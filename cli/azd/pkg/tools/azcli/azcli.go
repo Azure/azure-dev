@@ -207,19 +207,18 @@ func (cli *azCli) UserAgent() string {
 	return cli.userAgent
 }
 
-func (cli *azCli) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
+func (cli *azCli) clientOptionsBuilder() *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(cli.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy())
 }
 
 func clientOptionsBuilder(
-	ctx context.Context,
 	httpClient httputil.HttpClient,
 	userAgent string) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent)).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy())
 }

@@ -218,7 +218,7 @@ func (ds *deployments) createDeploymentsClient(
 		return nil, err
 	}
 
-	options := ds.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := ds.clientOptionsBuilder().BuildArmClientOptions()
 	client, err := armresources.NewDeploymentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -528,9 +528,9 @@ func createDeploymentError(err error) error {
 	return err
 }
 
-func (ds *deployments) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
+func (ds *deployments) clientOptionsBuilder() *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(ds.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(ds.userAgent)).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy())
 }

@@ -165,13 +165,12 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 
 	// Other devcenter components
 	container.MustRegisterSingleton(func(
-		ctx context.Context,
 		credential azcore.TokenCredential,
 		httpClient httputil.HttpClient,
 		resourceGraphClient *armresourcegraph.Client,
 	) (devcentersdk.DevCenterClient, error) {
 		options := azsdk.
-			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
+			DefaultClientOptionsBuilder(httpClient, "azd").
 			BuildCoreClientOptions()
 
 		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient)

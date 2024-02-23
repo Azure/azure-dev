@@ -412,11 +412,11 @@ func Test_Prompt_Parameters(t *testing.T) {
 
 func newPrompterForTest(t *testing.T, mockContext *mocks.MockContext, config *Config, manager Manager) *Prompter {
 	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+		DefaultClientOptionsBuilder(mockContext.HttpClient, "azd").
 		BuildCoreClientOptions()
 
 	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+		DefaultClientOptionsBuilder(mockContext.HttpClient, "azd").
 		BuildArmClientOptions()
 
 	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, armOptions)

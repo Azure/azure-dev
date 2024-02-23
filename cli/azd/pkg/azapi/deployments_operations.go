@@ -128,5 +128,5 @@ func (dp *deploymentOperations) clientOptionsBuilder(ctx context.Context) *azsdk
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(dp.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(dp.userAgent)).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy())
 }

@@ -580,7 +580,7 @@ func (ad *adService) createRoleDefinitionsClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ad.httpClient, ad.userAgent).BuildArmClientOptions()
 	client, err := armauthorization.NewRoleDefinitionsClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
@@ -599,7 +599,7 @@ func (ad *adService) createRoleAssignmentsClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ad.httpClient, ad.userAgent).BuildArmClientOptions()
 	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Assignments client: %w", err)
@@ -622,7 +622,7 @@ func (ad *adService) getOrCreateGraphClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildCoreClientOptions()
+	options := clientOptionsBuilder(ad.httpClient, ad.userAgent).BuildCoreClientOptions()
 	client, err := graphsdk.NewGraphClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Graph Users client: %w", err)

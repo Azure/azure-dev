@@ -74,7 +74,7 @@ func (cli *azCli) createAppConfigClient(
 		return nil, err
 	}
 
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder().BuildArmClientOptions()
 	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)

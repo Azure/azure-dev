@@ -326,7 +326,7 @@ func (cas *containerAppService) createContainerAppsClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(ctx, cas.httpClient, cas.userAgent).BuildArmClientOptions()
+	options := azsdk.DefaultClientOptionsBuilder(cas.httpClient, cas.userAgent).BuildArmClientOptions()
 	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
@@ -344,7 +344,7 @@ func (cas *containerAppService) createRevisionsClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(ctx, cas.httpClient, cas.userAgent).BuildArmClientOptions()
+	options := azsdk.DefaultClientOptionsBuilder(cas.httpClient, cas.userAgent).BuildArmClientOptions()
 	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)

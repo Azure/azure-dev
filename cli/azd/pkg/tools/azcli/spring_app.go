@@ -212,7 +212,7 @@ func (ss *springService) createSpringAppClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	client, err := armappplatform.NewAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringApp client: %w", err)
@@ -230,7 +230,7 @@ func (ss *springService) createSpringAppDeploymentClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	client, err := armappplatform.NewDeploymentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringAppDeployment client: %w", err)

@@ -32,11 +32,11 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NoError(t, err)
 
 	options := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd").
+		DefaultClientOptionsBuilder(http.DefaultClient, "azd").
 		BuildCoreClientOptions()
 
 	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd").
+		DefaultClientOptionsBuilder(http.DefaultClient, "azd").
 		BuildArmClientOptions()
 
 	resourceGraphClient, err := armresourcegraph.NewClient(credentials, armOptions)

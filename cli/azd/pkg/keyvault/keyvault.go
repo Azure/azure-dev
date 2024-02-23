@@ -159,7 +159,7 @@ func (kvs *keyVaultService) createKeyVaultClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(ctx, kvs.httpClient, kvs.userAgent).BuildArmClientOptions()
+	options := azsdk.DefaultClientOptionsBuilder(kvs.httpClient, kvs.userAgent).BuildArmClientOptions()
 	client, err := armkeyvault.NewVaultsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
@@ -180,7 +180,7 @@ func (kvs *keyVaultService) createSecretsDataClient(
 		return nil, err
 	}
 
-	coreOptions := azsdk.DefaultClientOptionsBuilder(ctx, kvs.httpClient, kvs.userAgent).BuildCoreClientOptions()
+	coreOptions := azsdk.DefaultClientOptionsBuilder(kvs.httpClient, kvs.userAgent).BuildCoreClientOptions()
 	options := &azsecrets.ClientOptions{
 		ClientOptions:                        *coreOptions,
 		DisableChallengeResourceVerification: false,

@@ -378,12 +378,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	container.MustRegisterSingleton(func(
-		ctx context.Context,
 		credential azcore.TokenCredential,
 		httpClient httputil.HttpClient,
 	) (*armresourcegraph.Client, error) {
 		options := azsdk.
-			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
+			DefaultClientOptionsBuilder(httpClient, "azd").
 			BuildArmClientOptions()
 
 		return armresourcegraph.NewClient(credential, options)

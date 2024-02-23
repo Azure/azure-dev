@@ -95,7 +95,7 @@ func (cs *managedClustersService) createManagedClusterClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, cs.httpClient, cs.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(cs.httpClient, cs.userAgent).BuildArmClientOptions()
 
 	client, err := armcontainerservice.NewManagedClustersClient(subscriptionId, credential, options)
 	if err != nil {

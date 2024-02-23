@@ -77,7 +77,7 @@ func (cli *azCli) createManagedHSMClient(
 		return nil, err
 	}
 
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder().BuildArmClientOptions()
 	client, err := armkeyvault.NewManagedHsmsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)

@@ -169,14 +169,13 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 
 // createClient creates a new blob client and caches it for future use
 func NewBlobSdkClient(
-	ctx context.Context,
 	credential azcore.TokenCredential,
 	accountConfig *AccountConfig,
 	httpClient httputil.HttpClient,
 	userAgent httputil.UserAgent,
 ) (*azblob.Client, error) {
 	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(ctx, httpClient, string(userAgent)).
+		DefaultClientOptionsBuilder(httpClient, string(userAgent)).
 		BuildCoreClientOptions()
 
 	blobOptions := &azblob.ClientOptions{

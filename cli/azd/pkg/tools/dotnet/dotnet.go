@@ -161,7 +161,7 @@ func (cli *dotNetCli) PublishContainer(
 	runArgs = runArgs.AppendParams(
 		"-r", "linux-x64",
 		"-c", configuration,
-		"-p:PublishProfile=DefaultContainer",
+		"/t:PublishContainer",
 		fmt.Sprintf("-p:ContainerImageName=%s", imageName),
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
 	)

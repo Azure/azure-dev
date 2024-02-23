@@ -133,7 +133,7 @@ func createContainerAppServiceTarget(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
-	containerAppService := containerapps.NewContainerAppService(credentialProvider, mockContext.HttpClient, clock.NewMock())
+	containerAppService := containerapps.NewContainerAppService(credentialProvider, mockContext.HttpClient, clock.NewMock(), mockContext.ArmClientOptions)
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)

@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
@@ -51,12 +51,14 @@ func NewContainerAppService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
 	clock clock.Clock,
+	armClientOptions *arm.ClientOptions,
 ) ContainerAppService {
 	return &containerAppService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
 		clock:              clock,
+		armClientOptions:   armClientOptions,
 	}
 }
 
@@ -65,6 +67,7 @@ type containerAppService struct {
 	httpClient         httputil.HttpClient
 	userAgent          string
 	clock              clock.Clock
+	armClientOptions   *arm.ClientOptions
 }
 
 type ContainerAppIngressConfiguration struct {
@@ -326,8 +329,7 @@ func (cas *containerAppService) createContainerAppsClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(cas.httpClient, cas.userAgent).BuildArmClientOptions()
-	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
+	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, cas.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
 	}
@@ -344,8 +346,7 @@ func (cas *containerAppService) createRevisionsClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(cas.httpClient, cas.userAgent).BuildArmClientOptions()
-	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, options)
+	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, cas.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
 	}

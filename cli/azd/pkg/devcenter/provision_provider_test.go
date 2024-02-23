@@ -9,7 +9,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -436,20 +435,12 @@ func newProvisionProviderForTest(
 	env *environment.Environment,
 	manager Manager,
 ) provisioning.Provider {
-	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(mockContext.HttpClient, "azd").
-		BuildCoreClientOptions()
-
-	armOptions := azsdk.
-		DefaultClientOptionsBuilder(mockContext.HttpClient, "azd").
-		BuildArmClientOptions()
-
-	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, armOptions)
+	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, mockContext.ArmClientOptions)
 	require.NoError(t, err)
 
 	devCenterClient, err := devcentersdk.NewDevCenterClient(
 		mockContext.Credentials,
-		coreOptions,
+		mockContext.CoreClientOptions,
 		resourceGraphClient,
 	)
 

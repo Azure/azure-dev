@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -378,14 +379,33 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	container.MustRegisterSingleton(func(
-		credential azcore.TokenCredential,
 		httpClient httputil.HttpClient,
-	) (*armresourcegraph.Client, error) {
-		options := azsdk.
-			DefaultClientOptionsBuilder(httpClient, "azd").
-			BuildArmClientOptions()
+		userAgent httputil.UserAgent,
+	) *azsdk.ClientOptionsBuilderFactory {
+		return azsdk.NewClientOptionsBuilderFactory(httpClient, string(userAgent))
+	})
 
-		return armresourcegraph.NewClient(credential, options)
+	container.MustRegisterSingleton(func(
+		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
+	) *azcore.ClientOptions {
+		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
+			BuildCoreClientOptions()
+	})
+
+	container.MustRegisterSingleton(func(
+		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
+	) *arm.ClientOptions {
+		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
+			BuildArmClientOptions()
+	})
+
+	container.MustRegisterSingleton(func(
+		credential azcore.TokenCredential,
+		armClientOptions *arm.ClientOptions,
+	) (*armresourcegraph.Client, error) {
+		return armresourcegraph.NewClient(credential, armClientOptions)
 	})
 
 	container.MustRegisterSingleton(templates.NewTemplateManager)

@@ -169,8 +169,9 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 		httpClient httputil.HttpClient,
 		resourceGraphClient *armresourcegraph.Client,
 	) (devcentersdk.DevCenterClient, error) {
-		options := azsdk.
-			DefaultClientOptionsBuilder(httpClient, "azd").
+		options := azsdk.NewClientOptionsBuilderFactory(httpClient, "azd").
+			NewClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
 			BuildCoreClientOptions()
 
 		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient)

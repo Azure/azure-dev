@@ -8,13 +8,11 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 var ErrAzCliSecretNotFound = errors.New("secret not found")
@@ -53,19 +51,20 @@ type KeyVaultService interface {
 
 type keyVaultService struct {
 	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
+	armClientOptions   *arm.ClientOptions
+	coreClientOptions  *azcore.ClientOptions
 }
 
 // NewKeyVaultService creates a new KeyVault service
 func NewKeyVaultService(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
+	armClientOptions *arm.ClientOptions,
+	coreClientOptions *azcore.ClientOptions,
 ) KeyVaultService {
 	return &keyVaultService{
 		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
+		armClientOptions:   armClientOptions,
+		coreClientOptions:  coreClientOptions,
 	}
 }
 
@@ -159,8 +158,7 @@ func (kvs *keyVaultService) createKeyVaultClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(kvs.httpClient, kvs.userAgent).BuildArmClientOptions()
-	client, err := armkeyvault.NewVaultsClient(subscriptionId, credential, options)
+	client, err := armkeyvault.NewVaultsClient(subscriptionId, credential, kvs.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}
@@ -180,9 +178,8 @@ func (kvs *keyVaultService) createSecretsDataClient(
 		return nil, err
 	}
 
-	coreOptions := azsdk.DefaultClientOptionsBuilder(kvs.httpClient, kvs.userAgent).BuildCoreClientOptions()
 	options := &azsecrets.ClientOptions{
-		ClientOptions:                        *coreOptions,
+		ClientOptions:                        *kvs.coreClientOptions,
 		DisableChallengeResourceVerification: false,
 	}
 

@@ -58,6 +58,34 @@
         "parent": "postgres2",
         "connectionString": "{postgres2.connectionString};Database=db2;"
       },
+      "sb": {
+        "type": "azure.bicep.v0",
+        "connectionString": "{sb.outputs.serviceBusEndpoint}",
+        "path": "aspire.hosting.azure.bicep.servicebus.bicep",
+        "params": {
+          "serviceBusNamespaceName": "sb",
+          "principalId": "",
+          "principalType": "",
+          "queues": [
+            "queue1"
+          ],
+          "topics": [
+            {
+              "name": "topic1",
+              "subscriptions": [
+                "subscription1",
+                "subscription2"
+              ]
+            },
+            {
+              "name": "topic2",
+              "subscriptions": [
+                "subscription1"
+              ]
+            }
+          ]
+        }
+      },
       "frontend": {
         "type": "project.v0",
         "path": "../Test1.Web/Test1.Web.csproj",
@@ -66,7 +94,8 @@
           "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
           "ConnectionStrings__db2": "{db2.connectionString}",
           "bicepValue_test": "{test.outputs.test}",
-          "bicepValue0": "{test.outputs.val0}"
+          "bicepValue0": "{test.outputs.val0}",
+          "ConnectionStrings__sb": "{sb.connectionString}"
         },
         "bindings": {
           "http": {

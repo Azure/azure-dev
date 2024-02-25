@@ -123,8 +123,10 @@ func TestAspireBicepGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	filesFromManifest := make(map[string]string)
-	filesFromManifest["test.bicep"] = "bicep file contents"
-	filesFromManifest["aspire.hosting.azure.bicep.postgres.bicep"] = "bicep file contents"
+	ignoredBicepContent := "bicep file contents"
+	filesFromManifest["test.bicep"] = ignoredBicepContent
+	filesFromManifest["aspire.hosting.azure.bicep.postgres.bicep"] = ignoredBicepContent
+	filesFromManifest["aspire.hosting.azure.bicep.servicebus.bicep"] = ignoredBicepContent
 	mockPublishManifest(mockCtx, aspireBicepManifest, filesFromManifest)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 

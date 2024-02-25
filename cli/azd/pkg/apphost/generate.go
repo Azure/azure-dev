@@ -901,6 +901,10 @@ func containsSecretInput(resourceName, envValue string, inputs map[string]Input)
 	return false
 }
 
+// singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
+var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
+var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
+
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required
 // infrastructure.
@@ -1025,12 +1029,18 @@ func (b *infraGenerator) Compile() error {
 			// bicep uses ' instead of " for strings, so we need to replace all " with '
 			singleQuoted := strings.ReplaceAll(paramValue, "\"", "'")
 
-			// evaluate references
-			evaluatedString, err := EvalString(singleQuoted, func(s string) (string, error) {
-				return b.evalBindingRef(s, inputEmitTypeBicep)
+			var evaluationError error
+			evaluatedString := singleQuotedStringRegex.ReplaceAllStringFunc(singleQuoted, func(s string) string {
+				evaluatedString, err := EvalString(s, func(s string) (string, error) {
+					return b.evalBindingRef(s, inputEmitTypeBicep)
+				})
+				if err != nil {
+					evaluationError = fmt.Errorf("evaluating bicep module %s parameter %s: %w", moduleName, paramName, err)
+				}
+				return evaluatedString
 			})
-			if err != nil {
-				return fmt.Errorf("evaluating bicep module %s parameter %s: %w", moduleName, paramName, err)
+			if evaluationError != nil {
+				return evaluationError
 			}
 
 			// quick check to know if evaluatedString is only holding one only reference. If so, we don't need to use
@@ -1039,6 +1049,11 @@ func (b *infraGenerator) Compile() error {
 				module.Params[paramName] = val
 				continue
 			}
+
+			// Property names that are valid identifiers should be declared without quotation marks and accessed
+			// using dot notation.
+			evaluatedString = propertyNameRegex.ReplaceAllString(evaluatedString, "${1}:")
+
 			// restore double {{ }} to single { } for bicep output
 			// we used double only during the evaluation to scape single brackets
 			module.Params[paramName] = strings.ReplaceAll(strings.ReplaceAll(evaluatedString, "'{{", "${"), "}}'", "}")

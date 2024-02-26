@@ -67,6 +67,9 @@ steps:
       displayName: Copy test-templates.sh
 
     - task: DevcontainersCI@0
+      # Exclude AKS templates due to internal security policies restricting ingress network traffic
+      # That will cause the Playwright tests to fail since the host is not reachable
+      condition: and(succeeded(), ne(contains(variables['TemplateName'], 'todo-nodejs-mongo-aks'), true))
       inputs:
           env: |
               # Required secrets for Terraform service principal authentication

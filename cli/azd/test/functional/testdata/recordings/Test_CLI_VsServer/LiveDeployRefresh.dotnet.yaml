@@ -4,76 +4,76 @@ interactions:
     - id: 0
       args:
         - publish
-        - /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj
+        - /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj
         - -r
         - linux-x64
         - -c
         - Debug
         - -p:PublishProfile=DefaultContainer
-        - -p:ContainerImageName=azd-deploy-apiservice-1708717459
-        - -p:ContainerRegistry=acrgnxzs2f5m4idm.azurecr.io
+        - -p:ContainerImageName=azd-deploy-apiservice-1708981409
+        - -p:ContainerRegistry=acrsoindfxt2muzw.azurecr.io
       exitCode: 0
       stdout: |
         MSBuild version 17.8.3+195e7f5a3 for .NET
           Determining projects to restore...
-          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.ServiceDefaults/AspireAzdTests.ServiceDefaults.csproj (in 501 ms).
-          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj (in 491 ms).
-          AspireAzdTests.ServiceDefaults -> /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.ServiceDefaults/bin/Debug/net8.0/AspireAzdTests.ServiceDefaults.dll
-          AspireAzdTests.ApiService -> /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.ApiService/bin/Debug/net8.0/linux-x64/AspireAzdTests.ApiService.dll
-          AspireAzdTests.ApiService -> /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.ApiService/bin/Debug/net8.0/linux-x64/publish/
-        /home/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj]
-          Building image 'azd-deploy-apiservice-1708717459' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
-          Uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploading layer 'sha256:0431bf7479963cb95650372df48718c37de7520d904f8b55c21697eca07f671e' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Finished uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Finished uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Finished uploading layer 'sha256:0431bf7479963cb95650372df48718c37de7520d904f8b55c21697eca07f671e' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Finished uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploading config to registry at blob 'sha256:6caa9f51ff3238e0a27a7d333381fb2465af5e428128ba67a6aded50dc8d6656',
+          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ServiceDefaults/AspireAzdTests.ServiceDefaults.csproj (in 526 ms).
+          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj (in 512 ms).
+          AspireAzdTests.ServiceDefaults -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ServiceDefaults/bin/Debug/net8.0/AspireAzdTests.ServiceDefaults.dll
+          AspireAzdTests.ApiService -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/bin/Debug/net8.0/linux-x64/AspireAzdTests.ApiService.dll
+          AspireAzdTests.ApiService -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/bin/Debug/net8.0/linux-x64/publish/
+        /home/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj]
+          Building image 'azd-deploy-apiservice-1708981409' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
+          Uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploading layer 'sha256:e93a3b0c33ad6a063eb30b66b8db034a88c2d3bafb098768a057200dfe687c8d' to 'acrsoindfxt2muzw.azurecr.io'.
+          Finished uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrsoindfxt2muzw.azurecr.io'.
+          Finished uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrsoindfxt2muzw.azurecr.io'.
+          Finished uploading layer 'sha256:e93a3b0c33ad6a063eb30b66b8db034a88c2d3bafb098768a057200dfe687c8d' to 'acrsoindfxt2muzw.azurecr.io'.
+          Finished uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploading config to registry at blob 'sha256:8b008c7866af996e78c2bd1af6fea62a20f8bb2f59c0fd4ea5384993e76ccc60',
           Uploaded config to registry.
-          Uploading tag 'latest' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploaded tag 'latest' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Pushed image 'azd-deploy-apiservice-1708717459:latest' to registry 'acrgnxzs2f5m4idm.azurecr.io'.
+          Uploading tag 'latest' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploaded tag 'latest' to 'acrsoindfxt2muzw.azurecr.io'.
+          Pushed image 'azd-deploy-apiservice-1708981409:latest' to registry 'acrsoindfxt2muzw.azurecr.io'.
 
         Workload updates are available. Run `dotnet workload list` for more information.
       stderr: ""
     - id: 1
       args:
         - publish
-        - /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj
+        - /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj
         - -r
         - linux-x64
         - -c
         - Debug
         - -p:PublishProfile=DefaultContainer
-        - -p:ContainerImageName=azd-deploy-webfrontend-1708717493
-        - -p:ContainerRegistry=acrgnxzs2f5m4idm.azurecr.io
+        - -p:ContainerImageName=azd-deploy-webfrontend-1708981443
+        - -p:ContainerRegistry=acrsoindfxt2muzw.azurecr.io
       exitCode: 0
       stdout: |
         MSBuild version 17.8.3+195e7f5a3 for .NET
           Determining projects to restore...
-          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj (in 568 ms).
+          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj (in 449 ms).
           1 of 2 projects are up-to-date for restore.
-          AspireAzdTests.ServiceDefaults -> /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.ServiceDefaults/bin/Debug/net8.0/AspireAzdTests.ServiceDefaults.dll
-          AspireAzdTests.Web -> /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.Web/bin/Debug/net8.0/linux-x64/AspireAzdTests.Web.dll
-          AspireAzdTests.Web -> /tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.Web/bin/Debug/net8.0/linux-x64/publish/
-        /home/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/tmp/Test_CLI_VsServerLiveDeployRefresh2261280644/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
-          Building image 'azd-deploy-webfrontend-1708717493' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
-          Uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploading layer 'sha256:9e2db8191805d750229efc3dafdf23f50b16af2c77eac1eb8e26481e114857a7' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Finished uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Finished uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Finished uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Finished uploading layer 'sha256:9e2db8191805d750229efc3dafdf23f50b16af2c77eac1eb8e26481e114857a7' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploading config to registry at blob 'sha256:11f2eea78317b2408766eb045b664a046eeb63088becf24d64baeaf879a0166f',
+          AspireAzdTests.ServiceDefaults -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ServiceDefaults/bin/Debug/net8.0/AspireAzdTests.ServiceDefaults.dll
+          AspireAzdTests.Web -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/bin/Debug/net8.0/linux-x64/AspireAzdTests.Web.dll
+          AspireAzdTests.Web -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/bin/Debug/net8.0/linux-x64/publish/
+        /home/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+          Building image 'azd-deploy-webfrontend-1708981443' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
+          Uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploading layer 'sha256:ed680b65daddfea2488824a68c580c9df690ac62c7d3a65170dd1211d395439f' to 'acrsoindfxt2muzw.azurecr.io'.
+          Finished uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrsoindfxt2muzw.azurecr.io'.
+          Finished uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrsoindfxt2muzw.azurecr.io'.
+          Finished uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrsoindfxt2muzw.azurecr.io'.
+          Finished uploading layer 'sha256:ed680b65daddfea2488824a68c580c9df690ac62c7d3a65170dd1211d395439f' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploading config to registry at blob 'sha256:afcc2d154cae10ee61a5c0d02ff6b48add3d70435580abcadf3c6c45df3c092c',
           Uploaded config to registry.
-          Uploading tag 'latest' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Uploaded tag 'latest' to 'acrgnxzs2f5m4idm.azurecr.io'.
-          Pushed image 'azd-deploy-webfrontend-1708717493:latest' to registry 'acrgnxzs2f5m4idm.azurecr.io'.
+          Uploading tag 'latest' to 'acrsoindfxt2muzw.azurecr.io'.
+          Uploaded tag 'latest' to 'acrsoindfxt2muzw.azurecr.io'.
+          Pushed image 'azd-deploy-webfrontend-1708981443:latest' to registry 'acrsoindfxt2muzw.azurecr.io'.
 
         Workload updates are available. Run `dotnet workload list` for more information.
       stderr: ""

@@ -14,6 +14,7 @@ const AzdUserAgentEnvVar = "AZURE_DEV_USER_AGENT"
 // Well-known user agents prefixes.
 const (
 	VsCodeAgentPrefix = "vscode:/extensions/ms-azuretools.azure-dev"
+	VsAgentPrefix     = "vside:/webtools/azdev.publish"
 )
 
 // UserAgent() creates the user agent string for azd.

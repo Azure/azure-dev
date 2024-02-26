@@ -109,7 +109,6 @@ stages:
         parameters:
           TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] ]
           TemplateBranchName: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateBranch'] ]
-          TemplateListFilter: '.*'
           JobCondition: >-
             and(
               succeeded(),

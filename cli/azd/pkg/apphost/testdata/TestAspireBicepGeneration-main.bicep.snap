@@ -41,6 +41,15 @@ module resources 'resources.bicep' = {
   }
 }
 
+module ai 'ai/aspire.hosting.azure.bicep.appinsights.bicep' = {
+  name: 'ai'
+  scope: rg
+  params: {
+    location: location
+    appInsightsName: 'ai'
+    logAnalyticsWorkspaceId: resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
+  }
+}
 module postgres2 'postgres2/aspire.hosting.azure.bicep.postgres.bicep' = {
   name: 'postgres2'
   scope: rg
@@ -65,6 +74,17 @@ module sb 'sb/aspire.hosting.azure.bicep.servicebus.bicep' = {
     topics: [{name:'topic1',subscriptions:['subscription1','subscription2']},{name:'topic2',subscriptions:['subscription1']}]
   }
 }
+module sql 'sql/aspire.hosting.azure.bicep.sql.bicep' = {
+  name: 'sql'
+  scope: rg
+  params: {
+    location: location
+    databases: ['db']
+    principalId: resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID
+    principalName: resources.outputs.MANAGED_IDENTITY_NAME
+    serverName: 'sql'
+  }
+}
 module test 'test/test.bicep' = {
   name: 'test'
   scope: rg
@@ -83,6 +103,8 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONT
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
 output SERVICE_BINDING_POSTGRES2KV_ENDPOINT string = resources.outputs.SERVICE_BINDING_POSTGRES2KV_ENDPOINT
 
+output AI_APPINSIGHTSCONNECTIONSTRING string = ai.outputs.appInsightsConnectionString
 output SB_SERVICEBUSENDPOINT string = sb.outputs.serviceBusEndpoint
+output SQL_SQLSERVERFQDN string = sql.outputs.sqlServerFqdn
 output TEST_TEST string = test.outputs.test
 output TEST_VAL0 string = test.outputs.val0

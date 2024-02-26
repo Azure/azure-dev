@@ -86,6 +86,32 @@
           ]
         }
       },
+      "ai": {
+        "type": "azure.bicep.v0",
+        "connectionString": "{ai.outputs.appInsightsConnectionString}",
+        "path": "aspire.hosting.azure.bicep.appinsights.bicep",
+        "params": {
+          "appInsightsName": "ai",
+          "logAnalyticsWorkspaceId": ""
+        }
+      },
+      "sql": {
+        "type": "azure.bicep.v0",
+        "connectionString": "Server=tcp:{sql.outputs.sqlServerFqdn},1433;Encrypt=True;Authentication=\u0022Active Directory Default\u0022",
+        "path": "aspire.hosting.azure.bicep.sql.bicep",
+        "params": {
+          "serverName": "sql",
+          "principalId": "",
+          "principalName": "",
+          "databases": [
+            "db"
+          ]
+        }
+      },
+      "db": {
+        "type": "value.v0",
+        "connectionString": "{sql.connectionString};Database=db"
+      },
       "frontend": {
         "type": "project.v0",
         "path": "../Test1.Web/Test1.Web.csproj",
@@ -95,7 +121,9 @@
           "ConnectionStrings__db2": "{db2.connectionString}",
           "bicepValue_test": "{test.outputs.test}",
           "bicepValue0": "{test.outputs.val0}",
-          "ConnectionStrings__sb": "{sb.connectionString}"
+          "ConnectionStrings__sb": "{sb.connectionString}",
+          "APPLICATIONINSIGHTS_CONNECTION_STRING": "{ai.connectionString}",
+          "ConnectionStrings__db": "{db.connectionString}"
         },
         "bindings": {
           "http": {

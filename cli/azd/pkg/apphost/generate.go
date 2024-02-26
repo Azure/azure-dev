@@ -582,13 +582,26 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 			autoInjectedParams[p] = struct{}{}
 		}
 	}
-	if _, keyVaultInjected := autoInjectedParams["keyVaultName"]; keyVaultInjected {
+	if _, keyVaultInjected := autoInjectedParams[knownParameterKeyVault]; keyVaultInjected {
 		b.addKeyVault(name+"kv", true, true)
 	}
 
 	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams}
 	return nil
 }
+
+const (
+	knownParameterKeyVault      string = "keyVaultName"
+	knownParameterPrincipalId   string = "principalId"
+	knownParameterPrincipalType string = "principalType"
+	knownParameterPrincipalName string = "principalName"
+	knownParameterLogAnalytics  string = "logAnalyticsWorkspaceId"
+
+	knownInjectedValuePrincipalId   string = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
+	knownInjectedValuePrincipalType string = "'ServicePrincipal'"
+	knownInjectedValuePrincipalName string = "resources.outputs.MANAGED_IDENTITY_NAME"
+	knownInjectedValueLogAnalytics  string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
+)
 
 // injectValueForBicepParameter checks for aspire-manifest and azd conventions rules for auto injecting values for
 // the bicep.v0 parameters.
@@ -611,17 +624,20 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 		return finalParamValue, false, nil
 	}
 
-	if p == "keyVaultName" {
+	if p == knownParameterKeyVault {
 		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(resourceName+"kv")), true, nil
 	}
-	if p == "principalId" {
-		return "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID", true, nil
+	if p == knownParameterPrincipalId {
+		return knownInjectedValuePrincipalId, true, nil
 	}
-	if p == "principalType" {
-		return "'ServicePrincipal'", true, nil
+	if p == knownParameterPrincipalType {
+		return knownInjectedValuePrincipalType, true, nil
 	}
-	if p == "principalName" {
-		return "resources.outputs.MANAGED_IDENTITY_NAME", true, nil
+	if p == knownParameterPrincipalName {
+		return knownInjectedValuePrincipalName, true, nil
+	}
+	if p == knownParameterLogAnalytics {
+		return knownInjectedValueLogAnalytics, true, nil
 	}
 	return finalParamValue, false, nil
 }

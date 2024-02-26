@@ -222,8 +222,8 @@ func (ch *ContainerHelper) Deploy(
 			var sourceImage string
 			targetImage := packageOutput.PackagePath
 
-			packageDetails := packageOutput.Details.(*dockerPackageResult)
-			if packageDetails != nil {
+			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
+			if ok && packageDetails != nil {
 				sourceImage = packageDetails.SourceImage
 				targetImage = packageDetails.TargetImage
 			}

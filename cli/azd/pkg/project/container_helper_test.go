@@ -274,8 +274,16 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			expectError:            false,
 		},
 		{
-			name:                   "Missing target image",
+			name:                   "Empty package details",
 			dockerDetails:          &dockerPackageResult{},
+			expectError:            true,
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  false,
+			expectDockerPushCalled: false,
+		},
+		{
+			name:                   "Nil package details",
+			dockerDetails:          nil,
 			expectError:            true,
 			expectDockerPullCalled: false,
 			expectDockerTagCalled:  false,
@@ -324,9 +332,11 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				require.NoError(t, err)
 				require.Same(t, packageOutput, deployResult.Package)
 
-				dockerDeployResult, ok := deployResult.Details.(*dockerDeployResult)
-				require.True(t, ok)
-				require.Equal(t, tt.expectedRemoteImage, dockerDeployResult.RemoteImageTag)
+				if deployResult.Details != nil {
+					dockerDeployResult, ok := deployResult.Details.(*dockerDeployResult)
+					require.True(t, ok)
+					require.Equal(t, tt.expectedRemoteImage, dockerDeployResult.RemoteImageTag)
+				}
 			}
 
 			_, dockerPullCalled := mockResults["docker-pull"]

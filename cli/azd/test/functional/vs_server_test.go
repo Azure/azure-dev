@@ -114,7 +114,12 @@ func Test_CLI_VsServer(t *testing.T) {
 			require.NoError(t, err)
 
 			// Wait for the server to start
-			time.Sleep(300 * time.Millisecond)
+			for i := 0; i < 5; i++ {
+				time.Sleep(300 * time.Millisecond)
+				if stdout.Len() > 0 {
+					break
+				}
+			}
 
 			var svr contracts.VsServerResult
 			err = json.Unmarshal(stdout.Bytes(), &svr)
@@ -144,7 +149,8 @@ func Test_CLI_VsServer(t *testing.T) {
 			if tt.IsLive {
 				// We don't currently have a way to deprovision using server mode.
 				// For now let's just clean up the resources.
-				cli.WorkingDirectory = testDir
+				cli.WorkingDirectory = dir
+				cli.Env = append(cli.Env, os.Environ()...)
 				_, _ = cli.RunCommand(ctx, "down", "--force", "--purge")
 			}
 		})

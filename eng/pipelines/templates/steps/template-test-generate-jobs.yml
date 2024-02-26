@@ -9,7 +9,7 @@ parameters:
   displayName: | 
     Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'python-mongo'
   type: string
-  default: ''
+  default: '.*'
 
 - name: OutputMatrixVariable
   displayName: The output matrix variable to set

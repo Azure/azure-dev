@@ -137,7 +137,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				err = at.dotNetCli.PublishContainer(
 					ctx,
 					serviceConfig.Path(),
-					"Debug",
+					"Release",
 					imageName,
 					dockerCreds.LoginServer,
 					dockerCreds.Username,

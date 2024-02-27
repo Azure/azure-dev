@@ -78,7 +78,7 @@ $templateNames = @()
 
 if ($TemplateList -eq 'all') {
     Write-Host "Running all templates "
-    
+
     $officialTemplates = (azd template list --output json | ConvertFrom-Json).repositoryPath | ForEach-Object {
         if (!$_.StartsWith("Azure-Samples/")) {
             "Azure-Samples/" + $_

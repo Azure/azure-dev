@@ -110,8 +110,8 @@ if ($TemplateListFilter -ne '.*') {
 }
 
 if ($templateNames.Length -eq 0) {
-    Write-Debug "No matched templates found."
-    exit 0
+    Write-Error "No matched templates found."
+    exit 1
 }
 
 $matrix = @{}

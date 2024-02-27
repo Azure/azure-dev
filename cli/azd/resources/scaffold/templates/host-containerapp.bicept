@@ -51,7 +51,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-01-01-pr
   name: containerRegistryName
 }
 
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-04-01' existing = {
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' existing = {
   name: containerAppsEnvironmentName
 }
 

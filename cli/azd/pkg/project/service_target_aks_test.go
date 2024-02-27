@@ -283,11 +283,7 @@ func Test_Deploy_Helm(t *testing.T) {
 	require.NoError(t, err)
 
 	packageResult := &ServicePackageResult{
-		PackagePath: "test-app/api-test:azd-deploy-0",
-		Details: &dockerPackageResult{
-			ImageHash:   "IMAGE_HASH",
-			TargetImage: "test-app/api-test:azd-deploy-0",
-		},
+		PackagePath: "",
 	}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
@@ -349,11 +345,7 @@ func Test_Deploy_Kustomize(t *testing.T) {
 	require.NoError(t, err)
 
 	packageResult := &ServicePackageResult{
-		PackagePath: "test-app/api-test:azd-deploy-0",
-		Details: &dockerPackageResult{
-			ImageHash:   "IMAGE_HASH",
-			TargetImage: "test-app/api-test:azd-deploy-0",
-		},
+		PackagePath: "",
 	}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))

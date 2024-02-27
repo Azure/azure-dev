@@ -192,7 +192,10 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			if packageOutput.PackagePath != "" {
+			// Only deploy the container image if a package output has been defined
+			// Empty package details is a valid scenario for any AKS deployment that does not build any containers
+			// Ex) Helm charts, or other manifests that reference external images
+			if packageOutput.Details != nil || packageOutput.PackagePath != "" {
 				// Login, tag & push container image to ACR
 				containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
 				syncProgress(task, containerDeployTask.Progress())
@@ -294,6 +297,8 @@ func (t *aksTarget) deployManifests(
 		deploymentPath = defaultDeploymentPath
 	}
 
+	deploymentPath = filepath.Join(serviceConfig.Path(), deploymentPath)
+
 	// Manifests are optional so we will continue if the directory does not exist
 	if _, err := os.Stat(deploymentPath); os.IsNotExist(err) {
 		return nil, err
@@ -302,7 +307,7 @@ func (t *aksTarget) deployManifests(
 	task.SetProgress(NewServiceProgress("Applying k8s manifests"))
 	err := t.kubectl.Apply(
 		ctx,
-		filepath.Join(serviceConfig.RelativePath, deploymentPath),
+		deploymentPath,
 		nil,
 	)
 	if err != nil {

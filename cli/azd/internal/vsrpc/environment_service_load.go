@@ -29,10 +29,12 @@ func (s *environmentService) OpenEnvironmentAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
 
-	return s.loadEnvironmentAsyncWithSession(ctx, session, name, false)
+	return s.loadEnvironmentAsync(ctx, container, name, false)
 }
 
 // LoadEnvironmentAsync is the server implementation of:
@@ -49,24 +51,26 @@ func (s *environmentService) LoadEnvironmentAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
-	return s.loadEnvironmentAsyncWithSession(ctx, session, name, true)
-}
-
-// loadEnvironmentAsyncWithSession is not safe to be called concurrently, ensure that the session is locked before calling.
-func (s *environmentService) loadEnvironmentAsyncWithSession(
-	ctx context.Context, session *serverSession, name string, mustLoadServices bool,
-) (*Environment, error) {
-	var c struct {
-		azdCtx        *azdcontext.AzdContext `container:"type"`
-		envManager    environment.Manager    `container:"type"`
-		projectConfig *project.ProjectConfig `container:"type"`
-		dotnetCli     dotnet.DotNetCli       `container:"type"`
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	return s.loadEnvironmentAsync(ctx, container, name, true)
+}
+
+func (s *environmentService) loadEnvironmentAsync(
+	ctx context.Context, container *container, name string, mustLoadServices bool,
+) (*Environment, error) {
+	var c struct {
+		azdCtx         *azdcontext.AzdContext  `container:"type"`
+		envManager     environment.Manager     `container:"type"`
+		projectConfig  *project.ProjectConfig  `container:"type"`
+		dotnetCli      dotnet.DotNetCli        `container:"type"`
+		dotnetImporter *project.DotNetImporter `container:"type"`
+	}
+
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 
@@ -83,11 +87,11 @@ func (s *environmentService) loadEnvironmentAsyncWithSession(
 	ret := &Environment{
 		Name: name,
 		Properties: map[string]string{
-			"Subscription":       e.GetSubscriptionId(),
-			"Location":           e.GetLocation(),
-			"ASPIRE_ENVIRONMENT": e.Getenv("ASPIRE_ENVIRONMENT"),
+			"Subscription": e.GetSubscriptionId(),
+			"Location":     e.GetLocation(),
 		},
 		IsCurrent: name == currentEnv,
+		Values:    e.Dotenv(),
 	}
 
 	// NOTE(ellismg): The IaC for Aspire Apps exposes these properties - we use them instead of trying to discover the
@@ -110,20 +114,16 @@ func (s *environmentService) loadEnvironmentAsyncWithSession(
 
 	// If we would have to discover the app host or load the manifest from disk and the caller did not request it
 	// skip this somewhat expensive operation, at the expense of not building out the services array.
-	if (session.appHostPath == "" || session.manifestCache[session.appHostPath] == nil) && !mustLoadServices {
+	if !mustLoadServices {
 		return ret, nil
 	}
 
-	if session.appHostPath == "" {
-		appHost, err := appHostForProject(ctx, c.projectConfig, c.dotnetCli)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find Aspire app host: %w", err)
-		}
-
-		session.appHostPath = appHost.Path()
+	appHost, err := appHostForProject(ctx, c.projectConfig, c.dotnetCli)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find Aspire app host: %w", err)
 	}
 
-	manifest, err := session.readManifest(ctx, session.appHostPath, c.dotnetCli)
+	manifest, err := c.dotnetImporter.ReadManifest(ctx, appHost)
 	if err != nil {
 		return nil, fmt.Errorf("reading app host manifest: %w", err)
 	}

@@ -28,7 +28,7 @@ import (
 
 type DeployFlags struct {
 	serviceName string
-	all         bool
+	All         bool
 	fromPackage string
 	global      *internal.GlobalCommandOptions
 	*internal.EnvFlag
@@ -59,7 +59,7 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 	d.EnvFlag.Bind(local, global)
 
 	local.BoolVar(
-		&d.all,
+		&d.All,
 		"all",
 		false,
 		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
@@ -183,13 +183,13 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		da.projectConfig,
 		string(project.ServiceEventDeploy),
 		targetServiceName,
-		da.flags.all,
+		da.flags.All,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	if da.flags.all && da.flags.fromPackage != "" {
+	if da.flags.All && da.flags.fromPackage != "" {
 		return nil, errors.New(
 			"'--from-package' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
 	}

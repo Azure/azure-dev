@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -205,7 +206,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.EnvironmentName
 			var err error
 
-			env, err := envManager.LoadOrCreateInteractive(ctx, environmentName)
+			env, err := envManager.LoadOrInitInteractive(ctx, environmentName)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}
@@ -407,7 +408,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 	container.MustRegisterSingleton(project.NewProjectManager)
-	container.MustRegisterScoped(project.NewDotNetImporter)
+	// Currently caches manifest across command executions
+	container.MustRegisterSingleton(project.NewDotNetImporter)
 	container.MustRegisterScoped(project.NewImportManager)
 	container.MustRegisterScoped(project.NewServiceManager)
 
@@ -440,6 +442,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(azcli.NewAdService)
 	container.MustRegisterSingleton(azcli.NewContainerRegistryService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
+	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterSingleton(azcli.NewSpringService)
 

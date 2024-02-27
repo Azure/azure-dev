@@ -24,9 +24,6 @@ func (s *environmentService) DeployAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	outputWriter := &lineWriter{
 		next: &messageWriter{
 			ctx:      ctx,
@@ -34,8 +31,12 @@ func (s *environmentService) DeployAsync(
 		},
 	}
 
-	session.outWriter.AddWriter(outputWriter)
-	defer session.outWriter.RemoveWriter(outputWriter)
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
+	container.outWriter.AddWriter(outputWriter)
+	defer container.outWriter.RemoveWriter(outputWriter)
 
 	provisionFlags := cmd.NewProvisionFlagsFromEnvAndOptions(
 		&internal.EnvFlag{
@@ -56,26 +57,27 @@ func (s *environmentService) DeployAsync(
 			NoPrompt: true,
 		},
 	)
+	deployFlags.All = true
 
-	session.container.MustRegisterScoped(func() internal.EnvFlag {
+	container.MustRegisterScoped(func() internal.EnvFlag {
 		return internal.EnvFlag{
 			EnvironmentName: name,
 		}
 	})
 
-	ioc.RegisterInstance[*cmd.ProvisionFlags](session.container, provisionFlags)
-	ioc.RegisterInstance[*cmd.DeployFlags](session.container, deployFlags)
-	ioc.RegisterInstance[[]string](session.container, []string{})
+	ioc.RegisterInstance[*cmd.ProvisionFlags](container.NestedContainer, provisionFlags)
+	ioc.RegisterInstance[*cmd.DeployFlags](container.NestedContainer, deployFlags)
+	ioc.RegisterInstance[[]string](container.NestedContainer, []string{})
 
-	session.container.MustRegisterNamedTransient("provisionAction", cmd.NewProvisionAction)
-	session.container.MustRegisterNamedTransient("deployAction", cmd.NewDeployAction)
+	container.MustRegisterNamedTransient("provisionAction", cmd.NewProvisionAction)
+	container.MustRegisterNamedTransient("deployAction", cmd.NewDeployAction)
 
 	var c struct {
 		deployAction    actions.Action `container:"name"`
 		provisionAction actions.Action `container:"name"`
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 
@@ -91,5 +93,5 @@ func (s *environmentService) DeployAsync(
 		return nil, err
 	}
 
-	return s.refreshEnvironmentAsyncWithSession(ctx, session, name, observer)
+	return s.refreshEnvironmentAsync(ctx, container, name, observer)
 }

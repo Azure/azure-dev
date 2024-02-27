@@ -274,8 +274,16 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			expectError:            false,
 		},
 		{
-			name:                   "Missing target image",
+			name:                   "Empty package details",
 			dockerDetails:          &dockerPackageResult{},
+			expectError:            true,
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  false,
+			expectDockerPushCalled: false,
+		},
+		{
+			name:                   "Nil package details",
+			dockerDetails:          nil,
 			expectError:            true,
 			expectDockerPullCalled: false,
 			expectDockerTagCalled:  false,
@@ -324,9 +332,11 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				require.NoError(t, err)
 				require.Same(t, packageOutput, deployResult.Package)
 
-				dockerDeployResult, ok := deployResult.Details.(*dockerDeployResult)
-				require.True(t, ok)
-				require.Equal(t, tt.expectedRemoteImage, dockerDeployResult.RemoteImageTag)
+				if deployResult.Details != nil {
+					dockerDeployResult, ok := deployResult.Details.(*dockerDeployResult)
+					require.True(t, ok)
+					require.Equal(t, tt.expectedRemoteImage, dockerDeployResult.RemoteImageTag)
+				}
 			}
 
 			_, dockerPullCalled := mockResults["docker-pull"]
@@ -336,6 +346,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
 			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
 			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
+			require.Equal(t, tt.expectedRemoteImage, env.GetServiceProperty("api", "IMAGE_NAME"))
 		})
 	}
 }
@@ -376,7 +387,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			},
 		},
 		{
-			name:  "with custom iamge",
+			name:  "with custom image",
 			image: osutil.NewExpandableString("custom-image"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "",
@@ -385,7 +396,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			},
 		},
 		{
-			name:  "with custom iamge and tag",
+			name:  "with custom image and tag",
 			image: osutil.NewExpandableString("custom-image"),
 			tag:   osutil.NewExpandableString("custom-tag"),
 			expectedImage: docker.ContainerImage{

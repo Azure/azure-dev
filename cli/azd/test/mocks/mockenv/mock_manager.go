@@ -16,7 +16,7 @@ func (m *MockEnvManager) Create(ctx context.Context, spec environment.Spec) (*en
 	return args.Get(0).(*environment.Environment), args.Error(1)
 }
 
-func (m *MockEnvManager) LoadOrCreateInteractive(ctx context.Context, name string) (*environment.Environment, error) {
+func (m *MockEnvManager) LoadOrInitInteractive(ctx context.Context, name string) (*environment.Environment, error) {
 	args := m.Called(ctx, name)
 	return args.Get(0).(*environment.Environment), args.Error(1)
 }

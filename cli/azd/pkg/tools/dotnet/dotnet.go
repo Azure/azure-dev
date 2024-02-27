@@ -28,7 +28,10 @@ type DotNetCli interface {
 		ctx context.Context, project, configuration, imageName, server, username, password string,
 	) error
 	InitializeSecret(ctx context.Context, project string) error
-	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string) error
+	// PublishAppHostManifest runs the app host program with the correct configuration to generate an manifest. If dotnetEnv
+	// is non-empty, it will be passed as environment variables (named `DOTNET_ENVIRONMENT`) when running the app host
+	// program.
+	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string, dotnetEnv string) error
 	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
 	GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error)
 }
@@ -120,9 +123,8 @@ func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration
 }
 
 func (cli *dotNetCli) PublishAppHostManifest(
-	ctx context.Context, hostProject string, manifestPath string,
+	ctx context.Context, hostProject string, manifestPath string, dotnetEnv string,
 ) error {
-
 	// TODO(ellismg): Before we GA manifest support, we should remove this debug tool, but being able to control what
 	// manifest is used is helpful, while the manifest/generator is still being built.  So if
 	// `AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST` is set, then we will expect to find apphost-manifest.json SxS with the host
@@ -144,6 +146,18 @@ func (cli *dotNetCli) PublishAppHostManifest(
 
 	runArgs = runArgs.WithCwd(filepath.Dir(hostProject))
 
+	// AppHosts may conditionalize their infrastructure based on the environment, so we need to pass the environment when we
+	// are `dotnet run`ing the app host project to produce its manifest.
+	var envArgs []string
+
+	if dotnetEnv != "" {
+		envArgs = append(envArgs, fmt.Sprintf("DOTNET_ENVIRONMENT=%s", dotnetEnv))
+	}
+
+	if envArgs != nil {
+		runArgs = runArgs.WithEnv(envArgs)
+	}
+
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet run --publisher manifest on project '%s' failed: %w", hostProject, err)
@@ -161,7 +175,7 @@ func (cli *dotNetCli) PublishContainer(
 	runArgs = runArgs.AppendParams(
 		"-r", "linux-x64",
 		"-c", configuration,
-		"-p:PublishProfile=DefaultContainer",
+		"/t:PublishContainer",
 		fmt.Sprintf("-p:ContainerImageName=%s", imageName),
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
 	)

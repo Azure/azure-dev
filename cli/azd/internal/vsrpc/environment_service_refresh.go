@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // RefreshEnvironmentAsync is the server implementation of:
@@ -32,19 +33,18 @@ func (s *environmentService) RefreshEnvironmentAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
 
-	return s.refreshEnvironmentAsyncWithSession(ctx, session, name, observer)
+	return s.refreshEnvironmentAsync(ctx, container, name, observer)
 }
 
-// refreshEnvironmentAsyncWithSession is not safe to be called concurrently, ensure that the session is locked before
-// calling.
-func (s *environmentService) refreshEnvironmentAsyncWithSession(
-	ctx context.Context, session *serverSession, name string, observer IObserver[ProgressMessage],
+func (s *environmentService) refreshEnvironmentAsync(
+	ctx context.Context, container *container, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-
-	env, err := s.loadEnvironmentAsyncWithSession(ctx, session, name, true)
+	env, err := s.loadEnvironmentAsync(ctx, container, name, true)
 	if err != nil {
 		return nil, err
 	}
@@ -55,18 +55,19 @@ func (s *environmentService) refreshEnvironmentAsyncWithSession(
 		importManager        *project.ImportManager      `container:"type"`
 		bicep                provisioning.Provider       `container:"name"`
 		azureResourceManager *infra.AzureResourceManager `container:"type"`
+		azcli                azcli.AzCli                 `container:"type"`
 		resourceManager      project.ResourceManager     `container:"type"`
 		serviceManager       project.ServiceManager      `container:"type"`
 		envManager           environment.Manager         `container:"type"`
 	}
 
-	session.container.MustRegisterScoped(func() internal.EnvFlag {
+	container.MustRegisterScoped(func() internal.EnvFlag {
 		return internal.EnvFlag{
 			EnvironmentName: name,
 		}
 	})
 
-	if err := session.container.Fill(&c); err != nil {
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 
@@ -145,9 +146,22 @@ func (s *environmentService) refreshEnvironmentAsyncWithSession(
 				log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
 			}
 		}
+
+		resources, err := c.azcli.ListResourceGroupResources(ctx, subId, rgName, nil)
+		if err == nil {
+			for _, res := range resources {
+				env.Resources = append(env.Resources, &Resource{
+					Id:   res.Id,
+					Name: res.Name,
+					Type: res.Type,
+				})
+			}
+		} else {
+			log.Printf("ignoring error loading resources for environment %s: %v", envName, err)
+		}
 	} else {
 		log.Printf(
-			"ignoring error determining resource group for environment %s, resource ids will not be available: %v",
+			"ignoring error determining resource group for environment %s, resources will not be available: %v",
 			env.Name,
 			err)
 	}

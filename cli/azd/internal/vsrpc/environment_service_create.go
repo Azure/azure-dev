@@ -25,9 +25,6 @@ func (s *environmentService) CreateEnvironmentAsync(
 		return false, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	envSpec := environment.Spec{
 		Name:         newEnv.Name,
 		Subscription: newEnv.Properties["Subscription"],
@@ -40,32 +37,44 @@ func (s *environmentService) CreateEnvironmentAsync(
 		envManager environment.Manager    `container:"type"`
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	container, err := session.newContainer()
+	if err != nil {
 		return false, err
+	}
+	if err := container.Fill(&c); err != nil {
+		return false, err
+	}
+
+	// We had thought at one point that we would introduce `ASPIRE_ENVIRONMENT` as a sibling to `ASPNETCORE_ENVIRONMENT` and
+	// `DOTNET_ENVIRONMENT` and was aspire specific. We no longer intend to do this (because having both DOTNET and
+	// ASPNETCORE versions is already confusing enough). For now, we'll use `ASPIRE_ENVIRONMENT` to seed the initial values of
+	// `DOTNET_ENVIRONMENT`, but allow them to be overriden at environment construction time.
+	//
+	// We only retain `DOTNET_ENVIRONMENT` in the .env file.
+	dotnetEnv := newEnv.Properties["ASPIRE_ENVIRONMENT"]
+
+	if v, has := newEnv.Values["DOTNET_ENVIRONMENT"]; has {
+		dotnetEnv = v
 	}
 
 	// If an azure.yaml doesn't already exist, we need to create one. Creating an environment implies initializing the
 	// azd project if it does not already exist.
 	if _, err := os.Stat(c.azdContext.ProjectPath()); errors.Is(err, fs.ErrNotExist) {
 		// Write an azure.yaml file to the project.
-		if session.appHostPath == "" {
-			hosts, err := appdetect.DetectAspireHosts(ctx, c.azdContext.ProjectDirectory(), c.dotnetCli)
-			if err != nil {
-				return false, fmt.Errorf("failed to discover app host project under %s: %w", c.azdContext.ProjectPath(), err)
-			}
-
-			if len(hosts) == 0 {
-				return false, fmt.Errorf("no app host projects found under %s", c.azdContext.ProjectPath())
-			}
-
-			if len(hosts) > 1 {
-				return false, fmt.Errorf("multiple app host projects found under %s", c.azdContext.ProjectPath())
-			}
-
-			session.appHostPath = hosts[0].Path
+		hosts, err := appdetect.DetectAspireHosts(ctx, c.azdContext.ProjectDirectory(), c.dotnetCli)
+		if err != nil {
+			return false, fmt.Errorf("failed to discover app host project under %s: %w", c.azdContext.ProjectPath(), err)
 		}
 
-		manifest, err := session.readManifest(ctx, session.appHostPath, c.dotnetCli)
+		if len(hosts) == 0 {
+			return false, fmt.Errorf("no app host projects found under %s", c.azdContext.ProjectPath())
+		}
+
+		if len(hosts) > 1 {
+			return false, fmt.Errorf("multiple app host projects found under %s", c.azdContext.ProjectPath())
+		}
+
+		manifest, err := apphost.ManifestFromAppHost(ctx, hosts[0].Path, c.dotnetCli, dotnetEnv)
 		if err != nil {
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
@@ -75,7 +84,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 			c.azdContext.ProjectDirectory(),
 			filepath.Base(c.azdContext.ProjectDirectory()),
 			manifest,
-			session.appHostPath)
+			hosts[0].Path)
 		if err != nil {
 			return false, fmt.Errorf("generating project artifacts: %w", err)
 		}
@@ -95,7 +104,13 @@ func (s *environmentService) CreateEnvironmentAsync(
 		return false, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	azdEnv.DotenvSet("ASPIRE_ENVIRONMENT", newEnv.Properties["ASPIRE_ENVIRONMENT"])
+	if dotnetEnv != "" {
+		azdEnv.DotenvSet("DOTNET_ENVIRONMENT", dotnetEnv)
+	}
+
+	for key, value := range newEnv.Values {
+		azdEnv.DotenvSet(key, value)
+	}
 
 	var servicesToExpose = make([]string, 0)
 

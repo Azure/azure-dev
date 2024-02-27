@@ -440,7 +440,7 @@ output MANAGED_IDENTITY_NAME string = managedIdentity.name
 output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
 {{if .HasLogAnalyticsWorkspace -}}
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
-output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspace.properties.customerId
+output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspace.id
 {{end -}}
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer

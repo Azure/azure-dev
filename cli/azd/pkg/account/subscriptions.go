@@ -6,42 +6,36 @@ import (
 	"sort"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // SubscriptionsService allows querying of subscriptions and tenants.
 type SubscriptionsService struct {
 	credentialProvider auth.MultiTenantCredentialProvider
-	userAgent          string
-	httpClient         httputil.HttpClient
+	armClientOptions   *arm.ClientOptions
 }
 
 func NewSubscriptionsService(
 	credentialProvider auth.MultiTenantCredentialProvider,
-	httpClient httputil.HttpClient) *SubscriptionsService {
+	armClientOptions *arm.ClientOptions,
+) *SubscriptionsService {
 	return &SubscriptionsService{
-		userAgent:          azdinternal.UserAgent(),
-		httpClient:         httpClient,
 		credentialProvider: credentialProvider,
+		armClientOptions:   armClientOptions,
 	}
 }
 
 func (ss *SubscriptionsService) createSubscriptionsClient(
 	ctx context.Context, tenantId string) (*armsubscriptions.Client, error) {
-	options := clientOptions(ss.httpClient, ss.userAgent)
 	cred, err := ss.credentialProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := armsubscriptions.NewClient(cred, options)
+	client, err := armsubscriptions.NewClient(cred, ss.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating subscriptions client: %w", err)
 	}
@@ -50,13 +44,12 @@ func (ss *SubscriptionsService) createSubscriptionsClient(
 }
 
 func (ss *SubscriptionsService) createTenantsClient(ctx context.Context) (*armsubscriptions.TenantsClient, error) {
-	options := clientOptions(ss.httpClient, ss.userAgent)
 	// Use default home tenant, since tenants itself can be listed across tenants
 	cred, err := ss.credentialProvider.GetTokenCredential(ctx, "")
 	if err != nil {
 		return nil, err
 	}
-	client, err := armsubscriptions.NewTenantsClient(cred, options)
+	client, err := armsubscriptions.NewTenantsClient(cred, ss.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating tenants client: %w", err)
 	}
@@ -175,13 +168,4 @@ func (s *SubscriptionsService) ListTenants(ctx context.Context) ([]armsubscripti
 	})
 
 	return tenants, nil
-}
-
-func clientOptions(httpClient httputil.HttpClient, userAgent string) *arm.ClientOptions {
-	return &arm.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			Transport:       httpClient,
-			PerCallPolicies: []policy.Policy{azsdk.NewUserAgentPolicy(userAgent)},
-		},
-	}
 }

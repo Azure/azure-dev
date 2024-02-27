@@ -34,7 +34,7 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      DotNet,
 					Path:          "dotnet",
-					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
+					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 				},
 				{
 					Language:      Java,
@@ -104,7 +104,7 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      DotNet,
 					Path:          "dotnet",
-					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
+					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 				},
 				{
 					Language:      Java,
@@ -123,7 +123,7 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      DotNet,
 					Path:          "dotnet",
-					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
+					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 				},
 				{
 					Language:      Java,
@@ -145,7 +145,7 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      DotNet,
 					Path:          "dotnet",
-					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
+					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 				},
 				{
 					Language:      Java,
@@ -191,7 +191,7 @@ func TestDetectDocker(t *testing.T) {
 	require.Equal(t, projects[0], Project{
 		Language:      DotNet,
 		Path:          filepath.Join(dir, "dotnet"),
-		DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
+		DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 		Docker: &Docker{
 			Path: filepath.Join(dir, "dotnet", "Dockerfile"),
 		},
@@ -218,7 +218,7 @@ func TestDetectNested(t *testing.T) {
 	require.Equal(t, projects[0], Project{
 		Language:      DotNet,
 		Path:          filepath.Join(src, "dotnet"),
-		DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
+		DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 	})
 }
 

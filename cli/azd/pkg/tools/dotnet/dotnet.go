@@ -24,9 +24,14 @@ type DotNetCli interface {
 	Restore(ctx context.Context, project string) error
 	Build(ctx context.Context, project string, configuration string, output string) error
 	Publish(ctx context.Context, project string, configuration string, output string) error
-	PublishContainer(ctx context.Context, project string, configuration string, imageName string, server string) error
+	PublishContainer(
+		ctx context.Context, project, configuration, imageName, server, username, password string,
+	) error
 	InitializeSecret(ctx context.Context, project string) error
-	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string) error
+	// PublishAppHostManifest runs the app host program with the correct configuration to generate an manifest. If dotnetEnv
+	// is non-empty, it will be passed as environment variables (named `DOTNET_ENVIRONMENT`) when running the app host
+	// program.
+	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string, dotnetEnv string) error
 	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
 	GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error)
 }
@@ -58,12 +63,12 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	dotnetRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "dotnet", "--version")
+	dotnetRes, err := cli.commandRunner.Run(ctx, newDotNetRunArgs("--version"))
 	if err != nil {
 		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	log.Printf("dotnet version: %s", dotnetRes)
-	dotnetSemver, err := tools.ExtractVersion(dotnetRes)
+	log.Printf("dotnet version: %s", dotnetRes.Stdout)
+	dotnetSemver, err := tools.ExtractVersion(dotnetRes.Stdout)
 	if err != nil {
 		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
@@ -75,7 +80,7 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
 }
 
 func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
-	runArgs := exec.NewRunArgs("dotnet", "restore", project)
+	runArgs := newDotNetRunArgs("restore", project)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet restore on project '%s' failed: %w", project, err)
@@ -84,7 +89,7 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 }
 
 func (cli *dotNetCli) Build(ctx context.Context, project string, configuration string, output string) error {
-	runArgs := exec.NewRunArgs("dotnet", "build", project)
+	runArgs := newDotNetRunArgs("build", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
 	}
@@ -101,7 +106,7 @@ func (cli *dotNetCli) Build(ctx context.Context, project string, configuration s
 }
 
 func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration string, output string) error {
-	runArgs := exec.NewRunArgs("dotnet", "publish", project)
+	runArgs := newDotNetRunArgs("publish", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
 	}
@@ -118,9 +123,8 @@ func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration
 }
 
 func (cli *dotNetCli) PublishAppHostManifest(
-	ctx context.Context, hostProject string, manifestPath string,
+	ctx context.Context, hostProject string, manifestPath string, dotnetEnv string,
 ) error {
-
 	// TODO(ellismg): Before we GA manifest support, we should remove this debug tool, but being able to control what
 	// manifest is used is helpful, while the manifest/generator is still being built.  So if
 	// `AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST` is set, then we will expect to find apphost-manifest.json SxS with the host
@@ -129,7 +133,9 @@ func (cli *dotNetCli) PublishAppHostManifest(
 		m, err := os.ReadFile(filepath.Join(filepath.Dir(hostProject), "apphost-manifest.json"))
 		if err != nil {
 			return fmt.Errorf(
-				"reading apphost-manifest.json (did you mean to have AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST set?): %w", err)
+				"reading apphost-manifest.json (did you mean to have AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST set?): %w",
+				err,
+			)
 		}
 
 		return os.WriteFile(manifestPath, m, osutil.PermissionFile)
@@ -139,6 +145,18 @@ func (cli *dotNetCli) PublishAppHostManifest(
 		"dotnet", "run", "--project", filepath.Base(hostProject), "--publisher", "manifest", "--output-path", manifestPath)
 
 	runArgs = runArgs.WithCwd(filepath.Dir(hostProject))
+
+	// AppHosts may conditionalize their infrastructure based on the environment, so we need to pass the environment when we
+	// are `dotnet run`ing the app host project to produce its manifest.
+	var envArgs []string
+
+	if dotnetEnv != "" {
+		envArgs = append(envArgs, fmt.Sprintf("DOTNET_ENVIRONMENT=%s", dotnetEnv))
+	}
+
+	if envArgs != nil {
+		runArgs = runArgs.WithEnv(envArgs)
+	}
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -150,22 +168,22 @@ func (cli *dotNetCli) PublishAppHostManifest(
 
 // PublishContainer runs a `dotnet publish“ with `PublishProfile=DefaultContainer` to build and publish the container.
 func (cli *dotNetCli) PublishContainer(
-	ctx context.Context, project string, configuration string, imageName string, server string,
+	ctx context.Context, project, configuration, imageName, server, username, password string,
 ) error {
-	runArgs := exec.NewRunArgs("dotnet", "publish", project)
-	if configuration != "" {
-		runArgs = runArgs.AppendParams("-c", configuration)
-	}
-
-	if imageName != "" {
-		runArgs = runArgs.AppendParams(fmt.Sprintf("-p:ContainerImageName=%s", imageName))
-	}
+	runArgs := newDotNetRunArgs("publish", project)
 
 	runArgs = runArgs.AppendParams(
 		"-r", "linux-x64",
-		"-p:PublishProfile=DefaultContainer",
+		"-c", configuration,
+		"/t:PublishContainer",
+		fmt.Sprintf("-p:ContainerImageName=%s", imageName),
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
 	)
+
+	runArgs = runArgs.WithEnv([]string{
+		fmt.Sprintf("SDK_CONTAINER_REGISTRY_UNAME=%s", username),
+		fmt.Sprintf("SDK_CONTAINER_REGISTRY_PWORD=%s", password),
+	})
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -175,7 +193,7 @@ func (cli *dotNetCli) PublishContainer(
 }
 
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
-	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "init", "--project", project)
+	runArgs := newDotNetRunArgs("user-secrets", "init", "--project", project)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to initialize secrets at project '%s': %w", project, err)
@@ -191,8 +209,7 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 
 	// dotnet user-secrets now support setting multiple values at once
 	//https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-7.0&tabs=windows#set-multiple-secrets
-	runArgs := exec.
-		NewRunArgs("dotnet", "user-secrets", "set", "--project", project).
+	runArgs := newDotNetRunArgs("user-secrets", "set", "--project", project).
 		WithStdIn(strings.NewReader(string(secretsJson)))
 
 	_, err = cli.commandRunner.Run(ctx, runArgs)
@@ -202,8 +219,12 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 	return nil
 }
 
+// GetMsBuildProperty uses -getProperty to fetch a property after evaluation, without executing the build.
+//
+// This only works for versions dotnet >= 8, MSBuild >= 17.8.
+// On older tool versions, this will return an error.
 func (cli *dotNetCli) GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error) {
-	runArgs := exec.NewRunArgs("dotnet", "msbuild", project, fmt.Sprintf("--getProperty:%s", propertyName))
+	runArgs := newDotNetRunArgs("msbuild", project, fmt.Sprintf("--getProperty:%s", propertyName))
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", err
@@ -215,4 +236,16 @@ func NewDotNetCli(commandRunner exec.CommandRunner) DotNetCli {
 	return &dotNetCli{
 		commandRunner: commandRunner,
 	}
+}
+
+// newDotNetRunArgs creates a new RunArgs to run the specified dotnet command. It sets the environment variable
+// to disable output of workload update notifications, to make it easier for us to parse the output.
+func newDotNetRunArgs(args ...string) exec.RunArgs {
+	runArgs := exec.NewRunArgs("dotnet", args...)
+
+	runArgs = runArgs.WithEnv([]string{
+		"DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1",
+	})
+
+	return runArgs
 }

@@ -28,7 +28,7 @@ type monitorFlags struct {
 	monitorLogs     bool
 	monitorOverview bool
 	global          *internal.GlobalCommandOptions
-	envFlag
+	internal.EnvFlag
 }
 
 func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -40,7 +40,7 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	)
 	local.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
 	local.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
-	m.envFlag.Bind(local, global)
+	m.EnvFlag.Bind(local, global)
 	m.global = global
 }
 
@@ -101,7 +101,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	resourceManager := infra.NewAzureResourceManager(m.azCli, m.deploymentOperations)
 	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(
-		ctx, m.env.GetSubscriptionId(), m.env.GetEnvName())
+		ctx, m.env.GetSubscriptionId(), m.env.Name())
 	if err != nil {
 		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
@@ -142,8 +142,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id),
-			)
+				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id))
 		}
 
 		if m.flags.monitorLogs {
@@ -155,8 +154,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	for _, portalResource := range portalResources {
 		if m.flags.monitorOverview {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id),
-			)
+				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id))
 		}
 	}
 

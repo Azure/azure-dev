@@ -127,11 +127,14 @@ stages:
               dockerVersion: 17.09.0-ce
               releaseType: stable
 
-          # Live testing uses dotnet 6.0.x in the WebApp project deployment
+          # Live testing uses dotnet 8.0.x in the WebApp project deployment
           - task: UseDotNet@2
             condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
             inputs:
-              version: 6.0.x
+              version: 8.0.x
+
+          - bash: dotnet nuget add source --name dotnet8 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8/nuget/v3/index.json
+            displayName: Add internal dotnet nuget feed
 
           - template: /eng/pipelines/templates/steps/az-login.yml
             parameters:
@@ -1071,6 +1074,7 @@ stages:
               pwsh: true
               workingDirectory: cli/installer/fpm
               filePath: eng/scripts/Test-LinuxPackages.ps1
+              arguments: -DockerImagePrefix "$(docker-mirror-tag-prefix)/"
 
   - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
     - stage: PublishCLI

@@ -1,20 +1,70 @@
 # Release History
 
-## 1.5.1 (Unreleased)
+## 1.7.0-beta.1 (Unreleased)
 
 ### Features Added
-
-- [[2998]](https://github.com/Azure/azure-dev/pull/2998) Adds support for Azure Storage Tables and Queues on Aspire projects.
-- [[3052]](https://github.com/Azure/azure-dev/pull/3052) Adds `target` argument support for docker build.
 
 ### Breaking Changes
 
 ### Bugs Fixed
 
+### Other Changes
+
+## 1.6.1 (2024-02-15)
+
+### Bugs Fixed
+
+- [[3375]](https://github.com/Azure/azure-dev/pull/3375) Fixes issues deploying to AKS service targets
+- [[3373]](https://github.com/Azure/azure-dev/pull/3373) Fixes resolution of AZD compatible templates within azure dev center catalogs
+- [[3372]](https://github.com/Azure/azure-dev/pull/3372) Removes requirement for dev center projects to include an `infra` folder
+
+## 1.6.0 (2024-02-13)
+
+### Features Added
+
+- [[3269]](https://github.com/Azure/azure-dev/pull/3269) Adds support for external/prebuilt container image references
+- [[3251]](https://github.com/Azure/azure-dev/pull/3251) Adds additional configuration resolving container registry names
+- [[3249]](https://github.com/Azure/azure-dev/pull/3249) Adds additional configuration resolving AKS cluster names
+- [[3223]](https://github.com/Azure/azure-dev/pull/3223) Updates AKS core modules for `azd` to easily enable RBAC clusters
+- [[3211]](https://github.com/Azure/azure-dev/pull/3211) Adds support for RBAC enabled AKS clusters using `kubelogin`
+- [[3196]](https://github.com/Azure/azure-dev/pull/3196) Adds support for Helm and Kustomize for AKS service targets
+- [[3173]](https://github.com/Azure/azure-dev/pull/3173) Adds support for defining customizable `azd up` workflows
+- Dotnet Aspire additions:
+  - [[3164]](https://github.com/Azure/azure-dev/pull/3164) Azure Cosmos DB.
+  - [[3226]](https://github.com/Azure/azure-dev/pull/3226) Azure SQL Database.
+  - [[3276]](https://github.com/Azure/azure-dev/pull/3276) Secrets handling improvement.
+- [[3155]](https://github.com/Azure/azure-dev/pull/3155) Adds support to define secrets and variables for `azd pipeline config`.
+
+### Bugs Fixed
+
+- [[3097]](https://github.com/Azure/azure-dev/pull/3097) For Dotnet Aspire projects, do not fail if folder `infra` is empty.
+
+## 1.5.1 (2023-12-20)
+
+### Features Added
+
+- [[2998]](https://github.com/Azure/azure-dev/pull/2998) Adds support for Azure Storage Tables and Queues on Aspire projects.
+- [[3052]](https://github.com/Azure/azure-dev/pull/3052) Adds `target` argument support for docker build.
+- [[2488]](https://github.com/Azure/azure-dev/pull/2488) Adds support to override behavior of the KUBECONFIG environment variable on AKS.
+- [[3075]](https://github.com/Azure/azure-dev/pull/3075) Adds support for `dockerfile.v0` on Aspire projects.
+- [[2992]](https://github.com/Azure/azure-dev/pull/2992) Adds support for `dapr` on Aspire projects.
+
+### Bugs Fixed
+
 - [[2969]](https://github.com/Azure/azure-dev/pull/2969) Relax container names truncation logic for Aspire `redis.v0` and `postgres.database.v0`.
   Truncation now happens above 30 characters instead of 12 characters.
+- [[3035]](https://github.com/Azure/azure-dev/pull/3035) .NET Aspire issues after `azd pipeline config`.
+- [[3038]](https://github.com/Azure/azure-dev/pull/3038) Fix init to not consider parent directories.
+- [[3045]](https://github.com/Azure/azure-dev/pull/3045) Handle interrupt to unhide cursor.
+- [[3069]](https://github.com/Azure/azure-dev/pull/3069) .NET Aspire, enable `admin user` for ACR.
+- [[3049]](https://github.com/Azure/azure-dev/pull/3049) Persist location from provisioning manager.
+- [[3056]](https://github.com/Azure/azure-dev/pull/3056) Fix `azd pipeline config` for resource group deployment.
+- [[3106]](https://github.com/Azure/azure-dev/pull/3106) Fix `azd restore` on .NET projects.
+- [[3041]](https://github.com/Azure/azure-dev/pull/3041) Ensure azd environment name is synchronized to .env file.
 
 ### Other Changes
+
+- [[3044]](https://github.com/Azure/azure-dev/pull/3044) Sets allowInsecure to true for internal services on Aspire projects.
 
 ## 1.5.0 (2023-11-15)
 
@@ -659,6 +709,7 @@ We plan to improve this behavior with [[#1126]](https://github.com/Azure/azure-d
 - [[#115]](https://github.com/Azure/azure-dev/issues/115) Fix deploy error when using a resource name with capital letters.
 
 ### Other Changes
+
 - [[#188]](https://github.com/Azure/azure-dev/issues/188) Update the minimum Bicep version to `v0.8.9`.
 
 ## 0.1.0-beta.2 (2022-07-13)

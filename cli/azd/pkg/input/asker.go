@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -105,7 +104,7 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		}
 	}
 
-	if isTerminal && os.Getenv("AZD_DEBUG_FORCE_NO_TTY") != "1" {
+	if isTerminal {
 		opts := []survey.AskOpt{}
 
 		// When asking a question which requires a text response, show the cursor, it helps
@@ -144,6 +143,16 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		if result == "" && v.Default != "" {
 			result = v.Default
 		}
+		*pResponse = result
+		return nil
+	case *survey.Password:
+		var pResponse = response.(*string)
+		fmt.Fprintf(stdout, "%s", v.Message)
+		result, err := readStringNoBuffer(stdin, '\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("reading response: %w", err)
+		}
+		result = strings.TrimSpace(result)
 		*pResponse = result
 		return nil
 	case *survey.MultiSelect:

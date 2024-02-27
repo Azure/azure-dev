@@ -175,7 +175,9 @@ var allDetectors = []projectDetector{
 		// TODO(ellismg): Remove ambient authority.
 		dotnetCli: dotnet.NewDotNetCli(exec.NewCommandRunner(nil)),
 	},
-	&dotNetDetector{},
+	&dotNetDetector{
+		dotnetCli: dotnet.NewDotNetCli(exec.NewCommandRunner(nil)),
+	},
 	&pythonDetector{},
 	&javaScriptDetector{},
 }
@@ -195,6 +197,17 @@ func DetectDirectory(ctx context.Context, directory string, options ...DetectDir
 	}
 
 	return detectAny(ctx, config.detectors, directory, entries)
+}
+
+func DetectAspireHosts(ctx context.Context, root string, dotnetCli dotnet.DotNetCli) ([]Project, error) {
+	config := newConfig()
+	config.detectors = []projectDetector{
+		&dotNetAppHostDetector{
+			dotnetCli: dotnetCli,
+		},
+	}
+
+	return detectUnder(ctx, root, config)
 }
 
 func detectUnder(ctx context.Context, root string, config detectConfig) ([]Project, error) {

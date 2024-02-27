@@ -40,7 +40,7 @@ func NewEnvironmentStore(
 
 // EnvPath returns the path for the environment
 func (s *EnvironmentStore) EnvPath(env *environment.Environment) string {
-	return fmt.Sprintf("projects/%s/users/me/environments/%s", s.config.Project, env.GetEnvName())
+	return fmt.Sprintf("projects/%s/users/me/environments/%s", s.config.Project, env.Name())
 }
 
 // ConfigPath returns the path for the environment configuration
@@ -106,7 +106,7 @@ func (s *EnvironmentStore) Get(ctx context.Context, name string) (*environment.E
 // Reload reloads the environment from the remote data store
 func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environment) error {
 	filter := func(e *devcentersdk.Environment) bool {
-		return s.envDefFilter(e) && strings.EqualFold(e.Name, env.GetEnvName())
+		return s.envDefFilter(e) && strings.EqualFold(e.Name, env.Name())
 	}
 
 	envList, err := s.matchingEnvironments(ctx, filter)
@@ -122,7 +122,7 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 		DevCenterByName(s.config.Name).
 		ProjectByName(s.config.Project).
 		EnvironmentsByUser(envList[0].User).
-		EnvironmentByName(env.GetEnvName()).
+		EnvironmentByName(env.Name()).
 		Get(ctx)
 
 	if err != nil {

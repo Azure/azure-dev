@@ -95,12 +95,12 @@ func newEnvSetCmd() *cobra.Command {
 }
 
 type envSetFlags struct {
-	envFlag
+	internal.EnvFlag
 	global *internal.GlobalCommandOptions
 }
 
 func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.envFlag.Bind(local, global)
+	f.EnvFlag.Bind(local, global)
 	f.global = global
 }
 
@@ -327,7 +327,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	if err := en.azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
+	if err := en.azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
@@ -337,13 +337,13 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 type envRefreshFlags struct {
 	hint   string
 	global *internal.GlobalCommandOptions
-	envFlag
+	internal.EnvFlag
 }
 
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(&er.hint, "hint", "", "", "Hint to help identify the environment to refresh")
 
-	er.envFlag.Bind(local, global)
+	er.EnvFlag.Bind(local, global)
 	er.global = global
 }
 
@@ -371,14 +371,14 @@ func newEnvRefreshCmd() *cobra.Command {
 				return nil
 			}
 
-			if flagValue, err := cmd.Flags().GetString(environmentNameFlag); err == nil {
+			if flagValue, err := cmd.Flags().GetString(internal.EnvironmentNameFlagName); err == nil {
 				if flagValue != "" && args[0] != flagValue {
 					return errors.New(
 						"the --environment flag and an explicit environment name as an argument may not be used together")
 				}
 			}
 
-			return cmd.Flags().Set(environmentNameFlag, args[0])
+			return cmd.Flags().Set(internal.EnvironmentNameFlagName, args[0])
 		},
 		Annotations: map[string]string{},
 	}
@@ -432,7 +432,7 @@ func newEnvRefreshAction(
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command title
 	ef.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.GetEnvName()),
+		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.Name()),
 	})
 
 	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
@@ -518,12 +518,12 @@ func newEnvGetValuesCmd() *cobra.Command {
 }
 
 type envGetValuesFlags struct {
-	envFlag
+	internal.EnvFlag
 	global *internal.GlobalCommandOptions
 }
 
 func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	eg.envFlag.Bind(local, global)
+	eg.EnvFlag.Bind(local, global)
 	eg.global = global
 }
 
@@ -563,8 +563,8 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	// and later, when envManager.Get() is called with the empty string, azd returns an error.
 	// But if there is already an environment (default to be selected), azd must honor the --environment flag
 	// over the default environment.
-	if eg.flags.environmentName != "" {
-		name = eg.flags.environmentName
+	if eg.flags.EnvironmentName != "" {
+		name = eg.flags.EnvironmentName
 	}
 	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {

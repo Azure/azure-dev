@@ -51,7 +51,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.ErrorContains(
-			t, err, "finding pipeline provider: reading project file:")
+			t, err, "Loading project configuration: reading project file:")
 		os.Remove(ghFolder)
 	})
 
@@ -98,7 +98,14 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		file, err := os.Create(filepath.Join(tempDir, azdoYml))
+		infraFolder := filepath.Join(tempDir, "infra")
+		err = os.MkdirAll(infraFolder, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		file, err := os.Create(filepath.Join(infraFolder, "main.foo"))
+		file.Close()
+		assert.NoError(t, err)
+
+		file, err = os.Create(filepath.Join(tempDir, azdoYml))
 		file.Close()
 		assert.NoError(t, err)
 
@@ -107,9 +114,9 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		env := environment.NewWithValues("test-env", envValues)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		assert.NoError(t, err)
 		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
 
 		os.Remove(azdoFolder)
 	})
@@ -417,8 +424,8 @@ func createPipelineManager(
 		mockContext.Container,
 		mockContext.SubscriptionCredentialProvider,
 	)
-	mockContext.Container.RegisterSingleton(github.NewGitHubCli)
-	mockContext.Container.RegisterSingleton(git.NewGitCli)
+	mockContext.Container.MustRegisterSingleton(github.NewGitHubCli)
+	mockContext.Container.MustRegisterSingleton(git.NewGitCli)
 
 	// Pipeline providers
 	pipelineProviderMap := map[string]any{
@@ -429,8 +436,7 @@ func createPipelineManager(
 	}
 
 	for provider, constructor := range pipelineProviderMap {
-		err := mockContext.Container.RegisterNamedSingleton(string(provider), constructor)
-		assert.NoError(t, err)
+		mockContext.Container.MustRegisterNamedSingleton(string(provider), constructor)
 	}
 
 	return NewPipelineManager(

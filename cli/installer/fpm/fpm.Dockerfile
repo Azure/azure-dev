@@ -1,5 +1,5 @@
 ARG prefix=''
-ARG base='ubuntu:20.04'
+ARG base='ubuntu:22.04'
 FROM ${prefix}${base}
 
 RUN apt update && \ 

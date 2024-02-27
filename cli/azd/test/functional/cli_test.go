@@ -67,8 +67,12 @@ type cliConfig struct {
 	// The tenant ID to use for live Azure tests.
 	TenantID string
 	// The Azure subscription ID to use for live Azure tests.
+	// In non-CI environments with no additional environment variables set,
+	// the azd user config 'defaults.subscription' value is used.
 	SubscriptionID string
 	// The Azure location to use for live Azure tests.
+	// In non-CI environments with no additional environment variables set,
+	// the azd user config 'defaults.location' value is used.
 	Location string
 }
 
@@ -79,6 +83,24 @@ func (c *cliConfig) init() {
 	c.TenantID = os.Getenv("AZD_TEST_TENANT_ID")
 	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
 	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
+
+	if !c.CI && (c.SubscriptionID == "" || c.Location == "") {
+		userConfig := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+		cfg, err := userConfig.Load()
+		if err == nil {
+			if subId, ok := cfg.GetString("defaults.subscription"); ok && c.SubscriptionID == "" {
+				c.SubscriptionID = subId
+			}
+
+			if loc, ok := cfg.GetString("defaults.location"); ok && c.Location == "" {
+				c.Location = loc
+			}
+		}
+
+		if err != nil {
+			log.Printf("could not load user config to provide default test values: %v", err)
+		}
+	}
 }
 
 func TestMain(m *testing.M) {
@@ -134,14 +156,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
@@ -172,7 +187,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -181,7 +196,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 }
 
 func Test_CLI_ProvisionState(t *testing.T) {
-	t.Setenv("AZURE_RECORD_MODE", "live")
+	t.Parallel()
+
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -231,12 +247,20 @@ func Test_CLI_ProvisionState(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
 
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
+
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
 
 func Test_CLI_ProvisionStateWithDown(t *testing.T) {
-	t.Setenv("AZURE_RECORD_MODE", "live")
+	t.Parallel()
+
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -278,6 +302,13 @@ func Test_CLI_ProvisionStateWithDown(t *testing.T) {
 	reProvisionAfterDown, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 	require.NotContains(t, reProvisionAfterDown.Stdout, expectedOutputContains)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
@@ -334,14 +365,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
@@ -371,7 +395,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -530,14 +554,7 @@ func Test_CLI_InfraBicepParam(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	// Delete
@@ -559,7 +576,7 @@ func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	assert.Equal(t, "", result.Stderr, "no output should be written to stderr when --help is passed")
 }
 
-//go:embed testdata/samples/*
+//go:embed all:testdata/samples/*
 var samples embed.FS
 
 func samplePath(paths ...string) string {
@@ -604,6 +621,21 @@ func randomOrStoredEnvName(session *recording.Session) string {
 	}
 
 	return randName
+}
+
+func cfgOrStoredSubscription(session *recording.Session) string {
+	if session != nil && session.Playback {
+		if _, ok := session.Variables[recording.SubscriptionIdKey]; ok {
+			return session.Variables[recording.SubscriptionIdKey]
+		}
+	}
+
+	subID := cfg.SubscriptionID
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = subID
+	}
+
+	return subID
 }
 
 func randomEnvName() string {

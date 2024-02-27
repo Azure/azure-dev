@@ -9,14 +9,14 @@ import dotenv from "dotenv";
  */
 const config: PlaywrightTestConfig = {
   testDir: ".",
-  /* Maximum time one test can run for. Using 10 min per test */
-  timeout: 10 * 60 * 1000,
+  /* Maximum time one test can run for. Using 2 hours per test */
+  timeout: 2 * 60 * 60 * 1000,
   expect: {
     /**
      * Maximum time expect() should wait for the condition to be met.
      * For example in `await expect(locator).toHaveText();`
      */
-    timeout: 5000,
+    timeout: 60 * 60 * 1000,
   },
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,

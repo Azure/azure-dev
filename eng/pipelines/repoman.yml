@@ -109,7 +109,7 @@ stages:
         parameters:
           TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] ]
           TemplateBranchName: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateBranch'] ]
-          TemplateListFilter: '^Azure-Samples/todo-.*$'
+          TemplateListFilter: '^Azure-Samples/todo-nodejs-mongo-aks$'
           JobCondition: >-
             and(
               succeeded(),

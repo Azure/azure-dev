@@ -89,7 +89,7 @@ module containerRegistryAccess '../security/registry-access.bicep' = if (usePriv
   }
 }
 
-resource app 'Microsoft.App/containerApps@2023-05-01' = {
+resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
   name: name
   location: location
   tags: tags

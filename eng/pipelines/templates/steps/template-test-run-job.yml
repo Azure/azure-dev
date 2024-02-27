@@ -110,8 +110,6 @@ steps:
                 RUN_VALIDATION=false
               fi
 
-              echo "RUN_VALIDATION: $RUN_VALIDATION"
-
               azd version
 
               # Login azd

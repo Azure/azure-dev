@@ -17,7 +17,7 @@ parameters:
   displayName: | 
     Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'python-mongo'
   type: string
-  default: '/^Azure-Samples\/todo-.*$/gmi'
+  default: '^Azure-Samples/todo-.*$'
 
 - name: TemplateBranchName
   displayName: The template repository branch to test against

@@ -111,7 +111,7 @@ stages:
           TemplateBranchName: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateBranch'] ]
           # Exclude AKS templates due to internal security policies restricting ingress network traffic
           # That will cause the Playwright tests to fail since the host is not reachable
-          TemplateListFilter: '/^Azure-Samples\/todo-.*$/gmi'
+          TemplateListFilter: '^Azure-Samples/todo-.*$'
           JobCondition: >-
             and(
               succeeded(),

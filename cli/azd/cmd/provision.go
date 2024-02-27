@@ -142,19 +142,6 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 	previewMode := p.flags.preview
 
-	// Test
-	subscriptionId := p.env.GetSubscriptionId()
-	resourceGroupName, err := p.resourceManager.GetResourceGroupName(
-		ctx, subscriptionId, p.projectConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	err = p.bindingManager.CreateBindings(ctx, subscriptionId, resourceGroupName, p.projectConfig.Bindings)
-	if err != nil {
-		return nil, err
-	}
-
 	// Command title
 	defaultTitle := "Provisioning Azure resources (azd provision)"
 	defaultTitleNote := "Provisioning Azure resources can take some time"

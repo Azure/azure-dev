@@ -7,63 +7,93 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicelinker/armservicelinker"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
-// BindingManager exposes operations for managing bindings in azure.yaml. Each binding item correspond to a
-// service linker resource
+// BindingManager exposes operations for managing service bindings in `azure.yaml` file
+// A binding corresponds to a service linker resource.
 type BindingManager interface {
-	CreateBinding(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		binding *BindingConfig,
+	ValidateBindingConfigs(
+		sourceType SourceResourceType,
+		sourceResource string,
+		bindingConfigs []*BindingConfig,
 	) error
 	CreateBindings(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
-		bindings []*BindingConfig,
-	) error
-	DeleteBinding(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		binding *BindingConfig,
+		sourceType SourceResourceType,
+		sourceResource string,
+		bindingConfigs []*BindingConfig,
 	) error
 	DeleteBindings(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
-		bindings []*BindingConfig,
+		sourceType SourceResourceType,
+		sourceResource string,
+		bindingConfigs []*BindingConfig,
 	) error
 }
 
 type bindingManager struct {
-	linkerService ServiceLinkerService
+	linkerManager LinkerManager
+	env           *environment.Environment
 }
 
 func NewBindingManager(
-	linkerService ServiceLinkerService,
+	linkerManager LinkerManager,
+	env *environment.Environment,
 ) BindingManager {
 	return &bindingManager{
-		linkerService: linkerService,
+		linkerManager: linkerManager,
+		env:           env,
 	}
 }
 
-// Create bindings
+// Validate binding source service and binding configs before creating bindings,
+// to fail earlier in case there are any user errors
+func (bm *bindingManager) ValidateBindingConfigs(
+	sourceType SourceResourceType,
+	sourceResource string,
+	bindingConfigs []*BindingConfig,
+) error {
+	// validate binding source type and source resource is specified in .env file
+	err := validateBindingSource(sourceType, sourceResource, bm.env.Dotenv())
+	if err != nil {
+		return err
+	}
+
+	// validate other binding info: tagret resource, store resource, binding name ...
+	for _, bindingConfig := range bindingConfigs {
+		err := validateBindingConfig(bindingConfig, bm.env.Dotenv())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Create all bindings of a service (each binding corresponds to a service linker resource)
 func (bm *bindingManager) CreateBindings(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
-	bindings []*BindingConfig,
+	sourceType SourceResourceType,
+	sourceResource string,
+	bindingConfigs []*BindingConfig,
 ) error {
-	err := validateBindingConfigs(bindings)
+	// collect Azure resource names from .env file, converting binding configs to linker configs
+	linkerConfigs, err := convertBindingsToLinkers(
+		subscriptionId, resourceGroupName, sourceType, sourceResource, bindingConfigs, bm.env.Dotenv())
 	if err != nil {
 		return err
 	}
 
-	for _, binding := range bindings {
-		err := bm.CreateBinding(ctx, subscriptionId, resourceGroupName, binding)
+	// create service linker resource for each binding
+	for _, linkerConfig := range linkerConfigs {
+		_, err := bm.linkerManager.Create(ctx, subscriptionId, linkerConfig)
 		if err != nil {
 			return err
 		}
@@ -71,29 +101,25 @@ func (bm *bindingManager) CreateBindings(
 	return nil
 }
 
-// Create a binding
-func (bm *bindingManager) CreateBinding(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	binding *BindingConfig,
-) error {
-	sourceResourceId, _ := formatResourceId(subscriptionId, resourceGroupName, binding.SourceResource, SourceResourceIdFormats[binding.SourceType])
-	targetResourceId, _ := formatResourceId(subscriptionId, resourceGroupName, binding.TargetResource, TargetResourceIdFormats[binding.TargetType])
-
-	_, err := bm.linkerService.Create(ctx, subscriptionId, sourceResourceId, binding.Name, targetResourceId, binding.ClientType)
-	return err
-}
-
-// Delete bindings
+// Delete all bindings of a service (each binding corresponds to a service linker resource)
 func (bm *bindingManager) DeleteBindings(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
-	bindings []*BindingConfig,
+	sourceType SourceResourceType,
+	sourceResource string,
+	bindingConfigs []*BindingConfig,
 ) error {
-	for _, binding := range bindings {
-		err := bm.DeleteBinding(ctx, subscriptionId, resourceGroupName, binding)
+	// collect Azure resource names from .env file, converting binding configs to linker configs
+	linkerConfigs, err := convertBindingsToLinkers(
+		subscriptionId, resourceGroupName, sourceType, sourceResource, bindingConfigs, bm.env.Dotenv())
+	if err != nil {
+		return err
+	}
+
+	// delete service linker resource for each binding
+	for _, linkerConfig := range linkerConfigs {
+		err := bm.linkerManager.Delete(ctx, subscriptionId, linkerConfig)
 		if err != nil {
 			return err
 		}
@@ -101,81 +127,186 @@ func (bm *bindingManager) DeleteBindings(
 	return nil
 }
 
-// Delete a binding
-func (bm *bindingManager) DeleteBinding(
-	ctx context.Context,
+// Convert binding configs to linker configs. Linker configs collects all info required to create
+// service linker resources
+func convertBindingsToLinkers(
 	subscriptionId string,
 	resourceGroupName string,
-	binding *BindingConfig,
-) error {
-	sourceResourceId, _ := formatResourceId(subscriptionId, resourceGroupName, binding.SourceResource, SourceResourceIdFormats[binding.SourceType])
+	sourceType SourceResourceType,
+	sourceResource string,
+	bindingConfigs []*BindingConfig,
+	env map[string]string,
+) ([]*LinkerConfig, error) {
+	linkerConfigs := []*LinkerConfig{}
 
-	err := bm.linkerService.Delete(ctx, subscriptionId, sourceResourceId, binding.Name)
-	return err
+	sourceId, err := getResourceId(subscriptionId, resourceGroupName,
+		sourceType, sourceResource, env)
+	if err != nil {
+		return linkerConfigs, err
+	}
+
+	for _, bindingConfig := range bindingConfigs {
+		targetId, err := getResourceId(subscriptionId, resourceGroupName,
+			bindingConfig.TargetType, bindingConfig.TargetResource, env)
+		if err != nil {
+			return linkerConfigs, err
+		}
+
+		scope, err := getScope(sourceType, sourceResource, env)
+		if err != nil {
+			return linkerConfigs, err
+		}
+
+		storeId, err := getResourceId(subscriptionId, resourceGroupName,
+			bindingConfig.StoreType, bindingConfig.StoreResource, env)
+		if err != nil {
+			return linkerConfigs, err
+		}
+
+		linkerConfigs = append(linkerConfigs, &LinkerConfig{
+			Name:             getLinkerName(bindingConfig),
+			SourceResourceId: sourceId,
+			Scope:            scope,
+			TargetResourceId: targetId,
+			StoreResourceId:  storeId,
+			ClientType:       bindingConfig.ClientType,
+		})
+	}
+
+	return linkerConfigs, nil
 }
 
-// Check if user provided binding configs are valid
-func validateBindingConfigs(
-	bindings []*BindingConfig,
+// Get linker name from binding config: use user provided name if specified, or else, generate
+// a linker name according to the binding config.
+func getLinkerName(
+	bindingConfig *BindingConfig,
+) string {
+	// use user provided name if specified
+	if len(bindingConfig.Name) > 0 {
+		return bindingConfig.Name
+	}
+
+	// or else, use `<targetType>_<targetResource>` (also removing all invalid characters)
+	linkerName := string(bindingConfig.TargetType) + "_" + string(bindingConfig.TargetResource)
+	regex := regexp.MustCompile(`^[^A-Za-z0-9\\._]$`)
+	linkerName = regex.ReplaceAllString(linkerName, "")
+
+	// service linker resource name length limit
+	return linkerName[:50]
+}
+
+// Collect resource names in .env file and format resource id according to resource id format
+// Can be used for any of a SourceResourceType, TargetResourceType or a StoreResourceType
+func getResourceId(
+	subscriptionId string,
+	resourceGroupName string,
+	resourceType interface{},
+	resourceName string,
+	env map[string]string,
+) (string, error) {
+	resourceIdFormat, resourceKeys := "", []string{}
+
+	// get resource id format and expected keys in .env file according to resource type
+	switch resourceType.(type) {
+	case SourceResourceType:
+		resourceIdFormat = SourceResourceIdFormats[resourceType]
+		resourceKeys = getExpectedKeysInEnv(resourceType, resourceName, SourceSubResourceSuffix[resourceType])
+	case TargetResourceType:
+		resourceIdFormat = TargetResourceIdFormats[resourceType]
+		resourceKeys = getExpectedKeysInEnv(resourceType, resourceName, TargetSubResourceSuffix[resourceType])
+	case StoreResourceType:
+		resourceIdFormat = StoreResourceIdFormats[resourceType]
+		resourceKeys = getExpectedKeysInEnv(resourceType, resourceName, nil)
+	}
+
+	resourceValues, err := getExpectedValuesInEnv(resourceKeys, env)
+	if err != nil {
+		return "", err
+	}
+
+	return formatResourceId(subscriptionId, resourceGroupName, resourceValues, resourceIdFormat)
+}
+
+// Get scope value from .env file according to source resource type and source resource name
+func getScope(
+	sourceType SourceResourceType,
+	sourceResource string,
+	env map[string]string,
+) (string, error) {
+	scopeKeys := getExpectedKeysInEnv(sourceType, sourceResource, SourceScopeSuffix[sourceType])
+
+	scopeValues, err := getExpectedValuesInEnv(scopeKeys, env)
+	if err != nil {
+		return "", err
+	}
+
+	if len(scopeValues) != 1 {
+		return "", fmt.Errorf("multiple scope values found for source resource: '%s'", sourceResource)
+	}
+
+	return scopeValues[0], nil
+}
+
+// Check if the binding source service is valid, including the hosting service type and expected
+// source service related environment variables in .env file
+func validateBindingSource(
+	sourceType SourceResourceType,
+	sourceResource string,
+	env map[string]string,
 ) error {
-	for _, binding := range bindings {
-		err := validateBindingConfig(binding)
-		if err != nil {
-			return err
-		}
+	if !sourceType.IsValid() {
+		return fmt.Errorf("source resource type: '%s' is not supported", sourceType)
+	}
+
+	sourceKeys := getExpectedKeysInEnv(sourceType, sourceResource, SourceSubResourceSuffix[sourceType])
+	_, err := getExpectedValuesInEnv(sourceKeys, env)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// Check if a single binding config is valid
+// Check if a binding config is valid, including the tagret resource, store resource, client type
+// and their expected environment variables in .env file
 func validateBindingConfig(
 	binding *BindingConfig,
+	env map[string]string,
 ) error {
 	// validate binding name
-	err := validateBindingName(binding.Name)
-	if err != nil {
-		return err
-	}
-
-	// validate source resource type
-	err = validateSourceType(binding.SourceType)
-	if err != nil {
-		return err
+	if len(binding.Name) > 0 {
+		err := validateBindingName(binding.Name)
+		if err != nil {
+			return err
+		}
 	}
 
 	// validate target resource type
-	err = validateTargetType(binding.TargetType)
-	if err != nil {
-		return err
+	if !binding.TargetType.IsValid() {
+		return fmt.Errorf("target resource type: '%s' is not supported", binding.TargetType)
+	}
+
+	// validate store resource type
+	if !binding.StoreType.IsValid() {
+		return fmt.Errorf("store resource type: '%s' is not supported", binding.StoreType)
 	}
 
 	// validate client type
-	err = validateClientType(binding.ClientType)
-	if err != nil {
-		return err
-	}
-
-	// validate store type
-	err = validateStoreType(binding.StoreType)
-	if err != nil {
-		return err
-	}
-
-	// validate source resource in the binding
-	err = validateResourceId(SourceResourceIdFormats[binding.SourceType], binding.SourceResource)
-	if err != nil {
-		return err
+	if !isValidClientType(binding.ClientType) {
+		return fmt.Errorf("client type: '%s' is not supported", binding.ClientType)
 	}
 
 	// validate target resource in the binding
-	err = validateResourceId(TargetResourceIdFormats[binding.TargetType], binding.TargetResource)
+	targetKeys := getExpectedKeysInEnv(binding.TargetType, binding.TargetResource,
+		TargetSubResourceSuffix[binding.TargetType])
+	_, err := getExpectedValuesInEnv(targetKeys, env)
 	if err != nil {
 		return err
 	}
 
 	// validate store resource in the binding
-	err = validateResourceId(StoreResourceIdFormats[binding.StoreType], binding.StoreResource)
+	storeKeys := getExpectedKeysInEnv(binding.StoreType, binding.StoreResource, nil)
+	_, err = getExpectedValuesInEnv(storeKeys, env)
 	if err != nil {
 		return err
 	}
@@ -183,143 +314,89 @@ func validateBindingConfig(
 	return nil
 }
 
-// Check if the provided binding name is valid
+// Check if the provided binding name is valid as service linker resource name
 func validateBindingName(
 	bindingName string,
 ) error {
-	// Binding name should align with service linker naming rule
-	pattern := "^[A-Za-z0-9\\._]{1,60}$"
-	regex := regexp.MustCompile(pattern)
+	// service linker resource naming rule
+	regex := regexp.MustCompile(`^[A-Za-z0-9\\._]{1,60}$`)
 	match := regex.MatchString(bindingName)
 
 	if !match {
-		return fmt.Errorf("the provided binding name: '%s' is invalid. "+
-			"Binding name can only contain letters, numbers (0-9), periods ('.'), and underscores ('_'). "+
+		return fmt.Errorf("the provided binding name: '%s' is invalid. Binding name can "+
+			"only contain letters, numbers (0-9), periods ('.'), and underscores ('_'). "+
 			"The length must not be more than 60 characters", bindingName)
 	}
 
 	return nil
 }
 
-// Check if the provided resource name could match the resource id format
-func validateResourceId(
-	resourceIdFormat string,
+// Get expected key names in .env file for a resource type and resource name
+func getExpectedKeysInEnv(
+	resourceType interface{},
 	resourceName string,
-) error {
-	// Split resource name as there may be sub-resources
-	components := strings.Split(resourceName, "/")
+	keySuffixes []string,
+) []string {
+	resourceKey := BindingPrefix + "_" + resourceName
+	expectedKeys := []string{resourceKey}
 
-	// Number of placeholders in resource id format should match components in resource name
-	if (len(components) + 2) != strings.Count(resourceIdFormat, "%s") {
-		return fmt.Errorf("the provided resource name: '%s' does not match the resource id format: '%s'",
-			resourceName, resourceIdFormat)
-	}
-
-	return nil
-}
-
-// Check if the source resource type is supported
-func validateSourceType(
-	sourceType SourceResourceType,
-) error {
-	switch sourceType {
-	case SourceTypeWebApp, SourceTypeFunctionApp, SourceTypeContainerApp, SourceTypeSpringApp:
-		return nil
-	}
-
-	return fmt.Errorf("source resource type: '%s' is not supported", sourceType)
-}
-
-// Check if the target resource type is supported
-func validateTargetType(
-	targetType TargetResourceType,
-) error {
-	switch targetType {
-	case TargetTypeStorageAccount, TargetTypeCosmosDB, TargetTypePostgreSqlFlexible, TargetTypeMysqlFlexible,
-		TargetTypeSql, TargetTypeRedis, TargetTypeRedisEnterprise, TargetTypeKeyVault, TargetTypeEventHub,
-		TargetTypeAppConfig, TargetTypeServiceBus, TargetTypeSignalR, TargetTypeWebPubSub, TargetTypeAppInsights,
-		TargetTypeWebApp, TargetTypeFunctionApp, TargetTypeContainerApp, TargetTypeSpringApp:
-		return nil
-	}
-
-	return fmt.Errorf("target resource type: '%s' is not supported", targetType)
-}
-
-// Check if the source resource type is supported
-func validateClientType(
-	clientType armservicelinker.ClientType,
-) error {
-	for _, possibleValue := range armservicelinker.PossibleClientTypeValues() {
-		if clientType == possibleValue {
-			return nil
+	if len(keySuffixes) > 0 {
+		for _, suffix := range keySuffixes {
+			expectedKeys = append(expectedKeys, resourceKey+"_"+suffix)
 		}
 	}
 
-	return fmt.Errorf("client type: '%s' is not supported", clientType)
+	return expectedKeys
 }
 
-// Check if the source resource type is supported
-func validateStoreType(
-	storeType StoreType,
-) error {
-	switch storeType {
-	case StoreTypeAppConfig:
-		return nil
+// Get values from .env file according to expected key names
+func getExpectedValuesInEnv(
+	expectedKeys []string,
+	env map[string]string,
+) ([]string, error) {
+	expectedValues := []string{}
+
+	for _, key := range expectedKeys {
+		value, exists := env[key]
+		if exists {
+			expectedValues = append(expectedValues, value)
+		} else {
+			return nil, fmt.Errorf("expected key: '%s' is not found in .env file", key)
+		}
 	}
 
-	return fmt.Errorf("store type: '%s' is not supported", storeType)
+	return expectedValues, nil
 }
 
-// Resource id formats supported by service linker as source resource
-var SourceResourceIdFormats = map[SourceResourceType]string{
-	SourceTypeWebApp:       "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Web/sites/%s",
-	SourceTypeFunctionApp:  "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Web/sites/%s",
-	SourceTypeContainerApp: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
-	SourceTypeSpringApp:    "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.AppPlatform/Spring/%s/apps/%s",
+// Check if the client type is valid for service linker resource
+func isValidClientType(
+	clientType armservicelinker.ClientType,
+) bool {
+	for _, value := range armservicelinker.PossibleClientTypeValues() {
+		if clientType == value {
+			return true
+		}
+	}
+	return false
 }
 
-// Resource id formats supported by service linker as target resource
-var TargetResourceIdFormats = map[TargetResourceType]string{
-	TargetTypeStorageAccount:     "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Storage/storageAccounts/%s",
-	TargetTypeCosmosDB:           "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DocumentDB/databaseAccounts/%s",
-	TargetTypePostgreSqlFlexible: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforPostgreSQL/flexibleServers/%s/databases/%s",
-	TargetTypeMysqlFlexible:      "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforMySQL/flexibleServers/%s/databases/%s",
-	TargetTypeSql:                "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Sql/servers/%s/databases/%s",
-	TargetTypeRedis:              "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Cache/redis/%s/databases/%s",
-	TargetTypeRedisEnterprise:    "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Cache/redisEnterprise/%s/databases/%s",
-	TargetTypeKeyVault:           "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.KeyVault/vaults/%s",
-	TargetTypeEventHub:           "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.EventHub/namespaces/%s",
-	TargetTypeAppConfig:          "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.AppConfiguration/configurationStores/%s",
-	TargetTypeServiceBus:         "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ServiceBus/namespaces/%s",
-	TargetTypeSignalR:            "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.SignalRService/SignalR/%s",
-	TargetTypeWebPubSub:          "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.SignalRService/WebPubSub/%s",
-	TargetTypeAppInsights:        "/subscriptions/%s/resourceGroups/%s/providers/microsoft.insights/components/%s",
-	TargetTypeWebApp:             "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Web/sites/%s",
-	TargetTypeFunctionApp:        "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Web/sites/%s",
-	TargetTypeContainerApp:       "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
-	TargetTypeSpringApp:          "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.AppPlatform/Spring/%s/apps/%s",
-}
-
-// Resource id formats supported by service linker as binding info store
-var StoreResourceIdFormats = map[StoreType]string{
-	StoreTypeAppConfig: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.AppConfiguration/configurationStores/%s",
-}
-
-// Format source and target resource id according to resource id format
+// Replace subscription, resource group and resource name placeholders in resource id format, returing
+// the formatted resource id
 func formatResourceId(
 	subscriptionId string,
 	resourceGroupName string,
-	resourceName string,
-	resourceIdForamt string,
+	resourceNames []string,
+	resourceIdFormat string,
 ) (string, error) {
-	validateResourceId(resourceIdForamt, resourceName)
+	components := append([]string{subscriptionId, resourceGroupName}, resourceNames...)
+	if (len(components)) != strings.Count(resourceIdFormat, "%s") {
+		return "", fmt.Errorf("resource id format is not matched: '%s'", resourceIdFormat)
+	}
 
-	// Replace subscription, resource group and resource name placeholders in resource id
-	components := append([]string{subscriptionId, resourceGroupName}, strings.Split(resourceName, "/")...)
 	interfaceComponents := make([]interface{}, len(components))
 	for i, v := range components {
 		interfaceComponents[i] = v
 	}
 
-	return fmt.Sprintf(resourceIdForamt, interfaceComponents...), nil
+	return fmt.Sprintf(resourceIdFormat, interfaceComponents...), nil
 }

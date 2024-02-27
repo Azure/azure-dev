@@ -11,83 +11,75 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-// ServiceLinkerService exposes operations for managing Azure Service Linker resources
-type ServiceLinkerService interface {
+// LinkerManager exposes operations for managing Azure Service Linker resources
+type LinkerManager interface {
 	// Get service linker resource
 	Get(
 		ctx context.Context,
 		subscriptionId string,
-		sourceResourceId string,
-		linkerName string,
+		linkerConfig *LinkerConfig,
 	) (*armservicelinker.LinkerResource, error)
 	// Create a new service linker resource
 	Create(
 		ctx context.Context,
 		subscriptionId string,
-		sourceResourceId string,
-		linkerName string,
-		targetResourceId string,
-		clientType armservicelinker.ClientType,
+		linkerConfig *LinkerConfig,
 	) (*armservicelinker.LinkerResource, error)
 	// Delete a service linker resource
 	Delete(
 		ctx context.Context,
 		subscriptionId string,
-		sourceResourceId string,
-		linkerName string,
+		linkerConfig *LinkerConfig,
 	) error
 }
 
-// NewServiceLinkerService creates a new ServiceLinkerService
-func NewServiceLinkerService(
+// NewLinkerManager creates a new LinkerManager
+func NewLinkerManager(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
-) ServiceLinkerService {
-	return &serviceLinkerService{
+) LinkerManager {
+	return &linkerManager{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
 	}
 }
 
-type serviceLinkerService struct {
+type linkerManager struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string
 }
 
 // Get a service linker resource
-func (sc *serviceLinkerService) Get(
+func (sc *linkerManager) Get(
 	ctx context.Context,
 	subscriptionId string,
-	sourceResourceId string,
-	linkerName string,
+	linkerConfig *LinkerConfig,
 ) (*armservicelinker.LinkerResource, error) {
 	linkerClient, err := sc.createServiceLinkerClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := linkerClient.Get(ctx, sourceResourceId, linkerName, nil)
+	resp, err := linkerClient.Get(ctx, linkerConfig.SourceResourceId, linkerConfig.Name, nil)
 	return &resp.LinkerResource, err
 }
 
 // Create a service linker resource
-func (sc *serviceLinkerService) Create(
+func (sc *linkerManager) Create(
 	ctx context.Context,
 	subscriptionId string,
-	sourceResourceId string,
-	linkerName string,
-	targetResourceId string,
-	clientType armservicelinker.ClientType,
+	linkerConfig *LinkerConfig,
 ) (*armservicelinker.LinkerResource, error) {
 	linkerClient, err := sc.createServiceLinkerClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	linkerResource := constructLinkerResource(targetResourceId, clientType)
-	poller, err := linkerClient.BeginCreateOrUpdate(ctx, sourceResourceId, linkerName, linkerResource, nil)
+	linkerResource := constructLinkerResource(linkerConfig)
+	poller, err := linkerClient.BeginCreateOrUpdate(
+		ctx, linkerConfig.SourceResourceId, linkerConfig.Name, linkerResource, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -97,18 +89,17 @@ func (sc *serviceLinkerService) Create(
 }
 
 // Delete a service linker resource
-func (sc *serviceLinkerService) Delete(
+func (sc *linkerManager) Delete(
 	ctx context.Context,
 	subscriptionId string,
-	sourceResourceId string,
-	linkerName string,
+	linkerConfig *LinkerConfig,
 ) error {
 	linkerClient, err := sc.createServiceLinkerClient(ctx, subscriptionId)
 	if err != nil {
 		return err
 	}
 
-	poller, err := linkerClient.BeginDelete(ctx, sourceResourceId, linkerName, nil)
+	poller, err := linkerClient.BeginDelete(ctx, linkerConfig.SourceResourceId, linkerConfig.Name, nil)
 	if err != nil {
 		return err
 	}
@@ -118,7 +109,7 @@ func (sc *serviceLinkerService) Delete(
 }
 
 // Create a client to manage service linker resources
-func (sc *serviceLinkerService) createServiceLinkerClient(
+func (sc *linkerManager) createServiceLinkerClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armservicelinker.LinkerClient, error) {
@@ -130,7 +121,7 @@ func (sc *serviceLinkerService) createServiceLinkerClient(
 	options := azsdk.DefaultClientOptionsBuilder(ctx, sc.httpClient, sc.userAgent).BuildArmClientOptions()
 	clientFactory, err := armservicelinker.NewClientFactory(credential, options)
 	if err != nil {
-		return nil, fmt.Errorf("creating Service Linker client: %w", err)
+		return nil, fmt.Errorf("creating service linker client: %w", err)
 	}
 
 	client := clientFactory.NewLinkerClient()
@@ -139,13 +130,11 @@ func (sc *serviceLinkerService) createServiceLinkerClient(
 
 // Construct a resource payload used for linker resource creation
 func constructLinkerResource(
-	targetResourceId string,
-	clientType armservicelinker.ClientType,
+	linkerConfig *LinkerConfig,
 ) armservicelinker.LinkerResource {
 	// Fixed to use secret as auth type for azd
 	secretAuthType := armservicelinker.AuthTypeSecret
 	azureResourceType := armservicelinker.TargetServiceTypeAzureResource
-	scope := "main"
 
 	return armservicelinker.LinkerResource{
 		Properties: &armservicelinker.LinkerProperties{
@@ -154,10 +143,10 @@ func constructLinkerResource(
 			},
 			TargetService: &armservicelinker.AzureResource{
 				Type: &azureResourceType,
-				ID:   &targetResourceId,
+				ID:   &linkerConfig.TargetResourceId,
 			},
-			ClientType: &clientType,
-			Scope:      &scope,
+			ClientType: &linkerConfig.ClientType,
+			Scope:      &linkerConfig.Scope,
 		},
 	}
 }

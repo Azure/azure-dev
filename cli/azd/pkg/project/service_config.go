@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/binding"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
@@ -21,6 +22,8 @@ type ServiceConfig struct {
 	Host ServiceTargetKind `yaml:"host"`
 	// The programming language of the project
 	Language ServiceLanguageKind `yaml:"language"`
+	// The bindings of the service
+	Bindings []*binding.BindingConfig `yaml:"bindings,omitempty"`
 	// The output path for build artifacts
 	OutputPath string `yaml:"dist,omitempty"`
 	// The optional docker options

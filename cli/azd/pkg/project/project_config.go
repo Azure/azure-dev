@@ -3,7 +3,6 @@ package project
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/binding"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
@@ -20,7 +19,6 @@ type ProjectConfig struct {
 	Path              string                     `yaml:"-"`
 	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig  `yaml:"services,omitempty"`
-	Bindings          []*binding.BindingConfig   `yaml:"bindings,omitempty"`
 	Infra             provisioning.Options       `yaml:"infra,omitempty"`
 	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
 	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`

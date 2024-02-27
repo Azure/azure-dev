@@ -459,7 +459,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(prompt.NewDefaultPrompter)
 
 	// Binding
-	container.RegisterSingleton(binding.NewServiceLinkerService)
+	container.RegisterSingleton(binding.NewLinkerManager)
 	container.RegisterSingleton(binding.NewBindingManager)
 
 	// Other

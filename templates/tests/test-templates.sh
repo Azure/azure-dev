@@ -51,7 +51,7 @@ function usage {
     exit 1
 }
 
-while getopts "f:t:b:e:r:p:l:s:u:n:c:h:d" arg; do
+while getopts "f:t:b:e:r:p:l:s:u:n:c:h:v:d" arg; do
     case ${arg} in
     f) FOLDER_PATH=$OPTARG ;;
     t) TEMPLATE_NAME=$OPTARG ;;

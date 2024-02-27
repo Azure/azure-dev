@@ -101,6 +101,46 @@ public class AcceptanceTests : TestBase
     }
 
     [Test]
+    public async Task LiveDeployRefresh() {
+        IObserver<ProgressMessage> observer = new WriterObserver<ProgressMessage>();
+        var session = await svrSvc.InitializeAsync(_rootDir, CancellationToken.None);
+        var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);
+
+        Environment e = new Environment(_envName) {
+            Properties = new Dictionary<string, string>() {
+                { "ASPIRE_ENVIRONMENT", "Production" },
+                { "Subscription", _subscriptionId },
+                { "Location", _location}
+            },
+            Services = [
+                new Service() {
+                    Name = "apiservice",
+                    IsExternal = false,
+                },
+                new Service() {
+                    Name = "webfrontend",
+                    IsExternal = true,
+                }
+            ],
+        };
+
+        await esSvc.CreateEnvironmentAsync(session, e, observer, CancellationToken.None);
+
+        var recorder = new Recorder<ProgressMessage>();
+        var envResult = await esSvc.DeployAsync(session, e.Name, recorder, CancellationToken.None);
+        recorder.Values.ShouldNotBeEmpty();
+        envResult.LastDeployment.ShouldNotBeNull();
+        envResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
+        envResult.Resources.ShouldNotBeEmpty();
+
+        var refreshResult = await esSvc.RefreshEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
+        refreshResult.LastDeployment.ShouldNotBeNull();
+        refreshResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
+        refreshResult.Resources.ShouldNotBeEmpty();
+    }
+
+
+    [Test]
     public async Task Cancellation() {
         var cts = new CancellationTokenSource();
         var cancelOp = dsSvc.TestCancelAsync(1000 * 10, cts.Token);

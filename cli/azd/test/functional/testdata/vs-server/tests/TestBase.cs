@@ -18,6 +18,9 @@ public class TestBase
 
     protected string _location = string.Empty;
 
+    // Environment name for live tests
+    protected string _envName = string.Empty;
+
 
     protected IEnvironmentService esSvc;
 
@@ -37,6 +40,7 @@ public class TestBase
         _subscriptionId = config["AZURE_SUBSCRIPTION_ID"] ?? "any";
         _rootDir = config["ROOT_DIR"] ?? System.IO.Directory.GetCurrentDirectory();
         _location = config["AZURE_LOCATION"] ?? "westus2";
+        _envName = config["AZURE_ENV_NAME"] ?? "vs-server-env";
 
         var host = $"ws://127.0.0.1:{_port}";
 

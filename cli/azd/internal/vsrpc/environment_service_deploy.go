@@ -57,6 +57,7 @@ func (s *environmentService) DeployAsync(
 			NoPrompt: true,
 		},
 	)
+	deployFlags.All = true
 
 	container.MustRegisterScoped(func() internal.EnvFlag {
 		return internal.EnvFlag{

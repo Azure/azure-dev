@@ -20,6 +20,13 @@ type Environment struct {
 	Services       []*Service
 	Values         map[string]string
 	LastDeployment *DeploymentResult `json:",omitempty"`
+	Resources      []*Resource
+}
+
+type Resource struct {
+	Name string
+	Type string
+	Id   string
 }
 
 type EnvironmentInfo struct {

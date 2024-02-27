@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -285,7 +287,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 }
 
 func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
-	t.Setenv("AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS", "true")
+	t.Parallel()
 
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -293,7 +295,22 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+	client := http.DefaultClient
+	subscriptionId := cfg.SubscriptionID
+	if session != nil {
+		client = session.ProxyClient
+
+		if session.Playback {
+			subscriptionId = session.Variables[recording.SubscriptionIdKey]
+		}
+	}
+
+	if subscriptionId == "" {
+		t.Skip("Skipping test because no subscription was provided")
+	}
+
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
 	resourceGroupName := fmt.Sprintf("rg-%s", envName)
@@ -301,7 +318,11 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	require.NoError(t, err)
 
-	rgClient, err := armresources.NewResourceGroupsClient(cfg.SubscriptionID, cred, nil)
+	rgClient, err := armresources.NewResourceGroupsClient(subscriptionId, cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: client,
+		},
+	})
 	require.NoError(t, err)
 
 	_, err = rgClient.CreateOrUpdate(context.Background(), resourceGroupName, armresources.ResourceGroup{
@@ -314,9 +335,12 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 
 	require.NoError(t, err)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env,
+		"AZURE_LOCATION=eastus2",
+		"AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS=true")
 
 	err = copySample(dir, "storage-rg")
 	require.NoError(t, err, "failed expanding sample")
@@ -324,7 +348,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "env", "set", "AZURE_RESOURCE_GROUP", resourceGroupName)
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_RESOURCE_GROUP", resourceGroupName)
 	require.NoError(t, err)
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
@@ -339,6 +363,10 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	require.True(t, has)
 
 	require.Contains(t, strings.ToLower(storageAccountId), fmt.Sprintf("/resourcegroups/%s/", resourceGroupName))
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
 
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
 	require.NoError(t, err)

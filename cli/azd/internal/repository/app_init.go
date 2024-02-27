@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -22,7 +23,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/otiai10/copy"
-	"golang.org/x/exp/slices"
 )
 
 var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
@@ -88,14 +88,49 @@ func (i *Initializer) InitFromApp(
 			continue
 		}
 
-		manifest, err := apphost.ManifestFromAppHost(ctx, prj.Path, i.dotnetCli)
+		manifest, err := apphost.ManifestFromAppHost(ctx, prj.Path, i.dotnetCli, "")
 		if err != nil {
 			return fmt.Errorf("failed to generate manifest from app host project: %w", err)
 		}
 		appHostManifests[prj.Path] = manifest
 
+		// Load projects referenced by the App Host,
+		// ensuring that projects are located under the azd project directory.
+		const parentDir = ".." + string(os.PathSeparator)
+		relParentCount := 0
+		relParentProject := ""
+
+		// Use canonical paths for Rel comparison due to absolute paths provided by ManifestFromAppHost
+		// being possibly symlinked paths.
+		compWd, err := filepath.EvalSymlinks(wd)
+		if err != nil {
+			return err
+		}
+
 		for _, path := range apphost.ProjectPaths(manifest) {
+			normalPath, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return err
+			}
+
+			rel, err := filepath.Rel(compWd, normalPath)
+			if err != nil {
+				return err
+			}
+
+			if parentCount := countPrefix(rel, parentDir); parentCount > relParentCount {
+				relParentCount = parentCount
+				relParentProject = rel
+			}
+
 			appHostForProject[filepath.Dir(path)] = prj.Path
+		}
+
+		if relParentCount > 0 {
+			return fmt.Errorf(
+				"found project %s located not under the current directory. To fix, rerun `azd init` in directory %s",
+				relParentProject,
+				filepath.Clean(filepath.Join(wd, strings.Repeat(parentDir, relParentCount))))
 		}
 	}
 
@@ -117,22 +152,52 @@ func (i *Initializer) InitFromApp(
 	}
 	i.console.StopSpinner(ctx, title, input.StepDone)
 
-	isDotNetAppHost := func(p appdetect.Project) bool { return p.Language == appdetect.DotNetAppHost }
-	if idx := slices.IndexFunc(projects, isDotNetAppHost); idx >= 0 {
-		// TODO(ellismg): We will have to figure out how to relax this over time.
-		if len(projects) != 1 {
-			return errors.New("only a single Aspire project is supported at this time")
+	var prjAppHost []appdetect.Project
+	for _, prj := range projects {
+		if prj.Language == appdetect.DotNetAppHost {
+			prjAppHost = append(prjAppHost, prj)
+		}
+	}
+
+	if len(prjAppHost) > 1 {
+		relPaths := make([]string, 0, len(prjAppHost))
+		for _, appHost := range prjAppHost {
+			rel, _ := filepath.Rel(wd, appHost.Path)
+			relPaths = append(relPaths, rel)
+		}
+		return fmt.Errorf(
+			"only a single Aspire app host project is supported at this time, found multiple: %s",
+			ux.ListAsText(relPaths))
+	}
+
+	if len(prjAppHost) == 1 {
+		appHost := prjAppHost[0]
+
+		otherProjects := make([]string, 0, len(projects))
+		for _, prj := range projects {
+			if prj.Language != appdetect.DotNetAppHost {
+				rel, _ := filepath.Rel(wd, prj.Path)
+				otherProjects = append(otherProjects, rel)
+			}
+		}
+
+		if len(otherProjects) > 0 {
+			i.console.Message(
+				ctx,
+				output.WithWarningFormat(
+					"\nIgnoring other projects present but not referenced by app host: %s",
+					ux.ListAsText(otherProjects)))
 		}
 
 		detect := detectConfirmAppHost{console: i.console}
-		detect.Init(projects[idx], wd)
+		detect.Init(appHost, wd)
 
 		if err := detect.Confirm(ctx); err != nil {
 			return err
 		}
 
 		// Figure out what services to expose.
-		ingressSelector := apphost.NewIngressSelector(appHostManifests[projects[idx].Path], i.console)
+		ingressSelector := apphost.NewIngressSelector(appHostManifests[appHost.Path], i.console)
 		tracing.SetUsageAttributes(fields.AppInitLastStep.String("modify"))
 
 		exposed, err := ingressSelector.SelectPublicServices(ctx)
@@ -168,8 +233,8 @@ func (i *Initializer) InitFromApp(
 			ctx,
 			azdCtx.ProjectDirectory(),
 			filepath.Base(azdCtx.ProjectDirectory()),
-			appHostManifests[projects[idx].Path],
-			projects[idx].Path,
+			appHostManifests[appHost.Path],
+			appHost.Path,
 		)
 		if err != nil {
 			return err
@@ -402,4 +467,15 @@ func prjConfigFromDetect(
 	}
 
 	return config, nil
+}
+
+func countPrefix(s string, prefix string) int {
+	count := 0
+	for strings.HasPrefix(s, prefix) {
+		count++
+		// len(s) >= len(prefix) guaranteed by HasPrefix
+		s = s[len(prefix):]
+	}
+
+	return count
 }

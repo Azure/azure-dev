@@ -26,7 +26,7 @@ type restoreFlags struct {
 	all         bool
 	global      *internal.GlobalCommandOptions
 	serviceName string
-	envFlag
+	internal.EnvFlag
 }
 
 func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -50,7 +50,7 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *restoreFlags {
 	flags := &restoreFlags{}
 	flags.Bind(cmd.Flags(), global)
-	flags.envFlag.Bind(cmd.Flags(), global)
+	flags.EnvFlag.Bind(cmd.Flags(), global)
 	flags.global = global
 
 	return flags
@@ -92,6 +92,7 @@ func newRestoreAction(
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
 	commandRunner exec.CommandRunner,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &restoreAction{
 		flags:          flags,
@@ -105,6 +106,7 @@ func newRestoreAction(
 		serviceManager: serviceManager,
 		env:            env,
 		commandRunner:  commandRunner,
+		importManager:  importManager,
 	}
 }
 

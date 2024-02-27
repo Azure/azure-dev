@@ -54,14 +54,14 @@ func newHooksRunCmd() *cobra.Command {
 }
 
 type hooksRunFlags struct {
-	envFlag
+	internal.EnvFlag
 	global   *internal.GlobalCommandOptions
 	platform string
 	service  string
 }
 
 func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.envFlag.Bind(local, global)
+	f.EnvFlag.Bind(local, global)
 	f.global = global
 
 	local.StringVar(&f.platform, "platform", "", "Forces hooks to run for the specified platform.")
@@ -112,7 +112,7 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		TitleNote: fmt.Sprintf(
 			"Finding and executing %s hooks for environment %s",
 			output.WithHighLightFormat(hookName),
-			output.WithHighLightFormat(hra.env.GetEnvName()),
+			output.WithHighLightFormat(hra.env.Name()),
 		),
 	})
 

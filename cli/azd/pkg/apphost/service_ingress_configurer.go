@@ -22,7 +22,9 @@ func NewIngressSelector(manifest *Manifest, console input.Console) *IngressSelec
 func (adc *IngressSelector) SelectPublicServices(ctx context.Context) ([]string, error) {
 	var services []string
 	for name, res := range adc.manifest.Resources {
-		if (res.Type == "container.v0" || res.Type == "project.v0") && len(res.Bindings) > 0 {
+		// "container.v0" not supported on aspire-prev4
+		// see: https://github.com/Azure/azure-dev/issues/3441
+		if (res.Type == "project.v0" || res.Type == "dockerfile.v0") && len(res.Bindings) > 0 {
 			services = append(services, name)
 		}
 	}
@@ -37,8 +39,9 @@ func (adc *IngressSelector) SelectPublicServices(ctx context.Context) ([]string,
 		"it is running in. Selecting a service here will also allow it to be reached from the Internet.")
 
 	exposed, err := adc.console.MultiSelect(ctx, input.ConsoleOptions{
-		Message: "Select which services to expose to the Internet",
-		Options: services,
+		Message:      "Select which services to expose to the Internet",
+		Options:      services,
+		DefaultValue: []string{},
 	})
 	if err != nil {
 		return nil, err

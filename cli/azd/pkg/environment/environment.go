@@ -5,7 +5,9 @@ package environment
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -57,17 +59,35 @@ type Environment struct {
 	Config config.Config
 }
 
+const AzdInitialEnvironmentConfigName = "AZD_INITIAL_ENVIRONMENT_CONFIG"
+
 // New returns a new environment with the specified name.
 func New(name string) *Environment {
 	env := &Environment{
 		name:        name,
 		dotenv:      make(map[string]string),
 		deletedKeys: make(map[string]struct{}),
-		Config:      config.NewEmptyConfig(),
+		Config:      getInitialConfig(),
 	}
 
-	env.SetEnvName(name)
+	env.DotenvSet(EnvNameEnvVarName, name)
+
 	return env
+}
+
+func getInitialConfig() config.Config {
+	initialConfig := os.Getenv(AzdInitialEnvironmentConfigName)
+	if initialConfig == "" {
+		return config.NewEmptyConfig()
+	}
+
+	var initConfig map[string]any
+	if err := json.Unmarshal([]byte(initialConfig), &initConfig); err != nil {
+		log.Println("Failed to unmarshal initial config", err, "Using empty config.")
+		return config.NewEmptyConfig()
+	}
+
+	return config.NewConfig(initConfig)
 }
 
 // NewWithValues returns an ephemeral environment (i.e. not backed by a data store) with a set
@@ -81,7 +101,6 @@ func NewWithValues(name string, values map[string]string) *Environment {
 		env.dotenv = values
 	}
 
-	env.SetEnvName(name)
 	return env
 }
 
@@ -160,14 +179,14 @@ func (e *Environment) DotenvSet(key string, value string) {
 	delete(e.deletedKeys, key)
 }
 
-// GetEnvName is shorthand for Getenv(EnvNameEnvVarName)
-func (e *Environment) GetEnvName() string {
-	return e.Getenv(EnvNameEnvVarName)
-}
+// Name gets the name of the environment
+// If empty will fallback to the value of the AZURE_ENV_NAME environment variable
+func (e *Environment) Name() string {
+	if e.name == "" {
+		e.name = e.Getenv(EnvNameEnvVarName)
+	}
 
-// SetEnvName is shorthand for DotenvSet(EnvNameEnvVarName, envname)
-func (e *Environment) SetEnvName(envname string) {
-	e.DotenvSet(EnvNameEnvVarName, envname)
+	return e.name
 }
 
 // GetSubscriptionId is shorthand for Getenv(SubscriptionIdEnvVarName)

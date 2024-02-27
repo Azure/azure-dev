@@ -110,6 +110,38 @@ func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.azd.json"))
 }
 
+func Test_CLI_Init_WithinExistingProject(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Setup: Create a project
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		"Select a template\nMinimal\nTESTENV\n",
+		"init",
+	)
+	require.NoError(t, err)
+
+	err = os.Mkdir(filepath.Join(dir, "nested"), osutil.PermissionDirectory)
+	require.NoError(t, err)
+
+	// Verify init within a nested directory. This should end up creating a new project.
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"Select a template\nMinimal\nTESTENV\n",
+		"init",
+		"--cwd",
+		"nested",
+	)
+	require.NoError(t, err)
+}
+
 func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()

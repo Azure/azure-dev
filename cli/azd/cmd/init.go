@@ -53,7 +53,7 @@ type initFlags struct {
 	subscription   string
 	location       string
 	global         *internal.GlobalCommandOptions
-	envFlag
+	internal.EnvFlag
 }
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -79,7 +79,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"Name or ID of an Azure subscription to use for the new environment",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
-	i.envFlag.Bind(local, global)
+	i.EnvFlag.Bind(local, global)
 
 	i.global = global
 }
@@ -125,11 +125,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	azdCtx, err := i.lazyAzdCtx.GetValue()
-	if err != nil {
-		azdCtx = azdcontext.NewAzdContextWithDirectory(wd)
-		i.lazyAzdCtx.SetValue(azdCtx)
-	}
+	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
+	i.lazyAzdCtx.SetValue(azdCtx)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil,
@@ -348,7 +345,7 @@ func (i *initAction) initializeEnv(
 	}
 
 	envSpec := environment.Spec{
-		Name:         i.flags.environmentName,
+		Name:         i.flags.EnvironmentName,
 		Subscription: i.flags.subscription,
 		Location:     i.flags.location,
 		Examples:     examples,
@@ -359,7 +356,7 @@ func (i *initAction) initializeEnv(
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
+	if err := azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 

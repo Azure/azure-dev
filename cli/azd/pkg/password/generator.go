@@ -14,10 +14,27 @@ const (
 	UppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	Digits           = "0123456789"
 	Symbols          = "~!@#$%^&*()_+`-={}|[]\\:\"<>?,./"
+	LettersAndDigits = LowercaseLetters + UppercaseLetters + Digits
 )
 
 type PasswordComposition struct {
 	NumLowercase, NumUppercase, NumDigits, NumSymbols uint
+}
+
+// FromAlphabet generates a password of a given length, using only characters from the given alphabet (which should
+// be a string with no duplicates)
+func FromAlphabet(alphabet string, length int) (string, error) {
+	if length <= 0 {
+		return "", fmt.Errorf("Empty passwords are insecure")
+	}
+
+	chars := make([]byte, length)
+	var pos uint = 0
+	if err := addRandomChars(chars, &pos, uint(length), alphabet); err != nil {
+		return "", err
+	}
+
+	return string(chars), nil
 }
 
 // Generate password consisting of given number of lowercase letters, uppercase letters, digits, and "symbol" characters.

@@ -25,6 +25,8 @@ param(
     [switch] $DevOpsOutputFormat
 )
 
+$PSNativeCommandArgumentPassing = 'Legacy'
+
 git fetch --tags
 $existingTag = git tag -l $Tag
 

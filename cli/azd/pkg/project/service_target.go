@@ -18,6 +18,7 @@ import (
 type ServiceTargetKind string
 
 const (
+	NonSpecifiedTarget       ServiceTargetKind = ""
 	AppServiceTarget         ServiceTargetKind = "appservice"
 	ContainerAppTarget       ServiceTargetKind = "containerapp"
 	AzureFunctionTarget      ServiceTargetKind = "function"
@@ -26,6 +27,17 @@ const (
 	AksTarget                ServiceTargetKind = "aks"
 	DotNetContainerAppTarget ServiceTargetKind = "containerapp-dotnet"
 )
+
+// RequiresContainer returns true if the service target runs a container image.
+func (stk ServiceTargetKind) RequiresContainer() bool {
+	switch stk {
+	case ContainerAppTarget,
+		AksTarget:
+		return true
+	}
+
+	return false
+}
 
 func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
 	switch kind {

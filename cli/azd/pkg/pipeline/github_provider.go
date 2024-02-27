@@ -506,7 +506,7 @@ func (p *GitHubCiProvider) setPipelineVariables(
 	servicePrincipal *graphsdk.ServicePrincipal,
 ) error {
 	for name, value := range map[string]string{
-		environment.EnvNameEnvVarName:        p.env.GetEnvName(),
+		environment.EnvNameEnvVarName:        p.env.Name(),
 		environment.LocationEnvVarName:       p.env.GetLocation(),
 		environment.SubscriptionIdEnvVarName: p.env.GetSubscriptionId(),
 		environment.TenantIdEnvVarName:       *servicePrincipal.AppOwnerOrganizationId,
@@ -625,7 +625,23 @@ func (p *GitHubCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string,
+	additionalVariables map[string]string,
 ) (CiPipeline, error) {
+
+	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
+	for key, value := range additionalSecrets {
+		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+			return nil, fmt.Errorf("failed setting %s secret: %w", key, err)
+		}
+	}
+
+	for key, value := range additionalVariables {
+		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
+			return nil, fmt.Errorf("failed setting %s secret: %w", key, err)
+		}
+	}
+
 	return &workflow{
 		repoDetails: repoDetails,
 	}, nil

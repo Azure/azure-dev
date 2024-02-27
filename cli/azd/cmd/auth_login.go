@@ -473,7 +473,15 @@ func (la *loginAction) login(ctx context.Context) error {
 
 		if useDevCode {
 			_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, func(url string) error {
-				openWithDefaultBrowser(ctx, la.console, url)
+				if !la.flags.global.NoPrompt {
+					la.console.Message(ctx, "Then press enter and continue to log in from your browser...")
+					la.console.WaitForEnter()
+					openWithDefaultBrowser(ctx, la.console, url)
+					return nil
+				}
+				// For no-prompt, Just provide instructions without trying to open the browser
+				// If manual browsing is enabled, we don't want to open the browser automatically
+				la.console.Message(ctx, fmt.Sprintf("Then, go to: %s", url))
 				return nil
 			})
 			if err != nil {

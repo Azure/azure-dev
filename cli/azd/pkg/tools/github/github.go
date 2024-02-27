@@ -224,7 +224,7 @@ func (cli *ghCli) ListSecrets(ctx context.Context, repoSlug string) error {
 }
 
 func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "set", name, "--body", value)
+	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "set", name).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh secret set: %w", err)
@@ -233,7 +233,7 @@ func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, v
 }
 
 func (cli *ghCli) SetVariable(ctx context.Context, repoSlug string, name string, value string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name, "--body", value)
+	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh variable set: %w", err)

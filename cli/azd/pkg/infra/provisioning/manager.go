@@ -31,7 +31,21 @@ type Manager struct {
 	options             *Options
 }
 
+// defaultOptions for this package.
+const (
+	defaultModule = "main"
+	defaultPath   = "infra"
+)
+
 func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
+	// applied defaults if missing
+	if options.Module == "" {
+		options.Module = defaultModule
+	}
+	if options.Path == "" {
+		options.Path = defaultPath
+	}
+
 	m.projectPath = projectPath
 	m.options = &options
 
@@ -169,21 +183,27 @@ func EnsureSubscriptionAndLocation(
 	prompter prompt.Prompter,
 	locationFiler prompt.LocationFilterPredicate,
 ) error {
-	if env.GetSubscriptionId() == "" {
+	subId := env.GetSubscriptionId()
+	if subId == "" {
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
 			return err
 		}
-
-		env.SetSubscriptionId(subscriptionId)
-
-		if err := envManager.Save(ctx, env); err != nil {
-			return err
-		}
+		subId = subscriptionId
+	}
+	// GetSubscriptionId() can get the value from the .env file or from system environment.
+	// We want to ensure that, if the value came from the system environment, it is persisted in the .env file.
+	// By doing this, we ensure that any command depending on .env values does not need to read system env.
+	// For example, on CI, when running `azd provision`, we want the .env to have the subscription id and location
+	// so that `azd deploy` can just use the values from .env w/o checking os-env again.
+	env.SetSubscriptionId(subId)
+	if err := envManager.Save(ctx, env); err != nil {
+		return err
 	}
 
+	location := env.GetLocation()
 	if env.GetLocation() == "" {
-		location, err := prompter.PromptLocation(
+		loc, err := prompter.PromptLocation(
 			ctx,
 			env.GetSubscriptionId(),
 			"Select an Azure location to use:",
@@ -192,15 +212,12 @@ func EnsureSubscriptionAndLocation(
 		if err != nil {
 			return err
 		}
-
-		env.SetLocation(location)
-
-		if err := envManager.Save(ctx, env); err != nil {
-			return err
-		}
+		location = loc
 	}
 
-	return nil
+	// Same as before, this make sure the location is persisted in the .env file.
+	env.SetLocation(location)
+	return envManager.Save(ctx, env)
 }
 
 // Creates a new instance of the Provisioning Manager

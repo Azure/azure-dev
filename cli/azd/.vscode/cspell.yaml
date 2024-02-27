@@ -71,6 +71,9 @@ overrides:
       - keychain
       - crusername
       - azurecr
+  - filename: pkg/tools/dotnet/dotnet.go
+    words:
+      - PWORD
   - filename: pkg/tools/kubectl/kubectl.go
     words:
       - tmpl
@@ -85,6 +88,10 @@ overrides:
   - filename: pkg/azsdk/storage/storage_blob_client.go
     words:
       - azblob
+  - filename: pkg/project/service_target_aks.go
+    words:
+      - kustomization
+      - templating
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

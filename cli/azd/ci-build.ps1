@@ -71,7 +71,7 @@ $tagsFlag = "-tags=cfi,cfg,osusergo"
 # -s: Omit symbol table and debug information
 # -w: Omit DWARF symbol table
 # -X: Set variable at link time. Used to set the version in source.
-$ldFlag = "-ldflags=`"-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' "
+$ldFlag = "-ldflags=-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' "
 
 if ($IsWindows) {
     Write-Host "Building for windows"
@@ -84,7 +84,7 @@ if ($IsWindows) {
         "-trimpath",
         $tagsFlag,
         # -extldflags=-Wl,--high-entropy-va: Pass the high-entropy VA flag to the linker to enable high entropy virtual addresses
-        ($ldFlag + "-linkmode=auto -extldflags=-Wl,--high-entropy-va`"")
+        ($ldFlag + "-linkmode=auto -extldflags=-Wl,--high-entropy-va")
     )
 }
 elseif ($IsLinux) {
@@ -93,7 +93,7 @@ elseif ($IsLinux) {
         "-buildmode=pie",
         ($tagsFlag + ",cfgo"),
         # -extldflags=-Wl,--high-entropy-va: Pass the high-entropy VA flag to the linker to enable high entropy virtual addresses
-        ($ldFlag + "-extldflags=-Wl,--high-entropy-va`"")
+        ($ldFlag + "-extldflags=-Wl,--high-entropy-va")
     )
 }
 elseif ($IsMacOS) {
@@ -102,7 +102,7 @@ elseif ($IsMacOS) {
         "-buildmode=pie",
         ($tagsFlag + ",cfgo"),
         # -linkmode=auto: Link Go object files and C object files together
-        ($ldFlag + "-linkmode=auto`"")
+        ($ldFlag + "-linkmode=auto")
     )
 }
 
@@ -116,7 +116,7 @@ function PrintFlags() {
     foreach ($buildFlag in $buildFlags) {
         # If the flag has a value, wrap it in quotes. This is not required when invoking directly below,
         # but when repasted into a shell for execution, the quotes can help escape special characters such as ','.
-        $argWithValue = $buildFlag -split "="
+        $argWithValue = $buildFlag.Split('=', 2)
         if ($argWithValue.Length -eq 2 -and !$argWithValue[1].StartsWith("`"")) {
             $buildFlag = "$($argWithValue[0])=`"$($argWithValue[1])`""
         }

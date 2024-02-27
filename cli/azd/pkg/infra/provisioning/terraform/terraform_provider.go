@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -24,10 +23,10 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-var Defaults = Options{
-	Module: "main",
-	Path:   "infra",
-}
+const (
+	defaultModule = "main"
+	defaultPath   = "infra"
+)
 
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
@@ -78,12 +77,14 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
-	if err := mergo.Merge(&options, Defaults); err != nil {
-		return fmt.Errorf("merging terraform defaults: %w", err)
-	}
-
 	t.projectPath = projectPath
 	t.options = options
+	if t.options.Module == "" {
+		t.options.Module = defaultModule
+	}
+	if t.options.Path == "" {
+		t.options.Path = defaultPath
+	}
 
 	requiredTools := t.RequiredExternalTools()
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
@@ -613,29 +614,29 @@ func (t *TerraformProvider) modulePath() string {
 // Gets the path to the staging .azure terraform plan file path
 func (t *TerraformProvider) planFilePath() string {
 	planFilename := fmt.Sprintf("%s.tfplan", t.options.Module)
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, planFilename)
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, planFilename)
 }
 
 // Gets the path to the staging .azure terraform local state file path
 func (t *TerraformProvider) localStateFilePath() string {
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, "terraform.tfstate")
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, "terraform.tfstate")
 }
 
 // Gets the path to the staging .azure parameters file path
 func (t *TerraformProvider) backendConfigFilePath() string {
-	backendConfigFilename := fmt.Sprintf("%s.conf.json", t.env.GetEnvName())
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, backendConfigFilename)
+	backendConfigFilename := fmt.Sprintf("%s.conf.json", t.env.Name())
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, backendConfigFilename)
 }
 
 // Gets the path to the staging .azure backend config file path
 func (t *TerraformProvider) parametersFilePath() string {
 	parametersFilename := fmt.Sprintf("%s.tfvars.json", t.options.Module)
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, parametersFilename)
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, parametersFilename)
 }
 
 // Gets the path to the current env.
 func (t *TerraformProvider) dataDirPath() string {
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, ".terraform")
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, ".terraform")
 }
 
 // Check terraform file for remote backend provider

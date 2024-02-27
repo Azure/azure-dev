@@ -298,7 +298,7 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 	if strings.Contains(resource.Kind, "OpenAI") {
 		return "Azure OpenAI", nil
 	} else if strings.Contains(resource.Kind, "FormRecognizer") {
-		return "Form recognizer", nil
+		return "Document Intelligence", nil
 	} else {
 		return "Cognitive Service", nil
 	}

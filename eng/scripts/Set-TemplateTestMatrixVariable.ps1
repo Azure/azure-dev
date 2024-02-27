@@ -110,8 +110,7 @@ if ($TemplateListFilter -ne '.*') {
 }
 
 if ($templateNames.Length -eq 0) {
-    Write-Error "No matched templates found."
-    exit 1
+    Write-Information "No matched templates found."
 }
 
 $matrix = @{}
@@ -131,7 +130,7 @@ $upperTestCase = Copy-RandomJob -JobMatrix $matrix
 $upperTestCase.TEST_SCENARIO = 'UPPER' # Use UPPER case for env name
 $matrix[$upperTestCase.TemplateName.Replace('/', '_') + '-Upper-case-test'] = $upperTestCase
 
-if ($jobVariables.USE_APIM -ne 'true') { # If USE_APIM is specified, avoid creating a new job
+if ($templateNames.Length -gt 0 && $jobVariables.USE_APIM -ne 'true') { # If USE_APIM is specified, avoid creating a new job
     $apimEnabledTestCase = Copy-RandomJob -JobMatrix $matrix
     $apimEnabledTestCase.TEST_SCENARIO = 'apim'
     $apimEnabledTestCase.USE_APIM = 'true'

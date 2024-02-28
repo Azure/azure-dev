@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -49,6 +50,7 @@ func TestAuthToken(t *testing.T) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
 		&mockSubscriptionTenantResolver{},
+		cloud.AzurePublic(),
 	)
 
 	_, err := a.Run(context.Background())
@@ -91,6 +93,7 @@ func TestAuthTokenSysEnv(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			TenantId: expectedTenant,
 		},
+		cloud.AzurePublic(),
 	)
 
 	_, err := a.Run(context.Background())
@@ -138,6 +141,7 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			Err: fmt.Errorf(expectedError),
 		},
+		cloud.AzurePublic(),
 	)
 
 	_, err := a.Run(context.Background())
@@ -181,6 +185,7 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			Err: fmt.Errorf(expectedError),
 		},
+		cloud.AzurePublic(),
 	)
 
 	_, err := a.Run(context.Background())
@@ -221,6 +226,7 @@ func TestAuthTokenAzdEnv(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			TenantId: expectedTenant,
 		},
+		cloud.AzurePublic(),
 	)
 
 	_, err := a.Run(context.Background())
@@ -261,6 +267,7 @@ func TestAuthTokenAzdEnvWithEmpty(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			TenantId: expectedTenant,
 		},
+		cloud.AzurePublic(),
 	)
 
 	_, err := a.Run(context.Background())
@@ -297,6 +304,7 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
 		&mockSubscriptionTenantResolver{},
+		cloud.AzurePublic(),
 	)
 
 	_, err := a.Run(context.Background())
@@ -318,6 +326,7 @@ func TestAuthTokenFailure(t *testing.T) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
 		&mockSubscriptionTenantResolver{},
+		cloud.AzurePublic(),
 	)
 
 	_, err := a.Run(context.Background())

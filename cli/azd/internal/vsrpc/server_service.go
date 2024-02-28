@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 )
 
 // serverService is the RPC server for the '/ServerService/v1.0' endpoint.
@@ -53,6 +55,14 @@ func (s *serverService) StopAsync(ctx context.Context) error {
 	// TODO(azure/azure-dev#3286): Need to think about how shutdown works. For now it is probably best to just have the
 	// client terminate `azd` once they know all outstanding RPCs have completed instead of trying to do a graceful
 	// shutdown on our end.
+
+	ts := telemetry.GetTelemetrySystem()
+	// Flush all in-memory telemetry data before stopping.
+	err := ts.Shutdown(ctx)
+	if err != nil {
+		log.Printf("error shutting down telemetry: %v", err)
+	}
+
 	return nil
 }
 

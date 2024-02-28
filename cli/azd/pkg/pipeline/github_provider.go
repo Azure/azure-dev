@@ -616,10 +616,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 func (p *GitHubCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
-	provisioningProvider provisioning.Options,
-	additionalSecrets map[string]string,
-	additionalVariables map[string]string,
-	options *ConfigOptions,
+	options *configurePipelineOptions,
 ) (CiPipeline, error) {
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 
@@ -631,8 +628,8 @@ func (p *GitHubCiProvider) configurePipeline(
 	msg := ""
 	var procErr error
 	ciSecrets, ciVariables := []string{}, []string{}
-	if len(options.Variables) > 0 || len(options.Secrets) > 0 {
-		msg = "Setting up project's secrets and variables to be used in the pipeline"
+	if len(options.projectVariables) > 0 {
+		msg = "Setting up project's variables to be used in the pipeline"
 		ciSecretsInstance, err := p.ghCli.ListSecrets(ctx, repoSlug)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get list of repository secrets: %w", err)
@@ -661,23 +658,23 @@ func (p *GitHubCiProvider) configurePipeline(
 		}
 	}()
 
-	// combine the variables and secrets for O(1) lookup during clean up
-	combinedVariablesAndSecrets := make(map[string]string, len(options.Variables)+len(options.Secrets))
-	for _, value := range options.Variables {
-		combinedVariablesAndSecrets[value] = value
+	// create map of variables for O(1) lookup during clean up
+	variablesAndSecretsMap := make(map[string]string, len(options.projectVariables)+len(options.projectSecrets))
+	for _, value := range options.projectVariables {
+		variablesAndSecretsMap[value] = value
 	}
-	for _, value := range options.Secrets {
-		combinedVariablesAndSecrets[value] = value
+	for _, value := range options.projectSecrets {
+		variablesAndSecretsMap[value] = value
 	}
 
 	// iterate the existing secrets on the pipeline and remove the ones matching the project's secrets or variables
 	for _, existingSecret := range ciSecrets {
-		if _, willBeUpdated := additionalSecrets[existingSecret]; willBeUpdated {
+		if _, willBeUpdated := options.secrets[existingSecret]; willBeUpdated {
 			// if the secret will be updated, we don't need to delete it
 			continue
 		}
 		// only delete if the secret is defined in the project's secrets or variables (azure.yaml)
-		if _, exists := combinedVariablesAndSecrets[existingSecret]; exists {
+		if _, exists := variablesAndSecretsMap[existingSecret]; exists {
 			deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
 			if deleteErr != nil {
 				procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
@@ -687,12 +684,12 @@ func (p *GitHubCiProvider) configurePipeline(
 	}
 	// iterate the existing variables on the pipeline and remove the ones matching the project's secrets or variables
 	for _, existingVariable := range ciVariables {
-		if _, willBeUpdated := additionalVariables[existingVariable]; willBeUpdated {
+		if _, willBeUpdated := options.variables[existingVariable]; willBeUpdated {
 			// if the variable will be updated, we don't need to delete it
 			continue
 		}
 		// only delete if the variable is defined in the project's secrets or variables (azure.yaml)
-		if _, exists := combinedVariablesAndSecrets[existingVariable]; exists {
+		if _, exists := variablesAndSecretsMap[existingVariable]; exists {
 			deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
 			if deleteErr != nil {
 				procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
@@ -702,14 +699,14 @@ func (p *GitHubCiProvider) configurePipeline(
 	}
 
 	// set the new variables and secrets
-	for key, value := range additionalSecrets {
+	for key, value := range options.secrets {
 		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
 			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)
 			return nil, procErr
 		}
 	}
 
-	for key, value := range additionalVariables {
+	for key, value := range options.variables {
 		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
 			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)
 			return nil, procErr

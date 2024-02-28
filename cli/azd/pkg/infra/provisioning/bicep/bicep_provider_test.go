@@ -392,7 +392,8 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 					return mockContext.Credentials, nil
 				}),
-			mockContext.HttpClient,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
 		),
 	)
 
@@ -937,7 +938,8 @@ func TestUserDefinedTypes(t *testing.T) {
 				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 					return mockContext.Credentials, nil
 				}),
-			mockContext.HttpClient,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
 		),
 	)
 	bicepProvider, gooCast := provider.(*BicepProvider)

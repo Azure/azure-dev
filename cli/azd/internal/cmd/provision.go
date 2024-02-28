@@ -215,6 +215,9 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	projectEventArgs := project.ProjectLifecycleEventArgs{
 		Project: p.projectConfig,
+		Args: map[string]any{
+			"preview": previewMode,
+		},
 	}
 
 	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {

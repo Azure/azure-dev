@@ -8,10 +8,9 @@ import (
 	"errors"
 	"io"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -23,13 +22,6 @@ var (
 )
 
 type AzCli interface {
-	// SetUserAgent sets the user agent that's sent with each call to the Azure
-	// CLI via the `AZURE_HTTP_USER_AGENT` environment variable.
-	SetUserAgent(userAgent string)
-
-	// UserAgent gets the currently configured user agent
-	UserAgent() string
-
 	GetResource(
 		ctx context.Context,
 		subscriptionId string,
@@ -176,18 +168,18 @@ func NewAzCli(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
 	args NewAzCliArgs,
+	armClientOptions *arm.ClientOptions,
 ) AzCli {
 	return &azCli{
 		credentialProvider: credentialProvider,
 		enableDebug:        args.EnableDebug,
 		enableTelemetry:    args.EnableTelemetry,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
+		armClientOptions:   armClientOptions,
 	}
 }
 
 type azCli struct {
-	userAgent       string
 	enableDebug     bool
 	enableTelemetry bool
 
@@ -195,31 +187,6 @@ type azCli struct {
 	httpClient httputil.HttpClient
 
 	credentialProvider account.SubscriptionCredentialProvider
-}
 
-// SetUserAgent sets the user agent that's sent with each call to the Azure
-// CLI via the `AZURE_HTTP_USER_AGENT` environment variable.
-func (cli *azCli) SetUserAgent(userAgent string) {
-	cli.userAgent = userAgent
-}
-
-func (cli *azCli) UserAgent() string {
-	return cli.userAgent
-}
-
-func (cli *azCli) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
-	return azsdk.NewClientOptionsBuilder().
-		WithTransport(cli.httpClient).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
-}
-
-func clientOptionsBuilder(
-	ctx context.Context,
-	httpClient httputil.HttpClient,
-	userAgent string) *azsdk.ClientOptionsBuilder {
-	return azsdk.NewClientOptionsBuilder().
-		WithTransport(httpClient).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent)).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
+	armClientOptions *arm.ClientOptions
 }

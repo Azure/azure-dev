@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
@@ -48,21 +50,22 @@ type ContainerRegistryService interface {
 type containerRegistryService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	docker             docker.Docker
-	httpClient         httputil.HttpClient
-	userAgent          string
+	armClientOptions   *arm.ClientOptions
+	coreClientOptions  *azcore.ClientOptions
 }
 
 // Creates a new instance of the ContainerRegistryService
 func NewContainerRegistryService(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
 	docker docker.Docker,
+	armClientOptions *arm.ClientOptions,
+	coreClientOptions *azcore.ClientOptions,
 ) ContainerRegistryService {
 	return &containerRegistryService{
 		credentialProvider: credentialProvider,
 		docker:             docker,
-		httpClient:         httpClient,
-		userAgent:          internal.UserAgent(),
+		armClientOptions:   armClientOptions,
+		coreClientOptions:  coreClientOptions,
 	}
 }
 
@@ -232,8 +235,7 @@ func (crs *containerRegistryService) createRegistriesClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildArmClientOptions()
-	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, options)
+	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, crs.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating registries client: %w", err)
 	}
@@ -258,8 +260,7 @@ func (crs *containerRegistryService) getAcrToken(
 	}
 
 	// Implementation based on docs @ https://azure.github.io/acr/AAD-OAuth.html
-	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildCoreClientOptions()
-	pipeline := azruntime.NewPipeline("azd-acr", internal.Version, azruntime.PipelineOptions{}, options)
+	pipeline := azruntime.NewPipeline("azd-acr", internal.Version, azruntime.PipelineOptions{}, crs.coreClientOptions)
 
 	formData := url.Values{}
 	formData.Set("grant_type", "access_token")

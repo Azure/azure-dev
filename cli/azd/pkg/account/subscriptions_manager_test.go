@@ -159,7 +159,7 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 			subManager := &SubscriptionsManager{
 				service: NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				cache:         NewBypassSubscriptionsCache(),
 				principalInfo: principalInfo,

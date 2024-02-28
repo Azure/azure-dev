@@ -21,9 +21,8 @@ func TestOverrideUserAgent(t *testing.T) {
 		return mocks.CreateEmptyHttpResponse(request, http.StatusOK)
 	})
 
-	clientOptions := NewClientOptionsBuilder().
-		WithTransport(mockContext.HttpClient).
-		WithPerCallPolicy(NewUserAgentPolicy(expectedUserAgent)).
+	clientOptions := NewClientOptionsBuilderFactory(mockContext.HttpClient, expectedUserAgent).
+		NewClientOptionsBuilder().
 		BuildArmClientOptions()
 
 	client, err := armresources.NewClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, clientOptions)

@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ func Test_GetUserAccessToken(t *testing.T) {
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd")
+	clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd", cloud.AzurePublic())
 	userProfile := NewUserProfileService(
 		&mocks.MockMultiTenantCredentialProvider{
 			TokenMap: map[string]mocks.MockCredentials{
@@ -57,7 +58,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusOK, &mockUserProfile)
 
-		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd")
+		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd", cloud.AzurePublic())
 		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
@@ -69,7 +70,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusBadRequest, nil)
 
-		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd")
+		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd", cloud.AzurePublic())
 		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")

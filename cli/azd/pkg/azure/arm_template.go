@@ -88,8 +88,13 @@ func (d *ArmTemplateParameterDefinition) Secure() bool {
 	return lowerCase == "secureobject" || lowerCase == "securestring"
 }
 
+type autoGenInput struct {
+	Len int `json:"len"`
+}
+
 type AzdMetadata struct {
-	Type *string `json:"type,omitempty"`
+	Type         *string                            `json:"type,omitempty"`
+	AutoGenerate map[string]map[string]autoGenInput `json:"autoGenerate,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

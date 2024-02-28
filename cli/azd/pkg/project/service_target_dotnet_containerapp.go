@@ -23,7 +23,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
-	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -211,48 +210,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 				return
 			}
 
-			requiredInputs, err := apphost.Inputs(serviceConfig.DotNetContainerApp.Manifest)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed to get required inputs: %w", err))
-			}
-
-			wroteNewInput := false
-
-			for inputName, inputInfo := range requiredInputs {
-				inputConfigKey := fmt.Sprintf("inputs.%s", inputName)
-
-				if _, has := at.env.Config.GetString(inputConfigKey); !has {
-					// No value found, so we need to generate one, and store it in the config bag.
-					//
-					// TODO(ellismg): Today this dereference is safe because when loading a manifest we validate that every
-					// input has a generate block with a min length property.  We would like to relax this in Preview 3 to
-					// to support cases where this is not the case (and we'd prompt for the value).  When we do that, we'll
-					// need to audit these dereferences to check for nil.
-					val, err := password.FromAlphabet(password.LettersAndDigits, *inputInfo.Default.Generate.MinLength)
-					if err != nil {
-						task.SetError(fmt.Errorf("generating value for input %s: %w", inputName, err))
-						return
-
-					}
-
-					if err := at.env.Config.Set(inputConfigKey, val); err != nil {
-						task.SetError(fmt.Errorf("saving value for input %s: %w", inputName, err))
-						return
-					}
-
-					wroteNewInput = true
-				}
-			}
-
-			if wroteNewInput {
-				if err := at.containerHelper.envManager.Save(ctx, at.env); err != nil {
-					task.SetError(fmt.Errorf("saving environment: %w", err))
-					return
-				}
-			}
-
 			var inputs map[string]any
-
+			// inputs are auto-gen during provision and saved to env-config
 			if has, err := at.env.Config.GetSection("inputs", &inputs); err != nil {
 				task.SetError(fmt.Errorf("failed to get inputs section: %w", err))
 				return

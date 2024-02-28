@@ -37,6 +37,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -1927,21 +1928,46 @@ func (p *BicepProvider) ensureParameters(
 			continue
 		}
 
-		// For object inputs, if the "AZD Type" is a "inputs" it gets the value from the inputs section of the config,
-		// or an empty object, if there are no inputs configured.
+		// For object inputs, if the "AZD Type" is a "inputs" see if the autoGen inputs are already available in
+		// env config.
 		if p.mapBicepTypeToInterfaceType(param.Type) == ParameterTypeObject {
 			if m, has := param.AzdMetadata(); has && m.Type != nil && *m.Type == "inputs" {
-				var inputs map[string]any
-				if has, err := p.env.Config.GetSection("inputs", &inputs); err != nil {
+				existingInputs := make(map[string]map[string]any)
+				if _, err := p.env.Config.GetSection("inputs", &existingInputs); err != nil {
 					return nil, fmt.Errorf("reading inputs from config: %w", err)
-				} else if !has {
-					inputs = make(map[string]any)
+				}
+				wroteNewInput := false
+
+				for inputResource, inputResourceInfo := range m.AutoGenerate {
+					existingRecordsForResource := make(map[string]any)
+					if current, exists := existingInputs[inputResource]; exists {
+						existingRecordsForResource = current
+					}
+					for inputName, inputInfo := range inputResourceInfo {
+						if _, has := existingRecordsForResource[inputName]; !has {
+							val, err := password.FromAlphabet(password.LettersAndDigits, inputInfo.Len)
+							if err != nil {
+								return nil, fmt.Errorf("generating value for input %s: %w", inputName, err)
+							}
+							existingRecordsForResource[inputName] = val
+							wroteNewInput = true
+						}
+					}
+					existingInputs[inputResource] = existingRecordsForResource
+				}
+
+				if wroteNewInput {
+					if err := p.env.Config.Set("inputs", existingInputs); err != nil {
+						return nil, fmt.Errorf("saving env config: %w", err)
+					}
+					if err := p.envManager.Save(ctx, p.env); err != nil {
+						return nil, fmt.Errorf("saving environment: %w", err)
+					}
 				}
 
 				configuredParameters[key] = azure.ArmParameterValue{
-					Value: inputs,
+					Value: existingInputs,
 				}
-
 				continue
 			}
 		}

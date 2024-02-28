@@ -9,9 +9,10 @@ param principalId string = ''
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
+{{- if gt (len .AutoGenInputs) 0 }}
 @secure()
-@metadata({azd: {type: 'inputs' }})
 param inputs object
+{{end }}
 
 var resourceToken = uniqueString(resourceGroup().id)
 

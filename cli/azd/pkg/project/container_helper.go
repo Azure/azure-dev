@@ -171,21 +171,20 @@ func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.Extern
 func (ch *ContainerHelper) Login(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
 ) (string, error) {
-	loginServer, err := ch.RegistryName(ctx, serviceConfig)
+	registryName, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return "", err
 	}
 
 	// Only perform automatic login for ACR
 	// Other registries require manual login via external 'docker login' command
-	hostParts := strings.Split(loginServer, ".")
-	if len(hostParts) == 1 || strings.Contains(loginServer, "azurecr.io") {
-		return loginServer, ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
+	hostParts := strings.Split(registryName, ".")
+	if len(hostParts) == 1 || strings.Contains(registryName, "azurecr.io") {
+		return registryName, ch.containerRegistryService.Login(ctx, ch.env.GetSubscriptionId(), registryName)
 	}
 
-	return loginServer, nil
+	return registryName, nil
 }
 
 func (ch *ContainerHelper) Credentials(
@@ -273,7 +272,8 @@ func (ch *ContainerHelper) Deploy(
 
 					log.Printf("logging into container registry '%s'\n", registryName)
 					task.SetProgress(NewServiceProgress("Logging into container registry"))
-					err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), registryName)
+
+					_, err = ch.Login(ctx, serviceConfig)
 					if err != nil {
 						task.SetError(err)
 						return
@@ -283,7 +283,13 @@ func (ch *ContainerHelper) Deploy(
 					log.Printf("pushing %s to registry", remoteImage)
 					task.SetProgress(NewServiceProgress("Pushing container image"))
 					if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteImage); err != nil {
-						task.SetError(err)
+						errSuggestion := &azcli.ErrorWithSuggestion{
+							Err: err,
+							//nolint:lll
+							Suggestion: "When pushing to an external registry, ensure you have have successfully authenticated by calling 'docker login' and run 'azd deploy' again",
+						}
+
+						task.SetError(errSuggestion)
 						return
 					}
 				}

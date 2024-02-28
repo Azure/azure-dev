@@ -558,12 +558,23 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			}
 
 			var platformConfig *platform.Config
-			ok, err := config.GetSection("platform", &platformConfig)
+			_, err = config.GetSection("platform", &platformConfig)
 			if err != nil {
 				return nil, fmt.Errorf("getting platform config: %w", err)
 			}
 
-			if !ok || platformConfig.Type == "" {
+			// If we still don't have a platform configuration, check the OS environment
+			// We check the OS environment instead of AZD environment because the global platform configuration
+			// cannot be known at this time in the azd bootstrapping process.
+			if platformConfig == nil {
+				if envPlatformType, has := os.LookupEnv(environment.PlatformTypeEnvVarName); has {
+					platformConfig = &platform.Config{
+						Type: platform.PlatformKind(envPlatformType),
+					}
+				}
+			}
+
+			if platformConfig == nil || platformConfig.Type == "" {
 				return nil, platform.ErrPlatformConfigNotFound
 			}
 
@@ -585,7 +596,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			}
 
 			return platformConfig, nil
-
 		})
 	})
 

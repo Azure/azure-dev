@@ -1,17 +1,25 @@
 package azsdk
 
 import (
-	"context"
-
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-func DefaultClientOptionsBuilder(
-	ctx context.Context,
-	httpClient httputil.HttpClient,
-	userAgent string) *ClientOptionsBuilder {
+type ClientOptionsBuilderFactory struct {
+	defaultTransport policy.Transporter
+	defaultUserAgent string
+}
+
+func NewClientOptionsBuilderFactory(httpClient httputil.HttpClient, userAgent string) *ClientOptionsBuilderFactory {
+	return &ClientOptionsBuilderFactory{
+		defaultTransport: httpClient,
+		defaultUserAgent: userAgent,
+	}
+}
+
+func (c *ClientOptionsBuilderFactory) NewClientOptionsBuilder() *ClientOptionsBuilder {
 	return NewClientOptionsBuilder().
-		WithTransport(httpClient).
-		WithPerCallPolicy(NewUserAgentPolicy(userAgent)).
-		WithPerCallPolicy(NewMsCorrelationPolicy(ctx))
+		WithTransport(c.defaultTransport).
+		WithPerCallPolicy(NewUserAgentPolicy(c.defaultUserAgent)).
+		WithPerCallPolicy(NewMsCorrelationPolicy())
 }

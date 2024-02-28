@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -172,18 +173,26 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		client = http.DefaultClient
 	}
 
+	armClientOptions := &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: client,
+		},
+	}
 	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
 		client,
-		azcli.NewAzCliArgs{})
+		azcli.NewAzCliArgs{},
+		armClientOptions,
+	)
 	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil
 			}),
-		client)
+		armClientOptions,
+	)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
@@ -379,19 +388,27 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
+	armClientOptions := &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: client,
+		},
+	}
 
 	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
 		client,
-		azcli.NewAzCliArgs{})
+		azcli.NewAzCliArgs{},
+		armClientOptions,
+	)
 	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil
 			}),
-		client)
+		armClientOptions,
+	)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)

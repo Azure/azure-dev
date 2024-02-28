@@ -9,7 +9,9 @@
             "helm": "latest",
             "minikube": "none"
         },
-        "ghcr.io/azure/azure-dev/azd:latest": {}
+        "ghcr.io/azure/azure-dev/azd:latest": {},
+        "ghcr.io/rio/features/kustomize:1": {},
+        "ghcr.io/devcontainers/features/azure-cli:1": {}
     },
     "customizations": {
         "vscode": {
@@ -29,7 +31,7 @@
         }
     },
     "forwardPorts": [3000, 3100],
-    "postCreateCommand": "",
+    "postCreateCommand": "sudo az aks install-cli",
     "remoteUser": "node",
     "hostRequirements": {
         "memory": "8gb"

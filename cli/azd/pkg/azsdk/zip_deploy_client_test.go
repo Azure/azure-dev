@@ -20,11 +20,7 @@ func TestZipDeploy(t *testing.T) {
 		registerDeployMocks(mockContext)
 		registerPollingMocks(mockContext)
 
-		options := NewClientOptionsBuilder().
-			WithTransport(mockContext.HttpClient).
-			BuildArmClientOptions()
-
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options)
+		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
@@ -45,11 +41,7 @@ func TestZipDeploy(t *testing.T) {
 		registerDeployMocks(mockContext)
 		registerPollingErrorMocks(mockContext)
 
-		options := NewClientOptionsBuilder().
-			WithTransport(mockContext.HttpClient).
-			BuildArmClientOptions()
-
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options)
+		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
@@ -69,11 +61,7 @@ func TestZipDeploy(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerConflictMocks(mockContext)
 
-		options := NewClientOptionsBuilder().
-			WithTransport(mockContext.HttpClient).
-			BuildArmClientOptions()
-
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options)
+		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})

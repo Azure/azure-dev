@@ -45,7 +45,7 @@ func (p *Platform) IsEnabled() bool {
 // ConfigureContainer configures the IoC container for the devcenter platform components
 func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// DevCenter Config
-	container.MustRegisterSingleton(func(
+	container.MustRegisterTransient(func(
 		ctx context.Context,
 		lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
 		userConfigManager config.UserConfigManager,
@@ -152,26 +152,26 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	})
 
 	// Provision Provider
-	container.MustRegisterNamedScoped(string(ProvisionKindDevCenter), NewProvisionProvider)
+	container.MustRegisterNamedTransient(string(ProvisionKindDevCenter), NewProvisionProvider)
 
 	// Remote Environment Storage
-	container.MustRegisterNamedScoped(string(RemoteKindDevCenter), NewEnvironmentStore)
+	container.MustRegisterNamedTransient(string(RemoteKindDevCenter), NewEnvironmentStore)
 
 	// Template Sources
-	container.MustRegisterNamedScoped(string(SourceKindDevCenter), NewTemplateSource)
+	container.MustRegisterNamedTransient(string(SourceKindDevCenter), NewTemplateSource)
 
-	container.MustRegisterSingleton(NewManager)
-	container.MustRegisterSingleton(NewPrompter)
+	container.MustRegisterTransient(NewManager)
+	container.MustRegisterTransient(NewPrompter)
 
 	// Other devcenter components
 	container.MustRegisterSingleton(func(
-		ctx context.Context,
 		credential azcore.TokenCredential,
 		httpClient httputil.HttpClient,
 		resourceGraphClient *armresourcegraph.Client,
 	) (devcentersdk.DevCenterClient, error) {
-		options := azsdk.
-			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
+		options := azsdk.NewClientOptionsBuilderFactory(httpClient, "azd").
+			NewClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
 			BuildCoreClientOptions()
 
 		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient)

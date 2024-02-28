@@ -34,7 +34,7 @@ module resources 'resources.bicep' = {
   name: 'resources'
   params: {
     location: location
-    tags: tags    
+    tags: tags
     inputs: inputs
   }
 }

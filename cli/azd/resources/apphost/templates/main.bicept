@@ -48,9 +48,9 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-{{- if gt (len .AutoGenInputs) 0 }}    
+{{- if gt (len .AutoGenInputs) 0 }}
     inputs: inputs
-{{- end }}    
+{{- end }}
 {{- if .RequiresPrincipalId }}
     principalId: principalId
 {{- end }}

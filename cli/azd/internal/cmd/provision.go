@@ -245,11 +245,9 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	var deployResult *provisioning.DeployResult
 	var deployPreviewResult *provisioning.DeployPreviewResult
 
-	projectEventArgs := project.ProjectLifecycleEventArgs{
-		Project: p.projectConfig,
-	}
-
-	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+	// If we are in preview mode we don't want to invoke the project lifecycle event
+	// Register the call for provisioning
+	provisionFunc := func() error {
 		var err error
 		if previewMode {
 			deployPreviewResult, err = p.provisionManager.Preview(ctx)
@@ -257,7 +255,19 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			deployResult, err = p.provisionManager.Deploy(ctx)
 		}
 		return err
-	})
+	}
+
+	// When in standard provision mode invoke the function through the project config invocation
+	// that will automatically trigger any registered handlers
+	if previewMode {
+		err = provisionFunc()
+	} else {
+		projectEventArgs := project.ProjectLifecycleEventArgs{
+			Project: p.projectConfig,
+		}
+
+		err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, provisionFunc)
+	}
 
 	if err != nil {
 		if p.formatter.Kind() == output.JsonFormat {

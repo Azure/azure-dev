@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/gorilla/websocket"
@@ -135,7 +136,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 
 		go func() {
 			var respErr error
-			childCtx, span := tracing.Start(ctx, "vsrpc."+req.Method())
+			childCtx, span := tracing.Start(ctx, events.VsRpcEventPrefix+req.Method())
 			span.SetAttributes(fields.RpcMethod.String(req.Method()))
 			defer func() {
 				if respErr != nil {
@@ -151,8 +152,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 				span.End()
 			}()
 
-			// Wrap the reply function to capture the error returned by the handler before replying, and set it as respErr.
-			// This allows us to observe the response error.
+			// Wrap the reply function to capture the response error returned by the handler before replying.
 			origReply := reply
 			reply = func(ctx context.Context, result interface{}, err error) error {
 				if err != nil {

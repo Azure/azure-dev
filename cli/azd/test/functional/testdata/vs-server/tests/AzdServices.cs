@@ -111,6 +111,7 @@ public interface IDebugService {
 
 public interface IServerService {
     ValueTask<Session> InitializeAsync(string rootPath, CancellationToken cancellationToken);
+    ValueTask StopAsync(CancellationToken cancellationToken);
 }
 
 public interface IEnvironmentService {

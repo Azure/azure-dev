@@ -66,7 +66,7 @@ module webAppSettings '../../../../../../common/infra/bicep/core/host/appservice
   params: {
     name: web.outputs.name
     appSettings: {
-      REACT_APP_API_BASE_URL: 'https://${api.outputs.defaultHostname}'
+      REACT_APP_API_BASE_URL: useAPIM ? apimApi.outputs.SERVICE_API_URI : 'https://${api.outputs.defaultHostname}'
       REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
     }
   }
@@ -182,7 +182,7 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
-//Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
+// Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
 module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if (useAPIM) {
   name: 'apim-deployment'
   scope: rg

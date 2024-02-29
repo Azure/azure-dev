@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	azdExec "github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -21,29 +20,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/cli/browser"
-	"github.com/spf13/pflag"
 )
 
 // CmdAnnotations on a command
 type CmdAnnotations map[string]string
 
 type Asker func(p survey.Prompt, response interface{}) error
-
-const environmentNameFlag string = "environment"
-
-type envFlag struct {
-	environmentName string
-}
-
-func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVarP(
-		&e.environmentName,
-		environmentNameFlag,
-		"e",
-		// Set the default value to AZURE_ENV_NAME value if available
-		os.Getenv(environment.EnvNameEnvVarName),
-		"The name of the environment to use.")
-}
 
 func getResourceGroupFollowUp(
 	ctx context.Context,

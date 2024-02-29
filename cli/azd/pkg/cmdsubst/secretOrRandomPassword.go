@@ -10,21 +10,22 @@ import (
 	"log"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 const SecretOrRandomPasswordCommandName string = "secretOrRandomPassword"
 
 type SecretOrRandomPasswordCommandExecutor struct {
-	azCli          azcli.AzCli
-	subscriptionId string
+	keyvaultService keyvault.KeyVaultService
+	subscriptionId  string
 }
 
-func NewSecretOrRandomPasswordExecutor(azCli azcli.AzCli, subscriptionId string) *SecretOrRandomPasswordCommandExecutor {
+func NewSecretOrRandomPasswordExecutor(
+	keyvaultService keyvault.KeyVaultService, subscriptionId string) *SecretOrRandomPasswordCommandExecutor {
 	return &SecretOrRandomPasswordCommandExecutor{
-		azCli:          azCli,
-		subscriptionId: subscriptionId,
+		keyvaultService: keyvaultService,
+		subscriptionId:  subscriptionId,
 	}
 }
 
@@ -50,14 +51,9 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(
 	keyVaultName := args[0]
 	secretName := args[1]
 
-	if ctx == nil || e.azCli == nil {
-		// Should never happen really...
-		return false, "", fmt.Errorf("missing context information for %s command", SecretOrRandomPasswordCommandName)
-	}
-
-	secret, err := e.azCli.GetKeyVaultSecret(ctx, e.subscriptionId, keyVaultName, secretName)
+	secret, err := e.keyvaultService.GetKeyVaultSecret(ctx, e.subscriptionId, keyVaultName, secretName)
 	if err != nil {
-		if errors.Is(err, azcli.ErrAzCliSecretNotFound) {
+		if errors.Is(err, keyvault.ErrAzCliSecretNotFound) {
 			log.Printf(
 				"%s: secret '%s' not found in vault '%s', using random password...",
 				SecretOrRandomPasswordCommandName,

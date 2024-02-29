@@ -28,7 +28,7 @@ type monitorFlags struct {
 	monitorLogs     bool
 	monitorOverview bool
 	global          *internal.GlobalCommandOptions
-	envFlag
+	internal.EnvFlag
 }
 
 func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -40,7 +40,7 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	)
 	local.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
 	local.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
-	m.envFlag.Bind(local, global)
+	m.EnvFlag.Bind(local, global)
 	m.global = global
 }
 

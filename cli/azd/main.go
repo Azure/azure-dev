@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -59,7 +60,9 @@ func main() {
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
 
-	cmdErr := cmd.NewRootCmd(ctx, false, nil).ExecuteContext(ctx)
+	rootContainer := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(rootContainer, ctx)
+	cmdErr := cmd.NewRootCmd(false, nil, rootContainer).ExecuteContext(ctx)
 
 	oneauth.Shutdown()
 

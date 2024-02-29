@@ -82,7 +82,8 @@ if ($TemplateList -eq 'all') {
     $officialTemplates = (azd template list --output json | ConvertFrom-Json).repositoryPath | ForEach-Object {
         if (!$_.StartsWith("Azure-Samples/")) {
             "Azure-Samples/" + $_
-        } else {
+        }
+        else {
             $_
         }
     }
@@ -97,7 +98,8 @@ if ($TemplateList -eq 'all') {
 
     $templateNames += $officialTemplates
     $templateNames += $otherTemplates
-} else {
+}
+else {
     Write-Host "Using provided TemplateList value: $TemplateList"
 
     $templateNames += ($TemplateList -split ",").Trim()
@@ -126,18 +128,21 @@ foreach ($jobName in $matrix.Keys) {
     }
 }
 
-# Generated test cases from existing templates
-$upperTestCase = Copy-RandomJob -JobMatrix $matrix
-$upperTestCase.TEST_SCENARIO = 'UPPER' # Use UPPER case for env name
-$matrix[$upperTestCase.TemplateName.Replace('/', '_') + '-Upper-case-test'] = $upperTestCase
+# When we only have a single template to test do not overload with APIM and UPPER case tests
+if ($templateNames.Length -gt 1) {
+    # Generated test cases from existing templates
+    $upperTestCase = Copy-RandomJob -JobMatrix $matrix
+    $upperTestCase.TEST_SCENARIO = 'UPPER' # Use UPPER case for env name
+    $matrix[$upperTestCase.TemplateName.Replace('/', '_') + '-Upper-case-test'] = $upperTestCase
 
-if ($jobVariables.USE_APIM -ne 'true') { # If USE_APIM is specified, avoid creating a new job
-    $apimEnabledTestCase = Copy-RandomJob -JobMatrix $matrix
-    $apimEnabledTestCase.TEST_SCENARIO = 'apim'
-    $apimEnabledTestCase.USE_APIM = 'true'
-    $matrix[$apimEnabledTestCase.TemplateName.Replace('/', '_') + '-apim-enabled'] = $apimEnabledTestCase
+    if ($jobVariables.USE_APIM -ne 'true') {
+        # If USE_APIM is specified, avoid creating a new job
+        $apimEnabledTestCase = Copy-RandomJob -JobMatrix $matrix
+        $apimEnabledTestCase.TEST_SCENARIO = 'apim'
+        $apimEnabledTestCase.USE_APIM = 'true'
+        $matrix[$apimEnabledTestCase.TemplateName.Replace('/', '_') + '-apim-enabled'] = $apimEnabledTestCase
+    }
 }
-
 
 foreach ($jobName in $matrix.Keys) {
     $keyNames = @()

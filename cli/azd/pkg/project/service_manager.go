@@ -98,11 +98,16 @@ type ServiceManager interface {
 	GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error)
 }
 
+// ServiceOperationCache is an alias to map used for internal caching of service operation results
+// The ServiceManager is a scoped component since it depends on the current environment
+// The ServiceOperationCache is used as a singleton cache for all service manager instances
+type ServiceOperationCache map[string]any
+
 type serviceManager struct {
 	env                 *environment.Environment
 	resourceManager     ResourceManager
 	serviceLocator      ioc.ServiceLocator
-	operationCache      map[string]any
+	operationCache      ServiceOperationCache
 	alphaFeatureManager *alpha.FeatureManager
 }
 
@@ -111,13 +116,14 @@ func NewServiceManager(
 	env *environment.Environment,
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
+	operationCache ServiceOperationCache,
 	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceManager {
 	return &serviceManager{
 		env:                 env,
 		resourceManager:     resourceManager,
 		serviceLocator:      serviceLocator,
-		operationCache:      map[string]any{},
+		operationCache:      operationCache,
 		alphaFeatureManager: alphaFeatureManager,
 	}
 }
@@ -545,6 +551,11 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
 	var frameworkService FrameworkService
 
+	// Publishing from an existing image currently follows the same lifecycle as a docker project
+	if serviceConfig.Language == ServiceLanguageNone && serviceConfig.Image != "" {
+		serviceConfig.Language = ServiceLanguageDocker
+	}
+
 	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Language), &frameworkService); err != nil {
 		panic(fmt.Errorf(
 			"failed to resolve language '%s' for service '%s', %w",
@@ -556,7 +567,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 
 	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
 	// project that handles the containerization.
-	if serviceConfig.Host.RequiresContainer() && serviceConfig.Language != ServiceLanguageDocker {
+	requiresLanguage := serviceConfig.Language != ServiceLanguageDocker && serviceConfig.Language != ServiceLanguageNone
+	if serviceConfig.Host.RequiresContainer() && requiresLanguage {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			panic(fmt.Errorf(
@@ -568,7 +580,6 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		}
 
 		compositeFramework.SetSource(frameworkService)
-
 		frameworkService = compositeFramework
 	}
 
@@ -601,7 +612,7 @@ func (sm *serviceManager) getOperationResult(
 	serviceConfig *ServiceConfig,
 	operationName string,
 ) (any, bool) {
-	key := fmt.Sprintf("%s:%s", serviceConfig.Name, operationName)
+	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	value, ok := sm.operationCache[key]
 
 	return value, ok
@@ -614,7 +625,7 @@ func (sm *serviceManager) setOperationResult(
 	operationName string,
 	result any,
 ) {
-	key := fmt.Sprintf("%s:%s", serviceConfig.Name, operationName)
+	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	sm.operationCache[key] = result
 }
 

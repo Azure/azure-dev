@@ -1,0 +1,80 @@
+﻿@page "/azurequeues"
+@using Azure.Storage.Queues;
+@rendermode InteractiveServer
+@inject QueueServiceClient queueServiceClient
+
+<PageTitle>Azure Queues</PageTitle>
+
+<h1>Azure Queues</h1>
+
+<p>Here you can test to make sure your code is sending and receiving messages to and from Azure Storage Queues.</p>
+
+<InputText @bind-Value="messageEntered" />
+<button class="btn btn-primary" id="sendMessageButton" @onclick="SendMessage">Send</button>
+
+@if (messages == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Messages</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var message in messages)
+            {
+                <tr>
+                    <td>@message</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+
+@code {
+    string messageEntered = RandomString();
+    List<string> messages = new();
+    QueueClient? queueClient;
+
+    private static string RandomString() => new string(Enumerable.Repeat("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 10)
+        .Select(s => s[Random.Shared.Next(s.Length)]).ToArray());
+
+    override protected async Task OnInitializedAsync()
+    {
+        queueClient = queueServiceClient.GetQueueClient("messages");
+        await queueClient.CreateIfNotExistsAsync();
+        await ReadFromQueue();
+
+        await InvokeAsync(() => StateHasChanged());
+    }
+
+    private async Task ReadFromQueue()
+    {
+        if (queueClient != null)
+        {
+            var result = await queueClient.ReceiveMessagesAsync();
+
+            foreach (var message in result.Value)
+            {
+                messages.Add(message.MessageText);
+                await queueClient.DeleteMessageAsync(message.MessageId, message.PopReceipt);
+            }
+        }
+    }
+
+    private async void SendMessage()
+    {
+        if (queueClient != null)
+        {
+            await queueClient.SendMessageAsync(messageEntered);
+            await ReadFromQueue();
+
+            messageEntered = RandomString();
+        }
+    }
+}

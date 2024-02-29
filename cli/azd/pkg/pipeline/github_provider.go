@@ -484,14 +484,6 @@ func (p *GitHubCiProvider) configureConnection(
 		return fmt.Errorf("failed setting pipeline variables: %w", err)
 	}
 
-	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-		Lines: []string{
-			"",
-			"GitHub Action secrets are now configured. You can view GitHub action secrets that were created at this link:",
-			output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
-			""},
-	})
-
 	return nil
 }
 
@@ -624,21 +616,100 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 func (p *GitHubCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
-	provisioningProvider provisioning.Options,
-	additionalSecrets map[string]string,
-	additionalVariables map[string]string,
+	options *configurePipelineOptions,
 ) (CiPipeline, error) {
-
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-	for key, value := range additionalSecrets {
-		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
-			return nil, fmt.Errorf("failed setting %s secret: %w", key, err)
+
+	// Variables and Secrets for a gh-actions are independent from the gh-action. They are set on the repository level.
+	// We need to clean up the previous values before setting the new ones.
+	// By doing this, we are handling:
+	// - When a secret is moved to be a variable (or vice versa). Don't leak the previous value on the pipeline.
+	// - When there was a previous additional variable/secret set and then it was updated to empty string or unset from .env.
+	msg := ""
+	var procErr error
+	ciSecrets, ciVariables := []string{}, []string{}
+	if len(options.projectVariables) > 0 {
+		msg = "Setting up project's variables to be used in the pipeline"
+		ciSecretsInstance, err := p.ghCli.ListSecrets(ctx, repoSlug)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get list of repository secrets: %w", err)
+		}
+		ciVariablesInstance, err := p.ghCli.ListVariables(ctx, repoSlug)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get list of repository variables: %w", err)
+		}
+		ciSecrets = ciSecretsInstance
+		ciVariables = ciVariablesInstance
+		p.console.ShowSpinner(ctx, msg, input.Step)
+	}
+
+	defer func() {
+		if msg != "" {
+			p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(procErr))
+		}
+		if procErr == nil {
+			p.console.MessageUxItem(ctx, &ux.MultilineMessage{
+				Lines: []string{
+					"",
+					"GitHub Action secrets are now configured. You can view GitHub action secrets that were created at this link:",
+					output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
+					""},
+			})
+		}
+	}()
+
+	// create map of variables for O(1) lookup during clean up
+	variablesAndSecretsMap := make(map[string]string, len(options.projectVariables)+len(options.projectSecrets))
+	for _, value := range options.projectVariables {
+		variablesAndSecretsMap[value] = value
+	}
+	for _, value := range options.projectSecrets {
+		variablesAndSecretsMap[value] = value
+	}
+
+	// iterate the existing secrets on the pipeline and remove the ones matching the project's secrets or variables
+	for _, existingSecret := range ciSecrets {
+		if _, willBeUpdated := options.secrets[existingSecret]; willBeUpdated {
+			// if the secret will be updated, we don't need to delete it
+			continue
+		}
+		// only delete if the secret is defined in the project's secrets or variables (azure.yaml)
+		if _, exists := variablesAndSecretsMap[existingSecret]; exists {
+			deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
+			if deleteErr != nil {
+				procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
+				return nil, procErr
+			}
+		}
+	}
+	// iterate the existing variables on the pipeline and remove the ones matching the project's secrets or variables
+	for _, existingVariable := range ciVariables {
+		if _, willBeUpdated := options.variables[existingVariable]; willBeUpdated {
+			// if the variable will be updated, we don't need to delete it
+			continue
+		}
+		// only delete if the variable is defined in the project's secrets or variables (azure.yaml)
+		if _, exists := variablesAndSecretsMap[existingVariable]; exists {
+			deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
+			if deleteErr != nil {
+				procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
+				return nil, procErr
+			}
 		}
 	}
 
-	for key, value := range additionalVariables {
+	// set the new variables and secrets
+	for key, value := range options.secrets {
+		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)
+			return nil, procErr
+		}
+	}
+
+	for key, value := range options.variables {
 		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
-			return nil, fmt.Errorf("failed setting %s secret: %w", key, err)
+			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)
+			return nil, procErr
 		}
 	}
 

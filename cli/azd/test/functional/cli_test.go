@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -67,8 +68,12 @@ type cliConfig struct {
 	// The tenant ID to use for live Azure tests.
 	TenantID string
 	// The Azure subscription ID to use for live Azure tests.
+	// In non-CI environments with no additional environment variables set,
+	// the azd user config 'defaults.subscription' value is used.
 	SubscriptionID string
 	// The Azure location to use for live Azure tests.
+	// In non-CI environments with no additional environment variables set,
+	// the azd user config 'defaults.location' value is used.
 	Location string
 }
 
@@ -79,6 +84,24 @@ func (c *cliConfig) init() {
 	c.TenantID = os.Getenv("AZD_TEST_TENANT_ID")
 	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
 	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
+
+	if !c.CI && (c.SubscriptionID == "" || c.Location == "") {
+		userConfig := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+		cfg, err := userConfig.Load()
+		if err == nil {
+			if subId, ok := cfg.GetString("defaults.subscription"); ok && c.SubscriptionID == "" {
+				c.SubscriptionID = subId
+			}
+
+			if loc, ok := cfg.GetString("defaults.location"); ok && c.Location == "" {
+				c.Location = loc
+			}
+		}
+
+		if err != nil {
+			log.Printf("could not load user config to provide default test values: %v", err)
+		}
+	}
 }
 
 func TestMain(m *testing.M) {
@@ -150,18 +173,26 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		client = http.DefaultClient
 	}
 
+	armClientOptions := &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: client,
+		},
+	}
 	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
 		client,
-		azcli.NewAzCliArgs{})
+		azcli.NewAzCliArgs{},
+		armClientOptions,
+	)
 	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil
 			}),
-		client)
+		armClientOptions,
+	)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
@@ -357,19 +388,27 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
+	armClientOptions := &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: client,
+		},
+	}
 
 	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
 		client,
-		azcli.NewAzCliArgs{})
+		azcli.NewAzCliArgs{},
+		armClientOptions,
+	)
 	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil
 			}),
-		client)
+		armClientOptions,
+	)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
@@ -554,7 +593,7 @@ func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	assert.Equal(t, "", result.Stderr, "no output should be written to stderr when --help is passed")
 }
 
-//go:embed testdata/samples/*
+//go:embed all:testdata/samples/*
 var samples embed.FS
 
 func samplePath(paths ...string) string {
@@ -599,6 +638,21 @@ func randomOrStoredEnvName(session *recording.Session) string {
 	}
 
 	return randName
+}
+
+func cfgOrStoredSubscription(session *recording.Session) string {
+	if session != nil && session.Playback {
+		if _, ok := session.Variables[recording.SubscriptionIdKey]; ok {
+			return session.Variables[recording.SubscriptionIdKey]
+		}
+	}
+
+	subID := cfg.SubscriptionID
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = subID
+	}
+
+	return subID
 }
 
 func randomEnvName() string {

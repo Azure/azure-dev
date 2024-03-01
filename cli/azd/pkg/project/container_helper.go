@@ -286,7 +286,7 @@ func (ch *ContainerHelper) Deploy(
 						errSuggestion := &azcli.ErrorWithSuggestion{
 							Err: err,
 							//nolint:lll
-							Suggestion: "When pushing to an external registry, ensure you have have successfully authenticated by calling 'docker login' and run 'azd deploy' again",
+							Suggestion: "When pushing to an external registry, ensure you have successfully authenticated by calling 'docker login' and run 'azd deploy' again",
 						}
 
 						task.SetError(errSuggestion)

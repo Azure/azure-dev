@@ -58,7 +58,11 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusOK, &mockUserProfile)
 
-		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd", cloud.AzurePublic())
+		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(
+			mockContext.HttpClient,
+			"azd",
+			cloud.AzurePublic(),
+		)
 		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
@@ -70,7 +74,11 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusBadRequest, nil)
 
-		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd", cloud.AzurePublic())
+		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(
+			mockContext.HttpClient,
+			"azd",
+			cloud.AzurePublic(),
+		)
 		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")

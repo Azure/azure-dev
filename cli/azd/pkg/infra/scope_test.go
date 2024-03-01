@@ -149,7 +149,14 @@ func TestScopeDeploy(t *testing.T) {
 			}, nil
 		})
 
-		target := NewSubscriptionDeployment(depService, depOpService, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME", cloud.AzurePublic().PortalUrlBase)
+		target := NewSubscriptionDeployment(
+			depService,
+			depOpService,
+			"eastus2",
+			"SUBSCRIPTION_ID",
+			"DEPLOYMENT_NAME",
+			cloud.AzurePublic().PortalUrlBase,
+		)
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
 		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
@@ -213,7 +220,14 @@ func TestScopeGetResourceOperations(t *testing.T) {
 			}, nil
 		})
 
-		target := NewSubscriptionDeployment(depService, depOpService, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME", cloud.AzurePublic().PortalUrlBase)
+		target := NewSubscriptionDeployment(
+			depService,
+			depOpService,
+			"eastus2",
+			"SUBSCRIPTION_ID",
+			"DEPLOYMENT_NAME",
+			cloud.AzurePublic().PortalUrlBase,
+		)
 
 		operations, err := target.Operations(*mockContext.Context)
 		require.NoError(t, err)

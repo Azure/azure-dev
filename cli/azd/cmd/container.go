@@ -442,7 +442,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 								// In the event of an error set the suggestion for updating the cloud configuration
 								suggestionFn = func() string {
 									// nolint:lll
-									return fmt.Sprintf("Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment", defaultEnvName)
+									return fmt.Sprintf(
+										"Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment",
+										defaultEnvName,
+									)
 								}
 							}
 						}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -180,13 +181,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Azd Context
-	container.MustRegisterSingleton(azdcontext.NewAzdContext)
+	container.MustRegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+		return lazyAzdContext.GetValue()
+	})
 
 	// Lazy loads the Azd context after the azure.yaml file becomes available
 	container.MustRegisterSingleton(func() *lazy.Lazy[*azdcontext.AzdContext] {
-		return lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
-			return azdcontext.NewAzdContext()
-		})
+		return lazy.NewLazy(azdcontext.NewAzdContext)
 	})
 
 	// Register an initialized environment based on the specified environment flag, or the default environment.
@@ -348,17 +349,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Required to be singleton (shared) because the project/service holds important event handlers
 	// from both hooks and internal that are used during azd lifecycle calls.
 	container.MustRegisterSingleton(
-		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
-			if azdContext == nil {
-				return nil, azdcontext.ErrNoProject
-			}
-
-			projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
-			if err != nil {
-				return nil, err
-			}
-
-			return projectConfig, nil
+		func(lazyConfig *lazy.Lazy[*project.ProjectConfig]) (*project.ProjectConfig, error) {
+			return lazyConfig.GetValue()
 		},
 	)
 
@@ -367,33 +359,53 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// from both hooks and internal that are used during azd lifecycle calls.
 	container.MustRegisterSingleton(
 		func(
-			serviceLocator ioc.ServiceLocator,
+			ctx context.Context,
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 		) *lazy.Lazy[*project.ProjectConfig] {
 			return lazy.NewLazy(func() (*project.ProjectConfig, error) {
-				_, err := lazyAzdContext.GetValue()
+				azdCtx, err := lazyAzdContext.GetValue()
 				if err != nil {
 					return nil, err
 				}
 
-				var projectConfig *project.ProjectConfig
-				err = serviceLocator.Resolve(&projectConfig)
+				projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+				if err != nil {
+					return nil, err
+				}
 
-				return projectConfig, err
+				return projectConfig, nil
 			})
 		},
 	)
 
 	container.MustRegisterSingleton(func(
-		ctx context.Context,
-		credential azcore.TokenCredential,
 		httpClient httputil.HttpClient,
-	) (*armresourcegraph.Client, error) {
-		options := azsdk.
-			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
-			BuildArmClientOptions()
+		userAgent httputil.UserAgent,
+	) *azsdk.ClientOptionsBuilderFactory {
+		return azsdk.NewClientOptionsBuilderFactory(httpClient, string(userAgent))
+	})
 
-		return armresourcegraph.NewClient(credential, options)
+	container.MustRegisterSingleton(func(
+		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
+	) *azcore.ClientOptions {
+		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
+			BuildCoreClientOptions()
+	})
+
+	container.MustRegisterSingleton(func(
+		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
+	) *arm.ClientOptions {
+		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
+			BuildArmClientOptions()
+	})
+
+	container.MustRegisterSingleton(func(
+		credential azcore.TokenCredential,
+		armClientOptions *arm.ClientOptions,
+	) (*armresourcegraph.Client, error) {
+		return armresourcegraph.NewClient(credential, armClientOptions)
 	})
 
 	container.MustRegisterSingleton(templates.NewTemplateManager)
@@ -459,11 +471,17 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		rootOptions *internal.GlobalCommandOptions,
 		credentialProvider account.SubscriptionCredentialProvider,
 		httpClient httputil.HttpClient,
+		armClientOptions *arm.ClientOptions,
 	) azcli.AzCli {
-		return azcli.NewAzCli(credentialProvider, httpClient, azcli.NewAzCliArgs{
-			EnableDebug:     rootOptions.EnableDebugLogging,
-			EnableTelemetry: rootOptions.EnableTelemetry,
-		})
+		return azcli.NewAzCli(
+			credentialProvider,
+			httpClient,
+			azcli.NewAzCliArgs{
+				EnableDebug:     rootOptions.EnableDebugLogging,
+				EnableTelemetry: rootOptions.EnableTelemetry,
+			},
+			armClientOptions,
+		)
 	})
 	container.MustRegisterSingleton(azapi.NewDeployments)
 	container.MustRegisterSingleton(azapi.NewDeploymentOperations)
@@ -543,59 +561,67 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	// Platform configuration
-	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*platform.Config] {
-		return lazy.NewLazy(func() (*platform.Config, error) {
-			var platformConfig *platform.Config
-			err := serviceLocator.Resolve(&platformConfig)
-
-			return platformConfig, err
-		})
+	container.MustRegisterSingleton(func(lazyConfig *lazy.Lazy[*platform.Config]) (*platform.Config, error) {
+		return lazyConfig.GetValue()
 	})
 
 	container.MustRegisterSingleton(func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
-	) (*platform.Config, error) {
-		// First check `azure.yaml` for platform configuration section
-		projectConfig, err := lazyProjectConfig.GetValue()
-		if err == nil && projectConfig != nil && projectConfig.Platform != nil {
-			return projectConfig.Platform, nil
-		}
+	) *lazy.Lazy[*platform.Config] {
+		return lazy.NewLazy[*platform.Config](func() (*platform.Config, error) {
+			// First check `azure.yaml` for platform configuration section
+			projectConfig, err := lazyProjectConfig.GetValue()
+			if err == nil && projectConfig != nil && projectConfig.Platform != nil {
+				return projectConfig.Platform, nil
+			}
 
-		// Fallback to global user configuration
-		config, err := userConfigManager.Load()
-		if err != nil {
-			return nil, fmt.Errorf("loading user config: %w", err)
-		}
+			// Fallback to global user configuration
+			config, err := userConfigManager.Load()
+			if err != nil {
+				return nil, fmt.Errorf("loading user config: %w", err)
+			}
 
-		var platformConfig *platform.Config
-		ok, err := config.GetSection("platform", &platformConfig)
-		if err != nil {
-			return nil, fmt.Errorf("getting platform config: %w", err)
-		}
+			var platformConfig *platform.Config
+			_, err = config.GetSection("platform", &platformConfig)
+			if err != nil {
+				return nil, fmt.Errorf("getting platform config: %w", err)
+			}
 
-		if !ok || platformConfig.Type == "" {
-			return nil, platform.ErrPlatformConfigNotFound
-		}
+			// If we still don't have a platform configuration, check the OS environment
+			// We check the OS environment instead of AZD environment because the global platform configuration
+			// cannot be known at this time in the azd bootstrapping process.
+			if platformConfig == nil {
+				if envPlatformType, has := os.LookupEnv(environment.PlatformTypeEnvVarName); has {
+					platformConfig = &platform.Config{
+						Type: platform.PlatformKind(envPlatformType),
+					}
+				}
+			}
 
-		// Validate platform type
-		supportedPlatformKinds := []string{
-			string(devcenter.PlatformKindDevCenter),
-			string(azd.PlatformKindDefault),
-		}
-		if !slices.Contains(supportedPlatformKinds, string(platformConfig.Type)) {
-			return nil, fmt.Errorf(
-				heredoc.Doc(`platform type '%s' is not supported. Valid values are '%s'.
+			if platformConfig == nil || platformConfig.Type == "" {
+				return nil, platform.ErrPlatformConfigNotFound
+			}
+
+			// Validate platform type
+			supportedPlatformKinds := []string{
+				string(devcenter.PlatformKindDevCenter),
+				string(azd.PlatformKindDefault),
+			}
+			if !slices.Contains(supportedPlatformKinds, string(platformConfig.Type)) {
+				return nil, fmt.Errorf(
+					heredoc.Doc(`platform type '%s' is not supported. Valid values are '%s'.
 				Run %s to set or %s to reset. (%w)`),
-				platformConfig.Type,
-				strings.Join(supportedPlatformKinds, ","),
-				output.WithBackticks("azd config set platform.type <type>"),
-				output.WithBackticks("azd config unset platform.type"),
-				platform.ErrPlatformNotSupported,
-			)
-		}
+					platformConfig.Type,
+					strings.Join(supportedPlatformKinds, ","),
+					output.WithBackticks("azd config set platform.type <type>"),
+					output.WithBackticks("azd config unset platform.type"),
+					platform.ErrPlatformNotSupported,
+				)
+			}
 
-		return platformConfig, nil
+			return platformConfig, nil
+		})
 	})
 
 	// Platform Providers

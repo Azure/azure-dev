@@ -24,6 +24,9 @@ type ProjectFilterPredicate func(p *devcentersdk.Project) bool
 // DevCenterFilterPredicate is a predicate function for filtering dev centers
 type DevCenterFilterPredicate func(dc *devcentersdk.DevCenter) bool
 
+// EnvironmentDefinitionFilterPredicate is a predicate function for filtering environment definitions
+type EnvironmentDefinitionFilterPredicate func(ed *devcentersdk.EnvironmentDefinition) bool
+
 // EnvironmentFilterPredicate is a predicate function for filtering environments
 type EnvironmentFilterPredicate func(e *devcentersdk.Environment) bool
 

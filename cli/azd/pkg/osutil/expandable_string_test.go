@@ -11,7 +11,7 @@ import (
 )
 
 func TestExpandableStringYaml(t *testing.T) {
-	var e ExpandableString
+	var e *ExpandableString
 
 	err := yaml.Unmarshal([]byte(`"${foo}"`), &e)
 	assert.NoError(t, err)

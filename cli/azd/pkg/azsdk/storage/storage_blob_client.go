@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 // AccountConfig contains the configuration for connecting to a storage account
@@ -166,9 +167,14 @@ func NewBlobSdkClient(
 	credential azcore.TokenCredential,
 	accountConfig *AccountConfig,
 	coreClientOptions *azcore.ClientOptions,
+	cloud *cloud.Cloud,
 ) (*azblob.Client, error) {
 	blobOptions := &azblob.ClientOptions{
 		ClientOptions: *coreClientOptions,
+	}
+
+	if accountConfig.Endpoint == "" {
+		accountConfig.Endpoint = cloud.StorageEndpointSuffix
 	}
 
 	serviceUrl := fmt.Sprintf("https://%s.%s", accountConfig.AccountName, accountConfig.Endpoint)

@@ -87,7 +87,7 @@ func createBlobClient(
 		NewClientOptionsBuilder().
 		BuildCoreClientOptions()
 
-	sdkClient, err := storage.NewBlobSdkClient(credentials, storageConfig, coreClientOptions)
+	sdkClient, err := storage.NewBlobSdkClient(credentials, storageConfig, coreClientOptions, cloud.AzurePublic())
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)
 

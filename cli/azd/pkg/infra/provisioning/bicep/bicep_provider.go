@@ -348,6 +348,7 @@ func (p *BicepProvider) createDeploymentFromArmDeployment(
 			p.env.GetLocation(),
 			p.env.GetSubscriptionId(),
 			deploymentName,
+			p.portalUrlBase,
 		), nil
 	default:
 		return nil, errors.New("unsupported deployment scope")
@@ -411,6 +412,7 @@ func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (
 			p.env.GetLocation(),
 			p.env.GetSubscriptionId(),
 			deploymentNameForEnv(p.env.Name(), p.clock),
+			p.portalUrlBase,
 		), nil
 	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
 		return infra.NewResourceGroupDeployment(

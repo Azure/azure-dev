@@ -477,6 +477,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return resolvedCloud, nil
 	})
 
+	container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {
+		return cloud.PortalUrlBase
+	})
+
 	container.MustRegisterSingleton(func(
 		httpClient httputil.HttpClient,
 		userAgent httputil.UserAgent,

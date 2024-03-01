@@ -138,7 +138,14 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 	)
-	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName)
+	err := cas.AddRevision(
+		*mockContext.Context,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		containerApp,
+		revision,
+	)
 	require.NoError(t, err)
 
 	// Verify lastest revision is read

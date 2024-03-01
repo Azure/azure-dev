@@ -800,7 +800,7 @@ func createAksServiceTarget(
 	userConfig config.Config,
 ) ServiceTarget {
 	kubeCtl := kubectl.NewKubectl(mockContext.CommandRunner)
-	helmCli := helm.NewCli(mockContext.CommandRunner)
+	helmCli := helm.NewCli(mockContext.CommandRunner, env)
 	kustomizeCli := kustomize.NewCli(mockContext.CommandRunner)
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	kubeLoginCli := kubelogin.NewCli(mockContext.CommandRunner)

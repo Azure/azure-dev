@@ -201,31 +201,33 @@ func (sm *serviceManager) Restore(
 			ServiceEventRestore,
 			serviceConfig,
 			func() *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-				return async.RunTaskWithProgress[*ServiceRestoreResult, ServiceProgress](func(componentTask *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-					componentResults := map[string]*ServiceRestoreResult{}
+				return async.RunTaskWithProgress[*ServiceRestoreResult, ServiceProgress](
+					func(componentTask *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+						componentResults := map[string]*ServiceRestoreResult{}
 
-					for key, component := range serviceConfig.Components {
-						frameworkService, err := sm.GetFrameworkService(ctx, component)
-						if err != nil {
-							rootTask.SetError(fmt.Errorf("getting framework services: %w", err))
-							return
+						for key, component := range serviceConfig.Components {
+							frameworkService, err := sm.GetFrameworkService(ctx, component)
+							if err != nil {
+								rootTask.SetError(fmt.Errorf("getting framework services: %w", err))
+								return
+							}
+
+							restoreTask := frameworkService.Restore(ctx, component)
+							syncProgress(rootTask, restoreTask.Progress())
+							restoreResult, err := restoreTask.Await()
+							if err != nil {
+								componentTask.SetError(err)
+								return
+							}
+
+							componentResults[key] = restoreResult
 						}
 
-						restoreTask := frameworkService.Restore(ctx, component)
-						syncProgress(rootTask, restoreTask.Progress())
-						restoreResult, err := restoreTask.Await()
-						if err != nil {
-							componentTask.SetError(err)
-							return
-						}
-
-						componentResults[key] = restoreResult
-					}
-
-					componentTask.SetResult(&ServiceRestoreResult{
-						Details: componentResults,
-					})
-				})
+						componentTask.SetResult(&ServiceRestoreResult{
+							Details: componentResults,
+						})
+					},
+				)
 			},
 		)
 
@@ -266,32 +268,34 @@ func (sm *serviceManager) Build(
 			ServiceEventBuild,
 			component,
 			func() *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-				return async.RunTaskWithProgress[*ServiceBuildResult, ServiceProgress](func(componentTask *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-					componentResults := map[string]*ServiceBuildResult{}
+				return async.RunTaskWithProgress[*ServiceBuildResult, ServiceProgress](
+					func(componentTask *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+						componentResults := map[string]*ServiceBuildResult{}
 
-					for key, component := range component.Components {
-						frameworkService, err := sm.GetFrameworkService(ctx, component)
-						if err != nil {
-							rootTask.SetError(fmt.Errorf("getting framework services: %w", err))
-							return
+						for key, component := range component.Components {
+							frameworkService, err := sm.GetFrameworkService(ctx, component)
+							if err != nil {
+								rootTask.SetError(fmt.Errorf("getting framework services: %w", err))
+								return
+							}
+
+							buildTask := frameworkService.Build(ctx, component, restoreOutput)
+							syncProgress(rootTask, buildTask.Progress())
+							restoreResult, err := buildTask.Await()
+							if err != nil {
+								componentTask.SetError(err)
+								return
+							}
+
+							componentResults[key] = restoreResult
 						}
 
-						buildTask := frameworkService.Build(ctx, component, restoreOutput)
-						syncProgress(rootTask, buildTask.Progress())
-						restoreResult, err := buildTask.Await()
-						if err != nil {
-							componentTask.SetError(err)
-							return
-						}
-
-						componentResults[key] = restoreResult
-					}
-
-					componentTask.SetResult(&ServiceBuildResult{
-						Restore: restoreOutput,
-						Details: componentResults,
-					})
-				})
+						componentTask.SetResult(&ServiceBuildResult{
+							Restore: restoreOutput,
+							Details: componentResults,
+						})
+					},
+				)
 			},
 		)
 

@@ -371,7 +371,8 @@ func (p *dockerProject) packBuild(
 		// Always default to port 80 for consistency across languages
 		environ = append(environ, "ORYX_RUNTIME_PORT=80")
 
-		if component.OutputPath != "" && (component.Language == ServiceLanguageTypeScript || component.Language == ServiceLanguageJavaScript) {
+		if component.OutputPath != "" &&
+			(component.Language == ServiceLanguageTypeScript || component.Language == ServiceLanguageJavaScript) {
 			inDockerOutputPath := path.Join("/workspace", component.OutputPath)
 			// A dist folder has been set.
 			// We assume that the service is a front-end service, configuring a nginx web server to serve the static content

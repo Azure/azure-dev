@@ -238,9 +238,9 @@ func Test_ServiceConfig_Unmarshall(t *testing.T) {
 				require.Equal(t, "./src/api", proj.Services["api"].RelativePath)
 
 				// Expect the same values to be available in the container configuration
-				require.Equal(t, AksTarget, proj.Services["api"].Components["default"].Host)
-				require.Equal(t, ServiceLanguageJavaScript, proj.Services["api"].Components["default"].Language)
-				require.Equal(t, "./src/api", proj.Services["api"].Components["default"].RelativePath)
+				require.Equal(t, AksTarget, proj.Services["api"].Components[defaultComponentName].Host)
+				require.Equal(t, ServiceLanguageJavaScript, proj.Services["api"].Components[defaultComponentName].Language)
+				require.Equal(t, "./src/api", proj.Services["api"].Components[defaultComponentName].RelativePath)
 			},
 		},
 		{

@@ -46,10 +46,10 @@ func Test_MavenProject(t *testing.T) {
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
-		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
+		err = mavenProject.Initialize(*mockContext.Context, &serviceConfig.ComponentConfig)
 		require.NoError(t, err)
 
-		restoreTask := mavenProject.Restore(*mockContext.Context, serviceConfig)
+		restoreTask := mavenProject.Restore(*mockContext.Context, &serviceConfig.ComponentConfig)
 		logProgress(restoreTask)
 
 		result, err := restoreTask.Await()
@@ -82,10 +82,10 @@ func Test_MavenProject(t *testing.T) {
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
-		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
+		err = mavenProject.Initialize(*mockContext.Context, &serviceConfig.ComponentConfig)
 		require.NoError(t, err)
 
-		buildTask := mavenProject.Build(*mockContext.Context, serviceConfig, nil)
+		buildTask := mavenProject.Build(*mockContext.Context, &serviceConfig.ComponentConfig, nil)
 		logProgress(buildTask)
 
 		result, err := buildTask.Await()
@@ -124,12 +124,12 @@ func Test_MavenProject(t *testing.T) {
 		require.NoError(t, err)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
-		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
+		err = mavenProject.Initialize(*mockContext.Context, &serviceConfig.ComponentConfig)
 		require.NoError(t, err)
 
 		packageTask := mavenProject.Package(
 			*mockContext.Context,
-			serviceConfig,
+			&serviceConfig.ComponentConfig,
 			&ServiceBuildResult{
 				BuildOutputPath: serviceConfig.Path(),
 			},
@@ -295,12 +295,13 @@ func Test_MavenProject_Package(t *testing.T) {
 			mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 			javaCli := javac.NewCli(mockContext.CommandRunner)
 			mavenProject := NewMavenProject(env, mavenCli, javaCli)
-			err = mavenProject.Initialize(*mockContext.Context, tt.args.svc)
+			svc := tt.args.svc
+			err = mavenProject.Initialize(*mockContext.Context, &svc.ComponentConfig)
 			require.NoError(t, err)
 
 			packageTask := mavenProject.Package(
 				*mockContext.Context,
-				tt.args.svc,
+				&svc.ComponentConfig,
 				&ServiceBuildResult{},
 			)
 			logProgress(packageTask)

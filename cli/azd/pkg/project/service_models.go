@@ -78,7 +78,14 @@ func (spr *ServicePackageResult) ToString(currentIndentation string) string {
 		builder := strings.Builder{}
 		componentIndentation := currentIndentation
 		for name, componentResult := range compositeResult {
-			builder.WriteString(fmt.Sprintf("%s%s:\n%s", componentIndentation, output.WithBold(name), componentResult.ToString(componentIndentation+"  ")))
+			builder.WriteString(
+				fmt.Sprintf(
+					"%s%s:\n%s",
+					componentIndentation,
+					output.WithBold(name),
+					componentResult.ToString(componentIndentation+"  "),
+				),
+			)
 		}
 
 		return builder.String()

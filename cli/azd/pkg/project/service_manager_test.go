@@ -227,7 +227,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 		serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
-		framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
+		framework, err := sm.GetFrameworkService(*mockContext.Context, &serviceConfig.ComponentConfig)
 		require.NoError(t, err)
 		require.NotNil(t, framework)
 		require.IsType(t, new(fakeFramework), framework)
@@ -243,7 +243,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
 		serviceConfig.Image = "nginx"
 
-		framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
+		framework, err := sm.GetFrameworkService(*mockContext.Context, &serviceConfig.ComponentConfig)
 		require.NoError(t, err)
 		require.NotNil(t, framework)
 		require.IsType(t, new(fakeFramework), framework)
@@ -259,7 +259,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
 
 		require.Panics(t, func() {
-			_, _ = sm.GetFrameworkService(*mockContext.Context, serviceConfig)
+			_, _ = sm.GetFrameworkService(*mockContext.Context, &serviceConfig.ComponentConfig)
 		})
 	})
 }
@@ -489,13 +489,13 @@ func (f *fakeFramework) RequiredExternalTools(ctx context.Context) []tools.Exter
 	return []tools.ExternalTool{&fakeTool{}}
 }
 
-func (f *fakeFramework) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+func (f *fakeFramework) Initialize(ctx context.Context, component *ComponentConfig) error {
 	return nil
 }
 
 func (f *fakeFramework) Restore(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	restoreCalled, ok := ctx.Value(frameworkRestoreCalled).(*bool)
 	if ok {
@@ -518,7 +518,7 @@ func (f *fakeFramework) Restore(
 
 func (f *fakeFramework) Build(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	buildCalled, ok := ctx.Value(frameworkBuildCalled).(*bool)
@@ -543,7 +543,7 @@ func (f *fakeFramework) Build(
 
 func (f *fakeFramework) Package(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	packageCalled, ok := ctx.Value(frameworkPackageCalled).(*bool)

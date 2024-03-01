@@ -8,6 +8,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
+const defaultComponentName = "main"
+
 type ServiceConfig struct {
 	ComponentConfig `yaml:",inline"`
 
@@ -80,8 +82,8 @@ func (sc *ServiceConfig) MarshalYAML() (interface{}, error) {
 
 	// If there is only a single container and it maps to our "default" convention,
 	// then we can promote the container to the service level
-	if _, has := svc.Components["default"]; has && len(svc.Components) == 1 {
-		svc.ComponentConfig = *svc.Components["default"]
+	if _, has := svc.Components[defaultComponentName]; has && len(svc.Components) == 1 {
+		svc.ComponentConfig = *svc.Components[defaultComponentName]
 		svc.Components = nil
 	} else {
 		// Host can be ignored
@@ -103,7 +105,7 @@ func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 	if len(svc.Components) == 0 {
 		svc.Components = map[string]*ComponentConfig{
-			"default": &svc.ComponentConfig,
+			defaultComponentName: &svc.ComponentConfig,
 		}
 	}
 

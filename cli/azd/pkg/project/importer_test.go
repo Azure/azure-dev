@@ -371,12 +371,14 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	_, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
-				Name:         "test",
-				Language:     ServiceLanguageDotNet,
-				Host:         ContainerAppTarget,
-				RelativePath: "path",
-				Project: &ProjectConfig{
-					Path: "path",
+				ComponentConfig: ComponentConfig{
+					Name:         "test",
+					Language:     ServiceLanguageDotNet,
+					Host:         ContainerAppTarget,
+					RelativePath: "path",
+					Project: &ProjectConfig{
+						Path: "path",
+					},
 				},
 			},
 		},

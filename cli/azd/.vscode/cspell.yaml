@@ -9,6 +9,9 @@ words:
   - nosec
   - Retryable
   - runcontext
+  - azcloud
+  - usgovcloudapi
+  - chinacloudapi
 languageSettings:
   - languageId: go
     ignoreRegExpList:

@@ -19,10 +19,6 @@ type AccountConfig struct {
 	Endpoint      string
 }
 
-const (
-	DefaultBlobEndpoint = "blob.core.windows.net"
-)
-
 var (
 	ErrContainerNotFound = errors.New("container not found")
 )
@@ -173,10 +169,6 @@ func NewBlobSdkClient(
 ) (*azblob.Client, error) {
 	blobOptions := &azblob.ClientOptions{
 		ClientOptions: *coreClientOptions,
-	}
-
-	if accountConfig.Endpoint == "" {
-		accountConfig.Endpoint = DefaultBlobEndpoint
 	}
 
 	serviceUrl := fmt.Sprintf("https://%s.%s", accountConfig.AccountName, accountConfig.Endpoint)

@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
@@ -102,7 +103,14 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		target := NewResourceGroupDeployment(depService, depOpService, subscriptionId, resourceGroupName, deploymentName)
+		target := NewResourceGroupDeployment(
+			depService,
+			depOpService,
+			subscriptionId,
+			resourceGroupName,
+			deploymentName,
+			cloud.AzurePublic().PortalUrlBase,
+		)
 
 		deployment, err := target.Deployment(*mockContext.Context)
 		require.NoError(t, err)
@@ -163,7 +171,13 @@ func TestScopeDeploy(t *testing.T) {
 		})
 
 		target := NewResourceGroupDeployment(
-			depService, depOpService, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
+			depService,
+			depOpService,
+			"SUBSCRIPTION_ID",
+			"RESOURCE_GROUP",
+			"DEPLOYMENT_NAME",
+			cloud.AzurePublic().PortalUrlBase,
+		)
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
 		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
@@ -219,7 +233,13 @@ func TestScopeGetResourceOperations(t *testing.T) {
 			}, nil
 		})
 		target := NewResourceGroupDeployment(
-			depService, depOpService, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
+			depService,
+			depOpService,
+			"SUBSCRIPTION_ID",
+			"RESOURCE_GROUP",
+			"DEPLOYMENT_NAME",
+			cloud.AzurePublic().PortalUrlBase,
+		)
 
 		operations, err := target.Operations(*mockContext.Context)
 		require.NoError(t, err)

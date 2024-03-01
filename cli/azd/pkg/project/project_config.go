@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -27,6 +28,7 @@ type ProjectConfig struct {
 	State             *state.Config              `yaml:"state,omitempty"`
 	Platform          *platform.Config           `yaml:"platform,omitempty"`
 	Workflows         workflow.WorkflowMap       `yaml:"workflows,omitempty"`
+	Cloud             *cloud.Config              `yaml:"cloud,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }

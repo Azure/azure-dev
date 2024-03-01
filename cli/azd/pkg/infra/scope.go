@@ -13,6 +13,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
 
+// cPortalUrlFormat is the prefix which can be combined with the RID of a deployment to produce a URL into the Azure Portal
+// that shows information about the deployment.
+const cPortalUrlFormat = "%s/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%s"
+const cOutputsUrlFormat = "%s/#view/HubsExtension/DeploymentDetailsBlade/~/outputs/id/%s"
+
 type Scope interface {
 	// SubscriptionId is the id of the subscription which this deployment targets.
 	SubscriptionId() string
@@ -50,6 +55,8 @@ type Deployment interface {
 type ResourceGroupDeployment struct {
 	*ResourceGroupScope
 	name string
+	// TODO: Should we add this here or should it be a property of ResourceGroupScope?
+	portalUrlBase string
 }
 
 func (s *ResourceGroupDeployment) Name() string {
@@ -95,28 +102,33 @@ func (s *ResourceGroupDeployment) Operations(ctx context.Context) ([]*armresourc
 // Gets the url to check deployment progress
 func (s *ResourceGroupDeployment) PortalUrl() string {
 	return fmt.Sprintf("%s/%s",
-		cPortalUrlPrefix,
+		cPortalUrlFormat,
 		url.PathEscape(azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroupName, s.name)))
 }
 
 // Gets the url to view deployment outputs
 func (s *ResourceGroupDeployment) OutputsUrl() string {
 	return fmt.Sprintf("%s/%s",
-		cOutputsUrlPrefix,
+		cOutputsUrlFormat,
 		url.PathEscape(azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroupName, s.name)))
 }
 
 func NewResourceGroupDeployment(
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
-	subscriptionId string, resourceGroupName string, deploymentName string,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+	// TODO: this is probably wrong
+	portalUrlBase string,
 ) Deployment {
 	return &ResourceGroupDeployment{
 		ResourceGroupScope: NewResourceGroupScope(
 			deploymentsService,
 			deploymentOperations,
 			subscriptionId, resourceGroupName),
-		name: deploymentName,
+		name:          deploymentName,
+		portalUrlBase: string(portalUrlBase),
 	}
 }
 
@@ -152,11 +164,6 @@ func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*armresourc
 	return s.deployments.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
 }
 
-// cPortalUrlPrefix is the prefix which can be combined with the RID of a deployment to produce a URL into the Azure Portal
-// that shows information about the deployment.
-const cPortalUrlPrefix = "https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id"
-const cOutputsUrlPrefix = "https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/outputs/id"
-
 type SubscriptionDeployment struct {
 	*SubscriptionScope
 	name     string
@@ -175,14 +182,14 @@ func (s *SubscriptionDeployment) SubscriptionId() string {
 // Gets the url to check deployment progress
 func (s *SubscriptionDeployment) PortalUrl() string {
 	return fmt.Sprintf("%s/%s",
-		cPortalUrlPrefix,
+		cPortalUrlFormat,
 		url.PathEscape(azure.SubscriptionDeploymentRID(s.subscriptionId, s.name)))
 }
 
 // Gets the url to view deployment outputs
 func (s *SubscriptionDeployment) OutputsUrl() string {
 	return fmt.Sprintf("%s/%s",
-		cOutputsUrlPrefix,
+		cOutputsUrlFormat,
 		url.PathEscape(azure.SubscriptionDeploymentRID(s.subscriptionId, s.name)))
 }
 

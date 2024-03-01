@@ -15,17 +15,14 @@ const (
 	AzureUSGovernmentName = "AzureUSGovernment"
 )
 
+type PortalUrlBase = string
+
 type Cloud struct {
 	Configuration cloud.Configuration
 
 	// The base URL for the cloud's portal (e.g. https://portal.azure.com for
 	// Azure public cloud).
 	PortalUrlBase string
-
-	// The suffix for the cloud's storage endpoints (e.g. core.windows.net for
-	// Azure public cloud). These are well known values and can be found at:
-	// https://<management-endpoint>/metadata/endpoints?api-version=2023-12-01
-	StorageEndpointSuffix string
 }
 
 type Config struct {
@@ -57,25 +54,22 @@ func ParseCloudConfig(partialConfig any) (*Config, error) {
 
 func AzurePublic() *Cloud {
 	return &Cloud{
-		Configuration:         cloud.AzurePublic,
-		PortalUrlBase:         "https://portal.azure.com",
-		StorageEndpointSuffix: "core.windows.net",
+		Configuration: cloud.AzurePublic,
+		PortalUrlBase: "https://portal.azure.com",
 	}
 }
 
 func AzureGovernment() *Cloud {
 	return &Cloud{
-		Configuration:         cloud.AzureGovernment,
-		PortalUrlBase:         "https://portal.azure.us",
-		StorageEndpointSuffix: "core.usgovcloudapi.net",
+		Configuration: cloud.AzureGovernment,
+		PortalUrlBase: "https://portal.azure.us",
 	}
 }
 
 func AzureChina() *Cloud {
 	return &Cloud{
-		Configuration:         cloud.AzureChina,
-		PortalUrlBase:         "https://portal.azure.cn",
-		StorageEndpointSuffix: "core.chinacloudapi.cn",
+		Configuration: cloud.AzureChina,
+		PortalUrlBase: "https://portal.azure.cn",
 	}
 }
 

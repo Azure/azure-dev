@@ -146,6 +146,7 @@ func createAzureRMServiceEndPointArgs(
 ) (serviceendpoint.CreateServiceEndpointArgs, error) {
 	endpointType := "azurerm"
 	endpointOwner := "library"
+	// TODO: This should probably be populated by the cloud config
 	endpointUrl := "https://management.azure.com/"
 	endpointName := ServiceConnectionName
 	endpointIsShared := false

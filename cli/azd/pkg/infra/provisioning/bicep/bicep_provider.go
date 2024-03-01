@@ -79,6 +79,8 @@ type BicepProvider struct {
 	// prevent resolving parameters multiple times in the same azd run.
 	ensureParamsInMemoryCache azure.ArmParameters
 	keyvaultService           keyvault.KeyVaultService
+
+	portalUrlBase string
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -337,6 +339,7 @@ func (p *BicepProvider) createDeploymentFromArmDeployment(
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 			deploymentName,
+			p.portalUrlBase,
 		), nil
 	case *infra.SubscriptionScope:
 		return infra.NewSubscriptionDeployment(
@@ -416,6 +419,7 @@ func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 			deploymentNameForEnv(p.env.Name(), p.clock),
+			p.portalUrlBase,
 		), nil
 	}
 	return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
@@ -1120,15 +1124,16 @@ func (p *BicepProvider) getAllResourcesToDelete(
 	return allResources, nil
 }
 
-func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliResource, subId string) []string {
+func (p *BicepProvider) generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliResource) []string {
 	lines := []string{"Resource group(s) to be deleted:", ""}
 
 	for rg := range groupedResources {
 		lines = append(lines, fmt.Sprintf(
 			"  • %s: %s",
 			rg,
-			output.WithLinkFormat("https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-				subId,
+			output.WithLinkFormat("%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+				p.portalUrlBase,
+				p.env.GetSubscriptionId(),
 				rg,
 			),
 		))
@@ -1145,7 +1150,7 @@ func (p *BicepProvider) destroyResourceGroups(
 ) error {
 	if !options.Force() {
 		p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-			Lines: generateResourceGroupsToDelete(groupedResources, p.env.GetSubscriptionId())},
+			Lines: p.generateResourceGroupsToDelete(groupedResources)},
 		)
 		confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
@@ -2092,6 +2097,7 @@ func NewBicepProvider(
 	alphaFeatureManager *alpha.FeatureManager,
 	clock clock.Clock,
 	keyvaultService keyvault.KeyVaultService,
+	portalUrlBase string,
 ) Provider {
 	return &BicepProvider{
 		envManager:           envManager,
@@ -2106,5 +2112,6 @@ func NewBicepProvider(
 		alphaFeatureManager:  alphaFeatureManager,
 		clock:                clock,
 		keyvaultService:      keyvaultService,
+		portalUrlBase:        portalUrlBase,
 	}
 }

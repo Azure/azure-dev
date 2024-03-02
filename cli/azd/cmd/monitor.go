@@ -146,12 +146,12 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("%s/%s%s/quickPulse", m.portalUrlBase, tenantId, insightsResource.Id))
+				fmt.Sprintf("%s/#@%s/resource%s/quickPulse", m.portalUrlBase, tenantId, insightsResource.Id))
 		}
 
 		if m.flags.monitorLogs {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("%s/%s%s/logs", m.portalUrlBase, tenantId, insightsResource.Id))
+				fmt.Sprintf("%s/#@%s/resource%s/logs", m.portalUrlBase, tenantId, insightsResource.Id))
 		}
 	}
 

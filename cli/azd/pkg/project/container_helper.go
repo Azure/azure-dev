@@ -172,7 +172,7 @@ func (ch *ContainerHelper) Login(
 	ctx context.Context,
 	component *ComponentConfig,
 ) (string, error) {
-	loginServer, err := ch.RegistryName(ctx, component)
+	registryName, err := ch.RegistryName(ctx, component)
 	if err != nil {
 		return "", err
 	}
@@ -273,7 +273,7 @@ func (ch *ContainerHelper) Deploy(
 					log.Printf("logging into container registry '%s'\n", registryName)
 					task.SetProgress(NewServiceProgress("Logging into container registry"))
 
-					_, err = ch.Login(ctx, serviceConfig)
+					_, err = ch.Login(ctx, component)
 					if err != nil {
 						task.SetError(err)
 						return

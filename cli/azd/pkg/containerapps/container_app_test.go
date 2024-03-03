@@ -138,13 +138,30 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 	)
-	err := cas.AddRevision(
+
+	myApp, err := cas.Get(*mockContext.Context, subscriptionId, resourceGroup, appName)
+	require.NoError(t, err)
+	require.NotNil(t, myApp)
+
+	latestRevision, err := cas.GetRevision(
+		*mockContext.Context,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		*myApp.Properties.LatestRevisionName,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, latestRevision)
+
+	latestRevision.Properties.Template.Containers[0].Image = &updatedImageName
+
+	err = cas.AddRevision(
 		*mockContext.Context,
 		subscriptionId,
 		resourceGroup,
 		appName,
 		containerApp,
-		revision,
+		latestRevision,
 	)
 	require.NoError(t, err)
 

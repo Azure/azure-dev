@@ -46,10 +46,10 @@ func Test_MavenProject(t *testing.T) {
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
-		err = mavenProject.Initialize(*mockContext.Context, &serviceConfig.ComponentConfig)
+		err = mavenProject.Initialize(*mockContext.Context, serviceConfig.ComponentConfig)
 		require.NoError(t, err)
 
-		restoreTask := mavenProject.Restore(*mockContext.Context, &serviceConfig.ComponentConfig)
+		restoreTask := mavenProject.Restore(*mockContext.Context, serviceConfig.ComponentConfig)
 		logProgress(restoreTask)
 
 		result, err := restoreTask.Await()
@@ -82,10 +82,10 @@ func Test_MavenProject(t *testing.T) {
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
-		err = mavenProject.Initialize(*mockContext.Context, &serviceConfig.ComponentConfig)
+		err = mavenProject.Initialize(*mockContext.Context, serviceConfig.ComponentConfig)
 		require.NoError(t, err)
 
-		buildTask := mavenProject.Build(*mockContext.Context, &serviceConfig.ComponentConfig, nil)
+		buildTask := mavenProject.Build(*mockContext.Context, serviceConfig.ComponentConfig, nil)
 		logProgress(buildTask)
 
 		result, err := buildTask.Await()
@@ -124,12 +124,12 @@ func Test_MavenProject(t *testing.T) {
 		require.NoError(t, err)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
-		err = mavenProject.Initialize(*mockContext.Context, &serviceConfig.ComponentConfig)
+		err = mavenProject.Initialize(*mockContext.Context, serviceConfig.ComponentConfig)
 		require.NoError(t, err)
 
 		packageTask := mavenProject.Package(
 			*mockContext.Context,
-			&serviceConfig.ComponentConfig,
+			serviceConfig.ComponentConfig,
 			&ServiceBuildResult{
 				BuildOutputPath: serviceConfig.Path(),
 			},
@@ -165,7 +165,7 @@ func Test_MavenProject_Package(t *testing.T) {
 			"Default",
 			args{
 				&ServiceConfig{
-					ComponentConfig: ComponentConfig{
+					ComponentConfig: &ComponentConfig{
 						Project:      &ProjectConfig{},
 						Name:         "api",
 						RelativePath: "src/api",
@@ -181,7 +181,7 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"SpecifyOutputDir",
 			args{&ServiceConfig{
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Project:      &ProjectConfig{},
 					Name:         "api",
 					RelativePath: "src/api",
@@ -198,7 +198,7 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"SpecifyOutputFile",
 			args{&ServiceConfig{
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Project:      &ProjectConfig{},
 					Name:         "api",
 					RelativePath: "src/api",
@@ -215,7 +215,7 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"ErrNoArchive",
 			args{&ServiceConfig{
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Project:      &ProjectConfig{},
 					Name:         "api",
 					RelativePath: "src/api",
@@ -231,7 +231,7 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"ErrMultipleArchives",
 			args{&ServiceConfig{
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Project:      &ProjectConfig{},
 					Name:         "api",
 					RelativePath: "src/api",
@@ -296,12 +296,12 @@ func Test_MavenProject_Package(t *testing.T) {
 			javaCli := javac.NewCli(mockContext.CommandRunner)
 			mavenProject := NewMavenProject(env, mavenCli, javaCli)
 			svc := tt.args.svc
-			err = mavenProject.Initialize(*mockContext.Context, &svc.ComponentConfig)
+			err = mavenProject.Initialize(*mockContext.Context, svc.ComponentConfig)
 			require.NoError(t, err)
 
 			packageTask := mavenProject.Package(
 				*mockContext.Context,
-				&svc.ComponentConfig,
+				svc.ComponentConfig,
 				&ServiceBuildResult{},
 			)
 			logProgress(packageTask)

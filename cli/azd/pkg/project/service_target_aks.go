@@ -188,7 +188,7 @@ func (t *aksTarget) Deploy(
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(rootTask *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+			if err := t.validateTargetResource(targetResource); err != nil {
 				rootTask.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
@@ -204,13 +204,13 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			// Only deploy the container image if a package output has been defined
-			// Empty package details is a valid scenario for any AKS deployment that does not build any containers
-			// Ex) Helm charts, or other manifests that reference external images
-			if packageOutput.Details != nil || packageOutput.PackagePath != "" {
-				for key, component := range serviceConfig.Components {
-					componentOutput := componentPackageResults[key]
+			for key, component := range serviceConfig.Components {
+				componentOutput := componentPackageResults[key]
 
+				// Only deploy the container image if a package output has been defined
+				// Empty package details is a valid scenario for any AKS deployment that does not build any containers
+				// Ex) Helm charts, or other manifests that reference external images
+				if componentOutput.Details != nil || componentOutput.PackagePath != "" {
 					// Login, tag & push container image to ACR
 					containerDeployTask := t.containerHelper.Deploy(ctx, component, componentOutput, targetResource, true)
 					syncProgress(rootTask, containerDeployTask.Progress())
@@ -256,13 +256,13 @@ func (t *aksTarget) Deploy(
 			deployed = deployed || kustomizeDeployed
 
 			// Vanilla k8s manifests with minimal templating support
-			deployment, err := t.deployManifests(ctx, serviceConfig, rootTask)
+			deployments, err := t.deployManifests(ctx, serviceConfig, rootTask)
 			if err != nil && !os.IsNotExist(err) {
 				rootTask.SetError(err)
 				return
 			}
 
-			deployed = deployed || deployment != nil
+			deployed = deployed || len(deployments) > 0
 
 			if !deployed {
 				rootTask.SetError(errors.New("no deployment manifests found"))
@@ -296,7 +296,7 @@ func (t *aksTarget) Deploy(
 					targetResource.ResourceName(),
 				),
 				Kind:      AksTarget,
-				Details:   deployment,
+				Details:   deployments,
 				Endpoints: endpoints,
 			})
 		})
@@ -307,7 +307,7 @@ func (t *aksTarget) deployManifests(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
-) (*kubectl.Deployment, error) {
+) ([]*kubectl.Deployment, error) {
 	deploymentPath := serviceConfig.K8s.DeploymentPath
 	if deploymentPath == "" {
 		deploymentPath = defaultDeploymentPath
@@ -338,12 +338,12 @@ func (t *aksTarget) deployManifests(
 	// It is not a requirement for a AZD deploy to contain a deployment object
 	// If we don't find any deployment within the namespace we will continue
 	task.SetProgress(NewServiceProgress("Verifying deployment"))
-	deployment, err := t.waitForDeployment(ctx, deploymentName)
+	deployments, err := t.waitForDeployments(ctx, deploymentName)
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 		return nil, err
 	}
 
-	return deployment, nil
+	return deployments, nil
 }
 
 // deployKustomize deploys kustomize manifests to the k8s cluster
@@ -510,7 +510,7 @@ func (t *aksTarget) Endpoints(
 
 	// Find endpoints for any matching services
 	// These endpoints would typically be internal cluster accessible endpoints
-	serviceEndpoints, err := t.getServiceEndpoints(ctx, serviceConfig, serviceName)
+	serviceEndpoints, err := t.getServiceEndpoints(ctx, serviceName)
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 		return nil, fmt.Errorf("failed retrieving service endpoints, %w", err)
 	}
@@ -528,8 +528,6 @@ func (t *aksTarget) Endpoints(
 }
 
 func (t *aksTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if targetResource.ResourceGroupName() == "" {
@@ -671,13 +669,13 @@ func (t *aksTarget) ensureNamespace(ctx context.Context, namespace string) error
 // Finds a deployment using the specified deploymentNameFilter string
 // Waits until the deployment rollout is complete and all replicas are accessible
 // Additionally confirms rollout is complete by checking the rollout status
-func (t *aksTarget) waitForDeployment(
+func (t *aksTarget) waitForDeployments(
 	ctx context.Context,
 	deploymentNameFilter string,
-) (*kubectl.Deployment, error) {
+) ([]*kubectl.Deployment, error) {
 	// The deployment can appear like it has succeeded when a previous deployment
 	// was already in place.
-	deployment, err := kubectl.WaitForResource(
+	deployments, err := kubectl.WaitForResources(
 		ctx, t.kubectl, kubectl.ResourceTypeDeployment,
 		func(deployment *kubectl.Deployment) bool {
 			return strings.Contains(deployment.Metadata.Name, deploymentNameFilter)
@@ -691,23 +689,25 @@ func (t *aksTarget) waitForDeployment(
 		return nil, err
 	}
 
-	// Check the rollout status
-	// This can be a long operation when the deployment is in a failed state such as an ImagePullBackOff loop
-	_, err = t.kubectl.RolloutStatus(ctx, deployment.Metadata.Name, nil)
-	if err != nil {
-		return nil, err
+	for _, deployment := range deployments {
+		// Check the rollout status
+		// This can be a long operation when the deployment is in a failed state such as an ImagePullBackOff loop
+		_, err = t.kubectl.RolloutStatus(ctx, deployment.Metadata.Name, nil)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return deployment, nil
+	return deployments, nil
 }
 
 // Finds an ingress using the specified ingressNameFilter string
 // Waits until the ingress LoadBalancer has assigned a valid IP address
-func (t *aksTarget) waitForIngress(
+func (t *aksTarget) waitForIngresses(
 	ctx context.Context,
 	ingressNameFilter string,
-) (*kubectl.Ingress, error) {
-	return kubectl.WaitForResource(
+) ([]*kubectl.Ingress, error) {
+	return kubectl.WaitForResources(
 		ctx, t.kubectl, kubectl.ResourceTypeIngress,
 		func(ingress *kubectl.Ingress) bool {
 			return strings.Contains(ingress.Metadata.Name, ingressNameFilter)
@@ -726,11 +726,11 @@ func (t *aksTarget) waitForIngress(
 
 // Finds a service using the specified serviceNameFilter string
 // Waits until the service is available
-func (t *aksTarget) waitForService(
+func (t *aksTarget) waitForServices(
 	ctx context.Context,
 	serviceNameFilter string,
-) (*kubectl.Service, error) {
-	return kubectl.WaitForResource(
+) ([]*kubectl.Service, error) {
+	return kubectl.WaitForResources(
 		ctx, t.kubectl, kubectl.ResourceTypeService,
 		func(service *kubectl.Service) bool {
 			return strings.Contains(service.Metadata.Name, serviceNameFilter)
@@ -759,32 +759,34 @@ func (t *aksTarget) waitForService(
 // Supports service types for LoadBalancer and ClusterIP
 func (t *aksTarget) getServiceEndpoints(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	serviceNameFilter string,
 ) ([]string, error) {
-	service, err := t.waitForService(ctx, serviceNameFilter)
+	services, err := t.waitForServices(ctx, serviceNameFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	var endpoints []string
-	if service.Spec.Type == kubectl.ServiceTypeLoadBalancer {
-		for _, resource := range service.Status.LoadBalancer.Ingress {
-			endpoints = append(
-				endpoints,
-				fmt.Sprintf("http://%s, (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
-			)
-		}
-	} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
-		for index, ip := range service.Spec.ClusterIps {
-			endpoints = append(
-				endpoints,
-				fmt.Sprintf("http://%s:%d, (Service: %s, Type: ClusterIP)",
-					ip,
-					service.Spec.Ports[index].Port,
-					service.Metadata.Name,
-				),
-			)
+	endpoints := []string{}
+
+	for _, service := range services {
+		if service.Spec.Type == kubectl.ServiceTypeLoadBalancer {
+			for _, resource := range service.Status.LoadBalancer.Ingress {
+				endpoints = append(
+					endpoints,
+					fmt.Sprintf("http://%s, (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
+				)
+			}
+		} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
+			for index, ip := range service.Spec.ClusterIps {
+				endpoints = append(
+					endpoints,
+					fmt.Sprintf("http://%s:%d, (Service: %s, Type: ClusterIP)",
+						ip,
+						service.Spec.Ports[index].Port,
+						service.Metadata.Name,
+					),
+				)
+			}
 		}
 	}
 
@@ -798,33 +800,36 @@ func (t *aksTarget) getIngressEndpoints(
 	serviceConfig *ServiceConfig,
 	resourceFilter string,
 ) ([]string, error) {
-	ingress, err := t.waitForIngress(ctx, resourceFilter)
+	ingresses, err := t.waitForIngresses(ctx, resourceFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	var endpoints []string
-	var protocol string
-	if len(ingress.Spec.Tls) == 0 {
-		protocol = "http"
-	} else {
-		protocol = "https"
-	}
+	endpoints := []string{}
 
-	for index, resource := range ingress.Status.LoadBalancer.Ingress {
-		var baseUrl string
-		if ingress.Spec.Rules[index].Host == nil {
-			baseUrl = fmt.Sprintf("%s://%s", protocol, resource.Ip)
+	for _, ingress := range ingresses {
+		var protocol string
+		if len(ingress.Spec.Tls) == 0 {
+			protocol = "http"
 		} else {
-			baseUrl = fmt.Sprintf("%s://%s", protocol, *ingress.Spec.Rules[index].Host)
+			protocol = "https"
 		}
 
-		endpointUrl, err := url.JoinPath(baseUrl, serviceConfig.K8s.Ingress.RelativePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed constructing service endpoints, %w", err)
-		}
+		for index, resource := range ingress.Status.LoadBalancer.Ingress {
+			var baseUrl string
+			if ingress.Spec.Rules[index].Host == nil {
+				baseUrl = fmt.Sprintf("%s://%s", protocol, resource.Ip)
+			} else {
+				baseUrl = fmt.Sprintf("%s://%s", protocol, *ingress.Spec.Rules[index].Host)
+			}
 
-		endpoints = append(endpoints, fmt.Sprintf("%s, (Ingress, Type: LoadBalancer)", endpointUrl))
+			endpointUrl, err := url.JoinPath(baseUrl, serviceConfig.K8s.Ingress.RelativePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed constructing service endpoints, %w", err)
+			}
+
+			endpoints = append(endpoints, fmt.Sprintf("%s, (Ingress, Type: LoadBalancer)", endpointUrl))
+		}
 	}
 
 	return endpoints, nil

@@ -97,15 +97,14 @@ func GetResources[T any](
 
 type ResourceFilterFn[T comparable] func(resource T) bool
 
-func WaitForResource[T comparable](
+func WaitForResources[T comparable](
 	ctx context.Context,
 	cli KubectlCli,
 	resourceType ResourceType,
 	resourceFilter ResourceFilterFn[T],
 	readyStatusFilter ResourceFilterFn[T],
-) (T, error) {
-	var resource T
-	var zero T
+) ([]T, error) {
+	resources := []T{}
 	err := retry.Do(
 		ctx,
 		retry.WithMaxDuration(time.Minute*10, retry.NewConstant(time.Second*10)),
@@ -118,17 +117,18 @@ func WaitForResource[T comparable](
 
 			for _, r := range result.Items {
 				if resourceFilter(r) {
-					resource = r
-					break
+					if !readyStatusFilter(r) {
+						return retry.RetryableError(
+							fmt.Errorf("resource '%s' is not ready, %w", resourceType, ErrResourceNotReady),
+						)
+					}
+
+					resources = append(resources, r)
 				}
 			}
 
-			if resource == zero {
-				return fmt.Errorf("cannot find resource for '%s', %w", resourceType, ErrResourceNotFound)
-			}
-
-			if !readyStatusFilter(resource) {
-				return retry.RetryableError(fmt.Errorf("resource '%s' is not ready, %w", resourceType, ErrResourceNotReady))
+			if len(resources) == 0 {
+				return fmt.Errorf("cannot find resource(s) for '%s', %w", resourceType, ErrResourceNotFound)
 			}
 
 			return nil
@@ -136,8 +136,8 @@ func WaitForResource[T comparable](
 	)
 
 	if err != nil {
-		return zero, fmt.Errorf("failed waiting for resource, %w", err)
+		return nil, fmt.Errorf("failed waiting for resource, %w", err)
 	}
 
-	return resource, nil
+	return resources, nil
 }

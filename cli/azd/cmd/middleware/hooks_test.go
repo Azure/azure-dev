@@ -226,7 +226,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 	}
 
 	serviceConfig := &project.ServiceConfig{
-		ComponentConfig: project.ComponentConfig{
+		ComponentConfig: &project.ComponentConfig{
 
 			Language:     "ts",
 			RelativePath: "./src/api",

@@ -120,9 +120,13 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 		serviceConfig,
 		&ServicePackageResult{
 			PackagePath: "test-app/api-test:azd-deploy-0",
-			Details: &dockerPackageResult{
-				ImageHash:   "IMAGE_HASH",
-				TargetImage: "test-app/api-test:azd-deploy-0",
+			Details: map[string]*ServicePackageResult{
+				"main": {
+					Details: &dockerPackageResult{
+						ImageHash:   "IMAGE_HASH",
+						TargetImage: "test-app/api-test:azd-deploy-0",
+					},
+				},
 			},
 		},
 	)
@@ -131,7 +135,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+	require.Len(t, packageResult.Details, 1)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
 	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
@@ -141,7 +145,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
 	require.Equal(t, AksTarget, deployResult.Kind)
-	require.IsType(t, new(kubectl.Deployment), deployResult.Details)
+	require.IsType(t, []*kubectl.Deployment{}, deployResult.Details)
 	require.Greater(t, len(deployResult.Endpoints), 0)
 	// New env variable is created
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
@@ -283,7 +287,12 @@ func Test_Deploy_Helm(t *testing.T) {
 	require.NoError(t, err)
 
 	packageResult := &ServicePackageResult{
-		PackagePath: "",
+		PackagePath: "test-app/api-test:azd-deploy-0",
+		Details: map[string]*ServicePackageResult{
+			"main": {
+				PackagePath: "",
+			},
+		},
 	}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
@@ -345,7 +354,12 @@ func Test_Deploy_Kustomize(t *testing.T) {
 	require.NoError(t, err)
 
 	packageResult := &ServicePackageResult{
-		PackagePath: "",
+		PackagePath: "test-app/api-test:azd-deploy-0",
+		Details: map[string]*ServicePackageResult{
+			"main": {
+				PackagePath: "",
+			},
+		},
 	}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))

@@ -45,7 +45,7 @@ func TestImportManagerHasService(t *testing.T) {
 	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Name:     "test",
 					Language: ServiceLanguageJava,
 				},
@@ -59,7 +59,7 @@ func TestImportManagerHasService(t *testing.T) {
 	r, e = manager.HasService(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Name:     "test",
 					Language: ServiceLanguageJava,
 				},
@@ -102,7 +102,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 		Path: "path",
 		Services: map[string]*ServiceConfig{
 			"test": {
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Name:         "test",
 					Language:     ServiceLanguageDotNet,
 					RelativePath: "path",
@@ -112,7 +112,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 				},
 			},
 			"foo": {
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Name:         "foo",
 					Language:     ServiceLanguageDotNet,
 					RelativePath: "path2",
@@ -159,7 +159,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 		Path: "path",
 		Services: map[string]*ServiceConfig{
 			"test": {
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Name:         "test",
 					Language:     ServiceLanguageDotNet,
 					Host:         StaticWebAppTarget,
@@ -341,7 +341,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Name:         "test",
 					Language:     ServiceLanguageDotNet,
 					Host:         ContainerAppTarget,
@@ -371,7 +371,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	_, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
-				ComponentConfig: ComponentConfig{
+				ComponentConfig: &ComponentConfig{
 					Name:         "test",
 					Language:     ServiceLanguageDotNet,
 					Host:         ContainerAppTarget,

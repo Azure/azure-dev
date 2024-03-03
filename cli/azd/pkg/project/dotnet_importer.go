@@ -171,7 +171,7 @@ func (ai *DotNetImporter) Services(
 
 		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
 		svc := &ServiceConfig{
-			ComponentConfig: ComponentConfig{
+			ComponentConfig: &ComponentConfig{
 				RelativePath: relPath,
 				Language:     ServiceLanguageDotNet,
 				Host:         DotNetContainerAppTarget,
@@ -200,7 +200,7 @@ func (ai *DotNetImporter) Services(
 
 		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
 		svc := &ServiceConfig{
-			ComponentConfig: ComponentConfig{
+			ComponentConfig: &ComponentConfig{
 				RelativePath: relPath,
 				Language:     ServiceLanguageDocker,
 				Host:         DotNetContainerAppTarget,

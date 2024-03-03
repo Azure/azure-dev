@@ -28,7 +28,7 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	projectName := "my-app"
 	serviceName := "web"
 	serviceConfig := &ServiceConfig{
-		ComponentConfig: ComponentConfig{
+		ComponentConfig: &ComponentConfig{
 			Name: serviceName,
 			Host: "containerapp",
 			Project: &ProjectConfig{
@@ -62,7 +62,7 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 			containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil)
 			serviceConfig.Docker = tt.dockerConfig
 
-			tag, err := containerHelper.LocalImageTag(*mockContext.Context, &serviceConfig.ComponentConfig)
+			tag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig.ComponentConfig)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, tag)
 		})
@@ -117,7 +117,7 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 
 			remoteTag, err := containerHelper.RemoteImageTag(
 				*mockContext.Context,
-				&serviceConfig.ComponentConfig,
+				serviceConfig.ComponentConfig,
 				tt.localImageTag,
 			)
 
@@ -141,7 +141,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		registryName, err := containerHelper.RegistryName(*mockContext.Context, &serviceConfig.ComponentConfig)
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig.ComponentConfig)
 
 		require.NoError(t, err)
 		require.Equal(t, "contoso.azurecr.io", registryName)
@@ -154,7 +154,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
-		registryName, err := containerHelper.RegistryName(*mockContext.Context, &serviceConfig.ComponentConfig)
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig.ComponentConfig)
 
 		require.NoError(t, err)
 		require.Equal(t, "contoso.azurecr.io", registryName)
@@ -168,7 +168,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		serviceConfig.Docker.Registry = osutil.NewExpandableString("${MY_CUSTOM_REGISTRY}")
-		registryName, err := containerHelper.RegistryName(*mockContext.Context, &serviceConfig.ComponentConfig)
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig.ComponentConfig)
 
 		require.NoError(t, err)
 		require.Equal(t, "custom.azurecr.io", registryName)
@@ -180,7 +180,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		registryName, err := containerHelper.RegistryName(*mockContext.Context, &serviceConfig.ComponentConfig)
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig.ComponentConfig)
 
 		require.Error(t, err)
 		require.Empty(t, registryName)
@@ -355,7 +355,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 
 			deployTask := containerHelper.Deploy(
 				*mockContext.Context,
-				&serviceConfig.ComponentConfig,
+				serviceConfig.ComponentConfig,
 				packageOutput,
 				targetResource,
 				true,
@@ -525,7 +525,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 				env.DotenvSet(k, v)
 			}
 
-			image, err := containerHelper.GeneratedImage(*mockContext.Context, &serviceConfig.ComponentConfig)
+			image, err := containerHelper.GeneratedImage(*mockContext.Context, serviceConfig.ComponentConfig)
 
 			if tt.expectError {
 				require.Error(t, err)

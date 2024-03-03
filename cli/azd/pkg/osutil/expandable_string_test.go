@@ -16,7 +16,7 @@ func TestExpandableStringYaml(t *testing.T) {
 	err := yaml.Unmarshal([]byte(`"${foo}"`), &e)
 	assert.NoError(t, err)
 
-	assert.Equal(t, "${foo}", e.template)
+	assert.Equal(t, "${foo}", e.Template)
 
 	marshalled, err := yaml.Marshal(e)
 	assert.NoError(t, err)
@@ -25,22 +25,36 @@ func TestExpandableStringYaml(t *testing.T) {
 }
 
 func TestNestedObjectYaml(t *testing.T) {
-	c := Custom{
-		A: &ExpandableString{
-			template: "${foo}",
-		},
-		B: &ExpandableString{
-			template: "${bar}",
-		},
-	}
+	expected := "a: ${foo}\nb: ${bar}\n"
 
-	marshalled, err := yaml.Marshal(c)
+	var custom *Custom
+	err := yaml.Unmarshal([]byte(expected), &custom)
+	assert.NoError(t, err)
+	assert.Equal(t, "${foo}", custom.A.Template)
+	assert.Equal(t, "${bar}", custom.B.Template)
+
+	marshalled, err := yaml.Marshal(custom)
 	assert.NoError(t, err)
 
-	assert.Equal(t, "a: ${foo}\nb: ${bar}\n", string(marshalled))
+	assert.Equal(t, expected, string(marshalled))
+}
+
+func TestNestedObjectWithEmpty(t *testing.T) {
+	expected := "{}\n"
+
+	var custom *Custom
+	err := yaml.Unmarshal([]byte(expected), &custom)
+	assert.NoError(t, err)
+	assert.NotNil(t, custom.A)
+	assert.NotNil(t, custom.B)
+
+	marshalled, err := yaml.Marshal(custom)
+	assert.NoError(t, err)
+
+	assert.Equal(t, expected, string(marshalled))
 }
 
 type Custom struct {
-	A *ExpandableString `yaml:"a,omitempty"`
-	B *ExpandableString `yaml:"b,omitempty"`
+	A ExpandableString `yaml:"a,omitempty"`
+	B ExpandableString `yaml:"b,omitempty"`
 }

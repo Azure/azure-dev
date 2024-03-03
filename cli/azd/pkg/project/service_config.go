@@ -11,7 +11,7 @@ import (
 const defaultComponentName = "main"
 
 type ServiceConfig struct {
-	ComponentConfig `yaml:",inline"`
+	*ComponentConfig `yaml:",inline"`
 
 	// The name used to override the default azure resource name
 	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
@@ -83,7 +83,7 @@ func (sc *ServiceConfig) MarshalYAML() (interface{}, error) {
 	// If there is only a single container and it maps to our "default" convention,
 	// then we can promote the container to the service level
 	if _, has := svc.Components[defaultComponentName]; has && len(svc.Components) == 1 {
-		svc.ComponentConfig = *svc.Components[defaultComponentName]
+		svc.ComponentConfig = svc.Components[defaultComponentName]
 		svc.Components = nil
 	} else {
 		// Host can be ignored
@@ -105,7 +105,7 @@ func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 	if len(svc.Components) == 0 {
 		svc.Components = map[string]*ComponentConfig{
-			defaultComponentName: &svc.ComponentConfig,
+			defaultComponentName: svc.ComponentConfig,
 		}
 	}
 

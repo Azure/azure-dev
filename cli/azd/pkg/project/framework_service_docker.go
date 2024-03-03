@@ -49,12 +49,11 @@ type dockerBuildResult struct {
 }
 
 func (dbr *dockerBuildResult) ToString(currentIndentation string) string {
-	lines := []string{
-		fmt.Sprintf("%s- Image ID: %s", currentIndentation, output.WithLinkFormat(dbr.ImageId)),
-		fmt.Sprintf("%s- Image Name: %s", currentIndentation, output.WithLinkFormat(dbr.ImageName)),
-	}
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("%s- Image Hash: %s\n", currentIndentation, output.WithLinkFormat(dbr.ImageId)))
+	builder.WriteString(fmt.Sprintf("%s- Image Name: %s\n", currentIndentation, output.WithLinkFormat(dbr.ImageName)))
 
-	return strings.Join(lines, "\n")
+	return builder.String()
 }
 
 func (dbr *dockerBuildResult) MarshalJSON() ([]byte, error) {

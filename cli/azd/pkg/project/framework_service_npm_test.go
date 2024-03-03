@@ -34,7 +34,7 @@ func Test_NpmProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
-	restoreTask := npmProject.Restore(*mockContext.Context, &serviceConfig.ComponentConfig)
+	restoreTask := npmProject.Restore(*mockContext.Context, serviceConfig.ComponentConfig)
 	logProgress(restoreTask)
 
 	result, err := restoreTask.Await()
@@ -66,7 +66,7 @@ func Test_NpmProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
-	buildTask := npmProject.Build(*mockContext.Context, &serviceConfig.ComponentConfig, nil)
+	buildTask := npmProject.Build(*mockContext.Context, serviceConfig.ComponentConfig, nil)
 	logProgress(buildTask)
 
 	result, err := buildTask.Await()
@@ -106,7 +106,7 @@ func Test_NpmProject_Package(t *testing.T) {
 	npmProject := NewNpmProject(npmCli, env)
 	packageTask := npmProject.Package(
 		*mockContext.Context,
-		&serviceConfig.ComponentConfig,
+		serviceConfig.ComponentConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},

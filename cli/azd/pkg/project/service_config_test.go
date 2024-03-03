@@ -295,7 +295,7 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 				Services: map[string]*ServiceConfig{
 					"api": {
 						Components: map[string]*ComponentConfig{
-							"default": {
+							defaultComponentName: {
 								Host:         AksTarget,
 								Language:     ServiceLanguageJavaScript,
 								RelativePath: "./src/api",
@@ -311,7 +311,7 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 				Name: "test-proj",
 				Services: map[string]*ServiceConfig{
 					"todo": {
-						ComponentConfig: ComponentConfig{
+						ComponentConfig: &ComponentConfig{
 							Host: AksTarget,
 						},
 						Components: map[string]*ComponentConfig{
@@ -334,7 +334,7 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 				Name: "test-proj",
 				Services: map[string]*ServiceConfig{
 					"todo": {
-						ComponentConfig: ComponentConfig{
+						ComponentConfig: &ComponentConfig{
 							Host: AksTarget,
 						},
 						Components: map[string]*ComponentConfig{
@@ -353,7 +353,7 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 				Name: "test-proj",
 				Services: map[string]*ServiceConfig{
 					"todo": {
-						ComponentConfig: ComponentConfig{
+						ComponentConfig: &ComponentConfig{
 							Host: ContainerAppTarget,
 						},
 						Components: map[string]*ComponentConfig{
@@ -382,30 +382,35 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 			outputYaml, err := yaml.Marshal(test.config)
 			require.NoError(t, err)
 			require.NotEmpty(t, string(outputYaml))
-
 			snapshot.SnapshotT(t, string(outputYaml))
-
-			//expectedYaml := strings.ReplaceAll(test.expectedYaml, "\t", "    ")
-			//require.Equal(t, expectedYaml, string(outputYaml))
 		})
 	}
 }
 
 func createTestServiceConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {
-	return &ServiceConfig{
-		ComponentConfig: ComponentConfig{
-			Name:         "api",
-			Host:         host,
-			Language:     language,
-			RelativePath: filepath.Join(path),
-			Project: &ProjectConfig{
-				Name:            "Test-App",
-				Path:            ".",
-				EventDispatcher: ext.NewEventDispatcher[ProjectLifecycleEventArgs](),
-			},
-		},
-		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+	projectConfig := &ProjectConfig{
+		Name:            "Test-App",
+		Path:            ".",
+		EventDispatcher: ext.NewEventDispatcher[ProjectLifecycleEventArgs](),
 	}
+
+	componentConfig := &ComponentConfig{
+		Name:         "api",
+		Host:         host,
+		Language:     language,
+		RelativePath: filepath.Join(path),
+		Project:      projectConfig,
+	}
+
+	serviceConfig := &ServiceConfig{
+		ComponentConfig: componentConfig,
+		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+		Components:      map[string]*ComponentConfig{defaultComponentName: componentConfig},
+	}
+
+	serviceConfig.ComponentConfig.Service = serviceConfig
+
+	return serviceConfig
 }
 
 func Test_Parent_Child(t *testing.T) {

@@ -59,7 +59,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	restoreTask := pythonProject.Restore(*mockContext.Context, &serviceConfig.ComponentConfig)
+	restoreTask := pythonProject.Restore(*mockContext.Context, serviceConfig.ComponentConfig)
 	logProgress(restoreTask)
 
 	result, err := restoreTask.Await()
@@ -93,7 +93,7 @@ func Test_PythonProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	buildTask := pythonProject.Build(*mockContext.Context, &serviceConfig.ComponentConfig, nil)
+	buildTask := pythonProject.Build(*mockContext.Context, serviceConfig.ComponentConfig, nil)
 	logProgress(buildTask)
 
 	result, err := buildTask.Await()
@@ -117,7 +117,7 @@ func Test_PythonProject_Package(t *testing.T) {
 	pythonProject := NewPythonProject(pythonCli, env)
 	packageTask := pythonProject.Package(
 		*mockContext.Context,
-		&serviceConfig.ComponentConfig,
+		serviceConfig.ComponentConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},

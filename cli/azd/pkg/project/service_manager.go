@@ -201,7 +201,7 @@ func (sm *serviceManager) Restore(
 			ServiceEventRestore,
 			serviceConfig,
 			func() *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-				return async.RunTaskWithProgress[*ServiceRestoreResult, ServiceProgress](
+				return async.RunTaskWithProgress(
 					func(componentTask *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
 						componentResults := map[string]*ServiceRestoreResult{}
 
@@ -213,7 +213,7 @@ func (sm *serviceManager) Restore(
 							}
 
 							restoreTask := frameworkService.Restore(ctx, component)
-							syncProgress(rootTask, restoreTask.Progress())
+							syncProgress(componentTask, restoreTask.Progress())
 							restoreResult, err := restoreTask.Await()
 							if err != nil {
 								componentTask.SetError(err)
@@ -268,7 +268,7 @@ func (sm *serviceManager) Build(
 			ServiceEventBuild,
 			component,
 			func() *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-				return async.RunTaskWithProgress[*ServiceBuildResult, ServiceProgress](
+				return async.RunTaskWithProgress(
 					func(componentTask *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 						componentResults := map[string]*ServiceBuildResult{}
 
@@ -280,7 +280,7 @@ func (sm *serviceManager) Build(
 							}
 
 							buildTask := frameworkService.Build(ctx, component, restoreOutput)
-							syncProgress(rootTask, buildTask.Progress())
+							syncProgress(componentTask, buildTask.Progress())
 							restoreResult, err := buildTask.Await()
 							if err != nil {
 								componentTask.SetError(err)
@@ -697,7 +697,7 @@ func runCommand[T comparable, P comparable](
 
 	err := serviceConfig.Invoke(ctx, eventName, eventArgs, func() error {
 		serviceTask := taskFunc()
-		go syncProgress(task, serviceTask.Progress())
+		syncProgress(task, serviceTask.Progress())
 
 		taskResult, err := serviceTask.Await()
 		if err != nil {

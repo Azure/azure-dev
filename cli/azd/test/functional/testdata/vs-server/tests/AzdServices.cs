@@ -87,7 +87,7 @@ public class ProgressMessage
     public string Code;
     public string AdditionalInfoLink;
 
-    public override string ToString() => $"{Time}: {Severity} {Message}";
+    public override string ToString() => $"{Time}: {Kind} : {Severity} {Message}";
 }
 
 public enum MessageSeverity

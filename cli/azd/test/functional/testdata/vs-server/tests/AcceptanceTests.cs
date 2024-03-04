@@ -129,6 +129,16 @@ public class AcceptanceTests : TestBase
         var recorder = new Recorder<ProgressMessage>();
         var envResult = await esSvc.DeployAsync(session, e.Name, recorder, CancellationToken.None);
         recorder.Values.ShouldNotBeEmpty();
+        bool importMessagesLogged = false;
+        foreach (var msg in recorder.Values)
+        {
+            if (msg.Kind == MessageKind.Important) {
+                importMessagesLogged = true;
+            }
+            Console.WriteLine(msg.ToString());
+        }
+        importMessagesLogged.ShouldBeTrue();
+
         envResult.LastDeployment.ShouldNotBeNull();
         envResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
         envResult.Resources.ShouldNotBeEmpty();

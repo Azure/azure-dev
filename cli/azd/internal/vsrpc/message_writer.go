@@ -19,7 +19,7 @@ type messageWriter struct {
 
 // Write implements io.Writer.
 func (mw *messageWriter) Write(p []byte) (int, error) {
-	err := mw.observer.OnNext(mw.ctx, mw.messageTemplate.Fill(string(p)))
+	err := mw.observer.OnNext(mw.ctx, mw.messageTemplate.WithMessage(string(p)))
 	if err != nil {
 		return 0, err
 	}

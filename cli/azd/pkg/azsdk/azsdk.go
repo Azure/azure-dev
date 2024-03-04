@@ -28,6 +28,5 @@ func (c *ClientOptionsBuilderFactory) NewClientOptionsBuilder() *ClientOptionsBu
 	return NewClientOptionsBuilder().
 		WithTransport(c.defaultTransport).
 		WithPerCallPolicy(NewUserAgentPolicy(c.defaultUserAgent)).
-		WithPerCallPolicy(NewMsCorrelationPolicy()).
 		WithCloud(c.cloud.Configuration)
 }

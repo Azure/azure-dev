@@ -63,9 +63,10 @@ module web 'br/public:avm/res/web/site:0.2.0' = {
   }
 }
 
+// Set environment variables for the frontend
 module webAppSettings 'br/public:avm/res/web/site:0.2.0' = {
-  scope: rg
   name: 'web-appsettings'
+  scope: rg
   params: {
     kind: 'app'
     name: web.outputs.name

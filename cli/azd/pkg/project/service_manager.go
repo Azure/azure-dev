@@ -536,12 +536,12 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 	}
 
 	if err := sm.serviceLocator.ResolveNamed(host, &target); err != nil {
-		panic(fmt.Errorf(
+		return nil, fmt.Errorf(
 			"failed to resolve service host '%s' for service '%s', %w",
 			serviceConfig.Host,
 			serviceConfig.Name,
 			err,
-		))
+		)
 	}
 
 	return target, nil
@@ -557,12 +557,12 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	}
 
 	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Language), &frameworkService); err != nil {
-		panic(fmt.Errorf(
+		return nil, fmt.Errorf(
 			"failed to resolve language '%s' for service '%s', %w",
 			serviceConfig.Language,
 			serviceConfig.Name,
 			err,
-		))
+		)
 	}
 
 	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
@@ -571,12 +571,12 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	if serviceConfig.Host.RequiresContainer() && requiresLanguage {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
-			panic(fmt.Errorf(
+			return nil, fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",
 				serviceConfig.Name,
 				serviceConfig.Language,
 				err,
-			))
+			)
 		}
 
 		compositeFramework.SetSource(frameworkService)

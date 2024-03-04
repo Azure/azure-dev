@@ -11,8 +11,9 @@ import (
 
 // messageWriter is an io.Writer that writes to an IObserver[ProgressMessage], emitting a message for each write.
 type messageWriter struct {
-	ctx      context.Context
-	observer IObserver[ProgressMessage]
+	ctx             context.Context
+	observer        IObserver[ProgressMessage]
+	messageTemplate ProgressMessage
 }
 
 // lineWriter is an io.Writer that writes to another io.Writer, emitting a message for each line written.
@@ -61,7 +62,7 @@ func (mw *lineWriter) Flush(ctx context.Context) error {
 
 // Write implements io.Writer.
 func (mw *messageWriter) Write(p []byte) (int, error) {
-	err := mw.observer.OnNext(mw.ctx, newInfoProgressMessage(string(p)))
+	err := mw.observer.OnNext(mw.ctx, mw.messageTemplate.Fill(string(p)))
 	if err != nil {
 		return 0, err
 	}

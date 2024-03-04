@@ -68,6 +68,12 @@ func newInfoProgressMessage(message string) ProgressMessage {
 	}
 }
 
+func (m ProgressMessage) Fill(message string) ProgressMessage {
+	m.Message = message
+	m.Time = time.Now()
+	return m
+}
+
 type MessageSeverity int
 
 const (

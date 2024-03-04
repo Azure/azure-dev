@@ -36,6 +36,7 @@ func (s *environmentService) DeployAsync(
 	}
 
 	spinnerWriter := &lineWriter{
+		trimLineEndings: true,
 		next: &messageWriter{
 			ctx:      ctx,
 			observer: observer,

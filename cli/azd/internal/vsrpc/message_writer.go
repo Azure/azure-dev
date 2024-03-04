@@ -29,7 +29,10 @@ func (mw *messageWriter) Write(p []byte) (int, error) {
 
 // lineWriter is an io.Writer that writes to another io.Writer, emitting a message for each line written.
 type lineWriter struct {
+	// The next writer to write to.
 	next io.Writer
+	// If true, trim line endings from the written lines.
+	trimLineEndings bool
 
 	buf bytes.Buffer
 	// bufMu protects access to buf.
@@ -44,6 +47,14 @@ func (lw *lineWriter) Write(p []byte) (int, error) {
 		lw.buf.WriteByte(b)
 
 		if b == '\n' {
+			if lw.trimLineEndings {
+				dropped := 1
+				if lw.buf.Len() > 1 && lw.buf.Bytes()[lw.buf.Len()-2] == '\r' {
+					dropped = 2
+				}
+				lw.buf.Truncate(lw.buf.Len() - dropped)
+			}
+
 			_, err := lw.next.Write(lw.buf.Bytes())
 			if err != nil {
 				return i + 1, err

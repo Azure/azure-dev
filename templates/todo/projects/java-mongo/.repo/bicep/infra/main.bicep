@@ -86,11 +86,19 @@ module api 'br/public:avm/res/web/site:0.2.0' = {
     kind: 'app'
     name: !empty(apiServiceName) ? apiServiceName : '${abbrs.webSitesAppService}api-${resourceToken}'
     serverFarmResourceId: appServicePlan.outputs.resourceId
-    location: location
     tags: union(tags, { 'azd-service-name': 'api' })
+    location: location
     appInsightResourceId: appInsightResourceId
     managedIdentities: {
       systemAssigned: true
+    }
+    siteConfig: {
+      cors: {
+        allowedOrigins: [ 'https://portal.azure.com', 'https://ms.portal.azure.com' ,'https://${web.outputs.defaultHostname}' ]
+      }
+      linuxFxVersion: 'java|17-java17'
+      alwaysOn: true
+      appCommandLine: ''
     }
     appSettingsKeyValuePairs: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
@@ -105,34 +113,7 @@ module api 'br/public:avm/res/web/site:0.2.0' = {
           [],
           ['-Djdk.attach.allowAttachSelf=true']),
           ' ')
-      APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
-      applicationLogs: { fileSystem: { level: 'Verbose' } }
-      detailedErrorMessages: { enabled: true }
-      failedRequestsTracing: { enabled: true }
-      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
-    siteConfig: {
-      cors: {
-        allowedOrigins: [ 'https://portal.azure.com', 'https://ms.portal.azure.com' ,'https://${web.outputs.defaultHostname}' ]
-      }
-      linuxFxVersion: 'java|17-java17'
-      alwaysOn: true
-      appCommandLine: ''
-      ftpsState: 'FtpsOnly'
-      minTlsVersion: '1.2'
-      use32BitWorkerProcess: false
-      clientAffinityEnabled: false
-    }
-    basicPublishingCredentialsPolicies: [
-      {
-        name: 'ftp'
-        allow: false
-      }
-      {
-        name: 'scm'
-        allow: false
-      }
-    ]
   }
 }
 
@@ -188,6 +169,7 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.1.0' = {
       tier: 'Basic'
     }
     location: location
+    tags: tags
     reserved: true
     kind: 'Linux'
   }
@@ -201,6 +183,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
     name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
     location: location
     tags: tags
+    enableRbacAuthorization: false
   }
 }
 

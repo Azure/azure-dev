@@ -63,6 +63,10 @@ func (s *serverService) StopAsync(ctx context.Context) error {
 		log.Printf("error shutting down telemetry: %v", err)
 	}
 
+	// Graceful telemetry cancellation.
+	// This is not strictly necessary, but it is a good practice to cancel the telemetry upload before shutting down.
+	s.server.cancelTelemetryUpload()
+
 	return nil
 }
 

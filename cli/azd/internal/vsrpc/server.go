@@ -34,6 +34,8 @@ type Server struct {
 	// rootContainer contains all the core registrations for the azd components.
 	// It is not expected to be modified throughout the lifetime of the server.
 	rootContainer *ioc.NestedContainer
+	// cancelTelemetryUpload is a function that cancels the background telemetry upload goroutine.
+	cancelTelemetryUpload func()
 }
 
 func NewServer(rootContainer *ioc.NestedContainer) *Server {
@@ -62,17 +64,24 @@ func (s *Server) Serve(l net.Listener) error {
 	}
 
 	// Run upload periodically in the background while the server is running.
+	ctx, cancel := context.WithCancel(context.Background())
 	ts := telemetry.GetTelemetrySystem()
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		for {
-			err := ts.RunBackgroundUpload(context.Background(), false)
+			err := ts.RunBackgroundUpload(ctx, false)
 			if err != nil {
 				log.Printf("telemetry upload failed: %v", err)
 			}
-			<-ticker.C
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
 	}()
+	s.cancelTelemetryUpload = cancel
 
 	server := http.Server{
 		ReadHeaderTimeout: 1 * time.Second,

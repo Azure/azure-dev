@@ -144,7 +144,7 @@ module apiKeyVaultAccess 'br/public:avm/res/key-vault/vault:0.3.5' = {
 
 // The application database
 module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
-  name: 'cosmos1'
+  name: 'cosmos'
   scope: rg
   params: {
     accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'

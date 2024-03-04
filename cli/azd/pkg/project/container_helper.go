@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -207,8 +208,14 @@ func (ch *ContainerHelper) Credentials(
 		func(ctx context.Context) error {
 			cred, err := ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
-				log.Println("failed getting ACR token credentials: ", err.Error())
-				return retry.RetryableError(err)
+				var httpErr *azcore.ResponseError
+				if errors.As(err, &httpErr) {
+					if httpErr.StatusCode == 404 {
+						// Retry if the registry is not found while logging in
+						return retry.RetryableError(err)
+					}
+				}
+				return err
 			}
 			credential = cred
 			return nil

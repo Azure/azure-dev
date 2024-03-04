@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -13,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/benbjohnson/clock"
+	"github.com/sethvargo/go-retry"
 )
 
 type ContainerHelper struct {
@@ -198,7 +200,21 @@ func (ch *ContainerHelper) Credentials(
 		return nil, err
 	}
 
-	return ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
+	var credential *azcli.DockerCredentials
+	credentialsError := retry.Do(
+		ctx,
+		retry.WithMaxDuration(90*time.Second, retry.NewExponential(1*time.Second)),
+		func(ctx context.Context) error {
+			cred, err := ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
+			if err != nil {
+				log.Println("failed getting ACR token credentials: ", err.Error())
+				return retry.RetryableError(err)
+			}
+			credential = cred
+			return nil
+		})
+
+	return credential, credentialsError
 }
 
 // Deploy pushes and image to a remote server, and optionally writes the fully qualified remote image name to the

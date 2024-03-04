@@ -667,7 +667,7 @@ type Writers struct {
 	// The writer to write output to.
 	Output io.Writer
 
-	// The writer to write spinner output to. If nil, the spinner will write to the Writer.
+	// The writer to write spinner output to. If nil, the spinner will write to Output.
 	Spinner io.Writer
 }
 

@@ -525,15 +525,6 @@
                     "$ref": "#/definitions/workflow"
                 }
             }
-        },
-        "cloud": {
-            "type": "object",
-            "title": "The cloud configuration used for the project.",
-            "description": "Optional. Provides additional configuration for deploying to sovereign clouds such as Azure Government.",
-            "additionalProperties": false,
-            "properties": {
-                "name": { "enum": [ "AzureCloud", "AzureChinaCloud", "AzureUSGovernment" ] }
-            }
         }
     },
     "definitions": {

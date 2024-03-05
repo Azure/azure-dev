@@ -464,6 +464,7 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 	if options.IsPassword {
 		return &survey.Password{
 			Message: options.Message,
+			Help:    options.Help,
 		}
 	}
 

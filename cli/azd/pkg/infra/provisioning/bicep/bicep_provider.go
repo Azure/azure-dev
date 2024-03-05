@@ -1907,6 +1907,9 @@ func (p *BicepProvider) ensureParameters(
 
 	configModified := false
 
+	// There's no need to show the spinner in the middle of parameter prompting
+	p.console.StopSpinner(ctx, "", input.Step)
+
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
 
@@ -1970,21 +1973,12 @@ func (p *BicepProvider) ensureParameters(
 			return nil, fmt.Errorf("prompting for value: %w", err)
 		}
 
-		saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      "Save the value in the environment for future use",
-			DefaultValue: true,
-		})
-
-		if err != nil {
-			return nil, fmt.Errorf("prompting to save deployment parameter: %w", err)
-		}
-
-		if saveParameter {
-			if err := p.env.Config.Set(configKey, value); err == nil {
-				configModified = true
-			} else {
-				p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
-			}
+		if err := p.env.Config.Set(configKey, value); err == nil {
+			configModified = true
+		} else {
+			// errors from config.Set are panics, so we can't recover from them
+			// For example, the value is not serializable to JSON
+			log.Panic(fmt.Sprintf("warning: failed to set value: %v", err))
 		}
 
 		configuredParameters[key] = azure.ArmParameterValue{

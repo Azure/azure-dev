@@ -64,7 +64,11 @@ func Test_GetSignedInUserId(t *testing.T) {
 			"azd",
 			cloud.AzurePublic(),
 		)
-		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory, cloud.AzurePublic())
+		userProfile := NewUserProfileService(
+			&mocks.MockMultiTenantCredentialProvider{},
+			clientOptionsBuilderFactory,
+			cloud.AzurePublic(),
+		)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.NoError(t, err)
@@ -80,7 +84,11 @@ func Test_GetSignedInUserId(t *testing.T) {
 			"azd",
 			cloud.AzurePublic(),
 		)
-		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory, cloud.AzurePublic())
+		userProfile := NewUserProfileService(
+			&mocks.MockMultiTenantCredentialProvider{},
+			clientOptionsBuilderFactory,
+			cloud.AzurePublic(),
+		)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.Error(t, err)

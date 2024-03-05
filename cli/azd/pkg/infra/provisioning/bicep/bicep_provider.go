@@ -1978,7 +1978,7 @@ func (p *BicepProvider) ensureParameters(
 		} else {
 			// errors from config.Set are panics, so we can't recover from them
 			// For example, the value is not serializable to JSON
-			log.Panic(fmt.Sprintf("warning: failed to set value: %v", err))
+			log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
 		}
 
 		configuredParameters[key] = azure.ArmParameterValue{

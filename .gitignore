@@ -35,6 +35,7 @@ __pycache__/
 .env
 .azure
 /cli/azd/bin
+/cli/azd/pkg/oneauth/bridge/_build
 *env/
 obj/
 bin/

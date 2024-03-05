@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -25,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -213,6 +215,17 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if currentUser.HomeAccountID != nil {
+		if currentUser.FromOneAuth {
+			authority := cDefaultAuthority
+			if options.TenantID != "" {
+				authority = "https://login.microsoftonline.com/" + options.TenantID
+			}
+			return oneauth.NewCredential(authority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
+				HomeAccountID: *currentUser.HomeAccountID,
+				NoPrompt:      options.NoPrompt,
+			})
+		}
+
 		accounts, err := m.publicClient.Accounts(ctx)
 		if err != nil {
 			return nil, err
@@ -489,6 +502,24 @@ func (m *Manager) LoginInteractive(
 	return newAzdCredential(m.publicClient, &res.Account), nil
 }
 
+func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes []string) error {
+	if len(scopes) == 0 {
+		scopes = LoginScopes
+	}
+	authority := cDefaultAuthority
+	if tenantID != "" {
+		authority = "https://login.microsoftonline.com/" + tenantID
+	}
+	accountID, err := oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
+	if err == nil {
+		err = m.saveUserProperties(&userProperties{
+			FromOneAuth:   true,
+			HomeAccountID: &accountID,
+		})
+	}
+	return err
+}
+
 func (m *Manager) LoginWithDeviceCode(
 	ctx context.Context, tenantID string, scopes []string, withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
 	if scopes == nil {
@@ -638,13 +669,18 @@ func (m *Manager) Logout(ctx context.Context) error {
 
 	// we are fine to ignore the error here, it just means there's nothing to clean up.
 	currentUser, _ := readUserProperties(cfg)
-
-	// When logged in as a service principal, remove the stored credential
-	if currentUser != nil && currentUser.TenantID != nil && currentUser.ClientID != nil {
-		if err := m.saveLoginForServicePrincipal(
-			*currentUser.TenantID, *currentUser.ClientID, &persistedSecret{},
-		); err != nil {
-			return fmt.Errorf("removing authentication secrets: %w", err)
+	if currentUser != nil {
+		if currentUser.FromOneAuth {
+			if err := oneauth.Logout(cAZD_CLIENT_ID); err != nil {
+				return fmt.Errorf("logging out of OneAuth: %w", err)
+			}
+		} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
+			// When logged in as a service principal, remove the stored credential
+			if err := m.saveLoginForServicePrincipal(
+				*currentUser.TenantID, *currentUser.ClientID, &persistedSecret{},
+			); err != nil {
+				return fmt.Errorf("removing authentication secrets: %w", err)
+			}
 		}
 	}
 
@@ -821,6 +857,8 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 }
 
 type CredentialForCurrentUserOptions struct {
+	// NoPrompt controls whether the credential may prompt for user interaction.
+	NoPrompt bool
 	// The tenant ID to use when constructing the credential, instead of the default tenant.
 	TenantID string
 }
@@ -858,6 +896,7 @@ type federatedAuth struct {
 // client).
 type userProperties struct {
 	HomeAccountID *string `json:"homeAccountId,omitempty"`
+	FromOneAuth   bool    `json:"fromOneAuth,omitempty"`
 	ClientID      *string `json:"clientId,omitempty"`
 	TenantID      *string `json:"tenantId,omitempty"`
 }

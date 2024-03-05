@@ -5,7 +5,7 @@ import * as cp from 'child_process';
 import * as http from 'http';
 import * as vscode from 'vscode';
 import { UserCancelledError } from '@microsoft/vscode-azext-utils';
-import { startAuthServer } from './authServer';
+import { startAuthServer } from './servers/authServer';
 import { isAzdCommand } from './azureDevCli';
 import { isMac } from './osUtils';
 import { VsCodeAuthenticationCredential } from './VsCodeAuthenticationCredential';

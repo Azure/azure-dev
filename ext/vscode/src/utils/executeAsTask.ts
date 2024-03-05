@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as vscode from 'vscode';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { callWithTelemetryAndErrorHandling, IActionContext } from '@microsoft/vscode-azext-utils';
-import { startAuthServer } from './authServer';
+import { startAuthServer } from './servers/authServer';
 import { isAzdCommand } from './azureDevCli';
 import { VsCodeAuthenticationCredential } from './VsCodeAuthenticationCredential';
 

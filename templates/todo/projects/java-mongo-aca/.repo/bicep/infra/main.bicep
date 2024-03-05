@@ -31,6 +31,9 @@ param webAppExists bool = false
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
+@description('Hostname suffix for container registry. Set when deploying to sovereign clouds')
+param containerRegistryHostSuffix string = 'azurecr.io'
+
 @description('API Management SKU to use if APIM is enabled')
 param apimSku string = 'Consumption'
 
@@ -88,6 +91,7 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
+    containerRegistryHostSuffix: containerRegistryHostSuffix
     exists: webAppExists
   }
 }
@@ -104,6 +108,7 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
+    containerRegistryHostSuffix: containerRegistryHostSuffix
     keyVaultName: keyVault.outputs.name
     corsAcaUrl: corsAcaUrl
     exists: apiAppExists

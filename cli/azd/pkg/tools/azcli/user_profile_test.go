@@ -37,6 +37,7 @@ func Test_GetUserAccessToken(t *testing.T) {
 			},
 		},
 		clientOptionsBuilderFactory,
+		cloud.AzurePublic(),
 	)
 
 	actual, err := userProfile.GetAccessToken(*mockContext.Context, "")
@@ -63,7 +64,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 			"azd",
 			cloud.AzurePublic(),
 		)
-		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory)
+		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory, cloud.AzurePublic())
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.NoError(t, err)
@@ -79,7 +80,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 			"azd",
 			cloud.AzurePublic(),
 		)
-		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory)
+		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, clientOptionsBuilderFactory, cloud.AzurePublic())
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.Error(t, err)

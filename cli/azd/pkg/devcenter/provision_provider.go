@@ -399,6 +399,10 @@ func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
 		}
 	}
 
+	if err := p.envManager.Save(ctx, p.env); err != nil {
+		return fmt.Errorf("failed saving environment: %w", err)
+	}
+
 	p.config = updatedConfig
 
 	return nil
@@ -406,6 +410,12 @@ func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
 
 // Polls for the ADE environment and ARM deployment to be created
 func (p *ProvisionProvider) pollForEnvironment(ctx context.Context, envName string) {
+	// Disable reporting progress if needed
+	if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
+		log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
+		return
+	}
+
 	initialDelay := 3 * time.Second
 	regularDelay := 5 * time.Second
 	timer := time.NewTimer(initialDelay)

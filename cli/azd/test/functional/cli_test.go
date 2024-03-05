@@ -32,11 +32,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -115,6 +117,75 @@ func TestMain(m *testing.M) {
 
 	exitVal := m.Run()
 	os.Exit(exitVal)
+}
+
+func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+	envName := randomOrStoredEnvName(session)
+
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=devcenter", environment.PlatformTypeEnvVarName))
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=wbreza", devcenter.DevCenterCatalogEnvName))
+
+	initStdIn := strings.Join(
+		[]string{
+			"Select a template",
+			"HelloWorld",
+			envName,
+			"Project-1",
+		},
+		"\n",
+	)
+
+	// azd init
+	_, err := cli.RunCommandWithStdIn(ctx, initStdIn, "init")
+	require.NoError(t, err)
+
+	// evaluate the project and environment configuration
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+	require.NoError(t, err)
+
+	require.Equal(t, "dc-wabrez-od3kzvk4mwe72", projectConfig.Platform.Config["name"])
+	require.Equal(t, "wbreza", projectConfig.Platform.Config["catalog"])
+	require.Equal(t, "HelloWorld", projectConfig.Platform.Config["environmentDefinition"])
+
+	env, err := envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	require.Equal(t, envName, env.Name())
+	projectName, _ := env.Config.Get(devcenter.DevCenterProjectPath)
+	repoUrl, _ := env.Config.Get("provision.parameters.repoUrl")
+	require.Equal(t, "Project-1", projectName)
+	require.Equal(t, "https://github.com/wbreza/azd-hello-world", repoUrl)
+
+	// azd up
+	upStdIn := strings.Join([]string{"Dev"}, "\n")
+	_, err = cli.RunCommandWithStdIn(ctx, upStdIn, "up")
+	require.NoError(t, err)
+
+	// re-evaluate the environment configuration
+	env, err = envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	envTypeName, _ := env.Config.Get(devcenter.DevCenterEnvTypePath)
+	require.Equal(t, "Dev", envTypeName)
+
+	// azd down
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
 }
 
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {

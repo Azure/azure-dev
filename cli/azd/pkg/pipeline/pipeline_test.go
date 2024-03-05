@@ -10,10 +10,8 @@ import (
 
 func Test_ConfigOptions_SecretsAndVars(t *testing.T) {
 	// Initialize the ConfigOptions instance
-	config := &ConfigOptions{
-		Variables: []string{"var1", "var2"},
-		Secrets:   []string{"secret1"},
-	}
+	projectVariables := []string{"var1", "var2"}
+	projectSecrets := []string{"secret1"}
 
 	// Define the initial variables, secrets, and environment
 	initialVariables := map[string]string{
@@ -31,7 +29,8 @@ func Test_ConfigOptions_SecretsAndVars(t *testing.T) {
 	}
 
 	// Call the SecretsAndVars function
-	variables, secrets := config.SecretsAndVars(initialVariables, initialSecrets, env)
+	variables, secrets := mergeProjectVariablesAndSecrets(
+		projectVariables, projectSecrets, initialVariables, initialSecrets, env)
 
 	// Assert the expected results
 	expectedVariables := map[string]string{

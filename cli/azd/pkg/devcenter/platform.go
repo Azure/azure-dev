@@ -60,7 +60,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 
 		// Shell environment variables
 		envVarConfig := &Config{
-			Name:                  os.Getenv(DevCenterCatalogEnvName),
+			Name:                  os.Getenv(DevCenterNameEnvName),
 			Project:               os.Getenv(DevCenterProjectEnvName),
 			Catalog:               os.Getenv(DevCenterCatalogEnvName),
 			EnvironmentType:       os.Getenv(DevCenterEnvTypeEnvName),

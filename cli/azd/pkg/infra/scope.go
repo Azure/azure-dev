@@ -97,7 +97,7 @@ func (s *ResourceGroupDeployment) Operations(ctx context.Context) ([]*armresourc
 func (s *ResourceGroupDeployment) PortalUrl() string {
 	return fmt.Sprintf("%s/%s/%s",
 		s.portalUrlBase,
-		cPortalUrlPrefix,
+		cPortalUrlFragment,
 		url.PathEscape(azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroupName, s.name)))
 }
 
@@ -105,7 +105,7 @@ func (s *ResourceGroupDeployment) PortalUrl() string {
 func (s *ResourceGroupDeployment) OutputsUrl() string {
 	return fmt.Sprintf("%s/%s/%s",
 		s.portalUrlBase,
-		cOutputsUrlPrefix,
+		cOutputsUrlFragment,
 		url.PathEscape(azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroupName, s.name)))
 }
 
@@ -160,8 +160,8 @@ func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*armresourc
 	return s.deployments.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
 }
 
-const cPortalUrlPrefix = "#view/HubsExtension/DeploymentDetailsBlade/~/overview/id"
-const cOutputsUrlPrefix = "#view/HubsExtension/DeploymentDetailsBlade/~/outputs/id"
+const cPortalUrlFragment = "#view/HubsExtension/DeploymentDetailsBlade/~/overview/id"
+const cOutputsUrlFragment = "#view/HubsExtension/DeploymentDetailsBlade/~/outputs/id"
 
 type SubscriptionDeployment struct {
 	*SubscriptionScope
@@ -183,7 +183,7 @@ func (s *SubscriptionDeployment) SubscriptionId() string {
 func (s *SubscriptionDeployment) PortalUrl() string {
 	return fmt.Sprintf("%s/%s/%s",
 		s.portalUrlBase,
-		cPortalUrlPrefix,
+		cPortalUrlFragment,
 		url.PathEscape(azure.SubscriptionDeploymentRID(s.subscriptionId, s.name)))
 }
 
@@ -191,7 +191,7 @@ func (s *SubscriptionDeployment) PortalUrl() string {
 func (s *SubscriptionDeployment) OutputsUrl() string {
 	return fmt.Sprintf("%s/%s/%s",
 		s.portalUrlBase,
-		cOutputsUrlPrefix,
+		cOutputsUrlFragment,
 		url.PathEscape(azure.SubscriptionDeploymentRID(s.subscriptionId, s.name)))
 }
 

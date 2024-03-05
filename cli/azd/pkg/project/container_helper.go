@@ -180,11 +180,21 @@ func (ch *ContainerHelper) Login(
 	// Only perform automatic login for ACR
 	// Other registries require manual login via external 'docker login' command
 	hostParts := strings.Split(registryName, ".")
-	if len(hostParts) == 1 || strings.Contains(registryName, "azurecr.io") {
+	if len(hostParts) == 1 || isAzureContainerRegistry(registryName) {
 		return registryName, ch.containerRegistryService.Login(ctx, ch.env.GetSubscriptionId(), registryName)
 	}
 
 	return registryName, nil
+}
+
+func isAzureContainerRegistry(registryName string) bool {
+	var suffixes = []string{"azurecr.io", "azurecr.cn", "azurecr.us"}
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(registryName, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (ch *ContainerHelper) Credentials(

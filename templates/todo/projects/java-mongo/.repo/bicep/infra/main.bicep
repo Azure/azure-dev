@@ -28,9 +28,6 @@ param apimServiceName string = ''
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
-@description('API Management SKU to use if APIM is enabled')
-param apimSku string = 'Consumption'
-
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
@@ -159,7 +156,6 @@ module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if 
   scope: rg
   params: {
     name: !empty(apimServiceName) ? apimServiceName : '${abbrs.apiManagementService}${resourceToken}'
-    sku: apimSku
     location: location
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName

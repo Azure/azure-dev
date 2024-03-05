@@ -6,7 +6,6 @@ param identityName string
 param applicationInsightsName string
 param containerAppsEnvironmentName string
 param containerRegistryName string
-param containerRegistryHostSuffix string
 param keyVaultName string
 param serviceName string = 'api'
 param corsAcaUrl string
@@ -38,7 +37,6 @@ module app '../../../../../common/infra/bicep/core/host/container-app-upsert.bic
     exists: exists
     containerAppsEnvironmentName: containerAppsEnvironmentName
     containerRegistryName: containerRegistryName
-    containerRegistryHostSuffix: containerRegistryHostSuffix
     containerCpuCoreCount: '1.0'
     containerMemory: '2.0Gi'
     env: [

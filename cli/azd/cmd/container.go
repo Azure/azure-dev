@@ -413,8 +413,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 
 		// Project Configuration
-		projConfig, _ := lazyProjectConfig.GetValue()
-		if projConfig != nil && projConfig.Cloud != nil {
+		projConfig, err := lazyProjectConfig.GetValue()
+		if err == nil && projConfig != nil && projConfig.Cloud != nil {
 			value, err := cloud.ParseCloudConfig(projConfig.Cloud)
 			if err == nil {
 				cloudConfig = value

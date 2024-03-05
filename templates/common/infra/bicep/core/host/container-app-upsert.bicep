@@ -26,6 +26,9 @@ param containerName string = 'main'
 @description('The name of the container registry')
 param containerRegistryName string = ''
 
+@description('Hostname suffix for container registry. Set when deploying to sovereign clouds')
+param containerRegistryHostSuffix string = 'azurecr.io'
+
 @allowed([ 'http', 'grpc' ])
 @description('The protocol used by Dapr to connect to the app, e.g., HTTP or gRPC')
 param daprAppProtocol string = 'http'
@@ -67,7 +70,7 @@ param serviceBinds array = []
 @description('The target port for the container')
 param targetPort int = 80
 
-resource existingApp 'Microsoft.App/containerApps@2023-05-02-preview' existing = if (exists) {
+resource existingApp 'Microsoft.App/containerApps@2023-04-01-preview' existing = if (exists) {
   name: name
 }
 
@@ -83,6 +86,7 @@ module app 'container-app.bicep' = {
     containerName: containerName
     containerAppsEnvironmentName: containerAppsEnvironmentName
     containerRegistryName: containerRegistryName
+    containerRegistryHostSuffix: containerRegistryHostSuffix
     containerCpuCoreCount: containerCpuCoreCount
     containerMemory: containerMemory
     containerMinReplicas: containerMinReplicas

@@ -3,10 +3,10 @@
 
 import * as http from 'http';
 import { CancelledResponse, ErrorResponse, JsonServerResponse, SuccessResponseBase, UndefinedResponse, startJsonServer } from './jsonServer';
-import { isUserCancelledError } from '@microsoft/vscode-azext-utils';
+import { DialogResponses, IActionContext, IAzureQuickPickItem, IAzureQuickPickOptions, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
 
 type PromptServerSuccessResponse = SuccessResponseBase & {
-    value: string | string[] | boolean | number;
+    value: boolean | string | string[] | number | number[];
 };
 
 type PromptServerResponse = PromptServerSuccessResponse | ErrorResponse | CancelledResponse | undefined;
@@ -20,10 +20,32 @@ type PromptServerRequest = {
     options: {
         message: string;
         help: string | undefined;
-        options: string[] | undefined;
+        options: {
+            label: string;
+            description: string;
+        }[] | undefined;
         defaultValue: string | undefined;
     }
 };
+
+type SelectOption = {
+    label: string;
+    description: string;
+};
+
+function isValidSelectOption(obj: unknown): obj is SelectOption {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+
+    const maybeSelectOption = obj as SelectOption;
+
+    if (typeof maybeSelectOption.label !== 'string' || typeof maybeSelectOption.description !== 'string') {
+        return false;
+    }
+
+    return true;
+}
 
 function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
     if (typeof obj !== 'object' || obj === null) {
@@ -48,7 +70,7 @@ function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
         return false;
     }
 
-    if (!!maybePromptServerRequest.options.options && (!Array.isArray(maybePromptServerRequest.options.options) || maybePromptServerRequest.options.options.some((a: unknown) => typeof a !== 'string'))) {
+    if (!!maybePromptServerRequest.options.options && (!Array.isArray(maybePromptServerRequest.options.options) || !maybePromptServerRequest.options.options.every(isValidSelectOption))) {
         return false;
     }
 
@@ -67,73 +89,87 @@ export function startPromptServer(): Promise<{ server: http.Server, endpoint: st
     return startJsonServer({
         // eslint-disable-next-line @typescript-eslint/naming-convention
         '/prompt?api-version=2024-02-14-preview': async (reqBody: unknown): Promise<JsonServerResponse<PromptServerResponse>> => {
-            if (!isValidPromptServerRequest(reqBody)) {
-                return { statusCode: 400 } satisfies JsonServerResponse<UndefinedResponse>;
-            }
-
-            try {
-                switch (reqBody.type) {
-                    case 'string':
-                    case 'password': {
-                        const value = promptString(reqBody.type === 'password', reqBody.options.message, reqBody.options.defaultValue, reqBody.options.help);
-                        return {
-                            statusCode: 200,
-                            result: {
-                                status: 'success',
-                                value: value,
-                            },
-                        } satisfies JsonServerResponse<PromptServerSuccessResponse>;
-                    }
-                    case 'select':
-                    case 'multiSelect': {
-                        const value = promptSelect(reqBody.type === 'multiSelect', reqBody.options.message, reqBody.options.options!, reqBody.options.defaultValue, reqBody.options.help);
-                        return {
-                            statusCode: 200,
-                            result: {
-                                status: 'success',
-                                value: value,
-                            },
-                        } satisfies JsonServerResponse<PromptServerSuccessResponse>;
-                    }
-                    case 'confirm': {
-                        const value = promptConfirmation(reqBody.options.message, reqBody.options.help);
-                        return {
-                            statusCode: 200,
-                            result: {
-                                status: 'success',
-                                value: value,
-                            },
-                        } satisfies JsonServerResponse<PromptServerSuccessResponse>;
-                    }
-                }
-            } catch (e: unknown) {
-                if (isUserCancelledError(e)) {
-                    return { statusCode: 200, result: { status: 'cancelled' } } satisfies JsonServerResponse<CancelledResponse>;
+            return (await callWithTelemetryAndErrorHandling('promptServer.prompt', async (actionContext: IActionContext) => {
+                if (!isValidPromptServerRequest(reqBody)) {
+                    return { statusCode: 400 } satisfies JsonServerResponse<UndefinedResponse>;
                 }
 
-                throw e;
-            }
+                try {
+                    switch (reqBody.type) {
+                        case 'string':
+                        case 'password': {
+                            const value = await promptString(actionContext, reqBody.type === 'password', reqBody.options.message, reqBody.options.defaultValue, reqBody.options.help);
+                            return {
+                                statusCode: 200,
+                                result: {
+                                    status: 'success',
+                                    value: value,
+                                },
+                            } satisfies JsonServerResponse<PromptServerSuccessResponse>;
+                        }
+                        case 'select':
+                        case 'multiSelect': {
+                            const value = await promptSelect(actionContext, reqBody.type === 'multiSelect', reqBody.options.message, reqBody.options.options!, reqBody.options.defaultValue, reqBody.options.help);
+                            return {
+                                statusCode: 200,
+                                result: {
+                                    status: 'success',
+                                    value: value,
+                                },
+                            } satisfies JsonServerResponse<PromptServerSuccessResponse>;
+                        }
+                        case 'confirm': {
+                            const value = await promptConfirmation(actionContext, reqBody.options.message, reqBody.options.help);
+                            return {
+                                statusCode: 200,
+                                result: {
+                                    status: 'success',
+                                    value: value,
+                                },
+                            } satisfies JsonServerResponse<PromptServerSuccessResponse>;
+                        }
+                    }
+                } catch (e: unknown) {
+                    if (isUserCancelledError(e)) {
+                        return { statusCode: 200, result: { status: 'cancelled' } } satisfies JsonServerResponse<CancelledResponse>;
+                    }
 
-            return {
-                statusCode: 200,
-                result: {
-                    status: 'success',
-                    token: token.token,
-                    expiresOn: new Date(token.expiresOnTimestamp).toISOString()
+                    throw e;
                 }
-            } satisfies JsonServerResponse<PromptServerSuccessResponse>;
+            }))!;
         }
     });
 }
 
-function promptString(isPassword: boolean, message: string, defaultValue?: string, help?: string): string {
-    return '';
+async function promptString(context: IActionContext, isPassword: boolean, message: string, defaultValue?: string, help?: string): Promise<string> {
+    return await context.ui.showInputBox({
+    });
 }
 
-function promptSelect(isMulti: boolean, message: string, options: string[], defaultValue?: string, help?: string): string | string[] {
-    return '';
+async function promptSelect(context: IActionContext, isMulti: boolean, message: string, options: SelectOption[], defaultValue?: string, help?: string): Promise<number | number[]> {
+    const items: IAzureQuickPickItem<number>[] = options.map((option, index) => { return { label: option.label, description: option.description, data: index }; });
+
+    const quickPickOptions: IAzureQuickPickOptions = {
+        placeHolder: message,
+        ignoreFocusOut: true,
+        isPickSelected: p => p.label === defaultValue,
+    };
+
+    // This is done this way, instead of just `{ canPickMany: isMulti }`, to allow TypeScript to better infer the type of the result object(s) returned
+    if (isMulti) {
+        const results = await context.ui.showQuickPick(items, { ...quickPickOptions, canPickMany: true });
+        return results.map((result) => result.data);
+    } else {
+        const result = await context.ui.showQuickPick(items, quickPickOptions);
+        return result.data;
+    }
 }
 
-function promptConfirmation(message: string, help?: string): boolean {
-    return false;
+async function promptConfirmation(context: IActionContext, message: string, help?: string): Promise<boolean> {
+    return await context.ui.showWarningMessage(
+        help ? message + '\n\n' + help : message,
+        { modal: true },
+        DialogResponses.yes,
+        DialogResponses.no,
+    ) === DialogResponses.yes;
 }

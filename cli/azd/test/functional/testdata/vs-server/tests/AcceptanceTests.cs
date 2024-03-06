@@ -98,6 +98,8 @@ public class AcceptanceTests : TestBase
         loadEnv.Services.Length.ShouldEqual(2);
         File.Exists(loadEnv.Services[0].Path).ShouldBeTrue();
         File.Exists(loadEnv.Services[1].Path).ShouldBeTrue();
+
+        await svrSvc.StopAsync(CancellationToken.None);
     }
 
     [Test]
@@ -137,6 +139,8 @@ public class AcceptanceTests : TestBase
         refreshResult.LastDeployment.ShouldNotBeNull();
         refreshResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
         refreshResult.Resources.ShouldNotBeEmpty();
+
+        await svrSvc.StopAsync(CancellationToken.None);
     }
 
 

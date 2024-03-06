@@ -84,7 +84,7 @@ type PipelineManager struct {
 	console        input.Console
 	serviceLocator ioc.ServiceLocator
 	importManager  *project.ImportManager
-	configOptions  *ConfigOptions
+	configOptions  *configurePipelineOptions
 	infra          *project.Infra
 }
 
@@ -362,24 +362,24 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, fmt.Errorf("failed to marshal environment config: %w", err)
 	}
 
-	additionalSecrets := map[string]string{
+	defaultAzdSecrets := map[string]string{
 		environment.AzdInitialEnvironmentConfigName: string(localEnvConfig),
 	}
 
-	additionalVariables := map[string]string{}
+	defaultAzdVariables := map[string]string{}
 	// If the user has set the resource group name as an environment variable, we need to pass it to the pipeline
 	// as this likely means rg-deployment
 	if rgGroup, exists := pm.env.LookupEnv(environment.ResourceGroupEnvVarName); exists {
-		additionalVariables[environment.ResourceGroupEnvVarName] = rgGroup
+		defaultAzdVariables[environment.ResourceGroupEnvVarName] = rgGroup
 	}
 
-	// Merge azd required variables and secrets with the ones defined on azure.yaml
-	additionalVariables, additionalSecrets = pm.configOptions.SecretsAndVars(
-		additionalVariables, additionalSecrets, pm.env.Dotenv())
+	// Merge azd default variables and secrets with the ones defined on azure.yaml
+	pm.configOptions.variables, pm.configOptions.secrets = mergeProjectVariablesAndSecrets(
+		pm.configOptions.projectVariables, pm.configOptions.projectSecrets,
+		defaultAzdVariables, defaultAzdSecrets, pm.env.Dotenv())
 
 	// config pipeline handles setting or creating the provider pipeline to be used
-	ciPipeline, err := pm.ciProvider.configurePipeline(
-		ctx, gitRepoInfo, infra.Options, additionalSecrets, additionalVariables)
+	ciPipeline, err := pm.ciProvider.configurePipeline(ctx, gitRepoInfo, pm.configOptions)
 	if err != nil {
 		return result, err
 	}
@@ -753,9 +753,9 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	defer func() { _ = infra.Cleanup() }()
 	pm.infra = infra
 
-	pm.configOptions = &ConfigOptions{
-		Variables: slices.Clone(prjConfig.Pipeline.Variables),
-		Secrets:   slices.Clone(prjConfig.Pipeline.Secrets),
+	pm.configOptions = &configurePipelineOptions{
+		projectVariables:     slices.Clone(prjConfig.Pipeline.Variables),
+		provisioningProvider: &pm.infra.Options,
 	}
 
 	return nil

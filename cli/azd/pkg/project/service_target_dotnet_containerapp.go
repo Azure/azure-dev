@@ -120,6 +120,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			var remoteImageName string
 
+			var targetPort int
+
 			if serviceConfig.Language == ServiceLanguageDocker {
 				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
 				syncProgress(task, containerDeployTask.Progress())
@@ -144,6 +146,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 					dockerCreds.Password)
 				if err != nil {
 					task.SetError(fmt.Errorf("publishing container: %w", err))
+					return
+				}
+
+				// Get target Port
+				targetPort, err = at.dotNetCli.GetTargetPort(ctx, serviceConfig.Path())
+				if err != nil {
+					task.SetError(fmt.Errorf("getting target port: %w", err))
 					return
 				}
 
@@ -262,13 +271,15 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			builder := strings.Builder{}
 			err = tmpl.Execute(&builder, struct {
-				Env    map[string]string
-				Image  string
-				Inputs map[string]any
+				Env        map[string]string
+				Image      string
+				TargetPort int
+				Inputs     map[string]any
 			}{
-				Env:    at.env.Dotenv(),
-				Image:  remoteImageName,
-				Inputs: inputs,
+				Env:        at.env.Dotenv(),
+				Image:      remoteImageName,
+				TargetPort: targetPort,
+				Inputs:     inputs,
 			})
 			if err != nil {
 				task.SetError(fmt.Errorf("failed executing template file: %w", err))

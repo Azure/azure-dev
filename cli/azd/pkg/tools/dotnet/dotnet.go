@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -34,6 +35,7 @@ type DotNetCli interface {
 	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string, dotnetEnv string) error
 	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
 	GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error)
+	GetTargetPort(ctx context.Context, project string) (int, error)
 }
 
 type dotNetCli struct {
@@ -190,6 +192,31 @@ func (cli *dotNetCli) PublishContainer(
 		return fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
 	}
 	return nil
+}
+
+func (cli *dotNetCli) GetTargetPort(
+	ctx context.Context, project string,
+) (int, error) {
+	runArgs := newDotNetRunArgs("publish", "--getProperty:GeneratedContainerConfiguration", project)
+	result, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get target port at project '%s': %w", project, err)
+	}
+
+	// Check if the result contains numbers using regex
+	targetPointString := regexp.MustCompile(`[^0-9]+`).ReplaceAllString(result.Stdout, "")
+
+	// Set default target port 8080
+	if targetPointString == "" {
+		return 8080, nil
+	}
+
+	// Convert the port value to an integer
+	targetPort, err := strconv.Atoi(targetPointString)
+	if err != nil {
+		return 0, fmt.Errorf("failed to convert target port to integer: %w", err)
+	}
+	return targetPort, nil
 }
 
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {

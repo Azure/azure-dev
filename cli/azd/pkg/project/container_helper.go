@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -21,6 +22,7 @@ type ContainerHelper struct {
 	containerRegistryService azcli.ContainerRegistryService
 	docker                   docker.Docker
 	clock                    clock.Clock
+	cloud                    *cloud.Cloud
 }
 
 func NewContainerHelper(
@@ -29,6 +31,7 @@ func NewContainerHelper(
 	clock clock.Clock,
 	containerRegistryService azcli.ContainerRegistryService,
 	docker docker.Docker,
+	cloud *cloud.Cloud,
 ) *ContainerHelper {
 	return &ContainerHelper{
 		env:                      env,
@@ -36,6 +39,7 @@ func NewContainerHelper(
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
 		clock:                    clock,
+		cloud:                    cloud,
 	}
 }
 
@@ -180,21 +184,11 @@ func (ch *ContainerHelper) Login(
 	// Only perform automatic login for ACR
 	// Other registries require manual login via external 'docker login' command
 	hostParts := strings.Split(registryName, ".")
-	if len(hostParts) == 1 || isAzureContainerRegistry(registryName) {
+	if len(hostParts) == 1 || strings.HasSuffix(registryName, ch.cloud.ContainerRegistryEndpointSuffix) {
 		return registryName, ch.containerRegistryService.Login(ctx, ch.env.GetSubscriptionId(), registryName)
 	}
 
 	return registryName, nil
-}
-
-func isAzureContainerRegistry(registryName string) bool {
-	var suffixes = []string{"azurecr.io", "azurecr.cn", "azurecr.us"}
-	for _, suffix := range suffixes {
-		if strings.HasSuffix(registryName, suffix) {
-			return true
-		}
-	}
-	return false
 }
 
 func (ch *ContainerHelper) Credentials(

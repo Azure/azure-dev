@@ -106,28 +106,14 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 	)
 
 	t.Run("Confirm", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var body promptOptions
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(err.Error()))
-				return
-			}
-
+		server := newTestExternalPromptServer(func(body promptOptions) json.RawMessage {
 			require.Equal(t, "confirm", body.Type)
 			require.Equal(t, "Are you sure?", body.Options.Message)
 			require.NotNil(t, body.Options.DefaultValue)
 			require.True(t, (*body.Options.DefaultValue).(bool))
 
-			w.WriteHeader(http.StatusOK)
-
-			respBody, _ := json.Marshal(promptResponse{
-				Result: "success",
-				Value:  convert.RefOf(json.RawMessage(`"false"`)),
-			})
-
-			_, _ = w.Write(respBody)
-		}))
+			return json.RawMessage(`"false"`)
+		})
 		t.Cleanup(server.Close)
 
 		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)

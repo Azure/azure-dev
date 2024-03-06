@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
@@ -180,37 +179,6 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 	defer func() { _ = infra.Cleanup() }()
-
-	wroteNewInput := false
-
-	for inputName, inputInfo := range infra.Inputs {
-		inputConfigKey := fmt.Sprintf("inputs.%s", inputName)
-
-		if _, has := p.env.Config.GetString(inputConfigKey); !has {
-			// No value found, so we need to generate one, and store it in the config bag.
-			//
-			// TODO(ellismg): Today this dereference is safe because when loading a manifest we validate that every
-			// input has a generate block with a min length property.  We would like to relax this in Preview 3 to
-			// to support cases where this is not the case (and we'd prompt for the value).  When we do that, we'll need
-			// to audit these dereferences to check for nil.
-			val, err := password.FromAlphabet(password.LettersAndDigits, *inputInfo.Default.Generate.MinLength)
-			if err != nil {
-				return nil, fmt.Errorf("generating value for input %s: %w", inputName, err)
-			}
-
-			if err := p.env.Config.Set(inputConfigKey, val); err != nil {
-				return nil, fmt.Errorf("saving value for input %s: %w", inputName, err)
-			}
-
-			wroteNewInput = true
-		}
-	}
-
-	if wroteNewInput {
-		if err := p.envManager.Save(ctx, p.env); err != nil {
-			return nil, fmt.Errorf("saving environment: %w", err)
-		}
-	}
 
 	infraOptions := infra.Options
 	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState

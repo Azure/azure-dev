@@ -9,9 +9,6 @@ param environmentName string
 @description('The location used for all deployed resources')
 param location string
 
-@secure()
-@metadata({azd: {type: 'inputs' }})
-param inputs object
 
 var tags = {
   'azd-env-name': environmentName
@@ -29,7 +26,6 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-    inputs: inputs
   }
 }
 

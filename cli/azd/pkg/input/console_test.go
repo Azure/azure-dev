@@ -126,7 +126,7 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 				Value:  convert.RefOf(json.RawMessage(`"false"`)),
 			})
 
-			w.Write(respBody)
+			_, _ = w.Write(respBody)
 		}))
 		t.Cleanup(server.Close)
 
@@ -139,27 +139,13 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 	})
 
 	t.Run("Prompt", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var body promptOptions
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(err.Error()))
-				return
-			}
-
+		server := newTestExternalPromptServer(func(body promptOptions) json.RawMessage {
 			require.Equal(t, "string", body.Type)
 			require.Equal(t, "What is your name?", body.Options.Message)
 			require.Nil(t, body.Options.DefaultValue)
 
-			w.WriteHeader(http.StatusOK)
-
-			respBody, _ := json.Marshal(promptResponse{
-				Result: "success",
-				Value:  convert.RefOf(json.RawMessage(`"John Doe"`)),
-			})
-
-			w.Write(respBody)
-		}))
+			return json.RawMessage(`"John Doe"`)
+		})
 		t.Cleanup(server.Close)
 
 		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
@@ -171,28 +157,14 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 	})
 
 	t.Run("Select", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var body promptOptions
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(err.Error()))
-				return
-			}
-
+		server := newTestExternalPromptServer(func(body promptOptions) json.RawMessage {
 			require.Equal(t, "select", body.Type)
 			require.Equal(t, "What is your favorite color?", body.Options.Message)
 			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Options)
 			require.Nil(t, body.Options.DefaultValue)
 
-			w.WriteHeader(http.StatusOK)
-
-			respBody, _ := json.Marshal(promptResponse{
-				Result: "success",
-				Value:  convert.RefOf(json.RawMessage(`"Green"`)),
-			})
-
-			w.Write(respBody)
-		}))
+			return json.RawMessage(`"Green"`)
+		})
 		t.Cleanup(server.Close)
 
 		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
@@ -210,28 +182,14 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 	})
 
 	t.Run("MultiSelect", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var body promptOptions
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(err.Error()))
-				return
-			}
-
+		server := newTestExternalPromptServer(func(body promptOptions) json.RawMessage {
 			require.Equal(t, "multiSelect", body.Type)
 			require.Equal(t, "What are your favorite colors?", body.Options.Message)
 			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Options)
 			require.Nil(t, body.Options.DefaultValue)
 
-			w.WriteHeader(http.StatusOK)
-
-			respBody, _ := json.Marshal(promptResponse{
-				Result: "success",
-				Value:  convert.RefOf(json.RawMessage(`["Red", "Blue"]`)),
-			})
-
-			w.Write(respBody)
-		}))
+			return json.RawMessage(`["Red", "Blue"]`)
+		})
 		t.Cleanup(server.Close)
 
 		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
@@ -249,4 +207,25 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		require.Contains(t, res, "Red")
 		require.Contains(t, res, "Blue")
 	})
+}
+
+func newTestExternalPromptServer(handler func(promptOptions) json.RawMessage) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body promptOptions
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(err.Error()))
+			return
+		}
+
+		res := handler(body)
+		w.WriteHeader(http.StatusOK)
+
+		respBody, _ := json.Marshal(promptResponse{
+			Result: "success",
+			Value:  convert.RefOf(res),
+		})
+
+		_, _ = w.Write(respBody)
+	}))
 }

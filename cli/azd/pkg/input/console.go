@@ -500,9 +500,9 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	var response string
 
 	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
-	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+	externalKey := os.Getenv("AZD_UI_PROMPT_KEY")
 
-	if externalEndpoint != "" && exteralKey != "" {
+	if externalEndpoint != "" && externalKey != "" {
 		opts := promptOptions{
 			Type: "string",
 			Options: promptOptionsOptions{
@@ -519,7 +519,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 			opts.Options.DefaultValue = convert.RefOf[any](value)
 		}
 
-		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		client := newExternalPromptClient(externalEndpoint, externalKey, http.DefaultClient)
 		result, err := client.Prompt(ctx, opts)
 		if err != nil {
 			return "", err
@@ -547,9 +547,9 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 	var response string
 
 	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
-	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+	externalKey := os.Getenv("AZD_UI_PROMPT_KEY")
 
-	if externalEndpoint != "" && exteralKey != "" {
+	if externalEndpoint != "" && externalKey != "" {
 		opts := promptOptions{
 			Type: "directory",
 			Options: promptOptionsOptions{
@@ -562,7 +562,7 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 			opts.Options.DefaultValue = convert.RefOf[any](value)
 		}
 
-		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		client := newExternalPromptClient(externalEndpoint, externalKey, http.DefaultClient)
 		result, err := client.Prompt(ctx, opts)
 		if err != nil {
 			return "", err
@@ -594,9 +594,9 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 // Prompts the user to select from a set of values
 func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int, error) {
 	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
-	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+	externalKey := os.Getenv("AZD_UI_PROMPT_KEY")
 
-	if externalEndpoint != "" && exteralKey != "" {
+	if externalEndpoint != "" && externalKey != "" {
 		opts := promptOptions{
 			Type: "select",
 			Options: promptOptionsOptions{
@@ -610,7 +610,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 			opts.Options.DefaultValue = convert.RefOf[any](value)
 		}
 
-		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		client := newExternalPromptClient(externalEndpoint, externalKey, http.DefaultClient)
 		result, err := client.Prompt(ctx, opts)
 		if err != nil {
 			return -1, err
@@ -654,9 +654,9 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 	var response []string
 
 	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
-	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+	externalKey := os.Getenv("AZD_UI_PROMPT_KEY")
 
-	if externalEndpoint != "" && exteralKey != "" {
+	if externalEndpoint != "" && externalKey != "" {
 		opts := promptOptions{
 			Type: "multiSelect",
 			Options: promptOptionsOptions{
@@ -670,7 +670,7 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 			opts.Options.DefaultValue = convert.RefOf[any](value)
 		}
 
-		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		client := newExternalPromptClient(externalEndpoint, externalKey, http.DefaultClient)
 		result, err := client.Prompt(ctx, opts)
 		if err != nil {
 			return nil, err
@@ -703,9 +703,9 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 // Prompts the user to confirm an operation
 func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (bool, error) {
 	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
-	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+	externalKey := os.Getenv("AZD_UI_PROMPT_KEY")
 
-	if externalEndpoint != "" && exteralKey != "" {
+	if externalEndpoint != "" && externalKey != "" {
 		opts := promptOptions{
 			Type: "confirm",
 			Options: promptOptionsOptions{
@@ -718,7 +718,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 			opts.Options.DefaultValue = convert.RefOf[any](value)
 		}
 
-		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		client := newExternalPromptClient(externalEndpoint, externalKey, http.DefaultClient)
 		result, err := client.Prompt(ctx, opts)
 		if err != nil {
 			return false, err

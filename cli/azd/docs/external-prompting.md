@@ -55,26 +55,26 @@ The server should respond with 200 OK and the body should be one of the of the f
 
 ### Success 
 
-When the host is able to prompt the value it is returned with a `result` of `success`:
+When the host is able to prompt the value it is returned with a `status` of `success`:
 
 ```jsonc
 {
-    "result": "success", 
+    "status": "success", 
     "value": "<string>" | "<string>[]"
 }
 ```
 
-When the type is `confirm` the value should be either `"true"` or `"false"` (a string, not a JSON boolean) indicating if the user confirmed the operation (`"true"`) or rejected it (`"false"`). Note that a user rejecting a confirm prompt still results in a `"success"` result (the value is simply `"false"`). In the case of `multiSelect` an array of string values is returned, each individual value is a value from the `"options"` array that was selected by the user.
+When the type is `confirm` the value should be either `"true"` or `"false"` (a string, not a JSON boolean) indicating if the user confirmed the operation (`"true"`) or rejected it (`"false"`). Note that a user rejecting a confirm prompt still results in a `"success"` status (the value is simply `"false"`). In the case of `multiSelect` an array of string values is returned, each individual value is a value from the `"options"` array that was selected by the user.
 
 ### Cancelled
 
 The user may decline to provide a response (imagine hitting a cancel button on the dialog that is being used to present the question, or a user hitting something like CTRL+C in a terminal interaction to abort the question asking but not the entire application).
 
-In this case the `result` is `cancelled`.
+In this case the `status` is `cancelled`.
 
 ```jsonc
 {
-    "result": "cancelled", 
+    "status": "cancelled", 
 }
 ```
 
@@ -85,10 +85,8 @@ In this case the `result` is `cancelled`.
 Some error happened during prompting - the error message will be returned as is.
 
 ```jsonc
-{   "result": "error",
-    "error": {
-        "message": "<string>" // an error message, will be the text of the `Error` returned inside `azd`.
-    }
+{   "status": "error",
+    "message": "<string>" // an error message, will be the text of the `Error` returned inside `azd`.
 }
 ```
 

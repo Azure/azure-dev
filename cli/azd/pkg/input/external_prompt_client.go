@@ -14,7 +14,7 @@ import (
 type externalPromptClient struct {
 	endpoint string
 	key      string
-	pipleine httputil.HttpClient
+	pipeline httputil.HttpClient
 }
 
 type promptOptions struct {
@@ -37,16 +37,14 @@ type promptResponse struct {
 	Value *json.RawMessage `json:"value,omitempty"`
 
 	// These fields are set when the status "error"
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
+	Message *string `json:"message,omitempty"`
 }
 
-func newExternalPromptClient(endpoint string, key string, pipleine httputil.HttpClient) *externalPromptClient {
+func newExternalPromptClient(endpoint string, key string, pipeline httputil.HttpClient) *externalPromptClient {
 	return &externalPromptClient{
 		endpoint: endpoint,
 		key:      key,
-		pipleine: pipleine,
+		pipeline: pipeline,
 	}
 }
 
@@ -68,7 +66,7 @@ func (c *externalPromptClient) Prompt(ctx context.Context, options promptOptions
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.key))
 
-	res, err := c.pipleine.Do(req)
+	res, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)
 	}
@@ -87,7 +85,7 @@ func (c *externalPromptClient) Prompt(ctx context.Context, options promptOptions
 	case "success":
 		return *resp.Value, nil
 	case "error":
-		return nil, fmt.Errorf("prompt error: %s", resp.Error.Message)
+		return nil, fmt.Errorf("prompt error: %s", *resp.Message)
 	case "cancelled":
 		return nil, fmt.Errorf("prompt cancelled")
 	default:

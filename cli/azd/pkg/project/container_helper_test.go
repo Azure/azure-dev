@@ -336,7 +336,14 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			mockContainerRegistryService := &mockContainerRegistryService{}
 			setupContainerRegistryMocks(mockContext, &mockContainerRegistryService.Mock)
 
-			containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), mockContainerRegistryService, dockerCli)
+			containerHelper := NewContainerHelper(
+				env,
+				envManager,
+				clock.NewMock(),
+				mockContainerRegistryService,
+				dockerCli,
+				cloud.AzurePublic(),
+			)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 			serviceConfig.Image = tt.image

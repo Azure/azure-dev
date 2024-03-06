@@ -387,65 +387,39 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
 	) (*cloud.Cloud, error) {
 
-		// 1. Check config (~/.azure/config.json) set by azd config set (cloud node)
-		// 2. Check project config (azure.yaml)
-		// 3. Check .azure/<environment>/config.json
+		// Precedence for cloud configuration:
+		// 1. Local environment config (.azure/<environment>/config.json)
+		// 2. Project config (azure.yaml)
+		// 3. User config (~/.azure/config.json)
+		// Default if no cloud configured: Azure Public Cloud
 
-		// Default configuration
-		var cloudConfig = &cloud.Config{Name: cloud.AzurePublicName}
-		var suggestionFn func() string
+		validClouds := fmt.Sprintf(
+			"Valid cloud names are '%s', '%s', '%s'.",
+			cloud.AzurePublicName,
+			cloud.AzureChinaCloudName,
+			cloud.AzureUSGovernmentName,
+		)
 
-		// User Configuration
-		if azdConfig, err := userConfigManager.Load(); err == nil {
-			cloudConfigNode, exists := azdConfig.Get(cloud.ConfigPath)
-			if exists {
-				value, err := cloud.ParseCloudConfig(cloudConfigNode)
-				if err == nil {
-					cloudConfig = value
-
-					// In the event of an error set the suggestion for updating the cloud configuration
-					suggestionFn = func() string {
-						return "Set the cloud configuration using 'azd config set cloud.name <name>'. "
-					}
-				}
-
-			}
-		}
-
-		// Project Configuration
-		projConfig, err := lazyProjectConfig.GetValue()
-		if err == nil && projConfig != nil && projConfig.Cloud != nil {
-			value, err := cloud.ParseCloudConfig(projConfig.Cloud)
-			if err == nil {
-				cloudConfig = value
-
-				// In the event of an error set the suggestion for updating the cloud configuration
-				suggestionFn = func() string {
-					return "Set the cloud configuration by editing the 'cloud' node in the project YAML file"
-				}
-			}
-		}
-
-		// Local Environment Configuration
+		// Local Environment Configuration (.azure/<environment>/config.json)
 		localEnvStore, _ := lazyLocalEnvStore.GetValue()
 		if azdCtx, err := lazyAzdContext.GetValue(); err == nil {
 			if azdCtx != nil && localEnvStore != nil {
 				if defaultEnvName, err := azdCtx.GetDefaultEnvironmentName(); err == nil {
-					env, err := localEnvStore.Get(ctx, defaultEnvName)
-					if err == nil {
-						cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath)
-						if exists {
-							value, err := cloud.ParseCloudConfig(cloudConfigurationNode)
-							if err == nil {
-								cloudConfig = value
+					if env, err := localEnvStore.Get(ctx, defaultEnvName); err == nil {
+						if cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath); exists {
+							if value, err := cloud.ParseCloudConfig(cloudConfigurationNode); err == nil {
+								cloudConfig, err := cloud.NewCloud(value)
+								if err == nil {
+									return cloudConfig, nil
+								}
 
-								// In the event of an error set the suggestion for updating the cloud configuration
-								suggestionFn = func() string {
-									// nolint:lll
-									return fmt.Sprintf(
-										"Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment",
+								return nil, &azcli.ErrorWithSuggestion{
+									Err: err,
+									Suggestion: fmt.Sprintf(
+										"Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment\n%s",
 										defaultEnvName,
-									)
+										validClouds,
+									),
 								}
 							}
 						}
@@ -454,23 +428,41 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			}
 		}
 
-		resolvedCloud, err := cloud.NewCloud(cloudConfig)
-
-		if err != nil {
-			validClouds := fmt.Sprintf(
-				"Valid cloud names are '%s', '%s', '%s'.",
-				cloud.AzurePublicName,
-				cloud.AzureChinaCloudName,
-				cloud.AzureUSGovernmentName,
-			)
-
-			return nil, &azcli.ErrorWithSuggestion{
-				Err:        err,
-				Suggestion: fmt.Sprintf("%s\n%s", suggestionFn(), validClouds),
+		// Project Configuration (azure.yaml)
+		projConfig, err := lazyProjectConfig.GetValue()
+		if err == nil && projConfig != nil && projConfig.Cloud != nil {
+			if value, err := cloud.ParseCloudConfig(projConfig.Cloud); err == nil {
+				if cloudConfig, err := cloud.ParseCloudConfig(value); err == nil {
+					if cloud, err := cloud.NewCloud(cloudConfig); err == nil {
+						return cloud, nil
+					} else {
+						return nil, &azcli.ErrorWithSuggestion{
+							Err: err,
+							//nolint:lll
+							Suggestion: fmt.Sprintf("Set the cloud configuration by editing the 'cloud' node in the project YAML file\n%s", validClouds),
+						}
+					}
+				}
 			}
 		}
 
-		return resolvedCloud, nil
+		// User Configuration (~/.azure/config.json)
+		if azdConfig, err := userConfigManager.Load(); err == nil {
+			if cloudConfigNode, exists := azdConfig.Get(cloud.ConfigPath); exists {
+				if value, err := cloud.ParseCloudConfig(cloudConfigNode); err == nil {
+					if cloud, err := cloud.NewCloud(value); err == nil {
+						return cloud, nil
+					} else {
+						return nil, &azcli.ErrorWithSuggestion{
+							Err:        err,
+							Suggestion: fmt.Sprintf("Set the cloud configuration using 'azd config set cloud.name <name>'.\n%s", validClouds),
+						}
+					}
+				}
+			}
+		}
+
+		return cloud.NewCloud(&cloud.Config{Name: cloud.AzurePublicName})
 	})
 
 	container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,7 @@ func Test_DevCenter_Client(t *testing.T) {
 	authManager, err := auth.NewManager(
 		fileConfigManager,
 		config.NewUserConfigManager(fileConfigManager),
+		cloud.AzurePublic(),
 		http.DefaultClient,
 		mockContext.Console,
 	)
@@ -33,7 +35,12 @@ func Test_DevCenter_Client(t *testing.T) {
 	resourceGraphClient, err := armresourcegraph.NewClient(credentials, mockContext.ArmClientOptions)
 	require.NoError(t, err)
 
-	client, err := NewDevCenterClient(credentials, mockContext.CoreClientOptions, resourceGraphClient)
+	client, err := NewDevCenterClient(
+		credentials,
+		mockContext.CoreClientOptions,
+		resourceGraphClient,
+		cloud.AzurePublic(),
+	)
 	require.NoError(t, err)
 
 	// Get dev center list

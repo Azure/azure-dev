@@ -37,8 +37,11 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		correlationPolicyFunc func() policy.Policy
 	}{
 		{
-			name:                  "WithTraceId",
-			ctx:                   trace.ContextWithSpanContext(context.Background(), trace.SpanContext{}.WithTraceID(traceId)),
+			name: "WithTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(traceId),
+			),
 			expect:                convert.RefOf(traceId.String()),
 			headerName:            cMsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
@@ -46,7 +49,10 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		{
 			name: "WithInvalidTraceId",
 			// nolint:lll
-			ctx:                   trace.ContextWithSpanContext(context.Background(), trace.SpanContext{}.WithTraceID(invalidTraceId)),
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(invalidTraceId),
+			),
 			expect:                convert.RefOf(""),
 			headerName:            cMsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
@@ -59,8 +65,11 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
-			name:                  "WithTraceId",
-			ctx:                   trace.ContextWithSpanContext(context.Background(), trace.SpanContext{}.WithTraceID(traceId)),
+			name: "WithTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(traceId),
+			),
 			expect:                convert.RefOf(traceId.String()),
 			headerName:            cMsGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
@@ -68,7 +77,10 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		{
 			name: "WithInvalidTraceId",
 			// nolint:lll
-			ctx:                   trace.ContextWithSpanContext(context.Background(), trace.SpanContext{}.WithTraceID(invalidTraceId)),
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(invalidTraceId),
+			),
 			expect:                convert.RefOf(""),
 			headerName:            cMsGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,

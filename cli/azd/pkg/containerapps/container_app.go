@@ -115,12 +115,12 @@ func (cas *containerAppService) DeployYaml(
 
 	var obj map[string]any
 	if err := yaml.Unmarshal(containerAppYaml, &obj); err != nil {
-		return fmt.Errorf("decoding container app yaml: %w", err)
+		return fmt.Errorf("decoding yaml: %w", err)
 	}
 
 	containerAppJson, err := json.Marshal(obj)
 	if err != nil {
-		return fmt.Errorf("error marshaling container app json: %w", err)
+		panic("should not have failed")
 	}
 
 	var containerApp armappcontainers.ContainerApp

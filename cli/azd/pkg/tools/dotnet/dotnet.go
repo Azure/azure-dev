@@ -203,7 +203,7 @@ func (cli *dotNetCli) GetTargetPort(
 		return 0, fmt.Errorf("failed to get target port at project '%s': %w", project, err)
 	}
 
-	// Check if the result contains numbers using regex
+	// Filter the results to only use numbers - we need to reconsider this strategy
 	targetPointString := regexp.MustCompile(`[^0-9]+`).ReplaceAllString(result.Stdout, "")
 
 	// Set default target port 8080

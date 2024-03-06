@@ -3,7 +3,8 @@
 
 import * as http from 'http';
 import { CancelledResponse, ErrorResponse, JsonServerResponse, SuccessResponseBase, UndefinedResponse, startJsonServer } from './jsonServer';
-import { DialogResponses, IActionContext, IAzureQuickPickItem, IAzureQuickPickOptions, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
+import { IActionContext, IAzureQuickPickItem, IAzureQuickPickOptions, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
+import { MessageItem } from 'vscode';
 
 type PromptServerSuccessResponse = SuccessResponseBase & {
     value: boolean | string | string[] | number | number[];
@@ -71,7 +72,11 @@ function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
         return false;
     }
 
-    if (!!maybePromptServerRequest.options.options && (!Array.isArray(maybePromptServerRequest.options.options) || !maybePromptServerRequest.options.options.every(isValidSelectOption))) {
+    if ((maybePromptServerRequest.type === 'select' || maybePromptServerRequest.type === 'multiSelect' || maybePromptServerRequest.type === 'confirm') && !!maybePromptServerRequest.options.options) {
+        return false;
+    }
+
+    if ((!Array.isArray(maybePromptServerRequest.options.options) || !maybePromptServerRequest.options.options.every(isValidSelectOption))) {
         return false;
     }
 
@@ -120,7 +125,7 @@ export function startPromptServer(): Promise<{ server: http.Server, endpoint: st
                             } satisfies JsonServerResponse<PromptServerSuccessResponse>;
                         }
                         case 'confirm': {
-                            const value = await promptConfirmation(actionContext, reqBody.options.message, reqBody.options.help);
+                            const value = await promptConfirmation(actionContext, reqBody.options.message, reqBody.options.options!, reqBody.options.help);
                             return {
                                 statusCode: 200,
                                 result: {
@@ -156,7 +161,8 @@ async function promptSelect(context: IActionContext, isMulti: boolean, message: 
     const items: IAzureQuickPickItem<number>[] = options.map((option, index) => { return { label: option.label, description: option.description, data: index }; });
 
     const quickPickOptions: IAzureQuickPickOptions = {
-        placeHolder: message,
+        placeHolder: help,
+        title: message,
         ignoreFocusOut: true,
         isPickSelected: p => p.label === defaultValue,
     };
@@ -171,11 +177,18 @@ async function promptSelect(context: IActionContext, isMulti: boolean, message: 
     }
 }
 
-async function promptConfirmation(context: IActionContext, message: string, help?: string): Promise<boolean> {
-    return await context.ui.showWarningMessage(
+interface IAzureMessageItem<T> extends MessageItem {
+    data: T;
+}
+
+async function promptConfirmation(context: IActionContext, message: string, options: SelectOption[], help?: string): Promise<number> {
+    const buttons: IAzureMessageItem<number>[] = options.map((option, index) => { return { title: option.label, data: index }; });
+
+    const selection = await context.ui.showWarningMessage(
         message,
         { modal: true, detail: help },
-        DialogResponses.yes,
-        DialogResponses.no,
-    ) === DialogResponses.yes;
+        ...buttons,
+    );
+
+    return selection.data;
 }

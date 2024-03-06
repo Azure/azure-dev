@@ -66,7 +66,7 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
 
     const deleteOption: vscode.MessageItem = { title: vscode.l10n.t('Delete') };
 
-    const result = await vscode.window.showWarningMessage(
+    const result = await context.ui.showWarningMessage(
         vscode.l10n.t('Are you sure you want to delete the {0} environment?', name),
         { modal: true },
         deleteOption);

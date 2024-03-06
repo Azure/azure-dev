@@ -3,7 +3,6 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { createHash } from 'crypto';
 import { IActionContext, IAzureQuickPickItem, UserCancelledError } from '@microsoft/vscode-azext-utils';
 import { createAzureDevCli } from "../utils/azureDevCli";
 import { execAsync } from "../utils/process";
@@ -50,7 +49,7 @@ export async function getWorkingFolder(context: IActionContext, selectedFile?: v
     return folderPath;
 }
 
-export async function pickAzureYamlFile(context: IActionContext): Promise<vscode.Uri | undefined> {
+async function pickAzureYamlFile(context: IActionContext): Promise<vscode.Uri | undefined> {
     let filePath: vscode.Uri | undefined = undefined;
 
     const azureYamlFileUris = await vscode.workspace.findFiles(AzureYamlGlobPattern);
@@ -81,38 +80,6 @@ export function getAzDevTerminalTitle(): string {
     return vscode.l10n.t('az dev');
 }
 
-const UseCustomTemplate: string = 'azure-dev:/template/custom';
-
-export async function selectApplicationTemplate(context: IActionContext): Promise<string> {
-    let templateUrl: string = '';
-
-    const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder
-        .withArg('template').withArg('list')
-        .withArg('--output').withArg('json')
-        .build();
-    const result = await execAsync(command, azureCli.spawnOptions());
-    const templates = JSON.parse(result.stdout) as { name: string, description: string, repositoryPath: string }[];
-    const choices = templates.map(t => { return { label: t.name, detail: t.description, data: t.repositoryPath } as IAzureQuickPickItem<string>; });
-    choices.unshift({ label: vscode.l10n.t('Use another template...'), data: '', id: UseCustomTemplate });
-
-    const template = await context.ui.showQuickPick(choices, {
-        canPickMany: false,
-        title: vscode.l10n.t('Select application template')
-    });
-
-    if (template.id === UseCustomTemplate) {
-        templateUrl = await context.ui.showInputBox({
-            prompt: vscode.l10n.t("Enter application template repository name ('{org or user}/{repo}')")
-        });
-    } else {
-        templateUrl = template.data;
-    }
-
-    context.telemetry.properties.templateUrlHash = sha256(templateUrl.toLowerCase());
-    return templateUrl;
-}
-
 export type EnvironmentInfo = {
     Name: string,
     IsDefault: boolean,
@@ -133,12 +100,6 @@ export async function getEnvironments(context: IActionContext, cwd: string): Pro
     const envInfo = JSON.parse(result.stdout) as EnvironmentInfo[];
     context.telemetry.properties.environmentCount = envInfo.length.toString();
     return envInfo;
-}
-
-function sha256(s: string): string {
-    const hash = createHash('sha256');
-    const retval = hash.update(s).digest('hex');
-    return retval;
 }
 
 export async function showReadmeFile(folder: vscode.Uri | undefined): Promise<void> {

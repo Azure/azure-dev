@@ -77,8 +77,9 @@ func (s *Server) validateSession(ctx context.Context, session Session) (*serverS
 
 type container struct {
 	*ioc.NestedContainer
-	outWriter *writerMultiplexer
-	errWriter *writerMultiplexer
+	outWriter     *writerMultiplexer
+	errWriter     *writerMultiplexer
+	spinnerWriter *writerMultiplexer
 }
 
 // newContainer creates a new container for the session.
@@ -93,7 +94,7 @@ func (s *serverSession) newContainer() (*container, error) {
 
 	outWriter := newWriter(fmt.Sprintf("[%s stdout] ", id))
 	errWriter := newWriter(fmt.Sprintf("[%s stderr] ", id))
-
+	spinnerWriter := newWriter(fmt.Sprintf("[%s spinner] ", id))
 	// Useful for debugging, direct all the output to the console, so you can see it in VS Code.
 	outWriter.AddWriter(&lineWriter{
 		next: writerFunc(func(p []byte) (n int, err error) {
@@ -109,17 +110,27 @@ func (s *serverSession) newContainer() (*container, error) {
 		}),
 	})
 
+	spinnerWriter.AddWriter(&lineWriter{
+		next: writerFunc(func(p []byte) (n int, err error) {
+			os.Stdout.Write([]byte(fmt.Sprintf("[%s spinner] %s", id, string(p))))
+			return n, nil
+		}),
+	})
+
 	c.MustRegisterScoped(func() input.Console {
 		stdout := outWriter
 		stderr := errWriter
 		stdin := strings.NewReader("")
 		writer := colorable.NewNonColorable(stdout)
 
-		return input.NewConsole(true, false, writer, input.ConsoleHandles{
-			Stdin:  stdin,
-			Stdout: stdout,
-			Stderr: stderr,
-		}, &output.NoneFormatter{})
+		return input.NewConsole(true, false, input.Writers{
+			Output:  writer,
+			Spinner: colorable.NewNonColorable(spinnerWriter)},
+			input.ConsoleHandles{
+				Stdin:  stdin,
+				Stdout: stdout,
+				Stderr: stderr,
+			}, &output.NoneFormatter{})
 	})
 
 	c.MustRegisterScoped(func(console input.Console) io.Writer {
@@ -144,5 +155,6 @@ func (s *serverSession) newContainer() (*container, error) {
 		NestedContainer: c,
 		outWriter:       outWriter,
 		errWriter:       errWriter,
+		spinnerWriter:   spinnerWriter,
 	}, nil
 }

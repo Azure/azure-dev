@@ -118,7 +118,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		isTerminal := cmd.OutOrStdout() == os.Stdout &&
 			cmd.InOrStdin() == os.Stdin && input.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 
-		return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
+		return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
 			Stdin:  cmd.InOrStdin(),
 			Stdout: cmd.OutOrStdout(),
 			Stderr: cmd.ErrOrStderr(),

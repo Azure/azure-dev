@@ -68,6 +68,13 @@ func newInfoProgressMessage(message string) ProgressMessage {
 	}
 }
 
+// WithMessage returns a new ProgressMessage with the given message and timestamp set to now.
+func (m ProgressMessage) WithMessage(message string) ProgressMessage {
+	m.Message = message
+	m.Time = time.Now()
+	return m
+}
+
 type MessageSeverity int
 
 const (

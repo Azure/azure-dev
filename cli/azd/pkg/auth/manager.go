@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -113,9 +114,14 @@ func NewManager(
 		return nil, fmt.Errorf("creating msal cache root: %w", err)
 	}
 
+	authorityUrl, err := url.JoinPath(cloud.Configuration.ActiveDirectoryAuthorityHost, "organizations")
+	if err != nil {
+		return nil, fmt.Errorf("joining authority url: %w", err)
+	}
+
 	options := []public.Option{
 		public.WithCache(newCache(cacheRoot)),
-		public.WithAuthority(cloud.Configuration.ActiveDirectoryAuthorityHost + "organizations"),
+		public.WithAuthority(authorityUrl),
 		public.WithHTTPClient(httpClient),
 	}
 
@@ -229,7 +235,16 @@ func (m *Manager) CredentialForCurrentUser(
 
 	if currentUser.HomeAccountID != nil {
 		if currentUser.FromOneAuth {
-			authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + options.TenantID
+			tenant := options.TenantID
+			if tenant == "" {
+				tenant = "organizations"
+			}
+
+			authority, err := url.JoinPath(m.cloud.Configuration.ActiveDirectoryAuthorityHost, tenant)
+			if err != nil {
+				return nil, fmt.Errorf("joining authority url: %w", err)
+			}
+
 			return oneauth.NewCredential(authority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
 				HomeAccountID: *currentUser.HomeAccountID,
 				NoPrompt:      options.NoPrompt,

@@ -1884,6 +1884,42 @@ func (p *BicepProvider) modulePath() string {
 	return filepath.Join(infraRoot, moduleFilename)
 }
 
+// inputsParameter generates and updates input parameters for the Azure Resource Manager (ARM) template.
+// It takes an existingInputs map that contains the current input values for each resource, and an autoGenParameters map
+// that contains information about the input parameters to be generated.
+// The method iterates over the autoGenParameters map and checks if each input parameter already exists in the existingInputs
+// map.
+// If an input parameter does not exist, a new value is generated and added to the existingInputs map.
+// The method returns an azure.ArmParameterValue struct that contains the updated existingInputs map, a boolean indicating
+// whether new inputs were written, and an error if any occurred during the generation of input values.
+func inputsParameter(
+	existingInputs map[string]map[string]any, autoGenParameters map[string]map[string]azure.AutoGenInput) (
+	inputsParameter azure.ArmParameterValue, inputsUpdated bool, err error) {
+	wroteNewInput := false
+
+	for inputResource, inputResourceInfo := range autoGenParameters {
+		existingRecordsForResource := make(map[string]any)
+		if current, exists := existingInputs[inputResource]; exists {
+			existingRecordsForResource = current
+		}
+		for inputName, inputInfo := range inputResourceInfo {
+			if _, has := existingRecordsForResource[inputName]; !has {
+				val, err := password.FromAlphabet(password.LettersAndDigits, inputInfo.Len)
+				if err != nil {
+					return inputsParameter, inputsUpdated, fmt.Errorf("generating value for input %s: %w", inputName, err)
+				}
+				existingRecordsForResource[inputName] = val
+				wroteNewInput = true
+			}
+		}
+		existingInputs[inputResource] = existingRecordsForResource
+	}
+
+	return azure.ArmParameterValue{
+		Value: existingInputs,
+	}, wroteNewInput, nil
+}
+
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
 func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
@@ -1936,24 +1972,10 @@ func (p *BicepProvider) ensureParameters(
 				if _, err := p.env.Config.GetSection("inputs", &existingInputs); err != nil {
 					return nil, fmt.Errorf("reading inputs from config: %w", err)
 				}
-				wroteNewInput := false
 
-				for inputResource, inputResourceInfo := range m.AutoGenerate {
-					existingRecordsForResource := make(map[string]any)
-					if current, exists := existingInputs[inputResource]; exists {
-						existingRecordsForResource = current
-					}
-					for inputName, inputInfo := range inputResourceInfo {
-						if _, has := existingRecordsForResource[inputName]; !has {
-							val, err := password.FromAlphabet(password.LettersAndDigits, inputInfo.Len)
-							if err != nil {
-								return nil, fmt.Errorf("generating value for input %s: %w", inputName, err)
-							}
-							existingRecordsForResource[inputName] = val
-							wroteNewInput = true
-						}
-					}
-					existingInputs[inputResource] = existingRecordsForResource
+				inputsParameter, wroteNewInput, err := inputsParameter(existingInputs, m.AutoGenerate)
+				if err != nil {
+					return nil, fmt.Errorf("generating inputs: %w", err)
 				}
 
 				if wroteNewInput {
@@ -1965,9 +1987,7 @@ func (p *BicepProvider) ensureParameters(
 					}
 				}
 
-				configuredParameters[key] = azure.ArmParameterValue{
-					Value: existingInputs,
-				}
+				configuredParameters[key] = inputsParameter
 				continue
 			}
 		}

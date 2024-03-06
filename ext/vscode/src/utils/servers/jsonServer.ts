@@ -35,8 +35,13 @@ export function startJsonServer(urls: Record<string, UrlHandler>): Promise<{ ser
     const key = randomBytes(32).toString('hex');
 
     const server = http.createServer(async (req, res) => {
-        if (req.headers['content-type'] !== 'application/json' || req.method !== 'POST' || !req.url || !!urls[req.url] ) {
+        if (req.headers['content-type'] !== 'application/json' || req.method !== 'POST' || !req.url) {
             res.writeHead(400).end();
+            return;
+        }
+
+        if (!urls[req.url]) {
+            res.writeHead(404).end();
             return;
         }
 

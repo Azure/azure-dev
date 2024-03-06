@@ -20,17 +20,14 @@ type PromptServerRequest = {
     options: {
         message: string;
         help: string | undefined;
-        options: {
-            label: string;
-            description: string;
-        }[] | undefined;
+        options: SelectOption[] | undefined;
         defaultValue: string | undefined;
     }
 };
 
 type SelectOption = {
     label: string;
-    description: string;
+    description: string | undefined;
 };
 
 function isValidSelectOption(obj: unknown): obj is SelectOption {
@@ -40,7 +37,11 @@ function isValidSelectOption(obj: unknown): obj is SelectOption {
 
     const maybeSelectOption = obj as SelectOption;
 
-    if (typeof maybeSelectOption.label !== 'string' || typeof maybeSelectOption.description !== 'string') {
+    if (typeof maybeSelectOption.label !== 'string') {
+        return false;
+    }
+
+    if (!!maybeSelectOption.description && typeof maybeSelectOption.description !== 'string') {
         return false;
     }
 
@@ -54,7 +55,7 @@ function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
 
     const maybePromptServerRequest = obj as PromptServerRequest;
 
-    if (!Array.isArray(maybePromptServerRequest.type) || !AllPromptTypes.includes(maybePromptServerRequest.type)) {
+    if (typeof maybePromptServerRequest.type !== 'string' || !AllPromptTypes.includes(maybePromptServerRequest.type)) {
         return false;
     }
 
@@ -143,6 +144,11 @@ export function startPromptServer(): Promise<{ server: http.Server, endpoint: st
 
 async function promptString(context: IActionContext, isPassword: boolean, message: string, defaultValue?: string, help?: string): Promise<string> {
     return await context.ui.showInputBox({
+        prompt: message,
+        placeHolder: help,
+        password: isPassword,
+        ignoreFocusOut: true,
+        value: defaultValue,
     });
 }
 
@@ -167,8 +173,8 @@ async function promptSelect(context: IActionContext, isMulti: boolean, message: 
 
 async function promptConfirmation(context: IActionContext, message: string, help?: string): Promise<boolean> {
     return await context.ui.showWarningMessage(
-        help ? message + '\n\n' + help : message,
-        { modal: true },
+        message,
+        { modal: true, detail: help },
         DialogResponses.yes,
         DialogResponses.no,
     ) === DialogResponses.yes;

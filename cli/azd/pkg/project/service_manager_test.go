@@ -258,9 +258,8 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
 
-		require.Panics(t, func() {
-			_, _ = sm.GetFrameworkService(*mockContext.Context, serviceConfig)
-		})
+		_, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
+		require.Error(t, err)
 	})
 }
 

@@ -10,9 +10,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -22,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	tm "github.com/buger/goterm"
@@ -85,6 +89,8 @@ type Console interface {
 	IsSpinnerInteractive() bool
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
+	// Prompts the user for a directory path.
+	PromptDir(ctx context.Context, options ConsoleOptions) (string, error)
 	// Prompts the user to select a single value from a set of values
 	Select(ctx context.Context, options ConsoleOptions) (int, error)
 	// Prompts the user to select zero or more values from a set of values
@@ -140,9 +146,7 @@ type ConsoleOptions struct {
 	DefaultValue any
 
 	// Prompt-only options
-
 	IsPassword bool
-	Suggest    func(input string) (completions []string)
 }
 
 type ConsoleHandles struct {
@@ -483,7 +487,6 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 		Message: options.Message,
 		Default: defaultValue,
 		Help:    options.Help,
-		Suggest: options.Suggest,
 	}
 }
 
@@ -496,6 +499,39 @@ const cAfterIO = "0\n"
 func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
 	var response string
 
+	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
+	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+
+	if externalEndpoint != "" && exteralKey != "" {
+		opts := promptOptions{
+			Type: "string",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+			},
+		}
+
+		if options.IsPassword {
+			opts.Type = "password"
+		}
+
+		if value, ok := options.DefaultValue.(string); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		result, err := client.Prompt(ctx, opts)
+		if err != nil {
+			return "", err
+		}
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			return "", fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		return response, nil
+	}
+
 	err := c.doInteraction(func(c *AskerConsole) error {
 		return c.asker(promptFromOptions(options), &response)
 	})
@@ -506,8 +542,94 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	return response, nil
 }
 
+// Prompts the user for a single value
+func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (string, error) {
+	var response string
+
+	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
+	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+
+	if externalEndpoint != "" && exteralKey != "" {
+		opts := promptOptions{
+			Type: "directory",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+			},
+		}
+
+		if value, ok := options.DefaultValue.(string); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		result, err := client.Prompt(ctx, opts)
+		if err != nil {
+			return "", err
+		}
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			return "", fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		return response, nil
+	}
+
+	err := c.doInteraction(func(c *AskerConsole) error {
+		prompt := &survey.Input{
+			Message: options.Message,
+			Help:    options.Help,
+			Suggest: dirSuggestions,
+		}
+
+		return c.asker(prompt, &response)
+	})
+	if err != nil {
+		return response, err
+	}
+	c.updateLastBytes(cAfterIO)
+	return response, nil
+}
+
 // Prompts the user to select from a set of values
 func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int, error) {
+	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
+	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+
+	if externalEndpoint != "" && exteralKey != "" {
+		opts := promptOptions{
+			Type: "select",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+				Options: convert.RefOf(options.Options),
+			},
+		}
+
+		if value, ok := options.DefaultValue.(string); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		result, err := client.Prompt(ctx, opts)
+		if err != nil {
+			return -1, err
+		}
+
+		var choice string
+
+		if err := json.Unmarshal(result, &choice); err != nil {
+			return -1, fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		res := slices.Index(options.Options, choice)
+		if res == -1 {
+			return -1, fmt.Errorf("invalid choice: %s", choice)
+		}
+
+		return res, nil
+	}
+
 	survey := &survey.Select{
 		Message: options.Message,
 		Options: options.Options,
@@ -529,14 +651,44 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 }
 
 func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) ([]string, error) {
+	var response []string
+
+	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
+	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+
+	if externalEndpoint != "" && exteralKey != "" {
+		opts := promptOptions{
+			Type: "multiSelect",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+				Options: convert.RefOf(options.Options),
+			},
+		}
+
+		if value, ok := options.DefaultValue.([]string); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		result, err := client.Prompt(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			return nil, fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		return response, nil
+	}
+
 	survey := &survey.MultiSelect{
 		Message: options.Message,
 		Options: options.Options,
 		Default: options.DefaultValue,
 		Help:    options.Help,
 	}
-
-	var response []string
 
 	err := c.doInteraction(func(c *AskerConsole) error {
 		return c.asker(survey, &response)
@@ -550,6 +702,45 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 
 // Prompts the user to confirm an operation
 func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (bool, error) {
+	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
+	exteralKey := os.Getenv("AZD_UI_PROMPT_KEY")
+
+	if externalEndpoint != "" && exteralKey != "" {
+		opts := promptOptions{
+			Type: "confirm",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+			},
+		}
+
+		if value, ok := options.DefaultValue.(bool); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		client := newExternalPromptClient(externalEndpoint, exteralKey, http.DefaultClient)
+		result, err := client.Prompt(ctx, opts)
+		if err != nil {
+			return false, err
+		}
+
+		var response string
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			return false, fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		switch response {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		default:
+			return false, fmt.Errorf("invalid response: %s", response)
+
+		}
+	}
+
 	var defaultValue bool
 	if value, ok := options.DefaultValue.(bool); ok {
 		defaultValue = value
@@ -759,6 +950,18 @@ func GetStepResultFormat(result error) SpinnerUxType {
 		formatResult = StepFailed
 	}
 	return formatResult
+}
+
+// dirSuggestions provides suggestion completions for directories given the current input directory.
+func dirSuggestions(input string) []string {
+	completions := []string{}
+	matches, _ := filepath.Glob(input + "*")
+	for _, match := range matches {
+		if fs, err := os.Stat(match); err == nil && fs.IsDir() {
+			completions = append(completions, match)
+		}
+	}
+	return completions
 }
 
 // Handle doing interactive calls. It checks if there's a spinner running to pause it before doing interactive actions.

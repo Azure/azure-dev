@@ -5,11 +5,16 @@ package input
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
 )
 
@@ -83,4 +88,165 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 	c.StopSpinner(ctx, "Done.", StepDone)
 	time.Sleep(cSleep)
 	require.Len(t, lines.captured, 5)
+}
+
+func TestAskerConsoleExternalPrompt(t *testing.T) {
+	c := NewConsole(
+		false,
+		false,
+		Writers{
+			Output: os.Stdout,
+		},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+		},
+		&output.NoneFormatter{},
+	)
+
+	t.Run("Confirm", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body promptOptions
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(err.Error()))
+				return
+			}
+
+			require.Equal(t, "confirm", body.Type)
+			require.Equal(t, "Are you sure?", body.Options.Message)
+			require.NotNil(t, body.Options.DefaultValue)
+			require.True(t, (*body.Options.DefaultValue).(bool))
+
+			w.WriteHeader(http.StatusOK)
+
+			respBody, _ := json.Marshal(promptResponse{
+				Result: "success",
+				Value:  convert.RefOf(json.RawMessage(`"false"`)),
+			})
+
+			w.Write(respBody)
+		}))
+		t.Cleanup(server.Close)
+
+		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
+		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+
+		res, err := c.Confirm(context.Background(), ConsoleOptions{Message: "Are you sure?", DefaultValue: true})
+		require.NoError(t, err)
+		require.False(t, res)
+	})
+
+	t.Run("Prompt", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body promptOptions
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(err.Error()))
+				return
+			}
+
+			require.Equal(t, "string", body.Type)
+			require.Equal(t, "What is your name?", body.Options.Message)
+			require.Nil(t, body.Options.DefaultValue)
+
+			w.WriteHeader(http.StatusOK)
+
+			respBody, _ := json.Marshal(promptResponse{
+				Result: "success",
+				Value:  convert.RefOf(json.RawMessage(`"John Doe"`)),
+			})
+
+			w.Write(respBody)
+		}))
+		t.Cleanup(server.Close)
+
+		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
+		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+
+		res, err := c.Prompt(context.Background(), ConsoleOptions{Message: "What is your name?"})
+		require.NoError(t, err)
+		require.Equal(t, "John Doe", res)
+	})
+
+	t.Run("Select", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body promptOptions
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(err.Error()))
+				return
+			}
+
+			require.Equal(t, "select", body.Type)
+			require.Equal(t, "What is your favorite color?", body.Options.Message)
+			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Options)
+			require.Nil(t, body.Options.DefaultValue)
+
+			w.WriteHeader(http.StatusOK)
+
+			respBody, _ := json.Marshal(promptResponse{
+				Result: "success",
+				Value:  convert.RefOf(json.RawMessage(`"Green"`)),
+			})
+
+			w.Write(respBody)
+		}))
+		t.Cleanup(server.Close)
+
+		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
+		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+
+		res, err := c.Select(
+			context.Background(),
+			ConsoleOptions{
+				Message: "What is your favorite color?",
+				Options: []string{"Red", "Green", "Blue"},
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, 1, res)
+	})
+
+	t.Run("MultiSelect", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body promptOptions
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(err.Error()))
+				return
+			}
+
+			require.Equal(t, "multiSelect", body.Type)
+			require.Equal(t, "What are your favorite colors?", body.Options.Message)
+			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Options)
+			require.Nil(t, body.Options.DefaultValue)
+
+			w.WriteHeader(http.StatusOK)
+
+			respBody, _ := json.Marshal(promptResponse{
+				Result: "success",
+				Value:  convert.RefOf(json.RawMessage(`["Red", "Blue"]`)),
+			})
+
+			w.Write(respBody)
+		}))
+		t.Cleanup(server.Close)
+
+		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
+		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+
+		res, err := c.MultiSelect(
+			context.Background(),
+			ConsoleOptions{
+				Message: "What are your favorite colors?",
+				Options: []string{"Red", "Green", "Blue"},
+			},
+		)
+		require.NoError(t, err)
+		require.Len(t, res, 2)
+		require.Contains(t, res, "Red")
+		require.Contains(t, res, "Blue")
+	})
 }

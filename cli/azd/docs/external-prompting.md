@@ -8,7 +8,7 @@ Today, this prompting happens via the terminal - we have a set of methods that c
 
 - `Prompt`: Asks the user for a single (freeform) text value.
 - `Select`: Asks the user to pick a single value from a list of options.
-- `MulitSelect`: Asks the user to pick zero or more values from a list of options.
+- `MultiSelect`: Asks the user to pick zero or more values from a list of options.
 - `Confirm`: Asks the user to confirm and operation with a given message.
 
 The implementation of this interface uses a go library to provide a terminal experience (using ANSI escape sequences to provide a nice terminal interaction model) with a fallback to raw text input when the user is not connected to a proper terminal.
@@ -35,16 +35,16 @@ Setting the following headers:
 
 The use of `AZD_UI_PROMPT_KEY` allows the host to block requests coming from other clients on the same machine (since the it is expected the host runs a ephemeral HTTP server listing on `127.0.0.1` on a random port). It is expected that the host will generate a random string and use this as a shared key for the lifetime of an `azd` invocation.
 
-The body of the request contains information about the prompt that `azd` needs a response for:
+The body of the request contains a JSON object with all the information about the prompt that `azd` needs a response for:
 
 ```jsonc
 {
-    "type": "<string>", // one of "string", "password", "select", "multiSelect", "confirm",
+    "type": "<string>", // one of "string", "password", "select", "multiSelect", "confirm", "directory"
     "options": {
       "message": "<string>", // the message to be displayed as part of the prompt
       "help": "<string>", // optional help text that can be displayed upon request
       "options": [ "<string>" /* ... */  ], // for select and multiSelect types - the valid options the user should pick from
-      "defaultValue": "<string>", // optional default value, when undefined there is no default.
+      "defaultValue":  "<string>" | "<string>[]" | boolean, // optional default value (or values, for multiSelect), when undefined there is no default.
     }
 }
 ```
@@ -60,7 +60,7 @@ When the host is able to prompt the value it is returned with a `result` of `suc
 ```jsonc
 {
     "result": "success", 
-    "value": "<string> | <string>[]"
+    "value": "<string>" | "<string>[]"
 }
 ```
 
@@ -95,20 +95,5 @@ Some error happened during prompting - the error message will be returned as is.
 Note that an error prompting leads to a successful result at the HTTP layer (200 OK) but with a special error object. `azd` treats other responses as if the server has an internal bug.
 
 ## Open Issues
-
-- [ ] ConsoleOptions today provides a way to provide a function which takes a string and returns an set of suggestions, this is used by our implementation today to tab complete directories.  Do we want to provide similar support here? If so, how might we do that? One could imagine a sort of LRO style thing where the server instead responds with a result like `"completionRequest"` which looks like:
-
-```jsonc
-{
-    "result": "completionRequest",
-    "location": "<url>",
-    "value": "<string>"
-}
-```
-
-And `azd` would execute the completion function, then post the results to the URL listed in `location`, yielding control back
-to the host and allowing it to display the completions.
-
-Another option would be to not support this but instead add a `directory` type that can be prompted for - to allow the host to provide special UI or fall back to a normal string selection for a path, similar to how we handle `password`.
 
 - [ ] Some hosts, such as VS, may want to collect a set of prompts up front and present them all on a single page as part of an end to end - how would we support this? It may be that the answer is "that's a separate API" and this solution is simply focused on "when `azd` it self is driving and end to end workflow".

@@ -142,6 +142,12 @@ func (c *MockConsole) Prompt(ctx context.Context, options input.ConsoleOptions) 
 	return value.(string), err
 }
 
+func (c *MockConsole) PromptDir(ctx context.Context, options input.ConsoleOptions) (string, error) {
+	c.log = append(c.log, options.Message)
+	value, err := c.respond("PromptDir", options)
+	return value.(string), err
+}
+
 // Writes a multiple choice selection to the console for the user to choose
 func (c *MockConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
 	c.log = append(c.log, options.Message)

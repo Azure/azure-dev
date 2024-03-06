@@ -66,7 +66,7 @@ type FrameworkService interface {
 
 	// Initializes the framework service for the specified service configuration
 	// This is useful if the framework needs to subscribe to any service events
-	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+	Initialize(ctx context.Context, component *ComponentConfig) error
 
 	// Gets the requirements for the language or framework service.
 	// This enables more fine grain control on whether the language / framework
@@ -76,13 +76,13 @@ type FrameworkService interface {
 	// Restores dependencies for the framework service
 	Restore(
 		ctx context.Context,
-		serviceConfig *ServiceConfig,
+		component *ComponentConfig,
 	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
 
 	// Builds the source for the framework service
 	Build(
 		ctx context.Context,
-		serviceConfig *ServiceConfig,
+		component *ComponentConfig,
 		restoreOutput *ServiceRestoreResult,
 	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
 
@@ -90,7 +90,7 @@ type FrameworkService interface {
 	// This may optionally perform a rebuild internally depending on the language/framework requirements
 	Package(
 		ctx context.Context,
-		serviceConfig *ServiceConfig,
+		component *ComponentConfig,
 		buildOutput *ServiceBuildResult,
 	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
 }

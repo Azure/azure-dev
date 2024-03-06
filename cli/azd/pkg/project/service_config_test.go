@@ -4,11 +4,16 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestServiceConfigAddHandler(t *testing.T) {
@@ -210,17 +215,238 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 	require.True(t, handlerCalled)
 }
 
+func Test_ServiceConfig_Unmarshall(t *testing.T) {
+	tests := []struct {
+		name       string
+		yaml       string
+		validateFn func(t *testing.T, proj *ProjectConfig)
+	}{
+		{
+			name: "Standard Project",
+			yaml: heredoc.Doc(`
+				name: test-proj
+				services:
+					api:
+						host: aks
+						language: js
+						project: ./src/api
+			`),
+			validateFn: func(t *testing.T, proj *ProjectConfig) {
+				require.Equal(t, "api", proj.Services["api"].Name)
+				require.Equal(t, AksTarget, proj.Services["api"].Host)
+				require.Equal(t, ServiceLanguageJavaScript, proj.Services["api"].Language)
+				require.Equal(t, "./src/api", proj.Services["api"].RelativePath)
+
+				// Expect the same values to be available in the container configuration
+				require.Equal(t, AksTarget, proj.Services["api"].Components[defaultComponentName].Host)
+				require.Equal(t, ServiceLanguageJavaScript, proj.Services["api"].Components[defaultComponentName].Language)
+				require.Equal(t, "./src/api", proj.Services["api"].Components[defaultComponentName].RelativePath)
+			},
+		},
+		{
+			name: "Multiple Containers",
+			yaml: heredoc.Doc(`
+				name: test-proj
+				services:
+					todo:
+						host: aks
+						containers:
+							api:
+								language: js
+								project: ./src/api
+							web:
+								language: js
+								project: ./src/web
+			`),
+			validateFn: func(t *testing.T, proj *ProjectConfig) {
+				require.Equal(t, "todo", proj.Services["todo"].Name)
+				require.Equal(t, AksTarget, proj.Services["todo"].Host)
+				require.Equal(t, 2, len(proj.Services["todo"].Components))
+				require.Equal(t, ServiceLanguageJavaScript, proj.Services["todo"].Components["api"].Language)
+				require.Equal(t, ServiceLanguageJavaScript, proj.Services["todo"].Components["web"].Language)
+				require.Equal(t, "./src/api", proj.Services["todo"].Components["api"].RelativePath)
+				require.Equal(t, "./src/web", proj.Services["todo"].Components["web"].RelativePath)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			testYaml := strings.ReplaceAll(test.yaml, "\t", "  ")
+			azdProj, err := Parse(*mockContext.Context, testYaml)
+			require.NoError(t, err)
+			require.NotNil(t, azdProj)
+
+			test.validateFn(t, azdProj)
+		})
+	}
+}
+
+func Test_ServiceConfig_Marshall(t *testing.T) {
+	tests := []struct {
+		name   string
+		config ProjectConfig
+	}{
+		{
+			name: "Standard Project",
+			config: ProjectConfig{
+				Name: "test-proj",
+				Services: map[string]*ServiceConfig{
+					"api": {
+						Components: map[string]*ComponentConfig{
+							defaultComponentName: {
+								Host:         AksTarget,
+								Language:     ServiceLanguageJavaScript,
+								RelativePath: "./src/api",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Multiple Containers",
+			config: ProjectConfig{
+				Name: "test-proj",
+				Services: map[string]*ServiceConfig{
+					"todo": {
+						ComponentConfig: &ComponentConfig{
+							Host: AksTarget,
+						},
+						Components: map[string]*ComponentConfig{
+							"api": {
+								Language:     ServiceLanguageJavaScript,
+								RelativePath: "./src/api",
+							},
+							"web": {
+								Language:     ServiceLanguageJavaScript,
+								RelativePath: "./src/web",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Single container with non-default name",
+			config: ProjectConfig{
+				Name: "test-proj",
+				Services: map[string]*ServiceConfig{
+					"todo": {
+						ComponentConfig: &ComponentConfig{
+							Host: AksTarget,
+						},
+						Components: map[string]*ComponentConfig{
+							"api": {
+								Language:     ServiceLanguageJavaScript,
+								RelativePath: "./src/api",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Multiple containers with other configuration",
+			config: ProjectConfig{
+				Name: "test-proj",
+				Services: map[string]*ServiceConfig{
+					"todo": {
+						ComponentConfig: &ComponentConfig{
+							Host: ContainerAppTarget,
+						},
+						Components: map[string]*ComponentConfig{
+							"main": {
+								Language:     ServiceLanguageJavaScript,
+								RelativePath: "./src/api",
+								Docker: DockerProjectOptions{
+									Path:     "./Dockerfile",
+									Registry: osutil.NewExpandableString("docker.io"),
+									Image:    osutil.NewExpandableString("test-image"),
+									Tag:      osutil.NewExpandableString("latest"),
+								},
+							},
+							"sidecar": {
+								Image: "docker.io/sidecar:latest",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			outputYaml, err := yaml.Marshal(test.config)
+			require.NoError(t, err)
+			require.NotEmpty(t, string(outputYaml))
+			snapshot.SnapshotT(t, string(outputYaml))
+		})
+	}
+}
+
 func createTestServiceConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {
-	return &ServiceConfig{
+	projectConfig := &ProjectConfig{
+		Name:            "Test-App",
+		Path:            ".",
+		EventDispatcher: ext.NewEventDispatcher[ProjectLifecycleEventArgs](),
+	}
+
+	componentConfig := &ComponentConfig{
 		Name:         "api",
 		Host:         host,
 		Language:     language,
 		RelativePath: filepath.Join(path),
-		Project: &ProjectConfig{
-			Name:            "Test-App",
-			Path:            ".",
-			EventDispatcher: ext.NewEventDispatcher[ProjectLifecycleEventArgs](),
-		},
-		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+		Project:      projectConfig,
 	}
+
+	serviceConfig := &ServiceConfig{
+		ComponentConfig: componentConfig,
+		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+		Components:      map[string]*ComponentConfig{defaultComponentName: componentConfig},
+	}
+
+	serviceConfig.ComponentConfig.Service = serviceConfig
+
+	return serviceConfig
+}
+
+func Test_Parent_Child(t *testing.T) {
+	parent := &Parent{
+		Name: "John",
+		Age:  40,
+		Children: map[string]*Child{
+			"child1": {
+				Name: "Alice",
+				Age:  10,
+			},
+		},
+	}
+
+	yamlBytes, err := yaml.Marshal(parent)
+	require.NoError(t, err)
+
+	yamlStr := string(yamlBytes)
+	require.NotEmpty(t, yamlStr)
+}
+
+type Parent struct {
+	Name     string
+	Age      int
+	Children map[string]*Child
+}
+
+type Child struct {
+	Name   string
+	Age    int
+	Gender string
+}
+
+func (c *Child) MarshalYAML() (interface{}, error) {
+	type child Child
+	cc := child(*c)
+
+	return cc, nil
 }

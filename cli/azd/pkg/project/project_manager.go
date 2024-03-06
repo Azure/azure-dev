@@ -195,17 +195,19 @@ func (pm *projectManager) EnsureFrameworkTools(
 			continue
 		}
 
-		frameworkService, err := pm.serviceManager.GetFrameworkService(ctx, svc)
-		if err != nil {
-			return fmt.Errorf("getting framework service: %w", err)
-		}
+		for _, component := range svc.Components {
+			frameworkService, err := pm.serviceManager.GetFrameworkService(ctx, component)
+			if err != nil {
+				return fmt.Errorf("getting framework service: %w", err)
+			}
 
-		frameworkTools := frameworkService.RequiredExternalTools(ctx)
-		if err != nil {
-			return fmt.Errorf("getting service required tools: %w", err)
-		}
+			frameworkTools := frameworkService.RequiredExternalTools(ctx)
+			if err != nil {
+				return fmt.Errorf("getting service required tools: %w", err)
+			}
 
-		requiredTools = append(requiredTools, frameworkTools...)
+			requiredTools = append(requiredTools, frameworkTools...)
+		}
 	}
 
 	if err := tools.EnsureInstalled(ctx, tools.Unique(requiredTools)...); err != nil {

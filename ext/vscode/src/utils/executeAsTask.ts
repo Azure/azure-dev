@@ -9,6 +9,7 @@ import { callWithTelemetryAndErrorHandling, IActionContext } from '@microsoft/vs
 import { startAuthServer } from './servers/authServer';
 import { isAzdCommand } from './azureDevCli';
 import { VsCodeAuthenticationCredential } from './VsCodeAuthenticationCredential';
+import { startPromptServer } from './servers/promptServer';
 
 type ExecuteAsTaskOptions = {
     workspaceFolder?: vscode.WorkspaceFolder;
@@ -26,19 +27,29 @@ export function executeAsTask(command: string, name: string, options?: ExecuteAs
         const env = {...options.env};
 
         let useIntegratedAuth = vscode.workspace.getConfiguration('azure-dev').get<boolean>('auth.useIntegratedAuth', false);
+        let useExternalPrompting = true; // TODO: an option to control this?
 
         if (!isAzdCommand(command)) {
             useIntegratedAuth = false;
+            useExternalPrompting = false;
         }
 
         let authServer: http.Server | undefined;
-
         if (useIntegratedAuth) {
             const { server, endpoint, key } = await startAuthServer(new VsCodeAuthenticationCredential());
 
+            authServer = server;
             env['AZD_AUTH_ENDPOINT'] = endpoint;
             env['AZD_AUTH_KEY'] = key;
-            authServer = server;
+        }
+
+        let promptServer: http.Server | undefined;
+        if (useExternalPrompting) {
+            const { server, endpoint, key } = await startPromptServer();
+
+            promptServer = server;
+            env['AZD_UI_PROMPT_ENDPOINT'] = endpoint;
+            env['AZD_UI_PROMPT_KEY'] = key;
         }
 
         const task = new vscode.Task(
@@ -74,6 +85,7 @@ export function executeAsTask(command: string, name: string, options?: ExecuteAs
             const disposable = vscode.tasks.onDidEndTaskProcess(e => {
                 if (e.execution === taskExecution) {
                     authServer?.close();
+                    promptServer?.close();
                     disposable.dispose();
 
                     if (e.exitCode && !(options?.suppressErrors)) {

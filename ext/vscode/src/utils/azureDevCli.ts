@@ -53,13 +53,13 @@ export async function createAzureDevCli(context: IActionContext): Promise<AzureD
 export function scheduleAzdVersionCheck(): void {
     const oneSecond = 1 * 1000;
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const minimumSupportedVersion = semver.coerce('0.8.0')!;
+    const minimumSupportedVersion = semver.coerce('0.8.0')!; // TODO: What is the new minimum version?
 
     setTimeout(async () => {
         const versionResult = await getAzdVersion();
 
         if (versionResult && !semver.gte(versionResult, minimumSupportedVersion)) {
-            // We won't show a warning if AZD is not installed, but if it is installed and less than 0.8.0, we will warn
+            // We won't show a warning if AZD is not installed, but if it is installed and less than the minimum, we will warn
 
             const install: vscode.MessageItem = {
                 title: vscode.l10n.t('Update'),

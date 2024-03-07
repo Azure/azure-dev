@@ -9,13 +9,13 @@ import { startAuthServer } from './servers/authServer';
 import { isAzdCommand } from './azureDevCli';
 import { isMac } from './osUtils';
 import { VsCodeAuthenticationCredential } from './VsCodeAuthenticationCredential';
+import { startPromptServer } from './servers/promptServer';
 
 const DEFAULT_BUFFER_SIZE = 1024 * 1024;
 
-export type Progress = (content: string, process: cp.ChildProcess) => void;
+type Progress = (content: string, process: cp.ChildProcess) => void;
 
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-export type ExecError = Error & { code: any, signal: any, stdErrHandled: boolean };
+type ExecError = Error & { code: unknown, signal: unknown, stdErrHandled: boolean };
 
 export async function spawnAsync(
     command: string,
@@ -27,22 +27,33 @@ export async function spawnAsync(
     token?: vscode.CancellationToken): Promise<void> {
 
     let useIntegratedAuth = vscode.workspace.getConfiguration('azure-dev').get<boolean>('auth.useIntegratedAuth', false);
+    let useExternalPrompting = true; // TODO: an option to control this?
 
     if (!isAzdCommand(command)) {
         useIntegratedAuth = false;
+        useExternalPrompting = false;
     }
 
     let authServer: http.Server | undefined;
-
-
     if (useIntegratedAuth) {
         const { server, endpoint, key } = await startAuthServer(new VsCodeAuthenticationCredential());
 
+        authServer = server;
         options ??= {};
         options.env ??= {};
         options.env['AZD_AUTH_ENDPOINT'] = endpoint;
         options.env['AZD_AUTH_KEY'] = key;
-        authServer = server;
+    }
+
+    let promptServer: http.Server | undefined;
+    if (useExternalPrompting){
+        const { server, endpoint, key } = await startPromptServer();
+
+        promptServer = server;
+        options ??= {};
+        options.env ??= {};
+        options.env['AZD_UI_PROMPT_ENDPOINT'] = endpoint;
+        options.env['AZD_UI_PROMPT_KEY'] = key;
     }
 
     return await new Promise((resolve, reject) => {
@@ -65,6 +76,7 @@ export async function spawnAsync(
             }
 
             authServer?.close();
+            promptServer?.close();
 
             return reject(err);
         });
@@ -76,6 +88,7 @@ export async function spawnAsync(
             }
 
             authServer?.close();
+            promptServer?.close();
 
             if (token && token.isCancellationRequested) {
                 // If cancellation is requested we'll assume that's why it exited
@@ -140,112 +153,6 @@ export async function spawnAsync(
     });
 }
 
-export async function spawnStreamAsync(
-    command: string,
-    options?: cp.SpawnOptions & { stdin?: string },
-    onStdout?: (chunk: Buffer | string) => void,
-    onStderr?: (chunk: Buffer | string) => void,
-    token?: vscode.CancellationToken): Promise<void> {
-
-    let useIntegratedAuth = vscode.workspace.getConfiguration('azure-dev').get<boolean>('auth.useIntegratedAuth', false);
-
-    if (!isAzdCommand(command)) {
-        useIntegratedAuth = false;
-    }
-
-    let authServer: http.Server | undefined;
-
-    if (useIntegratedAuth) {
-        const { server, endpoint, key } = await startAuthServer(new VsCodeAuthenticationCredential());
-
-        options ??= {};
-        options.env ??= {};
-        options.env['AZD_AUTH_ENDPOINT'] = endpoint;
-        options.env['AZD_AUTH_KEY'] = key;
-        authServer = server;
-    }
-
-    return await new Promise((resolve, reject) => {
-        let cancellationListener: vscode.Disposable | undefined;
-
-        // Without the shell option, it pukes on arguments
-        options = options || {};
-        options.shell = true;
-
-        const process = cp.spawn(command, options);
-
-        const errorChunks: Buffer[] = [];
-
-        process.on('error', (err) => {
-            if (cancellationListener) {
-                cancellationListener.dispose();
-                cancellationListener = undefined;
-            }
-
-            authServer?.close();
-
-            return reject(err);
-        });
-
-        process.on('close', (code, signal) => {
-            if (cancellationListener) {
-                cancellationListener.dispose();
-                cancellationListener = undefined;
-            }
-
-            authServer?.close();
-
-            if (token && token.isCancellationRequested) {
-                // If cancellation is requested we'll assume that's why it exited
-                return reject(new UserCancelledError());
-            } else if (code) {
-                let errorMessage = vscode.l10n.t('Process \'{0}\' exited with code {1}', command.length > 50 ? `${command.substring(0, 50)}...` : command, code);
-
-                errorMessage += vscode.l10n.t('\nError: {0}', bufferToString(Buffer.concat(errorChunks)));
-
-                const error = <ExecError>new Error(errorMessage);
-
-                error.code = code;
-                error.signal = signal;
-                error.stdErrHandled = false;
-
-                return reject(error);
-            }
-
-            return resolve();
-        });
-
-        if (options?.stdin) {
-            process.stdin?.write(options.stdin);
-            process.stdin?.end();
-        }
-
-        if (onStdout) {
-            process.stdout?.on('data', (chunk: Buffer) => {
-                if (onStdout) {
-                    onStdout(chunk);
-                }
-            });
-        }
-
-        if (onStderr) {
-            process.stderr?.on('data', (chunk: Buffer) => {
-                errorChunks.push(chunk);
-
-                if (onStderr) {
-                    onStderr(chunk);
-                }
-            });
-        }
-
-        if (token) {
-            cancellationListener = token.onCancellationRequested(() => {
-                process.kill();
-            });
-        }
-    });
-}
-
 export async function execAsync(command: string, options?: cp.ExecOptions & { stdin?: string }, progress?: (content: string, process: cp.ChildProcess) => void): Promise<{ stdout: string, stderr: string }> {
     const stdoutBuffer = Buffer.alloc(options && options.maxBuffer || DEFAULT_BUFFER_SIZE);
     const stderrBuffer = Buffer.alloc(options && options.maxBuffer || DEFAULT_BUFFER_SIZE);
@@ -258,27 +165,7 @@ export async function execAsync(command: string, options?: cp.ExecOptions & { st
     };
 }
 
-export async function execStreamAsync(
-    command: string,
-    options?: cp.ExecOptions & { stdin?: string },
-    token?: vscode.CancellationToken): Promise<{ stdout: string, stderr: string }> {
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-
-    await spawnStreamAsync(
-        command,
-        options as cp.CommonOptions,
-        chunk => stdoutChunks.push(chunk as Buffer),
-        chunk => stderrChunks.push(chunk as Buffer),
-        token);
-
-    return {
-        stdout: bufferToString(Buffer.concat(stdoutChunks)),
-        stderr: bufferToString(Buffer.concat(stderrChunks)),
-    };
-}
-
-export function bufferToString(buffer: Buffer): string {
+function bufferToString(buffer: Buffer): string {
     // Remove non-printing control characters and trailing newlines
     // eslint-disable-next-line no-control-regex
     return buffer.toString().replace(/[\x00-\x09\x0B-\x0C\x0E-\x1F]|\r?\n$/g, '');

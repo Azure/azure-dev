@@ -199,7 +199,7 @@ func PromptTemplate(
 			templateChoice += fmt.Sprintf(" (%s)", template.Source)
 		}
 
-		templateDetails = append(templateDetails, fmt.Sprintf("(%s)", template.RepositoryPath))
+		templateDetails = append(templateDetails, template.RepositoryPath)
 
 		if slices.Contains(templateNames, templateChoice) {
 			duplicateNames = append(duplicateNames, templateChoice)

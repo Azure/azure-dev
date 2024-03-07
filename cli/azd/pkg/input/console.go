@@ -651,8 +651,12 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		surveyOptions[i] = option
 
 		if c.IsSpinnerInteractive() && i < len(options.OptionDetails) {
-			detailString := output.WithGrayFormat("%s", options.OptionDetails[i])
-			surveyOptions[i] += fmt.Sprintf("\n  %s\n", detailString)
+			if options.OptionDetails[i] != "" {
+				detailString := output.WithGrayFormat("(%s)", options.OptionDetails[i])
+				surveyOptions[i] += fmt.Sprintf("\n  %s\n", detailString)
+			} else {
+				surveyOptions[i] += "\n"
+			}
 		}
 	}
 

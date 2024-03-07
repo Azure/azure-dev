@@ -151,7 +151,17 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		server := newTestExternalPromptServer(func(body promptOptions) json.RawMessage {
 			require.Equal(t, "select", body.Type)
 			require.Equal(t, "What is your favorite color?", body.Options.Message)
-			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Choices)
+
+			var choices []string
+			var details []string
+
+			for _, choice := range *body.Options.Choices {
+				choices = append(choices, choice.Value)
+				details = append(details, *choice.Detail)
+			}
+
+			require.Equal(t, []string{"Red", "Green", "Blue"}, choices)
+			require.Equal(t, []string{"RedDetails", "GreenDetails", "BlueDetails"}, details)
 			require.Nil(t, body.Options.DefaultValue)
 
 			return json.RawMessage(`"Green"`)
@@ -166,8 +176,9 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		res, err := c.Select(
 			context.Background(),
 			ConsoleOptions{
-				Message: "What is your favorite color?",
-				Options: []string{"Red", "Green", "Blue"},
+				Message:       "What is your favorite color?",
+				Options:       []string{"Red", "Green", "Blue"},
+				OptionDetails: []string{"RedDetails", "GreenDetails", "BlueDetails"},
 			},
 		)
 		require.NoError(t, err)
@@ -178,7 +189,17 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		server := newTestExternalPromptServer(func(body promptOptions) json.RawMessage {
 			require.Equal(t, "multiSelect", body.Type)
 			require.Equal(t, "What are your favorite colors?", body.Options.Message)
-			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Choices)
+
+			var choices []string
+			var details []string
+
+			for _, choice := range *body.Options.Choices {
+				choices = append(choices, choice.Value)
+				details = append(details, *choice.Detail)
+			}
+
+			require.Equal(t, []string{"Red", "Green", "Blue"}, choices)
+			require.Equal(t, []string{"RedDetails", "GreenDetails", "BlueDetails"}, details)
 			require.Nil(t, body.Options.DefaultValue)
 
 			return json.RawMessage(`["Red", "Blue"]`)
@@ -193,8 +214,9 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		res, err := c.MultiSelect(
 			context.Background(),
 			ConsoleOptions{
-				Message: "What are your favorite colors?",
-				Options: []string{"Red", "Green", "Blue"},
+				Message:       "What are your favorite colors?",
+				Options:       []string{"Red", "Green", "Blue"},
+				OptionDetails: []string{"RedDetails", "GreenDetails", "BlueDetails"},
 			},
 		)
 		require.NoError(t, err)

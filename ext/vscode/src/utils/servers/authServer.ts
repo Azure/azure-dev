@@ -19,28 +19,8 @@ type AuthServerRequest = {
     tenantId?: string;
 };
 
-function isValidAuthServerRequest(obj: unknown): obj is AuthServerRequest {
-    if (typeof obj !== 'object' || obj === null) {
-        return false;
-    }
-
-    const maybeAuthServerRequest = obj as AuthServerRequest;
-
-    if (!Array.isArray(maybeAuthServerRequest.scopes) ||
-        maybeAuthServerRequest.scopes.length === 0 ||
-        maybeAuthServerRequest.scopes.some((a: unknown) => typeof a !== 'string')) {
-        return false;
-    }
-
-    if (!!maybeAuthServerRequest.tenantId && typeof maybeAuthServerRequest.tenantId !== 'string') {
-        return false;
-    }
-
-    return true;
-}
-
 /**
- * `startAuthServer` creates a locally running server that will respond to Azure Dev CLI authentication requests and
+ * {@link startAuthServer} creates a locally running server that will respond to Azure Dev CLI authentication requests and
  * starts listening for requests.  Requests must be authenticated with a key that is returned from this function.
  * The provided credential is used to fetch tokens for auth requests.
  **/
@@ -95,4 +75,24 @@ export function startAuthServer(credential: TokenCredential): Promise<{ server: 
             }))!;
         }
     });
+}
+
+function isValidAuthServerRequest(obj: unknown): obj is AuthServerRequest {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+
+    const maybeAuthServerRequest = obj as AuthServerRequest;
+
+    if (!Array.isArray(maybeAuthServerRequest.scopes) ||
+        maybeAuthServerRequest.scopes.length === 0 ||
+        maybeAuthServerRequest.scopes.some((a: unknown) => typeof a !== 'string')) {
+        return false;
+    }
+
+    if (!!maybeAuthServerRequest.tenantId && typeof maybeAuthServerRequest.tenantId !== 'string') {
+        return false;
+    }
+
+    return true;
 }

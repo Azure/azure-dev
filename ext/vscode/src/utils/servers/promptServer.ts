@@ -32,7 +32,7 @@ type SelectOption = {
 };
 
 /**
- * `startPromptServer` creates a locally running server that will respond to Azure Dev CLI prompt requests and
+ * {@link startPromptServer} creates a locally running server that will respond to Azure Dev CLI prompt requests and
  * starts listening for requests.  Requests must be authenticated with a key that is returned from this function.
  **/
 export function startPromptServer(): Promise<{ server: http.Server, endpoint: string, key: string }> {

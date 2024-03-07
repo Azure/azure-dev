@@ -3,8 +3,7 @@
 
 import * as http from 'http';
 import { CancelledResponse, ErrorResponse, JsonServerResponse, SuccessResponseBase, UndefinedResponse, startJsonServer } from './jsonServer';
-import { IActionContext, IAzureQuickPickItem, IAzureQuickPickOptions, UserCancelledError, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
-import { MessageItem } from 'vscode';
+import { DialogResponses, IActionContext, IAzureQuickPickItem, IAzureQuickPickOptions, UserCancelledError, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
 
 type PromptServerSuccessResponse = SuccessResponseBase & {
     value: boolean | string | string[] | number | number[];
@@ -187,20 +186,12 @@ async function promptSelect(context: IActionContext, isMulti: boolean, message: 
     }
 }
 
-interface IAzureMessageItem<T> extends MessageItem {
-    data: T;
-}
-
-async function promptConfirmation(context: IActionContext, message: string, options: SelectOption[], help?: string): Promise<number> {
-    const buttons: IAzureMessageItem<number>[] = options.map((option, index) => { return { title: option.label, data: index }; });
-
-    const selection = await context.ui.showWarningMessage(
+async function promptConfirmation(context: IActionContext, message: string, help?: string): Promise<boolean> {
+    return await context.ui.showWarningMessage(
         message,
         { modal: true, detail: help },
-        ...buttons,
-    );
-
-    return selection.data;
+        ...[ DialogResponses.yes, DialogResponses.no ]
+    ) === DialogResponses.yes;
 }
 
 async function promptDirectory(context: IActionContext, message: string, help?: string): Promise<string> {

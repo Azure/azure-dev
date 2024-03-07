@@ -7,7 +7,7 @@ import { CancelledResponse, ErrorResponse, JsonServerResponse, SuccessResponseBa
 import { DialogResponses, IActionContext, UserCancelledError, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
 
 type PromptServerSuccessResponse = SuccessResponseBase & {
-    value: boolean | string | string[] | number | number[];
+    value: string | string[];
 };
 
 type PromptServerResponse = PromptServerSuccessResponse | ErrorResponse | CancelledResponse | undefined;
@@ -21,14 +21,14 @@ type PromptServerRequest = {
     options: {
         message: string;
         help: string | undefined;
-        options: SelectOption[] | undefined;
+        choices: SelectChoice[] | undefined;
         defaultValue: string | undefined;
     }
 };
 
-type SelectOption = {
-    label: string;
-    description: string | undefined;
+type SelectChoice = {
+    value: string;
+    detail: string | undefined;
 };
 
 /**
@@ -62,7 +62,7 @@ export function startPromptServer(): Promise<{ server: http.Server, endpoint: st
                         }
                         case 'select':
                         case 'multiSelect': {
-                            const value = await promptSelect(actionContext, reqBody.type === 'multiSelect', reqBody.options.message, reqBody.options.options!, reqBody.options.defaultValue, reqBody.options.help);
+                            const value = await promptSelect(actionContext, reqBody.type === 'multiSelect', reqBody.options.message, reqBody.options.choices!, reqBody.options.defaultValue, reqBody.options.help);
                             return {
                                 statusCode: 200,
                                 result: {
@@ -114,8 +114,8 @@ async function promptString(context: IActionContext, isPassword: boolean, messag
     });
 }
 
-async function promptSelect(context: IActionContext, isMulti: boolean, message: string, options: SelectOption[], defaultValue: string | undefined, help: string | undefined): Promise<string | string[]> {
-    const items: vscode.QuickPickItem[] = options.map((option, index) => { return { label: option.label, description: option.description }; });
+async function promptSelect(context: IActionContext, isMulti: boolean, message: string, choices: SelectChoice[], defaultValue: string | undefined, help: string | undefined): Promise<string | string[]> {
+    const pickChoices: vscode.QuickPickItem[] = choices.map(choice => { return { label: choice.value, description: choice.detail }; });
 
     const quickPickOptions: vscode.QuickPickOptions = {
         placeHolder: help,
@@ -125,10 +125,10 @@ async function promptSelect(context: IActionContext, isMulti: boolean, message: 
 
     // This is done this way, instead of just `{ canPickMany: isMulti }`, to allow TypeScript to better infer the type of the result object(s) returned
     if (isMulti) {
-        const results = await context.ui.showQuickPick(items, { ...quickPickOptions, canPickMany: true, isPickSelected: p => p.label === defaultValue});
+        const results = await context.ui.showQuickPick(pickChoices, { ...quickPickOptions, canPickMany: true, isPickSelected: p => p.label === defaultValue});
         return results.map(r => r.label);
     } else {
-        const result = await context.ui.showQuickPick(items, quickPickOptions);
+        const result = await context.ui.showQuickPick(pickChoices, quickPickOptions);
         return result.label;
     }
 }
@@ -181,11 +181,11 @@ function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
         return false;
     }
 
-    if ((maybePromptServerRequest.type === 'select' || maybePromptServerRequest.type === 'multiSelect') && !maybePromptServerRequest.options.options) {
+    if ((maybePromptServerRequest.type === 'select' || maybePromptServerRequest.type === 'multiSelect') && !maybePromptServerRequest.options.choices) {
         return false;
     }
 
-    if (!!maybePromptServerRequest.options.options && (!Array.isArray(maybePromptServerRequest.options.options) || !maybePromptServerRequest.options.options.every(isValidSelectOption))) {
+    if (!!maybePromptServerRequest.options.choices && (!Array.isArray(maybePromptServerRequest.options.choices) || !maybePromptServerRequest.options.choices.every(isValidSelectChoice))) {
         return false;
     }
 
@@ -196,18 +196,18 @@ function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
     return true;
 }
 
-function isValidSelectOption(obj: unknown): obj is SelectOption {
+function isValidSelectChoice(obj: unknown): obj is SelectChoice {
     if (typeof obj !== 'object' || obj === null) {
         return false;
     }
 
-    const maybeSelectOption = obj as SelectOption;
+    const maybeSelectChoice = obj as SelectChoice;
 
-    if (typeof maybeSelectOption.label !== 'string') {
+    if (typeof maybeSelectChoice.value !== 'string') {
         return false;
     }
 
-    if (!!maybeSelectOption.description && typeof maybeSelectOption.description !== 'string') {
+    if (!!maybeSelectChoice.detail && typeof maybeSelectChoice.detail !== 'string') {
         return false;
     }
 

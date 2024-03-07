@@ -34,6 +34,9 @@ type SelectOption = {
 /**
  * {@link startPromptServer} creates a locally running server that will respond to Azure Dev CLI prompt requests and
  * starts listening for requests.  Requests must be authenticated with a key that is returned from this function.
+ *
+ * The code in this extension refers to this prompting-in-VSCode process as "external prompting" (as in, it is external
+ * to `azd`). It does not apply in all cases.
  **/
 export function startPromptServer(): Promise<{ server: http.Server, endpoint: string, key: string }> {
     return startJsonServer({

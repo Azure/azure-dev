@@ -30,7 +30,7 @@ type CobraBuilder struct {
 }
 
 // Creates a new instance of the Cobra builder
-func NewCobraBuilder(container *ioc.NestedContainer, runner *middleware.MiddlewareRunner) *CobraBuilder {
+func NewCobraBuilder(container *ioc.NestedContainer) *CobraBuilder {
 	return &CobraBuilder{
 		container: container,
 	}
@@ -116,13 +116,8 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ioc.RegisterInstance(cmdContainer, cmdContainer)
 		ioc.RegisterInstance[ioc.ServiceLocator](cmdContainer, cmdContainer)
 
-		// Resolve the middleware runner from the container
-		var middlewareRunner *middleware.MiddlewareRunner
-		if err := cmdContainer.Resolve(&middlewareRunner); err != nil {
-			return fmt.Errorf("failed resolving middleware runner, %w", err)
-		}
-
 		// Register any required middleware registered for the current action descriptor
+		middlewareRunner := middleware.NewMiddlewareRunner(cmdContainer)
 		if err := cb.registerMiddleware(middlewareRunner, descriptor); err != nil {
 			return err
 		}
@@ -377,7 +372,10 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 // Registers all middleware components for the current command and any parent descriptors
 // Middleware components are insure to run in the order that they were registered from the
 // root registration, down through action groups and ultimately individual actions
-func (cb *CobraBuilder) registerMiddleware(middlewareRunner *middleware.MiddlewareRunner, descriptor *actions.ActionDescriptor) error {
+func (cb *CobraBuilder) registerMiddleware(
+	middlewareRunner *middleware.MiddlewareRunner,
+	descriptor *actions.ActionDescriptor,
+) error {
 	chain := []*actions.MiddlewareRegistration{}
 	current := descriptor
 

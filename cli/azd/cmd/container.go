@@ -97,7 +97,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Core bootstrapping registrations
 	ioc.RegisterInstance(container, container)
 	container.MustRegisterSingleton(NewCobraBuilder)
-	container.MustRegisterScoped(middleware.NewMiddlewareRunner)
 
 	// Standard Registrations
 	container.MustRegisterTransient(output.GetCommandFormatter)
@@ -347,8 +346,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	// Required to be singleton (shared) because the project/service holds important event handlers
-	// from both hooks and internal that are used during azd lifecycle calls.
 	container.MustRegisterScoped(
 		func(lazyConfig *lazy.Lazy[*project.ProjectConfig]) (*project.ProjectConfig, error) {
 			return lazyConfig.GetValue()
@@ -356,8 +353,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
-	// Required to be singleton (shared) because the project/service holds important event handlers
-	// from both hooks and internal that are used during azd lifecycle calls.
 	container.MustRegisterScoped(
 		func(
 			ctx context.Context,

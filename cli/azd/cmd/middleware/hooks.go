@@ -14,10 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
-type contextKey string
-
-var serviceHooksRegisteredContextKey contextKey = "service-hooks-registered"
-
 type HooksMiddleware struct {
 	lazyEnvManager    *lazy.Lazy[environment.Manager]
 	lazyEnv           *lazy.Lazy[*environment.Environment]

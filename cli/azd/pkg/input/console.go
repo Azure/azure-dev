@@ -144,10 +144,13 @@ type AskerConsole struct {
 }
 
 type ConsoleOptions struct {
-	Message      string
-	Help         string
-	Options      []string
-	DefaultValue any
+	Message string
+	Help    string
+	Options []string
+
+	// OptionDetails is an optional field that can be used to provide additional information about the options.
+	OptionDetails []string
+	DefaultValue  any
 
 	// Prompt-only options
 	IsPassword bool
@@ -591,6 +594,21 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 	return response, nil
 }
 
+func choicesFromOptions(options ConsoleOptions) []promptChoice {
+	choices := make([]promptChoice, len(options.Options))
+	for i, option := range options.Options {
+		choices[i] = promptChoice{
+			Value: option,
+		}
+
+		if i < len(options.OptionDetails) && options.OptionDetails[i] != "" {
+			choices[i].Detail = &options.OptionDetails[i]
+		}
+	}
+	return choices
+
+}
+
 // Prompts the user to select from a set of values
 func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int, error) {
 	if c.promptClient != nil {
@@ -599,7 +617,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Options: convert.RefOf(options.Options),
+				Choices: convert.RefOf(choicesFromOptions(options)),
 			},
 		}
 
@@ -628,9 +646,19 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		return res, nil
 	}
 
+	surveyOptions := make([]string, len(options.Options))
+	for i, option := range options.Options {
+		surveyOptions[i] = option
+
+		if c.IsSpinnerInteractive() && i < len(options.OptionDetails) {
+			detailString := output.WithGrayFormat("%s", options.OptionDetails[i])
+			surveyOptions[i] += fmt.Sprintf("\n  %s\n", detailString)
+		}
+	}
+
 	survey := &survey.Select{
 		Message: options.Message,
-		Options: options.Options,
+		Options: surveyOptions,
 		Default: options.DefaultValue,
 		Help:    options.Help,
 	}
@@ -657,7 +685,7 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Options: convert.RefOf(options.Options),
+				Choices: convert.RefOf(choicesFromOptions(options)),
 			},
 		}
 
@@ -679,9 +707,19 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 		return response, nil
 	}
 
+	surveyOptions := make([]string, len(options.Options))
+	for i, option := range options.Options {
+		surveyOptions[i] = option
+
+		if c.IsSpinnerInteractive() && i < len(options.OptionDetails) {
+			detailString := output.WithGrayFormat("%s", options.OptionDetails[i])
+			surveyOptions[i] += fmt.Sprintf("\n  %s\n", detailString)
+		}
+	}
+
 	survey := &survey.MultiSelect{
 		Message: options.Message,
-		Options: options.Options,
+		Options: surveyOptions,
 		Default: options.DefaultValue,
 		Help:    options.Help,
 	}

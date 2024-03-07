@@ -43,7 +43,7 @@ The body of the request contains a JSON object with all the information about th
     "options": {
       "message": "<string>", // the message to be displayed as part of the prompt
       "help": "<string>", // optional help text that can be displayed upon request
-      "options": [ "<string>" /* ... */  ], // for select and multiSelect types - the valid options the user should pick from
+      "choices": [  { "value": "string", "detail": "string" | undefined } /* ... */  ], // for select and multiSelect types - the valid options the user should pick from
       "defaultValue":  "<string>" | "<string>[]" | boolean, // optional default value (or values, for multiSelect), when undefined there is no default.
     }
 }

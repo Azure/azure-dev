@@ -151,7 +151,7 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		server := newTestExternalPromptServer(func(body promptOptions) json.RawMessage {
 			require.Equal(t, "select", body.Type)
 			require.Equal(t, "What is your favorite color?", body.Options.Message)
-			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Options)
+			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Choices)
 			require.Nil(t, body.Options.DefaultValue)
 
 			return json.RawMessage(`"Green"`)
@@ -178,7 +178,7 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		server := newTestExternalPromptServer(func(body promptOptions) json.RawMessage {
 			require.Equal(t, "multiSelect", body.Type)
 			require.Equal(t, "What are your favorite colors?", body.Options.Message)
-			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Options)
+			require.Equal(t, []string{"Red", "Green", "Blue"}, *body.Options.Choices)
 			require.Nil(t, body.Options.DefaultValue)
 
 			return json.RawMessage(`["Red", "Blue"]`)

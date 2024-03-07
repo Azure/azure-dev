@@ -23,11 +23,16 @@ type promptOptions struct {
 	Options promptOptionsOptions `json:"options"`
 }
 
+type promptChoice struct {
+	Value  string  `json:"value"`
+	Detail *string `json:"detail,omitempty"`
+}
+
 type promptOptionsOptions struct {
-	Message      string    `json:"message"`
-	Help         string    `json:"help"`
-	Options      *[]string `json:"options,omitempty"`
-	DefaultValue *any      `json:"defaultValue,omitempty"`
+	Message      string          `json:"message"`
+	Help         string          `json:"help"`
+	Choices      *[]promptChoice `json:"choices,omitempty"`
+	DefaultValue *any            `json:"defaultValue,omitempty"`
 }
 
 type promptResponse struct {

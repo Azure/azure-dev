@@ -2,8 +2,9 @@
 // Licensed under the MIT License.
 
 import * as http from 'http';
+import * as vscode from 'vscode';
 import { CancelledResponse, ErrorResponse, JsonServerResponse, SuccessResponseBase, UndefinedResponse, startJsonServer } from './jsonServer';
-import { DialogResponses, IActionContext, IAzureQuickPickItem, IAzureQuickPickOptions, UserCancelledError, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
+import { DialogResponses, IActionContext, UserCancelledError, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
 
 type PromptServerSuccessResponse = SuccessResponseBase & {
     value: boolean | string | string[] | number | number[];
@@ -20,48 +21,15 @@ type PromptServerRequest = {
     options: {
         message: string;
         help: string | undefined;
-        options: string[] | undefined;
+        options: SelectOption[] | undefined;
         defaultValue: string | undefined;
     }
 };
 
-function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
-    if (typeof obj !== 'object' || obj === null) {
-        return false;
-    }
-
-    const maybePromptServerRequest = obj as PromptServerRequest;
-
-    if (typeof maybePromptServerRequest.type !== 'string' || !AllPromptTypes.includes(maybePromptServerRequest.type)) {
-        return false;
-    }
-
-    if (typeof maybePromptServerRequest.options !== 'object' || maybePromptServerRequest.options === null) {
-        return false;
-    }
-
-    if (typeof maybePromptServerRequest.options.message !== 'string') {
-        return false;
-    }
-
-    if (!!maybePromptServerRequest.options.help && typeof maybePromptServerRequest.options.help !== 'string') {
-        return false;
-    }
-
-    if ((maybePromptServerRequest.type === 'select' || maybePromptServerRequest.type === 'multiSelect' || maybePromptServerRequest.type === 'confirm') && !!maybePromptServerRequest.options.options) {
-        return false;
-    }
-
-    if ((!Array.isArray(maybePromptServerRequest.options.options) || maybePromptServerRequest.options.options.some(option => typeof option !== 'string' || !!option))) {
-        return false;
-    }
-
-    if (!!maybePromptServerRequest.options.defaultValue && typeof maybePromptServerRequest.options.defaultValue !== 'string') {
-        return false;
-    }
-
-    return true;
-}
+type SelectOption = {
+    label: string;
+    description: string | undefined;
+};
 
 /**
  * `startPromptServer` creates a locally running server that will respond to Azure Dev CLI prompt requests and
@@ -143,41 +111,33 @@ async function promptString(context: IActionContext, isPassword: boolean, messag
     });
 }
 
-async function promptSelect(context: IActionContext, isMulti: boolean, message: string, options: string[], defaultValue: string | undefined, help: string | undefined): Promise<number | number[]> {
-    const items: IAzureQuickPickItem<number>[] = [];
+async function promptSelect(context: IActionContext, isMulti: boolean, message: string, options: SelectOption[], defaultValue: string | undefined, help: string | undefined): Promise<string | string[]> {
+    const items: vscode.QuickPickItem[] = options.map((option, index) => { return { label: option.label, description: option.description }; });
 
-    for (const option of options) {
-        // Split the string up, everything before a first newline goes to the label and everything after to the description
-        const split = option.split(/\r?\n/i);
-        const label = split[0];
-        const description = split.length > 1 ? split.slice(1).join('\n') : undefined;
-
-        items.push({ label, description, data: items.length });
-    }
-
-    const quickPickOptions: IAzureQuickPickOptions = {
+    const quickPickOptions: vscode.QuickPickOptions = {
         placeHolder: help,
         title: message,
         ignoreFocusOut: true,
-        isPickSelected: p => p.label === defaultValue,
     };
 
     // This is done this way, instead of just `{ canPickMany: isMulti }`, to allow TypeScript to better infer the type of the result object(s) returned
     if (isMulti) {
-        const results = await context.ui.showQuickPick(items, { ...quickPickOptions, canPickMany: true });
-        return results.map((result) => result.data);
+        const results = await context.ui.showQuickPick(items, { ...quickPickOptions, canPickMany: true, isPickSelected: p => p.label === defaultValue});
+        return results.map(r => r.label);
     } else {
         const result = await context.ui.showQuickPick(items, quickPickOptions);
-        return result.data;
+        return result.label;
     }
 }
 
-async function promptConfirmation(context: IActionContext, message: string, help: string | undefined): Promise<boolean> {
-    return await context.ui.showWarningMessage(
+async function promptConfirmation(context: IActionContext, message: string, help: string | undefined): Promise<string> {
+    const result = await context.ui.showWarningMessage(
         message,
         { modal: true, detail: help },
         ...[ DialogResponses.yes, DialogResponses.no ]
-    ) === DialogResponses.yes;
+    );
+
+    return result === DialogResponses.yes ? 'true' : 'false';
 }
 
 async function promptDirectory(context: IActionContext, message: string, help: string | undefined): Promise<string> {
@@ -193,4 +153,60 @@ async function promptDirectory(context: IActionContext, message: string, help: s
     }
 
     return selection[0].fsPath;
+}
+
+function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+
+    const maybePromptServerRequest = obj as PromptServerRequest;
+
+    if (typeof maybePromptServerRequest.type !== 'string' || !AllPromptTypes.includes(maybePromptServerRequest.type)) {
+        return false;
+    }
+
+    if (typeof maybePromptServerRequest.options !== 'object' || maybePromptServerRequest.options === null) {
+        return false;
+    }
+
+    if (typeof maybePromptServerRequest.options.message !== 'string') {
+        return false;
+    }
+
+    if (!!maybePromptServerRequest.options.help && typeof maybePromptServerRequest.options.help !== 'string') {
+        return false;
+    }
+
+    if ((maybePromptServerRequest.type === 'select' || maybePromptServerRequest.type === 'multiSelect') && !maybePromptServerRequest.options.options) {
+        return false;
+    }
+
+    if (!!maybePromptServerRequest.options.options && (!Array.isArray(maybePromptServerRequest.options.options) || !maybePromptServerRequest.options.options.every(isValidSelectOption))) {
+        return false;
+    }
+
+    if (!!maybePromptServerRequest.options.defaultValue && typeof maybePromptServerRequest.options.defaultValue !== 'string') {
+        return false;
+    }
+
+    return true;
+}
+
+function isValidSelectOption(obj: unknown): obj is SelectOption {
+    if (typeof obj !== 'object' || obj === null) {
+        return false;
+    }
+
+    const maybeSelectOption = obj as SelectOption;
+
+    if (typeof maybeSelectOption.label !== 'string') {
+        return false;
+    }
+
+    if (!!maybeSelectOption.description && typeof maybeSelectOption.description !== 'string') {
+        return false;
+    }
+
+    return true;
 }

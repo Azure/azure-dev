@@ -13,10 +13,18 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 {{ end }}
+{{- if gt (len .AutoGenInputs) 0 }}
 @secure()
-@metadata({azd: {type: 'inputs' }})
+@metadata({azd: {
+  type: 'inputs'
+  autoGenerate: {
+{{- range $param, $value := .AutoGenInputs }}
+    {{$param}}: { {{$value.Name }}: { len: {{$value.Len }} } }
+{{- end}}
+  }}
+})
 param inputs object
-
+{{ end }}
 {{- range $param, $value := .InputParameters }}
 {{- if $value.Secret }}
 @secure()
@@ -40,7 +48,9 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
+{{- if gt (len .AutoGenInputs) 0 }}
     inputs: inputs
+{{- end }}
 {{- if .RequiresPrincipalId }}
     principalId: principalId
 {{- end }}

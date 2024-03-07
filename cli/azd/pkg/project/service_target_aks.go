@@ -246,13 +246,13 @@ func (t *aksTarget) Deploy(
 			deployed = deployed || kustomizeDeployed
 
 			// Vanilla k8s manifests with minimal templating support
-			deployment, err := t.deployManifests(ctx, serviceConfig, task)
+			manifestsDeployed, deployment, err := t.deployManifests(ctx, serviceConfig, task)
 			if err != nil && !os.IsNotExist(err) {
 				task.SetError(err)
 				return
 			}
 
-			deployed = deployed || deployment != nil
+			deployed = deployed || manifestsDeployed
 
 			if !deployed {
 				task.SetError(errors.New("no deployment manifests found"))
@@ -297,7 +297,7 @@ func (t *aksTarget) deployManifests(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
-) (*kubectl.Deployment, error) {
+) (bool, *kubectl.Deployment, error) {
 	deploymentPath := serviceConfig.K8s.DeploymentPath
 	if deploymentPath == "" {
 		deploymentPath = defaultDeploymentPath
@@ -307,7 +307,7 @@ func (t *aksTarget) deployManifests(
 
 	// Manifests are optional so we will continue if the directory does not exist
 	if _, err := os.Stat(deploymentPath); os.IsNotExist(err) {
-		return nil, err
+		return false, nil, err
 	}
 
 	task.SetProgress(NewServiceProgress("Applying k8s manifests"))
@@ -317,7 +317,7 @@ func (t *aksTarget) deployManifests(
 		nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed applying kube manifests: %w", err)
+		return false, nil, fmt.Errorf("failed applying kube manifests: %w", err)
 	}
 
 	deploymentName := serviceConfig.K8s.Deployment.Name
@@ -330,10 +330,12 @@ func (t *aksTarget) deployManifests(
 	task.SetProgress(NewServiceProgress("Verifying deployment"))
 	deployment, err := t.waitForDeployment(ctx, deploymentName)
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
-		return nil, err
+		// We continue to return a true value here since at this point we have successfully applied the manifests
+		// even through the deployment may not have been found
+		return true, nil, err
 	}
 
-	return deployment, nil
+	return true, deployment, nil
 }
 
 // deployKustomize deploys kustomize manifests to the k8s cluster

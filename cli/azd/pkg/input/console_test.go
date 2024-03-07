@@ -45,7 +45,7 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 	c := NewConsole(
 		false,
 		false,
-		lines,
+		Writers{Output: lines},
 		ConsoleHandles{
 			Stderr: os.Stderr,
 			Stdin:  os.Stdin,

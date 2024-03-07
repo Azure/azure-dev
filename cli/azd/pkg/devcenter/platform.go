@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -168,13 +169,14 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 		credential azcore.TokenCredential,
 		httpClient httputil.HttpClient,
 		resourceGraphClient *armresourcegraph.Client,
+		cloud *cloud.Cloud,
 	) (devcentersdk.DevCenterClient, error) {
-		options := azsdk.NewClientOptionsBuilderFactory(httpClient, "azd").
+		options := azsdk.NewClientOptionsBuilderFactory(httpClient, "azd", cloud).
 			NewClientOptionsBuilder().
 			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
 			BuildCoreClientOptions()
 
-		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient)
+		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient, cloud)
 	})
 
 	return nil

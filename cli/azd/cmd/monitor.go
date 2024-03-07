@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -66,6 +67,7 @@ type monitorAction struct {
 	deploymentOperations azapi.DeploymentOperations
 	console              input.Console
 	flags                *monitorFlags
+	portalUrlBase        string
 }
 
 func newMonitorAction(
@@ -76,6 +78,7 @@ func newMonitorAction(
 	deploymentOperations azapi.DeploymentOperations,
 	console input.Console,
 	flags *monitorFlags,
+	portalUrlBase cloud.PortalUrlBase,
 ) actions.Action {
 	return &monitorAction{
 		azdCtx:               azdCtx,
@@ -85,6 +88,7 @@ func newMonitorAction(
 		console:              console,
 		flags:                flags,
 		subResolver:          subResolver,
+		portalUrlBase:        string(portalUrlBase),
 	}
 }
 
@@ -142,19 +146,19 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id))
+				fmt.Sprintf("%s/#@%s/resource%s/quickPulse", m.portalUrlBase, tenantId, insightsResource.Id))
 		}
 
 		if m.flags.monitorLogs {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
+				fmt.Sprintf("%s/#@%s/resource%s/logs", m.portalUrlBase, tenantId, insightsResource.Id))
 		}
 	}
 
 	for _, portalResource := range portalResources {
 		if m.flags.monitorOverview {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id))
+				fmt.Sprintf("%s/#@%s/dashboard/arm%s", m.portalUrlBase, tenantId, portalResource.Id))
 		}
 	}
 

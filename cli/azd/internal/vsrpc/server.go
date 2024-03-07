@@ -6,6 +6,8 @@ package vsrpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -14,6 +16,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/gorilla/websocket"
 	"go.lsp.dev/jsonrpc2"
@@ -27,6 +34,8 @@ type Server struct {
 	// rootContainer contains all the core registrations for the azd components.
 	// It is not expected to be modified throughout the lifetime of the server.
 	rootContainer *ioc.NestedContainer
+	// cancelTelemetryUpload is a function that cancels the background telemetry upload goroutine.
+	cancelTelemetryUpload func()
 }
 
 func NewServer(rootContainer *ioc.NestedContainer) *Server {
@@ -53,6 +62,26 @@ func (s *Server) Serve(l net.Listener) error {
 	if on, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_SERVER_DEBUG_ENDPOINTS")); err == nil && on {
 		mux.Handle("/TestDebugService/v1.0", newDebugService())
 	}
+
+	// Run upload periodically in the background while the server is running.
+	ctx, cancel := context.WithCancel(context.Background())
+	ts := telemetry.GetTelemetrySystem()
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		for {
+			err := ts.RunBackgroundUpload(ctx, false)
+			if err != nil {
+				log.Printf("telemetry upload failed: %v", err)
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	s.cancelTelemetryUpload = cancel
 
 	server := http.Server{
 		ReadHeaderTimeout: 1 * time.Second,
@@ -115,13 +144,39 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 		}
 
 		go func() {
+			var respErr error
+			childCtx, span := tracing.Start(ctx, events.VsRpcEventPrefix+req.Method())
+			span.SetAttributes(fields.RpcMethod.String(req.Method()))
+			defer func() {
+				if respErr != nil {
+					cmd.MapError(respErr, span)
+					var rpcErr *jsonrpc2.Error
+					if errors.As(respErr, &rpcErr) {
+						span.SetAttributes(fields.JsonRpcErrorCode.Int(int(rpcErr.Code)))
+					}
+				}
+
+				// Include any usage attributes set
+				span.SetAttributes(tracing.GetUsageAttributes()...)
+				span.End()
+			}()
+
+			// Wrap the reply function to capture the response error returned by the handler before replying.
+			origReply := reply
+			reply = func(ctx context.Context, result interface{}, err error) error {
+				if err != nil {
+					respErr = err
+				}
+				return origReply(ctx, result, err)
+			}
+
 			start := time.Now()
-			var childCtx context.Context = ctx
 
 			// If this is a call, create a new context and cancel function to track the request and allow it to be
 			// canceled.
 			call, isCall := req.(*jsonrpc2.Call)
 			if isCall {
+				span.SetAttributes(fields.JsonRpcId.String(fmt.Sprint(call.ID())))
 				ctx, cancel := context.WithCancel(ctx)
 				childCtx = ctx
 				cancelersMu.Lock()
@@ -129,7 +184,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 				cancelersMu.Unlock()
 			}
 
-			err := handler(childCtx, rpcServer, reply, req)
+			replyErr := handler(childCtx, rpcServer, reply, req)
 
 			if isCall {
 				cancelersMu.Lock()
@@ -143,8 +198,10 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 				}
 			}
 
-			if err != nil {
-				log.Printf("handled rpc %s in %s with err: %v", req.Method(), time.Since(start), err)
+			if respErr != nil {
+				log.Printf("handled rpc %s in %s with err: %v", req.Method(), time.Since(start), respErr)
+			} else if replyErr != nil {
+				log.Printf("failed to reply to rpc %s, err: %v", req.Method(), respErr)
 			} else {
 				log.Printf("handled rpc %s in %s", req.Method(), time.Since(start))
 			}

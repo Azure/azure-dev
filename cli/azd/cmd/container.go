@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
@@ -118,7 +119,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		isTerminal := cmd.OutOrStdout() == os.Stdout &&
 			cmd.InOrStdin() == os.Stdin && input.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 
-		return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
+		return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
 			Stdin:  cmd.InOrStdin(),
 			Stdout: cmd.OutOrStdout(),
 			Stderr: cmd.ErrOrStderr(),
@@ -379,10 +380,101 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	container.MustRegisterSingleton(func(
+		ctx context.Context,
+		userConfigManager config.UserConfigManager,
+		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+		lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
+	) (*cloud.Cloud, error) {
+
+		// Precedence for cloud configuration:
+		// 1. Local environment config (.azure/<environment>/config.json)
+		// 2. Project config (azure.yaml)
+		// 3. User config (~/.azure/config.json)
+		// Default if no cloud configured: Azure Public Cloud
+
+		validClouds := fmt.Sprintf(
+			"Valid cloud names are '%s', '%s', '%s'.",
+			cloud.AzurePublicName,
+			cloud.AzureChinaCloudName,
+			cloud.AzureUSGovernmentName,
+		)
+
+		// Local Environment Configuration (.azure/<environment>/config.json)
+		localEnvStore, _ := lazyLocalEnvStore.GetValue()
+		if azdCtx, err := lazyAzdContext.GetValue(); err == nil {
+			if azdCtx != nil && localEnvStore != nil {
+				if defaultEnvName, err := azdCtx.GetDefaultEnvironmentName(); err == nil {
+					if env, err := localEnvStore.Get(ctx, defaultEnvName); err == nil {
+						if cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath); exists {
+							if value, err := cloud.ParseCloudConfig(cloudConfigurationNode); err == nil {
+								cloudConfig, err := cloud.NewCloud(value)
+								if err == nil {
+									return cloudConfig, nil
+								}
+
+								return nil, &azcli.ErrorWithSuggestion{
+									Err: err,
+									Suggestion: fmt.Sprintf(
+										"Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment\n%s",
+										defaultEnvName,
+										validClouds,
+									),
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Project Configuration (azure.yaml)
+		projConfig, err := lazyProjectConfig.GetValue()
+		if err == nil && projConfig != nil && projConfig.Cloud != nil {
+			if value, err := cloud.ParseCloudConfig(projConfig.Cloud); err == nil {
+				if cloudConfig, err := cloud.ParseCloudConfig(value); err == nil {
+					if cloud, err := cloud.NewCloud(cloudConfig); err == nil {
+						return cloud, nil
+					} else {
+						return nil, &azcli.ErrorWithSuggestion{
+							Err: err,
+							//nolint:lll
+							Suggestion: fmt.Sprintf("Set the cloud configuration by editing the 'cloud' node in the project YAML file\n%s", validClouds),
+						}
+					}
+				}
+			}
+		}
+
+		// User Configuration (~/.azure/config.json)
+		if azdConfig, err := userConfigManager.Load(); err == nil {
+			if cloudConfigNode, exists := azdConfig.Get(cloud.ConfigPath); exists {
+				if value, err := cloud.ParseCloudConfig(cloudConfigNode); err == nil {
+					if cloud, err := cloud.NewCloud(value); err == nil {
+						return cloud, nil
+					} else {
+						return nil, &azcli.ErrorWithSuggestion{
+							Err:        err,
+							Suggestion: fmt.Sprintf("Set the cloud configuration using 'azd config set cloud.name <name>'.\n%s", validClouds),
+						}
+					}
+				}
+			}
+		}
+
+		return cloud.NewCloud(&cloud.Config{Name: cloud.AzurePublicName})
+	})
+
+	container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {
+		return cloud.PortalUrlBase
+	})
+
+	container.MustRegisterSingleton(func(
 		httpClient httputil.HttpClient,
 		userAgent httputil.UserAgent,
+		cloud *cloud.Cloud,
 	) *azsdk.ClientOptionsBuilderFactory {
-		return azsdk.NewClientOptionsBuilderFactory(httpClient, string(userAgent))
+		return azsdk.NewClientOptionsBuilderFactory(httpClient, string(userAgent), cloud)
 	})
 
 	container.MustRegisterSingleton(func(

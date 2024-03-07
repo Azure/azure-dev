@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -65,6 +66,7 @@ type showAction struct {
 	flags                *showFlags
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
 	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
+	portalUrlBase        string
 }
 
 func newShowAction(
@@ -80,6 +82,7 @@ func newShowAction(
 	flags *showFlags,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
+	portalUrlBase cloud.PortalUrlBase,
 ) actions.Action {
 	return &showAction{
 		projectConfig:        projectConfig,
@@ -94,6 +97,7 @@ func newShowAction(
 		flags:                flags,
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
+		portalUrlBase:        string(portalUrlBase),
 	}
 }
 
@@ -223,7 +227,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		AppName:         s.azdCtx.GetDefaultProjectName(),
 		Services:        uxServices,
 		Environments:    uxEnvironments,
-		AzurePortalLink: azurePortalLink(subId, rgName),
+		AzurePortalLink: azurePortalLink(s.portalUrlBase, subId, rgName),
 	})
 
 	return nil, nil

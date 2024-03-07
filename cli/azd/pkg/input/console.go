@@ -663,24 +663,42 @@ func watchTerminalInterrupt(c *AskerConsole) {
 	}()
 }
 
-// Creates a new console with the specified writer, handles and formatter.
-func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
+// Writers that back the underlying console.
+type Writers struct {
+	// The writer to write output to.
+	Output io.Writer
+
+	// The writer to write spinner output to. If nil, the spinner will write to Output.
+	Spinner io.Writer
+}
+
+// Creates a new console with the specified writers, handles and formatter.
+func NewConsole(
+	noPrompt bool,
+	isTerminal bool,
+	writers Writers,
+	handles ConsoleHandles,
+	formatter output.Formatter) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	c := &AskerConsole{
 		asker:         asker,
 		handles:       handles,
-		defaultWriter: w,
-		writer:        w,
+		defaultWriter: writers.Output,
+		writer:        writers.Output,
 		formatter:     formatter,
 		isTerminal:    isTerminal,
 		currentIndent: atomic.NewString(""),
 		noPrompt:      noPrompt,
 	}
 
+	if writers.Spinner == nil {
+		writers.Spinner = writers.Output
+	}
+
 	spinnerConfig := yacspin.Config{
 		Frequency:    200 * time.Millisecond,
-		Writer:       c.writer,
+		Writer:       writers.Spinner,
 		Suffix:       " ",
 		TerminalMode: spinnerTerminalMode(isTerminal),
 	}

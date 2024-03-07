@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	azcloud "github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 )
 
@@ -16,19 +17,23 @@ import (
 type UserProfileService struct {
 	credentialProvider auth.MultiTenantCredentialProvider
 	coreClientOptions  *azcore.ClientOptions
+	cloud              *cloud.Cloud
 }
 
 func NewUserProfileService(
 	credentialProvider auth.MultiTenantCredentialProvider,
 	clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
+	cloud *cloud.Cloud,
 ) *UserProfileService {
 	coreClientOptions := clientOptionsBuilderFactory.NewClientOptionsBuilder().
+		WithCloud(cloud.Configuration).
 		WithPerCallPolicy(azsdk.NewMsGraphCorrelationPolicy()).
 		BuildCoreClientOptions()
 
 	return &UserProfileService{
 		credentialProvider: credentialProvider,
 		coreClientOptions:  coreClientOptions,
+		cloud:              cloud,
 	}
 }
 
@@ -68,7 +73,7 @@ func (u *UserProfileService) GetAccessToken(ctx context.Context, tenantId string
 
 	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{
-			fmt.Sprintf("%s/.default", cloud.AzurePublic.Services[cloud.ResourceManager].Audience),
+			fmt.Sprintf("%s/.default", u.cloud.Configuration.Services[azcloud.ResourceManager].Audience),
 		},
 	})
 

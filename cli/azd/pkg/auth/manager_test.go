@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -61,6 +62,7 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		credentialCache:   credentialCache,
+		cloud:             cloud.AzurePublic(),
 	}
 
 	cred, err := m.LoginWithServicePrincipalSecret(
@@ -96,6 +98,7 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		credentialCache:   credentialCache,
+		cloud:             cloud.AzurePublic(),
 	}
 
 	cred, err := m.LoginWithServicePrincipalCertificate(
@@ -141,7 +144,9 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 		credentialCache:   credentialCache,
 		ghClient: github.NewFederatedTokenClient(&policy.ClientOptions{
 			Transport: mockContext.HttpClient,
+			Cloud:     cloud.AzurePublic().Configuration,
 		}),
+		cloud: cloud.AzurePublic(),
 	}
 
 	cred, err := m.LoginWithServicePrincipalFederatedTokenProvider(
@@ -204,6 +209,7 @@ func TestLoginInteractive(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		publicClient:      &mockPublicClient{},
+		cloud:             cloud.AzurePublic(),
 	}
 
 	cred, err := m.LoginInteractive(context.Background(), nil, nil)
@@ -232,6 +238,7 @@ func TestLoginDeviceCode(t *testing.T) {
 		userConfigManager: newMemoryUserConfigManager(),
 		publicClient:      &mockPublicClient{},
 		console:           console,
+		cloud:             cloud.AzurePublic(),
 	}
 
 	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil, func(url string) error { return nil })

@@ -11,12 +11,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
@@ -36,7 +36,6 @@ const (
 	AINotValid                  = "is not valid according to the validation procedure"
 	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
 	responsibleAITerms          = "until you agree to Responsible AI terms for this resource"
-	azurePortalURL              = "https://ms.portal.azure.com/"
 )
 
 func (i *ProvisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -103,6 +102,7 @@ type ProvisionAction struct {
 	console          input.Console
 	subManager       *account.SubscriptionsManager
 	importManager    *project.ImportManager
+	portalUrlBase    string
 }
 
 func NewProvisionAction(
@@ -118,6 +118,7 @@ func NewProvisionAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	subManager *account.SubscriptionsManager,
+	portalUrlBase cloud.PortalUrlBase,
 ) actions.Action {
 	return &ProvisionAction{
 		flags:            flags,
@@ -132,6 +133,7 @@ func NewProvisionAction(
 		console:          console,
 		subManager:       subManager,
 		importManager:    importManager,
+		portalUrlBase:    string(portalUrlBase),
 	}
 }
 
@@ -180,37 +182,6 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 	defer func() { _ = infra.Cleanup() }()
-
-	wroteNewInput := false
-
-	for inputName, inputInfo := range infra.Inputs {
-		inputConfigKey := fmt.Sprintf("inputs.%s", inputName)
-
-		if _, has := p.env.Config.GetString(inputConfigKey); !has {
-			// No value found, so we need to generate one, and store it in the config bag.
-			//
-			// TODO(ellismg): Today this dereference is safe because when loading a manifest we validate that every
-			// input has a generate block with a min length property.  We would like to relax this in Preview 3 to
-			// to support cases where this is not the case (and we'd prompt for the value).  When we do that, we'll need
-			// to audit these dereferences to check for nil.
-			val, err := password.FromAlphabet(password.LettersAndDigits, *inputInfo.Default.Generate.MinLength)
-			if err != nil {
-				return nil, fmt.Errorf("generating value for input %s: %w", inputName, err)
-			}
-
-			if err := p.env.Config.Set(inputConfigKey, val); err != nil {
-				return nil, fmt.Errorf("saving value for input %s: %w", inputName, err)
-			}
-
-			wroteNewInput = true
-		}
-	}
-
-	if wroteNewInput {
-		if err := p.envManager.Save(ctx, p.env); err != nil {
-			return nil, fmt.Errorf("saving environment: %w", err)
-		}
-	}
 
 	infraOptions := infra.Options
 	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
@@ -288,7 +259,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
 					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-					"any pricing tiers. Please visit " + output.WithLinkFormat(azurePortalURL) +
+					"any pricing tiers. Please visit " + output.WithLinkFormat(p.portalUrlBase) +
 					" and select 'Create' on specific services to request access."),
 				Err: err,
 			}
@@ -298,7 +269,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if strings.Contains(errorMsg, responsibleAITerms) {
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
-					output.WithLinkFormat(azurePortalURL) + ". Create the resource in azure portal " +
+					output.WithLinkFormat(p.portalUrlBase) + ". Create the resource in azure portal " +
 					"to go through Responsible AI terms, and then delete it. " +
 					"After that, run 'azd provision' again"),
 				Err: err,
@@ -316,7 +287,14 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 				Header: fmt.Sprintf(
 					"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
 				FollowUp: getResourceGroupFollowUp(
-					ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, true),
+					ctx,
+					p.formatter,
+					p.portalUrlBase,
+					p.projectConfig,
+					p.resourceManager,
+					p.env,
+					true,
+				),
 			},
 		}, nil
 	}
@@ -371,7 +349,14 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			Header: fmt.Sprintf(
 				"Your application was provisioned in Azure in %s.", ux.DurationAsText(since(startTime))),
 			FollowUp: getResourceGroupFollowUp(
-				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, false),
+				ctx,
+				p.formatter,
+				p.portalUrlBase,
+				p.projectConfig,
+				p.resourceManager,
+				p.env,
+				false,
+			),
 		},
 	}, nil
 }

@@ -12,9 +12,6 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
-@secure()
-@metadata({azd: {type: 'inputs' }})
-param inputs object
 param administratorLogin string
 @secure()
 param administratorLoginPassword string
@@ -36,7 +33,6 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-    inputs: inputs
     principalId: principalId
   }
 }

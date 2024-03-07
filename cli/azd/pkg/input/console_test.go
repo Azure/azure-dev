@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,19 +90,21 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 }
 
 func TestAskerConsoleExternalPrompt(t *testing.T) {
-	c := NewConsole(
-		false,
-		false,
-		Writers{
-			Output: os.Stdout,
-		},
-		ConsoleHandles{
-			Stderr: os.Stderr,
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-		},
-		&output.NoneFormatter{},
-	)
+	newConsole := func() Console {
+		return NewConsole(
+			false,
+			false,
+			Writers{
+				Output: os.Stdout,
+			},
+			ConsoleHandles{
+				Stderr: os.Stderr,
+				Stdin:  os.Stdin,
+				Stdout: os.Stdout,
+			},
+			nil,
+		)
+	}
 
 	t.Run("Confirm", func(t *testing.T) {
 		server := newTestExternalPromptServer(func(body promptOptions) json.RawMessage {
@@ -118,6 +119,8 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 
 		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
 		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+
+		c := newConsole()
 
 		res, err := c.Confirm(context.Background(), ConsoleOptions{Message: "Are you sure?", DefaultValue: true})
 		require.NoError(t, err)
@@ -137,6 +140,8 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
 		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
 
+		c := newConsole()
+
 		res, err := c.Prompt(context.Background(), ConsoleOptions{Message: "What is your name?"})
 		require.NoError(t, err)
 		require.Equal(t, "John Doe", res)
@@ -155,6 +160,8 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 
 		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
 		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+
+		c := newConsole()
 
 		res, err := c.Select(
 			context.Background(),
@@ -180,6 +187,8 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 
 		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
 		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+
+		c := newConsole()
 
 		res, err := c.MultiSelect(
 			context.Background(),

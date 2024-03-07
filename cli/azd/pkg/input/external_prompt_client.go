@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -48,6 +49,11 @@ func newExternalPromptClient(endpoint string, key string, pipeline httputil.Http
 	}
 }
 
+var (
+	// promptCancelledErr is the error that is returned by Prompt when the prompt is cancelled by the user.
+	promptCancelledErr = errors.New("cancelled")
+)
+
 func (c *externalPromptClient) Prompt(ctx context.Context, options promptOptions) (json.RawMessage, error) {
 	body, err := json.Marshal(options)
 	if err != nil {
@@ -87,7 +93,7 @@ func (c *externalPromptClient) Prompt(ctx context.Context, options promptOptions
 	case "error":
 		return nil, fmt.Errorf("prompt error: %s", *resp.Message)
 	case "cancelled":
-		return nil, fmt.Errorf("prompt cancelled")
+		return nil, promptCancelledErr
 	default:
 		return nil, fmt.Errorf("unexpected result: %s", resp.Result)
 	}

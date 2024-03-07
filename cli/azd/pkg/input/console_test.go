@@ -217,7 +217,7 @@ func newTestExternalPromptServer(handler func(promptOptions) json.RawMessage) *h
 		w.WriteHeader(http.StatusOK)
 
 		respBody, _ := json.Marshal(promptResponse{
-			Result: "success",
+			Status: "success",
 			Value:  convert.RefOf(res),
 		})
 

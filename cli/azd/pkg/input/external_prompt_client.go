@@ -31,13 +31,17 @@ type promptOptionsOptions struct {
 }
 
 type promptResponse struct {
-	Result string `json:"result"`
+	// Status is one of "success", "error", or "cancelled".
+	Status string `json:"status"`
 
-	// These fields are set when result is "success"
-	// Value is either a string or an array of strings.
+	// These fields are set when status is "success"
+
+	// Value is either a string or an array of strings, encoded in JSON.
 	Value *json.RawMessage `json:"value,omitempty"`
 
-	// These fields are set when the status "error"
+	// These fields are set when the status is "error"
+
+	// Message is a human-readable error message.
 	Message *string `json:"message,omitempty"`
 }
 
@@ -87,7 +91,7 @@ func (c *externalPromptClient) Prompt(ctx context.Context, options promptOptions
 		return nil, fmt.Errorf("unmarshalling response: %w", err)
 	}
 
-	switch resp.Result {
+	switch resp.Status {
 	case "success":
 		return *resp.Value, nil
 	case "error":
@@ -95,6 +99,6 @@ func (c *externalPromptClient) Prompt(ctx context.Context, options promptOptions
 	case "cancelled":
 		return nil, promptCancelledErr
 	default:
-		return nil, fmt.Errorf("unexpected result: %s", resp.Result)
+		return nil, fmt.Errorf("unexpected result: %s", resp.Status)
 	}
 }

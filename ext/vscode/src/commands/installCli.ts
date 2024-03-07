@@ -17,6 +17,7 @@ export async function installCli(context: IActionContext, shouldPrompt: boolean 
     if (shouldPrompt) {
         const message = vscode.l10n.t('This will install or update the Azure Developer CLI. Do you want to continue?');
         // Don't need to check the result, if the user chooses cancel a UserCancelledError will be thrown
+        // External prompting does not apply
         await context.ui.showWarningMessage(message, { modal: true }, DialogResponses.yes, DialogResponses.cancel);
     }
 

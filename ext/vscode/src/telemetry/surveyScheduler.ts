@@ -81,6 +81,7 @@ async function surveyPrompt(persistentStore: vscode.Memento, context: IActionCon
     await persistentStore.update(lastSurveySessionKey, vscode.env.sessionId);
 
     const buttons = Array.from(survey.buttons.keys());
+    // External prompting does not apply
     const result = await vscode.window.showInformationMessage(survey.prompt, ...buttons);
     const response = (result === undefined) ? SurveyRefusal.RemindLater : survey.buttons.get(result) ?? SurveyRefusal.RemindLater;
 

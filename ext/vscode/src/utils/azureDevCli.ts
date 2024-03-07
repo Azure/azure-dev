@@ -75,6 +75,7 @@ export function scheduleAzdVersionCheck(): void {
                 versionResult.version
             );
 
+            // External prompting does not apply
             void vscode.window.showWarningMessage(title, { modal: false }, install, later).then(async (result) => {
                 if (result === install) {
                     await vscode.commands.executeCommand('azure-dev.commands.cli.install', /* shouldPrompt: */ false);

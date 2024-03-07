@@ -61,6 +61,7 @@ async function pickAzureYamlFile(context: IActionContext): Promise<vscode.Uri | 
                 data: u
             };});
 
+            // External prompting does not apply
             const chosenFile = await context.ui.showQuickPick(choices, {
                 canPickMany: false,
                 suppressPersistence: true,

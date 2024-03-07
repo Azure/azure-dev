@@ -51,10 +51,12 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
         envData = envData.filter(e => !e.IsDefault);
 
         if (envData.length === 0) {
+            // External prompting does not apply
             void vscode.window.showInformationMessage(vscode.l10n.t('There are no environments to delete.'));
             return;
         }
 
+        // External prompting does not apply
         const envChoices  = envData.map(d => ({ label: d.Name, data: d,} as IAzureQuickPickItem<EnvironmentInfo>));
         const selectedEnv = await context.ui.showQuickPick(envChoices, {
             canPickMany: false,
@@ -66,6 +68,7 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
 
     const deleteOption: vscode.MessageItem = { title: vscode.l10n.t('Delete') };
 
+    // External prompting applies but is not used because there is no azd env delete command (see comment below)
     const result = await context.ui.showWarningMessage(
         vscode.l10n.t('Are you sure you want to delete the {0} environment?', name),
         { modal: true },
@@ -81,6 +84,7 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
         // azureCli.commandBuilder.withArg('env').withArg('delete').withQuotedArg(name);
         // await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
 
+        // External prompting does not apply
         void vscode.window.showInformationMessage(
             vscode.l10n.t("'{0}' has been deleted.", name));
 
@@ -147,6 +151,7 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
     azureCli.commandBuilder.withArg('env').withArg('select').withQuotedArg(name);
     await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
 
+    // External prompting does not apply
     void vscode.window.showInformationMessage(
         vscode.l10n.t("'{0}' is now the default environment.", name));
 
@@ -230,6 +235,7 @@ async function promptCreateNewEnvironment(message: string, details?: string): Pr
         title: vscode.l10n.t('Cancel'),
         isCloseAffordance: true
     };
+    // External prompting does not apply
     const selectedItem = await vscode.window.showErrorMessage(message,
         { modal: true, detail: details }, createNewEnvItem, cancelItem);
     if (selectedItem === createNewEnvItem) {

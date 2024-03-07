@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -89,8 +90,8 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 		&ServicePackageResult{
 			PackagePath: "test-app/api-test:azd-deploy-0",
 			Details: &dockerPackageResult{
-				ImageHash: "IMAGE_HASH",
-				ImageTag:  "test-app/api-test:azd-deploy-0",
+				ImageHash:   "IMAGE_HASH",
+				TargetImage: "test-app/api-test:azd-deploy-0",
 			},
 		},
 	)
@@ -133,9 +134,26 @@ func createContainerAppServiceTarget(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
-	containerAppService := containerapps.NewContainerAppService(credentialProvider, mockContext.HttpClient, clock.NewMock())
-	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
-	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)
+	containerAppService := containerapps.NewContainerAppService(
+		credentialProvider,
+		mockContext.HttpClient,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+	)
+	containerRegistryService := azcli.NewContainerRegistryService(
+		credentialProvider,
+		dockerCli,
+		mockContext.ArmClientOptions,
+		mockContext.CoreClientOptions,
+	)
+	containerHelper := NewContainerHelper(
+		env,
+		envManager,
+		clock.NewMock(),
+		containerRegistryService,
+		dockerCli,
+		cloud.AzurePublic(),
+	)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	resourceManager := NewResourceManager(env, azCli, depOpService)

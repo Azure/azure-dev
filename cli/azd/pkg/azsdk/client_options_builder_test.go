@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -72,6 +73,15 @@ func TestCreateCoreOptions(t *testing.T) {
 		require.Same(t, perCallPolicy, coreOptions.PerCallPolicies[1])
 		require.Same(t, preRetryPolicy, coreOptions.PerRetryPolicies[0])
 	})
+
+	t.Run("WithCloud", func(t *testing.T) {
+		builder := NewClientOptionsBuilder()
+		cloud := cloud.AzurePublic()
+		coreOptions := builder.WithCloud(cloud.Configuration).BuildCoreClientOptions()
+
+		require.Equal(t, cloud.Configuration, coreOptions.Cloud)
+	})
+
 }
 
 type testPerCallPolicy struct {

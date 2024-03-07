@@ -2,3 +2,7 @@
   description: "Support infrastructure deployments at resource group scope."
 - id: infraSynth
   description: "Enable the `infra synth` command to write generated infrastructure to disk."
+- id: aks.helm
+  description: "Enable Helm support for AKS deployments."
+- id: aks.kustomize
+  description: "Enable Kustomize support for AKS deployments."

@@ -4,7 +4,8 @@
       "type": "container.v0",
       "image": "mysql:latest",
       "env": {
-        "MYSQL_ROOT_PASSWORD": "{mysqlabstract.inputs.password}"
+        "MYSQL_ROOT_PASSWORD": "{mysqlabstract.inputs.password}",
+        "SpecialChar": "{mysqlabstract.inputs.pas-sw-ord}"
       },
       "bindings": {
         "tcp": {
@@ -17,6 +18,15 @@
       "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract.inputs.password}",
       "inputs": {
         "password": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 10
+            }
+          }
+        },
+        "pas-sw-ord": {
           "type": "string",
           "secret": true,
           "default": {

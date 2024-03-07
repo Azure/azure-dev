@@ -7,12 +7,11 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform/v2"
 	"github.com/Azure/azure-storage-file-go/azfile"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // SpringService provides artifacts upload/deploy and query to Azure Spring Apps (ASA)
@@ -57,19 +56,17 @@ type SpringService interface {
 
 type springService struct {
 	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
+	armClientOptions   *arm.ClientOptions
 }
 
 // Creates a new instance of the NewSpringService
 func NewSpringService(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
+	armClientOptions *arm.ClientOptions,
 ) SpringService {
 	return &springService{
 		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
+		armClientOptions:   armClientOptions,
 	}
 }
 
@@ -212,8 +209,7 @@ func (ss *springService) createSpringAppClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
-	client, err := armappplatform.NewAppsClient(subscriptionId, credential, options)
+	client, err := armappplatform.NewAppsClient(subscriptionId, credential, ss.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringApp client: %w", err)
 	}
@@ -230,8 +226,7 @@ func (ss *springService) createSpringAppDeploymentClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
-	client, err := armappplatform.NewDeploymentsClient(subscriptionId, credential, options)
+	client, err := armappplatform.NewDeploymentsClient(subscriptionId, credential, ss.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringAppDeployment client: %w", err)
 	}

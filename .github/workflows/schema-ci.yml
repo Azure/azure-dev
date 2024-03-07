@@ -1,0 +1,22 @@
+name: schema-ci
+
+on:
+  pull_request:
+    paths:
+      - "schemas/**"
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  schema-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+      - run: npm install -g jsonlint
+      - name: Validate schemas JSON
+        run: jsonlint schemas/**/*.json -c

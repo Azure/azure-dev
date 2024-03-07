@@ -23,10 +23,11 @@ jobs:
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install azd
         uses: Azure/setup-azd@v0.1.0
@@ -56,14 +57,6 @@ jobs:
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt
-        env:
-          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
-          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
-          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Application
         run: azd deploy --no-prompt
-        env:
-          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
-          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
-          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}

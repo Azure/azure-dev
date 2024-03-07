@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -133,7 +134,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		env,
 		mockContext.Console,
 		&mockCurrentPrincipal{},
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli, cloud.AzurePublic().PortalUrlBase),
 	)
 
 	err := provider.Initialize(*mockContext.Context, projectDir, options)

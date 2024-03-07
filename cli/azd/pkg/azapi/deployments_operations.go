@@ -9,11 +9,9 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 type DeploymentOperations interface {
@@ -32,19 +30,17 @@ type DeploymentOperations interface {
 
 func NewDeploymentOperations(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
+	armClientOptions *arm.ClientOptions,
 ) DeploymentOperations {
 	return &deploymentOperations{
 		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
+		armClientOptions:   armClientOptions,
 	}
 }
 
 type deploymentOperations struct {
 	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
+	armClientOptions   *arm.ClientOptions
 }
 
 func (dp *deploymentOperations) createDeploymentsOperationsClient(
@@ -56,8 +52,7 @@ func (dp *deploymentOperations) createDeploymentsOperationsClient(
 		return nil, err
 	}
 
-	options := dp.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armresources.NewDeploymentOperationsClient(subscriptionId, credential, options)
+	client, err := armresources.NewDeploymentOperationsClient(subscriptionId, credential, dp.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
@@ -122,11 +117,4 @@ func (dp *deploymentOperations) ListResourceGroupDeploymentOperations(
 	}
 
 	return result, nil
-}
-
-func (dp *deploymentOperations) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
-	return azsdk.NewClientOptionsBuilder().
-		WithTransport(dp.httpClient).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(dp.userAgent)).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }

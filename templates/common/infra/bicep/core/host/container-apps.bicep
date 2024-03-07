@@ -6,6 +6,7 @@ param tags object = {}
 param containerAppsEnvironmentName string
 param containerRegistryName string
 param containerRegistryResourceGroupName string = ''
+param containerRegistryAdminUserEnabled bool = false
 param logAnalyticsWorkspaceName string
 param applicationInsightsName string = ''
 
@@ -26,6 +27,7 @@ module containerRegistry 'container-registry.bicep' = {
   params: {
     name: containerRegistryName
     location: location
+    adminUserEnabled: containerRegistryAdminUserEnabled
     tags: tags
   }
 }

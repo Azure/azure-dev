@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -273,7 +274,13 @@ func TestPromptForParametersLocation(t *testing.T) {
 	}
 
 	p := createBicepProvider(t, mockContext)
-	p.prompters = prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli)
+	p.prompters = prompt.NewDefaultPrompter(
+		env,
+		mockContext.Console,
+		accountManager,
+		azCli,
+		cloud.AzurePublic().PortalUrlBase,
+	)
 
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "'unfilteredLocation")

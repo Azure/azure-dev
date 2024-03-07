@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
@@ -13,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -43,8 +45,8 @@ func (p *DefaultPlatform) IsEnabled() bool {
 // ConfigureContainer configures the IoC container for the default platform components
 func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// Tools
-	container.RegisterSingleton(terraform.NewTerraformCli)
-	container.RegisterSingleton(bicep.NewBicepCli)
+	container.MustRegisterSingleton(terraform.NewTerraformCli)
+	container.MustRegisterSingleton(bicep.NewBicepCli)
 
 	// Provisioning Providers
 	provisionProviderMap := map[provisioning.ProviderKind]any{
@@ -53,13 +55,11 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	}
 
 	for provider, constructor := range provisionProviderMap {
-		if err := container.RegisterNamedTransient(string(provider), constructor); err != nil {
-			panic(fmt.Errorf("registering IaC provider %s: %w", provider, err))
-		}
+		container.MustRegisterNamedTransient(string(provider), constructor)
 	}
 
 	// Function to determine the default IaC provider when provisioning
-	container.RegisterSingleton(func() provisioning.DefaultProviderResolver {
+	container.MustRegisterSingleton(func() provisioning.DefaultProviderResolver {
 		return func() (provisioning.ProviderKind, error) {
 			return provisioning.Bicep, nil
 		}
@@ -71,12 +71,10 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	}
 
 	for remoteKind, constructor := range remoteStateProviderMap {
-		if err := container.RegisterNamedSingleton(string(remoteKind), constructor); err != nil {
-			panic(fmt.Errorf("registering remote state provider %s: %w", remoteKind, err))
-		}
+		container.MustRegisterNamedScoped(string(remoteKind), constructor)
 	}
 
-	container.RegisterSingleton(func(
+	container.MustRegisterSingleton(func(
 		remoteStateConfig *state.RemoteConfig,
 		projectConfig *project.ProjectConfig,
 	) (*storage.AccountConfig, error) {
@@ -106,13 +104,19 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	})
 
 	// Storage components
-	container.RegisterSingleton(storage.NewBlobClient)
-	container.RegisterSingleton(storage.NewBlobSdkClient)
+	container.MustRegisterSingleton(storage.NewBlobClient)
+	container.MustRegisterSingleton(storage.NewBlobSdkClient)
+
+	// cosmosdb
+	container.MustRegisterSingleton(cosmosdb.NewCosmosDbService)
+
+	// sqldb
+	container.MustRegisterSingleton(sqldb.NewSqlDbService)
 
 	// Templates
 
 	// Gets a list of default template sources used in azd.
-	container.RegisterSingleton(func() *templates.SourceOptions {
+	container.MustRegisterSingleton(func() *templates.SourceOptions {
 		return &templates.SourceOptions{
 			DefaultSources:        []*templates.SourceConfig{},
 			LoadConfiguredSources: true,

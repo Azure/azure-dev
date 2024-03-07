@@ -1,6 +1,7 @@
 package alpha
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -31,11 +32,7 @@ func Test_AlphaToggle(t *testing.T) {
 		})
 
 		// We don't need the user-config
-		alphaManager := &FeatureManager{
-			alphaFeaturesResolver: mockAlphaFeatures,
-			userConfigCache:       mockConfig,
-		}
-
+		alphaManager := newFeatureManagerForTest(mockAlphaFeatures, mockConfig)
 		alphaF, err := alphaManager.ListFeatures()
 		require.NoError(t, err)
 		require.True(t, len(alphaF) == 1)
@@ -62,11 +59,7 @@ func Test_AlphaToggle(t *testing.T) {
 		})
 
 		// We don't need the user-config
-		alphaManager := &FeatureManager{
-			alphaFeaturesResolver: mockAlphaFeatures,
-			userConfigCache:       mockConfig,
-		}
-
+		alphaManager := newFeatureManagerForTest(mockAlphaFeatures, mockConfig)
 		alphaF, err := alphaManager.ListFeatures()
 		require.NoError(t, err)
 		require.True(t, len(alphaF) == 1)
@@ -97,11 +90,7 @@ func Test_AlphaToggle(t *testing.T) {
 		})
 
 		// We don't need the user-config
-		alphaManager := &FeatureManager{
-			alphaFeaturesResolver: mockAlphaFeatures,
-			userConfigCache:       mockConfig,
-		}
-
+		alphaManager := newFeatureManagerForTest(mockAlphaFeatures, mockConfig)
 		alphaF, err := alphaManager.ListFeatures()
 		require.NoError(t, err)
 		require.True(t, len(alphaF) == 2)
@@ -136,11 +125,7 @@ func Test_AlphaToggle(t *testing.T) {
 		})
 
 		// We don't need the user-config
-		alphaManager := &FeatureManager{
-			alphaFeaturesResolver: mockAlphaFeatures,
-			userConfigCache:       mockConfig,
-		}
-
+		alphaManager := newFeatureManagerForTest(mockAlphaFeatures, mockConfig)
 		alphaF, err := alphaManager.ListFeatures()
 		require.NoError(t, err)
 		require.True(t, len(alphaF) == 2)
@@ -159,4 +144,12 @@ func Test_AlphaToggle(t *testing.T) {
 		_ = NewFeaturesManager(config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())))
 	})
 
+}
+
+func newFeatureManagerForTest(alphaFeatureResolver func() []Feature, config config.Config) *FeatureManager {
+	return &FeatureManager{
+		alphaFeaturesResolver: alphaFeatureResolver,
+		userConfigCache:       config,
+		withSync:              &sync.Once{},
+	}
 }

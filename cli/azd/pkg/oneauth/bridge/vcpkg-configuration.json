@@ -1,0 +1,17 @@
+{
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://github.com/Microsoft/vcpkg",
+    "baseline": "c6c59e33f39b6c5588fb5884537d31c51dd947a9"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://office.visualstudio.com/OneAuth/_git/vcpkg-registry",
+      "baseline": "3e41ce291bfeee90ffa730501fb5ea754f2a1394",
+      "packages": [
+        "oneauth"
+      ]
+    }
+  ]
+}

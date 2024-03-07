@@ -1,0 +1,6 @@
+{
+  "name": "bridge",
+  "dependencies": [
+    { "name": "oneauth", "version>=": "1.100.0" }
+  ]
+}

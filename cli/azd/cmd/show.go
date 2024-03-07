@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -29,11 +30,11 @@ import (
 
 type showFlags struct {
 	global *internal.GlobalCommandOptions
-	envFlag
+	internal.EnvFlag
 }
 
 func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	s.envFlag.Bind(local, global)
+	s.EnvFlag.Bind(local, global)
 	s.global = global
 }
 
@@ -65,6 +66,7 @@ type showAction struct {
 	flags                *showFlags
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
 	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
+	portalUrlBase        string
 }
 
 func newShowAction(
@@ -80,6 +82,7 @@ func newShowAction(
 	flags *showFlags,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
+	portalUrlBase cloud.PortalUrlBase,
 ) actions.Action {
 	return &showAction{
 		projectConfig:        projectConfig,
@@ -94,6 +97,7 @@ func newShowAction(
 		flags:                flags,
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
+		portalUrlBase:        string(portalUrlBase),
 	}
 }
 
@@ -135,7 +139,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// having an environment injected into us so we can handle cases where the current environment doesn't exist (if we
 	// injected an environment, we'd prompt the user to see if they want to created one and we'd prefer not to have show
 	// interact with the user).
-	environmentName := s.flags.environmentName
+	environmentName := s.flags.EnvironmentName
 
 	if environmentName == "" {
 		var err error
@@ -147,7 +151,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	var subId, rgName string
 	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
-		if errors.Is(err, environment.ErrNotFound) && s.flags.environmentName != "" {
+		if errors.Is(err, environment.ErrNotFound) && s.flags.EnvironmentName != "" {
 			return nil, fmt.Errorf(
 				`"environment '%s' does not exist. You can create it with "azd env new"`, environmentName,
 			)
@@ -223,7 +227,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		AppName:         s.azdCtx.GetDefaultProjectName(),
 		Services:        uxServices,
 		Environments:    uxEnvironments,
-		AzurePortalLink: azurePortalLink(subId, rgName),
+		AzurePortalLink: azurePortalLink(s.portalUrlBase, subId, rgName),
 	})
 
 	return nil, nil

@@ -37,7 +37,12 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockRequest := mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 
-	cas := NewContainerAppService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, clock.NewMock())
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		mockContext.HttpClient,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+	)
 	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, subscriptionId, resourceGroup, appName)
 	require.NoError(t, err)
 	require.NotNil(t, ingressConfig)
@@ -127,7 +132,12 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		containerApp,
 	)
 
-	cas := NewContainerAppService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, clock.NewMock())
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		mockContext.HttpClient,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+	)
 	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName)
 	require.NoError(t, err)
 

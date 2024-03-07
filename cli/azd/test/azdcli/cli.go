@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 )
 
@@ -73,9 +74,9 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 	if opt.Session != nil {
 		env := append(
 			environ(opt.Session),
-			"HTTPS_PROXY="+opt.Session.ProxyUrl,
+			"AZD_TEST_HTTPS_PROXY="+opt.Session.ProxyUrl,
 			"AZD_DEBUG_PROVISION_PROGRESS_DISABLE=true",
-			"PATH="+opt.Session.CmdProxyPath)
+			"PATH="+strings.Join(opt.Session.CmdProxyPaths, string(os.PathListSeparator)))
 		cli.Env = append(cli.Env, env...)
 	}
 
@@ -140,15 +141,10 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 	cmd.Env = cli.Env
 
 	// Collect all PATH variables, appending in the order it was added, to form a single PATH variable
-	pathStrings := []string{}
-	for _, env := range cmd.Env {
-		if strings.HasPrefix(env, "PATH=") {
-			pathStrings = append(pathStrings, env[5:])
-		}
-	}
+	pathString := ostest.CombinedPaths(cmd.Env)
 
-	if len(pathStrings) > 0 {
-		cmd.Env = append(cmd.Env, "PATH="+strings.Join(pathStrings, string(os.PathListSeparator)))
+	if len(pathString) > 0 {
+		cmd.Env = append(cmd.Env, pathString)
 	}
 
 	// we run a background goroutine to report a heartbeat in the logs while the command

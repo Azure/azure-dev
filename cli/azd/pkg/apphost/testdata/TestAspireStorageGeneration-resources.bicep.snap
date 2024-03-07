@@ -4,10 +4,6 @@ param location string = resourceGroup().location
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
-@secure()
-@metadata({azd: {type: 'inputs' }})
-param inputs object
-
 var resourceToken = uniqueString(resourceGroup().id)
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -87,6 +83,7 @@ resource mydataBlobsRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   }
 }
+
 resource mydataQueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(mydata.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88'))
   scope: mydata
@@ -96,6 +93,7 @@ resource mydataQueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@202
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
   }
 }
+
 
 resource photos 'Microsoft.Storage/storageAccounts@2022-05-01' = {
   name: replace('photos-${resourceToken}', '-', '')
@@ -120,6 +118,7 @@ resource photosBlobsRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   }
 }
+
 resource photosQueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(photos.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88'))
   scope: photos
@@ -132,6 +131,10 @@ resource photosQueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@202
 
 
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
+output MANAGED_IDENTITY_NAME string = managedIdentity.name
+output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
+output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspace.id
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id

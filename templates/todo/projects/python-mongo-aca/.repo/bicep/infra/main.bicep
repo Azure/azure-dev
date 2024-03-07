@@ -60,6 +60,13 @@ module containerApps '../../../../../../common/infra/bicep/core/host/container-a
     tags: tags
     containerAppsEnvironmentName: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
     containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
+    // Work around Azure/azure-dev#3157 (the root cause of which is Azure/acr#723) by explicitly enabling the admin user to allow users which
+    // don't have the `Owner` role granted (and instead are classic administrators) to access the registry to push even if AAD authentication fails.
+    //
+    // This addresses the following error during deploy:
+    //
+    // failed getting ACR token: POST https://<some-random-name>.azurecr.io/oauth2/exchange 401 Unauthorized
+    containerRegistryAdminUserEnabled: true
     logAnalyticsWorkspaceName: monitoring.outputs.logAnalyticsWorkspaceName
     applicationInsightsName: monitoring.outputs.applicationInsightsName
   }

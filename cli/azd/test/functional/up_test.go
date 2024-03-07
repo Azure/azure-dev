@@ -348,7 +348,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "env", "set", "AZURE_RESOURCE_GROUP", resourceGroupName)
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_RESOURCE_GROUP", resourceGroupName)
 	require.NoError(t, err)
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")

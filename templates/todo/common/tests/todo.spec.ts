@@ -4,9 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 test("Create and delete item test", async ({ page }) => {
   await page.goto("/", { waitUntil: 'networkidle' });
 
-  await expect(page.locator("text=My List").first()).toBeVisible({
-    timeout: 360 * 1000,
-  });
+  await expect(page.locator("text=My List").first()).toBeVisible();
 
   await expect(page.locator("text=This list is empty.").first()).toBeVisible()
 

@@ -1,0 +1,5 @@
+[B|b]in/
+[O|o]bj/
+# This was added after the template was checked in, you can modify
+# so you can modify the file without git pending the edits.
+Settings.cs

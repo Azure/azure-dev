@@ -194,7 +194,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 				console: input.NewConsole(
 					false,
 					false,
-					os.Stdout,
+					input.Writers{Output: os.Stdout},
 					input.ConsoleHandles{
 						Stderr: os.Stderr,
 						Stdin:  strings.NewReader(strings.Join(tt.interactions, "\n") + "\n"),

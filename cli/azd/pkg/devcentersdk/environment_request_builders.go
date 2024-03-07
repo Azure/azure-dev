@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -130,14 +129,7 @@ func (c *EnvironmentItemRequestBuilder) BeginPut(
 		return nil, runtime.NewResponseError(res)
 	}
 
-	var finalResponse *OperationStatus
-
-	pollerOptions := &runtime.NewPollerOptions[*OperationStatus]{
-		Response: &finalResponse,
-		Handler:  NewEnvironmentPollingHandler(c.client.pipeline, res),
-	}
-
-	return runtime.NewPoller(res, c.client.pipeline, pollerOptions)
+	return runtime.NewPoller[*OperationStatus](res, c.client.pipeline, nil)
 }
 
 func (c *EnvironmentItemRequestBuilder) Put(
@@ -182,14 +174,7 @@ func (c *EnvironmentItemRequestBuilder) BeginDelete(
 		return nil, runtime.NewResponseError(res)
 	}
 
-	var finalResponse *OperationStatus
-
-	pollerOptions := &runtime.NewPollerOptions[*OperationStatus]{
-		Response: &finalResponse,
-		Handler:  NewEnvironmentPollingHandler(c.client.pipeline, res),
-	}
-
-	return runtime.NewPoller(res, c.client.pipeline, pollerOptions)
+	return runtime.NewPoller[*OperationStatus](res, c.client.pipeline, nil)
 }
 
 func (c *EnvironmentItemRequestBuilder) Delete(ctx context.Context) error {
@@ -205,64 +190,5 @@ func (c *EnvironmentItemRequestBuilder) Delete(ctx context.Context) error {
 		return err
 	}
 
-	return nil
-}
-
-type EnvironmentPollingHandler struct {
-	pipeline runtime.Pipeline
-	response *http.Response
-	result   *OperationStatus
-}
-
-func NewEnvironmentPollingHandler(pipeline runtime.Pipeline, res *http.Response) *EnvironmentPollingHandler {
-	return &EnvironmentPollingHandler{
-		pipeline: pipeline,
-		response: res,
-	}
-}
-
-func (p *EnvironmentPollingHandler) Poll(ctx context.Context) (*http.Response, error) {
-	location := p.response.Header.Get("Location")
-	if strings.TrimSpace(location) == "" {
-		return nil, fmt.Errorf("missing polling location header")
-	}
-
-	req, err := runtime.NewRequest(ctx, http.MethodGet, location)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := p.pipeline.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	if !runtime.HasStatusCode(response, http.StatusAccepted) && !runtime.HasStatusCode(response, http.StatusOK) {
-		return nil, runtime.NewResponseError(response)
-	}
-
-	// If response is 202 - we're still waiting
-	if runtime.HasStatusCode(response, http.StatusAccepted) {
-		return response, nil
-	}
-
-	// Status code is 200 if we get to this point - transform the response
-	deploymentStatus, err := httputil.ReadRawResponse[OperationStatus](response)
-	if err != nil {
-		return nil, err
-	}
-
-	p.result = deploymentStatus
-
-	return response, nil
-}
-
-func (p *EnvironmentPollingHandler) Done() bool {
-	return p.result != nil && ProvisioningState(p.result.Status) == ProvisioningStateSucceeded
-}
-
-// Gets the result of the deploy operation
-func (h *EnvironmentPollingHandler) Result(ctx context.Context, out **OperationStatus) error {
-	*out = h.result
 	return nil
 }

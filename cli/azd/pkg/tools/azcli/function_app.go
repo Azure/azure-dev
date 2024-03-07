@@ -2,7 +2,6 @@ package azcli
 
 import (
 	"context"
-	"fmt"
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -18,14 +17,9 @@ func (cli *azCli) GetFunctionAppProperties(
 	resourceGroup string,
 	appName string,
 ) (*AzCliFunctionAppProperties, error) {
-	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	webApp, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, err
-	}
-
-	webApp, err := client.Get(ctx, resourceGroup, appName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed retrieving function app properties: %w", err)
 	}
 
 	return &AzCliFunctionAppProperties{
@@ -40,12 +34,17 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 	appName string,
 	deployZipFile io.Reader,
 ) (*string, error) {
-	client, err := cli.createZipDeployClient(ctx, subscriptionId)
+	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, err
 	}
 
-	response, err := client.Deploy(ctx, appName, deployZipFile)
+	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := client.Deploy(ctx, deployZipFile)
 	if err != nil {
 		return nil, err
 	}

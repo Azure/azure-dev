@@ -31,7 +31,21 @@ type Manager struct {
 	options             *Options
 }
 
+// defaultOptions for this package.
+const (
+	defaultModule = "main"
+	defaultPath   = "infra"
+)
+
 func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
+	// applied defaults if missing
+	if options.Module == "" {
+		options.Module = defaultModule
+	}
+	if options.Path == "" {
+		options.Path = defaultPath
+	}
+
 	m.projectPath = projectPath
 	m.options = &options
 

@@ -8,7 +8,7 @@ steps:
     condition: ${{ parameters.Condition }}
     displayName: Copy binary to fpm working directory
 
-  - pwsh: docker build . -f fpm.Dockerfile -t fpm
+  - pwsh: docker build . -f fpm.Dockerfile -t fpm --build-arg prefix="$(docker-mirror-tag-prefix)/"
     condition: ${{ parameters.Condition }}
     workingDirectory: cli/installer/fpm
     displayName: Build fpm container

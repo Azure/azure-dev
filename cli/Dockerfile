@@ -38,12 +38,20 @@ RUN export DEBIAN_FRONTEND=noninteractive \
           tee /etc/apt/sources.list.d/hashicorp.list \
      && apt update && apt-get install terraform \
      # kubectl CLI
-     && apt-get update \
-     && mkdir -p /etc/apt/keyrings \
-     && curl -fsSLo /etc/apt/keyrings/kubernetes-archive-keyring.gpg https://dl.k8s.io/apt/doc/apt-key.gpg \
-     && echo "deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list \
-     && apt-get update \
-     && apt-get install -y kubectl \
+     && curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+     && curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256" \
+     && echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check \
+     && install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl \
+     && kubectl version --client \
+     && kubectl version --client --output=yaml \
+     # Helm CLI
+     && curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+     && chmod 700 get_helm.sh \
+     && ./get_helm.sh \
+     # Kustomize CLI
+     && curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- /usr/local/bin \
+     # Kubelogin CLI
+     && az aks install-cli \
      # xdg-open
      && apt update && apt-get install -y xdg-utils \
      # Cleanup

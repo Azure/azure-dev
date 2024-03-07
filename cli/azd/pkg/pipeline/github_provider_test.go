@@ -121,7 +121,11 @@ func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProv
 	return NewGitHubCiProvider(
 		env,
 		mockContext.SubscriptionCredentialProvider,
-		azcli.NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient),
+		azcli.NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		),
 		ghCli,
 		git.NewGitCli(mockContext.CommandRunner),
 		mockContext.Console,

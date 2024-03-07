@@ -7,6 +7,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -21,9 +22,8 @@ func TestOverrideUserAgent(t *testing.T) {
 		return mocks.CreateEmptyHttpResponse(request, http.StatusOK)
 	})
 
-	clientOptions := NewClientOptionsBuilder().
-		WithTransport(mockContext.HttpClient).
-		WithPerCallPolicy(NewUserAgentPolicy(expectedUserAgent)).
+	clientOptions := NewClientOptionsBuilderFactory(mockContext.HttpClient, expectedUserAgent, cloud.AzurePublic()).
+		NewClientOptionsBuilder().
 		BuildArmClientOptions()
 
 	client, err := armresources.NewClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, clientOptions)

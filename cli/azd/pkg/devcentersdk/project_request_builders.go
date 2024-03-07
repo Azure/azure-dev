@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 // Projects
@@ -33,11 +34,13 @@ func (c *ProjectListRequestBuilder) Get(ctx context.Context) (*ProjectListRespon
 
 type ProjectItemRequestBuilder struct {
 	*EntityItemRequestBuilder[ProjectItemRequestBuilder]
+	cloud *cloud.Cloud
 }
 
 func NewProjectItemRequestBuilder(c *devCenterClient, devCenter *DevCenter, projectName string) *ProjectItemRequestBuilder {
 	builder := &ProjectItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, devCenter, projectName)
+	builder.cloud = c.cloud
 
 	return builder
 }

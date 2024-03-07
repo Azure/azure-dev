@@ -31,10 +31,10 @@ type CobraBuilder struct {
 }
 
 // Creates a new instance of the Cobra builder
-func NewCobraBuilder(container *ioc.NestedContainer) *CobraBuilder {
+func NewCobraBuilder(container *ioc.NestedContainer, runner *middleware.MiddlewareRunner) *CobraBuilder {
 	return &CobraBuilder{
 		container: container,
-		runner:    middleware.NewMiddlewareRunner(container),
+		runner:    runner,
 	}
 }
 
@@ -101,22 +101,31 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		ctx = tools.WithInstalledCheckCache(ctx)
+		// Register root go context that will be used for resolving singleton dependencies
+		ctx := tools.WithInstalledCheckCache(cmd.Context())
+		ioc.RegisterInstance(cb.container, ctx)
 
-		// Registers the following to enable injection into actions that require them
-		ioc.RegisterInstance(cb.container, cb.runner)
-		ioc.RegisterInstance(cb.container, middleware.MiddlewareContext(cb.runner))
-		ioc.RegisterInstance(cb.container, cmd)
-		ioc.RegisterInstance(cb.container, args)
-
+		// Register any required middleware registered for the current action descriptor
 		if err := cb.registerMiddleware(descriptor); err != nil {
 			return err
 		}
 
+		// Create new container scope for the current command
+		cmdContainer, err := cb.container.NewScope()
+		if err != nil {
+			return fmt.Errorf("failed creating new scope for command, %w", err)
+		}
+
+		// Registers the following to enable injection into actions that require them
+		ioc.RegisterInstance(cmdContainer, ctx)
+		ioc.RegisterInstance(cmdContainer, cmd)
+		ioc.RegisterInstance(cmdContainer, args)
+		ioc.RegisterInstance(cmdContainer, cmdContainer)
+		ioc.RegisterInstance[ioc.ServiceLocator](cmdContainer, cmdContainer)
+
 		actionName := createActionName(cmd)
 		var action actions.Action
-		if err := cb.container.ResolveNamed(actionName, &action); err != nil {
+		if err := cmdContainer.ResolveNamed(actionName, &action); err != nil {
 			if errors.Is(err, ioc.ErrResolveInstance) {
 				return fmt.Errorf(
 					//nolint:lll
@@ -137,15 +146,16 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 			Args:        args,
 		}
 
+		// Set the container that should be used for resolving middleware components
+		runOptions.WithContainer(cmdContainer)
 		// Run the middleware chain with action
-		log.Printf("Resolved action '%s'\n", actionName)
 		actionResult, err := cb.runner.RunAction(ctx, runOptions, action)
 
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
 
 		// TODO: Consider refactoring to move the UX writing to a middleware
-		invokeErr := cb.container.Invoke(func(console input.Console) {
+		invokeErr := cmdContainer.Invoke(func(console input.Console) {
 			var displayResult *ux.ActionResult
 			if actionResult != nil && actionResult.Message != nil {
 				displayResult = &ux.ActionResult{
@@ -313,10 +323,10 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// These functions are typically the constructor function for the action. ex) newDeployAction(...)
 	// Action resolvers can take any number of dependencies and instantiated via the IoC container
 	if descriptor.Options.ActionResolver != nil {
-		if err := cb.container.RegisterNamedSingleton(actionName, descriptor.Options.ActionResolver); err != nil {
+		if err := cb.container.RegisterNamedTransient(actionName, descriptor.Options.ActionResolver); err != nil {
 			return fmt.Errorf(
 				//nolint:lll
-				"failed registering ActionResolver for action'%s'. Ensure the resolver is a valid go function and resolves without error. %w",
+				"failed registering ActionResolver for action '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
 				actionName,
 				err,
 			)

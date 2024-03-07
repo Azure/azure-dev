@@ -87,6 +87,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		azCli := newAzCliFromMockContext(mockContext)
 
+		registerInfoMocks(mockContext, &ran)
 		registerDeployMocks(mockContext, &ran)
 		registerPollingMocks(mockContext, &ran)
 
@@ -110,6 +111,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		azCli := newAzCliFromMockContext(mockContext)
 
+		registerInfoMocks(mockContext, &ran)
 		registerConflictMocks(mockContext, &ran)
 
 		zipFile := bytes.NewBuffer([]byte{})
@@ -128,10 +130,47 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 	})
 }
 
+func registerInfoMocks(mockContext *mocks.MockContext, ran *bool) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		//nolint:lll
+		return request.Method == http.MethodGet &&
+			strings.Contains(
+				request.URL.Path,
+				"subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/sites/FUNC_APP_NAME",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*ran = true
+		response, _ := mocks.CreateHttpResponseWithBody(
+			request,
+			http.StatusOK,
+			armappservice.WebAppsClientGetResponse{
+				Site: armappservice.Site{
+					Properties: &armappservice.SiteProperties{
+						HostNameSSLStates: []*armappservice.HostNameSSLState{
+							{
+								HostType: convert.RefOf(armappservice.HostTypeStandard),
+								Name:     convert.RefOf("INVALID"),
+							},
+							{
+								HostType: convert.RefOf(armappservice.HostTypeRepository),
+								Name:     convert.RefOf("FUNC_APP_NAME_SCM_HOST"),
+							},
+						},
+					},
+				},
+			},
+		)
+
+		return response, nil
+	})
+}
+
 func registerConflictMocks(mockContext *mocks.MockContext, ran *bool) {
 	// Original call to start the deployment operation
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/api/zipdeploy")
+		return request.Method == http.MethodPost &&
+			request.URL.Host == "FUNC_APP_NAME_SCM_HOST" &&
+			strings.Contains(request.URL.Path, "/api/zipdeploy")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		*ran = true
 		return mocks.CreateEmptyHttpResponse(request, http.StatusConflict)
@@ -141,11 +180,13 @@ func registerConflictMocks(mockContext *mocks.MockContext, ran *bool) {
 func registerDeployMocks(mockContext *mocks.MockContext, ran *bool) {
 	// Original call to start the deployment operation
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/api/zipdeploy")
+		return request.Method == http.MethodPost &&
+			request.URL.Host == "FUNC_APP_NAME_SCM_HOST" &&
+			strings.Contains(request.URL.Path, "/api/zipdeploy")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		*ran = true
 		response, _ := mocks.CreateEmptyHttpResponse(request, http.StatusAccepted)
-		response.Header.Set("Location", "http://myapp.scm.azurewebsites.net/deployments/latest")
+		response.Header.Set("Location", "https://FUNC_APP_NAME_SCM_HOST/deployments/latest")
 
 		return response, nil
 	})

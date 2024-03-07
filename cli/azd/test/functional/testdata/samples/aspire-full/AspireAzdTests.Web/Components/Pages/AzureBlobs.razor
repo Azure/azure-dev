@@ -1,0 +1,64 @@
+﻿@page "/azureblobs/{blobName?}"
+@using System.IO
+@using Markdig
+@using Azure
+@using Azure.Storage.Blobs
+@rendermode InteractiveServer
+@inject BlobServiceClient blobServiceClient
+
+<PageTitle>Azure Blobs</PageTitle>
+
+@if (markdownFiles == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Blob</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var file in markdownFiles)
+            {
+                <tr>
+                    <td><a href="/azureblobs/@file">@file</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if(BlobName != null)
+{
+    @((MarkupString)_html);
+}
+
+@code {
+    List<string> markdownFiles = new List<string>();
+
+    [Parameter]
+    public string? BlobName { get; set; }
+
+    string _html;
+
+    protected override void OnInitialized()
+    {
+        var blobContainerClient = blobServiceClient.GetBlobContainerClient("markdown");
+        var blobs = blobContainerClient.GetBlobs();
+
+        foreach (var blob in blobs)
+            markdownFiles.Add(blob.Name);
+
+        if (BlobName != null)
+        {
+            var blobClient = blobContainerClient.GetBlobClient(BlobName);
+            var blobDownloadInfo = blobClient.Download();
+            using var reader = new StreamReader(blobDownloadInfo.Value.Content);
+            var content = reader.ReadToEnd();
+            _html = Markdown.ToHtml(content);
+        }
+    }
+}

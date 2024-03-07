@@ -2,8 +2,12 @@ param(
     [string] $Version = (Get-Content "$PSScriptRoot/../version.txt"),
     [string] $SourceVersion = (git rev-parse HEAD),
     [switch] $CodeCoverageEnabled,
-    [switch] $BuildRecordMode
+    [switch] $BuildRecordMode,
+    [string] $MSYS2Shell # path to msys2_shell.cmd
 )
+
+# specifying $MSYS2Shell implies building with OneAuth integration
+$OneAuth = $MSYS2Shell.length -gt 0 -and $IsWindows
 
 # Remove any previously built binaries
 go clean
@@ -11,6 +15,34 @@ go clean
 if ($LASTEXITCODE) {
     Write-Host "Error running go clean"
     exit $LASTEXITCODE
+}
+
+if ($OneAuth) {
+    Write-Host "Building OneAuth bridge DLL"
+    # TODO: could have multiple VS installs
+    $results = Get-ChildItem "$env:ProgramFiles\Microsoft Visual Studio" -Recurse -Filter 'Launch-VsDevShell.ps1'
+    if (!$results) {
+        Write-Host "Launch-VsDevShell.ps1 not found, can't build OneAuth bridge DLL"
+        exit 1
+    }
+    . $results[0].FullName -SkipAutomaticLocation
+    $bridgeDir = "$pwd/pkg/oneauth/bridge"
+    cmake --preset=default -S"$bridgeDir" -B"$bridgeDir/_build"
+    if ($LASTEXITCODE -eq 0) {
+        cmake --build "$bridgeDir/_build" --config Release --verbose
+    }
+    if ($LASTEXITCODE) {
+        Write-Host "Error running cmake"
+        exit $LASTEXITCODE
+    }
+
+    # TODO: move this to a setup script that installs MSYS2
+    Write-Host "Installing required MSYS2 packages"
+    Invoke-Expression "$($MSYS2Shell) -mingw64 -defterm -no-start -c 'pacman -S --needed --noconfirm mingw-w64-x86_64-toolchain'"
+    if ($LASTEXITCODE) {
+        Write-Host "Error installing MSYS2 packages"
+        exit $LASTEXITCODE
+    }
 }
 
 # On Windows, use the goversioninfo tool to embed the version information into the executable.
@@ -71,10 +103,15 @@ $tagsFlag = "-tags=cfi,cfg,osusergo"
 # -s: Omit symbol table and debug information
 # -w: Omit DWARF symbol table
 # -X: Set variable at link time. Used to set the version in source.
-$ldFlag = "-ldflags=`"-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' "
+$ldFlag = "-ldflags=-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' "
 
 if ($IsWindows) {
-    Write-Host "Building for windows"
+    $msg = "Building for Windows"
+    if ($OneAuth) {
+        $msg += " with OneAuth integration"
+        $tagsFlag += ",oneauth"
+    }
+    Write-Host $msg
     $buildFlags += @(
         "-buildmode=exe",
         # remove all file system paths from the resulting executable.
@@ -84,7 +121,7 @@ if ($IsWindows) {
         "-trimpath",
         $tagsFlag,
         # -extldflags=-Wl,--high-entropy-va: Pass the high-entropy VA flag to the linker to enable high entropy virtual addresses
-        ($ldFlag + "-linkmode=auto -extldflags=-Wl,--high-entropy-va`"")
+        ($ldFlag + "-linkmode=auto -extldflags=-Wl,--high-entropy-va")
     )
 }
 elseif ($IsLinux) {
@@ -93,7 +130,7 @@ elseif ($IsLinux) {
         "-buildmode=pie",
         ($tagsFlag + ",cfgo"),
         # -extldflags=-Wl,--high-entropy-va: Pass the high-entropy VA flag to the linker to enable high entropy virtual addresses
-        ($ldFlag + "-extldflags=-Wl,--high-entropy-va`"")
+        ($ldFlag + "-extldflags=-Wl,--high-entropy-va")
     )
 }
 elseif ($IsMacOS) {
@@ -102,7 +139,7 @@ elseif ($IsMacOS) {
         "-buildmode=pie",
         ($tagsFlag + ",cfgo"),
         # -linkmode=auto: Link Go object files and C object files together
-        ($ldFlag + "-linkmode=auto`"")
+        ($ldFlag + "-linkmode=auto")
     )
 }
 
@@ -116,7 +153,7 @@ function PrintFlags() {
     foreach ($buildFlag in $buildFlags) {
         # If the flag has a value, wrap it in quotes. This is not required when invoking directly below,
         # but when repasted into a shell for execution, the quotes can help escape special characters such as ','.
-        $argWithValue = $buildFlag -split "="
+        $argWithValue = $buildFlag.Split('=', 2)
         if ($argWithValue.Length -eq 2 -and !$argWithValue[1].StartsWith("`"")) {
             $buildFlag = "$($argWithValue[0])=`"$($argWithValue[1])`""
         }
@@ -140,8 +177,16 @@ $env:GOEXPERIMENT="loopvar"
 try {
     Write-Host "Running: go build ``"
     PrintFlags -flags $buildFlags
-    go build @buildFlags
-    
+    if ($OneAuth) {
+        # write the go build command line to a script because that's simpler than trying
+        # to escape the build flags, which contain commas and both kinds of quotes
+        Set-Content -Path build.sh -Value "go build $($buildFlags)"
+        Invoke-Expression "$($MSYS2Shell) -mingw64 -defterm -no-start -here -c 'bash ./build.sh'"
+        Remove-Item -Path build.sh -ErrorAction Ignore
+    }
+    else {
+        go build @buildFlags
+    }
     if ($BuildRecordMode) {
         $recordFlagPresent = $false
         for ($i = 0; $i -lt $buildFlags.Length; $i++) {

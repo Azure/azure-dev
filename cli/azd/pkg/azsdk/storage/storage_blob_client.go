@@ -10,8 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 // AccountConfig contains the configuration for connecting to a storage account
@@ -20,10 +19,6 @@ type AccountConfig struct {
 	ContainerName string
 	Endpoint      string
 }
-
-const (
-	DefaultBlobEndpoint = "blob.core.windows.net"
-)
 
 var (
 	ErrContainerNotFound = errors.New("container not found")
@@ -169,25 +164,20 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 
 // createClient creates a new blob client and caches it for future use
 func NewBlobSdkClient(
-	ctx context.Context,
 	credential azcore.TokenCredential,
 	accountConfig *AccountConfig,
-	httpClient httputil.HttpClient,
-	userAgent httputil.UserAgent,
+	coreClientOptions *azcore.ClientOptions,
+	cloud *cloud.Cloud,
 ) (*azblob.Client, error) {
-	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(ctx, httpClient, string(userAgent)).
-		BuildCoreClientOptions()
-
 	blobOptions := &azblob.ClientOptions{
-		ClientOptions: *coreOptions,
+		ClientOptions: *coreClientOptions,
 	}
 
 	if accountConfig.Endpoint == "" {
-		accountConfig.Endpoint = DefaultBlobEndpoint
+		accountConfig.Endpoint = cloud.StorageEndpointSuffix
 	}
 
-	serviceUrl := fmt.Sprintf("https://%s.%s", accountConfig.AccountName, accountConfig.Endpoint)
+	serviceUrl := fmt.Sprintf("https://%s.blob.%s", accountConfig.AccountName, accountConfig.Endpoint)
 	client, err := azblob.NewClient(serviceUrl, credential, blobOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create blob client, %w", err)

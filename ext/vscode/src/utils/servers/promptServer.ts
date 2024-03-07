@@ -20,33 +20,10 @@ type PromptServerRequest = {
     options: {
         message: string;
         help: string | undefined;
-        options: SelectOption[] | undefined;
+        options: string[] | undefined;
         defaultValue: string | undefined;
     }
 };
-
-type SelectOption = {
-    label: string;
-    description: string | undefined;
-};
-
-function isValidSelectOption(obj: unknown): obj is SelectOption {
-    if (typeof obj !== 'object' || obj === null) {
-        return false;
-    }
-
-    const maybeSelectOption = obj as SelectOption;
-
-    if (typeof maybeSelectOption.label !== 'string') {
-        return false;
-    }
-
-    if (!!maybeSelectOption.description && typeof maybeSelectOption.description !== 'string') {
-        return false;
-    }
-
-    return true;
-}
 
 function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
     if (typeof obj !== 'object' || obj === null) {
@@ -75,7 +52,7 @@ function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
         return false;
     }
 
-    if ((!Array.isArray(maybePromptServerRequest.options.options) || !maybePromptServerRequest.options.options.every(isValidSelectOption))) {
+    if ((!Array.isArray(maybePromptServerRequest.options.options) || maybePromptServerRequest.options.options.some(option => typeof option !== 'string' || !!option))) {
         return false;
     }
 
@@ -124,7 +101,7 @@ export function startPromptServer(): Promise<{ server: http.Server, endpoint: st
                             } satisfies JsonServerResponse<PromptServerSuccessResponse>;
                         }
                         case 'confirm': {
-                            const value = await promptConfirmation(actionContext, reqBody.options.message, reqBody.options.options!, reqBody.options.help);
+                            const value = await promptConfirmation(actionContext, reqBody.options.message, reqBody.options.help);
                             return {
                                 statusCode: 200,
                                 result: {
@@ -156,7 +133,7 @@ export function startPromptServer(): Promise<{ server: http.Server, endpoint: st
     });
 }
 
-async function promptString(context: IActionContext, isPassword: boolean, message: string, defaultValue?: string, help?: string): Promise<string> {
+async function promptString(context: IActionContext, isPassword: boolean, message: string, defaultValue: string | undefined, help: string | undefined): Promise<string> {
     return await context.ui.showInputBox({
         prompt: message,
         placeHolder: help,
@@ -166,8 +143,17 @@ async function promptString(context: IActionContext, isPassword: boolean, messag
     });
 }
 
-async function promptSelect(context: IActionContext, isMulti: boolean, message: string, options: SelectOption[], defaultValue?: string, help?: string): Promise<number | number[]> {
-    const items: IAzureQuickPickItem<number>[] = options.map((option, index) => { return { label: option.label, description: option.description, data: index }; });
+async function promptSelect(context: IActionContext, isMulti: boolean, message: string, options: string[], defaultValue: string | undefined, help: string | undefined): Promise<number | number[]> {
+    const items: IAzureQuickPickItem<number>[] = [];
+
+    for (const option of options) {
+        // Split the string up, everything before a first newline goes to the label and everything after to the description
+        const split = option.split(/\r?\n/i);
+        const label = split[0];
+        const description = split.length > 1 ? split.slice(1).join('\n') : undefined;
+
+        items.push({ label, description, data: items.length });
+    }
 
     const quickPickOptions: IAzureQuickPickOptions = {
         placeHolder: help,
@@ -186,7 +172,7 @@ async function promptSelect(context: IActionContext, isMulti: boolean, message: 
     }
 }
 
-async function promptConfirmation(context: IActionContext, message: string, help?: string): Promise<boolean> {
+async function promptConfirmation(context: IActionContext, message: string, help: string | undefined): Promise<boolean> {
     return await context.ui.showWarningMessage(
         message,
         { modal: true, detail: help },
@@ -194,7 +180,7 @@ async function promptConfirmation(context: IActionContext, message: string, help
     ) === DialogResponses.yes;
 }
 
-async function promptDirectory(context: IActionContext, message: string, help?: string): Promise<string> {
+async function promptDirectory(context: IActionContext, message: string, help: string | undefined): Promise<string> {
     const selection = await context.ui.showOpenDialog({
         canSelectFiles: false,
         canSelectFolders: true,

@@ -359,15 +359,11 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
 	for name, comp := range m.Resources {
 		for k, v := range comp.Inputs {
-			input := genInput{
-				Secret: v.Secret,
-			}
-
-			if v.Type != "string" {
-				return fmt.Errorf("unsupported input type: %s", v.Type)
-			}
-
 			if v.Default != nil && v.Default.Generate != nil && v.Default.Generate.MinLength != nil {
+				input := genInput{
+					Secret: v.Secret,
+				}
+
 				input.DefaultMinLength = *v.Default.Generate.MinLength
 				// only inputs with default.generate are tracked here
 				b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
@@ -554,6 +550,9 @@ func resolveResourceInput(fromResource string, comp *Resource) (Input, error) {
 	input, exists := comp.Inputs[inputName]
 	if !exists {
 		return Input{}, fmt.Errorf("parameter %s does not have input %s", fromResource, inputName)
+	}
+	if input.Type == "" {
+		input.Type = "string"
 	}
 	return input, nil
 }

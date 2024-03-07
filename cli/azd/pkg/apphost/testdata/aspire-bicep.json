@@ -4,9 +4,7 @@
         "type": "parameter.v0",
         "value": "{parameter.inputs.value}",
         "inputs": {
-          "value": {
-            "type": "string"
-          }
+          "value": {}
         }
       },
       "test": {
@@ -25,7 +23,6 @@
         "value": "{administratorLogin.inputs.value}",
         "inputs": {
           "value": {
-            "type": "string"
           }
         }
       },

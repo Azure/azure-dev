@@ -41,6 +41,16 @@ func (ed *EventDispatcher[T]) AddHandler(name Event, handler EventHandlerFn[T]) 
 	}
 
 	events := ed.handlers[name]
+	newHandler := fmt.Sprintf("%v", handler)
+
+	// Ensure the handler is not already registered
+	for _, ref := range events {
+		existingHandler := fmt.Sprintf("%v", ref)
+		if existingHandler == newHandler {
+			return nil
+		}
+	}
+
 	events = append(events, handler)
 	ed.handlers[name] = events
 

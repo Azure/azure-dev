@@ -3,7 +3,7 @@
 
 import * as http from 'http';
 import { CancelledResponse, ErrorResponse, JsonServerResponse, SuccessResponseBase, UndefinedResponse, startJsonServer } from './jsonServer';
-import { IActionContext, IAzureQuickPickItem, IAzureQuickPickOptions, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
+import { IActionContext, IAzureQuickPickItem, IAzureQuickPickOptions, UserCancelledError, callWithTelemetryAndErrorHandling, isUserCancelledError } from '@microsoft/vscode-azext-utils';
 import { MessageItem } from 'vscode';
 
 type PromptServerSuccessResponse = SuccessResponseBase & {
@@ -12,7 +12,7 @@ type PromptServerSuccessResponse = SuccessResponseBase & {
 
 type PromptServerResponse = PromptServerSuccessResponse | ErrorResponse | CancelledResponse | undefined;
 
-const AllPromptTypes = ['string', 'password', 'select', 'multiSelect', 'confirm'] as const;
+const AllPromptTypes = ['string', 'password', 'select', 'multiSelect', 'confirm', 'directory'] as const;
 type PromptTypeTuple = typeof AllPromptTypes;
 type PromptType = PromptTypeTuple[number];
 
@@ -134,6 +134,16 @@ export function startPromptServer(): Promise<{ server: http.Server, endpoint: st
                                 },
                             } satisfies JsonServerResponse<PromptServerSuccessResponse>;
                         }
+                        case 'directory': {
+                            const value = await promptDirectory(actionContext, reqBody.options.message, reqBody.options.help);
+                            return {
+                                statusCode: 200,
+                                result: {
+                                    status: 'success',
+                                    value: value,
+                                },
+                            } satisfies JsonServerResponse<PromptServerSuccessResponse>;
+                        }
                     }
                 } catch (e: unknown) {
                     if (isUserCancelledError(e)) {
@@ -191,4 +201,19 @@ async function promptConfirmation(context: IActionContext, message: string, opti
     );
 
     return selection.data;
+}
+
+async function promptDirectory(context: IActionContext, message: string, help?: string): Promise<string> {
+    const selection = await context.ui.showOpenDialog({
+        canSelectFiles: false,
+        canSelectFolders: true,
+        canSelectMany: false,
+        title: message,
+    });
+
+    if (selection.length === 0) {
+        throw new UserCancelledError();
+    }
+
+    return selection[0].fsPath;
 }

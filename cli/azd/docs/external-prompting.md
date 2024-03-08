@@ -37,34 +37,44 @@ The use of `AZD_UI_PROMPT_KEY` allows the host to block requests coming from oth
 
 The body of the request contains a JSON object with all the information about the prompt that `azd` needs a response for:
 
-```jsonc
-{
-    "type": "<string>", // one of "string", "password", "select", "multiSelect", "confirm", "directory"
-    "options": {
-      "message": "<string>", // the message to be displayed as part of the prompt
-      "help": "<string>", // optional help text that can be displayed upon request
-      "choices": [  { "value": "string", "detail": "string" | undefined } /* ... */  ], // for select and multiSelect types - the valid options the user should pick from
-      "defaultValue":  "<string>" | "<string>[]" | boolean, // optional default value (or values, for multiSelect), when undefined there is no default.
+```typescript
+interface PromptRequest {
+    type: "string" | "password" | "directory" | "select" | "multiSelect" | "confirm"
+    options: {
+        message: string // the message to be displayed as part of the prompt
+        help?: string // optional help text that can be displayed upon request
+        choices?: PromptChoice[]
+        defaultValue?: string | string[] | boolean
     }
+}
+
+interface PromptChoice {
+    value: string
+    detail?: string
 }
 ```
 
 The `password` type represents a string value which represents a password. The host may want to use a different UI element (perhaps one that uses `***` instead of characters) when prompting.
 
-The server should respond with 200 OK and the body should be one of the of the following three shapes:
+The server should respond with 200 OK and the body that represents the result:
 
-### Success 
+```typescript
+interface PromptResponse {
+    status: "success" | "cancelled" | "error"
+    
+    // present when status is "success"
+    value?: string | string[]
 
-When the host is able to prompt the value it is returned with a `status` of `success`:
-
-```jsonc
-{
-    "status": "success", 
-    "value": "<string>" | "<string>[]"
+    // present when status is "error"
+    message?: string 
 }
 ```
 
-When the type is `confirm` the value should be either `"true"` or `"false"` (a string, not a JSON boolean) indicating if the user confirmed the operation (`"true"`) or rejected it (`"false"`). Note that a user rejecting a confirm prompt still results in a `"success"` status (the value is simply `"false"`). In the case of `multiSelect` an array of string values is returned, each individual value is a value from the `"options"` array that was selected by the user.
+### Success 
+
+When the host is able to prompt for the value a response with the `status` of `success` is sent.
+
+When the type is `confirm` the value should be either `"true"` or `"false"` (a string, not a JSON boolean) indicating if the user confirmed the operation (`"true"`) or rejected it (`"false"`). Note that a user rejecting a confirm prompt still results in a `"success"` status (the value is simply `"false"`). In the case of `multiSelect` an array of string values is returned, each individual value is a value from the `choices` array that was selected by the user.
 
 ### Cancelled
 
@@ -72,23 +82,11 @@ The user may decline to provide a response (imagine hitting a cancel button on t
 
 In this case the `status` is `cancelled`.
 
-```jsonc
-{
-    "status": "cancelled", 
-}
-```
-
 `azd` returns a special `Error` type internally in this case, which up-stack code can use.
 
 ### Error
 
-Some error happened during prompting - the error message will be returned as is.
-
-```jsonc
-{   "status": "error",
-    "message": "<string>" // an error message, will be the text of the `Error` returned inside `azd`.
-}
-```
+Some error happened during prompting - the status is `error` and the `message` property is a human readable error message that `azd` returns as a go `error`.
 
 Note that an error prompting leads to a successful result at the HTTP layer (200 OK) but with a special error object. `azd` treats other responses as if the server has an internal bug.
 

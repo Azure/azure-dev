@@ -97,7 +97,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Core bootstrapping registrations
 	ioc.RegisterInstance(container, container)
 	container.MustRegisterSingleton(NewCobraBuilder)
-	container.MustRegisterSingleton(middleware.NewMiddlewareRunner)
 
 	// Standard Registrations
 	container.MustRegisterTransient(output.GetCommandFormatter)
@@ -347,18 +346,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	// Required to be singleton (shared) because the project/service holds important event handlers
-	// from both hooks and internal that are used during azd lifecycle calls.
-	container.MustRegisterSingleton(
+	container.MustRegisterScoped(
 		func(lazyConfig *lazy.Lazy[*project.ProjectConfig]) (*project.ProjectConfig, error) {
 			return lazyConfig.GetValue()
 		},
 	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
-	// Required to be singleton (shared) because the project/service holds important event handlers
-	// from both hooks and internal that are used during azd lifecycle calls.
-	container.MustRegisterSingleton(
+	container.MustRegisterScoped(
 		func(
 			ctx context.Context,
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
@@ -511,7 +506,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return resourceManager, err
 		})
 	})
-	container.MustRegisterSingleton(project.NewProjectManager)
+	container.MustRegisterScoped(project.NewProjectManager)
 	// Currently caches manifest across command executions
 	container.MustRegisterSingleton(project.NewDotNetImporter)
 	container.MustRegisterScoped(project.NewImportManager)
@@ -661,7 +656,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
 	) *lazy.Lazy[*platform.Config] {
-		return lazy.NewLazy[*platform.Config](func() (*platform.Config, error) {
+		return lazy.NewLazy(func() (*platform.Config, error) {
 			// First check `azure.yaml` for platform configuration section
 			projectConfig, err := lazyProjectConfig.GetValue()
 			if err == nil && projectConfig != nil && projectConfig.Platform != nil {

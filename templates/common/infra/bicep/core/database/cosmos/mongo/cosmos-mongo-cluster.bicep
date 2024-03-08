@@ -1,27 +1,16 @@
-@description('Azure Cosmos DB MongoDB vCore cluster name')
+metadata description = 'Azure Cosmos DB MongoDB vCore cluster name'
 @maxLength(40)
 param name string
-
-@description('Location for the cluster.')
 param location string = resourceGroup().location
-
 param tags object = {}
 
-@description('Username for admin user')
 param administratorLogin string
-
-@secure()
-@description('Password for admin user')
-@minLength(8)
-@maxLength(128)
-param administratorLoginPassword string
-
-
 param sku string
 param storage int
 param nodeCount int
+@secure()
+param administratorLoginPassword string
 param highAvailabilityMode bool = false
-
 param allowAzureIPsFirewall bool = false
 param allowAllIPsFirewall bool = false
 param allowedSingleIPs array = []

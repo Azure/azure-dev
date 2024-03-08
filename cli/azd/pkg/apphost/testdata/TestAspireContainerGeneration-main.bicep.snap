@@ -13,7 +13,10 @@ param location string
 @metadata({azd: {
   type: 'inputs'
   autoGenerate: {
-    mysqlabstract: { 'pas-sw-ord': { len: 10 } }
+    mysqlabstract: {
+      'pas-sw-ord': { len: 10 }
+      password: { len: 10 }
+    }
   }}
 })
 param inputs object

@@ -109,6 +109,7 @@ type serviceManager struct {
 	serviceLocator      ioc.ServiceLocator
 	operationCache      ServiceOperationCache
 	alphaFeatureManager *alpha.FeatureManager
+	initialized         map[*ServiceConfig]map[any]bool
 }
 
 // NewServiceManager creates a new instance of the ServiceManager component
@@ -125,6 +126,7 @@ func NewServiceManager(
 		serviceLocator:      serviceLocator,
 		operationCache:      operationCache,
 		alphaFeatureManager: alphaFeatureManager,
+		initialized:         map[*ServiceConfig]map[any]bool{},
 	}
 }
 
@@ -149,12 +151,7 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 
 // Initializes the service configuration and dependent framework & service target
 // This allows frameworks & service targets to hook into a services lifecycle events
-
 func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	if serviceConfig.initialized {
-		return nil
-	}
-
 	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
 	if err != nil {
 		return fmt.Errorf("getting framework service: %w", err)
@@ -165,17 +162,38 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 		return fmt.Errorf("getting service target: %w", err)
 	}
 
-	if err := frameworkService.Initialize(ctx, serviceConfig); err != nil {
-		return err
+	if ok := sm.isComponentInitialized(serviceConfig, frameworkService); !ok {
+		if err := frameworkService.Initialize(ctx, serviceConfig); err != nil {
+			return err
+		}
+
+		sm.initialized[serviceConfig][frameworkService] = true
 	}
 
-	if err := serviceTarget.Initialize(ctx, serviceConfig); err != nil {
-		return err
-	}
+	if ok := sm.isComponentInitialized(serviceConfig, serviceTarget); !ok {
+		if err := serviceTarget.Initialize(ctx, serviceConfig); err != nil {
+			return err
+		}
 
-	serviceConfig.initialized = true
+		sm.initialized[serviceConfig][serviceTarget] = true
+	}
 
 	return nil
+}
+
+func (sm *serviceManager) isComponentInitialized(serviceConfig *ServiceConfig, component any) bool {
+	if componentMap, has := sm.initialized[serviceConfig]; has && len(componentMap) > 0 {
+		initialized := false
+		if ok, has := componentMap[component]; has && ok {
+			initialized = ok
+		}
+
+		return initialized
+	}
+
+	sm.initialized[serviceConfig] = map[any]bool{}
+
+	return false
 }
 
 // Restores the code dependencies for the specified service config

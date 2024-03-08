@@ -463,7 +463,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}
 
-	if err := ef.provisionManager.UpdateEnvironment(ctx, ef.env, getStateResult.State.Outputs); err != nil {
+	if err := ef.provisionManager.UpdateEnvironment(ctx, getStateResult.State.Outputs); err != nil {
 		return nil, err
 	}
 

@@ -18,8 +18,12 @@ param principalId string = ''
 @metadata({azd: {
   type: 'inputs'
   autoGenerate: {
-{{- range $param, $value := .AutoGenInputs }}
-    {{$param}}: { {{$value.Name }}: { len: {{$value.Len }} } }
+{{- range $resource, $params := .AutoGenInputs }}
+    {{$resource}}: { 
+{{- range $p := $params }}
+      {{$p.Name }}: { len: {{$p.Len }} }
+{{- end}}
+    }
 {{- end}}
   }}
 })

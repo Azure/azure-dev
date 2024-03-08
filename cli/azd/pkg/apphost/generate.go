@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -18,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
+	"golang.org/x/exp/maps"
 	"gopkg.in/yaml.v3"
 )
 
@@ -140,15 +142,24 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
-		AutoGenInputs map[string]autoGenInput
+		AutoGenInputs map[string][]autoGenInput
 	}
-	inputs := make(map[string]autoGenInput)
-	for key, input := range generator.inputs {
+	inputs := make(map[string][]autoGenInput)
+
+	// order to be deterministic when writing bicep
+	genInputKeys := maps.Keys(generator.inputs)
+	slices.Sort(genInputKeys)
+
+	for _, key := range genInputKeys {
+		input := generator.inputs[key]
 		parts := strings.Split(key, ".")
 		resource, inputName := handleBicepNameQuotes(parts[0]), handleBicepNameQuotes(parts[1])
-		inputs[resource] = autoGenInput{
-			Name: inputName,
-			Len:  input.DefaultMinLength,
+
+		resourceGenList, exists := inputs[resource]
+		if exists {
+			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Len: input.DefaultMinLength})
+		} else {
+			inputs[resource] = []autoGenInput{{Name: inputName, Len: input.DefaultMinLength}}
 		}
 	}
 	context := bicepContext{

@@ -1371,12 +1371,24 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// need the newline
 		resolvedValue := string(yamlString[0 : len(yamlString)-1])
 
-		// connectionString detection:
-		//  - If the env-key contains "ConnectionStrings__" or the value contains "{{ connectionString" then it is considered
-		//    as a secret and added to the secrets map.
-		if strings.Contains(k, "ConnectionStrings__") ||
-			strings.Contains(resolvedValue, "{{ connectionString") ||
-			strings.Contains(resolvedValue, "{{ secured-parameter ") {
+		// connectionString detection, either of:
+		//  a) explicit connection string key for env, like "ConnectionStrings__resource": "XXXXX"
+		//  b) a connection string field references in the value, like "FOO": "{resource.connectionString}"
+		//  c) found placeholder for a connection string within resolved value, like "{{ connectionString resource }}"
+		//  d) found placeholder for a secured-param, like "{{ secured-parameter param }}"
+		//  e) found placeholder for a secret output, like "{{ secretOutput kv secret }}"
+		if strings.Contains(k, "ConnectionStrings__") || // a)
+			strings.Contains(value, ".connectionString}") || // b)
+			strings.Contains(resolvedValue, "{{ connectionString") || // c)
+			strings.Contains(resolvedValue, "{{ secured-parameter ") || // d)
+			strings.Contains(resolvedValue, "{{ secretOutput ") { // e)
+
+			// handle secret-outputs:
+			// secret outputs can be set either as a direct reference to a key vault secret, or as secret within the
+			// container apps. Below code checks if the the resolved value is a complex expression like:
+			// `key:{{ secretOutput kv secret }};foo;bar`.
+			// If the resolved value is not complex, it can become a direct reference to key vault secret, otherwise it
+			// is set as a secret within the container app.
 			if strings.Contains(resolvedValue, "{{ secretOutput ") {
 				if isComplexExp, _ := isComplexExpression(resolvedValue); !isComplexExp {
 					removeBrackets := strings.ReplaceAll(

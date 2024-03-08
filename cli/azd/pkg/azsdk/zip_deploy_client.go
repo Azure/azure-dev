@@ -25,8 +25,8 @@ const (
 // https://github.com/MicrosoftDocs/azure-docs/blob/main/includes/app-service-deploy-zip-push-rest.md
 // https://github.com/projectkudu/kudu/wiki/REST-API
 type ZipDeployClient struct {
-	subscriptionId string
-	pipeline       runtime.Pipeline
+	hostName string
+	pipeline runtime.Pipeline
 }
 
 type DeployResponse struct {
@@ -54,7 +54,7 @@ type DeployStatus struct {
 
 // Creates a new ZipDeployClient instance
 func NewZipDeployClient(
-	subscriptionId string,
+	hostName string,
 	credential azcore.TokenCredential,
 	options *arm.ClientOptions,
 ) (*ZipDeployClient, error) {
@@ -77,18 +77,17 @@ func NewZipDeployClient(
 	}
 
 	return &ZipDeployClient{
-		subscriptionId: subscriptionId,
-		pipeline:       pipeline,
+		hostName: hostName,
+		pipeline: pipeline,
 	}, nil
 }
 
 // Begins a zip deployment and returns a poller to check for status
 func (c *ZipDeployClient) BeginDeploy(
 	ctx context.Context,
-	appName string,
 	zipFile io.Reader,
 ) (*runtime.Poller[*DeployResponse], error) {
-	request, err := c.createDeployRequest(ctx, appName, zipFile)
+	request, err := c.createDeployRequest(ctx, zipFile)
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +114,8 @@ func (c *ZipDeployClient) BeginDeploy(
 }
 
 // Deploys the specified application zip to the azure app service and waits for completion
-func (c *ZipDeployClient) Deploy(ctx context.Context, appName string, zipFile io.Reader) (*DeployResponse, error) {
-	poller, err := c.BeginDeploy(ctx, appName, zipFile)
+func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader) (*DeployResponse, error) {
+	poller, err := c.BeginDeploy(ctx, zipFile)
 	if err != nil {
 		return nil, err
 	}
@@ -134,10 +133,9 @@ func (c *ZipDeployClient) Deploy(ctx context.Context, appName string, zipFile io
 // Creates the HTTP request for the zip deployment operation
 func (c *ZipDeployClient) createDeployRequest(
 	ctx context.Context,
-	appName string,
 	zipFile io.Reader,
 ) (*policy.Request, error) {
-	endpoint := fmt.Sprintf("https://%s.scm.azurewebsites.net/api/zipdeploy", appName)
+	endpoint := fmt.Sprintf("https://%s/api/zipdeploy", c.hostName)
 	req, err := runtime.NewRequest(ctx, http.MethodPost, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("creating deploy request: %w", err)

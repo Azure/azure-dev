@@ -98,6 +98,8 @@ public class AcceptanceTests : TestBase
         loadEnv.Services.Length.ShouldEqual(2);
         File.Exists(loadEnv.Services[0].Path).ShouldBeTrue();
         File.Exists(loadEnv.Services[1].Path).ShouldBeTrue();
+
+        await svrSvc.StopAsync(CancellationToken.None);
     }
 
     [Test]
@@ -129,6 +131,16 @@ public class AcceptanceTests : TestBase
         var recorder = new Recorder<ProgressMessage>();
         var envResult = await esSvc.DeployAsync(session, e.Name, recorder, CancellationToken.None);
         recorder.Values.ShouldNotBeEmpty();
+        bool importantMessagesLogged = false;
+        foreach (var msg in recorder.Values)
+        {
+            if (msg.Kind == MessageKind.Important) {
+                importantMessagesLogged = true;
+            }
+            Console.WriteLine(msg.ToString());
+        }
+        importantMessagesLogged.ShouldBeTrue();
+
         envResult.LastDeployment.ShouldNotBeNull();
         envResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
         envResult.Resources.ShouldNotBeEmpty();
@@ -137,6 +149,8 @@ public class AcceptanceTests : TestBase
         refreshResult.LastDeployment.ShouldNotBeNull();
         refreshResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
         refreshResult.Resources.ShouldNotBeEmpty();
+
+        await svrSvc.StopAsync(CancellationToken.None);
     }
 
 

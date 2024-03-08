@@ -132,11 +132,34 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	// referenced by the Aspire manifest.
 	fs := manifest.BicepFiles
 
-	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", generator.bicepContext); err != nil {
+	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
+	// this allows the template to access the auto-gen inputs from the generator
+	type autoGenInput struct {
+		Name string
+		Len  int
+	}
+	type bicepContext struct {
+		genBicepTemplateContext
+		AutoGenInputs map[string]autoGenInput
+	}
+	inputs := make(map[string]autoGenInput)
+	for key, input := range generator.inputs {
+		parts := strings.Split(key, ".")
+		resource, inputName := handleBicepNameQuotes(parts[0]), handleBicepNameQuotes(parts[1])
+		inputs[resource] = autoGenInput{
+			Name: inputName,
+			Len:  input.DefaultMinLength,
+		}
+	}
+	context := bicepContext{
+		genBicepTemplateContext: generator.bicepContext,
+		AutoGenInputs:           inputs,
+	}
+	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
 	}
 
-	if err := executeToFS(fs, genTemplates, "resources.bicep", "resources.bicep", generator.bicepContext); err != nil {
+	if err := executeToFS(fs, genTemplates, "resources.bicep", "resources.bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 	}
 
@@ -148,31 +171,11 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	return fs, nil
 }
 
-// Inputs returns a map of fully qualified input names (as the dotted pair of resource name and input name) to information
-// about the input for every input across all resources in the manifest.
-func Inputs(manifest *Manifest) (map[string]Input, error) {
-	generator := newInfraGenerator()
-
-	if err := generator.LoadManifest(manifest); err != nil {
-		return nil, err
+func handleBicepNameQuotes(name string) string {
+	if strings.Contains(name, " ") || strings.Contains(name, "-") || strings.Contains(name, ".") {
+		return fmt.Sprintf("'%s'", name)
 	}
-
-	res := make(map[string]Input, len(generator.inputs))
-
-	for k, v := range generator.inputs {
-		minLen := v.DefaultMinLength
-		res[k] = Input{
-			Secret: v.Secret,
-			Type:   "string",
-			Default: &InputDefault{
-				Generate: &InputDefaultGenerate{
-					MinLength: &minLen,
-				},
-			},
-		}
-	}
-
-	return res, nil
+	return name
 }
 
 // GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. The azure.yaml file as well as

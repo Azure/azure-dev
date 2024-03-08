@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -166,7 +167,14 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := NewSubscriptionDeployment(depService, depOpService, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	scope := NewSubscriptionDeployment(
+		depService,
+		depOpService,
+		"eastus2",
+		"SUBSCRIPTION_ID",
+		"DEPLOYMENT_NAME",
+		cloud.AzurePublic().PortalUrlBase,
+	)
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -218,7 +226,14 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := NewSubscriptionDeployment(depService, depOpService, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	scope := NewSubscriptionDeployment(
+		depService,
+		depOpService,
+		"eastus2",
+		"SUBSCRIPTION_ID",
+		"DEPLOYMENT_NAME",
+		cloud.AzurePublic().PortalUrlBase,
+	)
 
 	/*NOTE: Mocking first response as an `StatusForbidden` error which is not retried by the sdk client.
 	  Adding an extra mock to test that it is not called*/
@@ -271,7 +286,14 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := NewSubscriptionDeployment(depService, depOpService, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	scope := NewSubscriptionDeployment(
+		depService,
+		depOpService,
+		"eastus2",
+		"SUBSCRIPTION_ID",
+		"DEPLOYMENT_NAME",
+		cloud.AzurePublic().PortalUrlBase,
+	)
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -322,7 +344,14 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := NewSubscriptionDeployment(depService, depOpService, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	scope := NewSubscriptionDeployment(
+		depService,
+		depOpService,
+		"eastus2",
+		"SUBSCRIPTION_ID",
+		"DEPLOYMENT_NAME",
+		cloud.AzurePublic().PortalUrlBase,
+	)
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(

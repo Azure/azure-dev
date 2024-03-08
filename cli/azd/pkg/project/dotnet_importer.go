@@ -106,11 +106,6 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
 
-	inputs, err := apphost.Inputs(manifest)
-	if err != nil {
-		return nil, fmt.Errorf("getting inputs from manifest: %w", err)
-	}
-
 	tmpDir, err := os.MkdirTemp("", "azd-infra")
 	if err != nil {
 		return nil, fmt.Errorf("creating temporary directory: %w", err)
@@ -147,7 +142,6 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 			Path:     tmpDir,
 			Module:   DefaultModule,
 		},
-		Inputs:     inputs,
 		cleanupDir: tmpDir,
 	}, nil
 }

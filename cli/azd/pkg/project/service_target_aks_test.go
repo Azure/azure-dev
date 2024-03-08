@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -830,7 +831,14 @@ func createAksServiceTarget(
 		mockContext.ArmClientOptions,
 		mockContext.CoreClientOptions,
 	)
-	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)
+	containerHelper := NewContainerHelper(
+		env,
+		envManager,
+		clock.NewMock(),
+		containerRegistryService,
+		dockerCli,
+		cloud.AzurePublic(),
+	)
 
 	if userConfig == nil {
 		userConfig = config.NewConfig(nil)

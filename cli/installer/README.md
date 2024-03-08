@@ -21,7 +21,7 @@ choco install azd
 The install script downloads and installs the MSI package on the machine with default parameters.
 
 ```powershell
-powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
+powershell -nop -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 ```
 
 #### MSI installation

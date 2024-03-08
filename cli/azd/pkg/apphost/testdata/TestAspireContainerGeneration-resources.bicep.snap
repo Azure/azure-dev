@@ -3,10 +3,9 @@ param location string = resourceGroup().location
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
-
 @secure()
-@metadata({azd: {type: 'inputs' }})
 param inputs object
+
 
 var resourceToken = uniqueString(resourceGroup().id)
 
@@ -58,6 +57,10 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {
           name: 'mysql-root-password'
           value: inputs.mysqlabstract.password
+        }
+        {
+          name: 'specialchar'
+          value: inputs.mysqlabstract['pas-sw-ord']
         }    
       ]
     }
@@ -70,6 +73,10 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
             {
               name: 'MYSQL_ROOT_PASSWORD'
               secretRef: 'mysql-root-password'
+            }
+            {
+              name: 'SpecialChar'
+              secretRef: 'specialchar'
             }
           ]
         }

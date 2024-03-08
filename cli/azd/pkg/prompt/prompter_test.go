@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -32,7 +33,13 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			},
 		}
 
-		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount, azCli).(*DefaultPrompter)
+		prompter := NewDefaultPrompter(
+			env,
+			mockContext.Console,
+			mockAccount,
+			azCli,
+			cloud.AzurePublic().PortalUrlBase,
+		).(*DefaultPrompter)
 		subList, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 
 		require.Nil(t, err)
@@ -68,7 +75,13 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			Locations: []account.Location{},
 		}
 
-		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount, azCli).(*DefaultPrompter)
+		prompter := NewDefaultPrompter(
+			env,
+			mockContext.Console,
+			mockAccount,
+			azCli,
+			cloud.AzurePublic().PortalUrlBase,
+		).(*DefaultPrompter)
 		subList, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 
 		require.Nil(t, err)

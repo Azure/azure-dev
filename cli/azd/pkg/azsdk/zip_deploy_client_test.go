@@ -20,11 +20,11 @@ func TestZipDeploy(t *testing.T) {
 		registerDeployMocks(mockContext)
 		registerPollingMocks(mockContext)
 
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
+		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
-		poller, err := client.BeginDeploy(*mockContext.Context, "APP_NAME", zipFile)
+		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.NotNil(t, poller)
 		require.NoError(t, err)
 
@@ -41,11 +41,11 @@ func TestZipDeploy(t *testing.T) {
 		registerDeployMocks(mockContext)
 		registerPollingErrorMocks(mockContext)
 
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
+		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
-		poller, err := client.BeginDeploy(*mockContext.Context, "APP_NAME", zipFile)
+		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.NotNil(t, poller)
 		require.NoError(t, err)
 
@@ -61,11 +61,11 @@ func TestZipDeploy(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerConflictMocks(mockContext)
 
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
+		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
-		poller, err := client.BeginDeploy(*mockContext.Context, "APP_NAME", zipFile)
+		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.Nil(t, poller)
 		require.Error(t, err)
 	})

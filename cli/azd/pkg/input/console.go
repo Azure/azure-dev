@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	tm "github.com/buger/goterm"
 	"github.com/mattn/go-isatty"
 	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
@@ -462,8 +463,15 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 
 func promptFromOptions(options ConsoleOptions) survey.Prompt {
 	if options.IsPassword {
+		// different than survey.Input, survey.Password doest not reset the line before rendering the question
+		// see password implementation: https://github.com/AlecAivazis/survey/blob/master/password.go#L51
+		// and input: https://github.com/AlecAivazis/survey/blob/master/input.go#L141
+		// by calling .Render(), the line is reset, cleaning any current message or spinner.
+		tm.Print(tm.ResetLine(""))
+		tm.Flush()
 		return &survey.Password{
 			Message: options.Message,
+			Help:    options.Help,
 		}
 	}
 

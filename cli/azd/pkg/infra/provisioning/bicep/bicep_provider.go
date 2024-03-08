@@ -1951,9 +1951,6 @@ func (p *BicepProvider) ensureParameters(
 
 	configModified := false
 
-	// There's no need to show the spinner in the middle of parameter prompting
-	p.console.StopSpinner(ctx, "", input.Step)
-
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
 

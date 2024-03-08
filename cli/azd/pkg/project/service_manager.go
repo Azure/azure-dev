@@ -181,28 +181,13 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 	return nil
 }
 
-func (sm *serviceManager) isComponentInitialized(serviceConfig *ServiceConfig, component any) bool {
-	if componentMap, has := sm.initialized[serviceConfig]; has && len(componentMap) > 0 {
-		initialized := false
-		if ok, has := componentMap[component]; has && ok {
-			initialized = ok
-		}
-
-		return initialized
-	}
-
-	sm.initialized[serviceConfig] = map[any]bool{}
-
-	return false
-}
-
 // Restores the code dependencies for the specified service config
 func (sm *serviceManager) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventRestore))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceRestoreResult))
 			return
@@ -230,7 +215,7 @@ func (sm *serviceManager) Restore(
 		}
 
 		task.SetResult(restoreResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventRestore), restoreResult)
+		sm.setOperationResult(serviceConfig, string(ServiceEventRestore), restoreResult)
 	})
 }
 
@@ -242,14 +227,14 @@ func (sm *serviceManager) Build(
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventBuild))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceBuildResult))
 			return
 		}
 
 		if restoreOutput == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
+			cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventRestore))
 			if ok && cachedResult != nil {
 				restoreOutput = cachedResult.(*ServiceRestoreResult)
 			}
@@ -277,7 +262,7 @@ func (sm *serviceManager) Build(
 		}
 
 		task.SetResult(buildResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventBuild), buildResult)
+		sm.setOperationResult(serviceConfig, string(ServiceEventBuild), buildResult)
 	})
 }
 
@@ -295,14 +280,14 @@ func (sm *serviceManager) Package(
 			options = &PackageOptions{}
 		}
 
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServicePackageResult))
 			return
 		}
 
 		if buildOutput == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
+			cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventBuild))
 			if ok && cachedResult != nil {
 				buildOutput = cachedResult.(*ServiceBuildResult)
 			}
@@ -388,7 +373,7 @@ func (sm *serviceManager) Package(
 			}
 
 			packageResult = serviceTargetPackageResult
-			sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPackage), packageResult)
+			sm.setOperationResult(serviceConfig, string(ServiceEventPackage), packageResult)
 
 			return nil
 		})
@@ -450,14 +435,14 @@ func (sm *serviceManager) Deploy(
 	packageResult *ServicePackageResult,
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy))
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventDeploy))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceDeployResult))
 			return
 		}
 
 		if packageResult == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
+			cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
 			if ok && cachedResult != nil {
 				packageResult = cachedResult.(*ServicePackageResult)
 			}
@@ -533,7 +518,7 @@ func (sm *serviceManager) Deploy(
 		}
 
 		task.SetResult(deployResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventDeploy), deployResult)
+		sm.setOperationResult(serviceConfig, string(ServiceEventDeploy), deployResult)
 	})
 }
 
@@ -625,11 +610,7 @@ func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env 
 }
 
 // Attempts to retrieve the result of a previous operation from the cache
-func (sm *serviceManager) getOperationResult(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	operationName string,
-) (any, bool) {
+func (sm *serviceManager) getOperationResult(serviceConfig *ServiceConfig, operationName string) (any, bool) {
 	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	value, ok := sm.operationCache[key]
 
@@ -637,14 +618,25 @@ func (sm *serviceManager) getOperationResult(
 }
 
 // Sets the result of an operation in the cache
-func (sm *serviceManager) setOperationResult(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	operationName string,
-	result any,
-) {
+func (sm *serviceManager) setOperationResult(serviceConfig *ServiceConfig, operationName string, result any) {
 	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	sm.operationCache[key] = result
+}
+
+// isComponentInitialized Checks if a component has been initialized for a service configuration
+func (sm *serviceManager) isComponentInitialized(serviceConfig *ServiceConfig, component any) bool {
+	if componentMap, has := sm.initialized[serviceConfig]; has && len(componentMap) > 0 {
+		initialized := false
+		if ok, has := componentMap[component]; has && ok {
+			initialized = ok
+		}
+
+		return initialized
+	}
+
+	sm.initialized[serviceConfig] = map[any]bool{}
+
+	return false
 }
 
 func runCommand[T comparable, P comparable](

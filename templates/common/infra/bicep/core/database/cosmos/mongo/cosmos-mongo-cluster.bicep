@@ -1,4 +1,4 @@
-metadata description = 'Azure Cosmos DB MongoDB vCore cluster name'
+metadata description = 'Azure Cosmos DB MongoDB vCore cluster'
 @maxLength(40)
 param name string
 param location string = resourceGroup().location

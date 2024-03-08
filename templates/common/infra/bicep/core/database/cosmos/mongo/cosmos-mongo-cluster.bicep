@@ -5,15 +5,16 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param administratorLogin string
-param sku string
-param storage int
-param nodeCount int
 @secure()
 param administratorLoginPassword string
-param highAvailabilityMode bool = false
-param allowAzureIPsFirewall bool = false
 param allowAllIPsFirewall bool = false
+param allowAzureIPsFirewall bool = false
 param allowedSingleIPs array = []
+param highAvailabilityMode bool = false
+param nodeCount int
+param sku string
+param storage int
+
 
 resource mognoCluster 'Microsoft.DocumentDB/mongoClusters@2023-03-01-preview' = {
   name: name

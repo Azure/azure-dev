@@ -15,7 +15,6 @@ param nodeCount int
 param sku string
 param storage int
 
-
 resource mognoCluster 'Microsoft.DocumentDB/mongoClusters@2023-03-01-preview' = {
   name: name
   tags: tags

@@ -15,7 +15,7 @@ param administratorLoginPassword string
 param allowAllIPsFirewall bool = false
 @description('Whether to allow Azure internal IPs or not.')
 param allowAzureIPsFirewall bool = false
-@description('IPs address to allow access to the cluster from.')
+@description('IPs addresses to allow access to the cluster from')
 param allowedSingleIPs array = []
 @description('Mode to create the mongo cluster')
 param createMode string = 'Default'

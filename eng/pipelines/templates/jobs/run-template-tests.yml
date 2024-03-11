@@ -106,7 +106,7 @@ jobs:
 
   #   strategy:
   #     matrix: $[ dependencies.TemplateTest_CreateMatrix.outputs['Generate.Matrix'] ]
-  #     maxParallel: 10
+  #     maxParallel: 8
 
   #   pool:
   #     name: azsdk-pool-mms-ubuntu-2004-general
@@ -128,8 +128,8 @@ jobs:
       value: ${{ parameters.AzdVersion }}
 
     - name: TemplateList
-      # value: Azure-Samples/todo-csharp-cosmos-sql, Azure-Samples/todo-nodejs-mongo-terraform, Azure-Samples/todo-nodejs-mongo-aks
-      value: Azure-Samples/todo-csharp-cosmos-sql
+      value: Azure-Samples/todo-csharp-cosmos-sql, Azure-Samples/todo-nodejs-mongo-terraform, Azure-Samples/todo-nodejs-mongo-aks
+      # value: Azure-Samples/todo-csharp-cosmos-sql
 
     - name: TemplateBranchName
       value: ${{ parameters.TemplateBranchName }}
@@ -169,7 +169,7 @@ jobs:
 
     strategy:
       matrix: $[ dependencies.TemplateTest_CreateMatrix_GovCloud.outputs['Generate_GovCloud.Matrix'] ]
-      maxParallel: 3
+      maxParallel: 1
 
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general
@@ -183,3 +183,72 @@ jobs:
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml
         parameters:
           SubscriptionConfiguration: $(sub-config-gov-test-resources)
+
+
+  - job: TemplateTest_CreateMatrix_ChinaCloud
+    condition: ${{ parameters.JobCondition }}
+    dependsOn: ${{ parameters.JobDependsOn }}
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      vmImage: MMSUbuntu20.04
+
+    variables:
+    - name: AzdVersion
+      value: ${{ parameters.AzdVersion }}
+
+    - name: TemplateList
+      value: Azure-Samples/todo-csharp-cosmos-sql, Azure-Samples/todo-nodejs-mongo-terraform, Azure-Samples/todo-nodejs-mongo-aks
+      # value: Azure-Samples/todo-csharp-cosmos-sql
+
+    - name: TemplateBranchName
+      value: ${{ parameters.TemplateBranchName }}
+
+    steps:
+      - checkout: self
+
+      - ${{ if parameters.UseAzdVersionFromPrNumber }}:
+        - pwsh: |
+            $AzdVersion = '$(AzdVersion)'
+            if ($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER) {
+              $AzdVersion = 'pr/' + $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
+              Write-Host "PR build detected, overriding to use azd version: $AzdVersion"
+              Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
+            } else {
+              Write-Host "Non PR build, using azd version: $AzdVersion."
+            }
+          displayName: Set azd version from PR run
+
+      - template: /eng/pipelines/templates/steps/template-test-generate-jobs.yml
+        parameters:
+          # Generation parameters
+          TemplateList: $(TemplateList)
+          TemplateListFilter: ${{ parameters.TemplateListFilter }}
+          TemplateRunEnvironmentVariables: ${{ parameters.TemplateRunEnvironmentVariables }}
+          OutputMatrixStepName: Generate_ChinaCloud
+          OutputMatrixVariable: Matrix
+          # Variables to set on the matrix job below
+          AzdVersion: $(AzdVersion)
+          AzureLocation: usgovvirginia
+          TemplateBranchName: $(TemplateBranchName)
+          CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
+
+  - job: TemplateTest_RunTest_ChinaCloud
+    timeoutInMinutes: 180
+    dependsOn: TemplateTest_CreateMatrix_ChinaCloud
+
+    strategy:
+      matrix: $[ dependencies.TemplateTest_CreateMatrix_ChinaCloud.outputs['Generate_ChinaCloud.Matrix'] ]
+      maxParallel: 1
+
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      vmImage: MMSUbuntu20.04
+
+    variables:
+      AZD_CLOUD_NAME: AzureChinaCloud
+      AZ_CLOUD_NAME: AzureChinaCloud
+    steps:
+      - checkout: self
+      - template: /eng/pipelines/templates/steps/template-test-run-job.yml
+        parameters:
+          SubscriptionConfiguration: $(sub-config-cn-test-resources)

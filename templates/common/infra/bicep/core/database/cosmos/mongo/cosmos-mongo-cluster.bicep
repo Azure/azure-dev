@@ -12,6 +12,7 @@ param allowAzureIPsFirewall bool = false
 param allowedSingleIPs array = []
 param highAvailabilityMode bool = false
 param nodeCount int
+param nodeType string = 'Shard'
 param sku string
 param storage int
 

@@ -163,7 +163,7 @@ jobs:
           TemplateBranchName: $(TemplateBranchName)
           CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
 
-  - job: TemplateTest_RunTest
+  - job: TemplateTest_RunTest_GovCloud
     timeoutInMinutes: 180
     dependsOn: TemplateTest_CreateMatrix_GovCloud
 

@@ -169,15 +169,20 @@ jobs:
 
     strategy:
       matrix: $[ dependencies.TemplateTest_CreateMatrix_GovCloud.outputs['Generate_GovCloud.Matrix'] ]
-      maxParallel: 1
+      # TODO: Use 1
+      maxParallel: 10
 
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
 
     variables:
+      # TODO: Put these in TemplateRunEnvironmentVariables
       AZD_CLOUD_NAME: AzureUSGovernment
       AZ_CLOUD_NAME: AzureUSGovernment
+      ARM_ENVIRONMENT: usgovernment
+      APIM_SKU: Developer
+      CONTAINER_REGISTRY_HOST_SUFFIX: azurecr.us
     steps:
       - checkout: self
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml
@@ -198,7 +203,6 @@ jobs:
 
     - name: TemplateList
       value: Azure-Samples/todo-csharp-cosmos-sql, Azure-Samples/todo-nodejs-mongo-terraform, Azure-Samples/todo-nodejs-mongo-aks
-      # value: Azure-Samples/todo-csharp-cosmos-sql
 
     - name: TemplateBranchName
       value: ${{ parameters.TemplateBranchName }}
@@ -238,15 +242,20 @@ jobs:
 
     strategy:
       matrix: $[ dependencies.TemplateTest_CreateMatrix_ChinaCloud.outputs['Generate_ChinaCloud.Matrix'] ]
-      maxParallel: 1
+      # TODO: Use 1
+      maxParallel: 10
 
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
 
     variables:
+      # TODO: Put these in TemplateRunEnvironmentVariables
       AZD_CLOUD_NAME: AzureChinaCloud
       AZ_CLOUD_NAME: AzureChinaCloud
+      ARM_ENVIRONMENT: china
+      APIM_SKU: Developer
+      CONTAINER_REGISTRY_HOST_SUFFIX: azurecr.cn
     steps:
       - checkout: self
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml

@@ -14,7 +14,7 @@ steps:
         ${{ parameters.SubscriptionConfiguration }}
       '@ | ConvertFrom-Json -AsHashtable;
 
-      & $azdCmd login `
+      & $azdCmd auth login `
         --client-id "$($subscriptionConfiguration.TestApplicationId)" `
         --client-secret "$($subscriptionConfiguration.TestApplicationSecret)" `
         --tenant-id "$($subscriptionConfiguration.TenantId)"

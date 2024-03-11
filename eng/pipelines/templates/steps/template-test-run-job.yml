@@ -98,8 +98,8 @@ steps:
               AZD_VERSION=$(AzdVersion)
               AZD_DEBUG_FORCE_NO_TTY="1"
 
-              AZD_CLOUD_NAME: $(AZD_CLOUD_NAME)
-              AZ_CLOUD_NAME: $(AZ_CLOUD_NAME)
+              AZD_CLOUD_NAME=$(AZD_CLOUD_NAME)
+              AZ_CLOUD_NAME=$(AZ_CLOUD_NAME)
           subFolder: "$(Build.SourcesDirectory)/temp"
           runCmd: |
               # Uninstall azd version

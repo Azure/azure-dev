@@ -127,7 +127,7 @@ steps:
 
               if [[ -z "${AZ_CLOUD_NAME}" ]]; then
                 echo "Setting az cloud set to ${AZ_CLOUD_NAME}"
-                az cloud set (azdev-storage-account-name "${AZ_CLOUD_NAME}"
+                az cloud set --name "${AZ_CLOUD_NAME}"
               fi
 
               # Login azd

@@ -44,6 +44,9 @@ func init() {
 				"fixBackSlash": func(src string) string {
 					return strings.ReplaceAll(src, "\\", "/")
 				},
+				"dashToUnderscore": func(src string) string {
+					return strings.ReplaceAll(src, "-", "_")
+				},
 				"envFormat": scaffold.EnvFormat,
 			},
 		).
@@ -535,12 +538,13 @@ func (b *infraGenerator) addInputParameter(name string, comp *Resource) error {
 	if err != nil {
 		return fmt.Errorf("resolving input for parameter %s: %w", name, err)
 	}
+
 	b.bicepContext.InputParameters[name] = input
 	return nil
 }
 
 func hasInputs(value string) bool {
-	matched, _ := regexp.MatchString(`{[a-zA-Z][a-zA-Z0-9]*\.inputs\.[a-zA-Z][a-zA-Z0-9]*}`, value)
+	matched, _ := regexp.MatchString(`{[a-zA-Z][a-zA-Z0-9\-]*\.inputs\.[a-zA-Z][a-zA-Z0-9\-]*}`, value)
 	return matched
 }
 
@@ -638,7 +642,8 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	}
 
 	if p == knownParameterKeyVault {
-		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(resourceName+"kv")), true, nil
+		dashToUnderscore := strings.ReplaceAll(resourceName, "-", "_")
+		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(dashToUnderscore+"kv")), true, nil
 	}
 	if p == knownParameterPrincipalId {
 		return knownInjectedValuePrincipalId, true, nil
@@ -1316,11 +1321,12 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		if param.Secret {
 			inputType = "secured-parameter"
 		}
+		replaceDash := strings.ReplaceAll(resource, "-", "_")
 		switch emitType {
 		case inputEmitTypeBicep:
-			return fmt.Sprintf("{{%s}}", resource), nil
+			return fmt.Sprintf("{{%s}}", replaceDash), nil
 		case inputEmitTypeYaml:
-			return fmt.Sprintf(`{{ %s "%s" }}`, inputType, resource), nil
+			return fmt.Sprintf(`{{ %s "%s" }}`, inputType, replaceDash), nil
 		default:
 			panic(fmt.Sprintf("unexpected parameter %s", string(emitType)))
 		}

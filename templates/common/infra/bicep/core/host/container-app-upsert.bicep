@@ -70,7 +70,7 @@ param serviceBinds array = []
 @description('The target port for the container')
 param targetPort int = 80
 
-resource existingApp 'Microsoft.App/containerApps@2023-04-01-preview' existing = if (exists) {
+resource existingApp 'Microsoft.App/containerApps@2023-05-02-preview' existing = if (exists) {
   name: name
 }
 

@@ -43,7 +43,7 @@
         "params": {
           "serverName": "postgres-2",
           "keyVaultName": "",
-          "administrator-login": "{administrator-login.value}",
+          "administratorLogin": "{administrator-login.value}",
           "administratorLoginPassword": "{administratorLoginPassword.value}",
           "databases": [
             "db2"

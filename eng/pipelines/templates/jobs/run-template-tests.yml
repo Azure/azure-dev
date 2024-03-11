@@ -178,6 +178,7 @@ jobs:
     variables:
       AZD_CLOUD_NAME: AzureUSGovernment
       AZ_CLOUD_NAME: AzureUSGovernment
+      AzdVersion: ${{ parameters.AzdVersion }}
     steps:
       - checkout: self
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml

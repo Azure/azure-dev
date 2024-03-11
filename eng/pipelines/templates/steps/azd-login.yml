@@ -1,6 +1,7 @@
 parameters:
   SubscriptionConfiguration: $(sub-config-azure-cloud-test-resources)
   AzdDirectory: ""
+  CloudName: AzureCloud
 
 steps:
   - pwsh: |
@@ -13,6 +14,11 @@ steps:
       $subscriptionConfiguration = @'
         ${{ parameters.SubscriptionConfiguration }}
       '@ | ConvertFrom-Json -AsHashtable;
+
+      if ('${{ parameters.CloudName }}') {
+        Write-Host "Setting cloud to ${{ parameters.CloudName }}"
+        & $azdCmd config set cloud.name '${{ parameters.CloudName }}'
+      }
 
       & $azdCmd auth login `
         --client-id "$($subscriptionConfiguration.TestApplicationId)" `

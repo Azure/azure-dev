@@ -33,7 +33,7 @@ param inputs object
 {{- if $value.Secret }}
 @secure()
 {{- end}}
-param {{$param}} {{$value.Type}}
+param {{dashToUnderscore $param}} {{$value.Type}}
 {{- end}}
 
 var tags = {
@@ -61,7 +61,7 @@ module resources 'resources.bicep' = {
   }
 }
 {{ range $name, $module := .BicepModules }}
-module {{$name}} '{{ fixBackSlash $module.Path }}' = {
+module {{dashToUnderscore $name}} '{{ fixBackSlash $module.Path }}' = {
   name: '{{$name}}'
   scope: rg
   params: {
@@ -115,6 +115,6 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
 {{end -}}
 {{- range $param, $value := .OutputParameters}}
-output {{$param}} {{$value.Type}} = {{$value.Value}}
+output {{dashToUnderscore $param}} {{$value.Type}} = {{dashToUnderscore $value.Value}}
 {{- end -}}
 {{ end}}

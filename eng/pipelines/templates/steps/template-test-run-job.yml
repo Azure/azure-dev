@@ -120,12 +120,12 @@ steps:
 
               azd version
 
-              if [[ -z "${AZD_CLOUD_NAME}" ]]; then
+              if [[ -n "${AZD_CLOUD_NAME}" ]]; then
                 echo "Setting azd cloud name to ${AZD_CLOUD_NAME}"
                 azd config set cloud.name "${AZD_CLOUD_NAME}"
               fi
 
-              if [[ -z "${AZ_CLOUD_NAME}" ]]; then
+              if [[ -n "${AZ_CLOUD_NAME}" ]]; then
                 echo "Setting az cloud set to ${AZ_CLOUD_NAME}"
                 az cloud set --name "${AZ_CLOUD_NAME}"
               fi

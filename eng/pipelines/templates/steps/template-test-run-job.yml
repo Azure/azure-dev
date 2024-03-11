@@ -5,6 +5,7 @@
 
 parameters:
   SubscriptionConfiguration: $(sub-config-azure-cloud-test-resources)
+  CloudName: AzureCloud
 
 steps:
     - pwsh: |
@@ -18,6 +19,7 @@ steps:
     - template: /eng/pipelines/templates/steps/azd-login.yml
       parameters:
         SubscriptionConfiguration: ${{ parameters.SubscriptionConfiguration }}
+        CloudName: ${{ parameters.CloudName }}
 
     # Java pre-requisites that isn't met
     # TODO: Use azd container as a form of validation that the container works
@@ -98,6 +100,7 @@ steps:
               AZD_VERSION=$(AzdVersion)
               AZD_DEBUG_FORCE_NO_TTY="1"
 
+              # TODO: Should these be parameters to the template?
               AZD_CLOUD_NAME=$(AZD_CLOUD_NAME)
               AZ_CLOUD_NAME=$(AZ_CLOUD_NAME)
               ARM_ENVIRONMENT=$(ARM_ENVIRONMENT)

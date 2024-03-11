@@ -240,7 +240,7 @@ jobs:
           OutputMatrixVariable: Matrix
           # Variables to set on the matrix job below
           AzdVersion: $(AzdVersion)
-          AzureLocation: chinaeast3
+          AzureLocation: chinanorth3
           TemplateBranchName: $(TemplateBranchName)
           CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
 

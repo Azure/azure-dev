@@ -353,6 +353,12 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
 
+	expectedParameter = "resources.outputs.SERVICE_BINDING_EXAMPLE_01KV_NAME"
+	value, inject, err = injectValueForBicepParameter(resourceName+"-01", param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
 	param = knownParameterPrincipalId
 	expectedParameter = `"exampleParameter"`
 

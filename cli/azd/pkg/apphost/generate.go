@@ -642,7 +642,8 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	}
 
 	if p == knownParameterKeyVault {
-		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(resourceName+"kv")), true, nil
+		dashToUnderscore := strings.ReplaceAll(resourceName, "-", "_")
+		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(dashToUnderscore+"kv")), true, nil
 	}
 	if p == knownParameterPrincipalId {
 		return knownInjectedValuePrincipalId, true, nil

@@ -54,7 +54,69 @@ parameters:
   default: false
 
 jobs:
-  - job: TemplateTest_CreateMatrix
+  # - job: TemplateTest_CreateMatrix
+  #   condition: ${{ parameters.JobCondition }}
+  #   dependsOn: ${{ parameters.JobDependsOn }}
+  #   pool:
+  #     name: azsdk-pool-mms-ubuntu-2004-general
+  #     vmImage: MMSUbuntu20.04
+
+  #   variables:
+  #   - name: AzdVersion
+  #     value: ${{ parameters.AzdVersion }}
+
+  #   - name: TemplateList
+  #     value: ${{ parameters.TemplateList }}
+
+  #   - name: TemplateBranchName
+  #     value: ${{ parameters.TemplateBranchName }}
+
+  #   steps:
+  #     - checkout: self
+
+  #     - ${{ if parameters.UseAzdVersionFromPrNumber }}:
+  #       - pwsh: |
+  #           $AzdVersion = '$(AzdVersion)'
+  #           if ($env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER) {
+  #             $AzdVersion = 'pr/' + $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER
+  #             Write-Host "PR build detected, overriding to use azd version: $AzdVersion"
+  #             Write-Host "##vso[task.setvariable variable=AzdVersion]$AzdVersion"
+  #           } else {
+  #             Write-Host "Non PR build, using azd version: $AzdVersion."
+  #           }
+  #         displayName: Set azd version from PR run
+
+  #     - template: /eng/pipelines/templates/steps/template-test-generate-jobs.yml
+  #       parameters:
+  #         # Generation parameters
+  #         TemplateList: $(TemplateList)
+  #         TemplateListFilter: ${{ parameters.TemplateListFilter }}
+  #         TemplateRunEnvironmentVariables: ${{ parameters.TemplateRunEnvironmentVariables }}
+  #         OutputMatrixStepName: Generate
+  #         OutputMatrixVariable: Matrix
+  #         # Variables to set on the matrix job below
+  #         AzdVersion: $(AzdVersion)
+  #         AzureLocation: ${{ parameters.AzureLocation }}
+  #         TemplateBranchName: $(TemplateBranchName)
+  #         CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
+
+  # - job: TemplateTest_RunTest
+  #   timeoutInMinutes: 180
+  #   dependsOn: TemplateTest_CreateMatrix
+
+  #   strategy:
+  #     matrix: $[ dependencies.TemplateTest_CreateMatrix.outputs['Generate.Matrix'] ]
+  #     maxParallel: 10
+
+  #   pool:
+  #     name: azsdk-pool-mms-ubuntu-2004-general
+  #     vmImage: MMSUbuntu20.04
+
+  #   steps:
+  #     - checkout: self
+  #     - template: /eng/pipelines/templates/steps/template-test-run-job.yml
+
+  - job: TemplateTest_CreateMatrix_GovCloud
     condition: ${{ parameters.JobCondition }}
     dependsOn: ${{ parameters.JobDependsOn }}
     pool:
@@ -66,7 +128,8 @@ jobs:
       value: ${{ parameters.AzdVersion }}
 
     - name: TemplateList
-      value: ${{ parameters.TemplateList }}
+      # value: Azure-Samples/todo-csharp-cosmos-sql, Azure-Samples/todo-nodejs-mongo-terraform, Azure-Samples/todo-nodejs-mongo-aks
+      value: Azure-Samples/todo-csharp-cosmos-sql
 
     - name: TemplateBranchName
       value: ${{ parameters.TemplateBranchName }}
@@ -92,26 +155,31 @@ jobs:
           TemplateList: $(TemplateList)
           TemplateListFilter: ${{ parameters.TemplateListFilter }}
           TemplateRunEnvironmentVariables: ${{ parameters.TemplateRunEnvironmentVariables }}
-          OutputMatrixStepName: Generate
+          OutputMatrixStepName: Generate_GovCloud
           OutputMatrixVariable: Matrix
           # Variables to set on the matrix job below
           AzdVersion: $(AzdVersion)
-          AzureLocation: ${{ parameters.AzureLocation }}
+          AzureLocation: usgovvirginia
           TemplateBranchName: $(TemplateBranchName)
           CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
 
   - job: TemplateTest_RunTest
     timeoutInMinutes: 180
-    dependsOn: TemplateTest_CreateMatrix
+    dependsOn: TemplateTest_CreateMatrix_GovCloud
 
     strategy:
-      matrix: $[ dependencies.TemplateTest_CreateMatrix.outputs['Generate.Matrix'] ]
-      maxParallel: 10
+      matrix: $[ dependencies.TemplateTest_CreateMatrix.outputs['Generate_GovCloud.Matrix'] ]
+      maxParallel: 3
 
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general
       vmImage: MMSUbuntu20.04
 
+    variables:
+      AZD_CLOUD_NAME: AzureUSGovernment
+      AZ_CLOUD_NAME: AzureUSGovernment
     steps:
       - checkout: self
       - template: /eng/pipelines/templates/steps/template-test-run-job.yml
+        parameters:
+          SubscriptionConfiguration: $(sub-config-gov-test-resources)

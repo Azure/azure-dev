@@ -23,7 +23,7 @@ param createMode string = 'Default'
 param highAvailabilityMode bool = false
 @description('Number of nodes in the node group')
 param nodeCount int
-@description('Node type deployed in the node group')
+@description('Deployed Node type in the node group')
 param nodeType string = 'Shard'
 @description('SKU defines the CPU and memory that is provisioned for each node')
 param sku string

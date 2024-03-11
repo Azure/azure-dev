@@ -13,7 +13,7 @@ param administratorLogin string
 param administratorLoginPassword string
 @description('Whether to allow all IPs or not. Warning: No IP addresses will be blocked and any host on the Internet can access the coordinator in this server group. It is strongly recommended to use this rule only temporarily and only on test clusters that do not contain sensitive data.')
 param allowAllIPsFirewall bool = false
-@description('Whether to allow Azure internal IPs or not.')
+@description('Whether to allow Azure internal IPs or not')
 param allowAzureIPsFirewall bool = false
 @description('IP addresses to allow access to the cluster from')
 param allowedSingleIPs array = []

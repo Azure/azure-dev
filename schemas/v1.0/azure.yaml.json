@@ -529,7 +529,7 @@
         "cloud": {
             "type": "object",
             "title": "The cloud configuration used for the project.",
-            "description": "Optional. Provides additional configuration for deploying to sovereign clouds such as Azure Government.",
+            "description": "Optional. Provides additional configuration for deploying to sovereign clouds such as Azure Government. The default cloud is AzureCloud.",
             "additionalProperties": false,
             "properties": {
                 "name": { "enum": [ "AzureCloud", "AzureChinaCloud", "AzureUSGovernment" ] }

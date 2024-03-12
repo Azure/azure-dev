@@ -430,6 +430,7 @@ func (m *manager) Delete(ctx context.Context, envName string, options *DeleteOpt
 	}
 
 	if name == envName {
+		// TODO: Test all parts of the app works correctly when default environment is unset
 		err = m.azdContext.SetDefaultEnvironmentName("")
 		if err != nil {
 			return fmt.Errorf("clearing default environment: %w", err)

@@ -15,7 +15,7 @@ import (
 )
 
 func TestArity(t *testing.T) {
-	debugServer := httptest.NewServer(newDebugService())
+	debugServer := httptest.NewServer(newDebugService(nil))
 	defer debugServer.Close()
 
 	// Connect to the server and start running a JSON-RPC 2.0 connection so we can send and recieve messages.
@@ -53,7 +53,7 @@ func TestCancellation(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	debugService := newDebugService()
+	debugService := newDebugService(nil)
 	debugService.wg = &wg
 	debugServer := httptest.NewServer(debugService)
 	defer debugServer.Close()
@@ -105,7 +105,7 @@ func TestCancellation(t *testing.T) {
 }
 
 func TestObserverable(t *testing.T) {
-	debugServer := httptest.NewServer(newDebugService())
+	debugServer := httptest.NewServer(newDebugService(nil))
 	defer debugServer.Close()
 
 	// Connect to the server and start running a JSON-RPC 2.0 connection so we can send and recieve messages.
@@ -167,7 +167,7 @@ func TestObserverable(t *testing.T) {
 }
 
 func TestPanic(t *testing.T) {
-	debugServer := httptest.NewServer(newDebugService())
+	debugServer := httptest.NewServer(newDebugService(nil))
 	defer debugServer.Close()
 
 	// Connect to the server and start running a JSON-RPC 2.0 connection so we can send and recieve messages.

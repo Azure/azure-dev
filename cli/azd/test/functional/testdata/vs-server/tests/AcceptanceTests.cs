@@ -15,7 +15,7 @@ public class AcceptanceTests : TestBase
     public async Task ManageEnvironments()
     {
         IObserver<ProgressMessage> observer = new WriterObserver<ProgressMessage>();
-        var session = await svrSvc.InitializeAsync(_rootDir, CancellationToken.None);
+        var session = await svrSvc.InitializeAsync(_rootDir, new InitializeServerOptions(), CancellationToken.None);
         var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);
         var environments = (await esSvc.GetEnvironmentsAsync(session, observer, CancellationToken.None)).ToList();
         environments.ShouldBeEmpty();
@@ -105,7 +105,7 @@ public class AcceptanceTests : TestBase
     [Test]
     public async Task LiveDeployRefresh() {
         IObserver<ProgressMessage> observer = new WriterObserver<ProgressMessage>();
-        var session = await svrSvc.InitializeAsync(_rootDir, CancellationToken.None);
+        var session = await svrSvc.InitializeAsync(_rootDir, new InitializeServerOptions(), CancellationToken.None);
         var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);
 
         Environment e = new Environment(_envName) {

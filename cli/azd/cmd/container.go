@@ -531,7 +531,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(config.NewUserConfigManager)
 	container.MustRegisterSingleton(config.NewManager)
 	container.MustRegisterSingleton(config.NewFileConfigManager)
-	container.MustRegisterSingleton(auth.NewManager)
+	container.MustRegisterScoped(func() auth.ExternalAuthConfiguration {
+		return auth.ExternalAuthConfiguration{
+			Endpoint: os.Getenv("AZD_AUTH_ENDPOINT"),
+			Key:      os.Getenv("AZD_AUTH_KEY"),
+		}
+	})
+	container.MustRegisterScoped(auth.NewManager)
 	container.MustRegisterSingleton(azcli.NewUserProfileService)
 	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)
@@ -549,7 +555,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return subManager
 	})
 
-	container.MustRegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
+	container.MustRegisterScoped(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
 		return authManager.CredentialForCurrentUser(ctx, nil)
 	})
 

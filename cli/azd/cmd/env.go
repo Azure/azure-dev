@@ -76,6 +76,12 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		DefaultFormat:  output.EnvVarsFormat,
 	})
 
+	group.Add("rm", &actions.ActionDescriptorOptions{
+		Command:        newEnvRemoveCmd(),
+		FlagsResolver:  newEnvRemoveFlags,
+		ActionResolver: newEnvRemoveAction,
+	})
+
 	return group
 }
 

@@ -136,7 +136,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else {
 				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
 
-				err = at.dotNetCli.PublishContainer(
+				targetPort, err = at.dotNetCli.PublishContainer(
 					ctx,
 					serviceConfig.Path(),
 					"Release",
@@ -146,13 +146,6 @@ func (at *dotnetContainerAppTarget) Deploy(
 					dockerCreds.Password)
 				if err != nil {
 					task.SetError(fmt.Errorf("publishing container: %w", err))
-					return
-				}
-
-				// Get target Port
-				targetPort, err = at.dotNetCli.GetTargetPort(ctx, serviceConfig.Path())
-				if err != nil {
-					task.SetError(fmt.Errorf("getting target port: %w", err))
 					return
 				}
 

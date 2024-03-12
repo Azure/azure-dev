@@ -27,7 +27,7 @@ type DotNetCli interface {
 	Publish(ctx context.Context, project string, configuration string, output string) error
 	PublishContainer(
 		ctx context.Context, project, configuration, imageName, server, username, password string,
-	) error
+	) (int, error)
 	InitializeSecret(ctx context.Context, project string) error
 	// PublishAppHostManifest runs the app host program with the correct configuration to generate an manifest. If dotnetEnv
 	// is non-empty, it will be passed as environment variables (named `DOTNET_ENVIRONMENT`) when running the app host
@@ -35,11 +35,18 @@ type DotNetCli interface {
 	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string, dotnetEnv string) error
 	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
 	GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error)
-	GetTargetPort(ctx context.Context, project string) (int, error)
 }
 
 type dotNetCli struct {
 	commandRunner exec.CommandRunner
+}
+
+type responseContainerConfiguration struct {
+	Config responseContainerConfigurationExpPorts `json:"config"`
+}
+
+type responseContainerConfigurationExpPorts struct {
+	ExposedPorts map[string]interface{} `json:"ExposedPorts"`
 }
 
 func (cli *dotNetCli) Name() string {
@@ -171,7 +178,7 @@ func (cli *dotNetCli) PublishAppHostManifest(
 // PublishContainer runs a `dotnet publish“ with `PublishProfile=DefaultContainer` to build and publish the container.
 func (cli *dotNetCli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
-) error {
+) (int, error) {
 	runArgs := newDotNetRunArgs("publish", project)
 
 	runArgs = runArgs.AppendParams(
@@ -180,6 +187,7 @@ func (cli *dotNetCli) PublishContainer(
 		"/t:PublishContainer",
 		fmt.Sprintf("-p:ContainerImageName=%s", imageName),
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
+		"--getProperty:GeneratedContainerConfiguration",
 	)
 
 	runArgs = runArgs.WithEnv([]string{
@@ -187,36 +195,37 @@ func (cli *dotNetCli) PublishContainer(
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_PWORD=%s", password),
 	})
 
-	_, err := cli.commandRunner.Run(ctx, runArgs)
-	if err != nil {
-		return fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
-	}
-	return nil
-}
-
-func (cli *dotNetCli) GetTargetPort(
-	ctx context.Context, project string,
-) (int, error) {
-	runArgs := newDotNetRunArgs("publish", "--getProperty:GeneratedContainerConfiguration", project)
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get target port at project '%s': %w", project, err)
+		return 0, fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
 	}
-
-	// Filter the results to only use numbers - we need to reconsider this strategy
-	targetPointString := regexp.MustCompile(`[^0-9]+`).ReplaceAllString(result.Stdout, "")
-
-	// Set default target port 8080
-	if targetPointString == "" {
-		return 8080, nil
-	}
-
-	// Convert the port value to an integer
-	targetPort, err := strconv.Atoi(targetPointString)
+	port, err := cli.getTargetPort(result.Stdout)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert target port to integer: %w", err)
+		return 0, fmt.Errorf("failed to get target port on project '%s': %w", project, err)
 	}
-	return targetPort, nil
+
+	return port, nil
+}
+
+func (cli *dotNetCli) getTargetPort(
+	output string,
+) (int, error) {
+	var configOutput responseContainerConfiguration
+	err := json.Unmarshal([]byte(output), &configOutput)
+	if err != nil {
+		return 0, fmt.Errorf("unmarshal configuration output: %w", err)
+	}
+	var exposedPortOutput string
+	for key, _ := range configOutput.Config.ExposedPorts {
+		exposedPortOutput = key
+	}
+	exposedPortRegexp := regexp.MustCompile(`\d+`)
+	exposedPortString := exposedPortRegexp.FindString(exposedPortOutput)
+	exposedPort, err := strconv.Atoi(exposedPortString)
+	if err != nil {
+		return 0, fmt.Errorf("failed to convert target port '%s' to integer: %w", exposedPortString, err)
+	}
+	return exposedPort, nil
 }
 
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {

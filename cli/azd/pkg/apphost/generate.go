@@ -991,22 +991,8 @@ func (b *infraGenerator) Compile() error {
 
 		if binding != nil {
 			projectTemplateCtx.Ingress = &genContainerAppIngress{
-				External:  binding.External,
-				Transport: binding.Transport,
-
-				// TODO(ellismg): We need to inspect the target container and determine this from the exposed ports (or ask
-				// MSBuild to tell us this value when it builds the container image). For now we just assume 8080.
-				//
-				// We can get this by running `dotnet publish` and using the `--getProperty:GeneratedContainerConfiguration`
-				// flag to get the generated docker configuration.  That's a JSON object, from that we pluck off
-				// Config.ExposedPorts, which is an object that would look like:
-				//
-				// {
-				//    "8080/tcp": {}
-				// }
-				//
-				// Note that the protocol type is apparently optional.
-				TargetPort:    8080,
+				External:      binding.External,
+				Transport:     binding.Transport,
 				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}
 		}

@@ -6,7 +6,6 @@
 
 - [[3450]](https://github.com/Azure/azure-dev/pull/3450) Adds support for pushing container images to external container registries
 - [[3452]](https://github.com/Azure/azure-dev/pull/3452) Adds support for other clouds
-- [[3453]](https://github.com/Azure/azure-dev/pull/3453) Adds usage telemetry for VS RPC
 - Dotnet Aspire:
   - [[3349]](https://github.com/Azure/azure-dev/pull/3349) Adds support for bicep and prompts for parameters
   - [[3411]](https://github.com/Azure/azure-dev/pull/3411) Adds support for `value.v0`
@@ -33,9 +32,6 @@
 - [[3413]](https://github.com/Azure/azure-dev/pull/3413) Adds Azure App Configuration store to bicep core. Thanks @RichardChen820 for the contribution
 - [[3442]](https://github.com/Azure/azure-dev/pull/3442) Updates AKS template tests without playwright validation
 - [[3478]](https://github.com/Azure/azure-dev/pull/3478) Updates `azd` to use default http client
-- VS RPC:
-  - [[3467]](https://github.com/Azure/azure-dev/pull/3467) Exposes spinner updates
-  - [[3430]](https://github.com/Azure/azure-dev/pull/3430) Exposes provisioned resources for Aspire
 
 ## 1.6.1 (2024-02-15)
 

@@ -4,11 +4,16 @@
 
 ### Features Added
 
+- [[3453]](https://github.com/Azure/azure-dev/pull/3453) Adds usage telemetry
+
 ### Breaking Changes
 
 ### Bugs Fixed
 
 ### Other Changes
+
+- [[3467]](https://github.com/Azure/azure-dev/pull/3467) Exposes spinner updates
+- [[3430]](https://github.com/Azure/azure-dev/pull/3430) Exposes provisioned resources for Aspire
 
 ## 0.8.1 (2024-03-06)
 

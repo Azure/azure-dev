@@ -66,9 +66,6 @@ param apimSku string = 'Basic'
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
-@description('API Management SKU to use if APIM is enabled')
-param apimSku string = 'Consumption'
-
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
@@ -161,7 +158,7 @@ module api 'br/public:avm/res/web/site:0.2.0' = {
 
 // Give the API access to KeyVault
 module apiKeyVaultAccess './../../../../../common/infra/bicep/app/keyvault-secret.bicep' = {
-  name: 'apiKeyVaultAccess'
+  name: 'api-keyvault-access'
   scope: rg
   params: {  
     apiPrincipalId: api.outputs.systemAssignedMIPrincipalId
@@ -250,6 +247,7 @@ module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
   }
 }
 
+// Monitor application with Azure applicationInsightsDashboard
 module applicationInsightsDashboard './../../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep' = {
   name: 'application-insights-dashboard'
   scope: rg
@@ -294,7 +292,7 @@ module apim 'br/public:avm/res/api-management/service:0.1.3' = if (useAPIM) {
 // Configures the API in the Azure API Management (APIM) service
 module apimsettings './../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
   scope: rg
-  name: 'apim-settings'
+  name: 'apim-api-settings'
   params: {
     apiAppName: api.outputs.name
     apiName: 'todo-api'

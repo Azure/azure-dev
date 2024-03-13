@@ -53,19 +53,10 @@ func (s *debugService) TestIObserverAsync(ctx context.Context, max int, observer
 	return nil
 }
 
-// TestCancelAsync is the server implementation of:
-// ValueTask TestPanicAsyncAsync(string, CancellationToken);
-//
-// It causes a go panic with the given message and is used to test the panic capturing machinary in the RPC server.
-func (s *debugService) TestPanicAsync(ctx context.Context, message string) error {
-	panic(message)
-}
-
 // ServeHTTP implements http.Handler.
 func (s *debugService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serveRpc(w, r, map[string]Handler{
 		"TestCancelAsync":    HandlerFunc1(s.TestCancelAsync),
 		"TestIObserverAsync": HandlerAction2(s.TestIObserverAsync),
-		"TestPanicAsync":     HandlerAction1(s.TestPanicAsync),
 	})
 }

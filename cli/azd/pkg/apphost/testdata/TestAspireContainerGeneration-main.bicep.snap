@@ -10,8 +10,17 @@ param environmentName string
 param location string
 
 @secure()
-@metadata({azd: {type: 'inputs' }})
+@metadata({azd: {
+  type: 'inputs'
+  autoGenerate: {
+    mysqlabstract: {
+      'pas-sw-ord': { len: 10 }
+      password: { len: 10 }
+    }
+  }}
+})
 param inputs object
+
 
 var tags = {
   'azd-env-name': environmentName

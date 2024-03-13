@@ -12,10 +12,7 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
-@secure()
-@metadata({azd: {type: 'inputs' }})
-param inputs object
-param administratorLogin string
+param administrator_login string
 @secure()
 param administratorLoginPassword string
 param parameter string
@@ -36,7 +33,6 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-    inputs: inputs
     principalId: principalId
   }
 }
@@ -50,16 +46,16 @@ module ai 'ai/aspire.hosting.azure.bicep.appinsights.bicep' = {
     logAnalyticsWorkspaceId: resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
   }
 }
-module postgres2 'postgres2/aspire.hosting.azure.bicep.postgres.bicep' = {
-  name: 'postgres2'
+module postgres_2 'postgres-2/aspire.hosting.azure.bicep.postgres.bicep' = {
+  name: 'postgres-2'
   scope: rg
   params: {
     location: location
-    administratorLogin: administratorLogin
+    administratorLogin: administrator_login
     administratorLoginPassword: administratorLoginPassword
     databases: ['db2']
-    keyVaultName: resources.outputs.SERVICE_BINDING_POSTGRES2KV_NAME
-    serverName: 'postgres2'
+    keyVaultName: resources.outputs.SERVICE_BINDING_POSTGRES_2KV_NAME
+    serverName: 'postgres-2'
   }
 }
 module sb 'sb/aspire.hosting.azure.bicep.servicebus.bicep' = {
@@ -101,7 +97,7 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAI
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
-output SERVICE_BINDING_POSTGRES2KV_ENDPOINT string = resources.outputs.SERVICE_BINDING_POSTGRES2KV_ENDPOINT
+output SERVICE_BINDING_POSTGRES_2KV_ENDPOINT string = resources.outputs.SERVICE_BINDING_POSTGRES_2KV_ENDPOINT
 
 output AI_APPINSIGHTSCONNECTIONSTRING string = ai.outputs.appInsightsConnectionString
 output SB_SERVICEBUSENDPOINT string = sb.outputs.serviceBusEndpoint

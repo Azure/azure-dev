@@ -28,6 +28,9 @@ param containerName string = 'main'
 @description('The name of the container registry')
 param containerRegistryName string = ''
 
+@description('Hostname suffix for container registry. Set when deploying to sovereign clouds')
+param containerRegistryHostSuffix string = 'azurecr.io'
+
 @description('The protocol used by Dapr to connect to the app, e.g., http or grpc')
 @allowed([ 'http', 'grpc' ])
 param daprAppProtocol string = 'http'
@@ -124,7 +127,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
       service: !empty(serviceType) ? { type: serviceType } : null
       registries: usePrivateRegistry ? [
         {
-          server: '${containerRegistryName}.azurecr.io'
+          server: '${containerRegistryName}.${containerRegistryHostSuffix}'
           identity: userIdentity.id
         }
       ] : []

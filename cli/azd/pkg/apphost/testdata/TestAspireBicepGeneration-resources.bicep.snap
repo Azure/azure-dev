@@ -7,10 +7,6 @@ param principalId string = ''
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
-@secure()
-@metadata({azd: {type: 'inputs' }})
-param inputs object
-
 var resourceToken = uniqueString(resourceGroup().id)
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -68,7 +64,7 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
 }
 
 resource postgres2kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: replace('postgres2kv-${resourceToken}', '-', '')
+  name: replace('postgres-2kv-${resourceToken}', '-', '')
   location: location
   properties: {
     sku: {
@@ -109,6 +105,6 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.l
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
-output SERVICE_BINDING_POSTGRES2KV_ENDPOINT string = postgres2kv.properties.vaultUri
-output SERVICE_BINDING_POSTGRES2KV_NAME string = postgres2kv.name
+output SERVICE_BINDING_POSTGRES_2KV_ENDPOINT string = postgres2kv.properties.vaultUri
+output SERVICE_BINDING_POSTGRES_2KV_NAME string = postgres2kv.name
 

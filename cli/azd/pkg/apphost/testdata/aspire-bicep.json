@@ -5,7 +5,6 @@
         "value": "{parameter.inputs.value}",
         "inputs": {
           "value": {
-            "type": "string"
           }
         }
       },
@@ -20,12 +19,11 @@
           ]
         }
       },
-      "administratorLogin": {
+      "administrator-login": {
         "type": "parameter.v0",
-        "value": "{administratorLogin.inputs.value}",
+        "value": "{administrator-login.inputs.value}",
         "inputs": {
           "value": {
-            "type": "string"
           }
         }
       },
@@ -34,19 +32,18 @@
         "value": "{administratorLoginPassword.inputs.value}",
         "inputs": {
           "value": {
-            "type": "string",
             "secret": true
           }
         }
       },
-      "postgres2": {
+      "postgres-2": {
         "type": "azure.bicep.v0",
-        "connectionString": "{postgres2.secretOutputs.connectionString}",
+        "connectionString": "{postgres-2.secretOutputs.connectionString}",
         "path": "aspire.hosting.azure.bicep.postgres.bicep",
         "params": {
-          "serverName": "postgres2",
+          "serverName": "postgres-2",
           "keyVaultName": "",
-          "administratorLogin": "{administratorLogin.value}",
+          "administratorLogin": "{administrator-login.value}",
           "administratorLoginPassword": "{administratorLoginPassword.value}",
           "databases": [
             "db2"
@@ -55,8 +52,8 @@
       },
       "db2": {
         "type": "value.v0",
-        "parent": "postgres2",
-        "connectionString": "{postgres2.connectionString};Database=db2;"
+        "parent": "postgres-2",
+        "connectionString": "{postgres-2.connectionString};Database=db2;"
       },
       "sb": {
         "type": "azure.bicep.v0",

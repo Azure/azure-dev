@@ -87,7 +87,7 @@ public class ProgressMessage
     public string Code;
     public string AdditionalInfoLink;
 
-    public override string ToString() => $"{Time}: {Severity} {Message}";
+    public override string ToString() => $"{Time}: {Kind} : {Severity} {Message}";
 }
 
 public enum MessageSeverity
@@ -111,6 +111,7 @@ public interface IDebugService {
 
 public interface IServerService {
     ValueTask<Session> InitializeAsync(string rootPath, CancellationToken cancellationToken);
+    ValueTask StopAsync(CancellationToken cancellationToken);
 }
 
 public interface IEnvironmentService {

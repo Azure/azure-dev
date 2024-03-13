@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -386,6 +387,10 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	}
 	mockContext.Container.MustRegisterSingleton(func() *storage.AccountConfig {
 		return storageAccountConfig
+	})
+
+	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
+		return cloud.AzurePublic()
 	})
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -57,6 +58,7 @@ type authTokenAction struct {
 	envResolver        environment.EnvironmentResolver
 	subResolver        account.SubscriptionTenantResolver
 	flags              *authTokenFlags
+	cloud              *cloud.Cloud
 }
 
 func newAuthTokenAction(
@@ -66,6 +68,7 @@ func newAuthTokenAction(
 	flags *authTokenFlags,
 	envResolver environment.EnvironmentResolver,
 	subResolver account.SubscriptionTenantResolver,
+	cloud *cloud.Cloud,
 ) actions.Action {
 	return &authTokenAction{
 		credentialProvider: credentialProvider,
@@ -74,6 +77,7 @@ func newAuthTokenAction(
 		formatter:          formatter,
 		writer:             writer,
 		flags:              flags,
+		cloud:              cloud,
 	}
 }
 
@@ -125,7 +129,7 @@ func getTenantIdFromEnv(
 
 func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.flags.scopes) == 0 {
-		a.flags.scopes = auth.LoginScopes
+		a.flags.scopes = auth.LoginScopes(a.cloud)
 	}
 
 	var cred azcore.TokenCredential
@@ -151,6 +155,7 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	// If tenantId is still empty, the fallback is to use current logged in user's home-tenant id.
 	cred, err := a.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		NoPrompt: true,
 		TenantID: tenantId,
 	})
 	if err != nil {

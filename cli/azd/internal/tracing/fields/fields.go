@@ -251,3 +251,17 @@ const (
 	// The last step recorded during the app init process.
 	AppInitLastStep = attribute.Key("appinit.lastStep")
 )
+
+// JSON-RPC related fields
+const (
+	// Logical name of the method from the RPC interface
+	// perspective, which can be different from the name of any implementing
+	// method/function. See semconv.RPCMethodKey.
+	RpcMethod = semconv.RPCMethodKey
+
+	// `id` property of JSON-RPC request or response.
+	JsonRpcId = semconv.RPCJsonrpcRequestIDKey
+
+	// `error_code` property of JSON-RPC request or response. Type: int.
+	JsonRpcErrorCode = semconv.RPCJsonrpcErrorCodeKey
+)

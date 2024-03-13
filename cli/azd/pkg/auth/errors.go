@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 const cLoginCmd = "azd auth login"
@@ -35,7 +36,9 @@ type ReLoginRequiredError struct {
 // If it is not a reauthentication error, it returns false.
 func newReLoginRequiredError(
 	response *AadErrorResponse,
-	scopes []string) (error, bool) {
+	scopes []string,
+	cloud *cloud.Cloud,
+) (error, bool) {
 	if response == nil {
 		return nil, false
 	}
@@ -46,17 +49,17 @@ func newReLoginRequiredError(
 	case "invalid_grant",
 		"interaction_required":
 		err := ReLoginRequiredError{}
-		err.init(response, scopes)
+		err.init(response, scopes, cloud)
 		return &err, true
 	}
 
 	return nil, false
 }
 
-func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string) {
+func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string, cloud *cloud.Cloud) {
 	e.scenario = cDefaultReloginScenario
 	e.loginCmd = cLoginCmd
-	if !matchesLoginScopes(scopes) { // if matching default login scopes, no scopes need to be specified
+	if !matchesLoginScopes(scopes, cloud) { // if matching default login scopes, no scopes need to be specified
 		for _, scope := range scopes {
 			e.loginCmd += fmt.Sprintf(" --scope %s", scope)
 		}
@@ -72,9 +75,9 @@ func (e *ReLoginRequiredError) Error() string {
 }
 
 // matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.
-func matchesLoginScopes(scopes []string) bool {
+func matchesLoginScopes(scopes []string, cloud *cloud.Cloud) bool {
 	for _, scope := range scopes {
-		_, matchLogin := loginScopesMap[scope]
+		_, matchLogin := loginScopesMap(cloud)[scope]
 		if !matchLogin {
 			return false
 		}

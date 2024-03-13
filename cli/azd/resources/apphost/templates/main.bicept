@@ -13,15 +13,27 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 {{ end }}
+{{- if gt (len .AutoGenInputs) 0 }}
 @secure()
-@metadata({azd: {type: 'inputs' }})
+@metadata({azd: {
+  type: 'inputs'
+  autoGenerate: {
+{{- range $resource, $params := .AutoGenInputs }}
+    {{$resource}}: { 
+{{- range $p := $params }}
+      {{$p.Name }}: { len: {{$p.Len }} }
+{{- end}}
+    }
+{{- end}}
+  }}
+})
 param inputs object
-
+{{ end }}
 {{- range $param, $value := .InputParameters }}
 {{- if $value.Secret }}
 @secure()
 {{- end}}
-param {{$param}} {{$value.Type}}
+param {{dashToUnderscore $param}} {{$value.Type}}
 {{- end}}
 
 var tags = {
@@ -40,14 +52,16 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
+{{- if gt (len .AutoGenInputs) 0 }}
     inputs: inputs
+{{- end }}
 {{- if .RequiresPrincipalId }}
     principalId: principalId
 {{- end }}
   }
 }
 {{ range $name, $module := .BicepModules }}
-module {{$name}} '{{ fixBackSlash $module.Path }}' = {
+module {{dashToUnderscore $name}} '{{ fixBackSlash $module.Path }}' = {
   name: '{{$name}}'
   scope: rg
   params: {
@@ -101,6 +115,6 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
 {{end -}}
 {{- range $param, $value := .OutputParameters}}
-output {{$param}} {{$value.Type}} = {{$value.Value}}
+output {{dashToUnderscore $param}} {{$value.Type}} = {{dashToUnderscore $value.Value}}
 {{- end -}}
 {{ end}}

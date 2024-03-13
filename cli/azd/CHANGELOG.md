@@ -1,14 +1,37 @@
 # Release History
 
-## 1.7.0-beta.1 (Unreleased)
+## 1.7.0 (2024-03-12)
 
 ### Features Added
 
-### Breaking Changes
+- [[3450]](https://github.com/Azure/azure-dev/pull/3450) Adds support for pushing container images to external container registries
+- [[3452]](https://github.com/Azure/azure-dev/pull/3452) Adds support for other clouds
+- Dotnet Aspire:
+  - [[3349]](https://github.com/Azure/azure-dev/pull/3349) Adds support for bicep and prompts for parameters
+  - [[3411]](https://github.com/Azure/azure-dev/pull/3411) Adds support for `value.v0`
+  - [[3425]](https://github.com/Azure/azure-dev/pull/3425) Sets `DOTNET_ENVIRONMENT` when running AppHost
 
 ### Bugs Fixed
 
+- [[3381]](https://github.com/Azure/azure-dev/pull/3381) Removes session `container` and `manifest` caching
+- [[3407]](https://github.com/Azure/azure-dev/pull/3407) Fixes docker build/package for Aspire projects
+- [[3418]](https://github.com/Azure/azure-dev/pull/3418) Fixes issues where deploying to AKS fails when service does not build any container
+- [[3445]](https://github.com/Azure/azure-dev/pull/3445) Fixes concurrent map issues in dev center client
+- [[3390]](https://github.com/Azure/azure-dev/pull/3390) Fixes issues where the ADE configuration was not being refreshed during `azd init` or `azd provision` in dev center
+- [[3382]](https://github.com/Azure/azure-dev/pull/3382) Cleans empty secrets and variables before setting them again
+- [[3448]](https://github.com/Azure/azure-dev/pull/3448) Fixes issues where `azd infra synth` doesn't generate autogenerate inputs
+- [[3506]](https://github.com/Azure/azure-dev/pull/3506) Fixes service config handlers referencing stale components
+- [[3513]](https://github.com/Azure/azure-dev/pull/3513) Fixes rules for setting secret environment variables in Aspire
+- [[3516]](https://github.com/Azure/azure-dev/pull/3516) Fixes issues where output bicep is invalid when using dash in resource names
+
 ### Other Changes
+
+- [[3357]](https://github.com/Azure/azure-dev/pull/3357) Allows selection on existing environments when default environment isn't set
+- [[3282]](https://github.com/Azure/azure-dev/pull/3282) Updates `azure-dev.yaml` for `azd-starter-bicep`. Thanks @IEvangelist for the contribution
+- [[3334]](https://github.com/Azure/azure-dev/pull/3334) Adds MySQL to bicep core. Thanks @john0isaac for the contribution
+- [[3413]](https://github.com/Azure/azure-dev/pull/3413) Adds Azure App Configuration store to bicep core. Thanks @RichardChen820 for the contribution
+- [[3442]](https://github.com/Azure/azure-dev/pull/3442) Updates AKS template tests without playwright validation
+- [[3478]](https://github.com/Azure/azure-dev/pull/3478) Updates `azd` to use default http client
 
 ## 1.6.1 (2024-02-15)
 

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//go:generate goversioninfo
+//go:generate goversioninfo -64
 
 package main
 
@@ -27,11 +27,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/blang/semver/v4"
+	"github.com/fatih/color"
 	"github.com/mattn/go-colorable"
 	"github.com/spf13/pflag"
 )
@@ -62,6 +66,20 @@ func main() {
 	rootContainer := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(rootContainer, ctx)
 	cmdErr := cmd.NewRootCmd(false, nil, rootContainer).ExecuteContext(ctx)
+
+	var suggestionErr *azcli.ErrorWithSuggestion
+	if cmdErr != nil && errors.As(cmdErr, &suggestionErr) {
+		invokeErr := rootContainer.Invoke(func(console input.Console) {
+			console.Message(ctx, color.RedString("ERROR: %s", cmdErr.Error()))
+			console.Message(ctx, (*azcli.ErrorWithSuggestion)(suggestionErr).Suggestion)
+		})
+
+		if invokeErr != nil {
+			log.Printf("failed to show error suggestion: %v", invokeErr)
+		}
+	}
+
+	oneauth.Shutdown()
 
 	if !isJsonOutput() {
 		if firstNotice := telemetry.FirstNotice(); firstNotice != "" {

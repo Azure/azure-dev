@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -18,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
+	"golang.org/x/exp/maps"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,6 +43,9 @@ func init() {
 				"toDotNotation":          scaffold.ToDotNotation,
 				"fixBackSlash": func(src string) string {
 					return strings.ReplaceAll(src, "\\", "/")
+				},
+				"dashToUnderscore": func(src string) string {
+					return strings.ReplaceAll(src, "-", "_")
 				},
 				"envFormat": scaffold.EnvFormat,
 			},
@@ -132,11 +137,43 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	// referenced by the Aspire manifest.
 	fs := manifest.BicepFiles
 
-	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", generator.bicepContext); err != nil {
+	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
+	// this allows the template to access the auto-gen inputs from the generator
+	type autoGenInput struct {
+		Name string
+		Len  int
+	}
+	type bicepContext struct {
+		genBicepTemplateContext
+		AutoGenInputs map[string][]autoGenInput
+	}
+	inputs := make(map[string][]autoGenInput)
+
+	// order to be deterministic when writing bicep
+	genInputKeys := maps.Keys(generator.inputs)
+	slices.Sort(genInputKeys)
+
+	for _, key := range genInputKeys {
+		input := generator.inputs[key]
+		parts := strings.Split(key, ".")
+		resource, inputName := handleBicepNameQuotes(parts[0]), handleBicepNameQuotes(parts[1])
+
+		resourceGenList, exists := inputs[resource]
+		if exists {
+			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Len: input.DefaultMinLength})
+		} else {
+			inputs[resource] = []autoGenInput{{Name: inputName, Len: input.DefaultMinLength}}
+		}
+	}
+	context := bicepContext{
+		genBicepTemplateContext: generator.bicepContext,
+		AutoGenInputs:           inputs,
+	}
+	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
 	}
 
-	if err := executeToFS(fs, genTemplates, "resources.bicep", "resources.bicep", generator.bicepContext); err != nil {
+	if err := executeToFS(fs, genTemplates, "resources.bicep", "resources.bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 	}
 
@@ -148,31 +185,11 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	return fs, nil
 }
 
-// Inputs returns a map of fully qualified input names (as the dotted pair of resource name and input name) to information
-// about the input for every input across all resources in the manifest.
-func Inputs(manifest *Manifest) (map[string]Input, error) {
-	generator := newInfraGenerator()
-
-	if err := generator.LoadManifest(manifest); err != nil {
-		return nil, err
+func handleBicepNameQuotes(name string) string {
+	if strings.Contains(name, " ") || strings.Contains(name, "-") || strings.Contains(name, ".") {
+		return fmt.Sprintf("'%s'", name)
 	}
-
-	res := make(map[string]Input, len(generator.inputs))
-
-	for k, v := range generator.inputs {
-		minLen := v.DefaultMinLength
-		res[k] = Input{
-			Secret: v.Secret,
-			Type:   "string",
-			Default: &InputDefault{
-				Generate: &InputDefaultGenerate{
-					MinLength: &minLen,
-				},
-			},
-		}
-	}
-
-	return res, nil
+	return name
 }
 
 // GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. The azure.yaml file as well as
@@ -356,15 +373,11 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
 	for name, comp := range m.Resources {
 		for k, v := range comp.Inputs {
-			input := genInput{
-				Secret: v.Secret,
-			}
-
-			if v.Type != "string" {
-				return fmt.Errorf("unsupported input type: %s", v.Type)
-			}
-
 			if v.Default != nil && v.Default.Generate != nil && v.Default.Generate.MinLength != nil {
+				input := genInput{
+					Secret: v.Secret,
+				}
+
 				input.DefaultMinLength = *v.Default.Generate.MinLength
 				// only inputs with default.generate are tracked here
 				b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
@@ -525,12 +538,13 @@ func (b *infraGenerator) addInputParameter(name string, comp *Resource) error {
 	if err != nil {
 		return fmt.Errorf("resolving input for parameter %s: %w", name, err)
 	}
+
 	b.bicepContext.InputParameters[name] = input
 	return nil
 }
 
 func hasInputs(value string) bool {
-	matched, _ := regexp.MatchString(`{[a-zA-Z][a-zA-Z0-9]*\.inputs\.[a-zA-Z][a-zA-Z0-9]*}`, value)
+	matched, _ := regexp.MatchString(`{[a-zA-Z][a-zA-Z0-9\-]*\.inputs\.[a-zA-Z][a-zA-Z0-9\-]*}`, value)
 	return matched
 }
 
@@ -551,6 +565,9 @@ func resolveResourceInput(fromResource string, comp *Resource) (Input, error) {
 	input, exists := comp.Inputs[inputName]
 	if !exists {
 		return Input{}, fmt.Errorf("parameter %s does not have input %s", fromResource, inputName)
+	}
+	if input.Type == "" {
+		input.Type = "string"
 	}
 	return input, nil
 }
@@ -625,7 +642,8 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	}
 
 	if p == knownParameterKeyVault {
-		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(resourceName+"kv")), true, nil
+		dashToUnderscore := strings.ReplaceAll(resourceName, "-", "_")
+		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(dashToUnderscore+"kv")), true, nil
 	}
 	if p == knownParameterPrincipalId {
 		return knownInjectedValuePrincipalId, true, nil
@@ -1303,11 +1321,12 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		if param.Secret {
 			inputType = "secured-parameter"
 		}
+		replaceDash := strings.ReplaceAll(resource, "-", "_")
 		switch emitType {
 		case inputEmitTypeBicep:
-			return fmt.Sprintf("{{%s}}", resource), nil
+			return fmt.Sprintf("{{%s}}", replaceDash), nil
 		case inputEmitTypeYaml:
-			return fmt.Sprintf(`{{ %s "%s" }}`, inputType, resource), nil
+			return fmt.Sprintf(`{{ %s "%s" }}`, inputType, replaceDash), nil
 		default:
 			panic(fmt.Sprintf("unexpected parameter %s", string(emitType)))
 		}
@@ -1357,12 +1376,24 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// need the newline
 		resolvedValue := string(yamlString[0 : len(yamlString)-1])
 
-		// connectionString detection:
-		//  - If the env-key contains "ConnectionStrings__" or the value contains "{{ connectionString" then it is considered
-		//    as a secret and added to the secrets map.
-		if strings.Contains(k, "ConnectionStrings__") ||
-			strings.Contains(resolvedValue, "{{ connectionString") ||
-			strings.Contains(resolvedValue, "{{ secured-parameter ") {
+		// connectionString detection, either of:
+		//  a) explicit connection string key for env, like "ConnectionStrings__resource": "XXXXX"
+		//  b) a connection string field references in the value, like "FOO": "{resource.connectionString}"
+		//  c) found placeholder for a connection string within resolved value, like "{{ connectionString resource }}"
+		//  d) found placeholder for a secured-param, like "{{ secured-parameter param }}"
+		//  e) found placeholder for a secret output, like "{{ secretOutput kv secret }}"
+		if strings.Contains(k, "ConnectionStrings__") || // a)
+			strings.Contains(value, ".connectionString}") || // b)
+			strings.Contains(resolvedValue, "{{ connectionString") || // c)
+			strings.Contains(resolvedValue, "{{ secured-parameter ") || // d)
+			strings.Contains(resolvedValue, "{{ secretOutput ") { // e)
+
+			// handle secret-outputs:
+			// secret outputs can be set either as a direct reference to a key vault secret, or as secret within the
+			// container apps. Below code checks if the the resolved value is a complex expression like:
+			// `key:{{ secretOutput kv secret }};foo;bar`.
+			// If the resolved value is not complex, it can become a direct reference to key vault secret, otherwise it
+			// is set as a secret within the container app.
 			if strings.Contains(resolvedValue, "{{ secretOutput ") {
 				if isComplexExp, _ := isComplexExpression(resolvedValue); !isComplexExp {
 					removeBrackets := strings.ReplaceAll(

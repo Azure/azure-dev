@@ -12,6 +12,9 @@ package events
 //   - cmd.up
 const CommandEventPrefix = "cmd."
 
+// Prefix for vsrpc events.
+const VsRpcEventPrefix = "vsrpc."
+
 // BicepInstallEvent is the name of the event which tracks the overall bicep install operation.
 const BicepInstallEvent = "tools.bicep.install"
 

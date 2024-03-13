@@ -16,6 +16,9 @@ properties:
     registries:
     - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
       identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+    secrets:
+      - name: my-sql-connection-string
+        value: Server=mysqlabstract;Port=3306;User ID=root;Password={{ index .Inputs `mysqlabstract` `password` }}
   template:
     containers:
     - image: {{ .Image }}
@@ -23,12 +26,12 @@ properties:
       env:
       - name: AZURE_CLIENT_ID
         value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
-      - name: MY_SQL_CONNECTION_STRING
-        value: Server=mysqlabstract;Port=3306;User ID=root;Password={{ index .Inputs `mysqlabstract` `password` }}
       - name: NODE_ENV
         value: development
       - name: PORT
         value: "3000"
+      - name: MY_SQL_CONNECTION_STRING
+        secretRef: my-sql-connection-string
     scale:
       minReplicas: 1
 tags:

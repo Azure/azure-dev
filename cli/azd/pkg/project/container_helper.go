@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -21,6 +22,7 @@ type ContainerHelper struct {
 	containerRegistryService azcli.ContainerRegistryService
 	docker                   docker.Docker
 	clock                    clock.Clock
+	cloud                    *cloud.Cloud
 }
 
 func NewContainerHelper(
@@ -29,6 +31,7 @@ func NewContainerHelper(
 	clock clock.Clock,
 	containerRegistryService azcli.ContainerRegistryService,
 	docker docker.Docker,
+	cloud *cloud.Cloud,
 ) *ContainerHelper {
 	return &ContainerHelper{
 		env:                      env,
@@ -36,6 +39,7 @@ func NewContainerHelper(
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
 		clock:                    clock,
+		cloud:                    cloud,
 	}
 }
 
@@ -171,21 +175,20 @@ func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.Extern
 func (ch *ContainerHelper) Login(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
 ) (string, error) {
-	loginServer, err := ch.RegistryName(ctx, serviceConfig)
+	registryName, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return "", err
 	}
 
 	// Only perform automatic login for ACR
 	// Other registries require manual login via external 'docker login' command
-	hostParts := strings.Split(loginServer, ".")
-	if len(hostParts) == 1 || strings.Contains(loginServer, "azurecr.io") {
-		return loginServer, ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
+	hostParts := strings.Split(registryName, ".")
+	if len(hostParts) == 1 || strings.HasSuffix(registryName, ch.cloud.ContainerRegistryEndpointSuffix) {
+		return registryName, ch.containerRegistryService.Login(ctx, ch.env.GetSubscriptionId(), registryName)
 	}
 
-	return loginServer, nil
+	return registryName, nil
 }
 
 func (ch *ContainerHelper) Credentials(
@@ -273,7 +276,8 @@ func (ch *ContainerHelper) Deploy(
 
 					log.Printf("logging into container registry '%s'\n", registryName)
 					task.SetProgress(NewServiceProgress("Logging into container registry"))
-					err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), registryName)
+
+					_, err = ch.Login(ctx, serviceConfig)
 					if err != nil {
 						task.SetError(err)
 						return
@@ -283,7 +287,13 @@ func (ch *ContainerHelper) Deploy(
 					log.Printf("pushing %s to registry", remoteImage)
 					task.SetProgress(NewServiceProgress("Pushing container image"))
 					if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteImage); err != nil {
-						task.SetError(err)
+						errSuggestion := &azcli.ErrorWithSuggestion{
+							Err: err,
+							//nolint:lll
+							Suggestion: "When pushing to an external registry, ensure you have successfully authenticated by calling 'docker login' and run 'azd deploy' again",
+						}
+
+						task.SetError(errSuggestion)
 						return
 					}
 				}

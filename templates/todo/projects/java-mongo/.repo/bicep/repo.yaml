@@ -80,6 +80,16 @@ repo:
         patterns:
           - "apim-api.bicep"
 
+      - from: ../../../../../api/common
+        to: ../src/api
+        patterns:
+          - "**/main.bicep"
+
+      - from: ../../../../../../common/infra/shared/gateway/apim
+        to: ./app
+        patterns:
+          - "**/main.bicep"
+
   assets:
     # Common assets
 
@@ -101,6 +111,15 @@ repo:
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
+
+    - from: ../../../../common/infra/bicep/app/keyvault-secret.bicep
+      to: ./infra/app/keyvault-secret.bicep
+
+    - from: ../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep
+      to: ./infra/app/applicationinsights-dashboard.bicep
+
+    - from: ../../../../common/infra/bicep/app/apim-api-settings.bicep
+      to: ./infra/app/apim-api-settings.bicep
 
     - from: ./../../
       to: ./

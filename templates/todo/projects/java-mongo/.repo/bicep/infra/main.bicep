@@ -60,9 +60,6 @@ param collections array = [
   }
 ]
 
-@description('API Management SKU to use if APIM is enabled')
-param apimSku string = 'Basic'
-
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
@@ -157,7 +154,7 @@ module api 'br/public:avm/res/web/site:0.2.0' = {
 }
 
 // Give the API access to KeyVault
-module apiKeyVaultAccess './../../../../../common/infra/bicep/app/keyvault-secret.bicep' = {
+module apiKeyVaultAccess '../../../../../common/infra/bicep/app/keyvault-secret.bicep' = {
   name: 'api-keyvault-access'
   scope: rg
   params: {  
@@ -248,7 +245,7 @@ module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
 }
 
 // Monitor application with Azure applicationInsightsDashboard
-module applicationInsightsDashboard './../../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep' = {
+module applicationInsightsDashboard '../../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep' = {
   name: 'application-insights-dashboard'
   scope: rg
   params: {
@@ -268,7 +265,6 @@ module apim 'br/public:avm/res/api-management/service:0.1.3' = if (useAPIM) {
     publisherName: 'n/a'
     location: location
     tags: tags
-    sku: apimSku
     apis: [
       {
         name: 'todo-api'
@@ -290,7 +286,7 @@ module apim 'br/public:avm/res/api-management/service:0.1.3' = if (useAPIM) {
 }
 
 // Configures the API in the Azure API Management (APIM) service
-module apimsettings './../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
+module apimsettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
   scope: rg
   name: 'apim-api-settings'
   params: {

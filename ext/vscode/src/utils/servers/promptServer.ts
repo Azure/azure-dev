@@ -115,7 +115,7 @@ async function promptString(context: IActionContext, isPassword: boolean, messag
 }
 
 async function promptSelect(context: IActionContext, isMulti: boolean, message: string, choices: SelectChoice[], defaultValue: string | undefined, help: string | undefined): Promise<string | string[]> {
-    const pickChoices: vscode.QuickPickItem[] = choices.map(choice => { return { label: choice.value, description: choice.detail }; });
+    const pickChoices: vscode.QuickPickItem[] = choices.map(choice => { return { label: choice.value, detail: choice.detail }; });
 
     const quickPickOptions: vscode.QuickPickOptions = {
         placeHolder: help,

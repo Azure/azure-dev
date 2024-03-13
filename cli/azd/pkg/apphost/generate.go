@@ -15,6 +15,7 @@ import (
 	"text/template"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
@@ -988,11 +989,17 @@ func (b *infraGenerator) Compile() error {
 		if err != nil {
 			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
 		}
+		
+		port, err := dotnet.DotNetCli.GetTargetPort(context.Background(), project.Path, "Release")
+		if err != nil{
+			return fmt.Errorf("getting dotnet port failed: %w",err)
+		}
 
 		if binding != nil {
 			projectTemplateCtx.Ingress = &genContainerAppIngress{
 				External:      binding.External,
 				Transport:     binding.Transport,
+				TargetPort:    port,
 				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}
 		}

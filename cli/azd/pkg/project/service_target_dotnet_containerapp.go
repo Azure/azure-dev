@@ -120,8 +120,6 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			var remoteImageName string
 
-			var targetPort string
-
 			if serviceConfig.Language == ServiceLanguageDocker {
 				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
 				syncProgress(task, containerDeployTask.Progress())
@@ -136,7 +134,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else {
 				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
 
-				targetPort, err = at.dotNetCli.PublishContainer(
+				err = at.dotNetCli.PublishContainer(
 					ctx,
 					serviceConfig.Path(),
 					"Release",
@@ -264,15 +262,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			builder := strings.Builder{}
 			err = tmpl.Execute(&builder, struct {
-				Env        map[string]string
-				Image      string
-				TargetPort string
-				Inputs     map[string]any
+				Env    map[string]string
+				Image  string
+				Inputs map[string]any
 			}{
-				Env:        at.env.Dotenv(),
-				Image:      remoteImageName,
-				TargetPort: targetPort,
-				Inputs:     inputs,
+				Env:    at.env.Dotenv(),
+				Image:  remoteImageName,
+				Inputs: inputs,
 			})
 			if err != nil {
 				task.SetError(fmt.Errorf("failed executing template file: %w", err))

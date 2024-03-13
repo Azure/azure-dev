@@ -785,9 +785,6 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
 	return w.cmd.ExecuteContext(childCtx)
 }
 
-type envAwareCredential struct {
-}
-
 // tokenCredentialFunc is an implementation of azcore.TokenCredential backed by a function
 type tokenCredentialFunc func(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error)
 

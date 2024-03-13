@@ -120,7 +120,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			var remoteImageName string
 
-			var targetPort int
+			var targetPort string
 
 			if serviceConfig.Language == ServiceLanguageDocker {
 				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
@@ -266,7 +266,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			err = tmpl.Execute(&builder, struct {
 				Env        map[string]string
 				Image      string
-				TargetPort int
+				TargetPort string
 				Inputs     map[string]any
 			}{
 				Env:        at.env.Dotenv(),

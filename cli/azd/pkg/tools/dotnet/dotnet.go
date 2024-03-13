@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -27,7 +26,7 @@ type DotNetCli interface {
 	Publish(ctx context.Context, project string, configuration string, output string) error
 	PublishContainer(
 		ctx context.Context, project, configuration, imageName, server, username, password string,
-	) (int, error)
+	) (string, error)
 	InitializeSecret(ctx context.Context, project string) error
 	// PublishAppHostManifest runs the app host program with the correct configuration to generate an manifest. If dotnetEnv
 	// is non-empty, it will be passed as environment variables (named `DOTNET_ENVIRONMENT`) when running the app host
@@ -47,6 +46,11 @@ type responseContainerConfiguration struct {
 
 type responseContainerConfigurationExpPorts struct {
 	ExposedPorts map[string]interface{} `json:"ExposedPorts"`
+}
+
+type targetPort struct {
+	port     string
+	protocol string
 }
 
 func (cli *dotNetCli) Name() string {
@@ -178,7 +182,7 @@ func (cli *dotNetCli) PublishAppHostManifest(
 // PublishContainer runs a `dotnet publish“ with `PublishProfile=DefaultContainer` to build and publish the container.
 func (cli *dotNetCli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
-) (int, error) {
+) (string, error) {
 	runArgs := newDotNetRunArgs("publish", project)
 
 	runArgs = runArgs.AppendParams(
@@ -197,35 +201,38 @@ func (cli *dotNetCli) PublishContainer(
 
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return 0, fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
-	}
-	port, err := cli.getTargetPort(result.Stdout)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get target port on project '%s': %w", project, err)
+		return "", fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
 	}
 
-	return port, nil
+	port, err := cli.getTargetPort(result.Stdout)
+	if err != nil {
+		return "", fmt.Errorf("failed to get target port on project '%s': %w", project, err)
+	}
+
+	// TODO Handle Target Port for multiple ports
+	return port[0].port, nil
 }
 
 func (cli *dotNetCli) getTargetPort(
 	output string,
-) (int, error) {
+) ([]targetPort, error) {
+	var targetPorts []targetPort
+
 	var configOutput responseContainerConfiguration
 	err := json.Unmarshal([]byte(output), &configOutput)
 	if err != nil {
-		return 0, fmt.Errorf("unmarshal configuration output: %w", err)
+		return targetPorts, fmt.Errorf("unmarshal configuration output: %w", err)
 	}
-	var exposedPortOutput string
-	for key, _ := range configOutput.Config.ExposedPorts {
-		exposedPortOutput = key
+	var exposedPortOutput []string
+	for key := range configOutput.Config.ExposedPorts {
+		exposedPortOutput = append(exposedPortOutput, key)
 	}
-	exposedPortRegexp := regexp.MustCompile(`\d+`)
-	exposedPortString := exposedPortRegexp.FindString(exposedPortOutput)
-	exposedPort, err := strconv.Atoi(exposedPortString)
-	if err != nil {
-		return 0, fmt.Errorf("failed to convert target port '%s' to integer: %w", exposedPortString, err)
+
+	for _, value := range exposedPortOutput {
+		split := strings.Split(value, "/")
+		targetPorts = append(targetPorts, targetPort{port: split[0], protocol: split[1]})
 	}
-	return exposedPort, nil
+	return targetPorts, nil
 }
 
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {

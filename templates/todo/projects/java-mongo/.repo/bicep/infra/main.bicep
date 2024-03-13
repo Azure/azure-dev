@@ -24,6 +24,44 @@ param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webServiceName string = ''
 param apimServiceName string = ''
+param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param collections array = [
+  {
+    name: 'TodoList'
+    id: 'TodoList'
+    shardKey: {keys: [
+      'Hash'
+    ]}
+    indexes: [
+      {
+        key: {
+          keys: [
+            '_id'
+          ]
+        }
+      }
+    ]
+  }
+  {
+    name: 'TodoItem'
+    id: 'TodoItem'
+    shardKey: {keys: [
+      'Hash'
+    ]}
+    indexes: [
+      {
+        key: {
+          keys: [
+            '_id'
+          ]
+        }
+      }
+    ]
+  }
+]
+
+@description('API Management SKU to use if APIM is enabled')
+param apimSku string = 'Basic'
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
@@ -35,7 +73,7 @@ var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 var appInsightResourceId = resourceId(subscription().subscriptionId, rg.name,
-'MMicrosoft.Insights/components', monitoring.outputs.applicationInsightsName)
+'Microsoft.Insights/components', applicationInsights.outputs.name)
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -74,7 +112,7 @@ module webAppSettings 'br/public:avm/res/web/site:0.2.0' = {
     tags: union(tags, { 'azd-service-name': 'web' })
     appSettingsKeyValuePairs: {
       REACT_APP_API_BASE_URL: 'https://${api.outputs.defaultHostname}'
-      REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
+      REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.outputs.connectionString
     }
   }
 }
@@ -103,9 +141,9 @@ module api 'br/public:avm/res/web/site:0.2.0' = {
     }
     appSettingsKeyValuePairs: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
-      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
+      AZURE_COSMOS_CONNECTION_STRING_KEY: connectionStringKey
       AZURE_COSMOS_DATABASE_NAME: !empty(cosmosDatabaseName) ? cosmosDatabaseName: 'Todo'
-      AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
+      AZURE_COSMOS_ENDPOINT: 'https://${cosmos.outputs.name}.mongo.cosmos.azure.com:443/'
       API_ALLOW_ORIGINS: 'https://${web.outputs.defaultHostname}'
       SCM_DO_BUILD_DURING_DEPLOYMENT: 'True'
       ENABLE_ORYX_BUILD: 'True'
@@ -119,40 +157,40 @@ module api 'br/public:avm/res/web/site:0.2.0' = {
 }
 
 // Give the API access to KeyVault
-module apiKeyVaultAccess 'br/public:avm/res/key-vault/vault:0.3.5' = {
-  name: 'api-keyvault-access'
+module apiKeyVaultAccess './../../../../../common/infra/bicep/app/keyvault-secret.bicep' = {
+  name: 'apiKeyVaultAccess'
   scope: rg
-  params: {
-    name: keyVault.outputs.name
-    enableRbacAuthorization: false
-    tags: tags
-    accessPolicies: [
-      {
-        objectId: principalId
-        permissions: {
-          secrets: [ 'get', 'list' ]
-        }
-      }
-      {
-        objectId: api.outputs.systemAssignedMIPrincipalId
-        permissions: {
-          secrets: [ 'get', 'list' ]
-        }
-      }
-    ]
+  params: {  
+    apiPrincipalId: api.outputs.systemAssignedMIPrincipalId
+    cosmosDbId: cosmos.outputs.resourceId
+    keyVaultName: keyVault.outputs.name
+    principalId: principalId
+    connectionStringKey: connectionStringKey
   }
 }
 
 // The application database
-module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
+module cosmos 'br/public:avm/res/document-db/database-account:0.3.0' = {
   name: 'cosmos'
   scope: rg
   params: {
-    accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-    databaseName: cosmosDatabaseName
+    locations: [
+      {
+        failoverPriority: 0
+        isZoneRedundant: false
+        locationName: location
+      }
+    ]
+    name: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
     location: location
-    tags: tags
-    keyVaultName: keyVault.outputs.name
+    mongodbDatabases: [
+      {
+        name: 'Todo'
+        tags: tags
+        collections: collections
+      }
+
+    ]
   }
 }
 
@@ -188,59 +226,94 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
   }
 }
 
-// Monitor application with Azure Monitor
-module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.bicep' = {
-  name: 'monitoring'
+// Monitor application with Azure loganalytics
+module loganalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
+  name: 'loganalytics'
   scope: rg
   params: {
+    name: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
     location: location
-    tags: tags
-    logAnalyticsName: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
-    applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
+  }
+}
+
+// Monitor application with Azure applicationInsights
+module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
+  name: 'applicationInsights'
+  scope: rg
+  params: {
+    name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
+    workspaceResourceId: loganalytics.outputs.resourceId
+    location: location
+  }
+}
+
+module applicationInsightsDashboard './../../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep' = {
+  name: 'application-insights-dashboard'
+  scope: rg
+  params: {
+    name: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
+    location: location
+    applicationInsightsName: applicationInsights.outputs.name
   }
 }
 
 // Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
-module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if (useAPIM) {
+module apim 'br/public:avm/res/api-management/service:0.1.3' = if (useAPIM) {
   name: 'apim-deployment'
   scope: rg
   params: {
     name: !empty(apimServiceName) ? apimServiceName : '${abbrs.apiManagementService}${resourceToken}'
+    publisherEmail: 'noreply@microsoft.com'
+    publisherName: 'n/a'
     location: location
     tags: tags
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    sku: apimSku
+    apis: [
+      {
+        name: 'todo-api'
+        path: 'todo'
+        displayName: 'Simple Todo API'
+        apiDescription: 'This is a simple Todo API'
+        serviceUrl: 'https://${api.outputs.defaultHostname}'
+        subscriptionRequired: false
+        value: loadTextContent('../../../../../api/common/openapi.yaml')
+        policies: [
+          {
+            value: replace(loadTextContent('../../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml'), '{origin}', 'https://${web.outputs.defaultHostname}')
+            format: 'rawxml'
+          }
+        ]
+      }
+    ]
   }
 }
 
 // Configures the API in the Azure API Management (APIM) service
-module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useAPIM) {
-  name: 'apim-api-deployment'
+module apimsettings './../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
   scope: rg
+  name: 'apim-settings'
   params: {
-    name: useAPIM ? apim.outputs.apimServiceName : ''
-    apiName: 'todo-api'
-    apiDisplayName: 'Simple Todo API'
-    apiDescription: 'This is a simple Todo API'
-    apiPath: 'todo'
-    webFrontendUrl: 'https://${web.outputs.defaultHostname}'
-    apiBackendUrl: 'https://${api.outputs.defaultHostname}'
     apiAppName: api.outputs.name
+    apiName: 'todo-api'
+    name: useAPIM ? apim.outputs.name : ''
+    apiPath: 'todo'
+    applicationInsightsName: applicationInsights.outputs.name
   }
 }
 
+
 // Data outputs
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
+output AZURE_COSMOS_DATABASE_NAME string = !empty(cosmosDatabaseName) ? cosmosDatabaseName: 'Todo'
 
 // App outputs
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output REACT_APP_API_BASE_URL string = useAPIM ? apimApi.outputs.SERVICE_API_URI : 'https://${api.outputs.defaultHostname}'
-output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
+output REACT_APP_API_BASE_URL string = useAPIM ? 'https://${apim.outputs.name}.azure-api.net/todo' : 'https://${api.outputs.defaultHostname}'
+output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
 output REACT_APP_WEB_BASE_URL string = 'https://${web.outputs.defaultHostname}'
 output USE_APIM bool = useAPIM
-output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.SERVICE_API_URI, 'https://${api.outputs.defaultHostname}' ]: []
+output SERVICE_API_ENDPOINTS array = useAPIM ? [ 'https://${apim.outputs.name}.azure-api.net/todo', 'https://${api.outputs.defaultHostname}' ]: []

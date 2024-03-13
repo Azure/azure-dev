@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 
 	"go.lsp.dev/jsonrpc2"
 )
@@ -24,7 +25,12 @@ type Handler func(ctx context.Context, conn jsonrpc2.Conn, reply jsonrpc2.Replie
 // HandlerAction0 is a helper for creating a Handler from a function that takes no arguments and returns an error.
 func HandlerAction0(f func(context.Context) error) Handler {
 	return func(ctx context.Context, conn jsonrpc2.Conn, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
-		err := f(ctx)
+		err := func() (err error) {
+			defer capturePanic(&err)
+			err = f(ctx)
+			return
+		}()
+
 		if err != nil && errors.Is(err, ctx.Err()) {
 			err = &jsonrpc2.Error{
 				Code:    requestCanceledErrorCode,
@@ -43,7 +49,12 @@ func HandlerAction1[T1 any](f func(context.Context, T1) error) Handler {
 			return reply(ctx, nil, err)
 		}
 
-		err = f(ctx, t1)
+		err = func() (err error) {
+			defer capturePanic(&err)
+			err = f(ctx, t1)
+			return
+		}()
+
 		if err != nil && errors.Is(err, ctx.Err()) {
 			err = &jsonrpc2.Error{
 				Code:    requestCanceledErrorCode,
@@ -67,7 +78,12 @@ func HandlerAction2[T1 any, T2 any](f func(context.Context, T1, T2) error) Handl
 			return reply(ctx, nil, err)
 		}
 
-		err = f(ctx, t1, t2)
+		err = func() (err error) {
+			defer capturePanic(&err)
+			err = f(ctx, t1, t2)
+			return
+		}()
+
 		if err != nil && errors.Is(err, ctx.Err()) {
 			err = &jsonrpc2.Error{
 				Code:    requestCanceledErrorCode,
@@ -96,7 +112,12 @@ func HandlerAction3[T1 any, T2 any, T3 any](f func(context.Context, T1, T2, T3) 
 			return reply(ctx, nil, err)
 		}
 
-		err = f(ctx, t1, t2, t3)
+		err = func() (err error) {
+			defer capturePanic(&err)
+			err = f(ctx, t1, t2, t3)
+			return
+		}()
+
 		if err != nil && errors.Is(err, ctx.Err()) {
 			err = &jsonrpc2.Error{
 				Code:    requestCanceledErrorCode,
@@ -110,7 +131,12 @@ func HandlerAction3[T1 any, T2 any, T3 any](f func(context.Context, T1, T2, T3) 
 // HandlerFunc0 is a helper for creating a Handler from a function that takes no arguments and returns a value and an error.
 func HandlerFunc0[TRet any](f func(context.Context) (TRet, error)) Handler {
 	return func(ctx context.Context, conn jsonrpc2.Conn, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
-		ret, err := f(ctx)
+		ret, err := func() (ret TRet, err error) {
+			defer capturePanic(&err)
+			ret, err = f(ctx)
+			return
+		}()
+
 		if err != nil && errors.Is(err, ctx.Err()) {
 			err = &jsonrpc2.Error{
 				Code:    requestCanceledErrorCode,
@@ -129,7 +155,12 @@ func HandlerFunc1[T1 any, TRet any](f func(context.Context, T1) (TRet, error)) H
 			return reply(ctx, nil, err)
 		}
 
-		ret, err := f(ctx, t1)
+		ret, err := func() (ret TRet, err error) {
+			defer capturePanic(&err)
+			ret, err = f(ctx, t1)
+			return
+		}()
+
 		if err != nil && errors.Is(err, ctx.Err()) {
 			err = &jsonrpc2.Error{
 				Code:    requestCanceledErrorCode,
@@ -153,7 +184,12 @@ func HandlerFunc2[T1 any, T2 any, TRet any](f func(context.Context, T1, T2) (TRe
 			return reply(ctx, nil, err)
 		}
 
-		ret, err := f(ctx, t1, t2)
+		ret, err := func() (ret TRet, err error) {
+			defer capturePanic(&err)
+			ret, err = f(ctx, t1, t2)
+			return
+		}()
+
 		if err != nil && errors.Is(err, ctx.Err()) {
 			err = &jsonrpc2.Error{
 				Code:    requestCanceledErrorCode,
@@ -183,7 +219,12 @@ func HandlerFunc3[T1 any, T2 any, T3 any, TRet any](f func(context.Context, T1, 
 			return reply(ctx, nil, err)
 		}
 
-		ret, err := f(ctx, t1, t2, t3)
+		ret, err := func() (ret TRet, err error) {
+			defer capturePanic(&err)
+			ret, err = f(ctx, t1, t2, t3)
+			return
+		}()
+
 		if err != nil && errors.Is(err, ctx.Err()) {
 			err = &jsonrpc2.Error{
 				Code:    requestCanceledErrorCode,
@@ -219,4 +260,26 @@ func unmarshalArg[T any](conn jsonrpc2.Conn, req jsonrpc2.Request, index int) (T
 	}
 
 	return arg, nil
+}
+
+// capturePanic is a helper for capturing panics and converting them to an error. It is expected to be called via `defer`:
+//
+//	err := func() (err error) {
+//		defer capturePanic(&err)
+//		err = /* ... some call that might panic ... */
+//		return
+//	}()
+//
+// If a panic occurs, the error will be set to a new *jsonrpc2.Error instance with a code of jsonrpc2.InternalError and a
+// message that includes the panic value.
+func capturePanic(err *error) {
+	if p := recover(); p != nil {
+		stackBuf := make([]byte, 4096)
+		stack := string(stackBuf[:runtime.Stack(stackBuf, false)])
+
+		*err = &jsonrpc2.Error{
+			Code:    jsonrpc2.InternalError,
+			Message: fmt.Sprintf("panic: %v\n%v", p, stack),
+		}
+	}
 }

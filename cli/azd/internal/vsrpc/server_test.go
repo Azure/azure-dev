@@ -132,3 +132,28 @@ func TestObserverable(t *testing.T) {
 	// The onCompleted message takes no parameters and the args value is empty.
 	require.Len(t, onCompletedParams[0], 0)
 }
+
+func TestPanic(t *testing.T) {
+	debugServer := httptest.NewServer(newDebugService())
+	defer debugServer.Close()
+
+	// Connect to the server and start running a JSON-RPC 2.0 connection so we can send and recieve messages.
+	serverUrl, err := url.Parse(debugServer.URL)
+	require.NoError(t, err)
+	serverUrl.Scheme = "ws"
+
+	wsConn, _, err := websocket.DefaultDialer.Dial(serverUrl.String(), nil)
+	require.NoError(t, err)
+
+	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
+	rpcConn.Go(context.Background(), nil)
+
+	_, err = rpcConn.Call(context.Background(), "TestPanicAsync", []any{"this is the panic office."}, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "this is the panic office.")
+
+	// Ensure the server is still running and we can make another call.
+	_, err = rpcConn.Call(context.Background(), "TestPanicAsync", []any{"this is the panic office, again."}, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "this is the panic office, again.")
+}

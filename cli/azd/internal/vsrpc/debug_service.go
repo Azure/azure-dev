@@ -53,10 +53,15 @@ func (s *debugService) TestIObserverAsync(ctx context.Context, max int, observer
 	return nil
 }
 
+func (s *debugService) TestPanicAsync(ctx context.Context, message string) error {
+	panic(message)
+}
+
 // ServeHTTP implements http.Handler.
 func (s *debugService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serveRpc(w, r, map[string]Handler{
 		"TestCancelAsync":    HandlerFunc1(s.TestCancelAsync),
 		"TestIObserverAsync": HandlerAction2(s.TestIObserverAsync),
+		"TestPanicAsync":     HandlerAction1(s.TestPanicAsync),
 	})
 }

@@ -549,8 +549,31 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return subManager
 	})
 
-	container.MustRegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
-		return authManager.CredentialForCurrentUser(ctx, nil)
+	container.MustRegisterSingleton(func(
+		ctx context.Context,
+		lazyEnv *lazy.Lazy[*environment.Environment],
+		subResolver account.SubscriptionTenantResolver,
+		credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
+
+		var tenantId string
+
+		// If the environment has a subscription configured, use the tenant associated with that subscription. Otherwise,
+		// use the default tenant.
+		if env, err := lazyEnv.GetValue(); err != nil {
+			if subId := env.GetSubscriptionId(); subId != "" {
+				if subTenant, err := subResolver.LookupTenant(ctx, subId); err != nil {
+					log.Printf("failed to resolve tenant for subscription %s: %s - using default tenant", subId, err)
+				} else {
+					tenantId = subTenant
+				}
+			} else {
+				log.Printf("environment does not have a subscription id - using default tenant")
+			}
+		} else {
+			log.Printf("failed to load environment to discover configured subscription: %s - using default tenant", err)
+		}
+
+		return credProvider.GetTokenCredential(ctx, tenantId)
 	})
 
 	// Tools

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -549,31 +550,39 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return subManager
 	})
 
-	container.MustRegisterSingleton(func(
+	container.MustRegisterScoped(func(
 		ctx context.Context,
 		lazyEnv *lazy.Lazy[*environment.Environment],
 		subResolver account.SubscriptionTenantResolver,
 		credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
 
-		var tenantId string
+		return tokenCredentialFunc(func(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
+			var tenantId string
 
-		// If the environment has a subscription configured, use the tenant associated with that subscription. Otherwise,
-		// use the default tenant.
-		if env, err := lazyEnv.GetValue(); err != nil {
-			if subId := env.GetSubscriptionId(); subId != "" {
-				if subTenant, err := subResolver.LookupTenant(ctx, subId); err != nil {
-					log.Printf("failed to resolve tenant for subscription %s: %s - using default tenant", subId, err)
+			// If the environment has a subscription configured, use the tenant associated with that subscription. Otherwise,
+			// use the default tenant.
+			if env, err := lazyEnv.GetValue(); err != nil {
+				if subId := env.GetSubscriptionId(); subId != "" {
+					if subTenant, err := subResolver.LookupTenant(ctx, subId); err != nil {
+						log.Printf("failed to resolve tenant for subscription %s: %s - using default tenant", subId, err)
+					} else {
+						tenantId = subTenant
+					}
 				} else {
-					tenantId = subTenant
+					log.Printf("environment does not have a subscription id - using default tenant")
 				}
 			} else {
-				log.Printf("environment does not have a subscription id - using default tenant")
+				log.Printf("failed to load environment to discover configured subscription: %s - using default tenant", err)
 			}
-		} else {
-			log.Printf("failed to load environment to discover configured subscription: %s - using default tenant", err)
-		}
 
-		return credProvider.GetTokenCredential(ctx, tenantId)
+			cred, err := credProvider.GetTokenCredential(ctx, tenantId)
+			if err != nil {
+				return azcore.AccessToken{}, err
+			}
+
+			return cred.GetToken(ctx, opts)
+		}), nil
+
 	})
 
 	// Tools
@@ -774,4 +783,14 @@ func (w *workflowCmdAdapter) SetArgs(args []string) {
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
 	childCtx := middleware.WithChildAction(ctx)
 	return w.cmd.ExecuteContext(childCtx)
+}
+
+type envAwareCredential struct {
+}
+
+// tokenCredentialFunc is an implementation of azcore.TokenCredential backed by a function
+type tokenCredentialFunc func(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error)
+
+func (f tokenCredentialFunc) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return f(ctx, opts)
 }

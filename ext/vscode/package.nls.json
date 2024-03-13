@@ -25,8 +25,8 @@
     "azure-dev.commands.getDotEnvFilePath.title": "Get Azure developer environment's .env file path",
 
     "azure-dev.maximumAppsToDisplay.description": "Maximum number of Azure Developer CLI apps to display in the Workspace Resource view",
-    "azure-dev.auth.useIntegratedAuth.description": "Use the VS Code integrated authentication with the Azure Developer CLI, instead of its own authentication. Note: This feature is currently in alpha and under active development, and requires a version of the Azure Development CLI that supports it.",
-    "azure-dev.useVisualStudioCodeForPrompts.description": "Use Visual Studio Code native prompts instead of the command line for prompts from the Azure Developer CLI.",
+    "azure-dev.auth.useIntegratedAuth.description": "Use the VS Code integrated authentication with the Azure Developer CLI, instead of its own authentication. Note: This feature is currently in alpha and under active development, and requires a version of the Azure Developer CLI that supports it.",
+    "azure-dev.useVisualStudioCodeForPrompts.description": "Use Visual Studio Code native prompts instead of the command line for prompts from the Azure Developer CLI. Requires a version of the Azure Developer CLI that supports it.",
 
     "azure-dev.tasks.dotenv.properties.file": "The .env file to use to populate the target task environment",
     "azure-dev.tasks.dotenv.properties.targetTasks": "Name of the task(s) that will be launched with environment populated from the .env file",

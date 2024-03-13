@@ -14,6 +14,39 @@ import (
 	"go.lsp.dev/jsonrpc2"
 )
 
+func TestArity(t *testing.T) {
+	debugServer := httptest.NewServer(newDebugService())
+	defer debugServer.Close()
+
+	// Connect to the server and start running a JSON-RPC 2.0 connection so we can send and recieve messages.
+	serverUrl, err := url.Parse(debugServer.URL)
+	require.NoError(t, err)
+	serverUrl.Scheme = "ws"
+
+	wsConn, _, err := websocket.DefaultDialer.Dial(serverUrl.String(), nil)
+	require.NoError(t, err)
+
+	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
+	rpcConn.Go(context.Background(), nil)
+
+	var rpcErr *jsonrpc2.Error
+
+	// TestIObserverAsync expects two argumments - this call should fail, there are too few arguments.
+	_, err = rpcConn.Call(context.Background(), "TestIObserverAsync", []any{10}, nil)
+	require.Error(t, err)
+	require.True(t, errors.As(err, &rpcErr))
+	require.Equal(t, jsonrpc2.InvalidParams, rpcErr.Code)
+
+	// TestIObserverAsync expects two argumments - this call should fail, there are too many arguments.
+	_, err = rpcConn.Call(context.Background(), "TestIObserverAsync", []any{10, map[string]any{
+		"__jsonrpc_marshaled": 1,
+		"handle":              1,
+	}, "extra-argument"}, nil)
+	require.Error(t, err)
+	require.True(t, errors.As(err, &rpcErr))
+	require.Equal(t, jsonrpc2.InvalidParams, rpcErr.Code)
+}
+
 func TestCancellation(t *testing.T) {
 	// wg controls when cancellation is sent by the client. We wait until the server RPC has started
 	// to run before requesting cancellation so we ensure we are testing our logic.

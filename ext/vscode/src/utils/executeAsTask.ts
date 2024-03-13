@@ -26,8 +26,9 @@ export function executeAsTask(command: string, name: string, options?: ExecuteAs
 
         const env = {...options.env};
 
-        let useIntegratedAuth = vscode.workspace.getConfiguration('azure-dev').get<boolean>('auth.useIntegratedAuth', false);
-        let useExternalPrompting = true; // TODO: an option to control this?
+        const configuration = vscode.workspace.getConfiguration('azure-dev');
+        let useIntegratedAuth = configuration.get<boolean>('auth.useIntegratedAuth', false);
+        let useExternalPrompting = configuration.get<boolean>('useVisualStudioCodeForPrompts', true);
 
         if (!isAzdCommand(command)) {
             useIntegratedAuth = false;

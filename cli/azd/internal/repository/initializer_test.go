@@ -60,6 +60,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 				git.NewGitCli(mockContext.CommandRunner),
 				dotnet.NewDotNetCli(mockContext.CommandRunner),
 				lazy.From[environment.Manager](mockEnv),
+				mockContext.CommandRunner,
 			)
 			err := i.Initialize(*mockContext.Context, azdCtx, &templates.Template{RepositoryPath: "local"}, "")
 			require.NoError(t, err)
@@ -104,6 +105,7 @@ func Test_Initializer_DevCenter(t *testing.T) {
 		git.NewGitCli(mockContext.CommandRunner),
 		dotnet.NewDotNetCli(mockContext.CommandRunner),
 		lazy.From[environment.Manager](mockEnv),
+		mockContext.CommandRunner,
 	)
 	err := i.Initialize(*mockContext.Context, azdCtx, template, "")
 	require.NoError(t, err)
@@ -174,6 +176,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				git.NewGitCli(mockRunner),
 				dotnet.NewDotNetCli(mockRunner),
 				lazy.From[environment.Manager](mockEnv),
+				mockRunner,
 			)
 			err = i.Initialize(context.Background(), azdCtx, &templates.Template{RepositoryPath: "local"}, "")
 			require.NoError(t, err)
@@ -375,7 +378,8 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			envManager := &mockenv.MockEnvManager{}
 			envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-			i := NewInitializer(console, git.NewGitCli(realRunner), nil, lazy.From[environment.Manager](envManager))
+			i := NewInitializer(
+				console, git.NewGitCli(realRunner), nil, lazy.From[environment.Manager](envManager), realRunner)
 			err := i.writeCoreAssets(context.Background(), azdCtx)
 			require.NoError(t, err)
 

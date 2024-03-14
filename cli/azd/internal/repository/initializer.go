@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -33,6 +34,7 @@ type Initializer struct {
 	gitCli         git.GitCli
 	dotnetCli      dotnet.DotNetCli
 	lazyEnvManager *lazy.Lazy[environment.Manager]
+	commandRunner  exec.CommandRunner
 }
 
 func NewInitializer(
@@ -40,12 +42,14 @@ func NewInitializer(
 	gitCli git.GitCli,
 	dotnetCli dotnet.DotNetCli,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
+	commandRunner exec.CommandRunner,
 ) *Initializer {
 	return &Initializer{
 		console:        console,
 		gitCli:         gitCli,
 		lazyEnvManager: lazyEnvManager,
 		dotnetCli:      dotnetCli,
+		commandRunner:  commandRunner,
 	}
 }
 

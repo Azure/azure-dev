@@ -95,8 +95,9 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
-func ContainerAppManifestTemplateForProject(manifest *Manifest, projectName string) (string, error) {
-	generator := newInfraGenerator()
+func ContainerAppManifestTemplateForProject(
+	manifest *Manifest, projectName string, commandRunner exec.CommandRunner) (string, error) {
+	generator := newInfraGenerator(commandRunner)
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return "", err
@@ -118,8 +119,8 @@ func ContainerAppManifestTemplateForProject(manifest *Manifest, projectName stri
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
-	generator := newInfraGenerator()
+func BicepTemplate(manifest *Manifest, commandRunner exec.CommandRunner) (*memfs.FS, error) {
+	generator := newInfraGenerator(commandRunner)
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
@@ -152,8 +153,8 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 
 // Inputs returns a map of fully qualified input names (as the dotted pair of resource name and input name) to information
 // about the input for every input across all resources in the manifest.
-func Inputs(manifest *Manifest) (map[string]Input, error) {
-	generator := newInfraGenerator()
+func Inputs(manifest *Manifest, commandRunner exec.CommandRunner) (map[string]Input, error) {
+	generator := newInfraGenerator(commandRunner)
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
@@ -180,14 +181,19 @@ func Inputs(manifest *Manifest) (map[string]Input, error) {
 // GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. The azure.yaml file as well as
 // a helpful next-steps.md file.
 func GenerateProjectArtifacts(
-	ctx context.Context, projectDir string, projectName string, manifest *Manifest, appHostProject string,
+	ctx context.Context,
+	projectDir string,
+	projectName string,
+	manifest *Manifest,
+	appHostProject string,
+	commandRunner exec.CommandRunner,
 ) (map[string]ContentsAndMode, error) {
 	appHostRel, err := filepath.Rel(projectDir, appHostProject)
 	if err != nil {
 		return nil, err
 	}
 
-	generator := newInfraGenerator()
+	generator := newInfraGenerator(commandRunner)
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
@@ -264,9 +270,10 @@ type infraGenerator struct {
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
+	commandRunner                exec.CommandRunner
 }
 
-func newInfraGenerator() *infraGenerator {
+func newInfraGenerator(commandRunner exec.CommandRunner) *infraGenerator {
 	return &infraGenerator{
 		bicepContext: genBicepTemplateContext{
 			AppInsights:                     make(map[string]genAppInsight),
@@ -292,6 +299,7 @@ func newInfraGenerator() *infraGenerator {
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
 		inputs:                       make(map[string]genInput),
+		commandRunner:                commandRunner,
 	}
 }
 
@@ -991,7 +999,7 @@ func (b *infraGenerator) Compile() error {
 			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
 		}
 
-		dotnetCli := dotnet.NewDotNetCli(exec.NewCommandRunner(nil))
+		dotnetCli := dotnet.NewDotNetCli(b.commandRunner)
 		port, err := dotnetCli.GetTargetPort(context.Background(), project.Path, "Release")
 		if err != nil {
 			return fmt.Errorf("getting dotnet port failed: %w", err)

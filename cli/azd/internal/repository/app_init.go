@@ -235,6 +235,7 @@ func (i *Initializer) InitFromApp(
 			filepath.Base(azdCtx.ProjectDirectory()),
 			appHostManifests[appHost.Path],
 			appHost.Path,
+			i.commandRunner,
 		)
 		if err != nil {
 			return err

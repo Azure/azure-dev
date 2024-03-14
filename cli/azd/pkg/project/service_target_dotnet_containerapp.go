@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
@@ -38,6 +39,7 @@ type dotnetContainerAppTarget struct {
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
 	keyvaultService     keyvault.KeyVaultService
+	commandRunner       exec.CommandRunner
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -57,6 +59,7 @@ func NewDotNetContainerAppTarget(
 	cosmosDbService cosmosdb.CosmosDbService,
 	sqlDbService sqldb.SqlDbService,
 	keyvaultService keyvault.KeyVaultService,
+	commandRunner exec.CommandRunner,
 ) ServiceTarget {
 	return &dotnetContainerAppTarget{
 		env:                 env,
@@ -67,6 +70,7 @@ func NewDotNetContainerAppTarget(
 		cosmosDbService:     cosmosDbService,
 		sqlDbService:        sqlDbService,
 		keyvaultService:     keyvaultService,
+		commandRunner:       commandRunner,
 	}
 }
 
@@ -178,6 +182,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
 					serviceConfig.DotNetContainerApp.Manifest,
 					serviceConfig.DotNetContainerApp.ProjectName,
+					at.commandRunner,
 				)
 				if err != nil {
 					task.SetError(fmt.Errorf("generating container app manifest: %w", err))
@@ -211,7 +216,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				return
 			}
 
-			requiredInputs, err := apphost.Inputs(serviceConfig.DotNetContainerApp.Manifest)
+			requiredInputs, err := apphost.Inputs(serviceConfig.DotNetContainerApp.Manifest, at.commandRunner)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed to get required inputs: %w", err))
 			}

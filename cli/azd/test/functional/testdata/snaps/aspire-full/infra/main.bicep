@@ -29,6 +29,16 @@ module resources 'resources.bicep' = {
   }
 }
 
+module storage 'storage/aspire.hosting.azure.bicep.storage.bicep' = {
+  name: 'storage'
+  scope: rg
+  params: {
+    location: location
+    principalId: resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID
+    principalType: 'ServicePrincipal'
+    storageName: 'storage'
+  }
+}
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
@@ -36,7 +46,7 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAI
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
-output SERVICE_BINDING_MARKDOWN_ENDPOINT string = resources.outputs.SERVICE_BINDING_MARKDOWN_ENDPOINT
-output SERVICE_BINDING_REQUESTLOG_ENDPOINT string = resources.outputs.SERVICE_BINDING_REQUESTLOG_ENDPOINT
-output SERVICE_BINDING_MESSAGES_ENDPOINT string = resources.outputs.SERVICE_BINDING_MESSAGES_ENDPOINT
 
+output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
+output STORAGE_QUEUEENDPOINT string = storage.outputs.queueEndpoint
+output STORAGE_TABLEENDPOINT string = storage.outputs.tableEndpoint

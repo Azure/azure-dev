@@ -58,6 +58,15 @@ func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[
 	})
 }
 
+func mockTargetPort(mockCtx *mocks.MockContext) {
+	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == "dotnet" && args.Args[0] == "publish" &&
+			args.Args[7] == "--getProperty:GeneratedContainerConfiguration"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "{\"config\":{\"ExposedPort\":{\"9090/tcp\":{},},}}", ""), nil
+	})
+}
+
 func TestAspireEscaping(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
@@ -66,11 +75,12 @@ func TestAspireEscaping(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireEscapingManifest, nil)
+
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-
+	mockTargetPort(mockCtx)
 	for _, name := range []string{"api"} {
 		t.Run(name, func(t *testing.T) {
 			tmpl, err := ContainerAppManifestTemplateForProject(m, name)

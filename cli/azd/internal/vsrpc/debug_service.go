@@ -42,7 +42,7 @@ func (s *debugService) TestCancelAsync(ctx context.Context, timeoutMs int) (bool
 }
 
 // TestCancelAsync is the server implementation of:
-// ValueTask<bool> TestIObserver(int, CancellationToken);
+// ValueTask<bool> TestIObserverAsync(int, CancellationToken);
 //
 // It emits a sequence of integers to the observer, from 0 to max, and then completes the observer, before returning.
 func (s *debugService) TestIObserverAsync(ctx context.Context, max int, observer IObserver[int]) error {

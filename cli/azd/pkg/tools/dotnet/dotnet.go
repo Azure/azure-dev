@@ -43,11 +43,11 @@ type dotNetCli struct {
 	commandRunner exec.CommandRunner
 }
 
-type responseContainerConfiguration struct {
-	Config responseContainerConfigurationExpPorts `json:"config"`
+type ResponseContainerConfiguration struct {
+	Config ResponseContainerConfigurationExpPorts `json:"config"`
 }
 
-type responseContainerConfigurationExpPorts struct {
+type ResponseContainerConfigurationExpPorts struct {
 	ExposedPorts map[string]interface{} `json:"ExposedPorts"`
 }
 
@@ -224,7 +224,7 @@ func (cli *dotNetCli) GetTargetPort(
 	}
 
 	var targetPorts []targetPort
-	var configOutput responseContainerConfiguration
+	var configOutput ResponseContainerConfiguration
 
 	if err = json.Unmarshal([]byte(result.Stdout), &configOutput); err != nil {
 		return 0, fmt.Errorf("unmarshal dotnet configuration output '%s' failed: %w", result.Stdout, err)

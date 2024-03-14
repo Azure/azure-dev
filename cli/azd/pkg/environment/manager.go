@@ -46,6 +46,9 @@ var (
 
 	// Error returned when an environment with a specified name cannot be found
 	ErrNotFound = errors.New("environment not found")
+
+	// Error returned when an environment name is not specified
+	ErrNameNotSpecified = errors.New("environment not specified")
 )
 
 // Manager is the interface used for managing instances of environments
@@ -333,6 +336,10 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 
 // Get returns the environment instance for the specified environment name
 func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
+	if name == "" {
+		return nil, ErrNameNotSpecified
+	}
+
 	localEnv, err := m.local.Get(ctx, name)
 	if err != nil {
 		if m.remote == nil {
@@ -389,7 +396,11 @@ type DeleteOptions struct {
 	DeleteRemote bool
 }
 
-func (m *manager) Delete(ctx context.Context, envName string, options *DeleteOptions) error {
+func (m *manager) Delete(ctx context.Context, name string, options *DeleteOptions) error {
+	if name == "" {
+		return ErrNameNotSpecified
+	}
+
 	if options == nil {
 		options = &DeleteOptions{}
 	}
@@ -399,7 +410,7 @@ func (m *manager) Delete(ctx context.Context, envName string, options *DeleteOpt
 	deleteRemote := m.remote != nil && options.DeleteRemote
 	var localNotFound error
 	var remoteNotFound error
-	err := m.local.Delete(ctx, envName)
+	err := m.local.Delete(ctx, name)
 	if errors.Is(err, ErrNotFound) {
 		if !deleteRemote {
 			return err
@@ -410,7 +421,7 @@ func (m *manager) Delete(ctx context.Context, envName string, options *DeleteOpt
 	}
 
 	if deleteRemote {
-		err := m.remote.Delete(ctx, envName)
+		err := m.remote.Delete(ctx, name)
 		if errors.Is(err, ErrNotFound) {
 			// TODO: When local exists, but remote doesn't exist
 			// Should we return an error?
@@ -421,16 +432,15 @@ func (m *manager) Delete(ctx context.Context, envName string, options *DeleteOpt
 	}
 
 	if localNotFound != nil && remoteNotFound != nil {
-		return fmt.Errorf("'%s': %w", envName, ErrNotFound)
+		return fmt.Errorf("'%s': %w", name, ErrNotFound)
 	}
 
-	name, err := m.azdContext.GetDefaultEnvironmentName()
+	defaultEnvName, err := m.azdContext.GetDefaultEnvironmentName()
 	if err != nil {
 		return fmt.Errorf("getting default environment: %w", err)
 	}
 
-	if name == envName {
-		// TODO: Test all parts of the app works correctly when default environment is unset
+	if defaultEnvName == name {
 		err = m.azdContext.SetDefaultEnvironmentName("")
 		if err != nil {
 			return fmt.Errorf("clearing default environment: %w", err)

@@ -566,16 +566,27 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, err
 	}
 	// Note: if there is not an environment yet, GetDefaultEnvironmentName() returns empty string (not error)
-	// and later, when envManager.Get() is called with the empty string, azd returns an error.
 	// But if there is already an environment (default to be selected), azd must honor the --environment flag
 	// over the default environment.
 	if eg.flags.EnvironmentName != "" {
 		name = eg.flags.EnvironmentName
 	}
+
+	if name == "" {
+		// No environment specified, and default environment is not selected.
+		// Prompt to choose an environment and set as default.
+		loaded, err := eg.envManager.LoadOrInitInteractive(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+
+		name = loaded.Name()
+	}
+
 	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
 		return nil, fmt.Errorf(
-			`"environment does not exist. You can create it with "azd env new"`,
+			`environment does not exist. You can create it with "azd env new"`,
 		)
 	} else if err != nil {
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)

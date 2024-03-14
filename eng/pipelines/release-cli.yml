@@ -1525,12 +1525,6 @@ stages:
 
               * $msiReleaseUrl
 
-              ### Container
-
-              ``````
-              docker run -it $(azdev-acr-host)/azure-dev:pr-$(PRNumber)
-              ``````
-
               ## Documentation
 
               <details>

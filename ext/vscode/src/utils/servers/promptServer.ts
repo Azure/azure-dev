@@ -118,8 +118,7 @@ async function promptSelect(context: IActionContext, isMulti: boolean, message: 
     const pickChoices: vscode.QuickPickItem[] = choices.map(choice => { return { label: choice.value, detail: choice.detail }; });
 
     const quickPickOptions: vscode.QuickPickOptions = {
-        placeHolder: help,
-        title: message,
+        placeHolder: message,
         ignoreFocusOut: true,
     };
 

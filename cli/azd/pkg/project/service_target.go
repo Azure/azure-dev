@@ -26,6 +26,9 @@ const (
 	SpringAppTarget          ServiceTargetKind = "springapp"
 	AksTarget                ServiceTargetKind = "aks"
 	DotNetContainerAppTarget ServiceTargetKind = "containerapp-dotnet"
+	AiModelTarget            ServiceTargetKind = "ai-model"
+	AiEndpointTarget         ServiceTargetKind = "ai-endpoint"
+	AiEnvironmentTarget      ServiceTargetKind = "ai-environment"
 )
 
 // RequiresContainer returns true if the service target runs a container image.
@@ -50,7 +53,10 @@ func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
 		AzureFunctionTarget,
 		StaticWebAppTarget,
 		SpringAppTarget,
-		AksTarget:
+		AksTarget,
+		AiEnvironmentTarget,
+		AiModelTarget,
+		AiEndpointTarget:
 
 		return kind, nil
 	}
@@ -135,7 +141,7 @@ func resourceTypeMismatchError(
 // As an example, ContainerAppTarget is able to provision the container app as part of deployment,
 // and thus returns true.
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
-	return st == AksTarget
+	return st == AksTarget || st == AiModelTarget || st == AiEndpointTarget || st == AiEnvironmentTarget
 }
 
 func checkResourceType(resource *environment.TargetResource, expectedResourceType infra.AzureResourceType) error {

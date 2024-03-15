@@ -39,8 +39,17 @@ type ServiceConfig struct {
 	// Options specific to the DotNetContainerApp target. These are set by the importer and
 	// can not be controlled via the project file today.
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
+	Ai                 *AiAppOptions              `yaml:"ai,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
+}
+
+type AiAppOptions struct {
+	Name        string `yaml:"name,omitempty"`
+	Workspace   string `yaml:"workspace,omitempty"`
+	Environment string `yaml:"environment,omitempty"`
+	Model       string `yaml:"model,omitempty"`
+	Path        string `yaml:"path,omitempty"`
 }
 
 type DotNetContainerAppOptions struct {

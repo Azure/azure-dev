@@ -599,6 +599,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.AksTarget:                project.NewAksTarget,
 		project.SpringAppTarget:          project.NewSpringAppTarget,
 		project.DotNetContainerAppTarget: project.NewDotNetContainerAppTarget,
+		project.AiModelTarget:            project.NewAiModel,
+		project.AiEndpointTarget:         project.NewAiEndpoint,
+		project.AiEnvironmentTarget:      project.NewAiEnvironment,
 	}
 
 	for target, constructor := range serviceTargetMap {

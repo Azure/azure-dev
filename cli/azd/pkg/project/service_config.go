@@ -45,11 +45,12 @@ type ServiceConfig struct {
 }
 
 type AiAppOptions struct {
-	Name        string `yaml:"name,omitempty"`
-	Workspace   string `yaml:"workspace,omitempty"`
-	Environment string `yaml:"environment,omitempty"`
-	Model       string `yaml:"model,omitempty"`
-	Path        string `yaml:"path,omitempty"`
+	Name           string `yaml:"name,omitempty"`
+	Workspace      string `yaml:"workspace,omitempty"`
+	Environment    string `yaml:"environment,omitempty"`
+	Model          string `yaml:"model,omitempty"`
+	Path           string `yaml:"path,omitempty"`
+	DeploymentPath string `yaml:"deploymentPath,omitempty"`
 }
 
 type DotNetContainerAppOptions struct {

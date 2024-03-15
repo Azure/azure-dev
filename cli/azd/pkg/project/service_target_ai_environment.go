@@ -71,13 +71,22 @@ func (m *AiEnvironment) Deploy(
 			return
 		}
 
-		workspaceClient, err := armmachinelearning.NewWorkspacesClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		workspaceClient, err := armmachinelearning.NewWorkspacesClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		workspaceResponse, err := workspaceClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, nil)
+		workspaceResponse, err := workspaceClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			nil,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
@@ -95,20 +104,31 @@ func (m *AiEnvironment) Deploy(
 			return
 		}
 
-		environmentsClient, err := armmachinelearning.NewEnvironmentContainersClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		environmentsClient, err := armmachinelearning.NewEnvironmentContainersClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
 		nextVersion := "1"
-		envContainerResponse, err := environmentsClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Name, nil)
+		envContainerResponse, err := environmentsClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			serviceConfig.Ai.Name,
+			nil,
+		)
 		if err == nil {
 			nextVersion = *envContainerResponse.Properties.NextVersion
 		}
 
-		// az ml environment create --file deployment/docker/environment.yml --resource-group $AZURE_RESOURCE_GROUP --workspace-name $AZURE_MLPROJECT_NAME --version $new_version
-		envArgs := exec.NewRunArgs("az", "ml", "environment", "create",
+		envArgs := exec.NewRunArgs(
+			"az", "ml", "environment", "create",
+			"--name", serviceConfig.Ai.Name,
 			"--file", yamlFilePath,
 			"-g", targetResource.ResourceGroupName(),
 			"-w", serviceConfig.Ai.Workspace,
@@ -120,13 +140,24 @@ func (m *AiEnvironment) Deploy(
 			return
 		}
 
-		envVersionsClient, err := armmachinelearning.NewEnvironmentVersionsClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		envVersionsClient, err := armmachinelearning.NewEnvironmentVersionsClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		envVersionResponse, err := envVersionsClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Name, nextVersion, nil)
+		envVersionResponse, err := envVersionsClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			serviceConfig.Ai.Name,
+			nextVersion,
+			nil,
+		)
 		if err != nil {
 			task.SetError(err)
 			return

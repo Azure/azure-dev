@@ -71,13 +71,22 @@ func (m *AiModel) Deploy(
 			return
 		}
 
-		workspaceClient, err := armmachinelearning.NewWorkspacesClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		workspaceClient, err := armmachinelearning.NewWorkspacesClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		workspaceResponse, err := workspaceClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, nil)
+		workspaceResponse, err := workspaceClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			nil,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
@@ -95,12 +104,9 @@ func (m *AiModel) Deploy(
 			return
 		}
 
-		// echo "Registering PromptFlow as a model in Azure ML..."
-		// az ml model create --file deployment/chat-model.yaml  -g $AZURE_RESOURCE_GROUP -w $AZURE_MLPROJECT_NAME
-		createModelArgs := exec.NewRunArgs("az",
-			"ml",
-			"model",
-			"create",
+		createModelArgs := exec.NewRunArgs(
+			"az", "ml", "model", "create",
+			"--name", serviceConfig.Ai.Name,
 			"--file", yamlFilePath,
 			"-g", targetResource.ResourceGroupName(),
 			"-w", serviceConfig.Ai.Workspace,
@@ -112,13 +118,23 @@ func (m *AiModel) Deploy(
 			return
 		}
 
-		modelContainerClient, err := armmachinelearning.NewModelContainersClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		modelContainerClient, err := armmachinelearning.NewModelContainersClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		modelContainerResponse, err := modelContainerClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Name, nil)
+		modelContainerResponse, err := modelContainerClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			serviceConfig.Ai.Name,
+			nil,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
@@ -126,7 +142,11 @@ func (m *AiModel) Deploy(
 
 		modelContainer := &modelContainerResponse.ModelContainer
 
-		modelVersionClient, err := armmachinelearning.NewModelVersionsClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		modelVersionClient, err := armmachinelearning.NewModelVersionsClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
@@ -137,7 +157,14 @@ func (m *AiModel) Deploy(
 			latestVersion = *modelContainer.Properties.LatestVersion
 		}
 
-		modelVersionResponse, err := modelVersionClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Name, latestVersion, nil)
+		modelVersionResponse, err := modelVersionClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			serviceConfig.Ai.Name,
+			latestVersion,
+			nil,
+		)
 		if err != nil {
 			task.SetError(err)
 			return

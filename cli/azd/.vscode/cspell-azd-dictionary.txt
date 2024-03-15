@@ -21,6 +21,7 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 armcosmos
+armmachinelearning
 armresourcegraph
 armsql
 aspnet
@@ -44,6 +45,7 @@ azruntime
 azsdk
 AZURECLI
 azureedge
+azureml
 azurestaticapps
 azuretools
 azureutil

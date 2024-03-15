@@ -73,13 +73,22 @@ func (m *AiEndpoint) Deploy(
 			return
 		}
 
-		workspaceClient, err := armmachinelearning.NewWorkspacesClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		workspaceClient, err := armmachinelearning.NewWorkspacesClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		workspaceResponse, err := workspaceClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, nil)
+		workspaceResponse, err := workspaceClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			nil,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
@@ -90,14 +99,25 @@ func (m *AiEndpoint) Deploy(
 			return
 		}
 
-		yamlFilePath := filepath.Join(serviceConfig.Path(), serviceConfig.Ai.Path)
-		_, err = os.Stat(yamlFilePath)
+		endpointYamlFilePath := filepath.Join(serviceConfig.Path(), serviceConfig.Ai.Path)
+		_, err = os.Stat(endpointYamlFilePath)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		endpointClient, err := armmachinelearning.NewOnlineEndpointsClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		deploymentYamlFilePath := filepath.Join(serviceConfig.Path(), serviceConfig.Ai.DeploymentPath)
+		_, err = os.Stat(deploymentYamlFilePath)
+		if err != nil {
+			task.SetError(err)
+			return
+		}
+
+		endpointClient, err := armmachinelearning.NewOnlineEndpointsClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
@@ -105,31 +125,31 @@ func (m *AiEndpoint) Deploy(
 
 		var endpointCreateOrUpdateArgs exec.RunArgs
 
-		_, err = endpointClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Name, nil)
+		_, err = endpointClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			serviceConfig.Ai.Name,
+			nil,
+		)
 		if err == nil {
-			endpointCreateOrUpdateArgs = exec.NewRunArgs("az",
-				"ml",
-				"online-endpoint",
-				"update",
-				"--file", yamlFilePath,
+			endpointCreateOrUpdateArgs = exec.NewRunArgs(
+				"az", "ml", "online-endpoint", "update",
+				"--file", endpointYamlFilePath,
 				"-n", serviceConfig.Ai.Name,
 				"-g", targetResource.ResourceGroupName(),
 				"-w", serviceConfig.Ai.Workspace,
 			)
 		} else {
 			endpointCreateOrUpdateArgs = exec.NewRunArgs("az",
-				"ml",
-				"online-endpoint",
-				"create",
-				"--file", yamlFilePath,
+				"ml", "online-endpoint", "create",
+				"--file", endpointYamlFilePath,
 				"-n", serviceConfig.Ai.Name,
 				"-g", targetResource.ResourceGroupName(),
 				"-w", serviceConfig.Ai.Workspace,
 			)
 		}
 
-		// echo "Registering PromptFlow as a model in Azure ML..."
-		// az ml model create --file deployment/chat-model.yaml  -g $AZURE_RESOURCE_GROUP -w $AZURE_MLPROJECT_NAME
 		task.SetProgress(NewServiceProgress("Creating/updating endpoint"))
 		_, err = m.commandRunner.Run(ctx, endpointCreateOrUpdateArgs)
 		if err != nil {
@@ -137,7 +157,13 @@ func (m *AiEndpoint) Deploy(
 			return
 		}
 
-		endpointResponse, err := endpointClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Name, nil)
+		endpointResponse, err := endpointClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			serviceConfig.Ai.Name,
+			nil,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
@@ -145,73 +171,107 @@ func (m *AiEndpoint) Deploy(
 
 		endpoint := &endpointResponse.OnlineEndpoint
 
-		envClient, err := armmachinelearning.NewEnvironmentContainersClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		envClient, err := armmachinelearning.NewEnvironmentContainersClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		envGetResponse, err := envClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Environment, nil)
+		envGetResponse, err := envClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			serviceConfig.Ai.Environment,
+			nil,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		envVersionsClient, err := armmachinelearning.NewEnvironmentVersionsClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
+		environmentContainer := envGetResponse.EnvironmentContainer
+
+		modelClient, err := armmachinelearning.NewModelContainersClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		envVersionResponse, err := envVersionsClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Environment, *envGetResponse.Properties.LatestVersion, nil)
+		modelGetResponse, err := modelClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			serviceConfig.Ai.Model,
+			nil,
+		)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		modelClient, err := armmachinelearning.NewModelContainersClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+		modelContainer := modelGetResponse.ModelContainer
 
-		modelGetResponse, err := modelClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Model, nil)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		modelContainer := &modelGetResponse.ModelContainer
-
-		modelVersionsClient, err := armmachinelearning.NewModelVersionsClient(m.env.GetSubscriptionId(), credentials, m.armClientOptions)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		_, err = modelVersionsClient.Get(ctx, targetResource.ResourceGroupName(), serviceConfig.Ai.Workspace, serviceConfig.Ai.Model, *modelGetResponse.Properties.LatestVersion, nil)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		modelName := fmt.Sprintf("azureml:%s:%s", *modelContainer.Name, *modelContainer.Properties.LatestVersion)
-		deploymentName := fmt.Sprintf("%s-azd-%d", serviceConfig.Ai.Name, time.Now().Unix())
+		deploymentName := fmt.Sprintf("azd-%d", time.Now().Unix())
+		modelName := fmt.Sprintf(
+			"azureml:%s:%s",
+			*modelContainer.Name,
+			*modelContainer.Properties.LatestVersion,
+		)
+		environmentName := fmt.Sprintf(
+			"azureml:%s:%s",
+			*environmentContainer.Name,
+			*environmentContainer.Properties.LatestVersion,
+		)
 
 		deploymentArgs := exec.NewRunArgs("az", "ml",
 			"online-deployment", "create",
-			"--file", yamlFilePath,
+			"--file", deploymentYamlFilePath,
 			"--name", deploymentName,
 			"--endpoint-name", *endpoint.Name,
 			"--all-traffic",
 			"-g", targetResource.ResourceGroupName(),
 			"-w", serviceConfig.Ai.Workspace,
-			"--set", fmt.Sprintf("environment.image=%s", *envVersionResponse.Properties.Image),
+			"--set", fmt.Sprintf("environment=%s", environmentName),
 			"--set", fmt.Sprintf("model=%s", modelName),
 		)
 
-		task.SetProgress(NewServiceProgress("Deploying endpoint"))
+		task.SetProgress(NewServiceProgress("Deploying to endpoint"))
 		_, err = m.commandRunner.Run(ctx, deploymentArgs)
+		if err != nil {
+			task.SetError(err)
+			return
+		}
+
+		deploymentsClient, err := armmachinelearning.NewOnlineDeploymentsClient(
+			m.env.GetSubscriptionId(),
+			credentials,
+			m.armClientOptions,
+		)
+		if err != nil {
+			task.SetError(err)
+			return
+		}
+
+		deploymentResponse, err := deploymentsClient.Get(
+			ctx,
+			targetResource.ResourceGroupName(),
+			serviceConfig.Ai.Workspace,
+			serviceConfig.Ai.Name,
+			deploymentName,
+			nil,
+		)
+		if err != nil {
+			task.SetError(err)
+			return
+		}
 
 		endpoints := []string{
 			fmt.Sprintf("Scoring URI: %s", *endpoint.Properties.ScoringURI),
@@ -220,7 +280,7 @@ func (m *AiEndpoint) Deploy(
 
 		task.SetResult(&ServiceDeployResult{
 			Package:   servicePackage,
-			Details:   endpoint,
+			Details:   &deploymentResponse.OnlineDeployment,
 			Endpoints: endpoints,
 		})
 	})

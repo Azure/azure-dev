@@ -97,13 +97,13 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 // It can be used (after evaluation) to deploy the service to a container app environment.
 func ContainerAppManifestTemplateForProject(
 	manifest *Manifest, projectName string, commandRunner exec.CommandRunner) (string, error) {
-	generator := newInfraGenerator(commandRunner)
+	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return "", err
 	}
 
-	if err := generator.Compile(); err != nil {
+	if err := generator.Compile(commandRunner); err != nil {
 		return "", err
 	}
 
@@ -120,13 +120,13 @@ func ContainerAppManifestTemplateForProject(
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
 func BicepTemplate(manifest *Manifest, commandRunner exec.CommandRunner) (*memfs.FS, error) {
-	generator := newInfraGenerator(commandRunner)
+	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
 	}
 
-	if err := generator.Compile(); err != nil {
+	if err := generator.Compile(commandRunner); err != nil {
 		return nil, err
 	}
 
@@ -153,8 +153,8 @@ func BicepTemplate(manifest *Manifest, commandRunner exec.CommandRunner) (*memfs
 
 // Inputs returns a map of fully qualified input names (as the dotted pair of resource name and input name) to information
 // about the input for every input across all resources in the manifest.
-func Inputs(manifest *Manifest, commandRunner exec.CommandRunner) (map[string]Input, error) {
-	generator := newInfraGenerator(commandRunner)
+func Inputs(manifest *Manifest) (map[string]Input, error) {
+	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
@@ -193,13 +193,13 @@ func GenerateProjectArtifacts(
 		return nil, err
 	}
 
-	generator := newInfraGenerator(commandRunner)
+	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
 	}
 
-	if err := generator.Compile(); err != nil {
+	if err := generator.Compile(commandRunner); err != nil {
 		return nil, err
 	}
 
@@ -270,10 +270,9 @@ type infraGenerator struct {
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
-	commandRunner                exec.CommandRunner
 }
 
-func newInfraGenerator(commandRunner exec.CommandRunner) *infraGenerator {
+func newInfraGenerator() *infraGenerator {
 	return &infraGenerator{
 		bicepContext: genBicepTemplateContext{
 			AppInsights:                     make(map[string]genAppInsight),
@@ -299,7 +298,6 @@ func newInfraGenerator(commandRunner exec.CommandRunner) *infraGenerator {
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
 		inputs:                       make(map[string]genInput),
-		commandRunner:                commandRunner,
 	}
 }
 
@@ -934,7 +932,7 @@ var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required
 // infrastructure.
-func (b *infraGenerator) Compile() error {
+func (b *infraGenerator) Compile(commandRunner exec.CommandRunner) error {
 	for name, container := range b.containers {
 		cs := genContainerApp{
 			Image:   container.Image,
@@ -999,7 +997,7 @@ func (b *infraGenerator) Compile() error {
 			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
 		}
 
-		dotnetCli := dotnet.NewDotNetCli(b.commandRunner)
+		dotnetCli := dotnet.NewDotNetCli(commandRunner)
 		port, err := dotnetCli.GetTargetPort(context.Background(), project.Path, "Release")
 		if err != nil {
 			return fmt.Errorf("getting dotnet port failed: %w", err)

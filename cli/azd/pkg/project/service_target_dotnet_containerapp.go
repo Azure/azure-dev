@@ -216,7 +216,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				return
 			}
 
-			requiredInputs, err := apphost.Inputs(serviceConfig.DotNetContainerApp.Manifest, at.commandRunner)
+			requiredInputs, err := apphost.Inputs(serviceConfig.DotNetContainerApp.Manifest)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed to get required inputs: %w", err))
 			}

@@ -110,7 +110,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
 
-	inputs, err := apphost.Inputs(manifest, ai.commandRunner)
+	inputs, err := apphost.Inputs(manifest)
 	if err != nil {
 		return nil, fmt.Errorf("getting inputs from manifest: %w", err)
 	}

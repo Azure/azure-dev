@@ -51,10 +51,11 @@ type genContainer struct {
 }
 
 type genDockerfile struct {
-	Path     string
-	Context  string
-	Env      map[string]string
-	Bindings map[string]*Binding
+	Path      string
+	Context   string
+	Env       map[string]string
+	Bindings  map[string]*Binding
+	BuildArgs map[string]string
 }
 
 type genProject struct {

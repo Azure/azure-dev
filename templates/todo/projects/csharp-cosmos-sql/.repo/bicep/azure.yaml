@@ -3,14 +3,17 @@
 name: todo-csharp-cosmos-sql
 metadata:
   template: todo-csharp-cosmos-sql@0.0.1-beta
+workflows:
+  up: 
+    steps:
+      - azd: provision
+      - azd: deploy
 services:
   web:
     project: ../../web/vite-react-fluent
     dist: dist
     language: js
     host: appservice
-    # Do not hold the package output, for deploy, during azd up.
-    noCache: true
     hooks:
       # Creates a temporary `.env.local` file for the build command. Vite will automatically use it during build.
       # The expected/required values are mapped to the infrastructure outputs.

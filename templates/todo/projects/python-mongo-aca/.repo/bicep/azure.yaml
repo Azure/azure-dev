@@ -3,38 +3,16 @@
 name: todo-python-mongo-aca
 metadata:
   template: todo-python-mongo-aca@0.0.1-beta
+workflows:
+  up: 
+    steps:
+      - azd: provision
+      - azd: deploy
 services:
   web:
     project: ../../web/vite-react-fluent
     language: js
     host: containerapp
-    docker:
-      # Setting an static tag for the docker image will allow us to re-build it before deploying.
-      # This strategy workarounds the `azd up` order, where package is called before provision, and the image created by package is used by deploy.
-      # If the tag is not static, calling package from a hook would produce a new unique image, which would be ignored by deploy.
-      # For static-web-applications, package must happen after provision.
-      tag: 'todo-python-mongo-aca/${AZURE_ENV_NAME}:azd-deploy'
-    hooks:
-      # This hook creates a temporary `.env.local` file for the build command. Vite will automatically use it during docker image creation.
-      # The values are mapped to the infrastructure outputs.
-      # .env.local is ignored by git.
-      # see: https://vitejs.dev/guide/env-and-mode
-      # Note: dotenv must be a project dependency for this to work. See package.json.
-      # Note: the docker/tag setting must be static (see above).
-      predeploy:
-        windows:
-          shell: pwsh
-          run: 'echo "VITE_API_BASE_URL=\"$env:API_BASE_URL\"" > .env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$env:APPLICATIONINSIGHTS_CONNECTION_STRING\"" >> .env.local ; azd package'
-        posix:
-          shell: sh
-          run: 'echo VITE_API_BASE_URL=\"$API_BASE_URL\" > .env.local && echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> .env.local && azd package'
-      postdeploy:
-        windows:
-          shell: pwsh
-          run: 'rm .env.local'
-        posix:
-          shell: sh
-          run: 'rm .env.local'
   api:
     project: ../../api/python
     language: python

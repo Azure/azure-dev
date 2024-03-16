@@ -3,34 +3,17 @@
 name: todo-nodejs-mongo-aks
 metadata:
   template: todo-nodejs-mongo-aks@0.0.1-beta
+workflows:
+  up: 
+    steps:
+      - azd: provision
+      - azd: deploy
 services:
   web:
     project: ../../web/vite-react-fluent
     dist: dist
     language: js
     host: aks
-    # Do not hold the package output, for deploy, during azd up.
-    noCache: true
-    hooks:
-      # Creates a temporary `.env.local` file for the build command. Vite will automatically use it during build.
-      # The expected/required values are mapped to the infrastructure outputs.
-      # .env.local is ignored by git, so it will not be committed if, for any reason, if deployment fails.
-      # see: https://vitejs.dev/guide/env-and-mode
-      # Note: Notice that dotenv must be a project dependency for this to work. See package.json.
-      predeploy:
-        windows:
-          shell: pwsh
-          run: 'echo "VITE_API_BASE_URL=\"$env:API_BASE_URL\"" > .env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$env:APPLICATIONINSIGHTS_CONNECTION_STRING\"" >> .env.local'
-        posix:
-          shell: sh
-          run: 'echo VITE_API_BASE_URL=\"$API_BASE_URL\" > .env.local && echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> .env.local'    
-      postdeploy:
-        windows:
-          shell: pwsh
-          run: azd env set REACT_APP_WEB_BASE_URL $env:SERVICE_WEB_ENDPOINT_URL
-        posix:
-          shell: sh
-          run: azd env set REACT_APP_WEB_BASE_URL ${SERVICE_WEB_ENDPOINT_URL}
   api:
     project: ../../api/js
     language: js

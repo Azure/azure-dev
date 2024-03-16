@@ -10,7 +10,7 @@ workflows:
       - azd: deploy
 services:
   web:
-    project: ../../web/vite-react-fluent
+    project: ../../web/react-fluent
     dist: dist
     language: js
     host: staticwebapp

@@ -24,6 +24,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	tm "github.com/buger/goterm"
+	"github.com/mattn/go-isatty"
 	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
 	"go.uber.org/atomic"
@@ -123,7 +125,9 @@ type AskerConsole struct {
 	previewer *progressLog
 
 	currentIndent *atomic.String
-	consoleWidth  *atomic.Int32
+	// consoleWidth is the width of the underlying console window. The value is updated as the window resized. Nil when
+	// isTerminal is false.
+	consoleWidth *atomic.Int32
 	// holds the last 2 bytes written by message or messageUX. This is used to detect when there is already an empty
 	// line (\n\n)
 	last2Byte [2]byte
@@ -236,7 +240,7 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 }
 
 func (c *AskerConsole) println(ctx context.Context, msg string) {
-	if c.spinner.Status() == yacspin.SpinnerRunning {
+	if c.IsSpinnerInteractive() && c.spinner.Status() == yacspin.SpinnerRunning {
 		c.StopSpinner(ctx, "", Step)
 		// default non-format
 		fmt.Fprintln(c.writer, msg)
@@ -295,6 +299,14 @@ type spinnerLine struct {
 }
 
 func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
+	if !c.isTerminal {
+		return spinnerLine{
+			Prefix:  indent,
+			CharSet: spinnerNoTerminalCharSet,
+			Message: title,
+		}
+	}
+
 	spinnerLen := len(indent) + len(spinnerCharSet[0]) + 1 // adding one for the empty space before the message
 	width := int(c.consoleWidth.Load())
 
@@ -342,43 +354,27 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 
 	indentPrefix := c.getIndent(format)
 	line := c.spinnerLine(title, indentPrefix)
+
+	_ = c.spinner.Pause()
 	c.spinner.Message(line.Message)
 	_ = c.spinner.CharSet(line.CharSet)
 	c.spinner.Prefix(line.Prefix)
+	_ = c.spinner.Unpause()
 
-	_ = c.spinner.Start()
+	if c.spinner.Status() == yacspin.SpinnerStopped {
+		// While it is indeed safe to call Start regardless of whether the spinner is running,
+		// calling Start may result in an additional line of output being written in non-tty scenarios
+		_ = c.spinner.Start()
+	}
 	c.spinnerLineMu.Unlock()
 }
 
-// spinnerTerminalMode determines the appropriate terminal mode for the spinner based on the current environment,
-// taking into account of environment variables that can control the terminal mode behavior.
+// spinnerTerminalMode determines the appropriate terminal mode.
 func spinnerTerminalMode(isTerminal bool) yacspin.TerminalMode {
 	nonInteractiveMode := yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
 	if !isTerminal {
 		return nonInteractiveMode
 	}
-
-	// User override to force non-TTY behavior
-	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
-		return nonInteractiveMode
-	}
-
-	// By default, detect if we are running on CI and force no TTY mode if we are.
-	// Allow for an override if this is not desired.
-	shouldDetectCI := true
-	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
-		skip, err := strconv.ParseBool(strVal)
-		if err != nil {
-			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
-		} else if skip {
-			shouldDetectCI = false
-		}
-	}
-
-	if shouldDetectCI && resource.IsRunningOnCI() {
-		return nonInteractiveMode
-	}
-
 	termMode := yacspin.ForceTTYMode
 	if os.Getenv("TERM") == "dumb" {
 		termMode |= yacspin.ForceDumbTerminalMode
@@ -394,6 +390,8 @@ var spinnerCharSet []string = []string{
 }
 
 var spinnerShortCharSet []string = []string{".", "..", "..."}
+
+var spinnerNoTerminalCharSet []string = []string{""}
 
 func setIndentation(spaces int) string {
 	bytes := make([]byte, spaces)
@@ -429,8 +427,12 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 		lastMessage = c.getStopChar(format) + " " + lastMessage
 	}
 
-	c.spinner.StopMessage(lastMessage)
 	_ = c.spinner.Stop()
+	if lastMessage != "" {
+		// Avoid using StopMessage() as it may result in an extra Message line print in non-tty scenarios
+		fmt.Fprintln(c.writer, lastMessage)
+	}
+
 	c.spinnerLineMu.Unlock()
 }
 
@@ -461,8 +463,15 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 
 func promptFromOptions(options ConsoleOptions) survey.Prompt {
 	if options.IsPassword {
+		// different than survey.Input, survey.Password doest not reset the line before rendering the question
+		// see password implementation: https://github.com/AlecAivazis/survey/blob/master/password.go#L51
+		// and input: https://github.com/AlecAivazis/survey/blob/master/input.go#L141
+		// by calling .Render(), the line is reset, cleaning any current message or spinner.
+		tm.Print(tm.ResetLine(""))
+		tm.Flush()
 		return &survey.Password{
 			Message: options.Message,
+			Help:    options.Help,
 		}
 	}
 
@@ -602,7 +611,8 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 	return c.handles
 }
 
-func getConsoleWidth() int {
+// consoleWidth the number of columns in the active console window
+func consoleWidth() int {
 	width, _ := consolesize.GetConsoleSize()
 	return width
 }
@@ -623,10 +633,10 @@ func (c *AskerConsole) handleResize(width int) {
 func watchTerminalResize(c *AskerConsole) {
 	if runtime.GOOS == "windows" {
 		go func() {
-			prevWidth := getConsoleWidth()
+			prevWidth := consoleWidth()
 			for {
 				time.Sleep(time.Millisecond * 250)
-				width := getConsoleWidth()
+				width := consoleWidth()
 
 				if prevWidth != width {
 					c.handleResize(width)
@@ -641,7 +651,7 @@ func watchTerminalResize(c *AskerConsole) {
 		signal.Notify(signalChan, SIGWINCH)
 		go func() {
 			for range signalChan {
-				c.handleResize(getConsoleWidth())
+				c.handleResize(consoleWidth())
 			}
 		}()
 	}
@@ -660,38 +670,87 @@ func watchTerminalInterrupt(c *AskerConsole) {
 	}()
 }
 
-// Creates a new console with the specified writer, handles and formatter.
-func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
+// Writers that back the underlying console.
+type Writers struct {
+	// The writer to write output to.
+	Output io.Writer
+
+	// The writer to write spinner output to. If nil, the spinner will write to Output.
+	Spinner io.Writer
+}
+
+// Creates a new console with the specified writers, handles and formatter.
+func NewConsole(
+	noPrompt bool,
+	isTerminal bool,
+	writers Writers,
+	handles ConsoleHandles,
+	formatter output.Formatter) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	c := &AskerConsole{
 		asker:         asker,
 		handles:       handles,
-		defaultWriter: w,
-		writer:        w,
+		defaultWriter: writers.Output,
+		writer:        writers.Output,
 		formatter:     formatter,
 		isTerminal:    isTerminal,
-		consoleWidth:  atomic.NewInt32(int32(getConsoleWidth())),
 		currentIndent: atomic.NewString(""),
 		noPrompt:      noPrompt,
 	}
 
+	if writers.Spinner == nil {
+		writers.Spinner = writers.Output
+	}
+
 	spinnerConfig := yacspin.Config{
 		Frequency:    200 * time.Millisecond,
-		Writer:       c.writer,
+		Writer:       writers.Spinner,
 		Suffix:       " ",
 		TerminalMode: spinnerTerminalMode(isTerminal),
-		CharSet:      spinnerCharSet,
 	}
+	if isTerminal {
+		spinnerConfig.CharSet = spinnerCharSet
+	} else {
+		spinnerConfig.CharSet = spinnerNoTerminalCharSet
+	}
+
 	c.spinner, _ = yacspin.New(spinnerConfig)
 	c.spinnerTerminalMode = spinnerConfig.TerminalMode
-
 	if isTerminal {
+		c.consoleWidth = atomic.NewInt32(int32(consoleWidth()))
 		watchTerminalResize(c)
 		watchTerminalInterrupt(c)
 	}
 
 	return c
+}
+
+// IsTerminal returns true if the given file descriptors are attached to a terminal,
+// taking into account of environment variables that force TTY behavior.
+func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
+	// User override to force non-TTY behavior
+	if ok, _ := strconv.ParseBool(os.Getenv("AZD_DEBUG_FORCE_NO_TTY")); ok {
+		return false
+	}
+
+	// By default, detect if we are running on CI and force no TTY mode if we are.
+	// Allow for an override if this is not desired.
+	shouldDetectCI := true
+	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
+		skip, err := strconv.ParseBool(strVal)
+		if err != nil {
+			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
+		} else if skip {
+			shouldDetectCI = false
+		}
+	}
+
+	if shouldDetectCI && resource.IsRunningOnCI() {
+		return false
+	}
+
+	return isatty.IsTerminal(stdoutFd) && isatty.IsTerminal(stdinFd)
 }
 
 func GetStepResultFormat(result error) SpinnerUxType {

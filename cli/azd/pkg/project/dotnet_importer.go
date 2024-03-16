@@ -37,11 +37,18 @@ type DotNetImporter struct {
 	// operation and it is expensive to generate. We should consider if this is the correct location for the cache or if
 	// it should be in some higher level component. Right now the lifetime issues are not too large of a deal, since
 	// `azd` processes are short lived.
-	cache   map[string]*apphost.Manifest
+	cache   map[manifestCacheKey]*apphost.Manifest
 	cacheMu sync.Mutex
 
 	hostCheck   map[string]hostCheckResult
 	hostCheckMu sync.Mutex
+}
+
+// manifestCacheKey is the key we use when caching manifests. It is a combination of the project path and the
+// DOTNET_ENVIRONMENT value (which can influence manifest generation)
+type manifestCacheKey struct {
+	projectPath       string
+	dotnetEnvironment string
 }
 
 func NewDotNetImporter(
@@ -55,7 +62,7 @@ func NewDotNetImporter(
 		console:        console,
 		lazyEnv:        lazyEnv,
 		lazyEnvManager: lazyEnvManager,
-		cache:          make(map[string]*apphost.Manifest),
+		cache:          make(map[manifestCacheKey]*apphost.Manifest),
 		hostCheck:      make(map[string]hostCheckResult),
 	}
 }
@@ -89,7 +96,7 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bo
 }
 
 func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *ServiceConfig) (*Infra, error) {
-	manifest, err := ai.readManifest(ctx, svcConfig)
+	manifest, err := ai.ReadManifestEnsureExposedServices(ctx, svcConfig)
 	if err != nil {
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
@@ -97,11 +104,6 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 	files, err := apphost.BicepTemplate(manifest)
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
-	}
-
-	inputs, err := apphost.Inputs(manifest)
-	if err != nil {
-		return nil, fmt.Errorf("getting inputs from manifest: %w", err)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "azd-infra")
@@ -138,9 +140,8 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		Options: provisioning.Options{
 			Provider: provisioning.Bicep,
 			Path:     tmpDir,
-			Module:   "main",
+			Module:   DefaultModule,
 		},
-		Inputs:     inputs,
 		cleanupDir: tmpDir,
 	}, nil
 }
@@ -150,7 +151,7 @@ func (ai *DotNetImporter) Services(
 ) (map[string]*ServiceConfig, error) {
 	services := make(map[string]*ServiceConfig)
 
-	manifest, err := ai.readManifest(ctx, svcConfig)
+	manifest, err := ai.ReadManifestEnsureExposedServices(ctx, svcConfig)
 	if err != nil {
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
@@ -228,7 +229,7 @@ func (ai *DotNetImporter) Services(
 func (ai *DotNetImporter) SynthAllInfrastructure(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
-	manifest, err := ai.readManifest(ctx, svcConfig)
+	manifest, err := ai.ReadManifestEnsureExposedServices(ctx, svcConfig)
 	if err != nil {
 		return nil, fmt.Errorf("generating apphost manifest: %w", err)
 	}
@@ -266,6 +267,13 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return nil, err
 	}
 
+	// Use canonical paths for Rel comparison due to absolute paths provided by ManifestFromAppHost
+	// being possibly symlinked paths.
+	root, err := filepath.EvalSymlinks(p.Path)
+	if err != nil {
+		return nil, err
+	}
+
 	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
@@ -275,7 +283,12 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}
 
-		projectRelPath, err := filepath.Rel(p.Path, path)
+		normalPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return err
+		}
+
+		projectRelPath, err := filepath.Rel(root, normalPath)
 		if err != nil {
 			return err
 		}
@@ -290,13 +303,13 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	}
 
 	for name, path := range apphost.ProjectPaths(manifest) {
-		if writeManifestForResource(name, path) != nil {
+		if err := writeManifestForResource(name, path); err != nil {
 			return nil, err
 		}
 	}
 
 	for name, docker := range apphost.Dockerfiles(manifest) {
-		if writeManifestForResource(name, docker.Path) != nil {
+		if err := writeManifestForResource(name, docker.Path); err != nil {
 			return nil, err
 		}
 	}
@@ -304,22 +317,46 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	return generatedFS, nil
 }
 
-// readManifest reads the manifest for the given app host service, and caches the result. It also reads the value of
-// the `services.<name>.config.exposedServices` property from the environment and sets the `External` property on
-// each binding for the exposed services. If this key does not exist in the config for the environment, the user
-// is prompted to select which services should be exposed. This can happen after an environment is created with
-// `azd env new`.
-func (ai *DotNetImporter) readManifest(ctx context.Context, svcConfig *ServiceConfig) (*apphost.Manifest, error) {
+// ReadManifest reads the manifest for the given app host service, and caches the result.
+func (ai *DotNetImporter) ReadManifest(ctx context.Context, svcConfig *ServiceConfig) (*apphost.Manifest, error) {
 	ai.cacheMu.Lock()
 	defer ai.cacheMu.Unlock()
 
-	if cached, has := ai.cache[svcConfig.Path()]; has {
+	var dotnetEnv string
+
+	if env, err := ai.lazyEnv.GetValue(); err == nil {
+		dotnetEnv = env.Getenv("DOTNET_ENVIRONMENT")
+	}
+
+	cacheKey := manifestCacheKey{
+		projectPath:       svcConfig.Path(),
+		dotnetEnvironment: dotnetEnv,
+	}
+
+	if cached, has := ai.cache[cacheKey]; has {
 		return cached, nil
 	}
 
 	ai.console.ShowSpinner(ctx, "Analyzing Aspire Application (this might take a moment...)", input.Step)
-	manifest, err := apphost.ManifestFromAppHost(ctx, svcConfig.Path(), ai.dotnetCli)
+	manifest, err := apphost.ManifestFromAppHost(ctx, svcConfig.Path(), ai.dotnetCli, dotnetEnv)
 	ai.console.StopSpinner(ctx, "", input.Step)
+	if err != nil {
+		return nil, err
+	}
+
+	ai.cache[cacheKey] = manifest
+	return manifest, nil
+}
+
+// ReadManifestEnsureExposedServices calls ReadManifest. It also reads the value of
+// the `services.<name>.config.exposedServices` property from the environment and sets the `External` property on
+// each binding for the exposed services. If this key does not exist in the config for the environment, the user
+// is prompted to select which services should be exposed. This can happen after an environment is created with
+// `azd env new`.
+func (ai *DotNetImporter) ReadManifestEnsureExposedServices(
+	ctx context.Context,
+	svcConfig *ServiceConfig) (*apphost.Manifest, error) {
+	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -380,6 +417,5 @@ func (ai *DotNetImporter) readManifest(ctx context.Context, svcConfig *ServiceCo
 		log.Printf("unexpected error fetching environment: %s, exposed services may not be correct", err)
 	}
 
-	ai.cache[svcConfig.Path()] = manifest
 	return manifest, nil
 }

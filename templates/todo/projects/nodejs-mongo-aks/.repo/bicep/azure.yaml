@@ -27,10 +27,10 @@ services:
       postdeploy:
         windows:
           shell: pwsh
-          run: 'azd env set REACT_APP_WEB_BASE_URL ${SERVICE_WEB_ENDPOINT_URL} ; rm .env.local'
+          run: azd env set REACT_APP_WEB_BASE_URL $env:SERVICE_WEB_ENDPOINT_URL
         posix:
           shell: sh
-          run: 'azd env set REACT_APP_WEB_BASE_URL ${SERVICE_WEB_ENDPOINT_URL} && rm .env.local'
+          run: azd env set REACT_APP_WEB_BASE_URL ${SERVICE_WEB_ENDPOINT_URL}
   api:
     project: ../../api/js
     language: js
@@ -40,5 +40,9 @@ services:
         relativePath: api
     hooks:
       postdeploy:
-        shell: sh
-        run: azd env set REACT_APP_API_BASE_URL ${SERVICE_API_ENDPOINT_URL}
+        windows:
+          shell: pwsh
+          run: azd env set REACT_APP_API_BASE_URL $env:SERVICE_API_ENDPOINT_URL
+        posix:
+          shell: sh
+          run: azd env set REACT_APP_API_BASE_URL ${SERVICE_API_ENDPOINT_URL}

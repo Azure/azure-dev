@@ -20,15 +20,11 @@ func TestZipDeploy(t *testing.T) {
 		registerDeployMocks(mockContext)
 		registerPollingMocks(mockContext)
 
-		options := NewClientOptionsBuilder().
-			WithTransport(mockContext.HttpClient).
-			BuildArmClientOptions()
-
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options)
+		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
-		poller, err := client.BeginDeploy(*mockContext.Context, "APP_NAME", zipFile)
+		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.NotNil(t, poller)
 		require.NoError(t, err)
 
@@ -45,15 +41,11 @@ func TestZipDeploy(t *testing.T) {
 		registerDeployMocks(mockContext)
 		registerPollingErrorMocks(mockContext)
 
-		options := NewClientOptionsBuilder().
-			WithTransport(mockContext.HttpClient).
-			BuildArmClientOptions()
-
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options)
+		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
-		poller, err := client.BeginDeploy(*mockContext.Context, "APP_NAME", zipFile)
+		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.NotNil(t, poller)
 		require.NoError(t, err)
 
@@ -69,15 +61,11 @@ func TestZipDeploy(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerConflictMocks(mockContext)
 
-		options := NewClientOptionsBuilder().
-			WithTransport(mockContext.HttpClient).
-			BuildArmClientOptions()
-
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options)
+		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
-		poller, err := client.BeginDeploy(*mockContext.Context, "APP_NAME", zipFile)
+		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.Nil(t, poller)
 		require.Error(t, err)
 	})
@@ -98,7 +86,7 @@ func registerDeployMocks(mockContext *mocks.MockContext) {
 		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/api/zipdeploy")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		response, _ := mocks.CreateEmptyHttpResponse(request, http.StatusAccepted)
-		response.Header.Set("Location", "http://myapp.scm.azurewebsites.net/deployments/latest")
+		response.Header.Set("Location", "https://myapp.scm.azurewebsites.net/deployments/latest")
 
 		return response, nil
 	})

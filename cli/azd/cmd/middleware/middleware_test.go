@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +18,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 		runLog := []string{}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 
 		_ = middlewareRunner.Use("test", func() Middleware {
 			return &testMiddleware{
@@ -56,7 +55,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 		runLog := []string{}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 
 		_ = middlewareRunner.Use("test", func() Middleware {
 			return &testMiddleware{
@@ -86,7 +85,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 
 	t.Run("multiple middleware components", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 		runLog := []string{}
 
 		_ = middlewareRunner.Use("A", func() Middleware {
@@ -128,7 +127,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 
 	t.Run("context propagated to action", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 
 		key := cxtKey{}
 
@@ -155,25 +154,6 @@ func Test_Middleware_RunAction(t *testing.T) {
 		require.Nil(t, result)
 		require.NoError(t, err)
 	})
-}
-
-func Test_Middleware_RunChildAction(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
-	runLog := []string{}
-
-	action, actionRan := createAction(&runLog)
-	runOptions := &Options{Name: "test"}
-
-	require.False(t, runOptions.IsChildAction())
-	result, err := middlewareRunner.RunChildAction(*mockContext.Context, runOptions, action)
-
-	// Executing RunChildAction sets a marker on the options that this is a child action
-	require.True(t, runOptions.IsChildAction())
-
-	require.NotNil(t, result)
-	require.NoError(t, err)
-	require.True(t, *actionRan)
 }
 
 func createAction(runLog *[]string) (actions.Action, *bool) {

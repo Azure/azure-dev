@@ -9,13 +9,12 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 )
@@ -74,21 +73,22 @@ type AdService interface {
 
 type adService struct {
 	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
 	clientCache        map[string]*graphsdk.GraphClient
+	armClientOptions   *arm.ClientOptions
+	coreClientOptions  *azcore.ClientOptions
 }
 
 // Creates a new instance of the AdService
 func NewAdService(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
+	armClientOptions *arm.ClientOptions,
+	coreClientOptions *azcore.ClientOptions,
 ) AdService {
 	return &adService{
 		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
 		clientCache:        map[string]*graphsdk.GraphClient{},
+		armClientOptions:   armClientOptions,
+		coreClientOptions:  coreClientOptions,
 	}
 }
 
@@ -580,8 +580,7 @@ func (ad *adService) createRoleDefinitionsClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildArmClientOptions()
-	client, err := armauthorization.NewRoleDefinitionsClient(credential, options)
+	client, err := armauthorization.NewRoleDefinitionsClient(credential, ad.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
 	}
@@ -599,8 +598,7 @@ func (ad *adService) createRoleAssignmentsClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildArmClientOptions()
-	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, credential, options)
+	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, credential, ad.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Assignments client: %w", err)
 	}
@@ -622,8 +620,7 @@ func (ad *adService) getOrCreateGraphClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildCoreClientOptions()
-	client, err := graphsdk.NewGraphClient(credential, options)
+	client, err := graphsdk.NewGraphClient(credential, ad.coreClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating Graph Users client: %w", err)
 	}

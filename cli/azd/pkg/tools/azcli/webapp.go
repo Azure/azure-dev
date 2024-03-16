@@ -20,6 +20,22 @@ func (cli *azCli) GetAppServiceProperties(
 	resourceGroup string,
 	appName string,
 ) (*AzCliAppServiceProperties, error) {
+	webApp, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AzCliAppServiceProperties{
+		HostNames: []string{*webApp.Properties.DefaultHostName},
+	}, nil
+}
+
+func (cli *azCli) appService(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) (*armappservice.WebAppsClientGetResponse, error) {
 	client, err := cli.createWebAppsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -30,9 +46,33 @@ func (cli *azCli) GetAppServiceProperties(
 		return nil, fmt.Errorf("failed retrieving webapp properties: %w", err)
 	}
 
-	return &AzCliAppServiceProperties{
-		HostNames: []string{*webApp.Properties.DefaultHostName},
-	}, nil
+	return &webApp, nil
+}
+
+func (cli *azCli) appServiceRepositoryHost(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) (string, error) {
+	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
+	if err != nil {
+		return "", err
+	}
+
+	hostName := ""
+	for _, item := range app.Properties.HostNameSSLStates {
+		if *item.HostType == armappservice.HostTypeRepository {
+			hostName = *item.Name
+			break
+		}
+	}
+
+	if hostName == "" {
+		return "", fmt.Errorf("failed to find host name for webapp %s", appName)
+	}
+
+	return hostName, nil
 }
 
 func (cli *azCli) DeployAppServiceZip(
@@ -42,12 +82,17 @@ func (cli *azCli) DeployAppServiceZip(
 	appName string,
 	deployZipFile io.Reader,
 ) (*string, error) {
-	client, err := cli.createZipDeployClient(ctx, subscriptionId)
+	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, err
 	}
 
-	response, err := client.Deploy(ctx, appName, deployZipFile)
+	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := client.Deploy(ctx, deployZipFile)
 	if err != nil {
 		return nil, err
 	}
@@ -61,8 +106,7 @@ func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string
 		return nil, err
 	}
 
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappservice.NewWebAppsClient(subscriptionId, credential, options)
+	client, err := armappservice.NewWebAppsClient(subscriptionId, credential, cli.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating WebApps client: %w", err)
 	}
@@ -70,14 +114,17 @@ func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string
 	return client, nil
 }
 
-func (cli *azCli) createZipDeployClient(ctx context.Context, subscriptionId string) (*azsdk.ZipDeployClient, error) {
+func (cli *azCli) createZipDeployClient(
+	ctx context.Context,
+	subscriptionId string,
+	hostName string,
+) (*azsdk.ZipDeployClient, error) {
 	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := azsdk.NewZipDeployClient(subscriptionId, credential, options)
+	client, err := azsdk.NewZipDeployClient(hostName, credential, cli.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating WebApps client: %w", err)
 	}

@@ -13,6 +13,9 @@
     },
     "useAPIM": {
       "value": "${USE_APIM=false}"
+    },
+    "apimSku": {
+      "value": "${APIM_SKU=Consumption}"
     }
   }
 }

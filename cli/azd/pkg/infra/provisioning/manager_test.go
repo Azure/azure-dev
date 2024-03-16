@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -213,13 +214,13 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
-	mockContext.Container.RegisterSingleton(func() environment.Manager {
+	mockContext.Container.MustRegisterSingleton(func() environment.Manager {
 		return envManager
 	})
 
-	mockContext.Container.RegisterSingleton(prompt.NewDefaultPrompter)
-	_ = mockContext.Container.RegisterNamedTransient(string(provisioning.Test), test.NewTestProvider)
-	mockContext.Container.RegisterSingleton(func() account.Manager {
+	mockContext.Container.MustRegisterSingleton(prompt.NewDefaultPrompter)
+	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test), test.NewTestProvider)
+	mockContext.Container.MustRegisterSingleton(func() account.Manager {
 		return &mockaccount.MockAccountManager{
 			Subscriptions: []account.Subscription{
 				{
@@ -236,15 +237,22 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 			},
 		}
 	})
-	mockContext.Container.RegisterSingleton(func() *environment.Environment {
+	mockContext.Container.MustRegisterSingleton(func() *environment.Environment {
 		return env
 	})
-	mockContext.Container.RegisterSingleton(func() azcli.AzCli {
+	mockContext.Container.MustRegisterSingleton(func() azcli.AzCli {
 		return mockazcli.NewAzCliFromMockContext(mockContext)
 	})
 
-	mockContext.Container.RegisterSingleton(func() clock.Clock {
+	mockContext.Container.MustRegisterSingleton(func() clock.Clock {
 		return clock.NewMock()
+	})
+
+	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
+		return cloud.AzurePublic()
+	})
+	mockContext.Container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {
+		return cloud.PortalUrlBase
 	})
 }
 

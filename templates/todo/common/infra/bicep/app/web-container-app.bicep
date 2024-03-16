@@ -4,6 +4,7 @@ param tags object = {}
 
 param identityName string
 param containerAppsEnvironmentName string
+param containerRegistryHostSuffix string
 param containerRegistryName string
 param serviceName string = 'web'
 param exists bool
@@ -24,6 +25,21 @@ module app '../../../../../common/infra/bicep/core/host/container-app-upsert.bic
     exists: exists
     containerAppsEnvironmentName: containerAppsEnvironmentName
     containerRegistryName: containerRegistryName
+    containerRegistryHostSuffix: containerRegistryHostSuffix
+    env: [
+      {
+        name: 'REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING'
+        value: applicationInsights.properties.ConnectionString
+      }
+      {
+        name: 'REACT_APP_API_BASE_URL'
+        value: apiBaseUrl
+      }
+      {
+        name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+        value: applicationInsights.properties.ConnectionString
+      }
+    ]
     targetPort: 80
   }
 }

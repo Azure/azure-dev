@@ -37,6 +37,7 @@ func sanitizeContainerAppTokenExchange(i *cassette.Interaction) error {
 
 func sanitizeContainerAppListSecrets(i *cassette.Interaction) error {
 	if i.Request.Method == "POST" &&
+		// TODO: Pull from config
 		i.Request.Host == "management.azure.com" &&
 		strings.Contains(i.Request.URL, "/Microsoft.App/containerApps") &&
 		strings.Contains(i.Request.URL, "/listSecrets") {
@@ -48,6 +49,15 @@ func sanitizeContainerAppListSecrets(i *cassette.Interaction) error {
 
 		for i := range body.Value {
 			if body.Value[i].Name != nil {
+				if body.Value[i].Value != nil {
+					val := *body.Value[i].Value
+					// Redis requirepass. Sanitize the password, remove other config.
+					if strings.Contains(val, "requirepass ") {
+						body.Value[i].Value = convert.RefOf("requirepass SANITIZED")
+					}
+					continue
+				}
+
 				body.Value[i].Value = convert.RefOf("SANITIZED")
 			}
 		}
@@ -65,6 +75,7 @@ func sanitizeContainerAppListSecrets(i *cassette.Interaction) error {
 
 func sanitizeContainerAppUpdate(i *cassette.Interaction) error {
 	if i.Request.Method == "PATCH" || i.Request.Method == "POST" &&
+		// TODO: Pull this from config
 		i.Request.Host == "management.azure.com" &&
 		strings.Contains(i.Request.URL, "/Microsoft.App/containerApps/") {
 		split := strings.Split(i.Request.URL, "/Microsoft.App/containerApps/")

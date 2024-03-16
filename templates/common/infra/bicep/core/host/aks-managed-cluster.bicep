@@ -12,7 +12,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 @description('Kubernetes Version')
-param kubernetesVersion string = '1.25.5'
+param kubernetesVersion string = '1.27.7'
 
 @description('Whether RBAC is enabled for local accounts')
 param enableRbac bool = true
@@ -29,7 +29,7 @@ param enableAad bool = false
 param enableAzureRbac bool = false
 
 @description('The Tenant ID associated to the Azure Active Directory')
-param aadTenantId string = ''
+param aadTenantId string = tenant().tenantId
 
 @description('The load balancer SKU to use for ingress into the AKS cluster')
 @allowed([ 'basic', 'standard' ])
@@ -62,7 +62,7 @@ param systemPoolConfig object
 @description('The DNS prefix to associate with the AKS cluster')
 param dnsPrefix string = ''
 
-resource aks 'Microsoft.ContainerService/managedClusters@2023-03-02-preview' = {
+resource aks 'Microsoft.ContainerService/managedClusters@2023-10-02-preview' = {
   name: name
   location: location
   tags: tags

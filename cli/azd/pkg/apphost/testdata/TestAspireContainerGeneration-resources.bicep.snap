@@ -3,10 +3,9 @@ param location string = resourceGroup().location
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
-
 @secure()
-@metadata({azd: {type: 'inputs' }})
 param inputs object
+
 
 var resourceToken = uniqueString(resourceGroup().id)
 
@@ -54,6 +53,16 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         targetPort: 3306
         transport: 'tcp'
       }
+      secrets: [
+        {
+          name: 'mysql-root-password'
+          value: inputs.mysqlabstract.password
+        }
+        {
+          name: 'specialchar'
+          value: inputs.mysqlabstract['pas-sw-ord']
+        }    
+      ]
     }
     template: {
       containers: [
@@ -63,18 +72,28 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
           env: [
             {
               name: 'MYSQL_ROOT_PASSWORD'
-              value: '${inputs['mysqlabstract']['password']}'
+              secretRef: 'mysql-root-password'
+            }
+            {
+              name: 'SpecialChar'
+              secretRef: 'specialchar'
             }
           ]
         }
       ]
+      scale: {
+        minReplicas: 1
+      }
     }
   }
   tags: union(tags, {'aspire-resource-name': 'mysqlabstract'})
 }
 
-
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
+output MANAGED_IDENTITY_NAME string = managedIdentity.name
+output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
+output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspace.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
 

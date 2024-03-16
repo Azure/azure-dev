@@ -9,10 +9,32 @@ param environmentName string
 @minLength(1)
 @description('The location used for all deployed resources')
 param location string
-
+{{ if .RequiresPrincipalId }}
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+{{ end }}
+{{- if gt (len .AutoGenInputs) 0 }}
 @secure()
-@metadata({azd: {type: 'inputs' }})
+@metadata({azd: {
+  type: 'inputs'
+  autoGenerate: {
+{{- range $resource, $params := .AutoGenInputs }}
+    {{$resource}}: { 
+{{- range $p := $params }}
+      {{$p.Name }}: { len: {{$p.Len }} }
+{{- end}}
+    }
+{{- end}}
+  }}
+})
 param inputs object
+{{ end }}
+{{- range $param, $value := .InputParameters }}
+{{- if $value.Secret }}
+@secure()
+{{- end}}
+param {{dashToUnderscore $param}} {{$value.Type}}
+{{- end}}
 
 var tags = {
   'azd-env-name': environmentName
@@ -30,11 +52,31 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
+{{- if gt (len .AutoGenInputs) 0 }}
     inputs: inputs
+{{- end }}
+{{- if .RequiresPrincipalId }}
+    principalId: principalId
+{{- end }}
   }
 }
-
+{{ range $name, $module := .BicepModules }}
+module {{dashToUnderscore $name}} '{{ fixBackSlash $module.Path }}' = {
+  name: '{{$name}}'
+  scope: rg
+  params: {
+    location: location
+{{- range $param, $value := $module.Params}}
+    {{$param}}: {{$value}}
+{{- end}}
+  }
+}
+{{- end }}
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
+output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
+{{if .HasLogAnalyticsWorkspace -}}
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
+{{end -}}
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
@@ -63,7 +105,16 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = resources.ou
 {{range $name, $value := .KeyVaults -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
 {{end -}}
-{{range $name, $value := .CosmosDbAccounts -}}
+{{range $name, $value := .AppConfigs -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
 {{end -}}
+{{range $name, $value := .CosmosDbAccounts -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
+{{end -}}
+{{range $name, $value := .SqlServers -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
+{{end -}}
+{{- range $param, $value := .OutputParameters}}
+output {{dashToUnderscore $param}} {{$value.Type}} = {{dashToUnderscore $value.Value}}
+{{- end -}}
 {{ end}}

@@ -20,7 +20,7 @@ services:
       # .env.local is ignored by git, so it will not be committed if, for any reason, if deployment fails.
       # see: https://vitejs.dev/guide/env-and-mode
       # Note: Notice that dotenv must be a project dependency for this to work. See package.json.
-      predeploy:
+      prepackage:
         windows:
           shell: pwsh
           run: 'echo "VITE_API_BASE_URL=\"$env:API_BASE_URL\"" > .env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$env:APPLICATIONINSIGHTS_CONNECTION_STRING\"" >> .env.local'

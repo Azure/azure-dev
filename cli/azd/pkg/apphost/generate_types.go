@@ -12,6 +12,9 @@ type genCosmosAccount struct {
 	Databases []string
 }
 
+type genOpenAiAccount struct {
+}
+
 type genServiceBus struct {
 	Queues []string
 	Topics []string
@@ -131,6 +134,7 @@ type genBicepTemplateContext struct {
 	OutputParameters                map[string]genOutputParameter
 	OutputSecretParameters          map[string]genOutputParameter
 	BicepModules                    map[string]genBicepModules
+	OpenAiAccounts                  map[string]genOpenAiAccount
 }
 
 type genContainerAppManifestTemplateContext struct {

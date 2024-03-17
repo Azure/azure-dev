@@ -298,6 +298,7 @@ func newInfraGenerator() *infraGenerator {
 			BicepModules:                    make(map[string]genBicepModules),
 			OutputParameters:                make(map[string]genOutputParameter),
 			OutputSecretParameters:          make(map[string]genOutputParameter),
+			OpenAiAccounts:                  make(map[string]genOpenAiAccount),
 		},
 		containers:                   make(map[string]genContainer),
 		dapr:                         make(map[string]genDapr),
@@ -422,6 +423,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addAppConfig(name)
 		case "azure.storage.v0":
 			b.addStorageAccount(name)
+		case "azure.openai.account.v0":
+			b.addOpenAiAccount(name)
 		case "azure.storage.blob.v0":
 			b.addStorageBlob(*comp.Parent, name)
 		case "azure.storage.queue.v0":
@@ -716,6 +719,12 @@ func (b *infraGenerator) addStorageAccount(name string) {
 	// blobs, queues or tables.
 	if _, exists := b.bicepContext.StorageAccounts[name]; !exists {
 		b.bicepContext.StorageAccounts[name] = genStorageAccount{}
+	}
+}
+
+func (b *infraGenerator) addOpenAiAccount(name string) {
+	if _, exists := b.bicepContext.OpenAiAccounts[name]; !exists {
+		b.bicepContext.OpenAiAccounts[name] = genOpenAiAccount{}
 	}
 }
 
@@ -1280,7 +1289,8 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	case targetType == "azure.keyvault.v0" ||
 		targetType == "azure.storage.blob.v0" ||
 		targetType == "azure.storage.queue.v0" ||
-		targetType == "azure.storage.table.v0":
+		targetType == "azure.storage.table.v0" ||
+		targetType == "azure.openai.account.v0":
 		switch prop {
 		case "connectionString":
 			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource)), nil

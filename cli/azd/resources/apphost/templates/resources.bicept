@@ -367,6 +367,30 @@ resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignme
   }
 }
 {{- end}}
+{{- range $name, $value := .OpenAiAccounts}}
+resource {{bicepName $name}} 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+  name: replace('{{$name}}-${resourceToken}', '-', '')
+  location: location
+  kind: 'OpenAI'
+  sku: {
+    name: 'S0'
+  }
+  properties: {
+    customSubDomainName: replace('{{$name}}-${resourceToken}', '-', '')
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: {{bicepName $name}}
+  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a001fd3d-188f-4b5d-821b-7da978bf7442'))
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a001fd3d-188f-4b5d-821b-7da978bf7442')
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+{{- end}}
 {{range $name, $value := .CosmosDbAccounts}}
 resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
   name: replace('{{$name}}-${resourceToken}', '-', '')
@@ -473,6 +497,9 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
 {{range $name, $value := .AppConfigs -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.endpoint
+{{end -}}
+{{range $name, $value := .OpenAiAccounts -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.endpoint
 {{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}

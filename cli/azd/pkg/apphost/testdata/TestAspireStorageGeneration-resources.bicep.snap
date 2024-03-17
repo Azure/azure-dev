@@ -130,6 +130,28 @@ resource photosQueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@202
 }
 
 
+resource openai 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+  name: replace('openai-${resourceToken}', '-', '')
+  location: location
+  kind: 'OpenAI'
+  sku: {
+    name: 'S0'
+  }
+  properties: {
+    customSubDomainName: replace('openai-${resourceToken}', '-', '')
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource openaiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: openai
+  name: guid(openai.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a001fd3d-188f-4b5d-821b-7da978bf7442'))
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a001fd3d-188f-4b5d-821b-7da978bf7442')
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 output MANAGED_IDENTITY_NAME string = managedIdentity.name
 output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
@@ -143,4 +165,5 @@ output SERVICE_BINDING_BLOBS_ENDPOINT string = mydata.properties.primaryEndpoint
 output SERVICE_BINDING_QUEUES_ENDPOINT string = mydata.properties.primaryEndpoints.queue
 output SERVICE_BINDING_PHOTOBLOBS_ENDPOINT string = photos.properties.primaryEndpoints.blob
 output SERVICE_BINDING_PHOTOQUEUES_ENDPOINT string = photos.properties.primaryEndpoints.queue
+output SERVICE_BINDING_OPENAI_ENDPOINT string = openai.properties.endpoint
 

@@ -20,7 +20,7 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/cli/azd",
-            "args": "provision -C C:\\Users\\houk\\Desktop\\msws\\AZD_SC_AppConfig_Demo\\todo-python-mongo-aca-after",
+            "args": "${input:cliArgs}",
             "console": "integratedTerminal",
         }
     ],

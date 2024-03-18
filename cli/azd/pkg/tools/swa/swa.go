@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -45,10 +46,9 @@ type swaCli struct {
 }
 
 func (cli *swaCli) Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error {
+	fullAppFolderPath := filepath.Join(cwd, appFolderPath)
 	_, err := cli.executeCommand(ctx,
-		cwd, "build",
-		"--app-location", appFolderPath,
-		"--output-location", outputRelativeFolderPath)
+		fullAppFolderPath, "build")
 
 	if err != nil {
 		return fmt.Errorf("swa build: %w", err)
@@ -77,15 +77,14 @@ func (cli *swaCli) Deploy(
 		appName,
 		environment,
 	)
-
+	
+	fullAppFolderPath := filepath.Join(cwd, appFolderPath)
 	res, err := cli.executeCommand(ctx,
-		cwd, "deploy",
+		fullAppFolderPath, "deploy",
 		"--tenant-id", tenantId,
 		"--subscription-id", subscriptionId,
 		"--resource-group", resourceGroup,
 		"--app-name", appName,
-		"--app-location", appFolderPath,
-		"--output-location", outputRelativeFolderPath,
 		"--env", environment,
 		"--no-use-keychain",
 		"--deployment-token", deploymentToken)

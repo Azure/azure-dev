@@ -232,76 +232,79 @@ func (p *Prompter) PromptParameters(
 		paramPath := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, param.Id)
 		paramValue, exists := env.Config.Get(paramPath)
 
+		if exists {
+			paramValues[param.Id] = paramValue
+			continue
+		}
+
 		// Only prompt for parameter values when it has not already been set in the environment configuration
-		if !exists {
-			if param.Name == "environmentName" {
-				paramValues[param.Id] = env.Name()
+		if param.Id == "environmentName" {
+			paramValues[param.Id] = env.Name()
+			continue
+		}
+
+		// Process repoUrl parameter from defaults and allowed values
+		if param.Id == "repoUrl" {
+			var repoUrlValue string
+			if len(param.Allowed) > 0 {
+				repoUrlValue = param.Allowed[0]
+			} else {
+				value, ok := param.Default.(string)
+				if ok {
+					repoUrlValue = value
+				}
+			}
+
+			if repoUrlValue != "" {
+				paramValues[param.Id] = repoUrlValue
 				continue
 			}
+		}
 
-			// Process repoUrl parameter from defaults and allowed values
-			if param.Name == "repoUrl" {
-				var repoUrlValue string
-				if len(param.Allowed) > 0 {
-					repoUrlValue = param.Allowed[0]
-				} else {
-					value, ok := param.Default.(string)
-					if ok {
-						repoUrlValue = value
-					}
-				}
+		promptOptions := input.ConsoleOptions{
+			DefaultValue: param.Default,
+			Options:      param.Allowed,
+			Message:      fmt.Sprintf("Enter a value for %s", param.Name),
+			Help:         param.Description,
+		}
 
-				if repoUrlValue != "" {
-					paramValues[param.Id] = repoUrlValue
-					continue
-				}
+		switch param.Type {
+		case devcentersdk.ParameterTypeBool:
+			confirmValue, err := p.console.Confirm(ctx, promptOptions)
+			if err != nil {
+				return nil, fmt.Errorf("failed to prompt for %s: %w", param.Name, err)
 			}
-
-			promptOptions := input.ConsoleOptions{
-				DefaultValue: param.Default,
-				Options:      param.Allowed,
-				Message:      fmt.Sprintf("Enter a value for %s", param.Name),
-				Help:         param.Description,
-			}
-
-			switch param.Type {
-			case devcentersdk.ParameterTypeBool:
-				confirmValue, err := p.console.Confirm(ctx, promptOptions)
+			paramValue = confirmValue
+		case devcentersdk.ParameterTypeString:
+			if param.Allowed != nil && len(param.Allowed) > 0 {
+				selectedIndex, err := p.console.Select(ctx, promptOptions)
 				if err != nil {
 					return nil, fmt.Errorf("failed to prompt for %s: %w", param.Name, err)
 				}
-				paramValue = confirmValue
-			case devcentersdk.ParameterTypeString:
-				if param.Allowed != nil && len(param.Allowed) > 0 {
-					selectedIndex, err := p.console.Select(ctx, promptOptions)
-					if err != nil {
-						return nil, fmt.Errorf("failed to prompt for %s: %w", param.Name, err)
-					}
 
-					paramValue = param.Allowed[selectedIndex]
-				} else {
-					promptValue, err := p.console.Prompt(ctx, promptOptions)
-					if err != nil {
-						return nil, err
-					}
-
-					paramValue = promptValue
-				}
-
-			case devcentersdk.ParameterTypeInt:
+				paramValue = param.Allowed[selectedIndex]
+			} else {
 				promptValue, err := p.console.Prompt(ctx, promptOptions)
 				if err != nil {
-					return nil, fmt.Errorf("failed to prompt for %s: %w", param.Name, err)
+					return nil, err
 				}
 
-				numValue, err := strconv.Atoi(promptValue)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert %s to int: %w", param.Name, err)
-				}
-				paramValue = numValue
-			default:
-				return nil, fmt.Errorf("failed to prompt for %s, unsupported parameter type: %s", param.Name, param.Type)
+				paramValue = promptValue
 			}
+
+		case devcentersdk.ParameterTypeInt:
+			promptValue, err := p.console.Prompt(ctx, promptOptions)
+			if err != nil {
+				return nil, fmt.Errorf("failed to prompt for %s: %w", param.Name, err)
+			}
+
+			numValue, err := strconv.Atoi(promptValue)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert %s to int: %w", param.Name, err)
+			}
+			paramValue = numValue
+		default:
+			return nil, fmt.Errorf("failed to prompt for %s, unsupported parameter type: %s", param.Name, param.Type)
 		}
 
 		paramValues[param.Id] = paramValue

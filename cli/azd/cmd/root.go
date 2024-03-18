@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -21,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -29,7 +29,13 @@ import (
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation
 // middlewareChain - nil, except for running unit tests
-func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
+// rootContainer - The IoC container to use for registering and resolving dependencies. If nil is provided, a new
+// container empty will be created.
+func NewRootCmd(
+	staticHelp bool,
+	middlewareChain []*actions.MiddlewareRegistration,
+	rootContainer *ioc.NestedContainer,
+) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
@@ -135,6 +141,14 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 		},
 	})
 
+	root.Add("vs-server", &actions.ActionDescriptorOptions{
+		Command:        newVsServerCmd(),
+		FlagsResolver:  newVsServerFlags,
+		ActionResolver: newVsServerAction,
+		OutputFormats:  []output.Format{output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
 	root.Add("show", &actions.ActionDescriptorOptions{
 		Command:        newShowCmd(),
 		FlagsResolver:  newShowFlags,
@@ -207,13 +221,13 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 
 	root.
 		Add("provision", &actions.ActionDescriptorOptions{
-			Command:        newProvisionCmd(),
-			FlagsResolver:  newProvisionFlags,
-			ActionResolver: newProvisionAction,
+			Command:        cmd.NewProvisionCmd(),
+			FlagsResolver:  cmd.NewProvisionFlags,
+			ActionResolver: cmd.NewProvisionAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 			HelpOptions: actions.ActionHelpOptions{
-				Description: getCmdProvisionHelpDescription,
+				Description: cmd.GetCmdProvisionHelpDescription,
 				Footer:      getCmdHelpDefaultFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
@@ -247,14 +261,14 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 
 	root.
 		Add("deploy", &actions.ActionDescriptorOptions{
-			Command:        newDeployCmd(),
-			FlagsResolver:  newDeployFlags,
-			ActionResolver: newDeployAction,
+			Command:        cmd.NewDeployCmd(),
+			FlagsResolver:  cmd.NewDeployFlags,
+			ActionResolver: cmd.NewDeployAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 			HelpOptions: actions.ActionHelpOptions{
-				Description: getCmdDeployHelpDescription,
-				Footer:      getCmdDeployHelpFooter,
+				Description: cmd.GetCmdDeployHelpDescription,
+				Footer:      cmd.GetCmdDeployHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupManage,
@@ -323,19 +337,26 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 			return !descriptor.Options.DisableTelemetry
 		})
 
-	// Register common dependencies for the IoC container
-	ioc.RegisterInstance(ioc.Global, ctx)
-	registerCommonDependencies(ioc.Global)
+	// Register common dependencies for the IoC rootContainer
+	if rootContainer == nil {
+		rootContainer = ioc.NewNestedContainer(nil)
+	}
+	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
+	registerCommonDependencies(rootContainer)
 
 	// Initialize the platform specific components for the IoC container
 	// Only container resolution errors will return an error
 	// Invalid configurations will fall back to default platform
-	if _, err := platform.Initialize(ioc.Global, azd.PlatformKindDefault); err != nil {
+	if _, err := platform.Initialize(rootContainer, azd.PlatformKindDefault); err != nil {
 		panic(err)
 	}
 
 	// Compose the hierarchy of action descriptions into cobra commands
-	cobraBuilder := NewCobraBuilder(ioc.Global)
+	var cobraBuilder *CobraBuilder
+	if err := rootContainer.Resolve(&cobraBuilder); err != nil {
+		panic(err)
+	}
+
 	cmd, err := cobraBuilder.BuildCommand(root)
 
 	if err != nil {

@@ -1,0 +1,63 @@
+﻿@page "/azuretables"
+@using Azure
+@using Azure.Data.Tables
+@rendermode InteractiveServer
+@inject Azure.Data.Tables.TableServiceClient tableServiceClient
+
+<PageTitle>Azure Tables</PageTitle>
+
+@if (requestLogs == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Row Key</th>
+                <th>Endpoint</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var request in requestLogs)
+            {
+                <tr>
+                    <td>@request.RowKey</td>
+                    <td>@request.Endpoint</td>
+                    <td>@request.Timestamp</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    List<RequestLog> requestLogs = new List<RequestLog>();
+
+    protected override void OnInitialized()
+    {
+        var tblClient = tableServiceClient.GetTableClient("person");
+        tblClient.CreateIfNotExists();
+
+        tblClient.AddEntity<RequestLog>(new RequestLog
+            {
+                PartitionKey = "1",
+                RowKey = Guid.NewGuid().ToString(),
+                Timestamp = DateTimeOffset.Now,
+                Endpoint = "/azuretables"
+            });
+
+        requestLogs = tblClient.Query<RequestLog>().ToList();
+    }
+
+    public class RequestLog : ITableEntity
+    {
+        public string PartitionKey { get; set; }
+        public string RowKey { get; set; }
+        public DateTimeOffset? Timestamp { get; set; }
+        public ETag ETag { get; set; }
+        public string Endpoint { get; set; }
+    }
+}

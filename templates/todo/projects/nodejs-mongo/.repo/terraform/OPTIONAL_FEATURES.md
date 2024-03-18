@@ -9,6 +9,13 @@ To use APIM on this template you just need to set the environment variable with 
 ```bash
 azd env set USE_APIM true
 ```
+
+The default SKU is `Consumption` but you can change it by setting the `APIM_SKU` environment variable:
+
+```bash
+azd env set APIM_SKU Standard
+```
+
 And then execute `azd up` to provision and deploy. No worries if you already did `azd up`! You can set the `USE_APIM` environment variable at anytime and then just repeat the `azd up` command to run the incremental deployment.
 
 Here's the high level architecture diagram when APIM is used:

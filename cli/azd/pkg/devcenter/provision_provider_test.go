@@ -9,7 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -436,29 +436,27 @@ func newProvisionProviderForTest(
 	env *environment.Environment,
 	manager Manager,
 ) provisioning.Provider {
-	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
-		BuildCoreClientOptions()
-
-	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
-		BuildArmClientOptions()
-
-	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, armOptions)
+	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, mockContext.ArmClientOptions)
 	require.NoError(t, err)
 
 	devCenterClient, err := devcentersdk.NewDevCenterClient(
 		mockContext.Credentials,
-		coreOptions,
+		mockContext.CoreClientOptions,
 		resourceGraphClient,
+		cloud.AzurePublic(),
 	)
 
 	require.NoError(t, err)
 
-	azCli := azcli.NewAzCli(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(
+		mockContext.SubscriptionCredentialProvider,
+		mockContext.HttpClient,
+		azcli.NewAzCliArgs{},
+		mockContext.ArmClientOptions,
+	)
 	resourceManager := infra.NewAzureResourceManager(
 		azCli,
-		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient),
+		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
 	)
 
 	if manager == nil {

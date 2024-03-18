@@ -1,0 +1,98 @@
+{
+  "resources": {
+    "cache": {
+      "type": "container.v0",
+      "connectionString": "{cache.bindings.tcp.host}:{cache.bindings.tcp.port}",
+      "image": "redis:7.2.4",
+      "bindings": {
+        "tcp": {
+          "scheme": "tcp",
+          "protocol": "tcp",
+          "transport": "tcp",
+          "containerPort": 6379
+        }
+      }
+    },
+    "pubsub": {
+      "type": "container.v0",
+      "connectionString": "{pubsub.bindings.tcp.host}:{pubsub.bindings.tcp.port}",
+      "image": "redis:7.2.4",
+      "bindings": {
+        "tcp": {
+          "scheme": "tcp",
+          "protocol": "tcp",
+          "transport": "tcp",
+          "containerPort": 6379
+        }
+      }
+    },
+    "storage": {
+      "type": "azure.bicep.v0",
+      "path": "aspire.hosting.azure.bicep.storage.bicep",
+      "params": {
+        "principalId": "",
+        "principalType": "",
+        "storageName": "storage"
+      }
+    },
+    "requestlog": {
+      "type": "value.v0",
+      "connectionString": "{storage.outputs.tableEndpoint}"
+    },
+    "markdown": {
+      "type": "value.v0",
+      "connectionString": "{storage.outputs.blobEndpoint}"
+    },
+    "messages": {
+      "type": "value.v0",
+      "connectionString": "{storage.outputs.queueEndpoint}"
+    },
+    "apiservice": {
+      "type": "project.v0",
+      "path": "../AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj",
+      "env": {
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true"
+      },
+      "bindings": {
+        "http": {
+          "scheme": "http",
+          "protocol": "tcp",
+          "transport": "http"
+        },
+        "https": {
+          "scheme": "https",
+          "protocol": "tcp",
+          "transport": "http"
+        }
+      }
+    },
+    "webfrontend": {
+      "type": "project.v0",
+      "path": "../AspireAzdTests.Web/AspireAzdTests.Web.csproj",
+      "env": {
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
+        "ConnectionStrings__cache": "{cache.connectionString}",
+        "ConnectionStrings__pubsub": "{pubsub.connectionString}",
+        "ConnectionStrings__requestlog": "{requestlog.connectionString}",
+        "ConnectionStrings__markdown": "{markdown.connectionString}",
+        "ConnectionStrings__messages": "{messages.connectionString}",
+        "services__apiservice__0": "{apiservice.bindings.http.url}",
+        "services__apiservice__1": "{apiservice.bindings.https.url}"
+      },
+      "bindings": {
+        "http": {
+          "scheme": "http",
+          "protocol": "tcp",
+          "transport": "http"
+        },
+        "https": {
+          "scheme": "https",
+          "protocol": "tcp",
+          "transport": "http"
+        }
+      }
+    }
+  }
+}

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -411,21 +411,14 @@ func Test_Prompt_Parameters(t *testing.T) {
 }
 
 func newPrompterForTest(t *testing.T, mockContext *mocks.MockContext, config *Config, manager Manager) *Prompter {
-	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
-		BuildCoreClientOptions()
-
-	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
-		BuildArmClientOptions()
-
-	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, armOptions)
+	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, mockContext.ArmClientOptions)
 	require.NoError(t, err)
 
 	devCenterClient, err := devcentersdk.NewDevCenterClient(
 		mockContext.Credentials,
-		coreOptions,
+		mockContext.CoreClientOptions,
 		resourceGraphClient,
+		cloud.AzurePublic(),
 	)
 
 	require.NoError(t, err)

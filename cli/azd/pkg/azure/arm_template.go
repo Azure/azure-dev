@@ -84,11 +84,21 @@ type ArmTemplateParameterDefinition struct {
 }
 
 func (d *ArmTemplateParameterDefinition) Secure() bool {
-	return d.Type == "secureObject" || d.Type == "secureString"
+	lowerCase := strings.ToLower(d.Type)
+	return lowerCase == "secureobject" || lowerCase == "securestring"
+}
+
+type AutoGenInput struct {
+	Len int `json:"len"`
 }
 
 type AzdMetadata struct {
 	Type *string `json:"type,omitempty"`
+	// AutoGenerate defines a two levels map of auto generation inputs.
+	// The first level key is used to group many parameters at second level.
+	// A typical use case for this is having the first level key as an Azure resource name to created and the second level
+	// key for each of the auto-generated values required to create the resource.
+	AutoGenerate map[string]map[string]AutoGenInput `json:"autoGenerate,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/spf13/cobra"
@@ -45,6 +46,7 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 
 type loginFlags struct {
 	onlyCheckStatus        bool
+	browser                bool
 	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
@@ -150,6 +152,9 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"redirect-port",
 		0,
 		"Choose the port to be used as part of the redirect URI during interactive login.")
+	if oneauth.Supported {
+		local.BoolVar(&lf.browser, "browser", false, "Authenticate in a web browser instead of an integrated dialog.")
+	}
 
 	lf.global = global
 }
@@ -170,8 +175,8 @@ func newLoginCmd(parent string) *cobra.Command {
 
 		When run without any arguments, log in interactively using a browser. To log in using a device code, pass
 		--use-device-code.
-		
-		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
+
+		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret,
 		--client-certificate, or --federated-credential-provider.
 		`),
 		Annotations: map[string]string{
@@ -245,7 +250,7 @@ const cLoginSuccessMessage = "Logged in to Azure."
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(la.flags.scopes) == 0 {
-		la.flags.scopes = auth.LoginScopes
+		la.flags.scopes = la.authManager.LoginScopes()
 	}
 
 	if la.annotations[loginCmdParentAnnotation] == "" {
@@ -462,48 +467,47 @@ func (la *loginAction) login(ctx context.Context) error {
 		//
 		// TODO(ellismg): We may want instead to call some explicit `/login` endpoint on the external auth system instead
 		// of abusing the token request in this manner. This would allow the other end to provide a more tailored experience.
-		if _, err := la.verifyLoggedIn(ctx); err != nil {
-			return err
-		}
-	} else {
-		useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
-		if err != nil {
-			return err
-		}
-
-		if useDevCode {
-			_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, func(url string) error {
-				if !la.flags.global.NoPrompt {
-					la.console.Message(ctx, "Then press enter and continue to log in from your browser...")
-					la.console.WaitForEnter()
-					openWithDefaultBrowser(ctx, la.console, url)
-					return nil
-				}
-				// For no-prompt, Just provide instructions without trying to open the browser
-				// If manual browsing is enabled, we don't want to open the browser automatically
-				la.console.Message(ctx, fmt.Sprintf("Then, go to: %s", url))
-				return nil
-			})
-			if err != nil {
-				return fmt.Errorf("logging in: %w", err)
-			}
-		} else {
-			_, err := la.authManager.LoginInteractive(ctx, la.flags.scopes,
-				&auth.LoginInteractiveOptions{
-					TenantID:     la.flags.tenantID,
-					RedirectPort: la.flags.redirectPort,
-					WithOpenUrl: func(url string) error {
-						openWithDefaultBrowser(ctx, la.console, url)
-						return nil
-					},
-				})
-			if err != nil {
-				return fmt.Errorf("logging in: %w", err)
-			}
-		}
+		_, err := la.verifyLoggedIn(ctx)
+		return err
 	}
 
-	return nil
+	useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
+	if err != nil {
+		return err
+	}
+	if useDevCode {
+		_, err = la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, func(url string) error {
+			if !la.flags.global.NoPrompt {
+				la.console.Message(ctx, "Then press enter and continue to log in from your browser...")
+				la.console.WaitForEnter()
+				openWithDefaultBrowser(ctx, la.console, url)
+				return nil
+			}
+			// For no-prompt, Just provide instructions without trying to open the browser
+			// If manual browsing is enabled, we don't want to open the browser automatically
+			la.console.Message(ctx, fmt.Sprintf("Then, go to: %s", url))
+			return nil
+		})
+		return err
+	}
+
+	if oneauth.Supported && !la.flags.browser {
+		err = la.authManager.LoginWithOneAuth(ctx, la.flags.tenantID, la.flags.scopes)
+	} else {
+		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes,
+			&auth.LoginInteractiveOptions{
+				TenantID:     la.flags.tenantID,
+				RedirectPort: la.flags.redirectPort,
+				WithOpenUrl: func(url string) error {
+					openWithDefaultBrowser(ctx, la.console, url)
+					return nil
+				},
+			})
+	}
+	if err != nil {
+		err = fmt.Errorf("logging in: %w", err)
+	}
+	return err
 }
 
 func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.CommandRunner) (bool, error) {

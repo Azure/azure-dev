@@ -34,6 +34,3 @@ type Action interface {
 	// It is currently valid to both return an error and a non-nil ActionResult.
 	Run(ctx context.Context) (*ActionResult, error)
 }
-
-// A function that lazily returns the specified action type T
-type ActionInitializer[T Action] func() (T, error)

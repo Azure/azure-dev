@@ -27,7 +27,7 @@ To troubleshoot any issues, see [troubleshooting](#troubleshooting).
 
 ### Infrastructure configuration
 
-To describe the infrastructure and application and `azure.yaml` was added with the following directory structure:
+To describe the infrastructure and application, an `azure.yaml` was added with the following directory structure:
 
 ```yaml
 - azure.yaml     # azd project configuration

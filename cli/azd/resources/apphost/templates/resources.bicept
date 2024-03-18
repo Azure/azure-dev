@@ -1,13 +1,18 @@
 {{define "resources.bicep" -}}
 @description('The location used for all deployed resources')
 param location string = resourceGroup().location
+{{- if .RequiresPrincipalId }}
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+{{end }}
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
+{{- if gt (len .AutoGenInputs) 0 }}
 @secure()
-@metadata({azd: {type: 'inputs' }})
 param inputs object
+{{end }}
 
 var resourceToken = uniqueString(resourceGroup().id)
 
@@ -116,6 +121,9 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
           name: '{{$value.Type}}'
         }
       ]
+      scale: {
+        minReplicas: 1
+      }
     }
   }
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
@@ -163,13 +171,23 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
       }
 {{- end}}
+{{- if gt (len $value.Secrets) 0 }}
+      secrets: [
+{{- range $sName, $sValue := $value.Secrets}}
+        {
+          name: '{{containerAppSecretName $sName}}'
+          value: {{toDotNotation $sValue}}
+        }
+{{- end}}    
+      ]
+{{- end}}
     }
     template: {
       containers: [
         {
           image: '{{$value.Image}}'
           name: '{{$name}}'
-{{- if $value.Env }}
+{{- if or (gt (len $value.Env) 0) (gt (len $value.Secrets) 0)}}
           env: [
 {{- range $name, $value := $value.Env}}
             {
@@ -177,10 +195,19 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
               value: '{{$value}}'
             }
 {{- end}}
+{{- range $sName, $sValue := $value.Secrets}}
+            {
+              name: '{{$sName}}'
+              secretRef: '{{containerAppSecretName $sName}}'
+            }
+{{- end}}
           ]
 {{- end}}
         }
       ]
+      scale: {
+        minReplicas: 1
+      }
     }
   }
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
@@ -257,8 +284,8 @@ resource {{bicepName $name}}BlobsRoleAssignment 'Microsoft.Authorization/roleAss
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   }
 }
-{{end -}}
 
+{{end -}}
 {{if gt (len $value.Queues) 0 -}}
 resource {{bicepName $name}}QueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88'))
@@ -269,8 +296,8 @@ resource {{bicepName $name}}QueuesRoleAssignment 'Microsoft.Authorization/roleAs
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
   }
 }
-{{end -}}
 
+{{end -}}
 {{if gt (len $value.Tables) 0 -}}
 resource {{bicepName $name}}TablesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'))
@@ -282,7 +309,6 @@ resource {{bicepName $name}}TablesRoleAssignment 'Microsoft.Authorization/roleAs
   }
 }
 {{end -}}
-
 {{end -}}
 {{range $name, $value := .KeyVaults}}
 resource {{bicepName $name}} 'Microsoft.KeyVault/vaults@2023-07-01' = {
@@ -296,7 +322,9 @@ resource {{bicepName $name}} 'Microsoft.KeyVault/vaults@2023-07-01' = {
     tenantId: subscription().tenantId
     enableRbacAuthorization: true
   }
+{{ if not $value.NoTags }}
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
+{{end -}}
 }
 
 resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -308,11 +336,42 @@ resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignme
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483')
   }
 }
-{{- end}}
-{{range $name, $value := .CosmosDbAccounts}}
-resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
+{{ if  $value.ReadAccessPrincipalId }}
+resource {{bicepName $name}}UserReadRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName $name}}.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6'))
+  scope: {{bicepName $name}}
+  properties: {
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+  }
+}
+{{end -}}
+{{end -}}
+{{range $name, $value := .AppConfigs}}
+resource {{bicepName $name}} 'Microsoft.AppConfiguration/configurationStores@2023-03-01'= {
   name: replace('{{$name}}-${resourceToken}', '-', '')
   location: location
+  sku: {
+    name: 'free'
+  }
+}
+
+resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b'))
+  scope: {{bicepName $name}}
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b')
+  }
+}
+{{- end}}
+{{range $name, $value := .CosmosDbAccounts}}
+resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
+  name: replace('{{$name}}-${resourceToken}', '-', '')
+  location: location
+  kind: 'GlobalDocumentDB'
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
   properties: {
     consistencyPolicy: { defaultConsistencyLevel: 'Session' }
@@ -324,29 +383,66 @@ resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' 
     ]
     databaseAccountOfferType: 'Standard'
   }
-}
-// Cosmos DB Account Reader Role
-resource {{bicepName $name}}ReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8')
+{{range $cname := $value.Databases}}
+  resource {{bicepName $cname}} 'sqlDatabases@2023-04-15' = {
+    name: '{{$cname}}'
+    location: location
+    tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
+    properties: {
+      resource: {
+        id: '{{$cname}}'
+      }
+    }
   }
+{{end -}}
 }
-// Cosmos DB Operator
-resource {{bicepName $name}}OperatorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa'))
-  scope: {{bicepName $name}}
+{{end -}}
+
+{{range $name, $value := .SqlServers}}
+resource {{bicepName $name}} 'Microsoft.Sql/servers@2022-05-01-preview' = {
+  name: '{{$name}}-${resourceToken}'
+  location: location
+  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
   properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa')
+    minimalTlsVersion: '1.2'
+    publicNetworkAccess: 'Enabled'
+    administrators: {
+      administratorType: 'ActiveDirectory'
+      azureADOnlyAuthentication: true
+      login: managedIdentity.name
+      principalType: 'User'
+      sid: managedIdentity.properties.principalId
+      tenantId: subscription().tenantId
+    }
   }
+
+resource {{bicepName $name}}Firewall 'firewallRules@2022-05-01-preview' = {
+    name: 'fw-{{$name}}'
+    properties: {
+      startIpAddress: '0.0.0.0'
+      endIpAddress: '255.255.255.255'
+    }
 }
-{{- end}}
+
+  {{range $cname := $value.Databases}}
+  resource {{bicepName $cname}} 'databases@2022-05-01-preview' = {
+  name: '{{$cname}}'
+  location: location
+  sku: {
+    name: 'S0'
+  }
+  tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
+  }
+{{end -}}
+}
+{{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
+output MANAGED_IDENTITY_NAME string = managedIdentity.name
+output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
+{{if .HasLogAnalyticsWorkspace -}}
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
+output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspace.id
+{{end -}}
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id
@@ -374,8 +470,15 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName 
 {{end -}}
 {{range $name, $value := .KeyVaults -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.vaultUri
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
+{{end -}}
+{{range $name, $value := .AppConfigs -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.endpoint
 {{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.documentEndpoint
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
+{{end -}}
+{{range $name, $value := .SqlServers -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
 {{ end}}

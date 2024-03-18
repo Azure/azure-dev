@@ -34,6 +34,7 @@ type Docker interface {
 	) (string, error)
 	Tag(ctx context.Context, cwd string, imageName string, tag string) error
 	Push(ctx context.Context, cwd string, tag string) error
+	Pull(ctx context.Context, imageName string) error
 	Inspect(ctx context.Context, imageName string, format string) (string, error)
 }
 
@@ -149,6 +150,15 @@ func (d *docker) Push(ctx context.Context, cwd string, tag string) error {
 	_, err := d.executeCommand(ctx, cwd, "push", tag)
 	if err != nil {
 		return fmt.Errorf("pushing image: %w", err)
+	}
+
+	return nil
+}
+
+func (d *docker) Pull(ctx context.Context, imageName string) error {
+	_, err := d.executeCommand(ctx, "", "pull", imageName)
+	if err != nil {
+		return fmt.Errorf("pulling image: %w", err)
 	}
 
 	return nil

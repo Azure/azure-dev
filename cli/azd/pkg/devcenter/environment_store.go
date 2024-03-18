@@ -21,6 +21,7 @@ type EnvironmentStore struct {
 	devCenterClient devcentersdk.DevCenterClient
 	prompter        *Prompter
 	manager         Manager
+	local           environment.LocalDataStore
 }
 
 // NewEnvironmentStore creates a new devcenter environment store
@@ -29,12 +30,14 @@ func NewEnvironmentStore(
 	devCenterClient devcentersdk.DevCenterClient,
 	prompter *Prompter,
 	manager Manager,
+	local environment.LocalDataStore,
 ) environment.RemoteDataStore {
 	return &EnvironmentStore{
 		config:          config,
 		devCenterClient: devCenterClient,
 		prompter:        prompter,
 		manager:         manager,
+		local:           local,
 	}
 }
 
@@ -174,7 +177,19 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 // DevCenter doesn't implement any APIs for saving environment configuration / metadata
 // outside of the environment definition itself or the ARM deployment outputs
 func (s *EnvironmentStore) Save(ctx context.Context, env *environment.Environment) error {
-	return nil
+	if s.config.Project != "" {
+		if err := env.Config.Set(DevCenterProjectPath, s.config.Project); err != nil {
+			return err
+		}
+	}
+
+	if s.config.EnvironmentType != "" {
+		if err := env.Config.Set(DevCenterEnvTypePath, s.config.EnvironmentType); err != nil {
+			return err
+		}
+	}
+
+	return s.local.Save(ctx, env)
 }
 
 // matchingEnvironments returns a list of environments matching the configured environment definition

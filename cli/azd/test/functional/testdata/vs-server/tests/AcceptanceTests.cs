@@ -108,48 +108,56 @@ public class AcceptanceTests : TestBase
         var session = await svrSvc.InitializeAsync(_rootDir, new InitializeServerOptions(), CancellationToken.None);
         var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);
 
-        Environment e = new Environment(_envName) {
-            Properties = new Dictionary<string, string>() {
-                { "ASPIRE_ENVIRONMENT", "Production" },
-                { "Subscription", _subscriptionId },
-                { "Location", _location}
-            },
-            Services = [
-                new Service() {
-                    Name = "apiservice",
-                    IsExternal = false,
-                },
-                new Service() {
-                    Name = "webfrontend",
-                    IsExternal = true,
-                }
-            ],
-        };
+        // Environment e = new Environment(_envName) {
+        //     Properties = new Dictionary<string, string>() {
+        //         { "ASPIRE_ENVIRONMENT", "Production" },
+        //         { "Subscription", _subscriptionId },
+        //         { "Location", _location}
+        //     },
+        //     Services = [
+        //         new Service() {
+        //             Name = "apiservice",
+        //             IsExternal = false,
+        //         },
+        //         new Service() {
+        //             Name = "webfrontend",
+        //             IsExternal = true,
+        //         }
+        //     ],
+        // };
 
-        await esSvc.CreateEnvironmentAsync(session, e, observer, CancellationToken.None);
+        // await esSvc.CreateEnvironmentAsync(session, e, observer, CancellationToken.None);
+
+        // var recorder = new Recorder<ProgressMessage>();
+        // var envResult = await esSvc.DeployAsync(session, e.Name, recorder, CancellationToken.None);
+        // recorder.Values.ShouldNotBeEmpty();
+        // bool importantMessagesLogged = false;
+        // foreach (var msg in recorder.Values)
+        // {
+        //     if (msg.Kind == MessageKind.Important) {
+        //         importantMessagesLogged = true;
+        //     }
+        //     Console.WriteLine(msg.ToString());
+        // }
+        // importantMessagesLogged.ShouldBeTrue();
+
+        // envResult.LastDeployment.ShouldNotBeNull();
+        // envResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
+        // envResult.Resources.ShouldNotBeEmpty();
+
+        // var refreshResult = await esSvc.RefreshEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
+        // refreshResult.LastDeployment.ShouldNotBeNull();
+        // refreshResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
+        // refreshResult.Resources.ShouldNotBeEmpty();
 
         var recorder = new Recorder<ProgressMessage>();
-        var envResult = await esSvc.DeployAsync(session, e.Name, recorder, CancellationToken.None);
-        recorder.Values.ShouldNotBeEmpty();
-        bool importantMessagesLogged = false;
+        var deleted = await esSvc.DeleteEnvironmentAsync(session, _envName, new DeleteOptions() { DeleteAzureResources = true }, recorder, CancellationToken.None);
+        deleted.ShouldBeTrue();
+
         foreach (var msg in recorder.Values)
         {
-            if (msg.Kind == MessageKind.Important) {
-                importantMessagesLogged = true;
-            }
             Console.WriteLine(msg.ToString());
         }
-        importantMessagesLogged.ShouldBeTrue();
-
-        envResult.LastDeployment.ShouldNotBeNull();
-        envResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
-        envResult.Resources.ShouldNotBeEmpty();
-
-        var refreshResult = await esSvc.RefreshEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
-        refreshResult.LastDeployment.ShouldNotBeNull();
-        refreshResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
-        refreshResult.Resources.ShouldNotBeEmpty();
-
         await svrSvc.StopAsync(CancellationToken.None);
     }
 

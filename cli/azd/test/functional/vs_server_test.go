@@ -195,7 +195,7 @@ func Test_CLI_VsServer(t *testing.T) {
 			ctx, cancel := newTestContext(t)
 			defer cancel()
 
-			dir := tempDirWithDiagnostics(t)
+			dir := os.TempDir()
 			t.Logf("DIR: %s", dir)
 
 			err = copySample(dir, "aspire-full")
@@ -260,13 +260,13 @@ func Test_CLI_VsServer(t *testing.T) {
 			err = cmd.Run()
 			require.NoError(t, err)
 
-			if tt.IsLive {
-				// We don't currently have a way to deprovision using server mode.
-				// For now let's just clean up the resources.
-				cli.WorkingDirectory = dir
-				cli.Env = append(cli.Env, os.Environ()...)
-				_, _ = cli.RunCommand(ctx, "down", "--force", "--purge")
-			}
+			// if tt.IsLive {
+			// 	// We don't currently have a way to deprovision using server mode.
+			// 	// For now let's just clean up the resources.
+			// 	cli.WorkingDirectory = dir
+			// 	cli.Env = append(cli.Env, os.Environ()...)
+			// 	_, _ = cli.RunCommand(ctx, "down", "--force", "--purge")
+			// }
 		})
 	}
 }

@@ -1,0 +1,79 @@
+version: "1.0"
+tool: dotnet
+interactions:
+    - id: 0
+      args:
+        - publish
+        - /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj
+        - -r
+        - linux-x64
+        - -c
+        - Release
+        - /t:PublishContainer
+        - -p:ContainerImageName=azd-deploy-apiservice-1710780728
+        - -p:ContainerRegistry=acrmoz7uhkt7z2yo.azurecr.io
+      exitCode: 0
+      stdout: |
+        MSBuild version 17.8.3+195e7f5a3 for .NET
+          Determining projects to restore...
+          Restored /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.ServiceDefaults/AspireAzdTests.ServiceDefaults.csproj (in 298 ms).
+          Restored /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj (in 298 ms).
+          AspireAzdTests.ServiceDefaults -> /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.ServiceDefaults/bin/Release/net8.0/AspireAzdTests.ServiceDefaults.dll
+          AspireAzdTests.ApiService -> /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.ApiService/bin/Release/net8.0/linux-x64/AspireAzdTests.ApiService.dll
+          AspireAzdTests.ApiService -> /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.ApiService/bin/Release/net8.0/linux-x64/publish/
+        /Users/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj]
+          Building image 'azd-deploy-apiservice-1710780728' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
+          Uploading layer 'sha256:8a1e25ce7c4f75e372e9884f8f7b1bedcfe4a7a7d452eb4b0a1c7477c9a90345' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploading layer 'sha256:d038975ffc90fa0cf112ccb6208e4a734bfd2ff0aad5502ae102ff34c459ad85' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploading layer 'sha256:4d3bcc6169b1668ece1d9e8252fdcc52f2502d78c6d83e481e2f999dc609c22c' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploading layer 'sha256:d8029d2331ca0c5ce62a6711d68a1d4cd5d06502071c25b067da1a37105a2c47' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Finished uploading layer 'sha256:4d3bcc6169b1668ece1d9e8252fdcc52f2502d78c6d83e481e2f999dc609c22c' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Finished uploading layer 'sha256:d8029d2331ca0c5ce62a6711d68a1d4cd5d06502071c25b067da1a37105a2c47' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Finished uploading layer 'sha256:d038975ffc90fa0cf112ccb6208e4a734bfd2ff0aad5502ae102ff34c459ad85' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Finished uploading layer 'sha256:8a1e25ce7c4f75e372e9884f8f7b1bedcfe4a7a7d452eb4b0a1c7477c9a90345' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploading config to registry at blob 'sha256:640a0de90307de11fb2af7c074ab0da2f5cce33f668f25cc8a952ce6c37a46c1',
+          Uploaded config to registry.
+          Uploading tag 'latest' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploaded tag 'latest' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Pushed image 'azd-deploy-apiservice-1710780728:latest' to registry 'acrmoz7uhkt7z2yo.azurecr.io'.
+      stderr: ""
+    - id: 1
+      args:
+        - publish
+        - /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/AspireAzdTests.Web.csproj
+        - -r
+        - linux-x64
+        - -c
+        - Release
+        - /t:PublishContainer
+        - -p:ContainerImageName=azd-deploy-webfrontend-1710780813
+        - -p:ContainerRegistry=acrmoz7uhkt7z2yo.azurecr.io
+      exitCode: 0
+      stdout: |
+        MSBuild version 17.8.3+195e7f5a3 for .NET
+          Determining projects to restore...
+          Restored /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/AspireAzdTests.Web.csproj (in 339 ms).
+          1 of 2 projects are up-to-date for restore.
+          AspireAzdTests.ServiceDefaults -> /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.ServiceDefaults/bin/Release/net8.0/AspireAzdTests.ServiceDefaults.dll
+        /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/Components/Pages/AzureBlobs.razor(45,12): warning CS8618: Non-nullable field '_html' must contain a non-null value when exiting constructor. Consider declaring the field as nullable. [/private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/Components/Pages/AzureTables.razor(57,23): warning CS8618: Non-nullable property 'PartitionKey' must contain a non-null value when exiting constructor. Consider declaring the property as nullable. [/private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/Components/Pages/AzureTables.razor(58,23): warning CS8618: Non-nullable property 'RowKey' must contain a non-null value when exiting constructor. Consider declaring the property as nullable. [/private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/Components/Pages/AzureTables.razor(61,23): warning CS8618: Non-nullable property 'Endpoint' must contain a non-null value when exiting constructor. Consider declaring the property as nullable. [/private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+          AspireAzdTests.Web -> /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/bin/Release/net8.0/linux-x64/AspireAzdTests.Web.dll
+          AspireAzdTests.Web -> /private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/bin/Release/net8.0/linux-x64/publish/
+        /Users/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/private/var/folders/h2/5h0c91tn2v1cr579ktgk37kc0000gn/T/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+          Building image 'azd-deploy-webfrontend-1710780813' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
+          Uploading layer 'sha256:8a1e25ce7c4f75e372e9884f8f7b1bedcfe4a7a7d452eb4b0a1c7477c9a90345' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploading layer 'sha256:d038975ffc90fa0cf112ccb6208e4a734bfd2ff0aad5502ae102ff34c459ad85' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploading layer 'sha256:4d3bcc6169b1668ece1d9e8252fdcc52f2502d78c6d83e481e2f999dc609c22c' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploading layer 'sha256:fc1e165362e3948b0d5cc6918cb8062ccaf0a39f9ab079aec45ce6a676054c7a' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Finished uploading layer 'sha256:4d3bcc6169b1668ece1d9e8252fdcc52f2502d78c6d83e481e2f999dc609c22c' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Finished uploading layer 'sha256:8a1e25ce7c4f75e372e9884f8f7b1bedcfe4a7a7d452eb4b0a1c7477c9a90345' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Finished uploading layer 'sha256:d038975ffc90fa0cf112ccb6208e4a734bfd2ff0aad5502ae102ff34c459ad85' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Finished uploading layer 'sha256:fc1e165362e3948b0d5cc6918cb8062ccaf0a39f9ab079aec45ce6a676054c7a' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploading config to registry at blob 'sha256:58680da625b1744e0205c24dee6804a00e03ffad5d781f3ecc340db2a2bb8e8d',
+          Uploaded config to registry.
+          Uploading tag 'latest' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Uploaded tag 'latest' to 'acrmoz7uhkt7z2yo.azurecr.io'.
+          Pushed image 'azd-deploy-webfrontend-1710780813:latest' to registry 'acrmoz7uhkt7z2yo.azurecr.io'.
+      stderr: ""

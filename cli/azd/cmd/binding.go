@@ -11,10 +11,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/binding"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -47,12 +47,12 @@ func newBindingCmd() *cobra.Command {
 }
 
 type bindingFlags struct {
-	envFlag
+	internal.EnvFlag
 	global *internal.GlobalCommandOptions
 }
 
 func (f *bindingFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.envFlag.Bind(local, global)
+	f.EnvFlag.Bind(local, global)
 	f.global = global
 }
 
@@ -91,7 +91,7 @@ type bindingAction struct {
 	bindingManager  binding.BindingManager
 	console         input.Console
 	alphaManager    *alpha.FeatureManager
-	azCli           azcli.AzCli
+	kvs             keyvault.KeyVaultService
 }
 
 func newBindingAction(
@@ -103,7 +103,7 @@ func newBindingAction(
 	bindingManager binding.BindingManager,
 	console input.Console,
 	alphaManager *alpha.FeatureManager,
-	azCli azcli.AzCli,
+	kvs keyvault.KeyVaultService,
 ) actions.Action {
 	return &bindingAction{
 		flags:           flags,
@@ -114,7 +114,7 @@ func newBindingAction(
 		bindingManager:  bindingManager,
 		console:         console,
 		alphaManager:    alphaManager,
-		azCli:           azCli,
+		kvs:             kvs,
 	}
 }
 

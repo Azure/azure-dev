@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicelinker/armservicelinker"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -37,18 +36,19 @@ type LinkerManager interface {
 func NewLinkerManager(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
+	armClientOptions *arm.ClientOptions,
 ) LinkerManager {
 	return &linkerManager{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
+		armClientOptions:   armClientOptions,
 	}
 }
 
 type linkerManager struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
-	userAgent          string
+	armClientOptions   *arm.ClientOptions
 }
 
 // Get a service linker resource
@@ -118,8 +118,7 @@ func (sc *linkerManager) createServiceLinkerClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(ctx, sc.httpClient, sc.userAgent).BuildArmClientOptions()
-	clientFactory, err := armservicelinker.NewClientFactory(credential, options)
+	clientFactory, err := armservicelinker.NewClientFactory(credential, sc.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating service linker client: %w", err)
 	}

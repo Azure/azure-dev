@@ -8,7 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 )
 
 // BindingManager exposes operations for managing service bindings in `azure.yaml` file
@@ -36,20 +36,20 @@ type BindingManager interface {
 
 type bindingManager struct {
 	linkerManager LinkerManager
-	azCli         azcli.AzCli
+	kvs           keyvault.KeyVaultService
 	env           *environment.Environment
 	console       input.Console
 }
 
 func NewBindingManager(
 	linkerManager LinkerManager,
-	azCli azcli.AzCli,
+	kvs keyvault.KeyVaultService,
 	env *environment.Environment,
 	console input.Console,
 ) BindingManager {
 	return &bindingManager{
 		linkerManager: linkerManager,
-		azCli:         azCli,
+		kvs:           kvs,
 		env:           env,
 		console:       console,
 	}
@@ -88,7 +88,7 @@ func (bm *bindingManager) CreateBindings(
 ) error {
 	// get binding resource info from .env file, converting binding configs into linker configs
 	linkerConfigs, err := convertBindingsToLinkers(
-		ctx, bm.azCli, subscriptionId, resourceGroupName, bindingSource, bindingConfigs, bm.env.Dotenv())
+		ctx, bm.kvs, subscriptionId, resourceGroupName, bindingSource, bindingConfigs, bm.env.Dotenv())
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (bm *bindingManager) DeleteBindings(
 ) error {
 	// get binding resource info from .env file, converting binding configs to linker configs
 	linkerConfigs, err := convertBindingsToLinkers(
-		ctx, bm.azCli, subscriptionId, resourceGroupName, bindingSource, bindingConfigs, bm.env.Dotenv())
+		ctx, bm.kvs, subscriptionId, resourceGroupName, bindingSource, bindingConfigs, bm.env.Dotenv())
 	if err != nil {
 		return err
 	}
@@ -216,7 +216,7 @@ func validateBindingName(
 // service linker resources
 func convertBindingsToLinkers(
 	ctx context.Context,
-	azCli azcli.AzCli,
+	kvs keyvault.KeyVaultService,
 	subscriptionId string,
 	resourceGroupName string,
 	bindingSource *BindingSource,
@@ -256,7 +256,7 @@ func convertBindingsToLinkers(
 		// improve this in the future.
 		userName, secret := "", ""
 		if TargetSecretInfoSuffix[bindingConfig.TargetType] != nil {
-			userName, secret, err = getTargetSecret(ctx, azCli, subscriptionId, bindingConfig.TargetType,
+			userName, secret, err = getTargetSecret(ctx, kvs, subscriptionId, bindingConfig.TargetType,
 				bindingConfig.TargetResource, env)
 			if err != nil {
 				return linkerConfigs, err
@@ -300,7 +300,7 @@ func getLinkerName(
 // secret specified in the .env file
 func getTargetSecret(
 	ctx context.Context,
-	azCli azcli.AzCli,
+	kvs keyvault.KeyVaultService,
 	subscriptionId string,
 	resourceType TargetResourceType,
 	resourceName string,
@@ -312,7 +312,7 @@ func getTargetSecret(
 	}
 
 	keyvaultName, secretName := secretInfo[1], secretInfo[2]
-	cliSecret, err := azCli.GetKeyVaultSecret(ctx, subscriptionId, keyvaultName, secretName)
+	cliSecret, err := kvs.GetKeyVaultSecret(ctx, subscriptionId, keyvaultName, secretName)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get secret `%s` from keyvault `%s`, please"+
 			" check whether the secret exists or not", keyvaultName, secretName)

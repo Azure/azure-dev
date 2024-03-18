@@ -97,7 +97,7 @@ func TestAspireStorageGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m)
+	files, err := BicepTemplate(m, false)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -139,7 +139,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m)
+	files, err := BicepTemplate(m, false)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -190,7 +190,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 		})
 	}
 
-	files, err := BicepTemplate(m)
+	files, err := BicepTemplate(m, false)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -225,7 +225,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m)
+	files, err := BicepTemplate(m, false)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {

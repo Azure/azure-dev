@@ -133,7 +133,7 @@ func ContainerAppManifestTemplateForProject(
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
+func BicepTemplate(manifest *Manifest, useResourceGroupScope bool) (*memfs.FS, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -163,8 +163,9 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
-		WithMetadataParameters []autoGenInput
-		MainToResourcesParams  []genInput
+		WithMetadataParameters       []autoGenInput
+		MainToResourcesParams        []genInput
+		SubscriptionScopedDeployment bool
 	}
 	var parameters []autoGenInput
 	var mapToResourceParams []genInput
@@ -193,9 +194,10 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		}
 	}
 	context := bicepContext{
-		genBicepTemplateContext: generator.bicepContext,
-		WithMetadataParameters:  parameters,
-		MainToResourcesParams:   mapToResourceParams,
+		genBicepTemplateContext:      generator.bicepContext,
+		WithMetadataParameters:       parameters,
+		MainToResourcesParams:        mapToResourceParams,
+		SubscriptionScopedDeployment: !useResourceGroupScope,
 	}
 	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)

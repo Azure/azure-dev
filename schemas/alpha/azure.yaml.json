@@ -159,6 +159,61 @@
                                 "$ref": "#/definitions/hook"
                             }
                         }
+                    },
+                    "bindings": {
+                        "type": "array",
+                        "title": "Bindings for the service",
+                        "items": {
+                            "type": "object",
+                            "required": ["targetType", "targetResource"],
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "title": "Name of the binding",
+                                    "description": "Optional. The name of the binding. If omitted, the CLI will generate a name for the binding."
+                                },
+                                "targetType": {
+                                    "type": "string",
+                                    "enum": [
+                                        "storage",
+                                        "cosmos",
+                                        "postgresql-flexible",
+                                        "mysql-flexible",
+                                        "sql",
+                                        "redis",
+                                        "redis-enterprise",
+                                        "keyvault",
+                                        "eventhub",
+                                        "appconfig",
+                                        "servicebus",
+                                        "signalr",
+                                        "webpubsub",
+                                        "app-insights"
+                                    ],
+                                    "title": "Target resource type for the binding",
+                                    "description": "The type of the target resource that current service will talk to. (Example: storage)"
+                                },
+                                "targetResource": {
+                                    "type": "string",
+                                    "title": "Target resource name for the binding",
+                                    "description": "The target resource logical name. The CLI will use this name to find the target resource info in the .env file"
+                                },
+                                "storeType": {
+                                    "type": "string",
+                                    "enum": [
+                                        "appconfig"
+                                    ],
+                                    "title": "Store resource type for the binding",
+                                    "description": "Optional. The type of the store resource that the binding infomation will be stored. (Default: appconfig)"  
+                                },
+                                "storeResource": {
+                                    "type": "string",
+                                    "title": "Store resource name for the binding",
+                                    "description": "Optional. The store resource logical name. The CLI will use this name to find the store resource info in the .env file"
+
+                                }
+                            }
+                        }
                     }
                 },
                 "allOf": [
@@ -224,59 +279,6 @@
                             }
                         }
                     }
-                ]
-            }
-        },
-        "bindings": {
-            "type": "array",
-            "title": "...",
-            "description": "...",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "title": "...",
-                        "description": "..."
-                    },
-                    "sourceType": {
-                        "type": "string",
-                        "title": "...",
-                        "description": "..."
-                    },
-                    "sourceResource": {
-                        "type": "string",
-                        "title": "...",
-                        "description": "..."
-                    },
-                    "targetType": {
-                        "type": "string",
-                        "title": "...",
-                        "description": "..."
-                    },
-                    "targetResource": {
-                        "type": "string",
-                        "title": "...",
-                        "description": "..."
-                    },
-                    "storeType": {
-                        "type": "string",
-                        "title": "...",
-                        "description": "..."
-                    },
-                    "storeResource": {
-                        "type": "string",
-                        "title": "...",
-                        "description": "..."
-                    }
-                },
-                "required": [
-                    "sourceType",
-                    "sourceResource",
-                    "targetType",
-                    "targetResource",
-                    "storeType",
-                    "storeResource"
                 ]
             }
         },

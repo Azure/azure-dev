@@ -9,9 +9,10 @@ import (
 type LinkerConfig struct {
 	Name             string
 	SourceResourceId string
-	Scope            string
 	TargetResourceId string
 	StoreResourceId  string
+	DBUserName       string
+	DBSecret         string
 	ClientType       armservicelinker.ClientType
 }
 
@@ -49,5 +50,5 @@ var TargetResourceIdFormats = map[interface{}]string{
 // Resource id formats supported by service linker as binding info store
 var StoreResourceIdFormats = map[interface{}]string{
 	StoreTypeAppConfig: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.AppConfiguration/configurationStores/%s",
-	StoreTypeKeyVault:  "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.KeyVault/vaults/%s",
+	// StoreTypeKeyVault:  "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.KeyVault/vaults/%s",
 }

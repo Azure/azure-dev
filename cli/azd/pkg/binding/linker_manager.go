@@ -135,18 +135,28 @@ func constructLinkerResource(
 	// Fixed to use secret as auth type for azd
 	secretAuthType := armservicelinker.AuthTypeSecret
 	azureResourceType := armservicelinker.TargetServiceTypeAzureResource
+	secretTypeRawValue := armservicelinker.SecretTypeRawValue
 
 	return armservicelinker.LinkerResource{
 		Properties: &armservicelinker.LinkerProperties{
 			AuthInfo: &armservicelinker.SecretAuthInfo{
 				AuthType: &secretAuthType,
+				Name:     &linkerConfig.DBUserName,
+				SecretInfo: &armservicelinker.ValueSecretInfo{
+					SecretType: &secretTypeRawValue,
+					Value:      &linkerConfig.DBSecret,
+				},
 			},
 			TargetService: &armservicelinker.AzureResource{
 				Type: &azureResourceType,
 				ID:   &linkerConfig.TargetResourceId,
 			},
+			ConfigurationInfo: &armservicelinker.ConfigurationInfo{
+				ConfigurationStore: &armservicelinker.ConfigurationStore{
+					AppConfigurationID: &linkerConfig.StoreResourceId,
+				},
+			},
 			ClientType: &linkerConfig.ClientType,
-			Scope:      &linkerConfig.Scope,
 		},
 	}
 }

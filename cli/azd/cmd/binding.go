@@ -4,79 +4,85 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicelinker/armservicelinker"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/binding"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func bindActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	group := root.Add("binding", &actions.ActionDescriptorOptions{
-		Command: &cobra.Command{
-			Use:   "binding",
-			Short: "Manage service bindings.",
-		},
+func bindActions(root *actions.ActionDescriptor) {
+	root.Add("binding", &actions.ActionDescriptorOptions{
+		Command:        newBindingCmd(),
+		FlagsResolver:  newBindingFlags,
+		ActionResolver: newBindingAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdBindingHelpDescription,
+			Footer:      getCmdBindingHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupManage,
 		},
 	})
-
-	group.Add("create", &actions.ActionDescriptorOptions{
-		Command:        newBindingCreateCmd(),
-		FlagsResolver:  newBindingCreateFlags,
-		ActionResolver: newBindingCreateAction,
-	})
-
-	group.Add("delete", &actions.ActionDescriptorOptions{
-		Command:        newBindingDeleteCmd(),
-		FlagsResolver:  newBindingDeleteFlags,
-		ActionResolver: newBindingDeleteAction,
-	})
-
-	return group
 }
 
-func getCmdBindingHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription(
-		"Manage your application bindings. With this command group, you can create, delete"+
-			" or view your application bindings.",
-		[]string{})
-}
-
-func newBindingCreateCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "create",
-		Short: "Create service bindings.",
-		Args:  cobra.MaximumNArgs(1),
+func newBindingCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "binding <service>",
+		Short: "Update bindings for the service.",
 	}
+	cmd.Args = cobra.MaximumNArgs(1)
+
+	return cmd
 }
 
-func newBindingCreateFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *bindingCreateFlags {
-	flags := &bindingCreateFlags{}
+type bindingFlags struct {
+	envFlag
+	global *internal.GlobalCommandOptions
+}
+
+func (f *bindingFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	f.envFlag.Bind(local, global)
+	f.global = global
+}
+
+func newBindingFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *bindingFlags {
+	flags := &bindingFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
 }
 
-type bindingCreateFlags struct {
-	envFlag
-	global *internal.GlobalCommandOptions
+func getCmdBindingHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Update bindings for all services in the current project.": output.WithHighLightFormat(
+			"azd binding --all",
+		),
+		"Update bindings for the service named 'api'.": output.WithHighLightFormat(
+			"azd binding api",
+		),
+	})
 }
 
-func (f *bindingCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.envFlag.Bind(local, global)
-	f.global = global
+func getCmdBindingHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		fmt.Sprintf("Manage your application bindings. %s", output.WithWarningFormat("(Beta)")),
+		[]string{})
 }
 
-type bindingCreateAction struct {
+var serviceBindingFeature = alpha.MustFeatureKey("serviceBinding")
+
+type bindingAction struct {
 	flags           *envSetFlags
 	args            []string
 	projectConfig   *project.ProjectConfig
@@ -84,9 +90,11 @@ type bindingCreateAction struct {
 	resourceManager project.ResourceManager
 	bindingManager  binding.BindingManager
 	console         input.Console
+	alphaManager    *alpha.FeatureManager
+	azCli           azcli.AzCli
 }
 
-func newBindingCreateAction(
+func newBindingAction(
 	flags *envSetFlags,
 	args []string,
 	projectConfig *project.ProjectConfig,
@@ -94,8 +102,10 @@ func newBindingCreateAction(
 	resourceManager project.ResourceManager,
 	bindingManager binding.BindingManager,
 	console input.Console,
+	alphaManager *alpha.FeatureManager,
+	azCli azcli.AzCli,
 ) actions.Action {
-	return &bindingCreateAction{
+	return &bindingAction{
 		flags:           flags,
 		args:            args,
 		projectConfig:   projectConfig,
@@ -103,10 +113,21 @@ func newBindingCreateAction(
 		resourceManager: resourceManager,
 		bindingManager:  bindingManager,
 		console:         console,
+		alphaManager:    alphaManager,
+		azCli:           azCli,
 	}
 }
 
-func (b *bindingCreateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (b *bindingAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if !b.alphaManager.IsEnabled(serviceBindingFeature) {
+		return nil, fmt.Errorf(
+			"service binding is currently under alpha support and must be explicitly enabled."+
+				" Run `%s` to enable this feature.", alpha.GetEnableCommand(serviceBindingFeature),
+		)
+	}
+
+	b.console.WarnForFeature(ctx, serviceBindingFeature)
+
 	subscriptionId := b.env.GetSubscriptionId()
 	if subscriptionId == "" {
 		return nil, fmt.Errorf("infrastructure has not been provisioned. Run `azd provision`")
@@ -123,27 +144,46 @@ func (b *bindingCreateAction) Run(ctx context.Context) (*actions.ActionResult, e
 		Title: "Binding services (azd binding)",
 	})
 
+	targetServiceName := ""
+	if len(b.args) == 1 {
+		targetServiceName = b.args[0]
+	}
+
 	// validate binding configs to fail earlier in case there are any user errors
 	bindingCount := 0
 	for svcName, svcConfig := range b.projectConfig.Services {
-		sourceType, err := convertServiceKindToSourceType(svcConfig.Host)
+		if targetServiceName != "" && targetServiceName != svcName {
+			continue
+		}
+
+		bindingSource, err := getBindingSource(svcName, *svcConfig)
 		if err != nil {
 			return nil, err
 		}
-		b.bindingManager.ValidateBindingConfigs(sourceType, svcName, svcConfig.Bindings)
+
+		err = b.bindingManager.ValidateBindingConfigs(bindingSource, svcConfig.Bindings)
+		if err != nil {
+			return nil, err
+		}
+
 		bindingCount += len(svcConfig.Bindings)
 	}
 
 	// create bindings by services
 	for svcName, svcConfig := range b.projectConfig.Services {
-		stepMessage := fmt.Sprintf("Creating bindings for service %s", svcName)
+		stepMessage := fmt.Sprintf("Create bindings for service %s", svcName)
 		b.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		// suppose no errors, as we have already validated the binding configs
-		sourceType, _ := convertServiceKindToSourceType(svcConfig.Host)
+		if targetServiceName != "" && targetServiceName != svcName {
+			b.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			continue
+		}
+
+		// suppose no errors, as we checked the binding source above
+		bindingSource, _ := getBindingSource(svcName, *svcConfig)
 
 		err = b.bindingManager.CreateBindings(ctx, subscriptionId, resourceGroupName,
-			sourceType, svcName, svcConfig.Bindings)
+			bindingSource, svcConfig.Bindings)
 		if err != nil {
 			b.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
@@ -152,118 +192,34 @@ func (b *bindingCreateAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 	}
 
+	header := fmt.Sprintf("%d bindings were created for your services.", bindingCount)
+	if bindingCount == 1 {
+		header = "1 binding was created for your service."
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("%d bindings were created for your services.", bindingCount),
+			Header: header,
 			FollowUp: fmt.Sprintf("To view the bindings in Azure Portal: %s",
-				getBindingsViewLink(subscriptionId, resourceGroupName)),
+				getBindingsViewLink()),
 		},
 	}, nil
 }
 
-func newBindingDeleteCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "delete",
-		Short: "Delete service bindings.",
-		Args:  cobra.MaximumNArgs(1),
-	}
-}
-
-func newBindingDeleteFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *bindingDeleteFlags {
-	flags := &bindingDeleteFlags{}
-	flags.Bind(cmd.Flags(), global)
-
-	return flags
-}
-
-type bindingDeleteFlags struct {
-	envFlag
-	global *internal.GlobalCommandOptions
-}
-
-func (f *bindingDeleteFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.envFlag.Bind(local, global)
-	f.global = global
-}
-
-type bindingDeleteAction struct {
-	flags           *envSetFlags
-	args            []string
-	projectConfig   *project.ProjectConfig
-	env             *environment.Environment
-	resourceManager project.ResourceManager
-	bindingManager  binding.BindingManager
-	console         input.Console
-}
-
-func newBindingDeleteAction(
-	flags *envSetFlags,
-	args []string,
-	projectConfig *project.ProjectConfig,
-	env *environment.Environment,
-	resourceManager project.ResourceManager,
-	bindingManager binding.BindingManager,
-	console input.Console,
-) actions.Action {
-	return &bindingDeleteAction{
-		flags:           flags,
-		args:            args,
-		projectConfig:   projectConfig,
-		env:             env,
-		resourceManager: resourceManager,
-		bindingManager:  bindingManager,
-		console:         console,
-	}
-}
-
-func (b *bindingDeleteAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	subscriptionId := b.env.GetSubscriptionId()
-	if subscriptionId == "" {
-		return nil, fmt.Errorf("infrastructure has not been provisioned. Run `azd provision`")
-	}
-
-	resourceGroupName, err := b.resourceManager.GetResourceGroupName(
-		ctx, subscriptionId, b.projectConfig)
+// Get binding source from service config
+func getBindingSource(
+	serviceName string,
+	serviceConfig project.ServiceConfig,
+) (*binding.BindingSource, error) {
+	sourceType, err := convertServiceKindToSourceType(serviceConfig.Host)
 	if err != nil {
 		return nil, err
 	}
 
-	// binding command title
-	b.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Binding services (azd binding)",
-	})
-
-	// validate binding configs to fail earlier in case there are any user errors
-	for svcName, svcConfig := range b.projectConfig.Services {
-		sourceType, err := convertServiceKindToSourceType(svcConfig.Host)
-		if err != nil {
-			return nil, err
-		}
-		b.bindingManager.ValidateBindingConfigs(sourceType, svcName, svcConfig.Bindings)
-	}
-
-	// delete bindings by services
-	for svcName, svcConfig := range b.projectConfig.Services {
-		stepMessage := fmt.Sprintf("Deleting bindings for service %s", svcName)
-		b.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-		// suppose no errors, as we have already validated the binding configs
-		sourceType, _ := convertServiceKindToSourceType(svcConfig.Host)
-
-		err = b.bindingManager.DeleteBindings(ctx, subscriptionId, resourceGroupName,
-			sourceType, svcName, svcConfig.Bindings)
-		if err != nil {
-			b.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, err
-		} else {
-			b.console.StopSpinner(ctx, stepMessage, input.StepDone)
-		}
-	}
-
-	return &actions.ActionResult{
-		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("%d bindings were deleted for your services.", 15),
-		},
+	return &binding.BindingSource{
+		SourceType:     sourceType,
+		SourceResource: serviceName,
+		ClientType:     convertLanguageKindToClientType(serviceConfig.Language),
 	}, nil
 }
 
@@ -286,9 +242,28 @@ func convertServiceKindToSourceType(
 	}
 }
 
-func getBindingsViewLink(subscriptionId, resourceGroupName string) string {
-	return fmt.Sprintf(
-		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-		subscriptionId,
-		resourceGroupName)
+// Converts the language kind to the binding client type
+func convertLanguageKindToClientType(
+	kind project.ServiceLanguageKind,
+) armservicelinker.ClientType {
+	switch kind {
+	case project.ServiceLanguageJava:
+		return armservicelinker.ClientTypeJava
+	case project.ServiceLanguageJavaScript:
+	case project.ServiceLanguageTypeScript:
+		return armservicelinker.ClientTypeNodejs
+	case project.ServiceLanguageDotNet:
+	case project.ServiceLanguageCsharp:
+		return armservicelinker.ClientTypeDotnet
+	case project.ServiceLanguagePython:
+		return armservicelinker.ClientTypePython
+	default:
+		return armservicelinker.ClientTypeNone
+	}
+	return armservicelinker.ClientTypeNone
+}
+
+func getBindingsViewLink() string {
+	return "https://ms.portal.azure.com/?servicelinkerextension=canary" +
+		"#view/ServiceLinkerExtension/ServiceLinkerMenuBlade/~/overview"
 }

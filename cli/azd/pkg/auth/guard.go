@@ -16,7 +16,7 @@ func NewLoggedInGuard(manager *Manager, ctx context.Context) (LoggedInGuard, err
 	cred, err := manager.CredentialForCurrentUser(ctx, nil)
 	if err == nil {
 		// If no error, ensure the credential is indeed valid
-		_, err = EnsureLoggedInCredential(ctx, cred)
+		_, err = EnsureLoggedInCredential(ctx, cred, manager.cloud)
 		if err == nil {
 			// If the credentials are valid, return without error
 			return LoggedInGuard{}, nil

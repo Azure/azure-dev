@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/binding"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -95,7 +94,6 @@ type ProvisionAction struct {
 	provisionManager *provisioning.Manager
 	projectManager   project.ProjectManager
 	resourceManager  project.ResourceManager
-	bindingManager   binding.BindingManager
 	env              *environment.Environment
 	envManager       environment.Manager
 	formatter        output.Formatter
@@ -113,7 +111,6 @@ func NewProvisionAction(
 	projectManager project.ProjectManager,
 	importManager *project.ImportManager,
 	resourceManager project.ResourceManager,
-	bindingManager binding.BindingManager,
 	projectConfig *project.ProjectConfig,
 	env *environment.Environment,
 	envManager environment.Manager,
@@ -128,7 +125,6 @@ func NewProvisionAction(
 		provisionManager: provisionManager,
 		projectManager:   projectManager,
 		resourceManager:  resourceManager,
-		bindingManager:   bindingManager,
 		env:              env,
 		envManager:       envManager,
 		formatter:        formatter,

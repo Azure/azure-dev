@@ -1,7 +1,7 @@
 package binding
 
 import (
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicelinker/armservicelinker"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicelinker/armservicelinker/v2"
 )
 
 // A child property of `services` in azure.yaml, used to define bindings of a service

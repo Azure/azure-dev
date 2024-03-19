@@ -1,11 +1,11 @@
 package binding
 
 import (
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicelinker/armservicelinker"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicelinker/armservicelinker/v2"
 )
 
 // Service linker facing (each binding corresponds to a linker resource)
-// LinkerConfig includes all required infomation used to create a service linker resource
+// LinkerConfig includes all required information used to create a service linker resource
 type LinkerConfig struct {
 	Name             string
 	SourceResourceId string

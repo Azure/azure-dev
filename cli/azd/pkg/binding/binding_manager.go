@@ -67,7 +67,7 @@ func (bm *bindingManager) ValidateBindingConfigs(
 		return err
 	}
 
-	// validate other binding info: tagret resource, store resource, binding name ...
+	// validate other binding info: target resource, store resource, binding name ...
 	for _, bindingConfig := range bindingConfigs {
 		err := validateBindingConfig(bindingConfig, bm.env.Dotenv())
 		if err != nil {
@@ -148,7 +148,7 @@ func validateBindingSource(
 	return err
 }
 
-// Check if a binding config is valid, including the tagret resource, store resource
+// Check if a binding config is valid, including the target resource, store resource
 // and their expected environment variables in .env file
 func validateBindingConfig(
 	binding *BindingConfig,

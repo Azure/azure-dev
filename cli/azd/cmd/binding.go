@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicelinker/armservicelinker"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicelinker/armservicelinker/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -39,7 +39,7 @@ func bindActions(root *actions.ActionDescriptor) {
 func newBindingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "binding <service>",
-		Short: "Update bindings for the service.",
+		Short: "Create bindings for the service.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 
@@ -65,10 +65,10 @@ func newBindingFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 
 func getCmdBindingHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Update bindings for all services in the current project.": output.WithHighLightFormat(
+		"Create bindings for all services in the current project.": output.WithHighLightFormat(
 			"azd binding --all",
 		),
-		"Update bindings for the service named 'api'.": output.WithHighLightFormat(
+		"Create bindings for the service named 'api'.": output.WithHighLightFormat(
 			"azd binding api",
 		),
 	})

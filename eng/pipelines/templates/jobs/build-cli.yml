@@ -18,12 +18,12 @@ jobs:
   - job: jsonify_${{ parameters.NameSuffix }}
     steps: 
       - pwsh: | 
-          Write-Host 'NameSuffix ${{ toJson(parameters.NameSuffix) }}'
-          Write-Host 'Pool ${{ toJson(parameters.Pool) }}'
-          Write-Host 'ImageKey ${{ toJson(parameters.ImageKey) }}'
-          Write-Host 'OSVmImage ${{ toJson(parameters.OSVmImage) }}'
-          Write-Host 'OS ${{ toJson(parameters.OS) }}'
-          Write-Host 'Variables ${{ toJson(parameters.Variables) }}'
+          Write-Host 'NameSuffix ${{ convertToJson(parameters.NameSuffix) }}'
+          Write-Host 'Pool ${{ convertToJson(parameters.Pool) }}'
+          Write-Host 'ImageKey ${{ convertToJson(parameters.ImageKey) }}'
+          Write-Host 'OSVmImage ${{ convertToJson(parameters.OSVmImage) }}'
+          Write-Host 'OS ${{ convertToJson(parameters.OS) }}'
+          Write-Host 'Variables ${{ convertToJson(parameters.Variables) }}'
   # - job: BuildCLI_${{ parameters.NameSuffix }}
   #   displayName: BuildCLI ${{ parameters.NameSuffix }}
 

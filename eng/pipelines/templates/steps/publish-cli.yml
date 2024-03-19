@@ -204,8 +204,10 @@ steps:
       }
     displayName: Upload release to storage account
 
-  - publish: release
-    artifact: UploadedReleaseArtifacts
+  - task: 1ES.PublishPipelineArtifact@1
+    input: 
+      targetPath: release
+      artifact: UploadedReleaseArtifacts
 
   - ${{ if eq('true', parameters.PublishShield) }}:
     - template: /eng/pipelines/templates/steps/publish-shield.yml

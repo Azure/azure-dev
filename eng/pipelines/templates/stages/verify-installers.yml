@@ -52,8 +52,10 @@ stages:
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
             displayName: Move folders to hosting location
 
-          - publish: hosting
-            artifact: test-hosting
+          - task: 1ES.PublishPipelineArtifact@1
+            inputs: 
+              targetPath: hosting
+              artifact: test-hosting
 
       - job: Verify_MSI
         dependsOn: Compress_For_Hosting

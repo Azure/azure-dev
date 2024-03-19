@@ -48,16 +48,20 @@ stages:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         displayName: Merge code coverage files
 
-      - publish: cover-unit
-        artifact: cover-unit
-        displayName: Upload unit test code coverage
-
-      - publish: cover-int
-        artifact: cover-int
-        displayName: Upload integration test code coverage
-
       - task: PublishCodeCoverageResults@1
         inputs:
           codeCoverageTool: Cobertura
           summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
         displayName: Publish Code Coverage to DevOps
+    
+    templateContext: 
+      outputs: 
+        - output: pipelineArtifact
+          path: cover-unit
+          artifact: cover-unit
+          displayName: Upload unit test code coverage
+
+        - output: pipelineArtifact
+          path: cover-int
+          artifact: cover-int
+          displayName: Upload integration test code coverage

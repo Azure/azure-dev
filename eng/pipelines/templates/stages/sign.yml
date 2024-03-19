@@ -58,14 +58,14 @@ stages:
         # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
         # when the common engsys is imported.
         # https://github.com/Azure/azure-dev/issues/956
-        - task: PublishPipelineArtifact@1
+        - task: 1ES.PublishPipelineArtifact@1
           condition: succeeded()
           displayName: Publish Signed Artifacts
           inputs:
             artifactName: signed-mac
             path: signed-mac/
 
-        - task: PublishPipelineArtifact@1
+        - task: 1ES.PublishPipelineArtifact@1
           condition: failed()
           displayName: Publish failed Signed Artifacts
           inputs:
@@ -142,14 +142,14 @@ stages:
         # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
         # when the common engsys is imported.
         # https://github.com/Azure/azure-dev/issues/956
-        - task: PublishPipelineArtifact@1
+        - task: 1ES.PublishPipelineArtifact@1
           condition: succeeded()
           displayName: Publish Signed Artifacts
           inputs:
             artifactName: signed-win
             path: signed-win/
 
-        - task: PublishPipelineArtifact@1
+        - task: 1ES.PublishPipelineArtifact@1
           condition: failed()
           displayName: Publish failed Signed Artifacts
           inputs:
@@ -182,14 +182,14 @@ stages:
           displayName: Copy signing outputs
           condition: always()
 
-        - task: PublishPipelineArtifact@1
+        - task: 1ES.PublishPipelineArtifact@1
           condition: succeeded()
           displayName: Publish Signed Artifacts
           inputs:
             artifactName: signed-linux
             path: signed-linux/
 
-        - task: PublishPipelineArtifact@1
+        - task: 1ES.PublishPipelineArtifact@1
           condition: failed()
           displayName: Publish failed Signed Artifacts
           inputs:

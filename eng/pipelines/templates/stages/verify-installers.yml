@@ -58,7 +58,7 @@ parameters:
       Pool: $(MACPOOL)
       OSVmImage: $(MACVMIMAGE12)
       ImageKey: vmImage
-      OS: $(MACOS)
+      OS: macOs
       Variables:
         TestShell: bash
         TestInstallCommand: >-
@@ -70,7 +70,7 @@ parameters:
       Pool: $(MACPOOL)
       OSVmImage: $(MACVMIMAGE12)
       ImageKey: vmImage
-      OS: $(MACOS)
+      OS: macOs
       Variables:
         TestShell: pwsh
         # Should also test telemetry functions but cannot because of macOS
@@ -88,7 +88,7 @@ parameters:
       Pool: $(MACPOOL)
       OSVmImage: $(MACVMIMAGE)
       ImageKey: vmImage
-      OS: $(MACOS)
+      OS: macOs
       Variables:
         TestShell: pwsh
         # Should also test telemetry functions but cannot because of macOS
@@ -251,7 +251,7 @@ stages:
         pool:
           name: $(MACPOOL)
           vmImage: $(MACVMIMAGE12)
-          os: $(MACOS)
+          os: macOs
 
         steps:
           - checkout: self

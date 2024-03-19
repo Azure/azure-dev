@@ -33,7 +33,7 @@ parameters:
       Mac:
         Pool: $(MACPOOL)
         OSVmImage: $(MACVMIMAGE)
-        OS: $(MACOS)
+        OS: macOs
         ImageKey: vmImage
         Variables: 
           BuildTarget: azd-darwin-amd64
@@ -61,7 +61,7 @@ parameters:
       MacARM64:
         Pool: $(MACPOOL)
         OSVmImage: $(MACVMIMAGE)
-        OS: $(MACOS)
+        OS: macOs
         ImageKey: vmImage
         Variables: 
           BuildTarget: azd-darwin-arm64

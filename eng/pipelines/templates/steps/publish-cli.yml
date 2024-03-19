@@ -205,7 +205,7 @@ steps:
     displayName: Upload release to storage account
 
   - task: 1ES.PublishPipelineArtifact@1
-    input: 
+    inputs: 
       targetPath: release
       artifact: UploadedReleaseArtifacts
 

@@ -66,15 +66,18 @@ resource cache 'Microsoft.App/containerApps@2023-05-02-preview' = {
   properties: {
     environmentId: containerAppEnvironment.id
     configuration: {
-      service: {
-        type: 'redis'
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        targetPort: 6379
+        transport: 'tcp'
       }
     }
     template: {
       containers: [
         {
-          image: 'redis'
-          name: 'redis'
+          image: 'redis:7.2.4'
+          name: 'cache'
         }
       ]
       scale: {
@@ -91,15 +94,18 @@ resource pubsub 'Microsoft.App/containerApps@2023-05-02-preview' = {
   properties: {
     environmentId: containerAppEnvironment.id
     configuration: {
-      service: {
-        type: 'redis'
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        targetPort: 6379
+        transport: 'tcp'
       }
     }
     template: {
       containers: [
         {
-          image: 'redis'
-          name: 'redis'
+          image: 'redis:7.2.4'
+          name: 'pubsub'
         }
       ]
       scale: {
@@ -108,50 +114,6 @@ resource pubsub 'Microsoft.App/containerApps@2023-05-02-preview' = {
     }
   }
   tags: union(tags, {'aspire-resource-name': 'pubsub'})
-}
-
-resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
-  name: replace('storage-${resourceToken}', '-', '')
-  location: location
-  kind: 'Storage'
-  sku: {
-    name: 'Standard_GRS'
-  }
-  tags: union(tags, {'aspire-resource-name': 'storage'})
-
-  resource blobs 'blobServices@2022-05-01' = {
-    name: 'default'
-  }
-}
-
-resource storageBlobsRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'))
-  scope: storage
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  }
-}
-
-resource storageQueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88'))
-  scope: storage
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
-  }
-}
-
-resource storageTablesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'))
-  scope: storage
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
-  }
 }
 
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
@@ -163,7 +125,4 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.l
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
-output SERVICE_BINDING_MARKDOWN_ENDPOINT string = storage.properties.primaryEndpoints.blob
-output SERVICE_BINDING_REQUESTLOG_ENDPOINT string = storage.properties.primaryEndpoints.table
-output SERVICE_BINDING_MESSAGES_ENDPOINT string = storage.properties.primaryEndpoints.queue
 

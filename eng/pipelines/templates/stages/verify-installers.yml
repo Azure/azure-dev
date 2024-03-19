@@ -1,11 +1,13 @@
 parameters:
   - name: Matrix
     type: object
-    default: 
+    default:
       LinuxDockerSh:
-        Pool: azsdk-pool-mms-ubuntu-2004-general
-        OSVmImage:  MMSUbuntu20.04
-        Variables: 
+        Pool: $(LINUXPOOL)
+        OSVmImage: $(LINUXVMIMAGE)
+        ImageKey: image
+        OS: $(LINUXOS)
+        Variables:
           TestShell: pwsh
           TestInstallCommand: >
             ./test-installer-containers.ps1
@@ -14,18 +16,23 @@ parameters:
             -ContainerPrefix '$(docker-mirror-tag-prefix)/'
             -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
       LinuxSh:
-        Pool: azsdk-pool-mms-ubuntu-2004-general
-        OSVmImage:  MMSUbuntu20.04
+        Pool: $(LINUXPOOL)
+        OSVmImage: $(LINUXVMIMAGE)
+        ImageKey: image
+        OS: $(LINUXOS)
         Variables:
           TestShell: bash
           TestInstallCommand: >
             ./test-sh-install.sh "bash" "$BASEURL" "" &&
             ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv" &&
             ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+
       LinuxPwsh:
-        Pool: azsdk-pool-mms-ubuntu-2004-general
-        OSVmImage:  MMSUbuntu20.04
-        Variables: 
+        Pool: $(LINUXPOOL)
+        OSVmImage: $(LINUXVMIMAGE)
+        ImageKey: image
+        OS: $(LINUXOS)
+        Variables:
           TestShell: pwsh
           TestInstallCommand: >
             ./test-pwsh-xplat-install.ps1 
@@ -36,27 +43,35 @@ parameters:
             ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
 
       Mac11Sh:
-        Pool: Azure Pipelines
-        OSVmImage: macOS-11
-        Variables: 
+        Pool: $(MACPOOL)
+        OSVmImage: $(MACVMIMAGE)
+        ImageKey: image
+        OS: 
+        Variables:
         TestShell: bash
         TestInstallCommand: >
           ./test-sh-install.sh "bash" "$BASEURL" "" &&
           ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv" &&
           ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+
       Mac12Sh:
-        Pool: Azure Pipelines
-        OSVmImage: macOS-12
-        Variables: 
+        Pool: $(MACPOOL)
+        OSVmImage: $(MACVMIMAGE12)
+        ImageKey: image
+        OS: $(MACOS)
+        Variables:
           TestShell: bash
           TestInstallCommand: >
             ./test-sh-install.sh "bash" "$BASEURL" "" &&
             ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv" &&
             ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+
       Mac12Pwsh:
-        Pool: Azure Pipelines
-        OSVmImage: macOS-12
-        Variables: 
+        Pool: $(MACPOOL)
+        OSVmImage: $(MACVMIMAGE12)
+        ImageKey: image
+        OS: $(MACOS)
+        Variables:
           TestShell: pwsh
           # Should also test telemetry functions but cannot because of macOS
           # host limitations in DevOps which do not reproduce on non-DevOps
@@ -68,10 +83,13 @@ parameters:
             -Version '' 
             -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
             -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
+
       Mac11Pwsh:
-        Pool: Azure Pipelines
-        OSVmImage: macOS-11
-        Variables: 
+        Pool: $(MACPOOL)
+        OSVmImage: $(MACVMIMAGE)
+        ImageKey: image
+        OS: $(MACOS)
+        Variables:
           TestShell: pwsh
           # Should also test telemetry functions but cannot because of macOS
           # host limitations in DevOps which do not reproduce on non-DevOps
@@ -83,32 +101,41 @@ parameters:
             -Version '' 
             -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
             -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
+
       WindowsCmd:
-        Pool: azsdk-pool-mms-win-2022-general
-        OSVmImage: MMS2022
-        Variables: 
+        Pool: $(WINDOWSPOOL)
+        OSVmImage: $(WINDOWSVMIMAGE)
+        ImageKey: image
+        OS: $(WINDOWSOS)
+        Variables:
           TestShell: cmd
           TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
+
       WindowsPwsh:
-        Pool: azsdk-pool-mms-win-2022-general
-        OSVmImage: MMS2022
-        Variables: 
+        Pool: $(WINDOWSPOOL)
+        OSVmImage: $(WINDOWSVMIMAGE)
+        ImageKey: image
+        OS: 
+        Variables:
           TestShell: pwsh
           TestInstallCommand: >
             $ErrorActionPreference = 'Stop';
             ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
             ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
+
       WindowsPowerShell:
-        Pool: azsdk-pool-mms-win-2022-general
-        OSVmImage: MMS2022
-        Variables: 
+        Pool: $(WINDOWSPOOL)
+        OSVmImage: $(WINDOWSVMIMAGE)
+        ImageKey: image
+        OS: $(WINDOWSOS)
+        Variables:
           TestShell: powershell
           TestInstallCommand: >
             $ErrorActionPreference = 'Stop';
             ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
             ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
 
-stages: 
+stages:
   - stage: Verify_Installers
     condition: and(succeeded(), ne(variables['Skip.VerifyInstallers'], 'true'))
     dependsOn: BuildAndTest
@@ -116,7 +143,7 @@ stages:
     variables:
       - template: /eng/pipelines/templates/variables/globals.yml
       - template: /eng/pipelines/templates/variables/image.yml
-    
+
     jobs:
       - job: Compress_For_Hosting
         pool:
@@ -168,19 +195,19 @@ stages:
             displayName: Move folders to hosting location
 
           - task: 1ES.PublishPipelineArtifact@1
-            inputs: 
+            inputs:
               targetPath: hosting
               artifact: test-hosting
 
       - job: Verify_MSI
         dependsOn: Compress_For_Hosting
-        
+
         pool:
           name: $(WINDOWSPOOL)
           image: $(WINDOWSVMIMAGE)
           os: $(WINDOWSOS)
-        
-        variables: 
+
+        variables:
           AZURE_DEV_COLLECT_TELEMETRY: no
         strategy:
           matrix:
@@ -210,20 +237,20 @@ stages:
             displayName: Test MSI
 
       - ${{ each build in parameters.Matrix }}:
-        - template: /eng/pipelines/templates/jobs/verify-installers.yml
-          parameters:
-            NameSuffix: ${{ build.key}}
-            Pool: ${{ build.value.Pool }}
-            ImageKey: ${{ build.value.ImageKey }}
-            OSVmImage: ${{ build.value.OSVmImage }} 
-            OS: ${{ build.value.OS }}
-            Variables: ${{ build.value.Variables }}
+          - template: /eng/pipelines/templates/jobs/verify-installers.yml
+            parameters:
+              NameSuffix: ${{ build.key}}
+              Pool: ${{ build.value.Pool }}
+              ImageKey: ${{ build.value.ImageKey }}
+              OSVmImage: ${{ build.value.OSVmImage }}
+              OS: ${{ build.value.OS }}
+              Variables: ${{ build.value.Variables }}
 
       - job: Verify_Mac_InstallOver
         dependsOn: Compress_For_Hosting
         pool:
           name: $(MACPOOL)
-          vmImage: macOS-12
+          vmImage: $(MACVMIMAGE12)
           os: $(MACOS)
 
         steps:
@@ -243,30 +270,29 @@ stages:
           - pwsh: azd version
             displayName: Run azd version (expect no failure)
 
-
       - job: Verify_LinuxPackages
 
         strategy:
           matrix:
-            LinuxAMD64: 
+            LinuxAMD64:
               Pool: $(LINUXPOOL)
-              OSVmImage:  $(LINUXVMIMAGE)
+              OSVmImage: $(LINUXVMIMAGE)
               Architecture: amd64
               OS: $(LINUXOS)
-            # TODO: When Docker can be installed and run properly on the ARM 
+            # TODO: When Docker can be installed and run properly on the ARM
             # host this can be used to validate the ARM64 Linux packages.
             # https://github.com/Azure/azure-dev/issues/2617
             # LinuxARM64:
             #   Pool: azsdk-pool-mms-ubuntu-2004-arm
             #   OSVmImage: MMSUbuntu20.04ARM64
             #   Architecture: arm64
-            
+
         pool:
           name: $(Pool)
           image: $(OSVmImage)
           os: $(OS)
 
-        steps: 
+        steps:
           - checkout: self
 
           - task: DownloadPipelineArtifact@2
@@ -276,7 +302,7 @@ stages:
 
           - task: PowerShell@2
             displayName: Verify Linux Packages
-            inputs: 
+            inputs:
               pwsh: true
               workingDirectory: cli/installer/fpm
               filePath: eng/scripts/Test-LinuxPackages.ps1

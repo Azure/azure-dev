@@ -533,5 +533,9 @@
         "rxjs": "~7",
         "semver": "~7",
         "yaml": "~2"
+    },
+    "agentMetadata": {
+        "version": "1.0",
+        "getCommandsCommandId": "azure-dev.commands.agent.getCommands"
     }
 }

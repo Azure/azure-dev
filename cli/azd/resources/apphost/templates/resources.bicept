@@ -56,6 +56,30 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
   tags: tags
 }
 {{end -}}
+{{if .RequiresStorageVolume}}
+resource storageVolume 'Microsoft.Storage/storageAccounts@2022-05-01' = {
+  name: 'vol${resourceToken}'
+  location: location
+  kind: 'StorageV2'
+  sku: {
+    name: 'Standard_LRS'
+  }
+
+  resource storageVolumeFileService 'fileServices' = {
+    name: 'default'
+{{range $name, $value := .ContainerApps}}
+{{- range $volume := $value.Volumes}}    
+    resource {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}FileShare 'shares' = {
+      name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+      properties: {
+        shareQuota: 100
+      }
+    }
+{{- end }}
+{{- end }}    
+  }
+}
+{{end -}}
 {{if .HasContainerEnvironment}}
 resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
   name: 'cae-${resourceToken}'
@@ -70,6 +94,26 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
     }
   }
   tags: tags
+{{range $name, $value := .ContainerApps}}
+{{- range $volume := $value.Volumes}}
+  resource {{dashToUnderscore $volume.Name}}Store 'storages' = {
+      name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+      properties: {
+        azureFile: {
+          shareName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+          accountName: storageVolume.name
+          accountKey: storageVolume.listKeys().keys[0].value
+{{- if $volume.ReadOnly }}
+          accessMode: 'ReadOnly'
+{{- end}}
+{{- if eq false $volume.ReadOnly }}
+          accessMode: 'ReadWrite'
+{{- end}}
+        }
+      }
+    }
+{{end -}}
+{{end -}}
 }
 {{range $componentName, $componentValue := .DaprComponents}}
 resource {{$componentName}} 'Microsoft.App/managedEnvironments/daprComponents@2023-05-01' = {
@@ -133,6 +177,9 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = {
   name: '{{containerAppName $name}}'
   location: location
+{{- if $value.Volumes}}
+  dependsOn: [storageVolume]
+{{- end }}  
   properties: {
     environmentId: containerAppEnvironment.id
     configuration: {
@@ -183,6 +230,17 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
     }
     template: {
+{{- if $value.Volumes}}
+      volumes: [
+{{- range $volume := $value.Volumes}}
+        {
+          name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+          storageType: 'AzureFile'
+          storageName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+        }
+{{- end}}
+      ]
+{{- end}}
       containers: [
         {
           image: '{{$value.Image}}'
@@ -199,6 +257,16 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
             {
               name: '{{$sName}}'
               secretRef: '{{containerAppSecretName $sName}}'
+            }
+{{- end}}
+          ]
+{{- end}}
+{{- if $value.Volumes}}
+          volumeMounts: [
+{{- range $volume := $value.Volumes}}
+            {
+              volumeName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+              mountPath: '{{$volume.Target}}'
             }
 {{- end}}
           ]

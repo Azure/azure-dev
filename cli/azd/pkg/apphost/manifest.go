@@ -75,6 +75,9 @@ type Resource struct {
 
 	// parameter.v0 uses value field to define the value of the parameter.
 	Value string
+
+	// container.v0 uses volumes field to define the volumes of the container.
+	Volumes []*Volume `json:"volumes,omitempty"`
 }
 
 type DaprResourceMetadata struct {
@@ -102,6 +105,12 @@ type Binding struct {
 	Protocol      string `json:"protocol"`
 	Transport     string `json:"transport"`
 	External      bool   `json:"external"`
+}
+
+type Volume struct {
+	Name     string `json:"name,omitempty"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"readOnly"`
 }
 
 type Input struct {

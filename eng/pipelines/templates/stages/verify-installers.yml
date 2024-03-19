@@ -9,131 +9,131 @@ parameters:
       OS: $(LINUXOS)
       Variables:
         TestShell: pwsh
-        # TestInstallCommand: >-
-        #   ./test-installer-containers.ps1
-        #   -BaseUrl "http://host.docker.internal:8080"
-        #   -Version ''
-        #   -ContainerPrefix '$(docker-mirror-tag-prefix)/'
-        #   -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
-    # LinuxSh:
-    #   Pool: $(LINUXPOOL)
-    #   OSVmImage: $(LINUXVMIMAGE)
-    #   ImageKey: image
-    #   OS: $(LINUXOS)
-    #   Variables:
-    #     TestShell: bash
-    #     TestInstallCommand: >-
-    #       ./test-sh-install.sh "bash" "$BASEURL" "" &&
-    #       ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv" &&
-    #       ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+        TestInstallCommand: >-
+          ./test-installer-containers.ps1
+          -BaseUrl "http://host.docker.internal:8080"
+          -Version ''
+          -ContainerPrefix '$(docker-mirror-tag-prefix)/'
+          -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
+    LinuxSh:
+      Pool: $(LINUXPOOL)
+      OSVmImage: $(LINUXVMIMAGE)
+      ImageKey: image
+      OS: $(LINUXOS)
+      Variables:
+        TestShell: bash
+        TestInstallCommand: >-
+          ./test-sh-install.sh "bash" "$BASEURL" "" &&
+          ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv" &&
+          ./test-sh-install-errors.sh "bash" "$BASEURL" ""
 
-    # LinuxPwsh:
-    #   Pool: $(LINUXPOOL)
-    #   OSVmImage: $(LINUXVMIMAGE)
-    #   ImageKey: image
-    #   OS: $(LINUXOS)
-    #   Variables:
-    #     TestShell: pwsh
-    #     TestInstallCommand: >-
-    #       ./test-pwsh-xplat-install.ps1 
-    #       -BaseUrl $env:BASEURL 
-    #       -Version '' 
-    #       -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
-    #       -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
-    #       ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
+    LinuxPwsh:
+      Pool: $(LINUXPOOL)
+      OSVmImage: $(LINUXVMIMAGE)
+      ImageKey: image
+      OS: $(LINUXOS)
+      Variables:
+        TestShell: pwsh
+        TestInstallCommand: >-
+          ./test-pwsh-xplat-install.ps1 
+          -BaseUrl $env:BASEURL 
+          -Version '' 
+          -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+          -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
+          ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
 
-    # Mac11Sh:
-    #   Pool: $(MACPOOL)
-    #   OSVmImage: $(MACVMIMAGE)
-    #   ImageKey: vmImage
-    #   OS: 
-    #   Variables:
-    #   TestShell: bash
-    #   TestInstallCommand: >-
-    #     ./test-sh-install.sh "bash" "$BASEURL" "" &&
-    #     ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv" &&
-    #     ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+    Mac11Sh:
+      Pool: $(MACPOOL)
+      OSVmImage: $(MACVMIMAGE)
+      ImageKey: vmImage
+      OS: 
+      Variables:
+        TestShell: bash
+        TestInstallCommand: >-
+          ./test-sh-install.sh "bash" "$BASEURL" "" &&
+          ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv" &&
+          ./test-sh-install-errors.sh "bash" "$BASEURL" ""
 
-    # Mac12Sh:
-    #   Pool: $(MACPOOL)
-    #   OSVmImage: $(MACVMIMAGE12)
-    #   ImageKey: vmImage
-    #   OS: $(MACOS)
-    #   Variables:
-    #     TestShell: bash
-    #     TestInstallCommand: >-
-    #       ./test-sh-install.sh "bash" "$BASEURL" "" &&
-    #       ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv" &&
-    #       ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+    Mac12Sh:
+      Pool: $(MACPOOL)
+      OSVmImage: $(MACVMIMAGE12)
+      ImageKey: vmImage
+      OS: $(MACOS)
+      Variables:
+        TestShell: bash
+        TestInstallCommand: >-
+          ./test-sh-install.sh "bash" "$BASEURL" "" &&
+          ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv" &&
+          ./test-sh-install-errors.sh "bash" "$BASEURL" ""
 
-    # Mac12Pwsh:
-    #   Pool: $(MACPOOL)
-    #   OSVmImage: $(MACVMIMAGE12)
-    #   ImageKey: vmImage
-    #   OS: $(MACOS)
-    #   Variables:
-    #     TestShell: pwsh
-    #     # Should also test telemetry functions but cannot because of macOS
-    #     # host limitations in DevOps which do not reproduce on non-DevOps
-    #     # macs. Disabled for now.
-    #     #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
-    #     TestInstallCommand: >-
-    #       ./test-pwsh-xplat-install.ps1 
-    #       -BaseUrl $env:BASEURL 
-    #       -Version '' 
-    #       -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
-    #       -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
+    Mac12Pwsh:
+      Pool: $(MACPOOL)
+      OSVmImage: $(MACVMIMAGE12)
+      ImageKey: vmImage
+      OS: $(MACOS)
+      Variables:
+        TestShell: pwsh
+        # Should also test telemetry functions but cannot because of macOS
+        # host limitations in DevOps which do not reproduce on non-DevOps
+        # macs. Disabled for now.
+        #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
+        TestInstallCommand: >-
+          ./test-pwsh-xplat-install.ps1 
+          -BaseUrl $env:BASEURL 
+          -Version '' 
+          -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+          -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
 
-    # Mac11Pwsh:
-    #   Pool: $(MACPOOL)
-    #   OSVmImage: $(MACVMIMAGE)
-    #   ImageKey: vmImage
-    #   OS: $(MACOS)
-    #   Variables:
-    #     TestShell: pwsh
-    #     # Should also test telemetry functions but cannot because of macOS
-    #     # host limitations in DevOps which do not reproduce on non-DevOps
-    #     # macs. Disabled for now.
-    #     #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
-    #     TestInstallCommand: >-
-    #       ./test-pwsh-xplat-install.ps1 
-    #       -BaseUrl $env:BASEURL 
-    #       -Version '' 
-    #       -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
-    #       -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
+    Mac11Pwsh:
+      Pool: $(MACPOOL)
+      OSVmImage: $(MACVMIMAGE)
+      ImageKey: vmImage
+      OS: $(MACOS)
+      Variables:
+        TestShell: pwsh
+        # Should also test telemetry functions but cannot because of macOS
+        # host limitations in DevOps which do not reproduce on non-DevOps
+        # macs. Disabled for now.
+        #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
+        TestInstallCommand: >-
+          ./test-pwsh-xplat-install.ps1 
+          -BaseUrl $env:BASEURL 
+          -Version '' 
+          -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+          -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
 
-    # WindowsCmd:
-    #   Pool: $(WINDOWSPOOL)
-    #   OSVmImage: $(WINDOWSVMIMAGE)
-    #   ImageKey: image
-    #   OS: $(WINDOWSOS)
-    #   Variables:
-    #     TestShell: cmd
-    #     TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
+    WindowsCmd:
+      Pool: $(WINDOWSPOOL)
+      OSVmImage: $(WINDOWSVMIMAGE)
+      ImageKey: image
+      OS: $(WINDOWSOS)
+      Variables:
+        TestShell: cmd
+        TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
 
-    # WindowsPwsh:
-    #   Pool: $(WINDOWSPOOL)
-    #   OSVmImage: $(WINDOWSVMIMAGE)
-    #   ImageKey: image
-    #   OS: 
-    #   Variables:
-    #     TestShell: pwsh
-    #     TestInstallCommand: >-
-    #       $ErrorActionPreference = 'Stop';
-    #       ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
-    #       ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
+    WindowsPwsh:
+      Pool: $(WINDOWSPOOL)
+      OSVmImage: $(WINDOWSVMIMAGE)
+      ImageKey: image
+      OS: 
+      Variables:
+        TestShell: pwsh
+        TestInstallCommand: >-
+          $ErrorActionPreference = 'Stop';
+          ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
+          ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
 
-    # WindowsPowerShell:
-    #   Pool: $(WINDOWSPOOL)
-    #   OSVmImage: $(WINDOWSVMIMAGE)
-    #   ImageKey: image
-    #   OS: $(WINDOWSOS)
-    #   Variables:
-    #     TestShell: powershell
-    #     TestInstallCommand: >-
-    #       $ErrorActionPreference = 'Stop';
-    #       ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
-    #       ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
+    WindowsPowerShell:
+      Pool: $(WINDOWSPOOL)
+      OSVmImage: $(WINDOWSVMIMAGE)
+      ImageKey: image
+      OS: $(WINDOWSOS)
+      Variables:
+        TestShell: powershell
+        TestInstallCommand: >-
+          $ErrorActionPreference = 'Stop';
+          ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
+          ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
 
 stages:
   - stage: Verify_Installers

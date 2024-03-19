@@ -67,22 +67,24 @@ resource storageVolume 'Microsoft.Storage/storageAccounts@2022-05-01' = {
   properties: {
     largeFileSharesState: 'Enabled'
   }
+}
 
-  resource storageVolumeFileService 'fileServices' = {
-    name: 'default'
+resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileServices@2022-05-01' = {
+  parent: storageVolume
+  name: 'default'
+}
 {{range $name, $value := .ContainerApps}}
-{{- range $volume := $value.Volumes}}    
-    resource {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}FileShare 'shares' = {
-      name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
-      properties: {
-        shareQuota: 1024
-        enabledProtocols: 'SMB'
-      }
-    }
-{{- end }}
-{{- end }}    
+{{- range $volume := $value.Volumes}}
+resource {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
   }
 }
+{{- end }}
+{{- end }}
 {{end -}}
 {{if .HasContainerEnvironment}}
 resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
@@ -98,27 +100,28 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
     }
   }
   tags: tags
+}
 {{range $name, $value := .ContainerApps}}
 {{- range $volume := $value.Volumes}}
-  resource {{dashToUnderscore $volume.Name}}Store 'storages' = {
-      name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
-      properties: {
-        azureFile: {
-          shareName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
-          accountName: storageVolume.name
-          accountKey: storageVolume.listKeys().keys[0].value
+resource {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+  properties: {
+    azureFile: {
+      shareName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
 {{- if $volume.ReadOnly }}
-          accessMode: 'ReadOnly'
+      accessMode: 'ReadOnly'
 {{- end}}
 {{- if eq false $volume.ReadOnly }}
-          accessMode: 'ReadWrite'
+      accessMode: 'ReadWrite'
 {{- end}}
-        }
-      }
     }
-{{end -}}
-{{end -}}
+  }
 }
+{{end -}}
+{{end -}}
 {{range $componentName, $componentValue := .DaprComponents}}
 resource {{$componentName}} 'Microsoft.App/managedEnvironments/daprComponents@2023-05-01' = {
   name: '{{$componentName}}'
@@ -229,7 +232,7 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
           name: '{{containerAppSecretName $sName}}'
           value: {{toDotNotation $sValue}}
         }
-{{- end}}    
+{{- end}}
       ]
 {{- end}}
     }
@@ -240,7 +243,7 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
         {
           name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
           storageType: 'AzureFile'
-          storageName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+          storageName: {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}Store.name
         }
 {{- end}}
       ]
@@ -290,7 +293,7 @@ resource {{bicepName $name}} 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   name: '{{$name}}-${resourceToken}'
   location: location
   sku: {
-    name: 'Standard'   
+    name: 'Standard'
   }
   properties: {
     minimumTlsVersion: '1.2'
@@ -301,13 +304,13 @@ resource {{bicepName $name}} 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   resource {{bicepName $name}} 'queues@2022-10-01-preview' = {
     name: '{{$name}}'
   }
-{{end -}}  
+{{end -}}
 {{range $name := $value.Topics}}
 
   resource {{bicepName $name}} 'topics@2022-10-01-preview' = {
     name: '{{$name}}'
   }
-{{end -}}  
+{{end -}}
 }
 
 resource {{bicepName $name}}MiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

@@ -36,24 +36,27 @@ resource storageVolume 'Microsoft.Storage/storageAccounts@2022-05-01' = {
   properties: {
     largeFileSharesState: 'Enabled'
   }
+}
 
-  resource storageVolumeFileService 'fileServices' = {
-    name: 'default'
-    
-    resource my_sql_abstract_volume_twoFileShare 'shares' = {
-      name: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
-      properties: {
-        shareQuota: 1024
-        enabledProtocols: 'SMB'
-      }
-    }    
-    resource mysqlabstract_volumeOneFileShare 'shares' = {
-      name: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
-      properties: {
-        shareQuota: 1024
-        enabledProtocols: 'SMB'
-      }
-    }    
+resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileServices@2022-05-01' = {
+  parent: storageVolume
+  name: 'default'
+}
+
+resource my_sql_abstract_volume_twoFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
+  }
+}
+resource mysqlabstract_volumeOneFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
   }
 }
 
@@ -70,30 +73,32 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
     }
   }
   tags: tags
+}
 
-  resource volume_twoStore 'storages' = {
-      name: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
-      properties: {
-        azureFile: {
-          shareName: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
-          accountName: storageVolume.name
-          accountKey: storageVolume.listKeys().keys[0].value
-          accessMode: 'ReadOnly'
-        }
-      }
+resource my_sql_abstract_volume_twoStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
+  properties: {
+    azureFile: {
+      shareName: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+      accessMode: 'ReadOnly'
     }
+  }
+}
 
-  resource volumeOneStore 'storages' = {
-      name: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
-      properties: {
-        azureFile: {
-          shareName: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
-          accountName: storageVolume.name
-          accountKey: storageVolume.listKeys().keys[0].value
-          accessMode: 'ReadWrite'
-        }
-      }
+resource mysqlabstract_volumeOneStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
+  properties: {
+    azureFile: {
+      shareName: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+      accessMode: 'ReadWrite'
     }
+  }
 }
 
 resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
@@ -117,7 +122,7 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {
           name: 'specialchar'
           value: inputs['my-sql-abstract']['pas-sw-ord']
-        }    
+        }
       ]
     }
     template: {
@@ -125,7 +130,7 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {
           name: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
           storageType: 'AzureFile'
-          storageName: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
+          storageName: my_sql_abstract_volume_twoStore.name
         }
       ]
       containers: [
@@ -179,7 +184,7 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {
           name: 'specialchar'
           value: inputs.mysqlabstract['pas-sw-ord']
-        }    
+        }
       ]
     }
     template: {
@@ -187,7 +192,7 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {
           name: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
           storageType: 'AzureFile'
-          storageName: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
+          storageName: mysqlabstract_volumeOneStore.name
         }
       ]
       containers: [
@@ -240,7 +245,7 @@ resource noVolume 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {
           name: 'specialchar'
           value: inputs.noVolume['pas-sw-ord']
-        }    
+        }
       ]
     }
     template: {

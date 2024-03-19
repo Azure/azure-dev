@@ -26,11 +26,8 @@ jobs:
       os: ${{ parameters.OS }}
 
     variables:
-      - name: BaseUrl
-        value: http://127.0.0.1:8080
-      - ${{ each pair in parameters.Variables }}:
-        - name: ${{ pair.key }}
-          value: ${{ pair.value }}
+      BaseUrl: http://127.0.0.1:8080
+      ${{ insert }}: ${{ parameters.Variables }}
 
     timeoutInMinutes: 10
 

@@ -239,7 +239,7 @@ stages:
       - ${{ each build in parameters.Matrix }}:
         - template: /eng/pipelines/templates/jobs/verify-installers.yml
           parameters:
-            NameSuffix: ${{ build.key}}
+            NameSuffix: ${{ build.key }}
             Pool: ${{ build.value.Pool }}
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }}

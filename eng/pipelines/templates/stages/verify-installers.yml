@@ -1,5 +1,5 @@
 parameters:
-  - name: Matrix
+  - name: VerifyMatrix
     type: object
     default:
       LinuxDockerSh:
@@ -236,25 +236,15 @@ stages:
               errorActionPreference: continue
             displayName: Test MSI
 
-      - ${{ each build in parameters.Matrix }}:
-        - job: ${{ build.key }}
-          steps: 
-            - pwsh: | 
-                Write-Host "${{ build.key }}"
-                Write-Host "${{ build.value.Pool }}"
-                Write-Host "${{ build.value.ImageKey }}"
-                Write-Host "${{ build.value.OSVmImage }}"
-                Write-Host "${{ build.value.OS }}"
-                Write-Host "${{ convertToJson(build.value.Variables) }}"
-              displayName: matrix parts
-        # - template: /eng/pipelines/templates/jobs/verify-installers.yml
-        #   parameters:
-        #     NameSuffix: ${{ build.key }}
-        #     Pool: ${{ build.value.Pool }}
-        #     ImageKey: ${{ build.value.ImageKey }}
-        #     OSVmImage: ${{ build.value.OSVmImage }}
-        #     OS: ${{ build.value.OS }}
-        #     Variables: ${{ build.value.Variables }}
+      - ${{ each build in parameters.VerifyMatrix }}:
+        - template: /eng/pipelines/templates/jobs/verify-installers.yml
+          parameters:
+            NameSuffix: ${{ build.key}}
+            Pool: ${{ build.value.Pool }}
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }} 
+            OS: ${{ build.value.OS }}
+            Variables: ${{ build.value.Variables }}
 
       - job: Verify_Mac_InstallOver
         dependsOn: Compress_For_Hosting

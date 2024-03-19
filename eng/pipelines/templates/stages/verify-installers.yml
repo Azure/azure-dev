@@ -237,14 +237,14 @@ stages:
             displayName: Test MSI
 
       - ${{ each build in parameters.Matrix }}:
-          - template: /eng/pipelines/templates/jobs/verify-installers.yml
-            parameters:
-              NameSuffix: ${{ build.key}}
-              Pool: ${{ build.value.Pool }}
-              ImageKey: ${{ build.value.ImageKey }}
-              OSVmImage: ${{ build.value.OSVmImage }}
-              OS: ${{ build.value.OS }}
-              Variables: ${{ build.value.Variables }}
+        - template: /eng/pipelines/templates/jobs/verify-installers.yml
+          parameters:
+            NameSuffix: ${{ build.key}}
+            Pool: ${{ build.value.Pool }}
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }}
+            OS: ${{ build.value.OS }}
+            Variables: ${{ build.value.Variables }}
 
       - job: Verify_Mac_InstallOver
         dependsOn: Compress_For_Hosting

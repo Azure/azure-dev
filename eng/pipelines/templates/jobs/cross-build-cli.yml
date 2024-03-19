@@ -1,16 +1,16 @@
 parameters:
-  NameSuffix: 
+  - name: NameSuffix
     type: string
-  Pool: 
+  - name: Pool
     type: string
-  ImageKey: 
+  - name: ImageKey
     type: string  
     default: image
-  OSVmImage:
+  - name: OSVmImage
     type: string
-  OS:
+  - name: OS
     type: string
-  Variables:
+  - name: Variables
     type: object
     default: {}
 

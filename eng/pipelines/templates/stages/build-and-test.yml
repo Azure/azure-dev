@@ -45,7 +45,7 @@ parameters:
             # Codeql.BuildIdentifier: cli_darwin
     CrossBuildMatrix:
       type: object
-      default: 
+      default:
         # Compliant image name required
         # LinuxARM64: 
         #   Pool: $(LINUXPOOL)
@@ -78,10 +78,10 @@ stages:
       - template: /eng/pipelines/templates/variables/globals.yml
       - template: /eng/pipelines/templates/variables/image.yml
     jobs: 
-      - ${{ each build in parameters.BuildMatrix }}: 
+      - ${{ each build in parameters.BuildMatrix }}:
         - template: /eng/pipelines/templates/jobs/build-cli.yml
           parameters:
-            NameSuffix: ${{ build.key}}
+            NameSuffix: ${{ build.key }}
             Pool: ${{ build.value.Pool }}
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }}

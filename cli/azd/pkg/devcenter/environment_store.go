@@ -192,6 +192,12 @@ func (s *EnvironmentStore) Save(ctx context.Context, env *environment.Environmen
 	return s.local.Save(ctx, env)
 }
 
+// Delete implements environment.RemoteDataStore.
+func (s *EnvironmentStore) Delete(ctx context.Context, name string) error {
+	// TODO: Is the user expected to be able to delete from DevCenter?
+	return s.local.Delete(ctx, name)
+}
+
 // matchingEnvironments returns a list of environments matching the configured environment definition
 func (s *EnvironmentStore) matchingEnvironments(
 	ctx context.Context,

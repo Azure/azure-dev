@@ -131,7 +131,7 @@ func NewAzdContext() (*AzdContext, error) {
 
 type configFile struct {
 	Version            int    `json:"version"`
-	DefaultEnvironment string `json:"defaultEnvironment"`
+	DefaultEnvironment string `json:"defaultEnvironment,omitempty"`
 }
 
 func writeConfig(path string, config configFile) error {

@@ -25,6 +25,7 @@ jobs:
         name: ${{ parameters.Pool }}
         ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
         os: ${{ parameters.OS }}
+        
     timeoutInMinutes: 180
     steps:
       - checkout: self

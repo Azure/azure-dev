@@ -1,13 +1,128 @@
+parameters:
+  - name: Matrix
+    type: object
+    default: 
+      LinuxDockerSh:
+        Pool: azsdk-pool-mms-ubuntu-2004-general
+        OSVmImage:  MMSUbuntu20.04
+        Variables: 
+          TestShell: pwsh
+          TestInstallCommand: >
+            ./test-installer-containers.ps1
+            -BaseUrl "http://host.docker.internal:8080"
+            -Version ''
+            -ContainerPrefix '$(docker-mirror-tag-prefix)/'
+            -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
+      LinuxSh:
+        Pool: azsdk-pool-mms-ubuntu-2004-general
+        OSVmImage:  MMSUbuntu20.04
+        Variables:
+          TestShell: bash
+          TestInstallCommand: >
+            ./test-sh-install.sh "bash" "$BASEURL" "" &&
+            ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv" &&
+            ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+      LinuxPwsh:
+        Pool: azsdk-pool-mms-ubuntu-2004-general
+        OSVmImage:  MMSUbuntu20.04
+        Variables: 
+          TestShell: pwsh
+          TestInstallCommand: >
+            ./test-pwsh-xplat-install.ps1 
+            -BaseUrl $env:BASEURL 
+            -Version '' 
+            -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+            -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
+            ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
+
+      Mac11Sh:
+        Pool: Azure Pipelines
+        OSVmImage: macOS-11
+        Variables: 
+        TestShell: bash
+        TestInstallCommand: >
+          ./test-sh-install.sh "bash" "$BASEURL" "" &&
+          ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv" &&
+          ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+      Mac12Sh:
+        Pool: Azure Pipelines
+        OSVmImage: macOS-12
+        Variables: 
+          TestShell: bash
+          TestInstallCommand: >
+            ./test-sh-install.sh "bash" "$BASEURL" "" &&
+            ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv" &&
+            ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+      Mac12Pwsh:
+        Pool: Azure Pipelines
+        OSVmImage: macOS-12
+        Variables: 
+          TestShell: pwsh
+          # Should also test telemetry functions but cannot because of macOS
+          # host limitations in DevOps which do not reproduce on non-DevOps
+          # macs. Disabled for now.
+          #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
+          TestInstallCommand: >
+            ./test-pwsh-xplat-install.ps1 
+            -BaseUrl $env:BASEURL 
+            -Version '' 
+            -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+            -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
+      Mac11Pwsh:
+        Pool: Azure Pipelines
+        OSVmImage: macOS-11
+        Variables: 
+          TestShell: pwsh
+          # Should also test telemetry functions but cannot because of macOS
+          # host limitations in DevOps which do not reproduce on non-DevOps
+          # macs. Disabled for now.
+          #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
+          TestInstallCommand: >
+            ./test-pwsh-xplat-install.ps1 
+            -BaseUrl $env:BASEURL 
+            -Version '' 
+            -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+            -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
+      WindowsCmd:
+        Pool: azsdk-pool-mms-win-2022-general
+        OSVmImage: MMS2022
+        Variables: 
+          TestShell: cmd
+          TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
+      WindowsPwsh:
+        Pool: azsdk-pool-mms-win-2022-general
+        OSVmImage: MMS2022
+        Variables: 
+          TestShell: pwsh
+          TestInstallCommand: >
+            $ErrorActionPreference = 'Stop';
+            ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
+            ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
+      WindowsPowerShell:
+        Pool: azsdk-pool-mms-win-2022-general
+        OSVmImage: MMS2022
+        Variables: 
+          TestShell: powershell
+          TestInstallCommand: >
+            $ErrorActionPreference = 'Stop';
+            ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
+            ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
 
 stages: 
   - stage: Verify_Installers
     condition: and(succeeded(), ne(variables['Skip.VerifyInstallers'], 'true'))
     dependsOn: BuildAndTest
+
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
     jobs:
       - job: Compress_For_Hosting
         pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          vmImage: MMSUbuntu20.04
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: $(LINUXOS)
 
         steps:
           - checkout: self
@@ -59,7 +174,12 @@ stages:
 
       - job: Verify_MSI
         dependsOn: Compress_For_Hosting
-        pool: azsdk-pool-mms-win-2022-general
+        
+        pool:
+          name: $(WINDOWSPOOL)
+          image: $(WINDOWSVMIMAGE)
+          os: $(WINDOWSOS)
+        
         variables: 
           AZURE_DEV_COLLECT_TELEMETRY: no
         strategy:
@@ -89,11 +209,22 @@ stages:
               errorActionPreference: continue
             displayName: Test MSI
 
+      - ${{ each build in paramters.Matrix }}
+      - template: /eng/pipelines/templates/jobs/verify-installers.yml
+        parameters:
+          NameSuffix: ${{ build.key}}
+          Pool: ${{ build.value.Pool }}
+          ImageKey: ${{ build.value.ImageKey }}
+          OSVmImage: ${{ build.value.OSVmImage }} 
+          OS: ${{ build.value.OS }}
+          Variables: ${{ build.value.Variables }}
+
       - job: Verify_Mac_InstallOver
         dependsOn: Compress_For_Hosting
         pool:
-          name: Azure Pipelines
+          name: $(MACPOOL)
           vmImage: macOS-12
+          os: $(MACOS)
 
         steps:
           - checkout: self
@@ -112,261 +243,16 @@ stages:
           - pwsh: azd version
             displayName: Run azd version (expect no failure)
 
-      - job: Verify_Installers
-        dependsOn: Compress_For_Hosting
-        strategy:
-          matrix:
-            LinuxDockerSh:
-              Pool: azsdk-pool-mms-ubuntu-2004-general
-              OSVmImage:  MMSUbuntu20.04
-              TestShell: pwsh
-              TestInstallCommand: >
-                ./test-installer-containers.ps1
-                -BaseUrl "http://host.docker.internal:8080"
-                -Version ''
-                -ContainerPrefix '$(docker-mirror-tag-prefix)/'
-                -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
-            LinuxSh:
-              Pool: azsdk-pool-mms-ubuntu-2004-general
-              OSVmImage:  MMSUbuntu20.04
-              TestShell: bash
-              TestInstallCommand: >
-                ./test-sh-install.sh "bash" "$BASEURL" "" &&
-                ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv" &&
-                ./test-sh-install-errors.sh "bash" "$BASEURL" ""
-            LinuxPwsh:
-              Pool: azsdk-pool-mms-ubuntu-2004-general
-              OSVmImage:  MMSUbuntu20.04
-              TestShell: pwsh
-              TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 
-                -BaseUrl $env:BASEURL 
-                -Version '' 
-                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
-                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
-                ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
-
-            Mac11Sh:
-              Pool: Azure Pipelines
-              OSVmImage: macOS-11
-              TestShell: bash
-              TestInstallCommand: >
-                ./test-sh-install.sh "bash" "$BASEURL" "" &&
-                ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv" &&
-                ./test-sh-install-errors.sh "bash" "$BASEURL" ""
-            Mac12Sh:
-              Pool: Azure Pipelines
-              OSVmImage: macOS-12
-              TestShell: bash
-              TestInstallCommand: >
-                ./test-sh-install.sh "bash" "$BASEURL" "" &&
-                ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv" &&
-                ./test-sh-install-errors.sh "bash" "$BASEURL" ""
-            Mac12Pwsh:
-              Pool: Azure Pipelines
-              OSVmImage: macOS-12
-              TestShell: pwsh
-              # Should also test telemetry functions but cannot because of macOS
-              # host limitations in DevOps which do not reproduce on non-DevOps
-              # macs. Disabled for now.
-              #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
-              TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 
-                -BaseUrl $env:BASEURL 
-                -Version '' 
-                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
-                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
-            Mac11Pwsh:
-              Pool: Azure Pipelines
-              OSVmImage: macOS-11
-              TestShell: pwsh
-              # Should also test telemetry functions but cannot because of macOS
-              # host limitations in DevOps which do not reproduce on non-DevOps
-              # macs. Disabled for now.
-              #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
-              TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 
-                -BaseUrl $env:BASEURL 
-                -Version '' 
-                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
-                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
-            WindowsCmd:
-              Pool: azsdk-pool-mms-win-2022-general
-              OSVmImage: MMS2022
-              TestShell: cmd
-              TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
-            WindowsPwsh:
-              Pool: azsdk-pool-mms-win-2022-general
-              OSVmImage: MMS2022
-              TestShell: pwsh
-              TestInstallCommand: >
-                $ErrorActionPreference = 'Stop';
-                ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
-                ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
-            WindowsPowerShell:
-              Pool: azsdk-pool-mms-win-2022-general
-              OSVmImage: MMS2022
-              TestShell: powershell
-              TestInstallCommand: >
-                $ErrorActionPreference = 'Stop';
-                ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
-                ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
-
-        pool:
-          name: $(Pool)
-          vmImage: $(OSVmImage)
-
-        variables:
-          BaseUrl: http://127.0.0.1:8080
-
-        timeoutInMinutes: 10
-
-        steps:
-          - checkout: self
-
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifact: test-hosting
-              path: hosting
-
-          - bash: ls
-            workingDirectory: hosting
-
-          - bash: |
-              unzip ./azd-darwin-amd64.zip -d ./tmp
-
-              # Ad-hoc signing with "-" identity
-              codesign -s - tmp/azd-darwin-amd64
-
-              zip azd-darwin-amd64.zip -j tmp/azd-darwin-amd64
-            displayName: Self-sign (Darwin)
-            condition: and(succeeded(), contains(variables['Agent.OS'], 'Darwin'))
-            workingDirectory: hosting
-
-          - pwsh: |
-              $ErrorActionPreference = 'Stop'
-
-              # Generate self-sign cert
-              $cert = New-SelfSignedCertificate -CertStoreLocation Cert:\LocalMachine\My -Type CodeSigningCert -Subject "azd installer tests code signing"
-              
-              # Add as temporary trusted root CA
-              try {
-                Export-Certificate -Cert $cert -FilePath code_signing.crt
-                Import-Certificate -FilePath .\code_signing.crt -Cert Cert:\LocalMachine\Root
-              }
-              finally {
-                Remove-Item -Force .\code_signing.crt -ErrorAction SilentlyContinue
-              }
-
-              # Sign the windows binary
-              Set-AuthenticodeSignature .\azd-windows-amd64.msi -Certificate $cert
-            displayName: Self-sign (Windows)
-            condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
-            workingDirectory: hosting
-
-          - bash: nohup npx -y http-server &
-            displayName: Start server in hosting/ (bash)
-            condition: and(succeeded(), not(contains(variables['Agent.OS'], 'Windows')))
-            workingDirectory: hosting
-
-          - pwsh: |
-              Start-Process npx.cmd `
-                -ArgumentList @('-y', 'http-server') `
-                -NoNewWindow `
-                -PassThru `
-                -RedirectStandardOutput ../server.log
-              Write-Host "Server started, waiting for server to initialize"
-              Start-Sleep -Seconds 15
-            displayName: Start server in hosting/ (pwsh)
-            condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
-            workingDirectory: hosting
-
-          - pwsh: |
-              $tmpFile = New-TemporaryFile
-              $timer = [Diagnostics.Stopwatch]::StartNew()
-              $MAX_ELAPSED_SECONDS = 120
-              $TIMEOUT_SECONDS = 12
-              $SLEEP_SECONDS = 1
-
-              while ($timer.Elapsed.TotalSeconds -lt $MAX_ELAPSED_SECONDS) {
-                try {
-                  Write-Host "Downloading file..."
-                  Invoke-WebRequest `
-                    $(BaseUrl)/azd-windows-amd64.zip `
-                    -OutFile $tmpFile `
-                    -TimeoutSec $TIMEOUT_SECONDS
-
-                  if ($LASTEXITCODE) {
-                    throw "Failed downloading file"
-                  }
-                } catch {
-                  Write-Host "Error downloading file."
-                  Write-Host $_
-                  Start-Sleep -Seconds $SLEEP_SECONDS
-                  continue
-                }
-
-                # Exit if the downloaded file size is less than a small threshold
-                # this could mean an error in how the files are being served.
-                if ((Get-Item $tmpFile).Length -le 100000) {
-                  Get-Content $tmpFile
-                  exit 1
-                }
-
-                break
-              }
-
-              Get-Item $tmpFile | Select-Object -Property Name,Length
-            displayName: Verify installer hosting
-
-          - pwsh: $(TestInstallCommand)
-            condition: and(succeeded(), eq('pwsh', variables['TestShell']))
-            workingDirectory: cli/installer/
-            displayName: Test install script (pwsh)
-
-          - powershell: $(TestInstallCommand)
-            condition: and(succeeded(), eq('powershell', variables['TestShell']))
-            workingDirectory: cli/installer/
-            displayName: Test install script (PowerShell)
-
-          - bash: $(TestInstallCommand)
-            condition: and(succeeded(), eq('bash', variables['TestShell']))
-            workingDirectory: cli/installer/
-            displayName: Test install script (bash)
-
-          - task: CmdLine@2
-            condition: and(succeeded(), eq('cmd', variables['TestShell']))
-            inputs:
-              script: $(TestInstallCommand)
-              workingDirectory: cli/installer/
-            displayName: Test install script (cmd)
-
-          - pwsh: |
-              Get-ChildItem Cert:\LocalMachine\My | ForEach-Object {
-                if ($_.Subject -match "azd installer tests code signing") {
-                  Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
-                  Remove-Item -Force $_.PSPath
-                }
-              }
-
-              Get-ChildItem Cert:\LocalMachine\Root | ForEach-Object {
-                if ($_.Subject -match "azd installer tests code signing") {
-                  Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
-                  Remove-Item -Force $_.PSPath
-                }
-              }
-            displayName: Clean up self-signed certificates (Windows)
-            condition: contains(variables['Agent.OS'], 'Windows')
-            workingDirectory: hosting
 
       - job: Verify_LinuxPackages
 
         strategy:
           matrix:
             LinuxAMD64: 
-              Pool: azsdk-pool-mms-ubuntu-2004-general
-              OSVmImage:  MMSUbuntu20.04
+              Pool: $(LINUXPOOL)
+              OSVmImage:  $(LINUXVMIMAGE)
               Architecture: amd64
+              OS: $(LINUXOS)
             # TODO: When Docker can be installed and run properly on the ARM 
             # host this can be used to validate the ARM64 Linux packages.
             # https://github.com/Azure/azure-dev/issues/2617
@@ -377,7 +263,8 @@ stages:
             
         pool:
           name: $(Pool)
-          vmImage: $(OSVmImage)
+          image: $(OSVmImage)
+          os: $(OS)
 
         steps: 
           - checkout: self

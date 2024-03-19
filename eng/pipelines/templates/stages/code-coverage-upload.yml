@@ -2,11 +2,17 @@ stages:
 - stage: CodeCoverage_Upload
   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
   dependsOn: BuildAndTest
+
+  variables:
+    - template: /eng/pipelines/templates/variables/globals.yml
+    - template: /eng/pipelines/templates/variables/image.yml
+
   jobs:
   - job: Upload
     pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      vmImage: MMSUbuntu20.04
+      name: $(LINUXPOOL)
+      image: $(LINUXVMIMAGE)
+      os: $(LINUXOS)
     steps:
       - template: /eng/pipelines/templates/steps/setup-go.yml
       - template: /eng/pipelines/templates/steps/download-artifacts.yml

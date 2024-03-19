@@ -114,6 +114,8 @@ stages:
     dependsOn: BuildAndTest
 
     variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
     
     jobs:
       - job: Compress_For_Hosting

@@ -45,7 +45,7 @@ parameters:
       Mac11Sh:
         Pool: $(MACPOOL)
         OSVmImage: $(MACVMIMAGE)
-        ImageKey: image
+        ImageKey: vmImage
         OS: 
         Variables:
         TestShell: bash
@@ -57,7 +57,7 @@ parameters:
       Mac12Sh:
         Pool: $(MACPOOL)
         OSVmImage: $(MACVMIMAGE12)
-        ImageKey: image
+        ImageKey: vmImage
         OS: $(MACOS)
         Variables:
           TestShell: bash
@@ -69,7 +69,7 @@ parameters:
       Mac12Pwsh:
         Pool: $(MACPOOL)
         OSVmImage: $(MACVMIMAGE12)
-        ImageKey: image
+        ImageKey: vmImage
         OS: $(MACOS)
         Variables:
           TestShell: pwsh
@@ -87,7 +87,7 @@ parameters:
       Mac11Pwsh:
         Pool: $(MACPOOL)
         OSVmImage: $(MACVMIMAGE)
-        ImageKey: image
+        ImageKey: vmImage
         OS: $(MACOS)
         Variables:
           TestShell: pwsh

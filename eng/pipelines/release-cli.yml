@@ -24,7 +24,7 @@ extends:
     - template: /eng/pipelines/templates/stages/build-and-test.yml
 
     - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
-    
+
     - template: /eng/pipelines/templates/stages/sign.yml
 
     - template: /eng/pipelines/templates/stages/verify-installers.yml

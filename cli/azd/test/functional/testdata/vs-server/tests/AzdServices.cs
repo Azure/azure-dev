@@ -67,6 +67,11 @@ public class Session {
     public string Id { get; set; } = "";
 }
 
+public class InitializeServerOptions {
+    public string AuthenticationEndpoint { get; set; } = null;
+    public string AuthenticationKey { get; set; } = null;
+}
+
 public class ProgressMessage
 {
     public ProgressMessage(
@@ -110,7 +115,7 @@ public interface IDebugService {
 }
 
 public interface IServerService {
-    ValueTask<Session> InitializeAsync(string rootPath, CancellationToken cancellationToken);
+    ValueTask<Session> InitializeAsync(string rootPath, InitializeServerOptions options, CancellationToken cancellationToken);
     ValueTask StopAsync(CancellationToken cancellationToken);
 }
 

@@ -155,7 +155,7 @@ stages:
       - job: GenerateReleaseArtifacts
         pool:
           name: $(LINUXPOOL)
-          vmImage: $(LINUXVMIMAGE)
+          image: $(LINUXVMIMAGE)
           os: $(LINUXOS)
 
         steps:

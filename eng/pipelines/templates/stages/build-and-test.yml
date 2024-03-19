@@ -1,76 +1,76 @@
 parameters: 
-    - name: BuildMatrix
-      type: object
-      default:
-        Windows:
-          Pool: $(WINDOWSPOOL)
-          OSVmImage: $(WINDOWSVMIMAGE)
-          OS: $(WINDOWSOS)
-          ImageKey: image
-          Variables: 
-            BuildTarget: azd-windows-amd64.exe
-            BuildOutputName: azd.exe
-            BuildTestMsi: true
-            AZURE_DEV_CI_OS: win
+  - name: BuildMatrix
+    type: object
+    default:
+      Windows:
+        Pool: $(WINDOWSPOOL)
+        OSVmImage: $(WINDOWSVMIMAGE)
+        OS: $(WINDOWSOS)
+        ImageKey: image
+        Variables: 
+          BuildTarget: azd-windows-amd64.exe
+          BuildOutputName: azd.exe
+          BuildTestMsi: true
+          AZURE_DEV_CI_OS: win
+          Codeql.Enabled: true
+          Codeql.SkipTaskAutoInjection: false
+          Codeql.BuildIdentifier: cli_windows
+      Linux:
+        Pool: $(LINUXPOOL)
+        OSVmImage: $(LINUXVMIMAGE)
+        OS: $(LINUXOS)
+        ImageKey: image
+        Variables: 
+            BuildTarget: azd-linux-amd64
+            BuildOutputName: azd
+            SetExecutableBit: true
+            SetShieldInfo: true
+            BuildLinuxPackages: true
+            AZURE_DEV_CI_OS: lin
             Codeql.Enabled: true
             Codeql.SkipTaskAutoInjection: false
-            Codeql.BuildIdentifier: cli_windows
-        Linux:
-          Pool: $(LINUXPOOL)
-          OSVmImage: $(LINUXVMIMAGE)
-          OS: $(LINUXOS)
-          ImageKey: image
-          Variables: 
-              BuildTarget: azd-linux-amd64
-              BuildOutputName: azd
-              SetExecutableBit: true
-              SetShieldInfo: true
-              BuildLinuxPackages: true
-              AZURE_DEV_CI_OS: lin
-              Codeql.Enabled: true
-              Codeql.SkipTaskAutoInjection: false
-              Codeql.BuildIdentifier: cli_linux
-        Mac:
-          Pool: $(MACPOOL)
-          OSVmImage: $(MACVMIMAGE)
-          OS: $(MACOS)
-          ImageKey: vmImage
-          Variables: 
-            BuildTarget: azd-darwin-amd64
-            BuildOutputName: azd
-            MacLocalSign: false
-            SetExecutableBit: true
-            AZURE_DEV_CI_OS: mac
-            # CodeQL on macOS not supported by the Azure DevOps task as-of current.
-            # Codeql.BuildIdentifier: cli_darwin
-    - name: CrossBuildMatrix
-      type: object
-      default:
-        # Compliant image name required
-        # LinuxARM64: 
-        #   Pool: $(LINUXPOOL)
-        #   OSVmImage: $(LINUXVMIMAGE)
-        #   OS: $(LINUXOS)
-        #   Variables: 
-        #     BuildTarget: azd-linux-arm64
-        #     BuildOutputName: azd
-        #     SetExecutableBit: true
-        #     GOOS: linux
-        #     GOARCH: arm64
-        #     BuildLinuxPackages: true
-        MacARM64:
-          Pool: $(MACPOOL)
-          OSVmImage: $(MACVMIMAGE)
-          OS: $(MACOS)
-          ImageKey: vmImage
-          Variables: 
-            BuildTarget: azd-darwin-arm64
-            BuildOutputName: azd
-            SetExecutableBit: true
-            GOOS: darwin
-            GOARCH: arm64
-            # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
-            CGO_ENABLED: 1
+            Codeql.BuildIdentifier: cli_linux
+      Mac:
+        Pool: $(MACPOOL)
+        OSVmImage: $(MACVMIMAGE)
+        OS: $(MACOS)
+        ImageKey: vmImage
+        Variables: 
+          BuildTarget: azd-darwin-amd64
+          BuildOutputName: azd
+          MacLocalSign: false
+          SetExecutableBit: true
+          AZURE_DEV_CI_OS: mac
+          # CodeQL on macOS not supported by the Azure DevOps task as-of current.
+          # Codeql.BuildIdentifier: cli_darwin
+  - name: CrossBuildMatrix
+    type: object
+    default:
+      # Compliant image name required
+      # LinuxARM64: 
+      #   Pool: $(LINUXPOOL)
+      #   OSVmImage: $(LINUXVMIMAGE)
+      #   OS: $(LINUXOS)
+      #   Variables: 
+      #     BuildTarget: azd-linux-arm64
+      #     BuildOutputName: azd
+      #     SetExecutableBit: true
+      #     GOOS: linux
+      #     GOARCH: arm64
+      #     BuildLinuxPackages: true
+      MacARM64:
+        Pool: $(MACPOOL)
+        OSVmImage: $(MACVMIMAGE)
+        OS: $(MACOS)
+        ImageKey: vmImage
+        Variables: 
+          BuildTarget: azd-darwin-arm64
+          BuildOutputName: azd
+          SetExecutableBit: true
+          GOOS: darwin
+          GOARCH: arm64
+          # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
+          CGO_ENABLED: 1
 
 stages: 
   - stage: BuildAndTest
@@ -81,23 +81,25 @@ stages:
       - ${{ each build in parameters.BuildMatrix }}:
         - template: /eng/pipelines/templates/jobs/build-cli.yml
           parameters:
-            NameSuffix: ${{ build.key }}
-            Pool: ${{ build.value.Pool }}
-            ImageKey: ${{ build.value.ImageKey }}
-            OSVmImage: ${{ build.value.OSVmImage }}
-            OS: ${{ build.value.OS }}
-            Variables: ${{ build.value.Variables }}
+            NameSuffix: __build.key__
+            Pool: __build.value.Pool__
+            ImageKey: __build.value.ImageKey__
+            OSVmImage: __build.value.OSVmImage__
+            OS: __build.value.OS__
+            Variables: 
+              ExampleItem: __build.value.Variables__
 
       # This is separated today because Skip.LiveTest is a queue-time variable
       # and cannot be set in a matrix entry.       
-      - ${{ each build in parameters.CrossBuildMatrix }}: 
-        - template: /eng/pipelines/templates/jobs/cross-build-cli.yml
-          parameters:
-            NameSuffix: ${{ build.key}}
-            Pool: ${{ build.value.Pool }}
-            OSVmImage: ${{ build.value.OSVmImage }} 
-            OS: ${{ build.value.OS }}
-            Variables: ${{ build.value.Variables }}
+      # - ${{ each build in parameters.CrossBuildMatrix }}: 
+      #   - template: /eng/pipelines/templates/jobs/cross-build-cli.yml
+      #     parameters:
+      #       NameSuffix: ${{ build.key}}
+      #       Pool: ${{ build.value.Pool }}
+      #       ImageKey: ${{ build.value.ImageKey }}
+      #       OSVmImage: ${{ build.value.OSVmImage }} 
+      #       OS: ${{ build.value.OS }}
+      #       Variables: ${{ build.value.Variables }}
 
       - job: MergeLinuxPackages
         pool:

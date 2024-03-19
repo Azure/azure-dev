@@ -81,25 +81,24 @@ stages:
       - ${{ each build in parameters.BuildMatrix }}:
         - template: /eng/pipelines/templates/jobs/build-cli.yml
           parameters:
-            NameSuffix: __build.key__
-            Pool: __build.value.Pool__
-            ImageKey: __build.value.ImageKey__
-            OSVmImage: __build.value.OSVmImage__
-            OS: __build.value.OS__
-            Variables: 
-              ExampleItem: __build.value.Variables__
+            NameSuffix: ${{ build.key}}
+            Pool: ${{ build.value.Pool }}
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }} 
+            OS: ${{ build.value.OS }}
+            Variables: ${{ build.value.Variables }}
 
       # This is separated today because Skip.LiveTest is a queue-time variable
       # and cannot be set in a matrix entry.       
-      # - ${{ each build in parameters.CrossBuildMatrix }}: 
-      #   - template: /eng/pipelines/templates/jobs/cross-build-cli.yml
-      #     parameters:
-      #       NameSuffix: ${{ build.key}}
-      #       Pool: ${{ build.value.Pool }}
-      #       ImageKey: ${{ build.value.ImageKey }}
-      #       OSVmImage: ${{ build.value.OSVmImage }} 
-      #       OS: ${{ build.value.OS }}
-      #       Variables: ${{ build.value.Variables }}
+      - ${{ each build in parameters.CrossBuildMatrix }}: 
+        - template: /eng/pipelines/templates/jobs/cross-build-cli.yml
+          parameters:
+            NameSuffix: ${{ build.key}}
+            Pool: ${{ build.value.Pool }}
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }} 
+            OS: ${{ build.value.OS }}
+            Variables: ${{ build.value.Variables }}
 
       - job: MergeLinuxPackages
         pool:

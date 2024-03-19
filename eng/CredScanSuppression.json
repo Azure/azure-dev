@@ -1,0 +1,9 @@
+{
+    "tool": "Credential Scanner",
+    "suppressions": [
+      {
+        "file": [ "cli/azd/pkg/auth/testdata/certificate.pem" ],
+        "_justification": "File contains private key used by test code."
+      }
+    ]
+  }

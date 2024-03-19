@@ -111,11 +111,7 @@ type Input struct {
 }
 
 type InputDefault struct {
-	Generate *InputDefaultGenerate `json:"generate,omitempty"`
-}
-
-type InputDefaultGenerate struct {
-	MinLength *int `json:"minLength,omitempty"`
+	Generate interface{} `json:"generate,omitempty"`
 }
 
 // ManifestFromAppHost returns the Manifest from the given app host.

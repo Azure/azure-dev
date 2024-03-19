@@ -140,8 +140,8 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
 	// this allows the template to access the auto-gen inputs from the generator
 	type autoGenInput struct {
-		Name string
-		Len  int
+		Name   string
+		Config string
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
@@ -159,10 +159,15 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		resource, inputName := handleBicepNameQuotes(parts[0]), handleBicepNameQuotes(parts[1])
 
 		resourceGenList, exists := inputs[resource]
+		config, err := json.Marshal(input.Default)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling input %s: %w", key, err)
+		}
+		configString := jasonSimpleKeyRegex.ReplaceAllString(string(config), "${1}:")
 		if exists {
-			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Len: input.DefaultMinLength})
+			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Config: configString})
 		} else {
-			inputs[resource] = []autoGenInput{{Name: inputName, Len: input.DefaultMinLength}}
+			inputs[resource] = []autoGenInput{{Name: inputName, Config: configString}}
 		}
 	}
 	context := bicepContext{
@@ -373,12 +378,12 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
 	for name, comp := range m.Resources {
 		for k, v := range comp.Inputs {
-			if v.Default != nil && v.Default.Generate != nil && v.Default.Generate.MinLength != nil {
+			if v.Default != nil && v.Default.Generate != nil {
 				input := genInput{
 					Secret: v.Secret,
 				}
 
-				input.DefaultMinLength = *v.Default.Generate.MinLength
+				input.Default = v.Default.Generate
 				// only inputs with default.generate are tracked here
 				b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
 			}
@@ -938,6 +943,7 @@ func containsSecretInput(resourceName, envValue string, inputs map[string]Input)
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
+var jasonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
 
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required

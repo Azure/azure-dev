@@ -1,0 +1,87 @@
+parameters:
+  NameSuffix: 
+    type: string
+  Pool: 
+    type: string
+  ImageKey: 
+    type: string  
+    default: image
+  OSVmImage:
+    type: string
+  OS:
+    type: string
+  Variables:
+    type: object
+    default: {}
+
+jobs:
+  - job: CrossBuildCLI_${{ parameters.NameSuffix }}
+    displayName: CrossBuildCLI ${{ parameters.NameSuffix }}
+
+    variables: ${{ parameters.Variables }}
+
+    pool: 
+      name: ${{ parameters.Pool }}
+      ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
+      os: ${{ parameters.OS }}
+
+    timeoutInMinutes: 20
+
+    steps: 
+      - checkout: self
+
+      - template: /eng/pipelines/templates/steps/setup-go.yml
+        parameters:
+          Condition: false
+
+      - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Set-CliVersionVariable.ps1
+        displayName: Set CLI_VERSION
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: cli/azd/ci-build.ps1
+          arguments: >-
+            -Version $(CLI_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+          workingDirectory: cli/azd
+        displayName: Build Go Binary (cross compile)
+
+      - pwsh: file azd
+        workingDirectory: cli/azd
+        displayName: Get file info
+
+      - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
+        workingDirectory: cli/azd
+        displayName: Rename binaries
+
+      - bash: chmod +x $(BuildTarget)
+        condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+        workingDirectory: cli/azd
+        displayName: Set executable bit for non-Windows binaries
+
+      - template: /eng/pipelines/templates/steps/build-linux-packages.yml
+        parameters:
+          Architecture: arm64
+          Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+    
+    templateContext: 
+      outputs: 
+        - output: pipelineArtifact
+          path: cli/azd/$(BuildTarget)
+          artifact: $(BuildTarget)
+          condition: always()
+          displayName: Upload azd binary to artifact store
+
+        - output: pipelineArtifact
+          path: cli/installer/fpm/artifact
+          artifact: linux-packages-arm64
+          condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+          displayName: Upload linux packages to artifact store

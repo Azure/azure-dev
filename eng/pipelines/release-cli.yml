@@ -17,11 +17,6 @@ pr:
       - eng/pipelines/release-cli.yml
       - eng/pipelines/templates/steps/publish-cli.yml
 
-variables:
-  - template: /eng/pipelines/templates/variables/globals.yml
-
-parameters: []
-
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:

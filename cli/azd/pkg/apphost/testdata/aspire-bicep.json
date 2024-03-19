@@ -55,12 +55,12 @@
         "parent": "postgres-2",
         "connectionString": "{postgres-2.connectionString};Database=db2;"
       },
-      "sb": {
+      "s-b": {
         "type": "azure.bicep.v0",
-        "connectionString": "{sb.outputs.serviceBusEndpoint}",
+        "connectionString": "{s-b.outputs.serviceBusEndpoint}",
         "path": "aspire.hosting.azure.bicep.servicebus.bicep",
         "params": {
-          "serviceBusNamespaceName": "sb",
+          "serviceBusNamespaceName": "s-b",
           "principalId": "",
           "principalType": "",
           "queues": [
@@ -118,7 +118,7 @@
           "ConnectionStrings__db2": "{db2.connectionString}",
           "bicepValue_test": "{test.outputs.test}",
           "bicepValue0": "{test.outputs.val0}",
-          "ConnectionStrings__sb": "{sb.connectionString}",
+          "ConnectionStrings__s-b": "{s-b.connectionString}",
           "APPLICATIONINSIGHTS_CONNECTION_STRING": "{ai.connectionString}",
           "ConnectionStrings__db": "{db.connectionString}"
         },

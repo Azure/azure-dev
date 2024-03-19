@@ -1,5 +1,5 @@
 parameters: 
-    BuildMatrix: 
+    - name: BuildMatrix
       type: object
       default:
         Windows:
@@ -43,7 +43,7 @@ parameters:
             AZURE_DEV_CI_OS: mac
             # CodeQL on macOS not supported by the Azure DevOps task as-of current.
             # Codeql.BuildIdentifier: cli_darwin
-    CrossBuildMatrix:
+    - name: CrossBuildMatrix
       type: object
       default:
         # Compliant image name required

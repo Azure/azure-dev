@@ -209,7 +209,7 @@ stages:
               errorActionPreference: continue
             displayName: Test MSI
 
-      - ${{ each build in paramters.Matrix }}:
+      - ${{ each build in parameters.Matrix }}:
         - template: /eng/pipelines/templates/jobs/verify-installers.yml
           parameters:
             NameSuffix: ${{ build.key}}

@@ -64,6 +64,9 @@ resource storageVolume 'Microsoft.Storage/storageAccounts@2022-05-01' = {
   sku: {
     name: 'Standard_LRS'
   }
+  properties: {
+    largeFileSharesState: 'Enabled'
+  }
 
   resource storageVolumeFileService 'fileServices' = {
     name: 'default'
@@ -72,7 +75,8 @@ resource storageVolume 'Microsoft.Storage/storageAccounts@2022-05-01' = {
     resource {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}FileShare 'shares' = {
       name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
       properties: {
-        shareQuota: 100
+        shareQuota: 1024
+        enabledProtocols: 'SMB'
       }
     }
 {{- end }}

@@ -179,7 +179,7 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
   location: location
 {{- if $value.Volumes}}
   dependsOn: [storageVolume]
-{{- end }}  
+{{- end }}
   properties: {
     environmentId: containerAppEnvironment.id
     configuration: {

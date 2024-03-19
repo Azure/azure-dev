@@ -60,10 +60,17 @@ type Manager interface {
 	// If the environment does not exist, the user is prompted to create it.
 	LoadOrInitInteractive(ctx context.Context, name string) (*Environment, error)
 	List(ctx context.Context) ([]*Description, error)
+
+	// Get returns the existing environment with the given name.
+	// If the environment specified by the given name does not exist, ErrNotFound is returned.
 	Get(ctx context.Context, name string) (*Environment, error)
+
 	Save(ctx context.Context, env *Environment) error
 	Reload(ctx context.Context, env *Environment) error
-	Delete(ctx context.Context, name string, deleteOptions *DeleteOptions) error
+
+	// Delete deletes the environment from local storage.
+	Delete(ctx context.Context, name string) error
+
 	EnvPath(env *Environment) string
 	ConfigPath(env *Environment) string
 }
@@ -392,47 +399,14 @@ func (m *manager) Reload(ctx context.Context, env *Environment) error {
 	return m.local.Reload(ctx, env)
 }
 
-type DeleteOptions struct {
-	DeleteRemote bool
-}
-
-func (m *manager) Delete(ctx context.Context, name string, options *DeleteOptions) error {
+func (m *manager) Delete(ctx context.Context, name string) error {
 	if name == "" {
 		return ErrNameNotSpecified
 	}
 
-	if options == nil {
-		options = &DeleteOptions{}
-	}
-
-	// Handle: local delete notExists, still delete remote
-	// What if remote doesn't exist?
-	deleteRemote := m.remote != nil && options.DeleteRemote
-	var localNotFound error
-	var remoteNotFound error
 	err := m.local.Delete(ctx, name)
-	if errors.Is(err, ErrNotFound) {
-		if !deleteRemote {
-			return err
-		}
-		localNotFound = err
-	} else if err != nil {
-		return fmt.Errorf("deleting local environment, %w", err)
-	}
-
-	if deleteRemote {
-		err := m.remote.Delete(ctx, name)
-		if errors.Is(err, ErrNotFound) {
-			// TODO: When local exists, but remote doesn't exist
-			// Should we return an error?
-			remoteNotFound = err
-		} else if err != nil {
-			return fmt.Errorf("deleting remote environment, %w", err)
-		}
-	}
-
-	if localNotFound != nil && remoteNotFound != nil {
-		return fmt.Errorf("'%s': %w", name, ErrNotFound)
+	if err != nil {
+		return err
 	}
 
 	defaultEnvName, err := m.azdContext.GetDefaultEnvironmentName()

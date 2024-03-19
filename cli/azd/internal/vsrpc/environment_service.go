@@ -173,9 +173,7 @@ func (s *environmentService) DeleteEnvironmentAsync(
 	}
 
 	_ = observer.OnNext(ctx, newInfoProgressMessage("Removing environment"))
-	err = c.envManager.Delete(ctx, name, &environment.DeleteOptions{
-		DeleteRemote: true,
-	})
+	err = c.envManager.Delete(ctx, name)
 	if err != nil {
 		return false, err
 	}

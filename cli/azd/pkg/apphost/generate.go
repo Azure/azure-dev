@@ -1291,23 +1291,24 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs.") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
+		replaceDash := strings.ReplaceAll(resource, "-", "_")
 		outputParts := strings.SplitN(prop, ".", 2)
 		outputType := outputParts[0]
 		outputName := outputParts[1]
 		if outputType == "outputs" {
 			if emitType == inputEmitTypeYaml {
-				return fmt.Sprintf("{{ .Env.%s_%s }}", strings.ToUpper(resource), strings.ToUpper(outputName)), nil
+				return fmt.Sprintf("{{ .Env.%s_%s }}", strings.ToUpper(replaceDash), strings.ToUpper(outputName)), nil
 			}
 			if emitType == inputEmitTypeBicep {
 				// using `{{ }}` helps to check if the result of evaluating a string is a complex expression or not.
-				return fmt.Sprintf("{{%s.outputs.%s}}", resource, outputName), nil
+				return fmt.Sprintf("{{%s.outputs.%s}}", replaceDash, outputName), nil
 			}
 			return "", fmt.Errorf("unexpected output type %s", string(emitType))
 		} else {
 			if emitType == inputEmitTypeYaml {
 				return fmt.Sprintf(
 					"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
-					strings.ToUpper(resource+"kv"),
+					strings.ToUpper(replaceDash+"kv"),
 					outputName), nil
 			}
 			if emitType == inputEmitTypeBicep {

@@ -6,6 +6,7 @@ parameters:
           Pool: $(WINDOWSPOOL)
           OSVmImage: $(WINDOWSVMIMAGE)
           OS: $(WINDOWSOS)
+          ImageKey: image
           Variables: 
             BuildTarget: azd-windows-amd64.exe
             BuildOutputName: azd.exe
@@ -18,6 +19,7 @@ parameters:
           Pool: $(LINUXPOOL)
           OSVmImage: $(LINUXVMIMAGE)
           OS: $(LINUXOS)
+          ImageKey: image
           Variables: 
               BuildTarget: azd-linux-amd64
               BuildOutputName: azd
@@ -81,7 +83,8 @@ stages:
           parameters:
             NameSuffix: ${{ build.key}}
             Pool: ${{ build.value.Pool }}
-            OSVmImage: ${{ build.value.OSVmImage }} 
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }}
             OS: ${{ build.value.OS }}
             Variables: ${{ build.value.Variables }}
 

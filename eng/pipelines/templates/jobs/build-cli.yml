@@ -17,7 +17,10 @@ parameters:
 jobs: 
   - job: BuildCLI_${{ parameters.NameSuffix }}
     displayName: BuildCLI ${{ parameters.NameSuffix }}
-    variables: ${{ parameters.Variables }}
+
+    variables: 
+      ${{ insert }}: ${{ parameters.Variables }}
+
     pool:
         name: ${{ parameters.Pool }}
         ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}

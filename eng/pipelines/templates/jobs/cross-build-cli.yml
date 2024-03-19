@@ -18,7 +18,8 @@ jobs:
   - job: CrossBuildCLI_${{ parameters.NameSuffix }}
     displayName: CrossBuildCLI ${{ parameters.NameSuffix }}
 
-    variables: ${{ parameters.Variables }}
+    variables: 
+      ${{ insert }}: ${{ parameters.Variables }}
 
     pool: 
       name: ${{ parameters.Pool }}

@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -261,6 +262,30 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 //go:embed testdata/aspire-escaping.json
 var aspireEscapingManifest []byte
 
+func mockPublishProperties(mockCtx *mocks.MockContext) {
+	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == "dotnet" && slices.Contains(args.Args, "--getProperty:GeneratedContainerConfiguration")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		response := dotnet.ResponseContainerConfiguration{
+			Config: dotnet.ResponseContainerConfigurationExpPorts{
+				ExposedPorts: map[string]interface{}{
+					"3341/tcp": struct{}{},
+				},
+			}}
+		serialize, err := json.Marshal(response)
+		if err != nil {
+			return exec.RunResult{
+				ExitCode: -1,
+				Stderr:   err.Error(),
+			}, err
+		}
+		return exec.RunResult{
+			ExitCode: 0,
+			Stdout:   string(serialize),
+		}, nil
+	})
+}
+
 func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	manifestInvokeCount := 0
 
@@ -268,6 +293,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
+	mockPublishProperties(mockContext)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet") &&
 			slices.Contains(args.Args, "--getProperty:IsAspireHost")
@@ -298,8 +324,9 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	})
 
 	manager := NewImportManager(&DotNetImporter{
-		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
-		console:   mockContext.Console,
+		dotnetCli:     dotnet.NewDotNetCli(mockContext.CommandRunner),
+		commandRunner: mockContext.CommandRunner,
+		console:       mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
 			env := environment.NewWithValues("env", map[string]string{
 				"DOTNET_ENVIRONMENT": "Development",

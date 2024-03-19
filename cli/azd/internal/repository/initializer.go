@@ -42,14 +42,12 @@ func NewInitializer(
 	gitCli git.GitCli,
 	dotnetCli dotnet.DotNetCli,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
-	commandRunner exec.CommandRunner,
 ) *Initializer {
 	return &Initializer{
 		console:        console,
 		gitCli:         gitCli,
 		lazyEnvManager: lazyEnvManager,
 		dotnetCli:      dotnetCli,
-		commandRunner:  commandRunner,
 	}
 }
 

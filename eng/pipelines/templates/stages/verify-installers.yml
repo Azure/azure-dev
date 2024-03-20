@@ -142,15 +142,20 @@ parameters:
     LinuxAMD64:
       Pool: $(LINUXPOOL)
       OSVmImage: $(LINUXVMIMAGE)
-      Architecture: amd64
+      HostArchitecture: amd64
       OS: linux
+      Variables:
+        Architecture: amd64
     # TODO: When Docker can be installed and run properly on the ARM
     # host this can be used to validate the ARM64 Linux packages.
     # https://github.com/Azure/azure-dev/issues/2617
-    # LinuxARM64:
-    #   Pool: azsdk-pool-mms-ubuntu-2004-arm
-    #   OSVmImage: MMSUbuntu20.04ARM64
-    #   Architecture: arm64
+    LinuxARM64:
+      Pool: $(LINUXARMPOOL)
+      OSVmImage: $(LINUXARMVMIMAGE)
+      HostArchitecture: arm64
+      OS: linux
+      Variables:
+        Architecture: arm64
 
 stages:
   - stage: Verify_Installers
@@ -295,6 +300,10 @@ stages:
             name: ${{ build.value.Pool}}
             image: ${{ build.value.OSVmImage }}
             os: ${{ build.value.OS }}
+            hostArchitecture: ${{ build.value.HostArchitecture }}
+
+          variables: 
+            ${{ insert }}: ${{ build.value.Variables }}
 
           steps:
             - checkout: self

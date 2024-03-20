@@ -14,6 +14,11 @@ stages:
             )
           )
         )
+
+      variables: 
+        - template: /eng/pipelines/templates/variables/image.yml
+        - template: /eng/pipelines/templates/variables/globals.yml
+
       jobs:
         - deployment: Publish_Release
           condition: >-
@@ -24,8 +29,9 @@ stages:
           environment: azure-dev
 
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            OSVmImage: MMSUbuntu20.04
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
 
           strategy:
             runOnce:
@@ -93,6 +99,7 @@ stages:
           pool:
             name: azsdk-pool-mms-win-2022-general
 
+os: linux
           strategy:
             runOnce:
               deploy:
@@ -121,6 +128,7 @@ stages:
           pool:
             name: azsdk-pool-mms-win-2022-general
 
+os: linux
           strategy:
             runOnce:
               deploy:
@@ -147,8 +155,9 @@ stages:
           environment: azure-dev
 
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            OSVmImage: MMSUbuntu20.04
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
 
           strategy:
             runOnce:
@@ -185,6 +194,10 @@ stages:
           )
         )
 
+      variables: 
+        - template: /eng/pipelines/templates/variables/image.yml
+        - template: /eng/pipelines/templates/variables/globals.yml
+
       jobs:
         - deployment: Upload_Version_Txt
           condition: >-
@@ -197,6 +210,7 @@ stages:
           pool:
             name: azsdk-pool-mms-win-2022-general
 
+os: linux
           strategy:
             runOnce:
               deploy:
@@ -291,8 +305,9 @@ stages:
               )
             )
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            OSVmImage: MMSUbuntu20.04
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
 
           steps:
             - checkout: self
@@ -328,8 +343,9 @@ stages:
             )
           )
         pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage: MMSUbuntu20.04
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
 
         variables:
           ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
@@ -495,8 +511,9 @@ stages:
         - deployment: PublishInstallers
           environment: azure-dev
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            OSVmImage: MMSUbuntu20.04
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
 
           strategy:
             runOnce:

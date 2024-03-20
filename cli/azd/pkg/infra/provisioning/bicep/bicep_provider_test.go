@@ -1305,14 +1305,10 @@ func TestInputsParameter(t *testing.T) {
 func TestGenerateInput(t *testing.T) {
 	config := azure.AutoGenInput{
 		MinLength:  to.Ptr(8),
-		Lower:      to.Ptr(true),
-		Upper:      to.Ptr(true),
-		Numeric:    to.Ptr(true),
 		Special:    to.Ptr(false),
 		MinLower:   to.Ptr(2),
 		MinUpper:   to.Ptr(2),
 		MinNumeric: to.Ptr(2),
-		MinSpecial: to.Ptr(0),
 	}
 
 	expectedLength := 8

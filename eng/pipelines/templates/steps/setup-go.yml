@@ -4,7 +4,7 @@ parameters:
 
 steps:
   - pwsh: |
-      if (!$IsWindows -and (arch) -eq 'arm64') {
+      if (!$IsWindows -and (arch) -in @('arm64', 'aarch64')) {
         Write-Host "Circumventing GoTool@0 because it does not support ARM64"
         $tempDir = [System.IO.Path]::GetTempPath()
         $os = 'darwin' 

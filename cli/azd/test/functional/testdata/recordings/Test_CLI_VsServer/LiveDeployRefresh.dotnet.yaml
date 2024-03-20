@@ -1,0 +1,83 @@
+version: "1.0"
+tool: dotnet
+interactions:
+    - id: 0
+      args:
+        - publish
+        - /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj
+        - -r
+        - linux-x64
+        - -c
+        - Release
+        - /t:PublishContainer
+        - -p:ContainerImageName=azd-deploy-apiservice-1710894643
+        - -p:ContainerRegistry=acr4jt5jbl6s5gno.azurecr.io
+      exitCode: 0
+      stdout: |
+        MSBuild version 17.8.3+195e7f5a3 for .NET
+          Determining projects to restore...
+          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj (in 516 ms).
+          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.ServiceDefaults/AspireAzdTests.ServiceDefaults.csproj (in 516 ms).
+          AspireAzdTests.ServiceDefaults -> /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.ServiceDefaults/bin/Release/net8.0/AspireAzdTests.ServiceDefaults.dll
+          AspireAzdTests.ApiService -> /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.ApiService/bin/Release/net8.0/linux-x64/AspireAzdTests.ApiService.dll
+          AspireAzdTests.ApiService -> /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.ApiService/bin/Release/net8.0/linux-x64/publish/
+        /home/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj]
+          Building image 'azd-deploy-apiservice-1710894643' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
+          Uploading layer 'sha256:8a1e25ce7c4f75e372e9884f8f7b1bedcfe4a7a7d452eb4b0a1c7477c9a90345' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploading layer 'sha256:d038975ffc90fa0cf112ccb6208e4a734bfd2ff0aad5502ae102ff34c459ad85' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploading layer 'sha256:4d3bcc6169b1668ece1d9e8252fdcc52f2502d78c6d83e481e2f999dc609c22c' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploading layer 'sha256:ccd8f6c592e78274d68c0c8d4268bcadf4c22a6cbd25cd6af79329d5600b98e4' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Finished uploading layer 'sha256:4d3bcc6169b1668ece1d9e8252fdcc52f2502d78c6d83e481e2f999dc609c22c' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Finished uploading layer 'sha256:d038975ffc90fa0cf112ccb6208e4a734bfd2ff0aad5502ae102ff34c459ad85' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Finished uploading layer 'sha256:8a1e25ce7c4f75e372e9884f8f7b1bedcfe4a7a7d452eb4b0a1c7477c9a90345' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Finished uploading layer 'sha256:ccd8f6c592e78274d68c0c8d4268bcadf4c22a6cbd25cd6af79329d5600b98e4' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploading config to registry at blob 'sha256:ecf3d389430ff03e69012e9492b75255d6fd89ec602bbbde9a49bdb973e72f83',
+          Uploaded config to registry.
+          Uploading tag 'latest' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploaded tag 'latest' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Pushed image 'azd-deploy-apiservice-1710894643:latest' to registry 'acr4jt5jbl6s5gno.azurecr.io'.
+
+        Workload updates are available. Run `dotnet workload list` for more information.
+      stderr: ""
+    - id: 1
+      args:
+        - publish
+        - /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj
+        - -r
+        - linux-x64
+        - -c
+        - Release
+        - /t:PublishContainer
+        - -p:ContainerImageName=azd-deploy-webfrontend-1710894678
+        - -p:ContainerRegistry=acr4jt5jbl6s5gno.azurecr.io
+      exitCode: 0
+      stdout: |
+        MSBuild version 17.8.3+195e7f5a3 for .NET
+          Determining projects to restore...
+          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj (in 509 ms).
+          1 of 2 projects are up-to-date for restore.
+          AspireAzdTests.ServiceDefaults -> /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.ServiceDefaults/bin/Release/net8.0/AspireAzdTests.ServiceDefaults.dll
+        /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/Components/Pages/AzureBlobs.razor(45,12): warning CS8618: Non-nullable field '_html' must contain a non-null value when exiting constructor. Consider declaring the field as nullable. [/tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/Components/Pages/AzureTables.razor(57,23): warning CS8618: Non-nullable property 'PartitionKey' must contain a non-null value when exiting constructor. Consider declaring the property as nullable. [/tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/Components/Pages/AzureTables.razor(58,23): warning CS8618: Non-nullable property 'RowKey' must contain a non-null value when exiting constructor. Consider declaring the property as nullable. [/tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/Components/Pages/AzureTables.razor(61,23): warning CS8618: Non-nullable property 'Endpoint' must contain a non-null value when exiting constructor. Consider declaring the property as nullable. [/tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+          AspireAzdTests.Web -> /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/bin/Release/net8.0/linux-x64/AspireAzdTests.Web.dll
+          AspireAzdTests.Web -> /tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/bin/Release/net8.0/linux-x64/publish/
+        /home/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/tmp/Test_CLI_VsServerLiveDeployRefresh3541481372/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+          Building image 'azd-deploy-webfrontend-1710894678' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
+          Uploading layer 'sha256:8a1e25ce7c4f75e372e9884f8f7b1bedcfe4a7a7d452eb4b0a1c7477c9a90345' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploading layer 'sha256:d038975ffc90fa0cf112ccb6208e4a734bfd2ff0aad5502ae102ff34c459ad85' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploading layer 'sha256:4d3bcc6169b1668ece1d9e8252fdcc52f2502d78c6d83e481e2f999dc609c22c' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploading layer 'sha256:885c42a8d4a4856fd16c72de1242ab2bcec1416bf2e483ed8d0cf495e5d77304' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Finished uploading layer 'sha256:4d3bcc6169b1668ece1d9e8252fdcc52f2502d78c6d83e481e2f999dc609c22c' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Finished uploading layer 'sha256:d038975ffc90fa0cf112ccb6208e4a734bfd2ff0aad5502ae102ff34c459ad85' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Finished uploading layer 'sha256:8a1e25ce7c4f75e372e9884f8f7b1bedcfe4a7a7d452eb4b0a1c7477c9a90345' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Finished uploading layer 'sha256:885c42a8d4a4856fd16c72de1242ab2bcec1416bf2e483ed8d0cf495e5d77304' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploading config to registry at blob 'sha256:1018ced52cc1cb0022b8626bb221f548fd66dbca424fd2922e0ee373c569a84a',
+          Uploaded config to registry.
+          Uploading tag 'latest' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Uploaded tag 'latest' to 'acr4jt5jbl6s5gno.azurecr.io'.
+          Pushed image 'azd-deploy-webfrontend-1710894678:latest' to registry 'acr4jt5jbl6s5gno.azurecr.io'.
+
+        Workload updates are available. Run `dotnet workload list` for more information.
+      stderr: ""

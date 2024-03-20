@@ -195,7 +195,7 @@ func Test_CLI_VsServer(t *testing.T) {
 			ctx, cancel := newTestContext(t)
 			defer cancel()
 
-			dir := t.TempDir()
+			dir := tempDirWithDiagnostics(t)
 			t.Logf("DIR: %s", dir)
 
 			err = copySample(dir, "aspire-full")

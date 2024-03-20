@@ -72,8 +72,13 @@ public class InitializeServerOptions {
     public string AuthenticationKey { get; set; } = null;
 }
 
-public class DeleteOptions {
-    public bool DeleteAzureResources { get; set; } = false;
+[Flags]
+public enum EnvironmentDeleteMode
+{
+    None = 0,
+    Local = 1,
+    Remote = 2,
+    All = Local | Remote
 }
 
 public class ProgressMessage
@@ -128,7 +133,7 @@ public interface IEnvironmentService {
     ValueTask<Environment> OpenEnvironmentAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
     ValueTask<Environment> LoadEnvironmentAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
     ValueTask<Environment> RefreshEnvironmentAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
-    ValueTask<bool> DeleteEnvironmentAsync(Session s, string envName, DeleteOptions deleteOptions, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<bool> DeleteEnvironmentAsync(Session s, string envName, EnvironmentDeleteMode mode, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
     ValueTask<bool> CreateEnvironmentAsync(Session s, Environment newEnv,IObserver<ProgressMessage> outputObserver,  CancellationToken cancellationToken);
     ValueTask<bool> SetCurrentEnvironmentAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
     ValueTask<Environment> DeployAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);

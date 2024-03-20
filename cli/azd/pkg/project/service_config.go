@@ -41,8 +41,6 @@ type ServiceConfig struct {
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
-
-	initialized bool
 }
 
 type DotNetContainerAppOptions struct {

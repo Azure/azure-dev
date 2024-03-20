@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	tm "github.com/buger/goterm"
 	"github.com/mattn/go-isatty"
 	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
@@ -462,8 +463,15 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 
 func promptFromOptions(options ConsoleOptions) survey.Prompt {
 	if options.IsPassword {
+		// different than survey.Input, survey.Password doest not reset the line before rendering the question
+		// see password implementation: https://github.com/AlecAivazis/survey/blob/master/password.go#L51
+		// and input: https://github.com/AlecAivazis/survey/blob/master/input.go#L141
+		// by calling .Render(), the line is reset, cleaning any current message or spinner.
+		tm.Print(tm.ResetLine(""))
+		tm.Flush()
 		return &survey.Password{
 			Message: options.Message,
+			Help:    options.Help,
 		}
 	}
 
@@ -662,24 +670,42 @@ func watchTerminalInterrupt(c *AskerConsole) {
 	}()
 }
 
-// Creates a new console with the specified writer, handles and formatter.
-func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
+// Writers that back the underlying console.
+type Writers struct {
+	// The writer to write output to.
+	Output io.Writer
+
+	// The writer to write spinner output to. If nil, the spinner will write to Output.
+	Spinner io.Writer
+}
+
+// Creates a new console with the specified writers, handles and formatter.
+func NewConsole(
+	noPrompt bool,
+	isTerminal bool,
+	writers Writers,
+	handles ConsoleHandles,
+	formatter output.Formatter) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	c := &AskerConsole{
 		asker:         asker,
 		handles:       handles,
-		defaultWriter: w,
-		writer:        w,
+		defaultWriter: writers.Output,
+		writer:        writers.Output,
 		formatter:     formatter,
 		isTerminal:    isTerminal,
 		currentIndent: atomic.NewString(""),
 		noPrompt:      noPrompt,
 	}
 
+	if writers.Spinner == nil {
+		writers.Spinner = writers.Output
+	}
+
 	spinnerConfig := yacspin.Config{
 		Frequency:    200 * time.Millisecond,
-		Writer:       c.writer,
+		Writer:       writers.Spinner,
 		Suffix:       " ",
 		TerminalMode: spinnerTerminalMode(isTerminal),
 	}

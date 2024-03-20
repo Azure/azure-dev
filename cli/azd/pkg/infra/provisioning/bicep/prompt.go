@@ -21,7 +21,8 @@ func (p *BicepProvider) promptForParameter(
 	param azure.ArmTemplateParameterDefinition,
 ) (any, error) {
 	securedParam := "parameter"
-	if param.Secure() {
+	isSecuredParam := param.Secure()
+	if isSecuredParam {
 		securedParam = "secured parameter"
 	}
 	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure %s:", key, securedParam)
@@ -92,7 +93,7 @@ func (p *BicepProvider) promptForParameter(
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
 				Message:    msg,
 				Help:       help,
-				IsPassword: param.Secure(),
+				IsPassword: isSecuredParam,
 			}, convertString, validateLengthRange(key, param.MinLength, param.MaxLength))
 			if err != nil {
 				return nil, err

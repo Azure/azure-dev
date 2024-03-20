@@ -28,6 +28,22 @@ func (s *environmentService) DeployAsync(
 		next: &messageWriter{
 			ctx:      ctx,
 			observer: observer,
+			messageTemplate: ProgressMessage{
+				Kind:     MessageKind(Info),
+				Severity: Info,
+			},
+		},
+	}
+
+	spinnerWriter := &lineWriter{
+		trimLineEndings: true,
+		next: &messageWriter{
+			ctx:      ctx,
+			observer: observer,
+			messageTemplate: ProgressMessage{
+				Kind:     MessageKind(Important),
+				Severity: Info,
+			},
 		},
 	}
 
@@ -36,7 +52,7 @@ func (s *environmentService) DeployAsync(
 		return nil, err
 	}
 	container.outWriter.AddWriter(outputWriter)
-	defer container.outWriter.RemoveWriter(outputWriter)
+	container.spinnerWriter.AddWriter(spinnerWriter)
 
 	provisionFlags := cmd.NewProvisionFlagsFromEnvAndOptions(
 		&internal.EnvFlag{
@@ -90,6 +106,10 @@ func (s *environmentService) DeployAsync(
 	}
 
 	if err := outputWriter.Flush(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := spinnerWriter.Flush(ctx); err != nil {
 		return nil, err
 	}
 

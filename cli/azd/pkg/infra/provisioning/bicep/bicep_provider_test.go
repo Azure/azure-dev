@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -383,7 +384,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		envManager,
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli, cloud.AzurePublic().PortalUrlBase),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
@@ -395,6 +396,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 			mockContext.ArmClientOptions,
 			mockContext.CoreClientOptions,
 		),
+		cloud.AzurePublic().PortalUrlBase,
 	)
 
 	err = provider.Initialize(*mockContext.Context, projectDir, options)
@@ -929,7 +931,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		&mockenv.MockEnvManager{},
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil),
+		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, cloud.AzurePublic().PortalUrlBase),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
@@ -941,6 +943,7 @@ func TestUserDefinedTypes(t *testing.T) {
 			mockContext.ArmClientOptions,
 			mockContext.CoreClientOptions,
 		),
+		cloud.AzurePublic().PortalUrlBase,
 	)
 	bicepProvider, gooCast := provider.(*BicepProvider)
 	require.True(t, gooCast)
@@ -1230,3 +1233,70 @@ const userDefinedParamsSample = `{
 		}
 	}
 }`
+
+func TestInputsParameter(t *testing.T) {
+	existingInputs := map[string]map[string]interface{}{
+		"resource1": {
+			"input1": "value1",
+		},
+		"resource2": {
+			"input2": "value2",
+		},
+	}
+
+	autoGenParameters := map[string]map[string]azure.AutoGenInput{
+		"resource1": {
+			"input1": {
+				Len: 10,
+			},
+			"input3": {
+				Len: 8,
+			},
+		},
+		"resource2": {
+			"input2": {
+				Len: 12,
+			},
+		},
+		"resource3": {
+			"input4": {
+				Len: 6,
+			},
+		},
+	}
+
+	expectedInputsParameter := map[string]map[string]interface{}{
+		"resource1": {
+			"input1": "value1",
+			"input3": "to-be-gen-with-len-8",
+		},
+		"resource2": {
+			"input2": "value2",
+		},
+		"resource3": {
+			"input4": "to-be-gen-with-len-6",
+		},
+	}
+
+	expectedInputsUpdated := true
+
+	inputsParameter, inputsUpdated, err := inputsParameter(existingInputs, autoGenParameters)
+
+	require.NoError(t, err)
+	result, parse := inputsParameter.Value.(map[string]map[string]interface{})
+	require.True(t, parse)
+
+	require.Equal(
+		t, expectedInputsParameter["resource1"]["input1"], result["resource1"]["input1"])
+	// generated - only check length
+	require.Equal(
+		t, autoGenParameters["resource1"]["input3"].Len, len(result["resource1"]["input3"].(string)))
+
+	require.Equal(t, expectedInputsParameter["resource2"], result["resource2"])
+
+	// generated - only check length
+	require.Equal(
+		t, autoGenParameters["resource3"]["input4"].Len, len(result["resource3"]["input4"].(string)))
+
+	require.Equal(t, expectedInputsUpdated, inputsUpdated)
+}

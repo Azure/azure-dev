@@ -6,7 +6,7 @@ parameters:
       Pool: $(LINUXPOOL)
       OSVmImage: $(LINUXVMIMAGE)
       ImageKey: image
-      OS: $(LINUXOS)
+      OS: linux
       Variables:
         TestShell: pwsh
         TestInstallCommand: >-
@@ -19,7 +19,7 @@ parameters:
       Pool: $(LINUXPOOL)
       OSVmImage: $(LINUXVMIMAGE)
       ImageKey: image
-      OS: $(LINUXOS)
+      OS: linux
       Variables:
         TestShell: bash
         TestInstallCommand: >-
@@ -31,7 +31,7 @@ parameters:
       Pool: $(LINUXPOOL)
       OSVmImage: $(LINUXVMIMAGE)
       ImageKey: image
-      OS: $(LINUXOS)
+      OS: linux
       Variables:
         TestShell: pwsh
         TestInstallCommand: >-
@@ -46,7 +46,7 @@ parameters:
       Pool: $(MACPOOL)
       OSVmImage: $(MACVMIMAGE)
       ImageKey: vmImage
-      OS: 
+      OS: macOS
       Variables:
         TestShell: bash
         TestInstallCommand: >-
@@ -58,7 +58,7 @@ parameters:
       Pool: $(MACPOOL)
       OSVmImage: $(MACVMIMAGE12)
       ImageKey: vmImage
-      OS: macOs
+      OS: macOS
       Variables:
         TestShell: bash
         TestInstallCommand: >-
@@ -70,7 +70,7 @@ parameters:
       Pool: $(MACPOOL)
       OSVmImage: $(MACVMIMAGE12)
       ImageKey: vmImage
-      OS: macOs
+      OS: macOS
       Variables:
         TestShell: pwsh
         # Should also test telemetry functions but cannot because of macOS
@@ -88,7 +88,7 @@ parameters:
       Pool: $(MACPOOL)
       OSVmImage: $(MACVMIMAGE)
       ImageKey: vmImage
-      OS: macOs
+      OS: macOS
       Variables:
         TestShell: pwsh
         # Should also test telemetry functions but cannot because of macOS
@@ -106,7 +106,7 @@ parameters:
       Pool: $(WINDOWSPOOL)
       OSVmImage: $(WINDOWSVMIMAGE)
       ImageKey: image
-      OS: $(WINDOWSOS)
+      OS: windows
       Variables:
         TestShell: cmd
         TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
@@ -127,13 +127,30 @@ parameters:
       Pool: $(WINDOWSPOOL)
       OSVmImage: $(WINDOWSVMIMAGE)
       ImageKey: image
-      OS: $(WINDOWSOS)
+      OS: windows
       Variables:
         TestShell: powershell
         TestInstallCommand: >-
           $ErrorActionPreference = 'Stop';
           ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
           ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
+
+
+- name: LinuxPackageMatrix
+  type: object
+  default: 
+    LinuxAMD64:
+      Pool: $(LINUXPOOL)
+      OSVmImage: $(LINUXVMIMAGE)
+      Architecture: amd64
+      OS: linux
+    # TODO: When Docker can be installed and run properly on the ARM
+    # host this can be used to validate the ARM64 Linux packages.
+    # https://github.com/Azure/azure-dev/issues/2617
+    # LinuxARM64:
+    #   Pool: azsdk-pool-mms-ubuntu-2004-arm
+    #   OSVmImage: MMSUbuntu20.04ARM64
+    #   Architecture: arm64
 
 stages:
   - stage: Verify_Installers
@@ -149,7 +166,7 @@ stages:
         pool:
           name: $(LINUXPOOL)
           image: $(LINUXVMIMAGE)
-          os: $(LINUXOS)
+          os: linux
 
         steps:
           - checkout: self
@@ -205,7 +222,7 @@ stages:
         pool:
           name: $(WINDOWSPOOL)
           image: $(WINDOWSVMIMAGE)
-          os: $(WINDOWSOS)
+          os: windows
 
         variables:
           AZURE_DEV_COLLECT_TELEMETRY: no
@@ -251,7 +268,7 @@ stages:
         pool:
           name: $(MACPOOL)
           vmImage: $(MACVMIMAGE12)
-          os: macOs
+          os: macOS
 
         steps:
           - checkout: self
@@ -270,40 +287,27 @@ stages:
           - pwsh: azd version
             displayName: Run azd version (expect no failure)
 
-      - job: Verify_LinuxPackages
+      - ${{ each build in parameters.LinuxPackageMatrix }}: 
+        - job: Verify_LinuxPackages_${{ build.key }}
+          displayName: Verify_LinuxPackages ${{ build.key }}
 
-        strategy:
-          matrix:
-            LinuxAMD64:
-              Pool: $(LINUXPOOL)
-              OSVmImage: $(LINUXVMIMAGE)
-              Architecture: amd64
-              OS: $(LINUXOS)
-            # TODO: When Docker can be installed and run properly on the ARM
-            # host this can be used to validate the ARM64 Linux packages.
-            # https://github.com/Azure/azure-dev/issues/2617
-            # LinuxARM64:
-            #   Pool: azsdk-pool-mms-ubuntu-2004-arm
-            #   OSVmImage: MMSUbuntu20.04ARM64
-            #   Architecture: arm64
+          pool:
+            name: ${{ build.value.Pool}}
+            image: ${{ build.value.OSVmImage }}
+            os: ${{ build.value.OS }}
 
-        pool:
-          name: $(Pool)
-          image: $(OSVmImage)
-          os: $(OS)
+          steps:
+            - checkout: self
 
-        steps:
-          - checkout: self
+            - task: DownloadPipelineArtifact@2
+              inputs:
+                artifact: linux-packages-$(Architecture)
+                path: cli/installer/fpm
 
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifact: linux-packages-$(Architecture)
-              path: cli/installer/fpm
-
-          - task: PowerShell@2
-            displayName: Verify Linux Packages
-            inputs:
-              pwsh: true
-              workingDirectory: cli/installer/fpm
-              filePath: eng/scripts/Test-LinuxPackages.ps1
-              arguments: -DockerImagePrefix "$(docker-mirror-tag-prefix)/"
+            - task: PowerShell@2
+              displayName: Verify Linux Packages
+              inputs:
+                pwsh: true
+                workingDirectory: cli/installer/fpm
+                filePath: eng/scripts/Test-LinuxPackages.ps1
+                arguments: -DockerImagePrefix "$(docker-mirror-tag-prefix)/"

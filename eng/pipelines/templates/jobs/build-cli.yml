@@ -149,7 +149,9 @@ jobs:
           workingDirectory: cli/azd
         displayName: Build Go Binary
 
-      - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
+      - pwsh: | 
+          Write-Host "Move-Item $(BuildOutputName) $(BuildTarget)"
+          Move-Item $(BuildOutputName) $(BuildTarget)
         workingDirectory: cli/azd
         displayName: Rename binaries
 

@@ -5,7 +5,7 @@ parameters:
       Windows:
         Pool: $(WINDOWSPOOL)
         OSVmImage: $(WINDOWSVMIMAGE)
-        OS: $(WINDOWSOS)
+        OS: windows
         ImageKey: image
         Variables: 
           BuildTarget: azd-windows-amd64.exe
@@ -18,7 +18,7 @@ parameters:
       Linux:
         Pool: $(LINUXPOOL)
         OSVmImage: $(LINUXVMIMAGE)
-        OS: $(LINUXOS)
+        OS: linux
         ImageKey: image
         Variables: 
             BuildTarget: azd-linux-amd64
@@ -50,7 +50,7 @@ parameters:
       # LinuxARM64: 
       #   Pool: $(LINUXPOOL)
       #   OSVmImage: $(LINUXVMIMAGE)
-      #   OS: $(LINUXOS)
+      #   OS: linux
       #   Variables: 
       #     BuildTarget: azd-linux-arm64
       #     BuildOutputName: azd
@@ -104,7 +104,7 @@ stages:
         pool:
           name: $(LINUXPOOL)
           image: $(LINUXVMIMAGE)
-          os: $(LINUXOS)
+          os: linux
         dependsOn:
           - ${{ each build in parameters.CrossBuildMatrix }}: 
             - CrossBuildCLI_${{ build.key }}
@@ -156,7 +156,7 @@ stages:
         pool:
           name: $(LINUXPOOL)
           image: $(LINUXVMIMAGE)
-          os: $(LINUXOS)
+          os: linux
 
         steps:
           - checkout: self

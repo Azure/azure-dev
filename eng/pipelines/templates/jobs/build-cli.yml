@@ -25,7 +25,7 @@ jobs:
         name: ${{ parameters.Pool }}
         ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
         os: ${{ parameters.OS }}
-        
+
     timeoutInMinutes: 180
     steps:
       - checkout: self
@@ -76,9 +76,9 @@ jobs:
 
       # Pinning DockerInstaller to 0.209.0 because 0.214.0 has failures.
       # Remove this pin when later versions succeed.
-      - task: DockerInstaller@0.209.0
+      - task: DockerInstaller
         displayName: Docker Installer
-        condition: and(succeeded(), contains(variables['OSVmImage'], 'macOS'))
+        condition: and(succeeded(), contains('${{ parameters.OS }}', 'macOS'))
         inputs:
           dockerVersion: 17.09.0-ce
           releaseType: stable

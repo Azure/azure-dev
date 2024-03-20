@@ -32,6 +32,9 @@ type Resource struct {
 	// Context is present on a dockerfile.v0 resource and is the path to the context directory.
 	Context *string `json:"context,omitempty"`
 
+	// BuildArgs is present on a dockerfile.v0 resource and is the --build-arg for building the docker image.
+	BuildArgs map[string]string `json:"buildArgs,omitempty"`
+
 	// Parent is present on a resource which is a child of another. It is the name of the parent resource. For example, a
 	// postgres.database.v0 is a child of a postgres.server.v0, and so it would have a parent of which is the name of
 	// the server resource.

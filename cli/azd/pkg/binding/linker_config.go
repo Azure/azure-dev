@@ -26,20 +26,23 @@ var SourceResourceIdFormats = map[interface{}]string{
 
 // Resource id formats supported by service linker as target resource
 var TargetResourceIdFormats = map[interface{}]string{
-	TargetTypeStorageAccount:     "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Storage/storageAccounts/%s",
-	TargetTypeCosmosDB:           "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DocumentDB/databaseAccounts/%s",
-	TargetTypePostgreSqlFlexible: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforPostgreSQL/flexibleServers/%s/databases/%s",
-	TargetTypeMysqlFlexible:      "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforMySQL/flexibleServers/%s/databases/%s",
-	TargetTypeSql:                "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Sql/servers/%s/databases/%s",
-	TargetTypeRedis:              "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Cache/redis/%s/databases/%s",
-	TargetTypeRedisEnterprise:    "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Cache/redisEnterprise/%s/databases/%s",
-	TargetTypeKeyVault:           "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.KeyVault/vaults/%s",
-	TargetTypeEventHub:           "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.EventHub/namespaces/%s",
-	TargetTypeAppConfig:          "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.AppConfiguration/configurationStores/%s",
-	TargetTypeServiceBus:         "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ServiceBus/namespaces/%s",
-	TargetTypeSignalR:            "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.SignalRService/SignalR/%s",
-	TargetTypeWebPubSub:          "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.SignalRService/WebPubSub/%s",
-	TargetTypeAppInsights:        "/subscriptions/%s/resourceGroups/%s/providers/microsoft.insights/components/%s",
+	TargetTypeStorageAccount: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Storage/storageAccounts/%s",
+	TargetTypeCosmosDB:       "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DocumentDB/databaseAccounts/%s",
+	TargetTypePostgreSqlFlexible: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforPostgreSQL/" +
+		"flexibleServers/%s/databases/%s",
+	TargetTypeMysqlFlexible: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforMySQL/" +
+		"flexibleServers/%s/databases/%s",
+	TargetTypeSql:   "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Sql/servers/%s/databases/%s",
+	TargetTypeRedis: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Cache/redis/%s/databases/%s",
+	TargetTypeRedisEnterprise: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Cache/" +
+		"redisEnterprise/%s/databases/%s",
+	TargetTypeEventHub: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.EventHub/namespaces/%s",
+	TargetTypeAppConfig: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.AppConfiguration/" +
+		"configurationStores/%s",
+	TargetTypeServiceBus:  "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ServiceBus/namespaces/%s",
+	TargetTypeSignalR:     "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.SignalRService/SignalR/%s",
+	TargetTypeWebPubSub:   "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.SignalRService/WebPubSub/%s",
+	TargetTypeAppInsights: "/subscriptions/%s/resourceGroups/%s/providers/microsoft.insights/components/%s",
 	// compute service as target, the format may be different from source resource
 	TargetTypeWebApp:       "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Web/sites/%s",
 	TargetTypeFunctionApp:  "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Web/sites/%s",

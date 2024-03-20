@@ -274,18 +274,21 @@ func TestFormatResourceId(t *testing.T) {
 			subscriptionId:    "subId",
 			resourceGroupName: "rgName",
 			resourceNames:     []string{"flexibleServerName", "databaseName"},
-			resourceIdFormat:  "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforPostgreSQL/flexibleServers/%s/databases/%s",
-			expected:          "/subscriptions/subId/resourceGroups/rgName/providers/Microsoft.DBforPostgreSQL/flexibleServers/flexibleServerName/databases/databaseName",
-			expectError:       false,
+			resourceIdFormat: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforPostgreSQL/" +
+				"flexibleServers/%s/databases/%s",
+			expected: "/subscriptions/subId/resourceGroups/rgName/providers/Microsoft.DBforPostgreSQL/" +
+				"flexibleServers/flexibleServerName/databases/databaseName",
+			expectError: false,
 		},
 		{
 			name:              "MismatchedFormat",
 			subscriptionId:    "subId",
 			resourceGroupName: "rgName",
 			resourceNames:     []string{"flexibleServerName"},
-			resourceIdFormat:  "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforPostgreSQL/flexibleServers/%s/databases/%s",
-			expected:          "",
-			expectError:       true,
+			resourceIdFormat: "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforPostgreSQL/" +
+				"flexibleServers/%s/databases/%s",
+			expected:    "",
+			expectError: true,
 		},
 	}
 
@@ -355,7 +358,8 @@ func TestGetResourceId(t *testing.T) {
 					fmt.Sprintf(BindingResourceKey, "STORERESOURCE"): "storeResourceValue",
 				},
 			},
-			want:    "/subscriptions/subId/resourceGroups/rgName/providers/Microsoft.AppConfiguration/configurationStores/storeResourceValue",
+			want: "/subscriptions/subId/resourceGroups/rgName/providers/Microsoft.AppConfiguration/" +
+				"configurationStores/storeResourceValue",
 			wantErr: false,
 		},
 		{
@@ -373,7 +377,8 @@ func TestGetResourceId(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := getResourceId(tt.args.subscriptionId, tt.args.resourceGroupName, tt.args.resourceType, tt.args.resourceName, tt.args.env)
+			got, err := getResourceId(tt.args.subscriptionId, tt.args.resourceGroupName,
+				tt.args.resourceType, tt.args.resourceName, tt.args.env)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getResourceId() error = %v, wantErr %v", err, tt.wantErr)
 				return

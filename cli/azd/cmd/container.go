@@ -600,8 +600,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(prompt.NewDefaultPrompter)
 
 	// Binding
-	container.RegisterSingleton(binding.NewLinkerManager)
-	container.RegisterSingleton(binding.NewBindingManager)
+	container.MustRegisterSingleton(binding.NewLinkerManager)
+	container.MustRegisterSingleton(binding.NewBindingManager)
 
 	// Other
 	container.MustRegisterSingleton(createClock)

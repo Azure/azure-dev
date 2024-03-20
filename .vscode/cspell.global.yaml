@@ -19,6 +19,7 @@ ignoreWords:
     - AADSTS
     - afwp
     - apim
+    - appconfig
     - appcontainers
     - appcs
     - appi
@@ -30,6 +31,7 @@ ignoreWords:
     - armkeyvault
     - armresources
     - armruntime
+    - armservicelinker
     - armsubscriptions
     - azconnection
     - azurewebsites
@@ -62,6 +64,7 @@ ignoreWords:
     - devcenter
     - devcontainer
     - dnsz
+    - eventhub
     - evgd
     - evgs
     - evgt
@@ -124,9 +127,12 @@ ignoreWords:
     - resourcegroupterraform
     - resourcegroupterraformremote
     - Retryable
+    - servicebus
     - serviceendpoint
+    - servicelinker
     - serviceprincipalid
     - serviceprincipalkey
+    - signalr
     - sigr
     - snet
     - sqldb
@@ -175,6 +181,7 @@ ignoreWords:
     - LOGANALYTICS
     - venv
     - webapprouting
+    - webpubsub
     - zipdeploy
     - appinsights
 useGitignore: true

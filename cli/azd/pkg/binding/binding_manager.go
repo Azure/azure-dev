@@ -471,7 +471,7 @@ func getExpectedValuesInEnv(
 	return expectedValues, nil
 }
 
-// Replace subscription, resource group and resource name placeholders in resource id format, returing
+// Replace subscription, resource group and resource name placeholders in resource id format, returning
 // the formatted resource id
 func formatResourceId(
 	subscriptionId string,
@@ -492,7 +492,7 @@ func formatResourceId(
 	return fmt.Sprintf(resourceIdFormat, interfaceComponents...), nil
 }
 
-// Retrieve passwork from a connection string of SQL, MySQL or PostgreSQL
+// Retrieve password from a connection string of SQL, MySQL or PostgreSQL
 func retrievePassword(
 	passwordOrConnStr string,
 ) string {

@@ -185,7 +185,6 @@
                                         "sql",
                                         "redis",
                                         "redis-enterprise",
-                                        "keyvault",
                                         "eventhub",
                                         "appconfig",
                                         "servicebus",
@@ -207,7 +206,7 @@
                                         "appconfig"
                                     ],
                                     "title": "Store resource type for the binding",
-                                    "description": "Optional. The type of the store resource that the binding infomation will be stored. (Default: appconfig)"  
+                                    "description": "Optional. The type of the store resource that the binding information will be stored. (Default: appconfig)"  
                                 },
                                 "storeResource": {
                                     "type": "string",

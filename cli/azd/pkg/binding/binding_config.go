@@ -102,7 +102,7 @@ func (targetType TargetResourceType) IsComputeService() bool {
 	return false
 }
 
-// Binding supported store types, used to store binding infomations
+// Binding supported store types, used to store binding information
 type StoreResourceType string
 
 const (

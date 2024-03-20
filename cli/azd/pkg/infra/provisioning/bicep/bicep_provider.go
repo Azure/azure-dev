@@ -1891,6 +1891,161 @@ func (p *BicepProvider) modulePath() string {
 	return filepath.Join(infraRoot, moduleFilename)
 }
 
+// generateInput generates a password based on the provided configuration.
+// It takes an `azure.AutoGenInput` configuration as input and returns the generated password as a string.
+// If any error occurs during the generation process, it returns an error.
+func generateInput(config azure.AutoGenInput) (string, error) {
+	var minLength int
+	if config.MinLength != nil {
+		minLength = *config.MinLength
+	}
+	var minLower int
+	if config.MinLower != nil {
+		minLower = *config.MinLower
+	}
+	var minUpper int
+	if config.MinUpper != nil {
+		minUpper = *config.MinUpper
+	}
+	var minNumeric int
+	if config.MinNumeric != nil {
+		minNumeric = *config.MinNumeric
+	}
+	var minSpecial int
+	if config.MinSpecial != nil {
+		minSpecial = *config.MinSpecial
+	}
+	var lower bool
+	if config.Lower != nil {
+		lower = *config.Lower
+	} else {
+		if minLower > 0 {
+			lower = true
+		}
+	}
+	var upper bool
+	if config.Upper != nil {
+		upper = *config.Upper
+	} else {
+		if minUpper > 0 {
+			lower = true
+		}
+	}
+	var numeric bool
+	if config.Numeric != nil {
+		numeric = *config.Numeric
+	} else {
+		if minNumeric > 0 {
+			lower = true
+		}
+	}
+	var special bool
+	if config.Special != nil {
+		special = *config.Special
+	} else {
+		if minSpecial > 0 {
+			lower = true
+		}
+	}
+
+	// a cluster is a group of characters that are required to be present in the password
+	clustersSize := minLower + minUpper + minNumeric + minSpecial
+	if minLength > 0 && minLength < clustersSize {
+		return "", fmt.Errorf(
+			"when minLength is not zero, it  must be greater than or equal to the sum of" +
+				" minLower, minUpper, minNumeric, and minSpecial")
+	}
+
+	if !lower && !upper && !numeric && !special {
+		return "", fmt.Errorf(
+			"at least one of lower, upper, numeric, or special must be true")
+	}
+
+	totalLength := minLength
+	if totalLength == 0 {
+		totalLength = clustersSize
+	}
+	if totalLength == 0 {
+		return "", fmt.Errorf(
+			"either minLength or the sum of minLower, minUpper, minNumeric, and minSpecial must be greater than 0")
+	}
+
+	// at this point, there's a valid totalLength to be generated.
+	unassignedClusterSize := totalLength - clustersSize
+
+	type cluster struct {
+		size     int
+		alphabet string
+	}
+	var fixedSizeClusters []cluster
+	var dynamicSizeClusters []cluster
+
+	// Classify the clusters
+	classifyCluster := func(minClusterSize int, condition bool, alphabet string) error {
+		if !condition {
+			if minClusterSize > 0 {
+				return fmt.Errorf("cluster size is greater than 0 but the condition is false")
+			}
+			return nil
+		}
+		if minClusterSize > 0 {
+			fixedSizeClusters = append(fixedSizeClusters,
+				cluster{size: minClusterSize, alphabet: alphabet})
+		}
+		dynamicSizeClusters = append(dynamicSizeClusters,
+			cluster{size: unassignedClusterSize, alphabet: alphabet})
+		return nil
+	}
+	if err := classifyCluster(minLower, lower, password.LowercaseLetters); err != nil {
+		return "", err
+	}
+	if err := classifyCluster(minUpper, upper, password.UppercaseLetters); err != nil {
+		return "", err
+	}
+	if err := classifyCluster(minNumeric, numeric, password.Digits); err != nil {
+		return "", err
+	}
+	if err := classifyCluster(minSpecial, special, password.Symbols); err != nil {
+		return "", err
+	}
+
+	genStringFromClusters := func(clusters []cluster) (string, error) {
+		var result string
+		for _, c := range clusters {
+			gen, err := password.FromAlphabet(c.alphabet, c.size)
+			if err != nil {
+				return "", fmt.Errorf("generating fixed size cluster: %w", err)
+			}
+			result += gen
+		}
+		return result, nil
+	}
+	fixedSizeClustersString, err := genStringFromClusters(fixedSizeClusters)
+	if err != nil {
+		return "", err
+	}
+	dynamicSizeClustersString, err := genStringFromClusters(dynamicSizeClusters)
+	if err != nil {
+		return "", err
+	}
+	dynamicSizeClusterChars := strings.Split(dynamicSizeClustersString, "")
+	if err := password.Shuffle(dynamicSizeClusterChars); err != nil {
+		return "", fmt.Errorf("shuffling dynamic size cluster: %w", err)
+	}
+
+	for unassignedClusterSize > 0 {
+		fixedSizeClustersString += dynamicSizeClusterChars[unassignedClusterSize-1]
+		unassignedClusterSize--
+	}
+
+	fixedSizeClustersStringChars := strings.Split(fixedSizeClustersString, "")
+	if err := password.Shuffle(fixedSizeClustersStringChars); err != nil {
+		return "", fmt.Errorf("shuffling fixed size cluster: %w", err)
+	}
+
+	return strings.Join(fixedSizeClustersStringChars, ""), nil
+}
+
 // inputsParameter generates and updates input parameters for the Azure Resource Manager (ARM) template.
 // It takes an existingInputs map that contains the current input values for each resource, and an autoGenParameters map
 // that contains information about the input parameters to be generated.
@@ -1911,7 +2066,7 @@ func inputsParameter(
 		}
 		for inputName, inputInfo := range inputResourceInfo {
 			if _, has := existingRecordsForResource[inputName]; !has {
-				val, err := password.FromAlphabet(password.LettersAndDigits, inputInfo.Len)
+				val, err := generateInput(inputInfo)
 				if err != nil {
 					return inputsParameter, inputsUpdated, fmt.Errorf("generating value for input %s: %w", inputName, err)
 				}

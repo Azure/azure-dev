@@ -89,7 +89,15 @@ func (d *ArmTemplateParameterDefinition) Secure() bool {
 }
 
 type AutoGenInput struct {
-	Len int `json:"len"`
+	MinLength  *int  `json:"minLength,omitempty"`
+	Lower      *bool `json:"lower,omitempty"`
+	Upper      *bool `json:"upper,omitempty"`
+	Numeric    *bool `json:"numeric,omitempty"`
+	Special    *bool `json:"special,omitempty"`
+	MinLower   *int  `json:"minLower,omitempty"`
+	MinUpper   *int  `json:"minUpper,omitempty"`
+	MinNumeric *int  `json:"minNumeric,omitempty"`
+	MinSpecial *int  `json:"minSpecial,omitempty"`
 }
 
 type AzdMetadata struct {

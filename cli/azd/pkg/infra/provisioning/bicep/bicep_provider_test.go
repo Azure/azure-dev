@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -1247,20 +1248,24 @@ func TestInputsParameter(t *testing.T) {
 	autoGenParameters := map[string]map[string]azure.AutoGenInput{
 		"resource1": {
 			"input1": {
-				Len: 10,
+				MinLength: to.Ptr(10),
+				Lower:     to.Ptr(true),
 			},
 			"input3": {
-				Len: 8,
+				MinLength: to.Ptr(8),
+				Lower:     to.Ptr(true),
 			},
 		},
 		"resource2": {
 			"input2": {
-				Len: 12,
+				MinLength: to.Ptr(12),
+				Lower:     to.Ptr(true),
 			},
 		},
 		"resource3": {
 			"input4": {
-				Len: 6,
+				MinLength: to.Ptr(6),
+				Lower:     to.Ptr(true),
 			},
 		},
 	}
@@ -1290,13 +1295,59 @@ func TestInputsParameter(t *testing.T) {
 		t, expectedInputsParameter["resource1"]["input1"], result["resource1"]["input1"])
 	// generated - only check length
 	require.Equal(
-		t, autoGenParameters["resource1"]["input3"].Len, len(result["resource1"]["input3"].(string)))
+		t, *autoGenParameters["resource1"]["input3"].MinLength, len(result["resource1"]["input3"].(string)))
 
 	require.Equal(t, expectedInputsParameter["resource2"], result["resource2"])
 
 	// generated - only check length
 	require.Equal(
-		t, autoGenParameters["resource3"]["input4"].Len, len(result["resource3"]["input4"].(string)))
+		t, *autoGenParameters["resource3"]["input4"].MinLength, len(result["resource3"]["input4"].(string)))
 
 	require.Equal(t, expectedInputsUpdated, inputsUpdated)
+}
+
+func TestGenerateInput(t *testing.T) {
+	config := azure.AutoGenInput{
+		MinLength:  to.Ptr(8),
+		Lower:      to.Ptr(true),
+		Upper:      to.Ptr(true),
+		Numeric:    to.Ptr(true),
+		Special:    to.Ptr(false),
+		MinLower:   to.Ptr(2),
+		MinUpper:   to.Ptr(2),
+		MinNumeric: to.Ptr(2),
+		MinSpecial: to.Ptr(0),
+	}
+
+	expectedLength := 8
+	expectedMinLower := 2
+	expectedMinUpper := 2
+	expectedMinNumeric := 2
+	expectedMinSpecial := 0
+
+	result, err := generateInput(config)
+	require.NoError(t, err)
+	require.Equal(t, expectedLength, len(result))
+
+	lowerCount := 0
+	upperCount := 0
+	numericCount := 0
+	specialCount := 0
+
+	for _, char := range result {
+		if unicode.IsLower(char) {
+			lowerCount++
+		} else if unicode.IsUpper(char) {
+			upperCount++
+		} else if unicode.IsDigit(char) {
+			numericCount++
+		} else {
+			specialCount++
+		}
+	}
+
+	require.LessOrEqual(t, expectedMinLower, lowerCount)
+	require.LessOrEqual(t, expectedMinUpper, upperCount)
+	require.LessOrEqual(t, expectedMinNumeric, numericCount)
+	require.LessOrEqual(t, expectedMinSpecial, specialCount)
 }

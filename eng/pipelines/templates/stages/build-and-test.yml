@@ -51,6 +51,7 @@ parameters:
         Pool: $(LINUXARMPOOL)
         OSVmImage: $(LINUXARMVMIMAGE)
         OS: linux
+        ImageKey: image
         Variables: 
           BuildTarget: azd-linux-arm64
           BuildOutputName: azd

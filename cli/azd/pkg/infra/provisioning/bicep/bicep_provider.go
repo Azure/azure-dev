@@ -1919,33 +1919,25 @@ func generateInput(config azure.AutoGenInput) (string, error) {
 	if config.Lower != nil {
 		lower = *config.Lower
 	} else {
-		if minLower > 0 {
-			lower = true
-		}
+		lower = true
 	}
 	var upper bool
 	if config.Upper != nil {
 		upper = *config.Upper
 	} else {
-		if minUpper > 0 {
-			lower = true
-		}
+		upper = true
 	}
 	var numeric bool
 	if config.Numeric != nil {
 		numeric = *config.Numeric
 	} else {
-		if minNumeric > 0 {
-			lower = true
-		}
+		numeric = true
 	}
 	var special bool
 	if config.Special != nil {
 		special = *config.Special
 	} else {
-		if minSpecial > 0 {
-			lower = true
-		}
+		special = true
 	}
 
 	// a cluster is a group of characters that are required to be present in the password

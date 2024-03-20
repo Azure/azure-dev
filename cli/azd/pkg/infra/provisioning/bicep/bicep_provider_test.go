@@ -1249,23 +1249,19 @@ func TestInputsParameter(t *testing.T) {
 		"resource1": {
 			"input1": {
 				MinLength: to.Ptr(10),
-				Lower:     to.Ptr(true),
 			},
 			"input3": {
 				MinLength: to.Ptr(8),
-				Lower:     to.Ptr(true),
 			},
 		},
 		"resource2": {
 			"input2": {
 				MinLength: to.Ptr(12),
-				Lower:     to.Ptr(true),
 			},
 		},
 		"resource3": {
 			"input4": {
 				MinLength: to.Ptr(6),
-				Lower:     to.Ptr(true),
 			},
 		},
 	}

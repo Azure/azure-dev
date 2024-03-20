@@ -12,7 +12,7 @@ stages:
     pool:
       name: $(LINUXPOOL)
       image: $(LINUXVMIMAGE)
-      os: $(LINUXOS)
+      os: linux
     steps:
       - template: /eng/pipelines/templates/steps/setup-go.yml
       - template: /eng/pipelines/templates/steps/download-artifacts.yml

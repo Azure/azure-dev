@@ -12,7 +12,7 @@ stages:
       pool:
         name: $(WINDOWSPOOL)
         image: $(WINDOWSVMIMAGE)
-        os: $(WINDOWSOS)
+        os: windows
 
       steps:
         - task: DownloadPipelineArtifact@2
@@ -81,7 +81,7 @@ stages:
       pool:
         name: $(WINDOWSPOOL)
         image: $(WINDOWSVMIMAGE)
-        os: $(WINDOWSOS)
+        os: windows
 
       steps:
         # Checkout required to build MSI
@@ -166,7 +166,7 @@ stages:
       pool:
         name: $(WINDOWSPOOL)
         image: $(WINDOWSVMIMAGE)
-        os: $(WINDOWSOS)
+        os: windows
 
       steps:
         - task: DownloadPipelineArtifact@2

@@ -237,7 +237,8 @@ func (m *Manager) CredentialForCurrentUser(
 			// Try logging in the active OS account. If that fails for any reason, tell the user to run `azd auth login`.
 			if err := m.LoginWithOneAuth(ctx, options.TenantID, nil, true); err == nil {
 				if config, err := m.readAuthConfig(); err == nil {
-					if user, err := readUserProperties(config); err == nil && user != nil && user.HomeAccountID != nil && *user.HomeAccountID != "" {
+					user, err := readUserProperties(config)
+					if err == nil && user != nil && user.HomeAccountID != nil && *user.HomeAccountID != "" {
 						tenant := options.TenantID
 						if tenant == "" {
 							tenant = "organizations"

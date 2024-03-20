@@ -76,6 +76,12 @@ jobs:
         workingDirectory: cli/azd
         displayName: Set executable bit for non-Windows binaries
 
+      - pwsh: |
+          New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/build-output -Force
+          Copy-Item $(BuildTarget) $(Build.ArtifactStagingDirectory)/build-output
+        workingDirectory: cli/azd
+        displayName: Copy binary to artifact staging directory
+
       - template: /eng/pipelines/templates/steps/build-linux-packages.yml
         parameters:
           Architecture: arm64
@@ -84,7 +90,7 @@ jobs:
     templateContext: 
       outputs: 
         - output: pipelineArtifact
-          path: cli/azd/$(BuildTarget)
+          path: $(Build.ArtifactStagingDirectory)/build-output
           artifact: $(BuildTarget)
           condition: always()
           displayName: Upload azd binary to artifact store

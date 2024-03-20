@@ -5,6 +5,7 @@ package vsrpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -94,14 +95,17 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 	return true, nil
 }
 
-type DeleteOptions struct {
-	RemoveAzureResources bool
-}
+type DeleteMode uint32
+
+const (
+	DeleteModeLocal = 1 << iota
+	DeleteModeAzureResources
+)
 
 // DeleteEnvironmentAsync is the server implementation of:
-// ValueTask<bool> DeleteEnvironmentAsync(Session, string, IObserver<ProgressMessage>, DeleteOptions, CancellationToken);
+// ValueTask<bool> DeleteEnvironmentAsync(Session, string, IObserver<ProgressMessage>, int, CancellationToken);
 func (s *environmentService) DeleteEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, deleteOptions DeleteOptions, observer IObserver[ProgressMessage],
+	ctx context.Context, sessionId Session, name string, mode int, observer IObserver[ProgressMessage],
 ) (bool, error) {
 	session, err := s.server.validateSession(ctx, sessionId)
 	if err != nil {
@@ -153,8 +157,8 @@ func (s *environmentService) DeleteEnvironmentAsync(
 		return false, err
 	}
 
-	if deleteOptions.RemoveAzureResources {
-		_ = observer.OnNext(ctx, newInfoProgressMessage("Removing azure resources"))
+	if mode&DeleteModeAzureResources > 0 {
+		_ = observer.OnNext(ctx, newImportantProgressMessage("Removing Azure resources"))
 
 		infra, err := c.importManager.ProjectInfrastructure(ctx, c.projectConfig)
 		if err != nil {
@@ -166,16 +170,22 @@ func (s *environmentService) DeleteEnvironmentAsync(
 			return false, fmt.Errorf("initializing provisioning manager: %w", err)
 		}
 
+		// Enable force and purge options
 		destroyOptions := provisioning.NewDestroyOptions(true, true)
-		if _, err := c.provisionManager.Destroy(ctx, destroyOptions); err != nil {
+		_, err = c.provisionManager.Destroy(ctx, destroyOptions)
+		if errors.Is(err, provisioning.ErrDeploymentsNotFound) {
+			_ = observer.OnNext(ctx, newInfoProgressMessage("No Azure resources were found"))
+		} else if err != nil {
 			return false, fmt.Errorf("deleting infrastructure: %w", err)
 		}
 	}
 
-	_ = observer.OnNext(ctx, newInfoProgressMessage("Removing environment"))
-	err = c.envManager.Delete(ctx, name)
-	if err != nil {
-		return false, err
+	if mode&DeleteModeLocal > 0 {
+		_ = observer.OnNext(ctx, newImportantProgressMessage("Removing environment"))
+		err = c.envManager.Delete(ctx, name)
+		if err != nil {
+			return false, err
+		}
 	}
 
 	return true, nil

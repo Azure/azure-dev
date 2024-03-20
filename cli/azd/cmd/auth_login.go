@@ -492,7 +492,7 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if oneauth.Supported && !la.flags.browser {
-		err = la.authManager.LoginWithOneAuth(ctx, la.flags.tenantID, la.flags.scopes)
+		err = la.authManager.LoginWithOneAuth(ctx, la.flags.tenantID, la.flags.scopes, false)
 	} else {
 		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes,
 			&auth.LoginInteractiveOptions{

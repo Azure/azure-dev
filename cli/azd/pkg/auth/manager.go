@@ -233,6 +233,23 @@ func (m *Manager) CredentialForCurrentUser(
 			}
 			return cloudShellCredential, nil
 		}
+		if oneauth.Supported && os.Getenv("IsDevBox") == "True" {
+			// Try logging in the active OS account. If that fails for any reason, tell the user to run `azd auth login`.
+			if err := m.LoginWithOneAuth(ctx, options.TenantID, nil, true); err == nil {
+				if config, err := m.readAuthConfig(); err == nil {
+					if user, err := readUserProperties(config); err == nil && user != nil && user.HomeAccountID != nil && *user.HomeAccountID != "" {
+						tenant := options.TenantID
+						if tenant == "" {
+							tenant = "organizations"
+						}
+						authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenant
+						return oneauth.NewCredential(authority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
+							HomeAccountID: *user.HomeAccountID,
+						})
+					}
+				}
+			}
+		}
 		return nil, ErrNoCurrentUser
 	}
 
@@ -538,13 +555,20 @@ func (m *Manager) LoginInteractive(
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
 }
 
-func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes []string) error {
-	if len(scopes) == 0 {
-		scopes = m.LoginScopes()
+func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes []string, osAccountOnly bool) error {
+	var (
+		accountID string
+		err       error
+	)
+	if osAccountOnly {
+		accountID, err = oneauth.LogInSilently(cAZD_CLIENT_ID)
+	} else {
+		authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenantID
+		if len(scopes) == 0 {
+			scopes = m.LoginScopes()
+		}
+		accountID, err = oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
 	}
-
-	authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenantID
-	accountID, err := oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
 	if err == nil {
 		err = m.saveUserProperties(&userProperties{
 			FromOneAuth:   true,

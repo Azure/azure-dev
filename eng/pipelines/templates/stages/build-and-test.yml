@@ -47,17 +47,17 @@ parameters:
     type: object
     default:
       # Compliant image name required
-      # LinuxARM64: 
-      #   Pool: $(LINUXPOOL)
-      #   OSVmImage: $(LINUXVMIMAGE)
-      #   OS: linux
-      #   Variables: 
-      #     BuildTarget: azd-linux-arm64
-      #     BuildOutputName: azd
-      #     SetExecutableBit: true
-      #     GOOS: linux
-      #     GOARCH: arm64
-      #     BuildLinuxPackages: true
+      LinuxARM64: 
+        Pool: $(LINUXARMPOOL)
+        OSVmImage: $(LINUXARMVMIMAGE)
+        OS: linux
+        Variables: 
+          BuildTarget: azd-linux-arm64
+          BuildOutputName: azd
+          SetExecutableBit: true
+          GOOS: linux
+          GOARCH: arm64
+          BuildLinuxPackages: true
       MacARM64:
         Pool: $(MACPOOL)
         OSVmImage: $(MACVMIMAGE)
@@ -132,25 +132,25 @@ stages:
               artifact: linux-packages
               displayName: Publish merged linux packages
 
-      # TODO: Need to have a compliant image for this to work 
-      # - job: ValidateCrossCompile
-      #   dependsOn: 
-      #     - ${{ each build in parameters.CrossBuildMatrix }}: 
-      #       - CrossBuildCLI_${{ build.key }}
-      #   pool: 
-      #     name: azsdk-pool-mms-ubuntu-2004-arm
-      #     vmImage: MMSUbuntu20.04ARM64
-      #   timeoutInMinutes: 5
-      #   steps: 
-      #     - checkout: none 
+      - job: ValidateCrossCompile
+        dependsOn: 
+          - ${{ each build in parameters.CrossBuildMatrix }}: 
+            - CrossBuildCLI_${{ build.key }}
+        pool: 
+          name: $(LINUXARMPOOL)
+          image: $(LINUXARMVMIMAGE)
+          os: linux
+        timeoutInMinutes: 5
+        steps: 
+          - checkout: none 
 
-      #     - task: DownloadPipelineArtifact@2
-      #       inputs:
-      #         artifact: azd-linux-arm64
-      #         targetPath: $(Build.SourcesDirectory)
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-linux-arm64
+              targetPath: $(Build.SourcesDirectory)
 
-      #     - bash: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
-      #       displayName: azd version
+          - bash: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
+            displayName: azd version
 
       - job: GenerateReleaseArtifacts
         pool:

@@ -1942,19 +1942,8 @@ func generateInput(config azure.AutoGenInput) (string, error) {
 
 	// a cluster is a group of characters that are required to be present in the password
 	clustersSize := minLower + minUpper + minNumeric + minSpecial
-	if minLength > 0 && minLength < clustersSize {
-		return "", fmt.Errorf(
-			"when minLength is not zero, it  must be greater than or equal to the sum of" +
-				" minLower, minUpper, minNumeric, and minSpecial")
-	}
-
-	if !lower && !upper && !numeric && !special {
-		return "", fmt.Errorf(
-			"at least one of lower, upper, numeric, or special must be true")
-	}
-
 	totalLength := minLength
-	if totalLength == 0 {
+	if clustersSize > totalLength {
 		totalLength = clustersSize
 	}
 	if totalLength == 0 {
@@ -1962,18 +1951,11 @@ func generateInput(config azure.AutoGenInput) (string, error) {
 			"either minLength or the sum of minLower, minUpper, minNumeric, and minSpecial must be greater than 0")
 	}
 
-	// at this point, there's a valid totalLength to be generated.
 	unassignedClusterSize := totalLength - clustersSize
+	var fixedSizeClustersString string
+	var dynamicSizeClustersString string
 
-	type cluster struct {
-		size     int
-		alphabet string
-	}
-	var fixedSizeClusters []cluster
-	var dynamicSizeClusters []cluster
-
-	// Classify the clusters
-	classifyCluster := func(minClusterSize int, condition bool, alphabet string) error {
+	genCluster := func(minClusterSize int, condition bool, alphabet string) error {
 		if !condition {
 			if minClusterSize > 0 {
 				return fmt.Errorf("cluster size is greater than 0 but the condition is false")
@@ -1981,45 +1963,32 @@ func generateInput(config azure.AutoGenInput) (string, error) {
 			return nil
 		}
 		if minClusterSize > 0 {
-			fixedSizeClusters = append(fixedSizeClusters,
-				cluster{size: minClusterSize, alphabet: alphabet})
+			gen, err := password.FromAlphabet(alphabet, minClusterSize)
+			if err != nil {
+				return fmt.Errorf("generating fixed size cluster: %w", err)
+			}
+			fixedSizeClustersString += gen
 		}
-		dynamicSizeClusters = append(dynamicSizeClusters,
-			cluster{size: unassignedClusterSize, alphabet: alphabet})
+		gen, err := password.FromAlphabet(alphabet, unassignedClusterSize)
+		if err != nil {
+			return fmt.Errorf("generating fixed size cluster: %w", err)
+		}
+		dynamicSizeClustersString += gen
 		return nil
 	}
-	if err := classifyCluster(minLower, lower, password.LowercaseLetters); err != nil {
+	if err := genCluster(minLower, lower, password.LowercaseLetters); err != nil {
 		return "", err
 	}
-	if err := classifyCluster(minUpper, upper, password.UppercaseLetters); err != nil {
+	if err := genCluster(minUpper, upper, password.UppercaseLetters); err != nil {
 		return "", err
 	}
-	if err := classifyCluster(minNumeric, numeric, password.Digits); err != nil {
+	if err := genCluster(minNumeric, numeric, password.Digits); err != nil {
 		return "", err
 	}
-	if err := classifyCluster(minSpecial, special, password.Symbols); err != nil {
+	if err := genCluster(minSpecial, special, password.Symbols); err != nil {
 		return "", err
 	}
 
-	genStringFromClusters := func(clusters []cluster) (string, error) {
-		var result string
-		for _, c := range clusters {
-			gen, err := password.FromAlphabet(c.alphabet, c.size)
-			if err != nil {
-				return "", fmt.Errorf("generating fixed size cluster: %w", err)
-			}
-			result += gen
-		}
-		return result, nil
-	}
-	fixedSizeClustersString, err := genStringFromClusters(fixedSizeClusters)
-	if err != nil {
-		return "", err
-	}
-	dynamicSizeClustersString, err := genStringFromClusters(dynamicSizeClusters)
-	if err != nil {
-		return "", err
-	}
 	dynamicSizeClusterChars := strings.Split(dynamicSizeClustersString, "")
 	if err := password.Shuffle(dynamicSizeClusterChars); err != nil {
 		return "", fmt.Errorf("shuffling dynamic size cluster: %w", err)

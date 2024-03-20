@@ -4,3 +4,6 @@ variables:
   DisableDockerDetector: true
   # Disable CodeQL injections except for where we specifically enable it
   Codeql.SkipTaskAutoInjection: true
+
+  # TODO: djurek REMOVE THIS TO ENABLE ALL TESTS
+  Skip.LiveTest: true

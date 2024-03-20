@@ -131,8 +131,8 @@ stages:
           # Merge the folders
           - pwsh: |
               New-Item -ItemType Directory -Path linux-packages
-              Get-ChildItem $(Pipeline.Workspace)/linux-packages-amd64 | ForEach-Object { Copy-Item $_ linux-packages }
-              Get-ChildItem $(Pipeline.Workspace)/linux-packages-arm64 | ForEach-Object { Copy-Item $_ linux-packages }
+              Get-ChildItem $(Pipeline.Workspace)/linux-packages-amd64 -Exclude '_manifest' | ForEach-Object { Copy-Item $_ linux-packages }
+              Get-ChildItem $(Pipeline.Workspace)/linux-packages-arm64 -Exclude '_manifest' | ForEach-Object { Copy-Item $_ linux-packages }
             displayName: Merge linux packages
         templateContext: 
           outputs: 

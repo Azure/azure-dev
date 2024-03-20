@@ -27,7 +27,7 @@ extends:
       skipBuildTagsForGitHubPullRequests: true
     sdl:
       credscan:
-        suppressionFile: $(Build.SourcesDirectory)/eng/CredScanSuppression.json
+        suppressionsFile: $(Build.SourcesDirectory)/eng/CredScanSuppression.json
       sourceRepositoriesToScan:
         exclude:
           - repository: azure-sdk-build-tools

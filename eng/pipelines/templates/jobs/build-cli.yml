@@ -163,6 +163,7 @@ jobs:
       - pwsh: |
           New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/build-output -Force
           Copy-Item $(BuildTarget) $(Build.ArtifactStagingDirectory)/build-output
+        workingDirectory: cli/azd
         displayName: Copy binary to artifact staging directory
 
       - template: /eng/pipelines/templates/steps/build-linux-packages.yml

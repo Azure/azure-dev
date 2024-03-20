@@ -189,7 +189,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 
 	for _, name := range []string{"frontend"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name, mockCtx.CommandRunner)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})

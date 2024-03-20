@@ -163,7 +163,9 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		if err != nil {
 			return nil, fmt.Errorf("marshalling input %s: %w", key, err)
 		}
-		configString := jasonSimpleKeyRegex.ReplaceAllString(string(config), "${1}:")
+		// key identifiers for objects on bicep don't need quotes, unless they have special characters, like `-` or `.`.
+		// jsonSimpleKeyRegex is used to remove the quotes from the key if no needed to avoid a bicep lint warning.
+		configString := jsonSimpleKeyRegex.ReplaceAllString(string(config), "${1}:")
 		if exists {
 			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Config: configString})
 		} else {
@@ -943,7 +945,7 @@ func containsSecretInput(resourceName, envValue string, inputs map[string]Input)
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
-var jasonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
+var jsonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
 
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required

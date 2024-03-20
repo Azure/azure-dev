@@ -96,7 +96,7 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 		return strings.Compare(x.Name, y.Name)
 	})
 
-	return allServicesSlice, nil
+	return orderByDependencies(allServicesSlice), nil
 }
 
 // defaultOptions for infra settings. These values are applied across provisioning providers.
@@ -193,4 +193,38 @@ func (i *Infra) Cleanup() error {
 	}
 
 	return nil
+}
+
+// orderByDependencies sorts the services by their dependencies.
+func orderByDependencies(services []*ServiceConfig) []*ServiceConfig {
+	indexedArr := make(map[string]*ServiceConfig)
+	visited := make(map[string]bool)
+	var orderedArr []*ServiceConfig
+
+	// Function to visit elements recursively
+	var visit func(string)
+	visit = func(name string) {
+		if !visited[name] {
+			visited[name] = true
+			item, exists := indexedArr[name]
+			if exists && len(item.DependsOn) > 0 {
+				for _, dep := range item.DependsOn {
+					visit(dep) // Recursively visit dependencies
+				}
+			}
+			orderedArr = append(orderedArr, item)
+		}
+	}
+
+	// Index elements by name for quick access
+	for _, item := range services {
+		indexedArr[item.Name] = item
+	}
+
+	// Visit elements in the array
+	for _, item := range services {
+		visit(item.Name)
+	}
+
+	return orderedArr
 }

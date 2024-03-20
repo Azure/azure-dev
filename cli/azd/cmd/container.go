@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/ai/promptflow"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -579,6 +580,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(npm.NewNpmCli)
 	container.MustRegisterSingleton(python.NewPythonCli)
 	container.MustRegisterSingleton(swa.NewSwaCli)
+	container.MustRegisterSingleton(promptflow.NewCli)
 
 	// Provisioning
 	container.MustRegisterSingleton(infra.NewAzureResourceManager)
@@ -602,6 +604,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.AiModelTarget:            project.NewAiModel,
 		project.AiEndpointTarget:         project.NewAiEndpoint,
 		project.AiEnvironmentTarget:      project.NewAiEnvironment,
+		project.AiFlowTarget:             project.NewAiFlow,
 	}
 
 	for target, constructor := range serviceTargetMap {

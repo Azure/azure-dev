@@ -14,6 +14,8 @@ type ServiceConfig struct {
 	Project *ProjectConfig `yaml:"-"`
 	// The friendly name/key of the project from the azure.yaml file
 	Name string `yaml:"-"`
+	// A list of dependent services that must be deployed before this service
+	DependsOn []string `yaml:"dependsOn,omitempty"`
 	// The name used to override the default azure resource name
 	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
 	// The relative path to the project folder from the project root

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -29,6 +30,7 @@ const (
 	AiModelTarget            ServiceTargetKind = "ai-model"
 	AiEndpointTarget         ServiceTargetKind = "ai-endpoint"
 	AiEnvironmentTarget      ServiceTargetKind = "ai-environment"
+	AiFlowTarget             ServiceTargetKind = "ai-flow"
 )
 
 // RequiresContainer returns true if the service target runs a container image.
@@ -56,7 +58,8 @@ func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
 		AksTarget,
 		AiEnvironmentTarget,
 		AiModelTarget,
-		AiEndpointTarget:
+		AiEndpointTarget,
+		AiFlowTarget:
 
 		return kind, nil
 	}
@@ -141,7 +144,15 @@ func resourceTypeMismatchError(
 // As an example, ContainerAppTarget is able to provision the container app as part of deployment,
 // and thus returns true.
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
-	return st == AksTarget || st == AiModelTarget || st == AiEndpointTarget || st == AiEnvironmentTarget
+	supportedTargets := []ServiceTargetKind{
+		AksTarget,
+		AiEnvironmentTarget,
+		AiModelTarget,
+		AiEndpointTarget,
+		AiFlowTarget,
+	}
+
+	return slices.Contains(supportedTargets, st)
 }
 
 func checkResourceType(resource *environment.TargetResource, expectedResourceType infra.AzureResourceType) error {

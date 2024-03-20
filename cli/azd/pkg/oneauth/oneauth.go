@@ -11,25 +11,25 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )
 
-// Supported indicates whether this build includes OneAuth integration.
-const Supported = false
+var (
+	// functions are defined as variables to make them easily replaceable in tests
 
-var errNotSupported = errors.New("this build doesn't support OneAuth authentication")
+	LogIn = func(authority, clientID, scope string) (string, error) {
+		return "", errNotSupported
+	}
+	LogInSilently = func(clientID string) (string, error) {
+		return "", errNotSupported
+	}
+	Logout = func(clientID string) error {
+		return errNotSupported
+	}
+	NewCredential = func(authority, clientID string, opts CredentialOptions) (azcore.TokenCredential, error) {
+		return nil, errNotSupported
+	}
+	Shutdown = func() {}
 
-func LogIn(authority, clientID, scope string) (string, error) {
-	return "", errNotSupported
-}
+	// Supported indicates whether this build includes OneAuth integration.
+	Supported = false
 
-func LogInSilently(clientID string) (string, error) {
-	return "", errNotSupported
-}
-
-func Logout(clientID string) error {
-	return errNotSupported
-}
-
-func NewCredential(authority, clientID string, opts CredentialOptions) (azcore.TokenCredential, error) {
-	return nil, errNotSupported
-}
-
-func Shutdown() {}
+	errNotSupported = errors.New("this build doesn't support OneAuth authentication")
+)

@@ -58,7 +58,7 @@ func goLog(s *C.char) {
 }
 
 // Supported indicates whether this build includes OneAuth integration.
-const Supported = true
+var Supported = true
 
 var (
 	//go:embed bridge/_build/Release/bridge.dll
@@ -81,7 +81,7 @@ var (
 	startup        *windows.Proc
 )
 
-func Shutdown() {
+var Shutdown = func() {
 	if started.CompareAndSwap(true, false) {
 		shutdown.Call()
 	}
@@ -100,7 +100,7 @@ type credential struct {
 }
 
 // NewCredential creates a new credential that acquires tokens via OneAuth.
-func NewCredential(authority, clientID string, opts CredentialOptions) (azcore.TokenCredential, error) {
+var NewCredential = func(authority, clientID string, opts CredentialOptions) (azcore.TokenCredential, error) {
 	cred := &credential{
 		authority:     authority,
 		clientID:      clientID,
@@ -120,12 +120,12 @@ func (c *credential) GetToken(ctx context.Context, opts policy.TokenRequestOptio
 	return ar.token, err
 }
 
-func LogIn(authority, clientID, scope string) (string, error) {
+var LogIn = func(authority, clientID, scope string) (string, error) {
 	ar, err := authn(authority, clientID, "", scope, false)
 	return ar.homeAccountID, err
 }
 
-func Logout(clientID string) error {
+var Logout = func(clientID string) error {
 	err := start(clientID)
 	if err == nil {
 		logout.Call()
@@ -134,7 +134,7 @@ func Logout(clientID string) error {
 }
 
 // LogInSilently attempts to log in the active Windows user and return that user's account ID. It never displays UI.
-func LogInSilently(clientID string) (string, error) {
+var LogInSilently = func(clientID string) (string, error) {
 	err := start(clientID)
 	if err != nil {
 		return "", err

@@ -54,7 +54,7 @@ parameters:
         ImageKey: image
         HostArchitecture: Arm64
         PreBuildSteps:
-          - pwsh: tdnf install -y build-essential
+          - pwsh: sudo tdnf install -y build-essential
             displayName: Install build-essential
         Variables: 
           BuildTarget: azd-linux-arm64

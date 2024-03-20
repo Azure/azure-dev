@@ -23,6 +23,23 @@ extern "C"
         char *message;
     } WrappedError;
 
+    typedef struct
+    {
+        char *id;
+        char *username;
+        char *displayName;
+        char **associations;
+        int associationCount;
+    } WrappedAccount;
+
+    typedef struct
+    {
+        WrappedAccount *accounts;
+        int count;
+        WrappedError *err;
+    } WrappedAccounts;
+
+    __declspec(dllexport) void FreeWrappedAccounts(WrappedAccounts *);
     __declspec(dllexport) void FreeWrappedAuthResult(WrappedAuthResult *);
     __declspec(dllexport) void FreeWrappedError(WrappedError *);
 
@@ -33,6 +50,9 @@ extern "C"
     // - version: the application version
     // - logCallback: a function to call with log messages
     __declspec(dllexport) WrappedError *Startup(const char *clientId, const char *applicationId, const char *version, Logger logCallback);
+
+    // ListAccounts returns a list of all accounts known to OneAuth.
+    __declspec(dllexport) WrappedAccounts *ListAccounts();
 
     // Authenticate acquires an access token. It will display an interactive login window if necessary, unless allowPrompt is false.
     // The parameters are:

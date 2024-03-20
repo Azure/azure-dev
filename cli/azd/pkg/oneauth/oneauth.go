@@ -16,6 +16,10 @@ const Supported = false
 
 var errNotSupported = errors.New("this build doesn't support OneAuth authentication")
 
+func ListAccounts() ([]Account, error) {
+	return nil, errNotSupported
+}
+
 func LogIn(authority, clientID, scope string) (string, error) {
 	return "", errNotSupported
 }

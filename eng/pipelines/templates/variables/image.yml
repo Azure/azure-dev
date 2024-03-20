@@ -23,7 +23,8 @@ variables:
   - name: MACVMIMAGE12
     value: macos-12
 
-  # Values required for pool.os field in 1es pipeline templates
+  # Values required for pool.os field in 1es pipeline templates. Variable form 
+  # cannot be used, instead those values must be written directly into pool.os.
   - name: LINUXOS
     value: linux
   - name: WINDOWSOS

@@ -61,14 +61,14 @@ func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[
 	})
 }
 
-func mockPublisProperties(mockCtx *mocks.MockContext) {
+func mockPublishProperties(mockCtx *mocks.MockContext) {
 	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "dotnet" && slices.Contains(args.Args, "--getProperty:GeneratedContainerConfiguration")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		response := dotnet.ResponseContainerConfiguration{
 			Config: dotnet.ResponseContainerConfigurationExpPorts{
 				ExposedPorts: map[string]interface{}{
-					"3341/tcp": struct{}{},
+					"8080/tcp": struct{}{},
 				},
 			}}
 		serialize, err := json.Marshal(response)
@@ -93,7 +93,7 @@ func TestAspireEscaping(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireEscapingManifest, nil)
-	mockPublisProperties(mockCtx)
+	mockPublishProperties(mockCtx)
 
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
@@ -117,7 +117,7 @@ func TestAspireStorageGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireStorageManifest, nil)
-	mockPublisProperties(mockCtx)
+	mockPublishProperties(mockCtx)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
@@ -160,7 +160,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	filesFromManifest["aspire.hosting.azure.bicep.appinsights.bicep"] = ignoredBicepContent
 	filesFromManifest["aspire.hosting.azure.bicep.sql.bicep"] = ignoredBicepContent
 	mockPublishManifest(mockCtx, aspireBicepManifest, filesFromManifest)
-	mockPublisProperties(mockCtx)
+	mockPublishProperties(mockCtx)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
@@ -204,7 +204,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
-	mockPublisProperties(mockCtx)
+	mockPublishProperties(mockCtx)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
@@ -256,7 +256,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireContainerManifest, nil)
-	mockPublisProperties(mockCtx)
+	mockPublishProperties(mockCtx)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")

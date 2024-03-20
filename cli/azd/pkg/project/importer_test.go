@@ -269,7 +269,7 @@ func mockPublishProperties(mockCtx *mocks.MockContext) {
 		response := dotnet.ResponseContainerConfiguration{
 			Config: dotnet.ResponseContainerConfigurationExpPorts{
 				ExposedPorts: map[string]interface{}{
-					"3341/tcp": struct{}{},
+					"8080/tcp": struct{}{},
 				},
 			}}
 		serialize, err := json.Marshal(response)

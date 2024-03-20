@@ -182,7 +182,7 @@ jobs:
           filePath: eng/scripts/Set-ShieldInfo.ps1
           arguments: >-
             -TemplatePath eng/shields/standalone.json
-            -OutputPath $(Build.ArtifactStagingDirectory)/shield
+            -OutputPath $(Build.ArtifactStagingDirectory)/shield/standalone.json
             -Version "$(CLI_VERSION)"
         displayName: Set shield info
 

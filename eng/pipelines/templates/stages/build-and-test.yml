@@ -106,6 +106,7 @@ stages:
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
             PreBuildSteps: ${{ build.value.PreBuildSteps }}
+            HostArchitecture: ${{ build.value.HostArchitecture }}
             Variables: ${{ build.value.Variables }}
 
       - job: MergeLinuxPackages

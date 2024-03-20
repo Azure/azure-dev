@@ -97,9 +97,9 @@ stages:
           environment: azure-dev
 
           pool:
-            name: azsdk-pool-mms-win-2022-general
-
-os: linux
+            name: $(WINDOWSPOOL)
+            image: $(WINDOWSVMIMAGE)
+            os: windows
           strategy:
             runOnce:
               deploy:
@@ -126,9 +126,9 @@ os: linux
           environment: azure-dev
 
           pool:
-            name: azsdk-pool-mms-win-2022-general
-
-os: linux
+            name: $(WINDOWSPOOL)
+            image: $(WINDOWSVMIMAGE)
+            os: windows
           strategy:
             runOnce:
               deploy:
@@ -208,9 +208,9 @@ os: linux
           environment: azure-dev
 
           pool:
-            name: azsdk-pool-mms-win-2022-general
-
-os: linux
+            name: $(WINDOWSPOOL)
+            image: $(WINDOWSVMIMAGE)
+            os: windows
           strategy:
             runOnce:
               deploy:

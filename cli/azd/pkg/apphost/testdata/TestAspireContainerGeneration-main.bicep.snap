@@ -14,16 +14,16 @@ param location string
   type: 'inputs'
   autoGenerate: {
     'my-sql-abstract': {
-      'pas-sw-ord': { len: 10 }
-      password: { len: 10 }
+      'pas-sw-ord': {minLength:10}
+      password: {minLength:10}
     }
     mysqlabstract: {
       'pas-sw-ord': {minLength:10}
       password: {minLength:10}
     }
     noVolume: {
-      'pas-sw-ord': { len: 10 }
-      password: { len: 10 }
+      'pas-sw-ord': {minLength:10}
+      password: {minLength:10}
     }
   }}
 })

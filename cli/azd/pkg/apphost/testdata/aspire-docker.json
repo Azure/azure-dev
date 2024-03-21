@@ -4,6 +4,12 @@
       "type": "dockerfile.v0",
       "path": "../NodeApp/Dockerfile",
       "context": "../NodeApp",
+      "buildArgs": {
+        "SOME_STRING": "Test",
+        "SOME_BOOL": "True",
+        "SOME_NUMBER": "7",
+        "SOME_NONVALUE": null
+      },
       "env": {
         "NODE_ENV": "development",
         "PORT": "{nodeapp.bindings.http.port}",

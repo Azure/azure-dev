@@ -7,6 +7,13 @@
         "MYSQL_ROOT_PASSWORD": "{mysqlabstract.inputs.password}",
         "SpecialChar": "{mysqlabstract.inputs.pas-sw-ord}"
       },
+      "volumes": [
+        {
+          "name": "volumeOne",
+          "target": "/data/db",
+          "readOnly": false
+        }
+      ],
       "bindings": {
         "tcp": {
           "scheme": "tcp",
@@ -16,6 +23,87 @@
         }
       },
       "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract.inputs.password}",
+      "inputs": {
+        "password": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 10
+            }
+          }
+        },
+        "pas-sw-ord": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 10
+            }
+          }
+        }
+      }
+    },
+    "my-sql-abstract": {
+      "type": "container.v0",
+      "image": "mysql:latest",
+      "env": {
+        "MYSQL_ROOT_PASSWORD": "{my-sql-abstract.inputs.password}",
+        "SpecialChar": "{my-sql-abstract.inputs.pas-sw-ord}"
+      },
+      "volumes": [
+        {
+          "name": "volume-two",
+          "target": "/data/db",
+          "readOnly": true
+        }
+      ],
+      "bindings": {
+        "tcp": {
+          "scheme": "tcp",
+          "protocol": "tcp",
+          "transport": "tcp",
+          "containerPort": 3306
+        }
+      },
+      "connectionString": "Server={my-sql-abstract.bindings.tcp.host};Port={my-sql-abstract.bindings.tcp.port};User ID=root;Password={my-sql-abstract.inputs.password}",
+      "inputs": {
+        "password": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 10
+            }
+          }
+        },
+        "pas-sw-ord": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 10
+            }
+          }
+        }
+      }
+    },
+    "noVolume": {
+      "type": "container.v0",
+      "image": "mysql:latest",
+      "env": {
+        "MYSQL_ROOT_PASSWORD": "{noVolume.inputs.password}",
+        "SpecialChar": "{noVolume.inputs.pas-sw-ord}"
+      },
+      "bindings": {
+        "tcp": {
+          "scheme": "tcp",
+          "protocol": "tcp",
+          "transport": "tcp",
+          "containerPort": 3306
+        }
+      },
+      "connectionString": "Server={noVolume.bindings.tcp.host};Port={noVolume.bindings.tcp.port};User ID=root;Password={noVolume.inputs.password}",
       "inputs": {
         "password": {
           "type": "string",

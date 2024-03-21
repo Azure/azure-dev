@@ -233,7 +233,7 @@ func (m *Manager) CredentialForCurrentUser(
 			}
 			return cloudShellCredential, nil
 		}
-		if oneauth.Supported && os.Getenv("IsDevBox") == "True" {
+		if oneauth.Supported && strings.EqualFold(os.Getenv("IsDevBox"), "True") {
 			// Try logging in the active OS account. If that fails for any reason, tell the user to run `azd auth login`.
 			if err := m.LoginWithOneAuth(ctx, options.TenantID, nil, true); err == nil {
 				if config, err := m.readAuthConfig(); err == nil {

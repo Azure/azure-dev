@@ -6,12 +6,14 @@ package password
 import (
 	"strings"
 	"testing"
+	"unicode"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/stretchr/testify/require"
 )
 
 func TestZeroLengthPasswordError(t *testing.T) {
-	_, err := Generate(PasswordComposition{})
+	_, err := Generate(GenerateConfig{})
 	require.Error(t, err)
 }
 
@@ -21,33 +23,33 @@ func TestOneCharPassword(t *testing.T) {
 	var pwd string
 	var err error
 
-	pwd, err = Generate(PasswordComposition{NumLowercase: 1})
+	pwd, err = Generate(GenerateConfig{MinLower: to.Ptr(1)})
 	require.NoError(t, err)
 	require.Len(t, pwd, 1)
 	require.Equal(t, 1, countCharsFrom(pwd, LowercaseLetters))
 
-	pwd, err = Generate(PasswordComposition{NumUppercase: 1})
+	pwd, err = Generate(GenerateConfig{MinUpper: to.Ptr(1)})
 	require.NoError(t, err)
 	require.Len(t, pwd, 1)
 	require.Equal(t, 1, countCharsFrom(pwd, UppercaseLetters))
 
-	pwd, err = Generate(PasswordComposition{NumDigits: 1})
+	pwd, err = Generate(GenerateConfig{MinNumeric: to.Ptr(1)})
 	require.NoError(t, err)
 	require.Len(t, pwd, 1)
 	require.Equal(t, 1, countCharsFrom(pwd, Digits))
 
-	pwd, err = Generate(PasswordComposition{NumSymbols: 1})
+	pwd, err = Generate(GenerateConfig{MinSpecial: to.Ptr(1)})
 	require.NoError(t, err)
 	require.Len(t, pwd, 1)
 	require.Equal(t, 1, countCharsFrom(pwd, Symbols))
 }
 
 func TestPasswordContainsRequestedChars(t *testing.T) {
-	pwd, err := Generate(PasswordComposition{
-		NumLowercase: 3,
-		NumUppercase: 4,
-		NumDigits:    5,
-		NumSymbols:   6,
+	pwd, err := Generate(GenerateConfig{
+		MinLower:   to.Ptr(3),
+		MinUpper:   to.Ptr(4),
+		MinNumeric: to.Ptr(5),
+		MinSpecial: to.Ptr(6),
 	})
 	require.NoError(t, err)
 
@@ -58,7 +60,7 @@ func TestPasswordContainsRequestedChars(t *testing.T) {
 }
 
 func TestPasswordShuffled(t *testing.T) {
-	pwd, err := Generate(PasswordComposition{NumLowercase: 10, NumUppercase: 20})
+	pwd, err := Generate(GenerateConfig{MinLower: to.Ptr(10), MinUpper: to.Ptr(20)})
 	require.NoError(t, err)
 
 	// Should be super improbable for the lowercase letters to remain at the front
@@ -71,4 +73,46 @@ func countCharsFrom(s, choices string) int {
 		count += strings.Count(s, string(choices[i]))
 	}
 	return count
+}
+
+func TestGenerateInput(t *testing.T) {
+	config := GenerateConfig{
+		MinLength:  to.Ptr(8),
+		Special:    to.Ptr(false),
+		MinLower:   to.Ptr(2),
+		MinUpper:   to.Ptr(2),
+		MinNumeric: to.Ptr(2),
+	}
+
+	expectedLength := 8
+	expectedMinLower := 2
+	expectedMinUpper := 2
+	expectedMinNumeric := 2
+	expectedMinSpecial := 0
+
+	result, err := Generate(config)
+	require.NoError(t, err)
+	require.Equal(t, expectedLength, len(result))
+
+	lowerCount := 0
+	upperCount := 0
+	numericCount := 0
+	specialCount := 0
+
+	for _, char := range result {
+		if unicode.IsLower(char) {
+			lowerCount++
+		} else if unicode.IsUpper(char) {
+			upperCount++
+		} else if unicode.IsDigit(char) {
+			numericCount++
+		} else {
+			specialCount++
+		}
+	}
+
+	require.LessOrEqual(t, expectedMinLower, lowerCount)
+	require.LessOrEqual(t, expectedMinUpper, upperCount)
+	require.LessOrEqual(t, expectedMinNumeric, numericCount)
+	require.LessOrEqual(t, expectedMinSpecial, specialCount)
 }

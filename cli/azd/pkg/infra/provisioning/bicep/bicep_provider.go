@@ -1891,122 +1891,6 @@ func (p *BicepProvider) modulePath() string {
 	return filepath.Join(infraRoot, moduleFilename)
 }
 
-// generateInput generates a password based on the provided configuration.
-// It takes an `azure.AutoGenInput` configuration as input and returns the generated password as a string.
-// If any error occurs during the generation process, it returns an error.
-func generateInput(config azure.AutoGenInput) (string, error) {
-	var minLength int
-	if config.MinLength != nil {
-		minLength = *config.MinLength
-	}
-	var minLower int
-	if config.MinLower != nil {
-		minLower = *config.MinLower
-	}
-	var minUpper int
-	if config.MinUpper != nil {
-		minUpper = *config.MinUpper
-	}
-	var minNumeric int
-	if config.MinNumeric != nil {
-		minNumeric = *config.MinNumeric
-	}
-	var minSpecial int
-	if config.MinSpecial != nil {
-		minSpecial = *config.MinSpecial
-	}
-	var lower bool
-	if config.Lower != nil {
-		lower = *config.Lower
-	} else {
-		lower = true
-	}
-	var upper bool
-	if config.Upper != nil {
-		upper = *config.Upper
-	} else {
-		upper = true
-	}
-	var numeric bool
-	if config.Numeric != nil {
-		numeric = *config.Numeric
-	} else {
-		numeric = true
-	}
-	var special bool
-	if config.Special != nil {
-		special = *config.Special
-	} else {
-		special = true
-	}
-
-	// a cluster is a group of characters that are required to be present in the password
-	clustersSize := minLower + minUpper + minNumeric + minSpecial
-	totalLength := minLength
-	if clustersSize > totalLength {
-		totalLength = clustersSize
-	}
-	if totalLength == 0 {
-		return "", fmt.Errorf(
-			"either minLength or the sum of minLower, minUpper, minNumeric, and minSpecial must be greater than 0")
-	}
-
-	unassignedClusterSize := totalLength - clustersSize
-	var fixedSizeClustersString string
-	var dynamicSizeClustersString string
-
-	genCluster := func(minClusterSize int, condition bool, alphabet string) error {
-		if !condition {
-			if minClusterSize > 0 {
-				return fmt.Errorf("cluster size is greater than 0 but the condition is false")
-			}
-			return nil
-		}
-		if minClusterSize > 0 {
-			gen, err := password.FromAlphabet(alphabet, minClusterSize)
-			if err != nil {
-				return fmt.Errorf("generating fixed size cluster: %w", err)
-			}
-			fixedSizeClustersString += gen
-		}
-		gen, err := password.FromAlphabet(alphabet, unassignedClusterSize)
-		if err != nil {
-			return fmt.Errorf("generating fixed size cluster: %w", err)
-		}
-		dynamicSizeClustersString += gen
-		return nil
-	}
-	if err := genCluster(minLower, lower, password.LowercaseLetters); err != nil {
-		return "", err
-	}
-	if err := genCluster(minUpper, upper, password.UppercaseLetters); err != nil {
-		return "", err
-	}
-	if err := genCluster(minNumeric, numeric, password.Digits); err != nil {
-		return "", err
-	}
-	if err := genCluster(minSpecial, special, password.Symbols); err != nil {
-		return "", err
-	}
-
-	dynamicSizeClusterChars := strings.Split(dynamicSizeClustersString, "")
-	if err := password.Shuffle(dynamicSizeClusterChars); err != nil {
-		return "", fmt.Errorf("shuffling dynamic size cluster: %w", err)
-	}
-
-	for unassignedClusterSize > 0 {
-		fixedSizeClustersString += dynamicSizeClusterChars[unassignedClusterSize-1]
-		unassignedClusterSize--
-	}
-
-	fixedSizeClustersStringChars := strings.Split(fixedSizeClustersString, "")
-	if err := password.Shuffle(fixedSizeClustersStringChars); err != nil {
-		return "", fmt.Errorf("shuffling fixed size cluster: %w", err)
-	}
-
-	return strings.Join(fixedSizeClustersStringChars, ""), nil
-}
-
 // inputsParameter generates and updates input parameters for the Azure Resource Manager (ARM) template.
 // It takes an existingInputs map that contains the current input values for each resource, and an autoGenParameters map
 // that contains information about the input parameters to be generated.
@@ -2027,7 +1911,18 @@ func inputsParameter(
 		}
 		for inputName, inputInfo := range inputResourceInfo {
 			if _, has := existingRecordsForResource[inputName]; !has {
-				val, err := generateInput(inputInfo)
+				val, err := password.Generate(password.GenerateConfig{
+					MinLength:  inputInfo.MinLength,
+					Lower:      inputInfo.Lower,
+					Upper:      inputInfo.Upper,
+					Numeric:    inputInfo.Numeric,
+					Special:    inputInfo.Special,
+					MinLower:   inputInfo.MinLower,
+					MinUpper:   inputInfo.MinUpper,
+					MinNumeric: inputInfo.MinNumeric,
+					MinSpecial: inputInfo.MinSpecial,
+				},
+				)
 				if err != nil {
 					return inputsParameter, inputsUpdated, fmt.Errorf("generating value for input %s: %w", inputName, err)
 				}

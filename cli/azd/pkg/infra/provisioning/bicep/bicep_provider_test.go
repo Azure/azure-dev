@@ -16,7 +16,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -34,6 +33,7 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -1245,7 +1245,7 @@ func TestInputsParameter(t *testing.T) {
 		},
 	}
 
-	autoGenParameters := map[string]map[string]azure.AutoGenInput{
+	autoGenParameters := map[string]map[string]password.GenerateConfig{
 		"resource1": {
 			"input1": {
 				MinLength: to.Ptr(10),
@@ -1300,46 +1300,4 @@ func TestInputsParameter(t *testing.T) {
 		t, *autoGenParameters["resource3"]["input4"].MinLength, len(result["resource3"]["input4"].(string)))
 
 	require.Equal(t, expectedInputsUpdated, inputsUpdated)
-}
-
-func TestGenerateInput(t *testing.T) {
-	config := azure.AutoGenInput{
-		MinLength:  to.Ptr(8),
-		Special:    to.Ptr(false),
-		MinLower:   to.Ptr(2),
-		MinUpper:   to.Ptr(2),
-		MinNumeric: to.Ptr(2),
-	}
-
-	expectedLength := 8
-	expectedMinLower := 2
-	expectedMinUpper := 2
-	expectedMinNumeric := 2
-	expectedMinSpecial := 0
-
-	result, err := generateInput(config)
-	require.NoError(t, err)
-	require.Equal(t, expectedLength, len(result))
-
-	lowerCount := 0
-	upperCount := 0
-	numericCount := 0
-	specialCount := 0
-
-	for _, char := range result {
-		if unicode.IsLower(char) {
-			lowerCount++
-		} else if unicode.IsUpper(char) {
-			upperCount++
-		} else if unicode.IsDigit(char) {
-			numericCount++
-		} else {
-			specialCount++
-		}
-	}
-
-	require.LessOrEqual(t, expectedMinLower, lowerCount)
-	require.LessOrEqual(t, expectedMinUpper, upperCount)
-	require.LessOrEqual(t, expectedMinNumeric, numericCount)
-	require.LessOrEqual(t, expectedMinSpecial, specialCount)
 }

@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+//go:build oneauth
+
 package oneauth
 
 import (
@@ -13,21 +15,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-type Account struct {
-	AssociatedApps []string
-	DisplayName    string
-	ID             string
-	Username       string
-}
-
-func (Account) FilterValue() string { return "" }
-
-func (a Account) IsZero() bool {
-	return a.ID == "" && a.Username == "" && a.DisplayName == "" && len(a.AssociatedApps) == 0
-}
-
-var _ list.Item = (*Account)(nil)
 
 var (
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(6)
@@ -140,7 +127,7 @@ func showAccountPicker(accounts []Account) (Account, error) {
 	// tea.Program.Run() yields to the scheduler at some point, giving it an opportunity to resume the calling goroutine
 	// on another OS thread when the account picker quits. This is a problem when that goroutine goes on to call OneAuth's
 	// SignInInteractively(), which requires a UI thread. Apparently we're (always?) on such a thread at this point--perhaps
-	// because azd's main goroutine doesn't yield at time of writing--so lock now to ensure we continue on that thread.
+	// because the main goroutine doesn't yield at time of writing--so lock the thread now to ensure we continue on it.
 	runtime.LockOSThread()
 	m := model{list: l}
 	final, err := tea.NewProgram(m).Run()

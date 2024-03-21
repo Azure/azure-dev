@@ -51,11 +51,13 @@ azureyaml
 Backticks
 bicepparam
 BOOLSLICE
+bubbletea
 BUILDID
 BUILDNUMBER
 buildpacks
 byoi
 cflags
+charmbracelet
 circleci
 cmdrecord
 cmdsubst
@@ -106,11 +108,13 @@ javac
 jmes
 jquery
 keychain
+keypress
 kubelogin
 LASTEXITCODE
 ldflags
 lechnerc77
 libc
+lipgloss
 memfs
 mergo
 mgmt

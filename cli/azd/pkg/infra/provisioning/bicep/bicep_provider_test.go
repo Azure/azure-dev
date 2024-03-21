@@ -33,7 +33,6 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
-	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -1245,7 +1244,7 @@ func TestInputsParameter(t *testing.T) {
 		},
 	}
 
-	autoGenParameters := map[string]map[string]password.GenerateConfig{
+	autoGenParameters := map[string]map[string]azure.AutoGenInput{
 		"resource1": {
 			"input1": {
 				MinLength: to.Ptr(10),

@@ -33,11 +33,15 @@ stages:
             image: $(LINUXVMIMAGE)
             os: linux
 
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
+
           strategy:
             runOnce:
               deploy:
                 steps:
-                  - checkout: self
                   - task: PowerShell@2
                     inputs:
                       pwsh: true
@@ -100,11 +104,16 @@ stages:
             name: $(WINDOWSPOOL)
             image: $(WINDOWSVMIMAGE)
             os: windows
+
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
+
           strategy:
             runOnce:
               deploy:
                 steps:
-                  - checkout: self
                   - task: PowerShell@2
                     inputs:
                       pwsh: true
@@ -129,11 +138,16 @@ stages:
             name: $(WINDOWSPOOL)
             image: $(WINDOWSVMIMAGE)
             os: windows
+
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
+
           strategy:
             runOnce:
               deploy:
                 steps:
-                  - checkout: self
                   - task: PowerShell@2
                     inputs:
                       pwsh: true
@@ -159,12 +173,15 @@ stages:
             image: $(LINUXVMIMAGE)
             os: linux
 
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
+
           strategy:
             runOnce:
               deploy:
                 steps:
-                  - checkout: self
-
                   - task: PowerShell@2
                     inputs:
                       pwsh: true
@@ -211,11 +228,16 @@ stages:
             name: $(WINDOWSPOOL)
             image: $(WINDOWSVMIMAGE)
             os: windows
+
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
+
           strategy:
             runOnce:
               deploy:
                 steps:
-                  - checkout: self
                   - task: PowerShell@2
                     inputs:
                       pwsh: true
@@ -526,12 +548,15 @@ stages:
             image: $(LINUXVMIMAGE)
             os: linux
 
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
+
           strategy:
             runOnce:
               deploy:
                 steps:
-                  - checkout: self
-
                   - task: DownloadPipelineArtifact@2
                     inputs:
                       artifact: signed-win

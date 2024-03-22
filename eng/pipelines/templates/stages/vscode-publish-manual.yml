@@ -21,20 +21,22 @@ stages:
     jobs:
       - deployment: runOnce
         displayName: Publish_Release
-        templateContext:
-          type: releaseJob
-          isProduction: true
 
         environment: azure-dev
         pool:
           name: $(LINUXPOOL)
           image: $(LINUXVMIMAGE)
           os: linux
+
+        templateContext:
+          inputs:
+            - input: checkout
+              repository: self
+        
         strategy:
           runOnce:
             deploy:
               steps:
-                - checkout: self
                 - pwsh: Write-Host "Validate deployment job works... This would normally publish"
                 # - checkout: self
 
@@ -48,9 +50,6 @@ stages:
 
       - deployment: runOnce
         displayName: Increment_Version
-        templateContext:
-          type: releaseJob
-          isProduction: true
 
         condition: >-
           and(
@@ -65,11 +64,15 @@ stages:
           image: $(LINUXVMIMAGE)
           os: linux
 
+        templateContext:
+          inputs:
+            - input: checkout
+              repository: self
+
         strategy:
           runOnce:
             deploy:
               steps:
-                - checkout: self
                 - pwsh: Write-Host "Validate deployment job works... This would normally publish"
                 # - task: PowerShell@2
                 #   inputs:

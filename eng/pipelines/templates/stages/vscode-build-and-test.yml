@@ -10,6 +10,7 @@ parameters:
         Variables: {}
       Linux:
         Pool: $(LINUXPOOL)
+        ImageKey: vmImage
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         Variables: 
@@ -17,6 +18,7 @@ parameters:
           Codeql.Enabled: true
           Codeql.SkipTaskAutoInjection: false
           Codeql.BuildIdentifier: vscode_linux
+
       Mac:
         Pool: Azure Pipelines
         ImageKey: image

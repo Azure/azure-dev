@@ -3,8 +3,6 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param identityName string
-param apiBaseUrl string
-param applicationInsightsName string
 param containerAppsEnvironmentName string
 param containerRegistryHostSuffix string
 param containerRegistryName string
@@ -28,26 +26,8 @@ module app '../../../../../common/infra/bicep/core/host/container-app-upsert.bic
     containerAppsEnvironmentName: containerAppsEnvironmentName
     containerRegistryName: containerRegistryName
     containerRegistryHostSuffix: containerRegistryHostSuffix
-    env: [
-      {
-        name: 'REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING'
-        value: applicationInsights.properties.ConnectionString
-      }
-      {
-        name: 'REACT_APP_API_BASE_URL'
-        value: apiBaseUrl
-      }
-      {
-        name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-        value: applicationInsights.properties.ConnectionString
-      }
-    ]
     targetPort: 80
   }
-}
-
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: applicationInsightsName
 }
 
 output SERVICE_WEB_IDENTITY_PRINCIPAL_ID string = webIdentity.properties.principalId

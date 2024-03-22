@@ -1045,7 +1045,7 @@ func (p *BicepProvider) findCompletedDeployments(
 	}
 
 	if len(matchingDeployments) == 0 {
-		return nil, fmt.Errorf("no deployments found for environment %s", envName)
+		return nil, fmt.Errorf("'%s': %w", envName, ErrDeploymentsNotFound)
 	}
 
 	return matchingDeployments, nil

@@ -89,11 +89,11 @@
             "label": "Web npm start",
             "detail": "Helper task--use 'Start Web' task to ensure environment is set up correctly",
             "type": "shell",
-            "command": "npm run start",
+            "command": "npm run dev",
             "options": {
                 "cwd": "${workspaceFolder}/src/web/",
                 "env": {
-                    "REACT_APP_API_BASE_URL": "http://localhost:3100",
+                    "VITE_API_BASE_URL": "http://localhost:3100",
                     "BROWSER": "none"
                 }
             },

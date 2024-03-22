@@ -71,7 +71,7 @@ jobs:
         displayName: Package
 
       - pwsh: New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/shield -Force
-        condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
+        condition: and(succeeded(), eq('true', variables['UploadArtifact']))
         displayName: Create shield artifact directory
 
       - task: PowerShell@2

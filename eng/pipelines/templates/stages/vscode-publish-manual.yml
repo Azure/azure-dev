@@ -23,7 +23,7 @@ stages:
         environment: azure-dev
         pool:
           name: $(LINUXPOOL)
-          vmImage: $(LINUXVMIMAGE)
+          image: $(LINUXVMIMAGE)
           os: linux
         strategy:
           runOnce:
@@ -50,7 +50,7 @@ stages:
 
         pool:
           name: $(LINUXPOOL)
-          vmImage: $(LINUXVMIMAGE)
+          image: $(LINUXVMIMAGE)
           os: linux
 
         strategy:

@@ -34,6 +34,11 @@ stages:
           runOnce:
             deploy:
               steps:
+                - task: DownloadPipelineArtifact@2
+                  displayName: Example of downloading an artifact
+                  inputs:
+                    artifact: signed
+                    path: signed
                 - pwsh: Write-Host "Validate deployment job works... This would normally publish"
                 # - checkout: self
 
@@ -68,6 +73,11 @@ stages:
           runOnce:
             deploy:
               steps:
+                - task: DownloadPipelineArtifact@2
+                  displayName: Example of downloading an artifact
+                  inputs:
+                    artifact: signed
+                    path: signed
                 - pwsh: Write-Host "Validate deployment job works... This would normally publish"
                 # - checkout: self
 

@@ -64,6 +64,16 @@ func (m *AiFlow) Deploy(
 
 		// Create Connections
 		for _, connectionConfig := range flowConfig.Connections {
+			connectionWorkspace, err := connectionConfig.Workspace.Envsubst(m.env.Getenv)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			if connectionWorkspace == "" {
+				connectionConfig.Workspace = flowConfig.Workspace
+			}
+
 			connectionName, err := connectionConfig.Name.Envsubst(m.env.Getenv)
 			if err != nil {
 				task.SetError(err)

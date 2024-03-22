@@ -18,8 +18,8 @@ param location string
       password: {length:10}
     }
     mysqlabstract: {
-      'pas-sw-ord': {length:10}
-      password: {length:10}
+      'pas-sw-ord': {length:15,noSpecial:true,minLower:10,minNumeric:5}
+      password: {length:10,noSpecial:true}
     }
     noVolume: {
       'pas-sw-ord': {length:10}

@@ -14,7 +14,7 @@ param location string
   type: 'inputs'
   autoGenerate: {
     mysqlabstract: {
-      password: {length:10}
+      password: {length:20,noLower:true,minNumeric:5,minSpecial:5}
     }
   }}
 })

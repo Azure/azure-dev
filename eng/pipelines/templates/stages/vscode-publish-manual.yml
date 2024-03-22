@@ -19,9 +19,7 @@ stages:
       - template: /eng/pipelines/templates/variables/image.yml
 
     jobs:
-      - deployment: runOnce
-        displayName: Publish_Release
-
+      - deployment: Publish_Release
         environment: azure-dev
         pool:
           name: $(LINUXPOOL)
@@ -48,9 +46,7 @@ stages:
                 #     TagRepository: true
                 #     UpdateShield: true
 
-      - deployment: runOnce
-        displayName: Increment_Version
-
+      - deployment: Increment_Version
         condition: >-
           and(
             succeeded(),

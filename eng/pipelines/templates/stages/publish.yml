@@ -288,6 +288,11 @@ stages:
 
   - stage: Publish_Integration
     dependsOn: Sign
+
+    variables: 
+      - template: /eng/pipelines/templates/variables/image.yml
+      - template: /eng/pipelines/templates/variables/globals.yml
+
     jobs:
       # Only publish Continuous Deployment if this is the public repo
       - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
@@ -304,6 +309,7 @@ stages:
                 )
               )
             )
+
           pool:
             name: $(LINUXPOOL)
             image: $(LINUXVMIMAGE)
@@ -507,6 +513,11 @@ stages:
             )
           )
         )
+
+      variables: 
+        - template: /eng/pipelines/templates/variables/image.yml
+        - template: /eng/pipelines/templates/variables/globals.yml
+
       jobs:
         - deployment: PublishInstallers
           environment: azure-dev

@@ -4,13 +4,14 @@ parameters:
     default:
       Windows:
         Pool: $(WINDOWSPOOL)
-        ImageKey: vmImage
+        ImageKey: image
         OSVmImage: $(WINDOWSVMIMAGE)
         OS: windows
         Variables: {}
+
       Linux:
         Pool: $(LINUXPOOL)
-        ImageKey: vmImage
+        ImageKey: image
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         Variables: 
@@ -21,7 +22,7 @@ parameters:
 
       Mac:
         Pool: Azure Pipelines
-        ImageKey: image
+        ImageKey: vmImage
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
         Variables: {}

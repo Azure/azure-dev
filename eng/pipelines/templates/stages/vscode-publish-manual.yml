@@ -22,8 +22,8 @@ stages:
       - deployment: Publish_Release
         environment: azure-dev
         pool:
-          name: $(LINUXPOOL)
-          image: $(LINUXVMIMAGE)
+          name: azsdk-pool-mms-ubuntu-2004-general
+          image: azsdk-pool-mms-ubuntu-2004-1espt
           os: linux
 
         templateContext:
@@ -56,8 +56,8 @@ stages:
         environment: azure-dev
 
         pool:
-          name: $(LINUXPOOL)
-          image: $(LINUXVMIMAGE)
+          name: azsdk-pool-mms-ubuntu-2004-general
+          image: azsdk-pool-mms-ubuntu-2004-1espt
           os: linux
 
         templateContext:

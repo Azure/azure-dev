@@ -95,11 +95,6 @@ type genDaprComponent struct {
 	Version  string
 }
 
-type genInput struct {
-	Secret  bool
-	Default *InputDefaultGenerate
-}
-
 type genSqlServer struct {
 	Databases []string
 }

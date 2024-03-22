@@ -144,40 +144,40 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
 	// this allows the template to access the auto-gen inputs from the generator
 	type autoGenInput struct {
-		Name   string
-		Config string
+		Name           string
+		Secret         bool
+		Type           string
+		MetadataConfig string
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
-		AutoGenInputs map[string][]autoGenInput
+		WithMetadataParameters []autoGenInput
 	}
-	inputs := make(map[string][]autoGenInput)
+	var parameters []autoGenInput
 
 	// order to be deterministic when writing bicep
-	genInputKeys := maps.Keys(generator.inputs)
-	slices.Sort(genInputKeys)
+	genParametersKeys := maps.Keys(generator.bicepContext.InputParameters)
+	slices.Sort(genParametersKeys)
 
-	for _, key := range genInputKeys {
-		input := generator.inputs[key]
-		parts := strings.Split(key, ".")
-		resource, inputName := handleBicepNameQuotes(parts[0]), handleBicepNameQuotes(parts[1])
-
-		resourceGenList, exists := inputs[resource]
-
-		inputMetadata, err := inputMetadata(*input.Default)
-		if err != nil {
-			return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
+	for _, key := range genParametersKeys {
+		parameter := generator.bicepContext.InputParameters[key]
+		parameterMetadata := ""
+		if parameter.Default != nil && parameter.Default.Generate != nil {
+			pMetadata, err := inputMetadata(*parameter.Default.Generate)
+			if err != nil {
+				return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
+			}
+			parameterMetadata = pMetadata
 		}
-
-		if exists {
-			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Config: inputMetadata})
-		} else {
-			inputs[resource] = []autoGenInput{{Name: inputName, Config: inputMetadata}}
-		}
+		parameters = append(parameters, autoGenInput{
+			Name:           key,
+			Type:           parameter.Type,
+			Secret:         parameter.Secret,
+			MetadataConfig: parameterMetadata})
 	}
 	context := bicepContext{
 		genBicepTemplateContext: generator.bicepContext,
-		AutoGenInputs:           inputs,
+		WithMetadataParameters:  parameters,
 	}
 	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
@@ -232,13 +232,6 @@ func inputMetadata(config InputDefaultGenerate) (string, error) {
 	// key identifiers for objects on bicep don't need quotes, unless they have special characters, like `-` or `.`.
 	// jsonSimpleKeyRegex is used to remove the quotes from the key if no needed to avoid a bicep lint warning.
 	return jsonSimpleKeyRegex.ReplaceAllString(string(metadataBytes), "${1}:"), nil
-}
-
-func handleBicepNameQuotes(name string) string {
-	if strings.Contains(name, " ") || strings.Contains(name, "-") || strings.Contains(name, ".") {
-		return fmt.Sprintf("'%s'", name)
-	}
-	return name
 }
 
 // GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. The azure.yaml file as well as
@@ -321,10 +314,6 @@ type infraGenerator struct {
 	// keeps the value from value.v0 resources if provided.
 	valueStrings  map[string]string
 	resourceTypes map[string]string
-	// inputs on this map holds only the inputs with `Default.Generate` configuration
-	// azd uses the env.config to persist the inputs after generating a value
-	// inputs which are not default.generate are tracked within bicepContext.InputParameters
-	inputs map[string]genInput
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
@@ -355,7 +344,6 @@ func newInfraGenerator() *infraGenerator {
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
-		inputs:                       make(map[string]genInput),
 	}
 }
 
@@ -421,17 +409,6 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 // LoadManifest loads the given manifest into the generator. It should be called before [Compile].
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
 	for name, comp := range m.Resources {
-		for k, v := range comp.Inputs {
-			if v.Default != nil && v.Default.Generate != nil {
-				input := genInput{
-					Secret:  v.Secret,
-					Default: v.Default.Generate,
-				}
-
-				// only inputs with default.generate are tracked here
-				b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
-			}
-		}
 		if err := b.extractOutputs(comp); err != nil {
 			return fmt.Errorf("extracting outputs: %w", err)
 		}

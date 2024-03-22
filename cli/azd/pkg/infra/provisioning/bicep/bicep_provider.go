@@ -1982,34 +1982,6 @@ func (p *BicepProvider) ensureParameters(
 			continue
 		}
 
-		// For object inputs, if the "AZD Type" is a "inputs" see if the autoGen inputs are already available in
-		// env config.
-		if p.mapBicepTypeToInterfaceType(param.Type) == ParameterTypeObject {
-			if m, has := param.AzdMetadata(); has && m.Type != nil && *m.Type == "inputs" {
-				existingInputs := make(map[string]map[string]any)
-				if _, err := p.env.Config.GetSection("inputs", &existingInputs); err != nil {
-					return nil, fmt.Errorf("reading inputs from config: %w", err)
-				}
-
-				inputsParameter, wroteNewInput, err := inputsParameter(existingInputs, m.AutoGenerate)
-				if err != nil {
-					return nil, fmt.Errorf("generating inputs: %w", err)
-				}
-
-				if wroteNewInput {
-					if err := p.env.Config.Set("inputs", existingInputs); err != nil {
-						return nil, fmt.Errorf("saving env config: %w", err)
-					}
-					if err := p.envManager.Save(ctx, p.env); err != nil {
-						return nil, fmt.Errorf("saving environment: %w", err)
-					}
-				}
-
-				configuredParameters[key] = inputsParameter
-				continue
-			}
-		}
-
 		// This required parameter was not in parameters file - see if we stored a value in config from an earlier
 		// prompt and if so use it.
 		configKey := fmt.Sprintf("infra.parameters.%s", key)

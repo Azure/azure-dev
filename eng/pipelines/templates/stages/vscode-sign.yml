@@ -1,3 +1,4 @@
+
 stages: 
   - stage: Sign
     dependsOn: BuildAndTest
@@ -10,7 +11,7 @@ stages:
       - job: Sign
         pool:
           name: $(WINDOWSPOOL)
-          vmImage: $(WINDOWSVMIMAGE)
+          image: $(WINDOWSVMIMAGE)
           os: windows
 
         steps:

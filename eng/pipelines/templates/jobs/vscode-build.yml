@@ -94,7 +94,7 @@ jobs:
         displayName: Copy *.vsix to build for upload
 
     templateContext: 
-      output: 
+      outputs: 
         - output: pipelineArtifact
           path: $(Build.ArtifactStagingDirectory)/shield
           condition: and(succeeded(), eq('true', variables['UploadArtifact']))

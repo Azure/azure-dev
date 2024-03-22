@@ -15,7 +15,7 @@ parameters:
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         Variables: 
-          UploadArtifact: true
+          UploadArtifact: 'true'
           Codeql.Enabled: true
           Codeql.SkipTaskAutoInjection: false
           Codeql.BuildIdentifier: vscode_linux

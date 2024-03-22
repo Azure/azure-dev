@@ -111,6 +111,16 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         targetPort: 3306
         transport: 'tcp'
       }
+      secrets: [
+        {
+          name: 'mysql-root-password'
+          value: '{{ secured_parameter "my_sql_abstract_password" }}'
+        }
+        {
+          name: 'specialchar'
+          value: '{{ secured_parameter "my_sql_abstract_pas_sw_ord" }}'
+        }
+      ]
     }
     template: {
       volumes: [
@@ -127,11 +137,11 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
           env: [
             {
               name: 'MYSQL_ROOT_PASSWORD'
-              value: '{{my_sql_abstract_password}}'
+              secretRef: 'mysql-root-password'
             }
             {
               name: 'SpecialChar'
-              value: '{{my_sql_abstract_pas_sw_ord}}'
+              secretRef: 'specialchar'
             }
           ]
           volumeMounts: [
@@ -163,6 +173,16 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         targetPort: 3306
         transport: 'tcp'
       }
+      secrets: [
+        {
+          name: 'mysql-root-password'
+          value: '{{ secured_parameter "mysqlabstract_password" }}'
+        }
+        {
+          name: 'specialchar'
+          value: '{{ secured_parameter "mysqlabstract_pas_sw_ord" }}'
+        }
+      ]
     }
     template: {
       volumes: [
@@ -179,11 +199,11 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
           env: [
             {
               name: 'MYSQL_ROOT_PASSWORD'
-              value: '{{mysqlabstract_password}}'
+              secretRef: 'mysql-root-password'
             }
             {
               name: 'SpecialChar'
-              value: '{{mysqlabstract_pas_sw_ord}}'
+              secretRef: 'specialchar'
             }
           ]
           volumeMounts: [
@@ -214,6 +234,16 @@ resource noVolume 'Microsoft.App/containerApps@2023-05-02-preview' = {
         targetPort: 3306
         transport: 'tcp'
       }
+      secrets: [
+        {
+          name: 'mysql-root-password'
+          value: '{{ secured_parameter "noVolume_password" }}'
+        }
+        {
+          name: 'specialchar'
+          value: '{{ secured_parameter "noVolume_pas_sw_ord" }}'
+        }
+      ]
     }
     template: {
       containers: [
@@ -223,11 +253,11 @@ resource noVolume 'Microsoft.App/containerApps@2023-05-02-preview' = {
           env: [
             {
               name: 'MYSQL_ROOT_PASSWORD'
-              value: '{{noVolume_password}}'
+              secretRef: 'mysql-root-password'
             }
             {
               name: 'SpecialChar'
-              value: '{{noVolume_pas_sw_ord}}'
+              secretRef: 'specialchar'
             }
           ]
         }

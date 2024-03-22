@@ -75,7 +75,7 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
       secrets: [
         {
           name: 'mysql-root-password'
-          value: inputs.mysqlabstract.password
+          value: '{{ secured_parameter "mysqlabstract_password" }}'
         }
       ]
     }

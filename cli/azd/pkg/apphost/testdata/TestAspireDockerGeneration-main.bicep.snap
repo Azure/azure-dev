@@ -9,6 +9,13 @@ param environmentName string
 @description('The location used for all deployed resources')
 param location string
 
+@metadata({azd: {
+  type: 'autoOrManualGeneration'
+  config: {length:20,noLower:true,minNumeric:5,minSpecial:5}
+  }
+})
+@secure()
+param mysqlabstract_password string
 
 var tags = {
   'azd-env-name': environmentName

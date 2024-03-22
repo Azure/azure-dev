@@ -202,7 +202,11 @@ func (at *dotnetContainerAppTarget) Deploy(
 					"urlHost":          fns.UrlHost,
 					"connectionString": fns.ConnectionString,
 					"parameter":        fns.Parameter,
-					"secretOutput":     fns.kvSecret,
+					// secured_parameter gets a parameter the same way as parameter, but supporting the secured_parameter
+					// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
+					// stores the parameter value.
+					"secured_parameter": fns.Parameter,
+					"secretOutput":      fns.kvSecret,
 				}).
 				Parse(manifest)
 			if err != nil {

@@ -6,15 +6,19 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type Cli struct {
+	env           *environment.Environment
 	commandRunner exec.CommandRunner
 }
 
-func NewCli(commandRunner exec.CommandRunner) *Cli {
+func NewCli(env *environment.Environment, commandRunner exec.CommandRunner) *Cli {
 	return &Cli{
+		env:           env,
 		commandRunner: commandRunner,
 	}
 }
@@ -61,10 +65,10 @@ func (c *Cli) CreateOrUpdate(
 	workspaceName string,
 	resourceGroupName string,
 	flow *Flow,
-	overrides map[string]string,
+	overrides map[string]osutil.ExpandableString,
 ) (*Flow, error) {
 	if overrides == nil {
-		overrides = map[string]string{}
+		overrides = map[string]osutil.ExpandableString{}
 	}
 
 	args := exec.NewRunArgs("pfazure", "flow")
@@ -81,12 +85,17 @@ func (c *Cli) CreateOrUpdate(
 		"--resource-group", resourceGroupName,
 	)
 
-	overrides["display_name"] = flow.DisplayName
-	overrides["description"] = flow.Description
-	overrides["type"] = string(flow.Type)
+	overrides["display_name"] = osutil.NewExpandableString(flow.DisplayName)
+	overrides["description"] = osutil.NewExpandableString(flow.Description)
+	overrides["type"] = osutil.NewExpandableString(string(flow.Type))
 
 	for key, value := range overrides {
-		args = args.AppendParams("--set", fmt.Sprintf("%s=%s", key, value))
+		expandedValue, err := value.Envsubst(c.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand value for key %s: %w", key, err)
+		}
+
+		args = args.AppendParams("--set", fmt.Sprintf("%s=%s", key, expandedValue))
 	}
 
 	_, err = c.commandRunner.Run(ctx, args)

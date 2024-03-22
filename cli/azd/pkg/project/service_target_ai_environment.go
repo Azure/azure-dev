@@ -2,37 +2,22 @@ package project
 
 import (
 	"context"
-	"errors"
-	"os"
-	"path/filepath"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 type AiEnvironment struct {
-	env                *environment.Environment
-	credentialProvider account.SubscriptionCredentialProvider
-	armClientOptions   *arm.ClientOptions
-	commandRunner      exec.CommandRunner
+	aiHelper *AiHelper
 }
 
 func NewAiEnvironment(
-	env *environment.Environment,
-	armClientOptions *arm.ClientOptions,
-	credentialProvider account.SubscriptionCredentialProvider,
-	commandRunner exec.CommandRunner,
+	aiHelper *AiHelper,
 ) ServiceTarget {
 	return &AiEnvironment{
-		env:                env,
-		armClientOptions:   armClientOptions,
-		credentialProvider: credentialProvider,
-		commandRunner:      commandRunner,
+		aiHelper: aiHelper,
 	}
 }
 
@@ -65,109 +50,26 @@ func (m *AiEnvironment) Deploy(
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	// Implement the Deploy method here.
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		credentials, err := m.credentialProvider.CredentialForSubscription(ctx, m.env.GetSubscriptionId())
+		envConfig, err := ai.ParseComponentConfig(serviceConfig.Config)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		workspaceClient, err := armmachinelearning.NewWorkspacesClient(
-			m.env.GetSubscriptionId(),
-			credentials,
-			m.armClientOptions,
-		)
-		if err != nil {
+		if err := m.aiHelper.EnsureWorkspace(ctx, targetResource, envConfig.Workspace); err != nil {
 			task.SetError(err)
 			return
 		}
 
-		workspaceResponse, err := workspaceClient.Get(
-			ctx,
-			targetResource.ResourceGroupName(),
-			serviceConfig.Ai.Workspace,
-			nil,
-		)
+		environmentVersion, err := m.aiHelper.CreateEnvironmentVersion(ctx, serviceConfig, targetResource, envConfig)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
-
-		if *workspaceResponse.Workspace.Name != serviceConfig.Ai.Workspace {
-			task.SetError(errors.New("Workspace not found"))
-			return
-		}
-
-		yamlFilePath := filepath.Join(serviceConfig.Path(), serviceConfig.Ai.Path)
-		_, err = os.Stat(yamlFilePath)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		environmentsClient, err := armmachinelearning.NewEnvironmentContainersClient(
-			m.env.GetSubscriptionId(),
-			credentials,
-			m.armClientOptions,
-		)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		nextVersion := "1"
-		envContainerResponse, err := environmentsClient.Get(
-			ctx,
-			targetResource.ResourceGroupName(),
-			serviceConfig.Ai.Workspace,
-			serviceConfig.Ai.Name,
-			nil,
-		)
-		if err == nil {
-			nextVersion = *envContainerResponse.Properties.NextVersion
-		}
-
-		envArgs := exec.NewRunArgs(
-			"az", "ml", "environment", "create",
-			"--name", serviceConfig.Ai.Name,
-			"--file", yamlFilePath,
-			"-g", targetResource.ResourceGroupName(),
-			"-w", serviceConfig.Ai.Workspace,
-			"--version", nextVersion)
-
-		_, err = m.commandRunner.Run(ctx, envArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		envVersionsClient, err := armmachinelearning.NewEnvironmentVersionsClient(
-			m.env.GetSubscriptionId(),
-			credentials,
-			m.armClientOptions,
-		)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		envVersionResponse, err := envVersionsClient.Get(
-			ctx,
-			targetResource.ResourceGroupName(),
-			serviceConfig.Ai.Workspace,
-			serviceConfig.Ai.Name,
-			nextVersion,
-			nil,
-		)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		envVersion := &envVersionResponse.EnvironmentVersion
 
 		task.SetResult(&ServiceDeployResult{
 			Package: servicePackage,
-			Details: envVersion,
+			Details: environmentVersion,
 		})
 	})
 }

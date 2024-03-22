@@ -27,10 +27,10 @@ const (
 	SpringAppTarget          ServiceTargetKind = "springapp"
 	AksTarget                ServiceTargetKind = "aks"
 	DotNetContainerAppTarget ServiceTargetKind = "containerapp-dotnet"
-	AiModelTarget            ServiceTargetKind = "ai-model"
-	AiEndpointTarget         ServiceTargetKind = "ai-endpoint"
-	AiEnvironmentTarget      ServiceTargetKind = "ai-environment"
-	AiFlowTarget             ServiceTargetKind = "ai-flow"
+	AiModelTarget            ServiceTargetKind = "ml.model"
+	AiEndpointTarget         ServiceTargetKind = "ml.endpoint"
+	AiEnvironmentTarget      ServiceTargetKind = "ml.environment"
+	AiFlowTarget             ServiceTargetKind = "ai.flow"
 )
 
 // RequiresContainer returns true if the service target runs a container image.

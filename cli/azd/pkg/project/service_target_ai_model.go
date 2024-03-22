@@ -2,37 +2,22 @@ package project
 
 import (
 	"context"
-	"errors"
-	"os"
-	"path/filepath"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 type AiModel struct {
-	env                *environment.Environment
-	credentialProvider account.SubscriptionCredentialProvider
-	armClientOptions   *arm.ClientOptions
-	commandRunner      exec.CommandRunner
+	aiHelper *AiHelper
 }
 
 func NewAiModel(
-	env *environment.Environment,
-	armClientOptions *arm.ClientOptions,
-	credentialProvider account.SubscriptionCredentialProvider,
-	commandRunner exec.CommandRunner,
+	aiHelper *AiHelper,
 ) ServiceTarget {
 	return &AiModel{
-		env:                env,
-		armClientOptions:   armClientOptions,
-		credentialProvider: credentialProvider,
-		commandRunner:      commandRunner,
+		aiHelper: aiHelper,
 	}
 }
 
@@ -65,121 +50,26 @@ func (m *AiModel) Deploy(
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	// Implement the Deploy method here.
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		credentials, err := m.credentialProvider.CredentialForSubscription(ctx, m.env.GetSubscriptionId())
+		modelConfig, err := ai.ParseComponentConfig(serviceConfig.Config)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		workspaceClient, err := armmachinelearning.NewWorkspacesClient(
-			m.env.GetSubscriptionId(),
-			credentials,
-			m.armClientOptions,
-		)
-		if err != nil {
+		if err := m.aiHelper.EnsureWorkspace(ctx, targetResource, modelConfig.Workspace); err != nil {
 			task.SetError(err)
 			return
 		}
 
-		workspaceResponse, err := workspaceClient.Get(
-			ctx,
-			targetResource.ResourceGroupName(),
-			serviceConfig.Ai.Workspace,
-			nil,
-		)
+		environmentVersion, err := m.aiHelper.CreateModelVersion(ctx, serviceConfig, targetResource, modelConfig)
 		if err != nil {
 			task.SetError(err)
 			return
-		}
-
-		if *workspaceResponse.Workspace.Name != serviceConfig.Ai.Workspace {
-			task.SetError(errors.New("Workspace not found"))
-			return
-		}
-
-		yamlFilePath := filepath.Join(serviceConfig.Path(), serviceConfig.Ai.Path)
-		_, err = os.Stat(yamlFilePath)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		createModelArgs := exec.NewRunArgs(
-			"az", "ml", "model", "create",
-			"--name", serviceConfig.Ai.Name,
-			"--file", yamlFilePath,
-			"-g", targetResource.ResourceGroupName(),
-			"-w", serviceConfig.Ai.Workspace,
-		)
-
-		_, err = m.commandRunner.Run(ctx, createModelArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		modelContainerClient, err := armmachinelearning.NewModelContainersClient(
-			m.env.GetSubscriptionId(),
-			credentials,
-			m.armClientOptions,
-		)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		modelContainerResponse, err := modelContainerClient.Get(
-			ctx,
-			targetResource.ResourceGroupName(),
-			serviceConfig.Ai.Workspace,
-			serviceConfig.Ai.Name,
-			nil,
-		)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		modelContainer := &modelContainerResponse.ModelContainer
-
-		modelVersionClient, err := armmachinelearning.NewModelVersionsClient(
-			m.env.GetSubscriptionId(),
-			credentials,
-			m.armClientOptions,
-		)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		latestVersion := "1"
-		if modelContainer.Properties.LatestVersion != nil {
-			latestVersion = *modelContainer.Properties.LatestVersion
-		}
-
-		modelVersionResponse, err := modelVersionClient.Get(
-			ctx,
-			targetResource.ResourceGroupName(),
-			serviceConfig.Ai.Workspace,
-			serviceConfig.Ai.Name,
-			latestVersion,
-			nil,
-		)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		modelVersion := &modelVersionResponse.ModelVersion
-
-		endpoints := []string{
-			*modelVersion.Properties.ModelURI,
 		}
 
 		task.SetResult(&ServiceDeployResult{
-			Package:   servicePackage,
-			Details:   modelVersion,
-			Endpoints: endpoints,
+			Package: servicePackage,
+			Details: environmentVersion,
 		})
 	})
 }

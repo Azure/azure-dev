@@ -581,6 +581,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(python.NewPythonCli)
 	container.MustRegisterSingleton(swa.NewSwaCli)
 	container.MustRegisterSingleton(promptflow.NewCli)
+	container.MustRegisterScoped(project.NewAiHelper)
 
 	// Provisioning
 	container.MustRegisterSingleton(infra.NewAzureResourceManager)

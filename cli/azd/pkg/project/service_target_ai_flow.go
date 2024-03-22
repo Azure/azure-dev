@@ -2,43 +2,26 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai/promptflow"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 type AiFlow struct {
-	env                *environment.Environment
-	credentialProvider account.SubscriptionCredentialProvider
-	armClientOptions   *arm.ClientOptions
-	commandRunner      exec.CommandRunner
-	flowCli            *promptflow.Cli
+	env      *environment.Environment
+	aiHelper *AiHelper
 }
 
 func NewAiFlow(
 	env *environment.Environment,
-	armClientOptions *arm.ClientOptions,
-	credentialProvider account.SubscriptionCredentialProvider,
-	commandRunner exec.CommandRunner,
-	flowCli *promptflow.Cli,
+	aiHelper *AiHelper,
 ) ServiceTarget {
 	return &AiFlow{
-		env:                env,
-		armClientOptions:   armClientOptions,
-		credentialProvider: credentialProvider,
-		commandRunner:      commandRunner,
-		flowCli:            flowCli,
+		env:      env,
+		aiHelper: aiHelper,
 	}
 }
 
@@ -71,65 +54,146 @@ func (m *AiFlow) Deploy(
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	// Implement the Deploy method here.
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		credentials, err := m.credentialProvider.CredentialForSubscription(ctx, m.env.GetSubscriptionId())
+		flowConfig, err := promptflow.ParseConfig(serviceConfig.Config)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		workspaceClient, err := armmachinelearning.NewWorkspacesClient(
-			m.env.GetSubscriptionId(),
-			credentials,
-			m.armClientOptions,
-		)
+		endpoints := []string{}
+
+		// Create Connections
+		for _, connectionConfig := range flowConfig.Connections {
+			connectionName, err := connectionConfig.Name.Envsubst(m.env.Getenv)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring connection '%s'", connectionName)))
+			_, err = m.aiHelper.CreateOrUpdateConnection(ctx, serviceConfig, targetResource, connectionConfig)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+		}
+
+		// Deploy environments
+		for _, envConfig := range flowConfig.Environments {
+			envWorkspace, err := envConfig.Workspace.Envsubst(m.env.Getenv)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			if envWorkspace == "" {
+				envConfig.Workspace = flowConfig.Workspace
+			}
+
+			envName, err := envConfig.Name.Envsubst(m.env.Getenv)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring environment '%s'", envName)))
+			envVersion, err := m.aiHelper.CreateEnvironmentVersion(ctx, serviceConfig, targetResource, envConfig)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			if envVersion.Properties.Image != nil {
+				endpoints = append(endpoints, *envVersion.Properties.Image)
+			}
+		}
+
+		// Deploy models
+		for _, modelConfig := range flowConfig.Models {
+			modelWorkspace, err := modelConfig.Workspace.Envsubst(m.env.Getenv)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			if modelWorkspace == "" {
+				modelConfig.Workspace = flowConfig.Workspace
+			}
+
+			modelName, err := modelConfig.Name.Envsubst(m.env.Getenv)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring model '%s'", modelName)))
+			modelVersion, err := m.aiHelper.CreateModelVersion(ctx, serviceConfig, targetResource, modelConfig)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			endpoints = append(endpoints, *modelVersion.Properties.ModelURI)
+		}
+
+		// Deploy endpoints
+		for _, endpointConfig := range flowConfig.Endpoints {
+			endpointWorkspace, err := endpointConfig.Workspace.Envsubst(m.env.Getenv)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			if endpointWorkspace == "" {
+				endpointConfig.Workspace = flowConfig.Workspace
+			}
+
+			endpointName, err := endpointConfig.Name.Envsubst(m.env.Getenv)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring endpoint '%s'", endpointName)))
+			endpoint, err := m.aiHelper.CreateOrUpdateEndpoint(ctx, serviceConfig, targetResource, endpointConfig)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			endpoints = append(endpoints, fmt.Sprintf("Swagger: %s", *endpoint.Properties.SwaggerURI))
+			endpoints = append(endpoints, fmt.Sprintf("Scoring: %s", *endpoint.Properties.ScoringURI))
+
+			deploymentWorkspace, err := endpointConfig.Deployment.Workspace.Envsubst(m.env.Getenv)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			if deploymentWorkspace == "" {
+				endpointConfig.Deployment.Workspace = flowConfig.Workspace
+			}
+
+			task.SetProgress(NewServiceProgress(fmt.Sprintf("Deploying endpoint '%s'", endpointName)))
+			_, err = m.aiHelper.DeployToEndpoint(ctx, serviceConfig, targetResource, endpointConfig)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+		}
+
+		// Deploy flow
+		flowName, err := flowConfig.Name.Envsubst(m.env.Getenv)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		workspaceResponse, err := workspaceClient.Get(
-			ctx,
-			targetResource.ResourceGroupName(),
-			serviceConfig.Ai.Workspace,
-			nil,
-		)
+		task.SetProgress(NewServiceProgress(fmt.Sprintf("Deploying flow '%s'", flowName)))
+		updatedFlow, err := m.aiHelper.CreateOrUpdateFlow(ctx, serviceConfig, targetResource, flowConfig)
 		if err != nil {
 			task.SetError(err)
 			return
-		}
-
-		if *workspaceResponse.Workspace.Name != serviceConfig.Ai.Workspace {
-			task.SetError(errors.New("Workspace not found"))
-			return
-		}
-
-		yamlFilePath := filepath.Join(serviceConfig.Path(), serviceConfig.Ai.Path)
-		_, err = os.Stat(yamlFilePath)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		flow := &promptflow.Flow{
-			DisplayName: fmt.Sprintf("%s-%d", serviceConfig.Ai.Name, time.Now().Unix()),
-			Type:        promptflow.FlowTypeChat,
-			Path:        yamlFilePath,
-		}
-
-		updatedFlow, err := m.flowCli.CreateOrUpdate(
-			ctx,
-			serviceConfig.Ai.Workspace,
-			targetResource.ResourceGroupName(),
-			flow,
-			nil,
-		)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
-
-		endpoints := []string{
-			updatedFlow.Code,
 		}
 
 		task.SetResult(&ServiceDeployResult{

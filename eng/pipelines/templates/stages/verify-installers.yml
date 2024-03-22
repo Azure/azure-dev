@@ -149,13 +149,13 @@ parameters:
     # TODO: When Docker can be installed and run properly on the ARM
     # host this can be used to validate the ARM64 Linux packages.
     # https://github.com/Azure/azure-dev/issues/2617
-    LinuxARM64:
-      Pool: $(LINUXARMPOOL)
-      OSVmImage: $(LINUXARMVMIMAGE)
-      HostArchitecture: arm64
-      OS: linux
-      Variables:
-        Architecture: arm64
+    # LinuxARM64:
+    #   Pool: $(LINUXARMPOOL)
+    #   OSVmImage: $(LINUXARMVMIMAGE)
+    #   HostArchitecture: arm64
+    #   OS: linux
+    #   Variables:
+    #     Architecture: arm64
 
 stages:
   - stage: Verify_Installers

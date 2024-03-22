@@ -122,8 +122,20 @@ type Input struct {
 	Default *InputDefault `json:"default,omitempty"`
 }
 
+type InputDefaultGenerate struct {
+	MinLength  *uint `json:"minLength,omitempty"`
+	Lower      *bool `json:"lower,omitempty"`
+	Upper      *bool `json:"upper,omitempty"`
+	Numeric    *bool `json:"numeric,omitempty"`
+	Special    *bool `json:"special,omitempty"`
+	MinLower   *uint `json:"minLower,omitempty"`
+	MinUpper   *uint `json:"minUpper,omitempty"`
+	MinNumeric *uint `json:"minNumeric,omitempty"`
+	MinSpecial *uint `json:"minSpecial,omitempty"`
+}
+
 type InputDefault struct {
-	Generate interface{} `json:"generate,omitempty"`
+	Generate *InputDefaultGenerate `json:"generate,omitempty"`
 }
 
 // ManifestFromAppHost returns the Manifest from the given app host.

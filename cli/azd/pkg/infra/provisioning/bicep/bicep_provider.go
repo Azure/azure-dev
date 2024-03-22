@@ -1912,11 +1912,11 @@ func inputsParameter(
 		for inputName, inputInfo := range inputResourceInfo {
 			if _, has := existingRecordsForResource[inputName]; !has {
 				val, err := password.Generate(password.GenerateConfig{
-					MinLength:  inputInfo.MinLength,
-					Lower:      inputInfo.Lower,
-					Upper:      inputInfo.Upper,
-					Numeric:    inputInfo.Numeric,
-					Special:    inputInfo.Special,
+					Length:     inputInfo.Length,
+					NoLower:    inputInfo.NoLower,
+					NoUpper:    inputInfo.NoUpper,
+					NoNumeric:  inputInfo.NoNumeric,
+					NoSpecial:  inputInfo.NoSpecial,
 					MinLower:   inputInfo.MinLower,
 					MinUpper:   inputInfo.MinUpper,
 					MinNumeric: inputInfo.MinNumeric,

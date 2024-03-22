@@ -23,22 +23,22 @@ func TestOneCharPassword(t *testing.T) {
 	var pwd string
 	var err error
 
-	pwd, err = Generate(GenerateConfig{MinLower: to.Ptr(1)})
+	pwd, err = Generate(GenerateConfig{MinLower: to.Ptr[uint](1)})
 	require.NoError(t, err)
 	require.Len(t, pwd, 1)
 	require.Equal(t, 1, countCharsFrom(pwd, LowercaseLetters))
 
-	pwd, err = Generate(GenerateConfig{MinUpper: to.Ptr(1)})
+	pwd, err = Generate(GenerateConfig{MinUpper: to.Ptr[uint](1)})
 	require.NoError(t, err)
 	require.Len(t, pwd, 1)
 	require.Equal(t, 1, countCharsFrom(pwd, UppercaseLetters))
 
-	pwd, err = Generate(GenerateConfig{MinNumeric: to.Ptr(1)})
+	pwd, err = Generate(GenerateConfig{MinNumeric: to.Ptr[uint](1)})
 	require.NoError(t, err)
 	require.Len(t, pwd, 1)
 	require.Equal(t, 1, countCharsFrom(pwd, Digits))
 
-	pwd, err = Generate(GenerateConfig{MinSpecial: to.Ptr(1)})
+	pwd, err = Generate(GenerateConfig{MinSpecial: to.Ptr[uint](1)})
 	require.NoError(t, err)
 	require.Len(t, pwd, 1)
 	require.Equal(t, 1, countCharsFrom(pwd, Symbols))
@@ -46,10 +46,10 @@ func TestOneCharPassword(t *testing.T) {
 
 func TestPasswordContainsRequestedChars(t *testing.T) {
 	pwd, err := Generate(GenerateConfig{
-		MinLower:   to.Ptr(3),
-		MinUpper:   to.Ptr(4),
-		MinNumeric: to.Ptr(5),
-		MinSpecial: to.Ptr(6),
+		MinLower:   to.Ptr[uint](3),
+		MinUpper:   to.Ptr[uint](4),
+		MinNumeric: to.Ptr[uint](5),
+		MinSpecial: to.Ptr[uint](6),
 	})
 	require.NoError(t, err)
 
@@ -60,7 +60,7 @@ func TestPasswordContainsRequestedChars(t *testing.T) {
 }
 
 func TestPasswordShuffled(t *testing.T) {
-	pwd, err := Generate(GenerateConfig{MinLower: to.Ptr(10), MinUpper: to.Ptr(20)})
+	pwd, err := Generate(GenerateConfig{MinLower: to.Ptr[uint](10), MinUpper: to.Ptr[uint](20)})
 	require.NoError(t, err)
 
 	// Should be super improbable for the lowercase letters to remain at the front
@@ -77,11 +77,11 @@ func countCharsFrom(s, choices string) int {
 
 func TestGenerateInput(t *testing.T) {
 	config := GenerateConfig{
-		MinLength:  to.Ptr(8),
-		Special:    to.Ptr(false),
-		MinLower:   to.Ptr(2),
-		MinUpper:   to.Ptr(2),
-		MinNumeric: to.Ptr(2),
+		Length:     8,
+		NoSpecial:  to.Ptr(true),
+		MinLower:   to.Ptr[uint](2),
+		MinUpper:   to.Ptr[uint](2),
+		MinNumeric: to.Ptr[uint](2),
 	}
 
 	expectedLength := 8

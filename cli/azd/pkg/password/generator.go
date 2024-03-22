@@ -20,7 +20,7 @@ const (
 
 // FromAlphabet generates a password of a given length, using only characters from the given alphabet (which should
 // be a string with no duplicates)
-func FromAlphabet(alphabet string, length int) (string, error) {
+func FromAlphabet(alphabet string, length uint) (string, error) {
 	if length <= 0 {
 		return "", fmt.Errorf("Empty passwords are insecure")
 	}
@@ -48,84 +48,61 @@ func addRandomChars(buf []byte, pos *uint, count uint, choices string) error {
 	return nil
 }
 
+// GenerateConfig are the settings to control the output of calling Generate.
 type GenerateConfig struct {
-	MinLength  *int  `json:"minLength,omitempty"`
-	Lower      *bool `json:"lower,omitempty"`
-	Upper      *bool `json:"upper,omitempty"`
-	Numeric    *bool `json:"numeric,omitempty"`
-	Special    *bool `json:"special,omitempty"`
-	MinLower   *int  `json:"minLower,omitempty"`
-	MinUpper   *int  `json:"minUpper,omitempty"`
-	MinNumeric *int  `json:"minNumeric,omitempty"`
-	MinSpecial *int  `json:"minSpecial,omitempty"`
+	Length     uint  `json:"length,omitempty"`
+	NoLower    *bool `json:"noLower,omitempty"`
+	NoUpper    *bool `json:"noUpper,omitempty"`
+	NoNumeric  *bool `json:"noNumeric,omitempty"`
+	NoSpecial  *bool `json:"noSpecial,omitempty"`
+	MinLower   *uint `json:"minLower,omitempty"`
+	MinUpper   *uint `json:"minUpper,omitempty"`
+	MinNumeric *uint `json:"minNumeric,omitempty"`
+	MinSpecial *uint `json:"minSpecial,omitempty"`
 }
 
 // Generate generates a password based on the provided configuration.
 // It takes an `azure.AutoGenInput` configuration as input and returns the generated password as a string.
 // If any error occurs during the generation process, it returns an error.
 func Generate(config GenerateConfig) (string, error) {
-	var minLength int
-	if config.MinLength != nil {
-		minLength = *config.MinLength
-	}
-	var minLower int
+	var minLower uint
 	if config.MinLower != nil {
 		minLower = *config.MinLower
 	}
-	var minUpper int
+	var minUpper uint
 	if config.MinUpper != nil {
 		minUpper = *config.MinUpper
 	}
-	var minNumeric int
+	var minNumeric uint
 	if config.MinNumeric != nil {
 		minNumeric = *config.MinNumeric
 	}
-	var minSpecial int
+	var minSpecial uint
 	if config.MinSpecial != nil {
 		minSpecial = *config.MinSpecial
 	}
-	var lower bool
-	if config.Lower != nil {
-		lower = *config.Lower
-	} else {
-		lower = true
-	}
-	var upper bool
-	if config.Upper != nil {
-		upper = *config.Upper
-	} else {
-		upper = true
-	}
-	var numeric bool
-	if config.Numeric != nil {
-		numeric = *config.Numeric
-	} else {
-		numeric = true
-	}
-	var special bool
-	if config.Special != nil {
-		special = *config.Special
-	} else {
-		special = true
-	}
 
 	// a cluster is a group of characters that are required to be present in the password
-	clustersSize := minLower + minUpper + minNumeric + minSpecial
-	totalLength := minLength
-	if clustersSize > totalLength {
-		totalLength = clustersSize
+	clustersLength := minLower + minUpper + minNumeric + minSpecial
+	totalLength := config.Length
+	if totalLength == 0 {
+		totalLength = clustersLength
+	}
+	if clustersLength > totalLength {
+		return "",
+			fmt.Errorf("the sum of MinLower, MinUpper, MinNumeric, and MinSpecial must be less than or equal to the length")
 	}
 	if totalLength == 0 {
 		return "", fmt.Errorf(
-			"either minLength or the sum of minLower, minUpper, minNumeric, and minSpecial must be greater than 0")
+			"either Length or the sum of MinLower, MinUpper, MinNumeric, and MinSpecial must be greater than 0")
 	}
 
-	unassignedClusterSize := totalLength - clustersSize
+	unassignedClusterSize := totalLength - clustersLength
 	var fixedSizeClustersString string
 	var dynamicSizeClustersString string
 
-	genCluster := func(minClusterSize int, condition bool, alphabet string) error {
-		if !condition {
+	genCluster := func(minClusterSize uint, disallowedCluster *bool, alphabet string) error {
+		if disallowedCluster != nil && *disallowedCluster {
 			if minClusterSize > 0 {
 				return fmt.Errorf("cluster size is greater than 0 but the condition is false")
 			}
@@ -147,16 +124,16 @@ func Generate(config GenerateConfig) (string, error) {
 		}
 		return nil
 	}
-	if err := genCluster(minLower, lower, LowercaseLetters); err != nil {
+	if err := genCluster(minLower, config.NoLower, LowercaseLetters); err != nil {
 		return "", err
 	}
-	if err := genCluster(minUpper, upper, UppercaseLetters); err != nil {
+	if err := genCluster(minUpper, config.NoUpper, UppercaseLetters); err != nil {
 		return "", err
 	}
-	if err := genCluster(minNumeric, numeric, Digits); err != nil {
+	if err := genCluster(minNumeric, config.NoNumeric, Digits); err != nil {
 		return "", err
 	}
-	if err := genCluster(minSpecial, special, Symbols); err != nil {
+	if err := genCluster(minSpecial, config.NoSpecial, Symbols); err != nil {
 		return "", err
 	}
 

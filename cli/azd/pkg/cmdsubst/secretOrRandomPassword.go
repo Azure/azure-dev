@@ -41,7 +41,7 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(
 
 	generatePassword := func() (bool, string, error) {
 		substitute, err := password.Generate(
-			password.GenerateConfig{MinLower: to.Ptr(5), MinUpper: to.Ptr(5), MinNumeric: to.Ptr(5)})
+			password.GenerateConfig{MinLower: to.Ptr[uint](5), MinUpper: to.Ptr[uint](5), MinNumeric: to.Ptr[uint](5)})
 		return err == nil, substitute, err
 	}
 

@@ -15,7 +15,10 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
@@ -160,17 +163,16 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		resource, inputName := handleBicepNameQuotes(parts[0]), handleBicepNameQuotes(parts[1])
 
 		resourceGenList, exists := inputs[resource]
-		config, err := json.Marshal(input.Default)
+
+		inputMetadata, err := inputMetadata(*input.Default)
 		if err != nil {
-			return nil, fmt.Errorf("marshalling input %s: %w", key, err)
+			return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
 		}
-		// key identifiers for objects on bicep don't need quotes, unless they have special characters, like `-` or `.`.
-		// jsonSimpleKeyRegex is used to remove the quotes from the key if no needed to avoid a bicep lint warning.
-		configString := jsonSimpleKeyRegex.ReplaceAllString(string(config), "${1}:")
+
 		if exists {
-			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Config: configString})
+			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Config: inputMetadata})
 		} else {
-			inputs[resource] = []autoGenInput{{Name: inputName, Config: configString}}
+			inputs[resource] = []autoGenInput{{Name: inputName, Config: inputMetadata}}
 		}
 	}
 	context := bicepContext{
@@ -191,6 +193,45 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	}
 
 	return fs, nil
+}
+
+func inputMetadata(config InputDefaultGenerate) (string, error) {
+	finalLength := convert.ToValueWithDefault(config.MinLength, 0)
+	clusterLength := convert.ToValueWithDefault(config.MinLower, 0) +
+		convert.ToValueWithDefault(config.MinUpper, 0) +
+		convert.ToValueWithDefault(config.MinNumeric, 0) +
+		convert.ToValueWithDefault(config.MinSpecial, 0)
+	if clusterLength > finalLength {
+		finalLength = clusterLength
+	}
+
+	adaptBool := func(b *bool) *bool {
+		if b == nil {
+			return b
+		}
+		return to.Ptr(!*b)
+	}
+
+	metadataModel := azure.AutoGenInput{
+		Length:     finalLength,
+		MinLower:   config.MinLower,
+		MinUpper:   config.MinUpper,
+		MinNumeric: config.MinNumeric,
+		MinSpecial: config.MinSpecial,
+		NoLower:    adaptBool(config.Lower),
+		NoUpper:    adaptBool(config.Upper),
+		NoNumeric:  adaptBool(config.Numeric),
+		NoSpecial:  adaptBool(config.Special),
+	}
+
+	metadataBytes, err := json.Marshal(metadataModel)
+	if err != nil {
+		return "", fmt.Errorf("marshalling metadata: %w", err)
+	}
+
+	// key identifiers for objects on bicep don't need quotes, unless they have special characters, like `-` or `.`.
+	// jsonSimpleKeyRegex is used to remove the quotes from the key if no needed to avoid a bicep lint warning.
+	return jsonSimpleKeyRegex.ReplaceAllString(string(metadataBytes), "${1}:"), nil
 }
 
 func handleBicepNameQuotes(name string) string {
@@ -383,10 +424,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		for k, v := range comp.Inputs {
 			if v.Default != nil && v.Default.Generate != nil {
 				input := genInput{
-					Secret: v.Secret,
+					Secret:  v.Secret,
+					Default: v.Default.Generate,
 				}
 
-				input.Default = v.Default.Generate
 				// only inputs with default.generate are tracked here
 				b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
 			}

@@ -235,7 +235,7 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 		if oneauth.Supported && strings.EqualFold(os.Getenv("IsDevBox"), "True") {
 			// Try logging in the active OS account. If that fails for any reason, tell the user to run `azd auth login`.
-			if err := m.LoginWithOneAuth(ctx, options.TenantID, nil, true); err == nil {
+			if err := m.LoginWithBrokerAccount(); err == nil {
 				if config, err := m.readAuthConfig(); err == nil {
 					user, err := readUserProperties(config)
 					if err == nil && user != nil && user.HomeAccountID != nil && *user.HomeAccountID != "" {
@@ -556,20 +556,27 @@ func (m *Manager) LoginInteractive(
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
 }
 
-func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes []string, osAccountOnly bool) error {
-	var (
-		accountID string
-		err       error
-	)
-	if osAccountOnly {
-		accountID, err = oneauth.LogInSilently(cAZD_CLIENT_ID)
-	} else {
-		authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenantID
-		if len(scopes) == 0 {
-			scopes = m.LoginScopes()
-		}
-		accountID, err = oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
+// LoginWithBrokerAccount logs in an account provided by the system authentication broker via OneAuth.
+// For example, it will log in the user currently signed in to Windows. This method never prompts for
+// user interaction and returns an error when the broker doesn't provide an account.
+func (m *Manager) LoginWithBrokerAccount() error {
+	accountID, err := oneauth.LogInSilently(cAZD_CLIENT_ID)
+	if err == nil {
+		err = m.saveUserProperties(&userProperties{
+			FromOneAuth:   true,
+			HomeAccountID: &accountID,
+		})
 	}
+	return err
+}
+
+// LoginWithOneAuth starts OneAuth's interactive login flow.
+func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes []string) error {
+	if len(scopes) == 0 {
+		scopes = m.LoginScopes()
+	}
+	authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenantID
+	accountID, err := oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
 	if err == nil {
 		err = m.saveUserProperties(&userProperties{
 			FromOneAuth:   true,

@@ -43,7 +43,7 @@ parameters:
           ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
 
     Mac11Sh:
-      Pool: $(MACPOOL)
+      Pool: Azure Pipelines
       OSVmImage: $(MACVMIMAGE)
       ImageKey: vmImage
       OS: macOS
@@ -55,7 +55,7 @@ parameters:
           ./test-sh-install-errors.sh "bash" "$BASEURL" ""
 
     Mac12Sh:
-      Pool: $(MACPOOL)
+      Pool: Azure Pipelines
       OSVmImage: $(MACVMIMAGE12)
       ImageKey: vmImage
       OS: macOS
@@ -67,7 +67,7 @@ parameters:
           ./test-sh-install-errors.sh "bash" "$BASEURL" ""
 
     Mac12Pwsh:
-      Pool: $(MACPOOL)
+      Pool: Azure Pipelines
       OSVmImage: $(MACVMIMAGE12)
       ImageKey: vmImage
       OS: macOS
@@ -85,7 +85,7 @@ parameters:
           -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
 
     Mac11Pwsh:
-      Pool: $(MACPOOL)
+      Pool: Azure Pipelines
       OSVmImage: $(MACVMIMAGE)
       ImageKey: vmImage
       OS: macOS
@@ -271,7 +271,7 @@ stages:
       - job: Verify_Mac_InstallOver
         dependsOn: Compress_For_Hosting
         pool:
-          name: $(MACPOOL)
+          name: Azure Pipelines
           vmImage: $(MACVMIMAGE12)
           os: macOS
 

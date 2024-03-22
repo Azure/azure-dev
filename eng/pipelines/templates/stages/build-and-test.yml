@@ -31,7 +31,7 @@ parameters:
             Codeql.SkipTaskAutoInjection: false
             Codeql.BuildIdentifier: cli_linux
       Mac:
-        Pool: $(MACPOOL)
+        Pool: Azure Pipelines
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
         ImageKey: vmImage
@@ -64,7 +64,7 @@ parameters:
           GOARCH: arm64
           BuildLinuxPackages: true
       MacARM64:
-        Pool: $(MACPOOL)
+        Pool: Azure Pipelines
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
         ImageKey: vmImage

@@ -133,6 +133,9 @@ func Generate(config GenerateConfig) (string, error) {
 	// 1. If all characters are disallowed, return an error
 	// 2. For each character that needs to be generated, generate a charset picking one random char for each allowed cluster
 	// 3. Use the generated charset to pick a random character for the char
+	// This strategy gives the same changes for each character to be picked from any cluster, regardless of the cluster size
+	// For example, picking a char from lowercase letters and numbers should not give more changes to get a lowercase letter
+	// just because there are more lower case letters than numbers.
 	for unassignedClusterSize > 0 {
 		var combinedAlphabet string
 		var noDisallow bool

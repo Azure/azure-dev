@@ -35,16 +35,13 @@ stages:
           runOnce:
             deploy:
               steps:
-                - pwsh: Write-Host "Validate deployment job works... This would normally publish"
-                # - checkout: self
+                - template: /eng/pipelines/templates/steps/set-vscode-version.yml
 
-                # - template: /eng/pipelines/templates/steps/set-vscode-version.yml
-
-                # - template: /eng/pipelines/templates/steps/publish-vscode.yml
-                #   parameters:
-                #     PublishLocations: vscode/release/$(VSIX_VERSION);vscode/release/latest
-                #     TagRepository: true
-                #     UpdateShield: true
+                - template: /eng/pipelines/templates/steps/publish-vscode.yml
+                  parameters:
+                    PublishLocations: vscode/release/$(VSIX_VERSION);vscode/release/latest
+                    TagRepository: true
+                    UpdateShield: true
 
       - deployment: Increment_Version
         condition: >-
@@ -69,16 +66,15 @@ stages:
           runOnce:
             deploy:
               steps:
-                - pwsh: Write-Host "Validate deployment job works... This would normally publish"
-                # - task: PowerShell@2
-                #   inputs:
-                #     pwsh: true
-                #     targetType: filePath
-                #     filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
-                #   displayName: Increment VSCode Extension version
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
+                  displayName: Increment VSCode Extension version
 
-                # - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-                #   parameters:
-                #     PRBranchName: vscode-version-increment-$(Build.BuildId)
-                #     CommitMsg: Increment VSCode Extension version after release
-                #     PRTitle: Increment VSCode Extension version after release
+                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                  parameters:
+                    PRBranchName: vscode-version-increment-$(Build.BuildId)
+                    CommitMsg: Increment VSCode Extension version after release
+                    PRTitle: Increment VSCode Extension version after release

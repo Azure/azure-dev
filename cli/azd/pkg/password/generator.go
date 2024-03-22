@@ -98,10 +98,9 @@ func Generate(config GenerateConfig) (string, error) {
 	}
 
 	unassignedClusterSize := totalLength - clustersLength
-	var fixedSizeClustersString string
-	var dynamicSizeClustersString string
+	var generated string
 
-	genCluster := func(minClusterSize uint, disallowedCluster *bool, alphabet string) error {
+	genCluster := func(minClusterSize uint, disallowedCluster *bool, alphabet string, appendTo *string) error {
 		if disallowedCluster != nil && *disallowedCluster {
 			if minClusterSize > 0 {
 				return fmt.Errorf("cluster size is greater than 0 but the condition is false")
@@ -113,41 +112,60 @@ func Generate(config GenerateConfig) (string, error) {
 			if err != nil {
 				return fmt.Errorf("generating fixed size cluster: %w", err)
 			}
-			fixedSizeClustersString += gen
-		}
-		if unassignedClusterSize > 0 {
-			gen, err := FromAlphabet(alphabet, unassignedClusterSize)
-			if err != nil {
-				return fmt.Errorf("generating fixed size cluster: %w", err)
-			}
-			dynamicSizeClustersString += gen
+			*appendTo += gen
 		}
 		return nil
 	}
-	if err := genCluster(minLower, config.NoLower, LowercaseLetters); err != nil {
+	if err := genCluster(minLower, config.NoLower, LowercaseLetters, &generated); err != nil {
 		return "", err
 	}
-	if err := genCluster(minUpper, config.NoUpper, UppercaseLetters); err != nil {
+	if err := genCluster(minUpper, config.NoUpper, UppercaseLetters, &generated); err != nil {
 		return "", err
 	}
-	if err := genCluster(minNumeric, config.NoNumeric, Digits); err != nil {
+	if err := genCluster(minNumeric, config.NoNumeric, Digits, &generated); err != nil {
 		return "", err
 	}
-	if err := genCluster(minSpecial, config.NoSpecial, Symbols); err != nil {
+	if err := genCluster(minSpecial, config.NoSpecial, Symbols, &generated); err != nil {
 		return "", err
 	}
 
-	dynamicSizeClusterChars := strings.Split(dynamicSizeClustersString, "")
-	if err := Shuffle(dynamicSizeClusterChars); err != nil {
-		return "", fmt.Errorf("shuffling dynamic size cluster: %w", err)
-	}
-
+	// Strategy for generating remaining characters:
+	// 1. If all characters are disallowed, return an error
+	// 2. For each character that needs to be generated, generate a charset picking one random char for each allowed cluster
+	// 3. Use the generated charset to pick a random character for the char
 	for unassignedClusterSize > 0 {
-		fixedSizeClustersString += dynamicSizeClusterChars[unassignedClusterSize-1]
+		var combinedAlphabet string
+		var noDisallow bool
+		if config.NoLower == nil || (config.NoLower != nil && !*config.NoLower) {
+			if err := genCluster(1, &noDisallow, LowercaseLetters, &combinedAlphabet); err != nil {
+				return "", err
+			}
+		}
+		if config.NoUpper == nil || (config.NoUpper != nil && !*config.NoUpper) {
+			if err := genCluster(1, &noDisallow, UppercaseLetters, &combinedAlphabet); err != nil {
+				return "", err
+			}
+		}
+		if config.NoNumeric == nil || (config.NoNumeric != nil && !*config.NoNumeric) {
+			if err := genCluster(1, &noDisallow, Digits, &combinedAlphabet); err != nil {
+				return "", err
+			}
+		}
+		if config.NoSpecial == nil || (config.NoSpecial != nil && !*config.NoSpecial) {
+			if err := genCluster(1, &noDisallow, Symbols, &combinedAlphabet); err != nil {
+				return "", err
+			}
+		}
+		if combinedAlphabet == "" {
+			return "", fmt.Errorf("can't generate if all characters are disallowed (noLower, noUpper, noNumeric, noSpecial)")
+		}
+		if err := genCluster(1, &noDisallow, combinedAlphabet, &generated); err != nil {
+			return "", err
+		}
 		unassignedClusterSize--
 	}
 
-	fixedSizeClustersStringChars := strings.Split(fixedSizeClustersString, "")
+	fixedSizeClustersStringChars := strings.Split(generated, "")
 	if err := Shuffle(fixedSizeClustersStringChars); err != nil {
 		return "", fmt.Errorf("shuffling fixed size cluster: %w", err)
 	}

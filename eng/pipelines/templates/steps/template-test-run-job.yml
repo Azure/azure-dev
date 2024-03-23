@@ -114,16 +114,16 @@ steps:
 
               # Login azd
               azd auth login \
-                --client-id "$ARM_CLIENT_ID" \
-                --client-secret "$ARM_CLIENT_SECRET" \
-                --tenant-id "$ARM_TENANT_ID"
+                --client-id "$(arm-client-id)" \
+                --client-secret "$(arm-client-secret)" \
+                --tenant-id "$(arm-tenant-id)"
 
               # Login az CLI (required for scenarios where az is invoked)
               az login \
                 --service-principal \
-                -u "$ARM_CLIENT_ID" \
-                -p "$ARM_CLIENT_SECRET" \
-                --tenant "$ARM_TENANT_ID"
+                -u "$(arm-client-id)" \
+                -p "$(arm-client-secret)" \
+                --tenant "$(arm-tenant-id)"
 
               # set default sub for az to be the same used by azd
               az account set --subscription "$(SubscriptionId)"

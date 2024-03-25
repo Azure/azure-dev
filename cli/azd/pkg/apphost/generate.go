@@ -15,7 +15,10 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
@@ -141,8 +144,8 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
 	// this allows the template to access the auto-gen inputs from the generator
 	type autoGenInput struct {
-		Name string
-		Len  int
+		Name   string
+		Config string
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
@@ -160,10 +163,16 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		resource, inputName := handleBicepNameQuotes(parts[0]), handleBicepNameQuotes(parts[1])
 
 		resourceGenList, exists := inputs[resource]
+
+		inputMetadata, err := inputMetadata(*input.Default)
+		if err != nil {
+			return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
+		}
+
 		if exists {
-			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Len: input.DefaultMinLength})
+			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Config: inputMetadata})
 		} else {
-			inputs[resource] = []autoGenInput{{Name: inputName, Len: input.DefaultMinLength}}
+			inputs[resource] = []autoGenInput{{Name: inputName, Config: inputMetadata}}
 		}
 	}
 	context := bicepContext{
@@ -184,6 +193,45 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	}
 
 	return fs, nil
+}
+
+func inputMetadata(config InputDefaultGenerate) (string, error) {
+	finalLength := convert.ToValueWithDefault(config.MinLength, 0)
+	clusterLength := convert.ToValueWithDefault(config.MinLower, 0) +
+		convert.ToValueWithDefault(config.MinUpper, 0) +
+		convert.ToValueWithDefault(config.MinNumeric, 0) +
+		convert.ToValueWithDefault(config.MinSpecial, 0)
+	if clusterLength > finalLength {
+		finalLength = clusterLength
+	}
+
+	adaptBool := func(b *bool) *bool {
+		if b == nil {
+			return b
+		}
+		return to.Ptr(!*b)
+	}
+
+	metadataModel := azure.AutoGenInput{
+		Length:     finalLength,
+		MinLower:   config.MinLower,
+		MinUpper:   config.MinUpper,
+		MinNumeric: config.MinNumeric,
+		MinSpecial: config.MinSpecial,
+		NoLower:    adaptBool(config.Lower),
+		NoUpper:    adaptBool(config.Upper),
+		NoNumeric:  adaptBool(config.Numeric),
+		NoSpecial:  adaptBool(config.Special),
+	}
+
+	metadataBytes, err := json.Marshal(metadataModel)
+	if err != nil {
+		return "", fmt.Errorf("marshalling metadata: %w", err)
+	}
+
+	// key identifiers for objects on bicep don't need quotes, unless they have special characters, like `-` or `.`.
+	// jsonSimpleKeyRegex is used to remove the quotes from the key if no needed to avoid a bicep lint warning.
+	return jsonSimpleKeyRegex.ReplaceAllString(string(metadataBytes), "${1}:"), nil
 }
 
 func handleBicepNameQuotes(name string) string {
@@ -374,12 +422,12 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
 	for name, comp := range m.Resources {
 		for k, v := range comp.Inputs {
-			if v.Default != nil && v.Default.Generate != nil && v.Default.Generate.MinLength != nil {
+			if v.Default != nil && v.Default.Generate != nil {
 				input := genInput{
-					Secret: v.Secret,
+					Secret:  v.Secret,
+					Default: v.Default.Generate,
 				}
 
-				input.DefaultMinLength = *v.Default.Generate.MinLength
 				// only inputs with default.generate are tracked here
 				b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
 			}
@@ -955,6 +1003,7 @@ func containsSecretInput(resourceName, envValue string, inputs map[string]Input)
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
+var jsonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
 
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required

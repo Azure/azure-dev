@@ -45,7 +45,10 @@
           "secret": true,
           "default": {
             "generate": {
-              "minLength": 10
+              "minLength": 20,
+              "lower": false,
+              "minNumeric": 5,
+              "minSpecial": 5
             }
           }
         }

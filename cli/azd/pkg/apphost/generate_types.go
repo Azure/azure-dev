@@ -96,8 +96,8 @@ type genDaprComponent struct {
 }
 
 type genInput struct {
-	Secret           bool
-	DefaultMinLength int
+	Secret  bool
+	Default *InputDefaultGenerate
 }
 
 type genSqlServer struct {

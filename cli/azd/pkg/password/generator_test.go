@@ -59,6 +59,18 @@ func TestPasswordContainsRequestedChars(t *testing.T) {
 	require.Equal(t, 6, countCharsFrom(pwd, Symbols))
 }
 
+func TestPasswordAllDisallowed(t *testing.T) {
+	pwd, err := Generate(GenerateConfig{
+		Length:    10,
+		NoLower:   to.Ptr(true),
+		NoUpper:   to.Ptr(true),
+		NoNumeric: to.Ptr(true),
+		NoSpecial: to.Ptr(true),
+	})
+	require.ErrorContains(t, err, "can't generate if all characters are disallowed (noLower, noUpper, noNumeric, noSpecial)")
+	require.Equal(t, "", pwd)
+}
+
 func TestPasswordShuffled(t *testing.T) {
 	pwd, err := Generate(GenerateConfig{MinLower: to.Ptr[uint](10), MinUpper: to.Ptr[uint](20)})
 	require.NoError(t, err)

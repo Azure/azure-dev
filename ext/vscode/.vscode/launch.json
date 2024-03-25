@@ -10,7 +10,8 @@
             "type": "extensionHost",
             "request": "launch",
             "args": [
-                "--extensionDevelopmentPath=${workspaceFolder}"
+                "--extensionDevelopmentPath=${workspaceFolder}",
+                "--extensionDevelopmentPath=${workspaceFolder}/../../../vscode-azure-agent"
             ],
             "preLaunchTask": "${defaultBuildTask}",
             "env": {

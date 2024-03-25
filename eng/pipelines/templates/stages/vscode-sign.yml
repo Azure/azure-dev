@@ -38,10 +38,7 @@ stages:
             condition: always()
 
         templateContext: 
-          outputs: 
-            # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
-            # when the common engsys is imported.
-            # https://github.com/Azure/azure-dev/issues/956
+          outputs:
             - output: pipelineArtifact
               condition: succeeded()
               displayName: Publish Signed Artifacts

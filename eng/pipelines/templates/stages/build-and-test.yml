@@ -178,13 +178,6 @@ stages:
               Copy-Item cli/installer/*install-azd.ps1 installer/
             displayName: Copy installer scripts (*.ps1) for artifact upload
 
-          # TODO: Validatee this is working properly
-          # - task: PublishPipelineArtifact@1
-          #   displayName: Publish install scripts to artifacts for signing
-          #   inputs:
-          #     artifactName: install-pwsh
-          #     targetPath: installer
-
           # CLI ref docs
           - pwsh: New-Item -ItemType Directory -Path docs
             workingDirectory: $(Pipeline.Workspace)

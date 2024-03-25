@@ -11,14 +11,14 @@ param location string
 
 @metadata({azd: {
   type: 'autoOrManualGeneration'
-  config: {length:10}
+  config: {length:15,noSpecial:true,minLower:10,minNumeric:5}
   }
 })
 @secure()
 param my_sql_abstract_pas_sw_ord string
 @metadata({azd: {
   type: 'autoOrManualGeneration'
-  config: {length:10}
+  config: {length:10,noSpecial:true}
   }
 })
 @secure()

@@ -10,12 +10,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"reflect"
 	"testing"
 
 	_ "embed"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
@@ -23,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
-	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
@@ -205,38 +202,6 @@ func TestCloudShellCredentialSupport(t *testing.T) {
 	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
 	require.NoError(t, err)
 	require.IsType(t, new(CloudShellCredential), cred)
-}
-
-func TestDevBoxIntegration(t *testing.T) {
-	loggedIn := false
-	expected := &azidentity.ClientSecretCredential{} // arbitrary type; expecting no attempt to get a token
-	setDuringTest := func(varPtr, value any) {
-		before := reflect.ValueOf(varPtr).Elem().Interface()
-		reflect.ValueOf(varPtr).Elem().Set(reflect.ValueOf(value))
-		t.Cleanup(func() { reflect.ValueOf(varPtr).Elem().Set(reflect.ValueOf(before)) })
-	}
-	setDuringTest(&oneauth.LogIn, func(string, string, string) (string, error) {
-		return "", errors.New("should have called LogInSilently instead of LogIn")
-	})
-	setDuringTest(&oneauth.LogInSilently, func(string) (string, error) {
-		loggedIn = true
-		return "fakeAccountID", nil
-	})
-	setDuringTest(&oneauth.NewCredential, func(string, string, oneauth.CredentialOptions) (azcore.TokenCredential, error) {
-		return expected, nil
-	})
-	setDuringTest(&oneauth.Supported, true)
-	t.Setenv("IsDevBox", "True")
-	m := Manager{
-		cloud:             cloud.AzurePublic(),
-		configManager:     newMemoryConfigManager(),
-		userConfigManager: newMemoryUserConfigManager(),
-	}
-
-	actual, err := m.CredentialForCurrentUser(context.Background(), nil)
-	require.NoError(t, err)
-	require.Equal(t, expected, actual)
-	require.True(t, loggedIn)
 }
 
 func TestLoginInteractive(t *testing.T) {

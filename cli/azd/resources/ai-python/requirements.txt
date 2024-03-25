@@ -1,0 +1,5 @@
+promptflow
+promptflow-tools
+azure-ai-ml
+azure-ai-resources
+nbconvert

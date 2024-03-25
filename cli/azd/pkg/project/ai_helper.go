@@ -2,7 +2,9 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,34 +15,43 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai/promptflow"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
+	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/wbreza/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 )
 
 type AiHelper struct {
+	azdCtx             *azdcontext.AzdContext
 	env                *environment.Environment
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
 	commandRunner      exec.CommandRunner
 	flowCli            *promptflow.Cli
+	pythonCli          *python.PythonCli
 	credentials        azcore.TokenCredential
 	initialized        bool
 }
 
 func NewAiHelper(
+	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	armClientOptions *arm.ClientOptions,
 	credentialProvider account.SubscriptionCredentialProvider,
 	commandRunner exec.CommandRunner,
 	flowCli *promptflow.Cli,
+	pythonCli *python.PythonCli,
 ) *AiHelper {
 	return &AiHelper{
+		azdCtx:             azdCtx,
 		env:                env,
 		armClientOptions:   armClientOptions,
 		credentialProvider: credentialProvider,
 		commandRunner:      commandRunner,
 		flowCli:            flowCli,
+		pythonCli:          pythonCli,
 	}
 }
 
@@ -54,8 +65,35 @@ func (a *AiHelper) init(ctx context.Context) error {
 		return err
 	}
 
+	if err := a.initPython(ctx); err != nil {
+		return fmt.Errorf("failed initializing Python AI app: %w", err)
+	}
+
 	a.credentials = credentials
 	a.initialized = true
+	return nil
+}
+
+func (a *AiHelper) initPython(ctx context.Context) error {
+	workingDirPath := filepath.Join(a.azdCtx.GetEnvironmentWorkDirectory(a.env.Name()), "ai")
+	if _, err := os.Stat(workingDirPath); errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(workingDirPath, osutil.PermissionDirectory); err != nil {
+			return err
+		}
+	}
+
+	if err := copyFS(resources.AiPythonApp, "ai-python", workingDirPath); err != nil {
+		return err
+	}
+
+	if err := a.pythonCli.CreateVirtualEnv(ctx, workingDirPath, ".venv"); err != nil {
+		return err
+	}
+
+	if err := a.pythonCli.InstallRequirements(ctx, workingDirPath, ".venv", "requirements.txt"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -693,4 +731,23 @@ func (a *AiHelper) createWorkspaceConnection(
 	workspaceConnection.Properties = properties
 
 	return &workspaceConnection, nil
+}
+
+func copyFS(embedFs fs.FS, root string, target string) error {
+	return fs.WalkDir(embedFs, root, func(name string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		targetPath := filepath.Join(target, name[len(root):])
+
+		if d.IsDir() {
+			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
+		}
+
+		contents, err := fs.ReadFile(embedFs, name)
+		if err != nil {
+			return fmt.Errorf("reading file: %w", err)
+		}
+		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
+	})
 }

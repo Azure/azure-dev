@@ -19,10 +19,10 @@ import { loginCli } from './loginCli';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
 import { revealAzureResource, revealAzureResourceGroup } from './azureWorkspace/reveal';
 import { disableDevCenterMode, enableDevCenterMode } from './devCenterMode';
-import { getAgentCommands } from './agent/getAgentCommands';
+import { registerAgentCommands } from './agent/agentCommands';
 
 export function registerCommands(): void {
-    registerCommandAzUI('azure-dev.commands.agent.getCommands', getAgentCommands);
+    registerAgentCommands();
 
     registerActivityCommand('azure-dev.commands.cli.init', init);
     registerActivityCommand('azure-dev.commands.cli.provision', provision);

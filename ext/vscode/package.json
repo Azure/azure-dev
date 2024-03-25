@@ -526,12 +526,13 @@
         "webpack-cli": "~5"
     },
     "dependencies": {
-        "@microsoft/vscode-azext-utils": "~2",
+        "@microsoft/vscode-azext-utils": "~2.4",
         "@microsoft/vscode-azureresources-api": "~2",
         "dayjs": "~1",
         "dotenv": "~16",
         "rxjs": "~7",
         "semver": "~7",
+        "vscode-azure-agent-api": "file:../../../vscode-azure-agent/api/vscode-azure-agent-api-1.0.0-beta.7.tgz",
         "yaml": "~2"
     },
     "agentMetadata": {

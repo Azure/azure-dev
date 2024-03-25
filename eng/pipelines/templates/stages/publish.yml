@@ -29,8 +29,8 @@ stages:
           environment: azure-dev
 
           pool:
-            name: $(LINUXPOOL)
-            image: $(LINUXVMIMAGE)
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
           templateContext:
@@ -101,8 +101,8 @@ stages:
           environment: azure-dev
 
           pool:
-            name: $(WINDOWSPOOL)
-            image: $(WINDOWSVMIMAGE)
+            name: azsdk-pool-mms-win-2022-general
+            image: azsdk-pool-mms-win-2022-1espt
             os: windows
 
           templateContext:
@@ -135,8 +135,8 @@ stages:
           environment: azure-dev
 
           pool:
-            name: $(WINDOWSPOOL)
-            image: $(WINDOWSVMIMAGE)
+            name: azsdk-pool-mms-win-2022-general
+            image: azsdk-pool-mms-win-2022-1espt
             os: windows
 
           templateContext:
@@ -169,8 +169,8 @@ stages:
           environment: azure-dev
 
           pool:
-            name: $(LINUXPOOL)
-            image: $(LINUXVMIMAGE)
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
           templateContext:
@@ -225,8 +225,8 @@ stages:
           environment: azure-dev
 
           pool:
-            name: $(WINDOWSPOOL)
-            image: $(WINDOWSVMIMAGE)
+            name: azsdk-pool-mms-win-2022-general
+            image: azsdk-pool-mms-win-2022-1espt
             os: windows
 
           templateContext:
@@ -544,8 +544,8 @@ stages:
         - deployment: PublishInstallers
           environment: azure-dev
           pool:
-            name: $(LINUXPOOL)
-            image: $(LINUXVMIMAGE)
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
           templateContext:

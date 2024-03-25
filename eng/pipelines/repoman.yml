@@ -183,10 +183,10 @@ extends:
             image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
-        templateContext:
-          inputs:
-            - input: checkout
-              repository: self
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
 
           strategy:
             runOnce:

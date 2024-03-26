@@ -72,7 +72,7 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
       activeRevisionsMode: 'Single'
       ingress: {
         external: false
-        targetPort: 3306
+        targetPort: {{ .TargetPort }}
         transport: 'tcp'
       }
       secrets: [

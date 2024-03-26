@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -101,7 +102,12 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate(manifest)
+	useResourceGroupScopedDeployment := false
+	if v, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_USE_RESOURCE_GROUP_DEPLOYMENTS")); err == nil {
+		useResourceGroupScopedDeployment = v
+	}
+
+	files, err := apphost.BicepTemplate(manifest, useResourceGroupScopedDeployment)
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -254,7 +260,13 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 
 	generatedFS := memfs.New()
 
-	infraFS, err := apphost.BicepTemplate(manifest)
+	useResourceGroupScopedDeployment := false
+
+	if v, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_USE_RESOURCE_GROUP_DEPLOYMENTS")); err == nil {
+		useResourceGroupScopedDeployment = v
+	}
+
+	infraFS, err := apphost.BicepTemplate(manifest, useResourceGroupScopedDeployment)
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)
 	}

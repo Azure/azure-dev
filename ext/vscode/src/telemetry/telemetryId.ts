@@ -83,4 +83,6 @@ export enum TelemetryId {
 
     // Reported when the project rename provider is invoked
     AzureYamlProjectRenameProvideWorkspaceEdits = 'azure-dev.azureYaml.projectRename.provideWorkspaceEdits',
+
+    InitAgent = 'azure-dev.commands.agent.init.task',
 }

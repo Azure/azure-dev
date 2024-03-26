@@ -24,8 +24,10 @@ const (
 	arityOne = 1
 	// arityTwo is the count of arguments in a two argument function.
 	arityTwo = 2
-	// arityThree is the count of arguments in a zero argument function.
+	// arityThree is the count of arguments in a three argument function.
 	arityThree = 3
+	// arityFour is the count of arguments in a four argument function.
+	arityFour = 4
 )
 
 // Handler is the type of function that handles incoming RPC requests.
@@ -263,6 +265,50 @@ func HandlerFunc3[T1 any, T2 any, T3 any, TRet any](f func(context.Context, T1, 
 		ret, err := func() (ret TRet, err error) {
 			defer capturePanic(&err)
 			ret, err = f(ctx, t1, t2, t3)
+			return
+		}()
+
+		if err != nil && errors.Is(err, ctx.Err()) {
+			err = &jsonrpc2.Error{
+				Code:    requestCanceledErrorCode,
+				Message: err.Error(),
+			}
+		}
+		return reply(ctx, ret, err)
+	}
+}
+
+// HandlerFunc4 is a helper for creating a Handler from a function that takes four arguments and returns a value and an
+// error.
+func HandlerFunc4[T1 any, T2 any, T3 any, T4 any, TRet any](f func(context.Context, T1, T2, T3, T4) (TRet, error)) Handler {
+	return func(ctx context.Context, conn jsonrpc2.Conn, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+		if err := verifyArity(req, arityFour); err != nil {
+			return reply(ctx, nil, err)
+		}
+
+		t1, err := unmarshalArg[T1](conn, req, 0)
+		if err != nil {
+			return reply(ctx, nil, err)
+		}
+
+		t2, err := unmarshalArg[T2](conn, req, 1)
+		if err != nil {
+			return reply(ctx, nil, err)
+		}
+
+		t3, err := unmarshalArg[T3](conn, req, 2)
+		if err != nil {
+			return reply(ctx, nil, err)
+		}
+
+		t4, err := unmarshalArg[T4](conn, req, 3)
+		if err != nil {
+			return reply(ctx, nil, err)
+		}
+
+		ret, err := func() (ret TRet, err error) {
+			defer capturePanic(&err)
+			ret, err = f(ctx, t1, t2, t3, t4)
 			return
 		}()
 

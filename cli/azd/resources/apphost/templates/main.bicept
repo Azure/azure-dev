@@ -21,7 +21,7 @@ param principalId string = ''
 {{- range $resource, $params := .AutoGenInputs }}
     {{$resource}}: { 
 {{- range $p := $params }}
-      {{$p.Name }}: { len: {{$p.Len }} }
+      {{$p.Name }}: {{$p.Config }}
 {{- end}}
     }
 {{- end}}

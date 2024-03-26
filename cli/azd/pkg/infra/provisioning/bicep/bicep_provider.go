@@ -1045,7 +1045,7 @@ func (p *BicepProvider) findCompletedDeployments(
 	}
 
 	if len(matchingDeployments) == 0 {
-		return nil, fmt.Errorf("no deployments found for environment %s", envName)
+		return nil, fmt.Errorf("'%s': %w", envName, ErrDeploymentsNotFound)
 	}
 
 	return matchingDeployments, nil
@@ -1911,7 +1911,18 @@ func inputsParameter(
 		}
 		for inputName, inputInfo := range inputResourceInfo {
 			if _, has := existingRecordsForResource[inputName]; !has {
-				val, err := password.FromAlphabet(password.LettersAndDigits, inputInfo.Len)
+				val, err := password.Generate(password.GenerateConfig{
+					Length:     inputInfo.Length,
+					NoLower:    inputInfo.NoLower,
+					NoUpper:    inputInfo.NoUpper,
+					NoNumeric:  inputInfo.NoNumeric,
+					NoSpecial:  inputInfo.NoSpecial,
+					MinLower:   inputInfo.MinLower,
+					MinUpper:   inputInfo.MinUpper,
+					MinNumeric: inputInfo.MinNumeric,
+					MinSpecial: inputInfo.MinSpecial,
+				},
+				)
 				if err != nil {
 					return inputsParameter, inputsUpdated, fmt.Errorf("generating value for input %s: %w", inputName, err)
 				}

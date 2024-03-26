@@ -1,0 +1,52 @@
+
+stages: 
+  - stage: Sign
+    dependsOn: BuildAndTest
+
+    variables: 
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
+    jobs:
+      - job: Sign
+        pool:
+          name: $(WINDOWSPOOL)
+          image: $(WINDOWSVMIMAGE)
+          os: windows
+
+        steps:
+          - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: vsix
+              path: vsix
+
+          - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+            - template: pipelines/steps/azd-vscode-signing.yml@azure-sdk-build-tools
+              parameters:
+                VsixPath: vsix
+
+          - ${{ else }}:
+            - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+              displayName: Signing process skipped for non-release build
+
+          - pwsh: |
+              New-Item -ItemType Directory -Path signed
+              Copy-Item vsix/ signed/ -Recurse
+            displayName: Copy signing outputs
+            condition: always()
+
+        templateContext: 
+          outputs:
+            - output: pipelineArtifact
+              condition: succeeded()
+              displayName: Publish Signed Artifacts
+              artifact: signed
+              path: signed/
+
+            - output: pipelineArtifact
+              condition: failed()
+              displayName: Publish failed Signed Artifacts
+              artifact: signed-FailedAttempt$(System.JobAttempt)
+              path: signed/

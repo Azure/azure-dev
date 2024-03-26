@@ -34,6 +34,7 @@ type genContainerApp struct {
 	Env     map[string]string
 	Secrets map[string]string
 	Ingress *genContainerAppIngress
+	Volumes []*Volume
 }
 
 type genContainerAppIngress struct {
@@ -48,13 +49,15 @@ type genContainer struct {
 	Env      map[string]string
 	Bindings map[string]*Binding
 	Inputs   map[string]Input
+	Volumes  []*Volume
 }
 
 type genDockerfile struct {
-	Path     string
-	Context  string
-	Env      map[string]string
-	Bindings map[string]*Binding
+	Path      string
+	Context   string
+	Env       map[string]string
+	Bindings  map[string]*Binding
+	BuildArgs map[string]string
 }
 
 type genProject struct {
@@ -93,8 +96,8 @@ type genDaprComponent struct {
 }
 
 type genInput struct {
-	Secret           bool
-	DefaultMinLength int
+	Secret  bool
+	Default *InputDefaultGenerate
 }
 
 type genSqlServer struct {
@@ -117,6 +120,7 @@ type genBicepTemplateContext struct {
 	HasDaprStore                    bool
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
+	RequiresStorageVolume           bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount

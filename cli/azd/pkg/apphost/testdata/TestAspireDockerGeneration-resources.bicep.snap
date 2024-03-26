@@ -79,7 +79,7 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {
           name: 'mysql-root-password'
           value: inputs.mysqlabstract.password
-        }    
+        }
       ]
     }
     template: {

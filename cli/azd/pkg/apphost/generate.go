@@ -15,7 +15,10 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -87,10 +90,11 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 		switch comp.Type {
 		case "dockerfile.v0":
 			res[name] = genDockerfile{
-				Path:     *comp.Path,
-				Context:  *comp.Context,
-				Env:      comp.Env,
-				Bindings: comp.Bindings,
+				Path:      *comp.Path,
+				Context:   *comp.Context,
+				Env:       comp.Env,
+				Bindings:  comp.Bindings,
+				BuildArgs: comp.BuildArgs,
 			}
 		}
 	}
@@ -143,8 +147,8 @@ func BicepTemplate(manifest *Manifest, commandRunner exec.CommandRunner) (*memfs
 	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
 	// this allows the template to access the auto-gen inputs from the generator
 	type autoGenInput struct {
-		Name string
-		Len  int
+		Name   string
+		Config string
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
@@ -162,10 +166,16 @@ func BicepTemplate(manifest *Manifest, commandRunner exec.CommandRunner) (*memfs
 		resource, inputName := handleBicepNameQuotes(parts[0]), handleBicepNameQuotes(parts[1])
 
 		resourceGenList, exists := inputs[resource]
+
+		inputMetadata, err := inputMetadata(*input.Default)
+		if err != nil {
+			return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
+		}
+
 		if exists {
-			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Len: input.DefaultMinLength})
+			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Config: inputMetadata})
 		} else {
-			inputs[resource] = []autoGenInput{{Name: inputName, Len: input.DefaultMinLength}}
+			inputs[resource] = []autoGenInput{{Name: inputName, Config: inputMetadata}}
 		}
 	}
 	context := bicepContext{
@@ -186,6 +196,45 @@ func BicepTemplate(manifest *Manifest, commandRunner exec.CommandRunner) (*memfs
 	}
 
 	return fs, nil
+}
+
+func inputMetadata(config InputDefaultGenerate) (string, error) {
+	finalLength := convert.ToValueWithDefault(config.MinLength, 0)
+	clusterLength := convert.ToValueWithDefault(config.MinLower, 0) +
+		convert.ToValueWithDefault(config.MinUpper, 0) +
+		convert.ToValueWithDefault(config.MinNumeric, 0) +
+		convert.ToValueWithDefault(config.MinSpecial, 0)
+	if clusterLength > finalLength {
+		finalLength = clusterLength
+	}
+
+	adaptBool := func(b *bool) *bool {
+		if b == nil {
+			return b
+		}
+		return to.Ptr(!*b)
+	}
+
+	metadataModel := azure.AutoGenInput{
+		Length:     finalLength,
+		MinLower:   config.MinLower,
+		MinUpper:   config.MinUpper,
+		MinNumeric: config.MinNumeric,
+		MinSpecial: config.MinSpecial,
+		NoLower:    adaptBool(config.Lower),
+		NoUpper:    adaptBool(config.Upper),
+		NoNumeric:  adaptBool(config.Numeric),
+		NoSpecial:  adaptBool(config.Special),
+	}
+
+	metadataBytes, err := json.Marshal(metadataModel)
+	if err != nil {
+		return "", fmt.Errorf("marshalling metadata: %w", err)
+	}
+
+	// key identifiers for objects on bicep don't need quotes, unless they have special characters, like `-` or `.`.
+	// jsonSimpleKeyRegex is used to remove the quotes from the key if no needed to avoid a bicep lint warning.
+	return jsonSimpleKeyRegex.ReplaceAllString(string(metadataBytes), "${1}:"), nil
 }
 
 func handleBicepNameQuotes(name string) string {
@@ -381,12 +430,12 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
 	for name, comp := range m.Resources {
 		for k, v := range comp.Inputs {
-			if v.Default != nil && v.Default.Generate != nil && v.Default.Generate.MinLength != nil {
+			if v.Default != nil && v.Default.Generate != nil {
 				input := genInput{
-					Secret: v.Secret,
+					Secret:  v.Secret,
+					Default: v.Default.Generate,
 				}
 
-				input.DefaultMinLength = *v.Default.Generate.MinLength
 				// only inputs with default.generate are tracked here
 				b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
 			}
@@ -409,7 +458,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "project.v0":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings)
 		case "container.v0":
-			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs)
+			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
 			if err != nil {
@@ -421,7 +470,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return err
 			}
 		case "dockerfile.v0":
-			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings)
+			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs)
 		case "redis.v0":
 			b.addContainerAppService(name, RedisContainerAppService)
 		case "azure.keyvault.v0":
@@ -521,6 +570,10 @@ func (b *infraGenerator) requireDaprStore() string {
 
 func (b *infraGenerator) requireLogAnalyticsWorkspace() {
 	b.bicepContext.HasLogAnalyticsWorkspace = true
+}
+
+func (b *infraGenerator) requireStorageVolume() {
+	b.bicepContext.RequiresStorageVolume = true
 }
 
 func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
@@ -757,14 +810,24 @@ func (b *infraGenerator) addStorageTable(storageAccount, tableName string) {
 }
 
 func (b *infraGenerator) addContainer(
-	name string, image string, env map[string]string, bindings map[string]*Binding, inputs map[string]Input) {
+	name string,
+	image string,
+	env map[string]string,
+	bindings map[string]*Binding,
+	inputs map[string]Input,
+	volumes []*Volume) {
 	b.requireCluster()
+
+	if len(volumes) > 0 {
+		b.requireStorageVolume()
+	}
 
 	b.containers[name] = genContainer{
 		Image:    image,
 		Env:      env,
 		Bindings: bindings,
 		Inputs:   inputs,
+		Volumes:  volumes,
 	}
 }
 
@@ -863,16 +926,18 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 }
 
 func (b *infraGenerator) addDockerfile(
-	name string, path string, context string, env map[string]string, bindings map[string]*Binding,
+	name string, path string, context string, env map[string]string,
+	bindings map[string]*Binding, buildArgs map[string]string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
 
 	b.dockerfiles[name] = genDockerfile{
-		Path:     path,
-		Context:  context,
-		Env:      env,
-		Bindings: bindings,
+		Path:      path,
+		Context:   context,
+		Env:       env,
+		Bindings:  bindings,
+		BuildArgs: buildArgs,
 	}
 }
 
@@ -946,6 +1011,7 @@ func containsSecretInput(resourceName, envValue string, inputs map[string]Input)
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
+var jsonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
 
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required
@@ -956,6 +1022,7 @@ func (b *infraGenerator) Compile(commandRunner exec.CommandRunner) error {
 			Image:   container.Image,
 			Env:     make(map[string]string),
 			Secrets: make(map[string]string),
+			Volumes: container.Volumes,
 		}
 
 		ingress, err := buildIngress(container.Bindings)

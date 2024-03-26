@@ -148,6 +148,7 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		Secret         bool
 		Type           string
 		MetadataConfig string
+		MetadataType   azure.AzdMetadataType
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
@@ -173,7 +174,8 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 			Name:           key,
 			Type:           parameter.Type,
 			Secret:         parameter.Secret,
-			MetadataConfig: parameterMetadata})
+			MetadataConfig: parameterMetadata,
+			MetadataType:   azure.AzdMetadataTypeGenerate})
 	}
 	context := bicepContext{
 		genBicepTemplateContext: generator.bicepContext,

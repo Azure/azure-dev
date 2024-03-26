@@ -100,10 +100,15 @@ type AutoGenInput struct {
 	MinSpecial *uint `json:"minSpecial,omitempty"`
 }
 
+type AzdMetadataType string
+
+const AzdMetadataTypeLocation AzdMetadataType = "location"
+const AzdMetadataTypeGenerate AzdMetadataType = "generate"
+const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
+
 type AzdMetadata struct {
-	Type               *string       `json:"type,omitempty"`
-	AutoGenerateConfig *AutoGenInput `json:"config,omitempty"`
-	NoManual           *bool         `json:"noManual,omitempty"`
+	Type               *AzdMetadataType `json:"type,omitempty"`
+	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

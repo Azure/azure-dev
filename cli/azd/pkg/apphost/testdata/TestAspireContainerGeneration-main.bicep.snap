@@ -10,42 +10,42 @@ param environmentName string
 param location string
 
 @metadata({azd: {
-  type: 'autoOrManualGeneration'
+  type: generate
   config: {length:15,noSpecial:true,minLower:10,minNumeric:5}
   }
 })
 @secure()
 param my_sql_abstract_pas_sw_ord string
 @metadata({azd: {
-  type: 'autoOrManualGeneration'
+  type: generate
   config: {length:10,noSpecial:true}
   }
 })
 @secure()
 param my_sql_abstract_password string
 @metadata({azd: {
-  type: 'autoOrManualGeneration'
+  type: generate
   config: {length:15,noSpecial:true,minLower:10,minNumeric:5}
   }
 })
 @secure()
 param mysqlabstract_pas_sw_ord string
 @metadata({azd: {
-  type: 'autoOrManualGeneration'
+  type: generate
   config: {length:10,noSpecial:true}
   }
 })
 @secure()
 param mysqlabstract_password string
 @metadata({azd: {
-  type: 'autoOrManualGeneration'
+  type: generate
   config: {length:10}
   }
 })
 @secure()
 param noVolume_pas_sw_ord string
 @metadata({azd: {
-  type: 'autoOrManualGeneration'
+  type: generate
   config: {length:10}
   }
 })

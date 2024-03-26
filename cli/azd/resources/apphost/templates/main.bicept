@@ -16,7 +16,7 @@ param principalId string = ''
 {{- range $parameter := .WithMetadataParameters }}
 {{- if ne $parameter.MetadataConfig "" }}
 @metadata({azd: {
-  type: 'autoOrManualGeneration'
+  type: {{$parameter.MetadataType}}
   config: {{$parameter.MetadataConfig}}
   }
 })

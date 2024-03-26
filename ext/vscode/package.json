@@ -532,7 +532,7 @@
         "dotenv": "~16",
         "rxjs": "~7",
         "semver": "~7",
-        "vscode-azure-agent-api": "file:../../../vscode-azure-agent/api/vscode-azure-agent-api-1.0.0-beta.7.tgz",
+        "vscode-azure-agent-api": "https://github.com/microsoft/vscode-azure-agent/releases/download/api-v1.0.0-beta.9/vscode-azure-agent-api-1.0.0-beta.9.tgz",
         "yaml": "~2",
         "zod": "~3"
     },

@@ -19,9 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
 	"golang.org/x/exp/maps"
@@ -105,14 +103,14 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
 func ContainerAppManifestTemplateForProject(
-	manifest *Manifest, projectName string, commandRunner exec.CommandRunner) (string, error) {
+	manifest *Manifest, projectName string) (string, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return "", err
 	}
 
-	if err := generator.Compile(commandRunner); err != nil {
+	if err := generator.Compile(); err != nil {
 		return "", err
 	}
 
@@ -128,14 +126,14 @@ func ContainerAppManifestTemplateForProject(
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest, commandRunner exec.CommandRunner) (*memfs.FS, error) {
+func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
 	}
 
-	if err := generator.Compile(commandRunner); err != nil {
+	if err := generator.Compile(); err != nil {
 		return nil, err
 	}
 
@@ -252,7 +250,6 @@ func GenerateProjectArtifacts(
 	projectName string,
 	manifest *Manifest,
 	appHostProject string,
-	commandRunner exec.CommandRunner,
 ) (map[string]ContentsAndMode, error) {
 	appHostRel, err := filepath.Rel(projectDir, appHostProject)
 	if err != nil {
@@ -265,7 +262,7 @@ func GenerateProjectArtifacts(
 		return nil, err
 	}
 
-	if err := generator.Compile(commandRunner); err != nil {
+	if err := generator.Compile(); err != nil {
 		return nil, err
 	}
 
@@ -1016,7 +1013,7 @@ var jsonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required
 // infrastructure.
-func (b *infraGenerator) Compile(commandRunner exec.CommandRunner) error {
+func (b *infraGenerator) Compile() error {
 	for name, container := range b.containers {
 		cs := genContainerApp{
 			Image:   container.Image,
@@ -1082,17 +1079,12 @@ func (b *infraGenerator) Compile(commandRunner exec.CommandRunner) error {
 			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
 		}
 
-		dotnetCli := dotnet.NewDotNetCli(commandRunner)
-		port, err := dotnetCli.GetTargetPort(context.Background(), project.Path, "Release")
-		if err != nil {
-			return fmt.Errorf("getting dotnet port failed: %w", err)
-		}
-
 		if binding != nil {
 			projectTemplateCtx.Ingress = &genContainerAppIngress{
-				External:      binding.External,
-				Transport:     binding.Transport,
-				TargetPort:    port,
+				External:  binding.External,
+				Transport: binding.Transport,
+				// This port number is for dapr
+				TargetPort:    8080,
 				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}
 		}

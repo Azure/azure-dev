@@ -10,7 +10,7 @@ properties:
     activeRevisionsMode: single
     ingress:
       external: false
-      targetPort: 8080
+      targetPort: {{ .TargetPort }}
       transport: http
       allowInsecure: true
     registries:

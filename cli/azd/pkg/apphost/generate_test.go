@@ -3,12 +3,10 @@ package apphost
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -61,30 +59,6 @@ func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[
 	})
 }
 
-func mockPublishProperties(mockCtx *mocks.MockContext) {
-	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "dotnet" && slices.Contains(args.Args, "--getProperty:GeneratedContainerConfiguration")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		response := dotnet.ResponseContainerConfiguration{
-			Config: dotnet.ResponseContainerConfigurationExpPorts{
-				ExposedPorts: map[string]interface{}{
-					"8080/tcp": struct{}{},
-				},
-			}}
-		serialize, err := json.Marshal(response)
-		if err != nil {
-			return exec.RunResult{
-				ExitCode: -1,
-				Stderr:   err.Error(),
-			}, err
-		}
-		return exec.RunResult{
-			ExitCode: 0,
-			Stdout:   string(serialize),
-		}, nil
-	})
-}
-
 func TestAspireEscaping(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
@@ -93,7 +67,6 @@ func TestAspireEscaping(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireEscapingManifest, nil)
-	mockPublishProperties(mockCtx)
 
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
@@ -102,7 +75,7 @@ func TestAspireEscaping(t *testing.T) {
 
 	for _, name := range []string{"api"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, mockCtx.CommandRunner)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
@@ -117,13 +90,12 @@ func TestAspireStorageGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireStorageManifest, nil)
-	mockPublishProperties(mockCtx)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m, mockCtx.CommandRunner)
+	files, err := BicepTemplate(m)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -160,13 +132,12 @@ func TestAspireBicepGeneration(t *testing.T) {
 	filesFromManifest["aspire.hosting.azure.bicep.appinsights.bicep"] = ignoredBicepContent
 	filesFromManifest["aspire.hosting.azure.bicep.sql.bicep"] = ignoredBicepContent
 	mockPublishManifest(mockCtx, aspireBicepManifest, filesFromManifest)
-	mockPublishProperties(mockCtx)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m, mockCtx.CommandRunner)
+	files, err := BicepTemplate(m)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -189,7 +160,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 
 	for _, name := range []string{"frontend"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, mockCtx.CommandRunner)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
@@ -204,7 +175,6 @@ func TestAspireDockerGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
-	mockPublishProperties(mockCtx)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
@@ -220,13 +190,13 @@ func TestAspireDockerGeneration(t *testing.T) {
 
 	for _, name := range []string{"nodeapp"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, mockCtx.CommandRunner)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
 	}
 
-	files, err := BicepTemplate(m, mockCtx.CommandRunner)
+	files, err := BicepTemplate(m)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -256,13 +226,12 @@ func TestAspireContainerGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireContainerManifest, nil)
-	mockPublishProperties(mockCtx)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m, mockCtx.CommandRunner)
+	files, err := BicepTemplate(m)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {

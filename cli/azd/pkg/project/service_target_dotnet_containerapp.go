@@ -21,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
@@ -38,7 +37,6 @@ type dotnetContainerAppTarget struct {
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
 	keyvaultService     keyvault.KeyVaultService
-	commandRunner       exec.CommandRunner
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -58,7 +56,6 @@ func NewDotNetContainerAppTarget(
 	cosmosDbService cosmosdb.CosmosDbService,
 	sqlDbService sqldb.SqlDbService,
 	keyvaultService keyvault.KeyVaultService,
-	commandRunner exec.CommandRunner,
 ) ServiceTarget {
 	return &dotnetContainerAppTarget{
 		env:                 env,
@@ -69,7 +66,6 @@ func NewDotNetContainerAppTarget(
 		cosmosDbService:     cosmosDbService,
 		sqlDbService:        sqlDbService,
 		keyvaultService:     keyvaultService,
-		commandRunner:       commandRunner,
 	}
 }
 
@@ -122,6 +118,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			task.SetProgress(NewServiceProgress("Pushing container image"))
 
 			var remoteImageName string
+			var portNumber int
 
 			if serviceConfig.Language == ServiceLanguageDocker {
 				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
@@ -137,7 +134,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else {
 				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
 
-				err = at.dotNetCli.PublishContainer(
+				portNumber, err = at.dotNetCli.PublishContainer(
 					ctx,
 					serviceConfig.Path(),
 					"Release",
@@ -181,7 +178,6 @@ func (at *dotnetContainerAppTarget) Deploy(
 				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
 					serviceConfig.DotNetContainerApp.Manifest,
 					serviceConfig.DotNetContainerApp.ProjectName,
-					at.commandRunner,
 				)
 				if err != nil {
 					task.SetError(fmt.Errorf("generating container app manifest: %w", err))
@@ -226,13 +222,15 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			builder := strings.Builder{}
 			err = tmpl.Execute(&builder, struct {
-				Env    map[string]string
-				Image  string
-				Inputs map[string]any
+				Env        map[string]string
+				Image      string
+				Inputs     map[string]any
+				TargetPort int
 			}{
-				Env:    at.env.Dotenv(),
-				Image:  remoteImageName,
-				Inputs: inputs,
+				Env:        at.env.Dotenv(),
+				Image:      remoteImageName,
+				Inputs:     inputs,
+				TargetPort: portNumber,
 			})
 			if err != nil {
 				task.SetError(fmt.Errorf("failed executing template file: %w", err))

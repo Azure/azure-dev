@@ -26,7 +26,7 @@ type DotNetCli interface {
 	Publish(ctx context.Context, project string, configuration string, output string) error
 	PublishContainer(
 		ctx context.Context, project, configuration, imageName, server, username, password string,
-	) error
+	) (int, error)
 	InitializeSecret(ctx context.Context, project string) error
 	// PublishAppHostManifest runs the app host program with the correct configuration to generate an manifest. If dotnetEnv
 	// is non-empty, it will be passed as environment variables (named `DOTNET_ENVIRONMENT`) when running the app host
@@ -34,9 +34,6 @@ type DotNetCli interface {
 	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string, dotnetEnv string) error
 	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
 	GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error)
-	GetTargetPort(
-		ctx context.Context, project, configuration string,
-	) (int, error)
 }
 
 type dotNetCli struct {
@@ -182,10 +179,11 @@ func (cli *dotNetCli) PublishAppHostManifest(
 	return nil
 }
 
-// PublishContainer runs a `dotnet publish“ with `PublishProfile=DefaultContainer` to build and publish the container.
+// PublishContainer runs a `dotnet publish“ with `/t:PublishContainer`to build and publish the container.
+// It also gets port number by using `--getProperty:GeneratedContainerConfiguration`
 func (cli *dotNetCli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
-) error {
+) (int, error) {
 	runArgs := newDotNetRunArgs("publish", project)
 
 	runArgs = runArgs.AppendParams(
@@ -194,6 +192,7 @@ func (cli *dotNetCli) PublishContainer(
 		"/t:PublishContainer",
 		fmt.Sprintf("-p:ContainerImageName=%s", imageName),
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
+		"--getProperty:GeneratedContainerConfiguration",
 	)
 
 	runArgs = runArgs.WithEnv([]string{
@@ -201,33 +200,22 @@ func (cli *dotNetCli) PublishContainer(
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_PWORD=%s", password),
 	})
 
-	_, err := cli.commandRunner.Run(ctx, runArgs)
-	if err != nil {
-		return fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
-	}
-	return nil
-}
-
-func (cli *dotNetCli) GetTargetPort(
-	ctx context.Context, project, configuration string,
-) (int, error) {
-	runArgs := newDotNetRunArgs("publish", project,
-		"-r", "linux-x64",
-		"-c", configuration,
-		"/t:PublishContainer",
-		"--getProperty:GeneratedContainerConfiguration",
-	)
-
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return 0, fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
 	}
 
+	port, err := cli.getTargetPort(result.Stdout)
+
+	return port, err
+}
+
+func (cli *dotNetCli) getTargetPort(result string) (int, error) {
 	var targetPorts []targetPort
 	var configOutput ResponseContainerConfiguration
 
-	if err = json.Unmarshal([]byte(result.Stdout), &configOutput); err != nil {
-		return 0, fmt.Errorf("unmarshal dotnet configuration output '%s' failed: %w", result.Stdout, err)
+	if err := json.Unmarshal([]byte(result), &configOutput); err != nil {
+		return 0, fmt.Errorf("unmarshal dotnet configuration output '%s' failed: %w", result, err)
 	}
 	var exposedPortOutput []string
 	for key := range configOutput.Config.ExposedPorts {
@@ -249,8 +237,7 @@ func (cli *dotNetCli) GetTargetPort(
 	// return port[0].port, nil
 	if len(exposedPortOutput) < 1 {
 		return 0, fmt.Errorf(
-			"multiple dotnet port %s detected on project %s ",
-			targetPorts, project)
+			"multiple dotnet port %s detected", targetPorts)
 	}
 
 	port, err := strconv.Atoi(targetPorts[0].port)

@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
@@ -33,10 +32,9 @@ func (s *environmentService) CreateEnvironmentAsync(
 	}
 
 	var c struct {
-		azdContext    *azdcontext.AzdContext `container:"type"`
-		dotnetCli     dotnet.DotNetCli       `container:"type"`
-		envManager    environment.Manager    `container:"type"`
-		commandRunner exec.CommandRunner     `container:"type"`
+		azdContext *azdcontext.AzdContext `container:"type"`
+		dotnetCli  dotnet.DotNetCli       `container:"type"`
+		envManager environment.Manager    `container:"type"`
 	}
 
 	container, err := session.newContainer()
@@ -87,7 +85,6 @@ func (s *environmentService) CreateEnvironmentAsync(
 			filepath.Base(c.azdContext.ProjectDirectory()),
 			manifest,
 			hosts[0].Path,
-			c.commandRunner,
 		)
 		if err != nil {
 			return false, fmt.Errorf("generating project artifacts: %w", err)

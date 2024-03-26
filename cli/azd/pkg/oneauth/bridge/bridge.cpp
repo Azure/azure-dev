@@ -60,6 +60,63 @@ void Shutdown()
     OleUninitialize();
 }
 
+WrappedAccounts *ListAccounts()
+{
+    auto result = new WrappedAccounts();
+    result->accounts = nullptr;
+    result->count = 0;
+    result->err = nullptr;
+    auto promise = std::promise<void>();
+    auto telemetryParams = TelemetryParameters(UUID::Generate());
+    OneAuth::GetAuthenticator()->DiscoverAccounts(std::nullopt, telemetryParams, [&promise](const DiscoveryResult &result)
+                                                  {
+        if (result.IsCompleted())
+        {
+            promise.set_value();
+            return true;
+        }
+        return false; });
+    auto future = promise.get_future();
+    if (future.wait_for(std::chrono::seconds(timeoutSeconds)) != std::future_status::ready)
+    {
+        result->err = new WrappedError();
+        result->err->message = strdup("timed out waiting for account discovery");
+        return result;
+    }
+
+    auto accounts = OneAuth::GetAuthenticator()->ReadAllAccounts(telemetryParams);
+    result->count = accounts.size();
+    result->accounts = new WrappedAccount[accounts.size()];
+    for (size_t i = 0; i < accounts.size(); i++)
+    {
+        result->accounts[i].id = strdup(accounts[i].GetId().c_str());
+        result->accounts[i].username = strdup(accounts[i].GetLoginName().c_str());
+        result->accounts[i].displayName = strdup(accounts[i].GetDisplayName().c_str());
+
+        result->accounts[i].associations = nullptr;
+        std::vector<std::string> associatedWith;
+        auto associations = accounts[i].GetAssociationStatus();
+        for (auto &a : associations)
+        {
+            if (a.second == AssociationStatus::Associated)
+            {
+                associatedWith.push_back(a.first);
+            }
+        }
+        result->accounts[i].associationCount = associatedWith.size();
+        if (auto size = associatedWith.size())
+        {
+            result->accounts[i].associationCount = size;
+            result->accounts[i].associations = new char *[size];
+            for (size_t j = 0; j < size; j++)
+            {
+                result->accounts[i].associations[j] = strdup(associatedWith[j].c_str());
+            }
+        }
+    }
+    return result;
+}
+
 // wrapAuthResult copies the data from a OneAuth AuthResult into a new struct that can be returned to
 // Go. An AuthResult itself can't be returned to Go because it contains shared_ptrs that may be freed
 // before Go is done with them. This workaround makes the Go application responsible for calling
@@ -167,6 +224,29 @@ void Logout()
         // out from az as well so long as azd and az share a client ID. Dis/associate
         // use application ID e.g. "com.microsoft.azd" instead.
         OneAuth::GetAuthenticator()->DisassociateAccount(a, telemetryParams, "");
+    }
+}
+
+void FreeWrappedAccounts(WrappedAccounts *accounts)
+{
+    if (accounts)
+    {
+        for (int i = 0; i < accounts->count; i++)
+        {
+            free(accounts->accounts[i].id);
+            free(accounts->accounts[i].username);
+            free(accounts->accounts[i].displayName);
+            if (accounts->accounts[i].associations)
+            {
+                for (int j = 0; j < accounts->accounts[i].associationCount; j++)
+                {
+                    free(accounts->accounts[i].associations[j]);
+                }
+                delete[] accounts->accounts[i].associations;
+            }
+        }
+        delete[] accounts->accounts;
+        delete accounts;
     }
 }
 

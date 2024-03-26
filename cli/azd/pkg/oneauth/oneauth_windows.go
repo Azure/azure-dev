@@ -31,6 +31,22 @@ typedef struct
 {
 	char *message;
 } WrappedError;
+
+typedef struct
+{
+	char *id;
+	char *username;
+	char *displayName;
+	char **associations;
+	int associationsCount;
+} WrappedAccount;
+
+typedef struct
+{
+	WrappedAccount *accounts;
+	int count;
+	WrappedError *err;
+} WrappedAccounts;
 */
 import "C"
 
@@ -73,8 +89,10 @@ var (
 	// bridge provides access to the OneAuth API
 	bridge       *windows.DLL
 	authenticate *windows.Proc
+	freeAccounts *windows.Proc
 	freeAR       *windows.Proc
 	freeError    *windows.Proc
+	listAccounts *windows.Proc
 	logout       *windows.Proc
 	shutdown     *windows.Proc
 	startup      *windows.Proc
@@ -119,8 +137,47 @@ func (c *credential) GetToken(ctx context.Context, opts policy.TokenRequestOptio
 	return ar.token, err
 }
 
+func ListAccounts(clientID string) ([]Account, error) {
+	err := start(clientID)
+	if err != nil {
+		return nil, err
+	}
+	p, _, _ := listAccounts.Call()
+	if p == 0 {
+		return nil, fmt.Errorf("couldn't list accounts")
+	}
+	defer freeAccounts.Call(p)
+	wrapped := (*C.WrappedAccounts)(unsafe.Pointer(p))
+	if wrapped.err != nil {
+		return nil, fmt.Errorf(C.GoString(wrapped.err.message))
+	}
+	accounts := make([]Account, wrapped.count)
+	for i, account := range unsafe.Slice(wrapped.accounts, wrapped.count) {
+		accounts[i] = Account{
+			DisplayName: C.GoString(account.displayName),
+			ID:          C.GoString(account.id),
+			Username:    C.GoString(account.username),
+		}
+		for _, assoc := range unsafe.Slice(account.associations, account.associationsCount) {
+			accounts[i].AssociatedApps = append(accounts[i].AssociatedApps, C.GoString(assoc))
+		}
+	}
+	return accounts, nil
+}
+
 func LogIn(authority, clientID, scope string) (string, error) {
-	ar, err := authn(authority, clientID, "", scope, false)
+	accts, err := ListAccounts(clientID)
+	if err != nil {
+		return "", err
+	}
+	choice := Account{}
+	if len(accts) > 0 {
+		choice, err = showAccountPicker(accts)
+		if err != nil {
+			return "", err
+		}
+	}
+	ar, err := authn(authority, clientID, choice.ID, scope, false)
 	return ar.homeAccountID, err
 }
 
@@ -234,10 +291,16 @@ func loadDLL() error {
 		authenticate, err = bridge.FindProc("Authenticate")
 	}
 	if err == nil {
+		freeAccounts, err = bridge.FindProc("FreeWrappedAccounts")
+	}
+	if err == nil {
 		freeAR, err = bridge.FindProc("FreeWrappedAuthResult")
 	}
 	if err == nil {
 		freeError, err = bridge.FindProc("FreeWrappedError")
+	}
+	if err == nil {
+		listAccounts, err = bridge.FindProc("ListAccounts")
 	}
 	if err == nil {
 		logout, err = bridge.FindProc("Logout")

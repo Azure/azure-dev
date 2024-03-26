@@ -5,6 +5,18 @@ param location string = resourceGroup().location
 param tags object = {}
 
 var resourceToken = uniqueString(resourceGroup().id)
+@secure()
+param my_sql_abstract_pas_sw_ord string
+@secure()
+param my_sql_abstract_password string
+@secure()
+param mysqlabstract_pas_sw_ord string
+@secure()
+param mysqlabstract_password string
+@secure()
+param noVolume_pas_sw_ord string
+@secure()
+param noVolume_password string
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'mi-${resourceToken}'
@@ -114,11 +126,11 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
       secrets: [
         {
           name: 'mysql-root-password'
-          value: '{{ securedParameter "my_sql_abstract_password" }}'
+          value: my_sql_abstract_password
         }
         {
           name: 'specialchar'
-          value: '{{ securedParameter "my_sql_abstract_pas_sw_ord" }}'
+          value: my_sql_abstract_pas_sw_ord
         }
       ]
     }
@@ -176,11 +188,11 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
       secrets: [
         {
           name: 'mysql-root-password'
-          value: '{{ securedParameter "mysqlabstract_password" }}'
+          value: mysqlabstract_password
         }
         {
           name: 'specialchar'
-          value: '{{ securedParameter "mysqlabstract_pas_sw_ord" }}'
+          value: mysqlabstract_pas_sw_ord
         }
       ]
     }
@@ -237,11 +249,11 @@ resource noVolume 'Microsoft.App/containerApps@2023-05-02-preview' = {
       secrets: [
         {
           name: 'mysql-root-password'
-          value: '{{ securedParameter "noVolume_password" }}'
+          value: noVolume_password
         }
         {
           name: 'specialchar'
-          value: '{{ securedParameter "noVolume_pas_sw_ord" }}'
+          value: noVolume_pas_sw_ord
         }
       ]
     }

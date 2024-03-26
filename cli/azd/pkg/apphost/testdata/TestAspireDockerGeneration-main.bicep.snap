@@ -33,6 +33,7 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
+    mysqlabstract_password: mysqlabstract_password
   }
 }
 

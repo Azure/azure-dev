@@ -18,7 +18,7 @@ properties:
       identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
     secrets:
       - name: my-sql-connection-string
-        value: Server=mysqlabstract;Port=3306;User ID=root;Password={{ parameter "mysqlabstract_password" }}
+        value: Server=mysqlabstract;Port=3306;User ID=root;Password={{ securedParameter "mysqlabstract_password" }}
   template:
     containers:
     - image: {{ .Image }}

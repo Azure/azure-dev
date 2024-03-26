@@ -46,6 +46,9 @@ module resources 'resources.bicep' = {
 {{- if .RequiresPrincipalId }}
     principalId: principalId
 {{- end }}
+{{- range $parameter := .MainToResourcesParams }}
+    {{dashToUnderscore $parameter.Name}}: {{dashToUnderscore $parameter.Name}}
+{{- end }}
   }
 }
 {{ range $name, $module := .BicepModules }}

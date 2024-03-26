@@ -11,6 +11,13 @@ param tags object = {}
 
 var resourceToken = uniqueString(resourceGroup().id)
 
+{{- range $parameter := .MainToResourcesParams }}
+{{- if $parameter.Secret }}
+@secure()
+{{- end}}
+param {{dashToUnderscore $parameter.Name}} {{$parameter.Type}}
+{{- end}}
+
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'mi-${resourceToken}'
   location: location
@@ -225,7 +232,7 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- range $sName, $sValue := $value.Secrets}}
         {
           name: '{{containerAppSecretName $sName}}'
-          value: {{toDotNotation $sValue}}
+          value: {{$sValue}}
         }
 {{- end}}
       ]

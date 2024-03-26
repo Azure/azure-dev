@@ -43,7 +43,6 @@ func init() {
 				"alphaSnakeUpper":        scaffold.AlphaSnakeUpper,
 				"containerAppName":       scaffold.ContainerAppName,
 				"containerAppSecretName": scaffold.ContainerAppSecretName,
-				"toDotNotation":          scaffold.ToDotNotation,
 				"fixBackSlash": func(src string) string {
 					return strings.ReplaceAll(src, "\\", "/")
 				},
@@ -143,18 +142,23 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 
 	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
 	// this allows the template to access the auto-gen inputs from the generator
+	type genInput struct {
+		Name   string
+		Secret bool
+		Type   string
+	}
 	type autoGenInput struct {
-		Name           string
-		Secret         bool
-		Type           string
+		genInput
 		MetadataConfig string
 		MetadataType   azure.AzdMetadataType
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
 		WithMetadataParameters []autoGenInput
+		MainToResourcesParams  []genInput
 	}
 	var parameters []autoGenInput
+	var mapToResourceParams []genInput
 
 	// order to be deterministic when writing bicep
 	genParametersKeys := maps.Keys(generator.bicepContext.InputParameters)
@@ -170,16 +174,19 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 			}
 			parameterMetadata = pMetadata
 		}
+		input := genInput{Name: key, Secret: parameter.Secret, Type: parameter.Type}
 		parameters = append(parameters, autoGenInput{
-			Name:           key,
-			Type:           parameter.Type,
-			Secret:         parameter.Secret,
+			genInput:       input,
 			MetadataConfig: parameterMetadata,
 			MetadataType:   azure.AzdMetadataTypeGenerate})
+		if slices.Contains(generator.bicepContext.mappedParameters, strings.ReplaceAll(key, "-", "_")) {
+			mapToResourceParams = append(mapToResourceParams, input)
+		}
 	}
 	context := bicepContext{
 		genBicepTemplateContext: generator.bicepContext,
 		WithMetadataParameters:  parameters,
+		MainToResourcesParams:   mapToResourceParams,
 	}
 	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
@@ -984,16 +991,38 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		cs.Ingress = ingress
-
+		parameters := maps.Keys(b.bicepContext.InputParameters)
+		for i, parameter := range parameters {
+			parameters[i] = strings.ReplaceAll(parameter, "-", "_")
+		}
 		for k, value := range container.Env {
-			res, err := EvalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
+			// first evaluation using inputEmitTypeYaml to know if there are secrets on the value
+			yamlString, err := EvalString(
+				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
 			if err != nil {
 				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
 			}
-			if strings.Contains(res, "{{ securedParameter ") {
-				cs.Secrets[k] = res
+			// second evaluation to build the appropriate string for bicep, which only replaces parameter names
+			// without caring about secret or not
+			bicepString, err := EvalString(
+				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
+			if err != nil {
+				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
+			}
+			if isComplexExp, val := isComplexExpression(fmt.Sprintf("'%s'", bicepString)); !isComplexExp {
+				bicepString = val
+			}
+
+			if slices.Contains(parameters, bicepString) {
+				if !slices.Contains(b.bicepContext.mappedParameters, bicepString) {
+					b.bicepContext.mappedParameters = append(b.bicepContext.mappedParameters, bicepString)
+				}
+			}
+
+			if strings.Contains(yamlString, "{{ securedParameter ") {
+				cs.Secrets[k] = bicepString
 			} else {
-				cs.Env[k] = res
+				cs.Env[k] = bicepString
 			}
 		}
 
@@ -1437,7 +1466,6 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 				// as a secret within the containerApp.
 				resolvedValue = secretOutputForDeployTemplate(resolvedValue)
 			}
-			resolvedValue = strings.ReplaceAll(resolvedValue, "{{ securedParameter ", "{{ parameter ")
 			manifestCtx.Secrets[k] = resolvedValue
 			continue
 		}

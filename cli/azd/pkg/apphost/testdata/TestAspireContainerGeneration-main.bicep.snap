@@ -68,6 +68,12 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
+    my_sql_abstract_pas_sw_ord: my_sql_abstract_pas_sw_ord
+    my_sql_abstract_password: my_sql_abstract_password
+    mysqlabstract_pas_sw_ord: mysqlabstract_pas_sw_ord
+    mysqlabstract_password: mysqlabstract_password
+    noVolume_pas_sw_ord: noVolume_pas_sw_ord
+    noVolume_password: noVolume_password
   }
 }
 

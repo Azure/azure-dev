@@ -1,19 +1,23 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import { registerCommand, type IActionContext } from '@microsoft/vscode-azext-utils';
-import { SimpleCommandConfig, SkillCommandConfig as SkillCommandConfigAgent } from 'vscode-azure-agent-api';
-import { agentInit } from './agentInit';
+import * as vscode from 'vscode';
+import { AzExtUserInputWithInputQueue, AzureUserInputQueue, IAzureUserInput, callWithTelemetryAndErrorHandling, registerCommand, type IActionContext } from '@microsoft/vscode-azext-utils';
+import { SimpleCommandConfig, SkillCommandConfig as SkillCommandConfigAgent, WizardCommandConfig } from 'vscode-azure-agent-api';
+// import { agentInit } from './agentInit';
 import { agentUp } from './agentUp';
-import { agentInitWithEnvironment } from './agentInitWithEnvironment';
+// import { agentInitWithEnvironment } from './agentInitWithEnvironment';
+import { init } from '../init';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AzdCommand = { handler: (context: IActionContext, ...args: any[]) => Promise<any> };
 type SkillCommandConfig = SkillCommandConfigAgent & AzdCommand;
-type CommandConfig = SimpleCommandConfig | SkillCommandConfig;
+type CommandConfig = SimpleCommandConfig | SkillCommandConfig | WizardCommandConfig;
 
 export function registerAgentCommands(): void {
-    registerCommand('azure-dev.commands.agent.getCommands', getAgentCommands);
+    vscode.commands.registerCommand('azure-dev.commands.agent.getCommands', getAgentCommands);
+    vscode.commands.registerCommand('azure-dev.commands.agent.runWizardCommandWithoutExecution', runWizardCommandWithoutExecution);
+    vscode.commands.registerCommand('azure-dev.commands.agent.runWizardCommandWithInputs', runWizardCommandWithInputs);
 
     for (const command of agentCommands) {
         if ('handler' in command && typeof command.handler === 'function') {
@@ -22,29 +26,40 @@ export function registerAgentCommands(): void {
     }
 }
 
-export function getAgentCommands(context: IActionContext): Promise<CommandConfig[]> {
+function getAgentCommands(): Promise<CommandConfig[]> {
     return Promise.resolve(agentCommands);
+}
+
+async function runWizardCommandWithoutExecution(command: WizardCommandConfig, ui: IAzureUserInput): Promise<void> {
+    if (command.commandId === 'azure-dev.commands.cli.init') {
+        await callWithTelemetryAndErrorHandling('azure-dev.commands.cli.init.viaAgent', async (context) => {
+            return await init({ ...context, ui: ui, skipExecute: true });
+        });
+    } else {
+        throw new Error('Unknown command: ' + command.commandId);
+    }
+}
+
+async function runWizardCommandWithInputs(command: WizardCommandConfig, inputsQueue: AzureUserInputQueue): Promise<void> {
+    if (command.commandId === 'azure-dev.commands.cli.init') {
+        await callWithTelemetryAndErrorHandling('azure-dev.commands.cli.init.viaAgentActual', async (context) => {
+            const azureUserInput = new AzExtUserInputWithInputQueue(context, inputsQueue);
+            return await init({ ...context, ui: azureUserInput });
+        });
+    } else {
+        throw new Error('Unknown command: ' + command.commandId);
+    }
 }
 
 const agentCommands: CommandConfig[] = [
     {
-        type: 'skill',
+        type: 'wizard',
         name: 'azdInit',
-        commandId: 'azure-dev.commands.agent.init',
+        commandId: 'azure-dev.commands.cli.init',
         displayName: 'Initialize with Azure Developer CLI',
-        intentDescription: 'This is best when users ask to set up or initialize their application for Azure, but have not provided a name for the environment to create.',
+        intentDescription: 'This is best when users ask to set up or initialize their application for Azure.',
         requiresAzureLogin: false,
-        handler: agentInit,
-    } satisfies SkillCommandConfig,
-    {
-        type: 'skill',
-        name: 'azdInitWithEnvironment',
-        commandId: 'azure-dev.commands.agent.initWithEnvironment',
-        displayName: 'Initialize with Azure Developer CLI',
-        intentDescription: 'This is best when users ask to set up or initialize their application for Azure and have provided a name for the environment to create.',
-        requiresAzureLogin: false,
-        handler: agentInitWithEnvironment,
-    } satisfies SkillCommandConfig,
+    } satisfies WizardCommandConfig,
     {
         type: 'skill',
         name: 'azdUp',

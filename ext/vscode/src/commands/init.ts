@@ -15,7 +15,7 @@ import { ChooseTemplateStep } from './agent/wizard/ChooseTemplateStep';
 import { EnvironmentNameStep } from './agent/wizard/EnvironmentNameStep';
 import { AzdInitStep } from './agent/wizard/AzdInitStep';
 
-export async function init(context: IActionContext, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri, options?: Partial<InitWizardContext> & { skipExecute?: boolean }): Promise<void> {
+export async function init(context: IActionContext & { skipExecute?: boolean }, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri, options?: Partial<InitWizardContext>): Promise<void> {
     const wizardContext = context as InitWizardContext;
     wizardContext.workspaceFolder = options?.workspaceFolder;
     wizardContext.templateUrl = options?.templateUrl;
@@ -38,7 +38,7 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
         {
             promptSteps,
             executeSteps,
-            skipExecute: !!options?.skipExecute,
+            skipExecute: !!context.skipExecute,
             title: vscode.l10n.t('Initializing with Azure Developer CLI'),
         }
     );

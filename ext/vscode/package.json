@@ -538,6 +538,8 @@
     },
     "agentMetadata": {
         "version": "1.0",
-        "getCommandsCommandId": "azure-dev.commands.agent.getCommands"
+        "getCommandsCommandId": "azure-dev.commands.agent.getCommands",
+        "runWizardCommandWithoutExecutionCommandId": "azure-dev.commands.agent.runWizardCommandWithoutExecution",
+        "runWizardCommandWithInputsCommandId": "azure-dev.commands.agent.runWizardCommandWithInputs"
     }
 }

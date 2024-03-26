@@ -114,11 +114,11 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
       secrets: [
         {
           name: 'mysql-root-password'
-          value: '{{ secured_parameter "my_sql_abstract_password" }}'
+          value: '{{ securedParameter "my_sql_abstract_password" }}'
         }
         {
           name: 'specialchar'
-          value: '{{ secured_parameter "my_sql_abstract_pas_sw_ord" }}'
+          value: '{{ securedParameter "my_sql_abstract_pas_sw_ord" }}'
         }
       ]
     }
@@ -176,11 +176,11 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
       secrets: [
         {
           name: 'mysql-root-password'
-          value: '{{ secured_parameter "mysqlabstract_password" }}'
+          value: '{{ securedParameter "mysqlabstract_password" }}'
         }
         {
           name: 'specialchar'
-          value: '{{ secured_parameter "mysqlabstract_pas_sw_ord" }}'
+          value: '{{ securedParameter "mysqlabstract_pas_sw_ord" }}'
         }
       ]
     }
@@ -237,11 +237,11 @@ resource noVolume 'Microsoft.App/containerApps@2023-05-02-preview' = {
       secrets: [
         {
           name: 'mysql-root-password'
-          value: '{{ secured_parameter "noVolume_password" }}'
+          value: '{{ securedParameter "noVolume_password" }}'
         }
         {
           name: 'specialchar'
-          value: '{{ secured_parameter "noVolume_pas_sw_ord" }}'
+          value: '{{ securedParameter "noVolume_pas_sw_ord" }}'
         }
       ]
     }

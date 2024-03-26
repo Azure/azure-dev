@@ -990,7 +990,7 @@ func (b *infraGenerator) Compile() error {
 			if err != nil {
 				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
 			}
-			if strings.Contains(res, "{{ secured_parameter ") {
+			if strings.Contains(res, "{{ securedParameter ") {
 				cs.Secrets[k] = res
 			} else {
 				cs.Env[k] = res
@@ -1348,7 +1348,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		param := b.bicepContext.InputParameters[resource]
 		inputType := "parameter"
 		if param.Secret {
-			inputType = "secured_parameter"
+			inputType = "securedParameter"
 		}
 		replaceDash := strings.ReplaceAll(resource, "-", "_")
 		switch emitType {
@@ -1409,12 +1409,12 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		//  a) explicit connection string key for env, like "ConnectionStrings__resource": "XXXXX"
 		//  b) a connection string field references in the value, like "FOO": "{resource.connectionString}"
 		//  c) found placeholder for a connection string within resolved value, like "{{ connectionString resource }}"
-		//  d) found placeholder for a secured-param, like "{{ secured_parameter param }}"
+		//  d) found placeholder for a secured-param, like "{{ securedParameter param }}"
 		//  e) found placeholder for a secret output, like "{{ secretOutput kv secret }}"
 		if strings.Contains(k, "ConnectionStrings__") || // a)
 			strings.Contains(value, ".connectionString}") || // b)
 			strings.Contains(resolvedValue, "{{ connectionString") || // c)
-			strings.Contains(resolvedValue, "{{ secured_parameter ") || // d)
+			strings.Contains(resolvedValue, "{{ securedParameter ") || // d)
 			strings.Contains(resolvedValue, "{{ secretOutput ") { // e)
 
 			// handle secret-outputs:
@@ -1437,7 +1437,7 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 				// as a secret within the containerApp.
 				resolvedValue = secretOutputForDeployTemplate(resolvedValue)
 			}
-			resolvedValue = strings.ReplaceAll(resolvedValue, "{{ secured_parameter ", "{{ parameter ")
+			resolvedValue = strings.ReplaceAll(resolvedValue, "{{ securedParameter ", "{{ parameter ")
 			manifestCtx.Secrets[k] = resolvedValue
 			continue
 		}

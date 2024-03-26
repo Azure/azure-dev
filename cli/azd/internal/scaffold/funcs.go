@@ -158,10 +158,6 @@ func ContainerAppSecretName(name string) string {
 	return strings.ReplaceAll(strings.ToLower(name), "_", "-")
 }
 
-// alphanumericAndDashesRegex is a regular expression pattern used to match alphanumeric characters and dashes enclosed
-// in square brackets.
-var alphanumericAndDashesRegex = regexp.MustCompile(`(\['[a-zA-Z0-9\-]+'\])`)
-
 // camelCaseRegex is a regular expression used to match camel case patterns.
 // It matches a lowercase letter or digit followed by an uppercase letter.
 var camelCaseRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)

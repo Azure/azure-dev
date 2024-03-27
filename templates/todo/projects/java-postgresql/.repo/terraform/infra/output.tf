@@ -7,7 +7,7 @@ output "REACT_APP_WEB_BASE_URL" {
   value = module.web.URI
 }
 
-output "REACT_APP_API_BASE_URL" {
+output "API_BASE_URL" {
   value = var.useAPIM ? module.apimApi[0].SERVICE_API_URI : module.api.URI
 }
 
@@ -16,11 +16,6 @@ output "AZURE_LOCATION" {
 }
 
 output "APPLICATIONINSIGHTS_CONNECTION_STRING" {
-  value     = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
-  sensitive = true
-}
-
-output "REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING" {
   value     = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
   sensitive = true
 }

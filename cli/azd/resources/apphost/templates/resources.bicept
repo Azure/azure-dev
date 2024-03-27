@@ -9,12 +9,14 @@ param principalId string = ''
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
-{{- if gt (len .AutoGenInputs) 0 }}
-@secure()
-param inputs object
-{{end }}
-
 var resourceToken = uniqueString(resourceGroup().id)
+
+{{- range $parameter := .MainToResourcesParams }}
+{{- if $parameter.Secret }}
+@secure()
+{{- end}}
+param {{dashToUnderscore $parameter.Name}} {{$parameter.Type}}
+{{- end}}
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'mi-${resourceToken}'
@@ -56,6 +58,36 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
   tags: tags
 }
 {{end -}}
+{{if .RequiresStorageVolume}}
+resource storageVolume 'Microsoft.Storage/storageAccounts@2022-05-01' = {
+  name: 'vol${resourceToken}'
+  location: location
+  kind: 'StorageV2'
+  sku: {
+    name: 'Standard_LRS'
+  }
+  properties: {
+    largeFileSharesState: 'Enabled'
+  }
+}
+
+resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileServices@2022-05-01' = {
+  parent: storageVolume
+  name: 'default'
+}
+{{range $name, $value := .ContainerApps}}
+{{- range $volume := $value.Volumes}}
+resource {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
+  }
+}
+{{- end }}
+{{- end }}
+{{end -}}
 {{if .HasContainerEnvironment}}
 resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
   name: 'cae-${resourceToken}'
@@ -71,6 +103,27 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   }
   tags: tags
 }
+{{range $name, $value := .ContainerApps}}
+{{- range $volume := $value.Volumes}}
+resource {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+  properties: {
+    azureFile: {
+      shareName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+{{- if $volume.ReadOnly }}
+      accessMode: 'ReadOnly'
+{{- end}}
+{{- if eq false $volume.ReadOnly }}
+      accessMode: 'ReadWrite'
+{{- end}}
+    }
+  }
+}
+{{end -}}
+{{end -}}
 {{range $componentName, $componentValue := .DaprComponents}}
 resource {{$componentName}} 'Microsoft.App/managedEnvironments/daprComponents@2023-05-01' = {
   name: '{{$componentName}}'
@@ -133,6 +186,9 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = {
   name: '{{containerAppName $name}}'
   location: location
+{{- if $value.Volumes}}
+  dependsOn: [storageVolume]
+{{- end }}
   properties: {
     environmentId: containerAppEnvironment.id
     configuration: {
@@ -176,13 +232,24 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- range $sName, $sValue := $value.Secrets}}
         {
           name: '{{containerAppSecretName $sName}}'
-          value: {{toDotNotation $sValue}}
+          value: {{$sValue}}
         }
-{{- end}}    
+{{- end}}
       ]
 {{- end}}
     }
     template: {
+{{- if $value.Volumes}}
+      volumes: [
+{{- range $volume := $value.Volumes}}
+        {
+          name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+          storageType: 'AzureFile'
+          storageName: {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}Store.name
+        }
+{{- end}}
+      ]
+{{- end}}
       containers: [
         {
           image: '{{$value.Image}}'
@@ -203,6 +270,16 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
           ]
 {{- end}}
+{{- if $value.Volumes}}
+          volumeMounts: [
+{{- range $volume := $value.Volumes}}
+            {
+              volumeName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+              mountPath: '{{$volume.Target}}'
+            }
+{{- end}}
+          ]
+{{- end}}
         }
       ]
       scale: {
@@ -218,7 +295,7 @@ resource {{bicepName $name}} 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   name: '{{$name}}-${resourceToken}'
   location: location
   sku: {
-    name: 'Standard'   
+    name: 'Standard'
   }
   properties: {
     minimumTlsVersion: '1.2'
@@ -229,13 +306,13 @@ resource {{bicepName $name}} 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   resource {{bicepName $name}} 'queues@2022-10-01-preview' = {
     name: '{{$name}}'
   }
-{{end -}}  
+{{end -}}
 {{range $name := $value.Topics}}
 
   resource {{bicepName $name}} 'topics@2022-10-01-preview' = {
     name: '{{$name}}'
   }
-{{end -}}  
+{{end -}}
 }
 
 resource {{bicepName $name}}MiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {

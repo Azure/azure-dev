@@ -9,8 +9,11 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
 // environmentService is the RPC server for the '/EnvironmentService/v1.0' endpoint.
@@ -92,18 +95,100 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 	return true, nil
 }
 
+type DeleteMode uint32
+
+const (
+	DeleteModeLocal = 1 << iota
+	DeleteModeAzureResources
+)
+
 // DeleteEnvironmentAsync is the server implementation of:
-// ValueTask<bool> DeleteEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<bool> DeleteEnvironmentAsync(Session, string, IObserver<ProgressMessage>, int, CancellationToken);
 func (s *environmentService) DeleteEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, sessionId Session, name string, mode int, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	_, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, sessionId)
 	if err != nil {
 		return false, err
 	}
+	outputWriter := &lineWriter{
+		next: &messageWriter{
+			ctx:      ctx,
+			observer: observer,
+			messageTemplate: ProgressMessage{
+				Kind:     MessageKind(Info),
+				Severity: Info,
+			},
+		},
+	}
 
-	// TODO(azure/azure-dev#3285): Implement this.
-	return false, errors.New("not implemented")
+	spinnerWriter := &lineWriter{
+		trimLineEndings: true,
+		next: &messageWriter{
+			ctx:      ctx,
+			observer: observer,
+			messageTemplate: ProgressMessage{
+				Kind:     MessageKind(Important),
+				Severity: Info,
+			},
+		},
+	}
+
+	container, err := session.newContainer()
+	if err != nil {
+		return false, err
+	}
+	container.outWriter.AddWriter(outputWriter)
+	container.spinnerWriter.AddWriter(spinnerWriter)
+
+	var c struct {
+		provisionManager *provisioning.Manager  `container:"type"`
+		envManager       environment.Manager    `container:"type"`
+		importManager    *project.ImportManager `container:"type"`
+		projectConfig    *project.ProjectConfig `container:"type"`
+	}
+	container.MustRegisterScoped(func() internal.EnvFlag {
+		return internal.EnvFlag{
+			EnvironmentName: name,
+		}
+	})
+
+	if err := container.Fill(&c); err != nil {
+		return false, err
+	}
+
+	if mode&DeleteModeAzureResources > 0 {
+		_ = observer.OnNext(ctx, newImportantProgressMessage("Removing Azure resources"))
+
+		infra, err := c.importManager.ProjectInfrastructure(ctx, c.projectConfig)
+		if err != nil {
+			return false, err
+		}
+		defer func() { _ = infra.Cleanup() }()
+
+		if err := c.provisionManager.Initialize(ctx, c.projectConfig.Path, infra.Options); err != nil {
+			return false, fmt.Errorf("initializing provisioning manager: %w", err)
+		}
+
+		// Enable force and purge options
+		destroyOptions := provisioning.NewDestroyOptions(true, true)
+		_, err = c.provisionManager.Destroy(ctx, destroyOptions)
+		if errors.Is(err, provisioning.ErrDeploymentsNotFound) {
+			_ = observer.OnNext(ctx, newInfoProgressMessage("No Azure resources were found"))
+		} else if err != nil {
+			return false, fmt.Errorf("deleting infrastructure: %w", err)
+		}
+	}
+
+	if mode&DeleteModeLocal > 0 {
+		_ = observer.OnNext(ctx, newImportantProgressMessage("Removing environment"))
+		err = c.envManager.Delete(ctx, name)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
 }
 
 // ServeHTTP implements http.Handler.
@@ -114,7 +199,7 @@ func (s *environmentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"LoadEnvironmentAsync":       HandlerFunc3(s.LoadEnvironmentAsync),
 		"OpenEnvironmentAsync":       HandlerFunc3(s.OpenEnvironmentAsync),
 		"SetCurrentEnvironmentAsync": HandlerFunc3(s.SetCurrentEnvironmentAsync),
-		"DeleteEnvironmentAsync":     HandlerFunc3(s.DeleteEnvironmentAsync),
+		"DeleteEnvironmentAsync":     HandlerFunc4(s.DeleteEnvironmentAsync),
 		"RefreshEnvironmentAsync":    HandlerFunc3(s.RefreshEnvironmentAsync),
 		"DeployAsync":                HandlerFunc3(s.DeployAsync),
 	})

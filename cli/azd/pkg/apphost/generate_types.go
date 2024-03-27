@@ -34,6 +34,7 @@ type genContainerApp struct {
 	Env     map[string]string
 	Secrets map[string]string
 	Ingress *genContainerAppIngress
+	Volumes []*Volume
 }
 
 type genContainerAppIngress struct {
@@ -48,13 +49,15 @@ type genContainer struct {
 	Env      map[string]string
 	Bindings map[string]*Binding
 	Inputs   map[string]Input
+	Volumes  []*Volume
 }
 
 type genDockerfile struct {
-	Path     string
-	Context  string
-	Env      map[string]string
-	Bindings map[string]*Binding
+	Path      string
+	Context   string
+	Env       map[string]string
+	Bindings  map[string]*Binding
+	BuildArgs map[string]string
 }
 
 type genProject struct {
@@ -92,11 +95,6 @@ type genDaprComponent struct {
 	Version  string
 }
 
-type genInput struct {
-	Secret           bool
-	DefaultMinLength int
-}
-
 type genSqlServer struct {
 	Databases []string
 }
@@ -117,6 +115,7 @@ type genBicepTemplateContext struct {
 	HasDaprStore                    bool
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
+	RequiresStorageVolume           bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount
@@ -131,6 +130,8 @@ type genBicepTemplateContext struct {
 	OutputParameters                map[string]genOutputParameter
 	OutputSecretParameters          map[string]genOutputParameter
 	BicepModules                    map[string]genBicepModules
+	// parameters to be passed from main.bicep to resources.bicep
+	mappedParameters []string
 }
 
 type genContainerAppManifestTemplateContext struct {

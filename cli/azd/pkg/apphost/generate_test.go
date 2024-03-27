@@ -156,6 +156,14 @@ func TestAspireBicepGeneration(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+
+	for _, name := range []string{"frontend"} {
+		t.Run(name, func(t *testing.T) {
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
+			require.NoError(t, err)
+			snapshot.SnapshotT(t, tmpl)
+		})
+	}
 }
 
 func TestAspireDockerGeneration(t *testing.T) {

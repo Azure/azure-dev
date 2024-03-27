@@ -13,27 +13,18 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 {{ end }}
-{{- if gt (len .AutoGenInputs) 0 }}
-@secure()
+{{- range $parameter := .WithMetadataParameters }}
+{{- if ne $parameter.MetadataConfig "" }}
 @metadata({azd: {
-  type: 'inputs'
-  autoGenerate: {
-{{- range $resource, $params := .AutoGenInputs }}
-    {{$resource}}: { 
-{{- range $p := $params }}
-      {{$p.Name }}: { len: {{$p.Len }} }
-{{- end}}
-    }
-{{- end}}
-  }}
+  type: '{{$parameter.MetadataType}}'
+  config: {{$parameter.MetadataConfig}}
+  }
 })
-param inputs object
-{{ end }}
-{{- range $param, $value := .InputParameters }}
-{{- if $value.Secret }}
+{{- end}}
+{{- if $parameter.Secret }}
 @secure()
 {{- end}}
-param {{dashToUnderscore $param}} {{$value.Type}}
+param {{dashToUnderscore $parameter.Name}} {{$parameter.Type}}
 {{- end}}
 
 var tags = {
@@ -52,11 +43,11 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-{{- if gt (len .AutoGenInputs) 0 }}
-    inputs: inputs
-{{- end }}
 {{- if .RequiresPrincipalId }}
     principalId: principalId
+{{- end }}
+{{- range $parameter := .MainToResourcesParams }}
+    {{dashToUnderscore $parameter.Name}}: {{dashToUnderscore $parameter.Name}}
 {{- end }}
   }
 }

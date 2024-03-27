@@ -40,11 +40,11 @@ type dotNetCli struct {
 	commandRunner exec.CommandRunner
 }
 
-type ResponseContainerConfiguration struct {
-	Config ResponseContainerConfigurationExpPorts `json:"config"`
+type responseContainerConfiguration struct {
+	Config responseContainerConfigurationExpPorts `json:"config"`
 }
 
-type ResponseContainerConfigurationExpPorts struct {
+type responseContainerConfigurationExpPorts struct {
 	ExposedPorts map[string]interface{} `json:"ExposedPorts"`
 }
 
@@ -215,7 +215,7 @@ func (cli *dotNetCli) PublishContainer(
 
 func (cli *dotNetCli) getTargetPort(result string) (int, error) {
 	var targetPorts []targetPort
-	var configOutput ResponseContainerConfiguration
+	var configOutput responseContainerConfiguration
 
 	if err := json.Unmarshal([]byte(result), &configOutput); err != nil {
 		return 0, fmt.Errorf("unmarshal dotnet configuration output '%s' failed: %w", result, err)

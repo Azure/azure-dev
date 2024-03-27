@@ -154,20 +154,31 @@ module api 'br/public:avm/res/web/site:0.2.0' = {
 }
 
 // Give the API access to KeyVault
-module apiKeyVaultAccess '../../../../../common/infra/bicep/app/keyvault-secret.bicep' = {
-  name: 'api-keyvault-access'
+module accesskeyvault 'br/public:avm/res/key-vault/vault:0.3.5' = {
+  name: 'accesskeyvault'
   scope: rg
-  params: {  
-    apiPrincipalId: api.outputs.systemAssignedMIPrincipalId
-    cosmosDbId: cosmos.outputs.resourceId
-    keyVaultName: keyVault.outputs.name
-    principalId: principalId
-    connectionStringKey: connectionStringKey
+  params: {
+    name: keyVault.outputs.name
+    enableRbacAuthorization: false
+    accessPolicies: [
+      {
+        objectId: principalId
+        permissions: {
+          secrets: [ 'get', 'list' ]
+        }
+      }
+      {
+        objectId: api.outputs.systemAssignedMIPrincipalId
+        permissions: {
+          secrets: [ 'get', 'list' ]
+        }
+      }
+    ]
   }
 }
 
 // The application database
-module cosmos 'br/public:avm/res/document-db/database-account:0.3.0' = {
+module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
   name: 'cosmos'
   scope: rg
   params: {
@@ -186,8 +197,11 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.3.0' = {
         tags: tags
         collections: collections
       }
-
     ]
+    secretsKeyVault: {
+      keyVaultName: keyVault.outputs.name
+      primaryWriteConnectionStringSecretName: connectionStringKey
+    }
   }
 }
 

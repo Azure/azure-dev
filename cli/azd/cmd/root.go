@@ -124,6 +124,7 @@ func NewRootCmd(
 	telemetryActions(root)
 	templatesActions(root)
 	authActions(root)
+	toolActions(root)
 	hooksActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{

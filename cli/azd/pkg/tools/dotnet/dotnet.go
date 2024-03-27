@@ -206,8 +206,11 @@ func (cli *dotNetCli) PublishContainer(
 	}
 
 	port, err := cli.getTargetPort(result.Stdout)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get dotnet target port: %w", err)
+	}
 
-	return port, err
+	return port, nil
 }
 
 func (cli *dotNetCli) getTargetPort(result string) (int, error) {

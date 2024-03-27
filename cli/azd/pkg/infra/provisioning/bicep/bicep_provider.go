@@ -2021,7 +2021,7 @@ func (p *BicepProvider) ensureParameters(
 			}
 
 			for _, prompt := range parameterPrompts {
-				dialog.Prompts = append(dialog.Prompts, p.promptDialogItemForParamter(prompt.key, prompt.param))
+				dialog.Prompts = append(dialog.Prompts, p.promptDialogItemForParameter(prompt.key, prompt.param))
 			}
 
 			values, err := p.console.PromptDialog(ctx, dialog)

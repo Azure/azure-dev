@@ -17,8 +17,8 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
-// promptDialogItemForParamter builds the input.PromptDialogItem for the given required parameter.
-func (p *BicepProvider) promptDialogItemForParamter(
+// promptDialogItemForParameter builds the input.PromptDialogItem for the given required parameter.
+func (p *BicepProvider) promptDialogItemForParameter(
 	key string,
 	param azure.ArmTemplateParameterDefinition,
 ) input.PromptDialogItem {

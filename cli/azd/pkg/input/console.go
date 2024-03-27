@@ -529,7 +529,7 @@ func (c *AskerConsole) SupportsPromptDialog() bool {
 	return c.promptClient != nil
 }
 
-// PromptDialog prompts for multiple values using a single dialog. When succesful, it returns a map of prompt IDs to their
+// PromptDialog prompts for multiple values using a single dialog. When successful, it returns a map of prompt IDs to their
 // values.
 func (c *AskerConsole) PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error) {
 

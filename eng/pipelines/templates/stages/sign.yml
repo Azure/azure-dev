@@ -97,8 +97,12 @@ stages:
             artifact: install-pwsh
             path: installer
 
-        - pwsh: Copy-Item installer/*.ps1 win
-          displayName: Copy install scripts to win/
+        - pwsh: |
+            Remove-Item -Recurse -Force win/_manifest
+            Copy-Item installer/*.ps1 win
+
+            Get-Childitem -Recurse win/ | Select-Object -Property Length,FullName
+          displayName: Prepare assets for signing
 
         - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools

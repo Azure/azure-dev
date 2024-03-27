@@ -95,11 +95,6 @@ type genDaprComponent struct {
 	Version  string
 }
 
-type genInput struct {
-	Secret  bool
-	Default *InputDefaultGenerate
-}
-
 type genSqlServer struct {
 	Databases []string
 }
@@ -135,6 +130,8 @@ type genBicepTemplateContext struct {
 	OutputParameters                map[string]genOutputParameter
 	OutputSecretParameters          map[string]genOutputParameter
 	BicepModules                    map[string]genBicepModules
+	// parameters to be passed from main.bicep to resources.bicep
+	mappedParameters []string
 }
 
 type genContainerAppManifestTemplateContext struct {

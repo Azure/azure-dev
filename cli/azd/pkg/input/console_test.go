@@ -55,6 +55,7 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 			Stdin:  os.Stdin,
 			Stdout: lines,
 		},
+		nil,
 		nil)
 
 	ctx := context.Background()
@@ -102,6 +103,7 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 				Stdin:  os.Stdin,
 				Stdout: os.Stdout,
 			},
+			nil,
 			nil,
 		)
 	}

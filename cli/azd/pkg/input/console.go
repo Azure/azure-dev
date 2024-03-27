@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -28,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	tm "github.com/buger/goterm"
@@ -64,6 +64,27 @@ type ShowPreviewerOptions struct {
 	Title        string
 }
 
+type PromptDialog struct {
+	Title       string
+	Description string
+	Prompts     []PromptDialogItem
+}
+
+type PromptDialogItem struct {
+	ID           string
+	Kind         string
+	DisplayName  string
+	Description  *string
+	DefaultValue *string
+	Required     bool
+	Choices      []PromptDialogChoice
+}
+
+type PromptDialogChoice struct {
+	Value       string
+	Description string
+}
+
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
@@ -89,6 +110,8 @@ type Console interface {
 	// If false, the spinner is non-interactive, which means messages are rendered as a new console message on each
 	// call to ShowSpinner, even when the title is unchanged.
 	IsSpinnerInteractive() bool
+	SupportsPromptDialog() bool
+	PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error)
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
 	// Prompts the user for a directory path.
@@ -502,6 +525,44 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 // 0 in the sentinel), followed by a new line.
 const cAfterIO = "0\n"
 
+func (c *AskerConsole) SupportsPromptDialog() bool {
+	return c.promptClient != nil
+}
+
+// PromptDialog prompts for multiple values using a single dialog. When succesful, it returns a map of prompt IDs to their
+// values.
+func (c *AskerConsole) PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error) {
+
+	request := externalPromptDialogRequest{
+		Title:       dialog.Title,
+		Description: dialog.Description,
+		Prompts:     make([]externalPromptDialogPrompt, len(dialog.Prompts)),
+	}
+
+	for i, prompt := range dialog.Prompts {
+		request.Prompts[i] = externalPromptDialogPrompt{
+			ID:           prompt.ID,
+			Kind:         prompt.Kind,
+			DisplayName:  prompt.DisplayName,
+			Description:  prompt.Description,
+			DefaultValue: prompt.DefaultValue,
+			Required:     prompt.Required,
+		}
+	}
+
+	resp, err := c.promptClient.PromptDialog(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := make(map[string]any, len(*resp.Inputs))
+	for _, v := range *resp.Inputs {
+		ret[v.ID] = v.Value
+	}
+
+	return ret, nil
+}
+
 // Prompts the user for a single value
 func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
 	var response string
@@ -906,13 +967,22 @@ type Writers struct {
 	Spinner io.Writer
 }
 
-// Creates a new console with the specified writers, handles and formatter.
+// ExternalPromptConfiguration allows configuring the console to delegate prompts to an external service.
+type ExternalPromptConfiguration struct {
+	Endpoint string
+	Key      string
+	Client   httputil.HttpClient
+}
+
+// Creates a new console with the specified writers, handles and formatter. When externalPromptCfg is non nil, it is used
+// instead of prompting on the console.
 func NewConsole(
 	noPrompt bool,
 	isTerminal bool,
 	writers Writers,
 	handles ConsoleHandles,
-	formatter output.Formatter) Console {
+	formatter output.Formatter,
+	externalPromptCfg *ExternalPromptConfiguration) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	c := &AskerConsole{
@@ -930,11 +1000,8 @@ func NewConsole(
 		writers.Spinner = writers.Output
 	}
 
-	externalEndpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT")
-	externalKey := os.Getenv("AZD_UI_PROMPT_KEY")
-
-	if externalEndpoint != "" && externalKey != "" {
-		c.promptClient = newExternalPromptClient(externalEndpoint, externalKey, http.DefaultClient)
+	if externalPromptCfg != nil {
+		c.promptClient = newExternalPromptClient(externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Client)
 	}
 
 	spinnerConfig := yacspin.Config{

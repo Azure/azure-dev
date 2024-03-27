@@ -201,7 +201,7 @@ jobs:
       - output: pipelineArtifact
         path: $(Build.ArtifactStagingDirectory)/build-output
         artifact: $(BuildTarget)
-        condition: always()
+        condition: succeeded()
         displayName: Upload azd binary to artifact store
 
       - output: pipelineArtifact

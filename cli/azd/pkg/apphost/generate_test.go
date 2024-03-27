@@ -67,6 +67,7 @@ func TestAspireEscaping(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireEscapingManifest, nil)
+
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")

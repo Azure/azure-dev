@@ -84,7 +84,8 @@ func (s *environmentService) CreateEnvironmentAsync(
 			c.azdContext.ProjectDirectory(),
 			filepath.Base(c.azdContext.ProjectDirectory()),
 			manifest,
-			hosts[0].Path)
+			hosts[0].Path,
+		)
 		if err != nil {
 			return false, fmt.Errorf("generating project artifacts: %w", err)
 		}

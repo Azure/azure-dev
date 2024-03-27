@@ -101,7 +101,8 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
-func ContainerAppManifestTemplateForProject(manifest *Manifest, projectName string) (string, error) {
+func ContainerAppManifestTemplateForProject(
+	manifest *Manifest, projectName string) (string, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -246,7 +247,11 @@ func inputMetadata(config InputDefaultGenerate) (string, error) {
 // GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. The azure.yaml file as well as
 // a helpful next-steps.md file.
 func GenerateProjectArtifacts(
-	ctx context.Context, projectDir string, projectName string, manifest *Manifest, appHostProject string,
+	ctx context.Context,
+	projectDir string,
+	projectName string,
+	manifest *Manifest,
+	appHostProject string,
 ) (map[string]ContentsAndMode, error) {
 	appHostRel, err := filepath.Rel(projectDir, appHostProject)
 	if err != nil {
@@ -1068,19 +1073,7 @@ func (b *infraGenerator) Compile() error {
 			projectTemplateCtx.Ingress = &genContainerAppIngress{
 				External:  binding.External,
 				Transport: binding.Transport,
-
-				// TODO(ellismg): We need to inspect the target container and determine this from the exposed ports (or ask
-				// MSBuild to tell us this value when it builds the container image). For now we just assume 8080.
-				//
-				// We can get this by running `dotnet publish` and using the `--getProperty:GeneratedContainerConfiguration`
-				// flag to get the generated docker configuration.  That's a JSON object, from that we pluck off
-				// Config.ExposedPorts, which is an object that would look like:
-				//
-				// {
-				//    "8080/tcp": {}
-				// }
-				//
-				// Note that the protocol type is apparently optional.
+				// This port number is for dapr
 				TargetPort:    8080,
 				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}

@@ -160,6 +160,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "%azure-dev.auth.useIntegratedAuth.description%"
+                },
+                "azure-dev.useVisualStudioCodeForPrompts": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "%azure-dev.useVisualStudioCodeForPrompts.description%"
                 }
             }
         },

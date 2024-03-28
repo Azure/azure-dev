@@ -29,10 +29,11 @@ export async function monitor(context: IActionContext, selectedItem?: vscode.Uri
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
+    // External prompting does not apply
     const monitorChoices  = await context.ui.showQuickPick(MonitorChoices, {
         canPickMany: true,
         placeHolder: vscode.l10n.t('What monitoring page(s) do you want to open?'),
-        isPickSelected: choice => !!choice.picked 
+        isPickSelected: choice => !!choice.picked
     });
     if (!monitorChoices || monitorChoices.length === 0) {
         throw new UserCancelledError();
@@ -55,6 +56,7 @@ export async function monitor(context: IActionContext, selectedItem?: vscode.Uri
     } catch(err) {
         const parsedErr = parseError(err);
         if (!parsedErr.isUserCancelledError) {
+            // External prompting does not apply
             await vscode.window.showErrorMessage(
                 vscode.l10n.t("Command '{0}' returned an error", 'monitor'),
                 { modal: true, detail: parsedErr.message }

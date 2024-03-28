@@ -59,7 +59,7 @@ export function scheduleAzdVersionCheck(): void {
         const versionResult = await getAzdVersion();
 
         if (versionResult && !semver.gte(versionResult, minimumSupportedVersion)) {
-            // We won't show a warning if AZD is not installed, but if it is installed and less than 0.8.0, we will warn
+            // We won't show a warning if AZD is not installed, but if it is installed and less than the minimum, we will warn
 
             const install: vscode.MessageItem = {
                 title: vscode.l10n.t('Update'),
@@ -75,6 +75,7 @@ export function scheduleAzdVersionCheck(): void {
                 versionResult.version
             );
 
+            // External prompting does not apply
             void vscode.window.showWarningMessage(title, { modal: false }, install, later).then(async (result) => {
                 if (result === install) {
                     await vscode.commands.executeCommand('azure-dev.commands.cli.install', /* shouldPrompt: */ false);

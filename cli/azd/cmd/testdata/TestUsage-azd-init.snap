@@ -1,7 +1,7 @@
 
 Initialize a new application in your current directory.
 
-  • Running init without a template will prompt you to start with a minimal template or select from a curated list of presets.
+  • Running init without flags specified will prompt you to initialize using your existing code, or from a template.
   • To view all available sample templates, including those submitted by the azd community, visit: https://azure.github.io/awesome-azd.
 
 Usage
@@ -11,10 +11,11 @@ Flags
     -b, --branch string       	: The template branch to initialize from. Must be used with a template argument (--template or -t).
         --docs                	: Opens the documentation for azd init in your web browser.
     -e, --environment string  	: The name of the environment to use.
+        --from-code           	: Initializes a new application from your existing code.
     -h, --help                	: Gets help for init.
     -l, --location string     	: Azure location for the new environment
     -s, --subscription string 	: Name or ID of an Azure subscription to use for the new environment
-    -t, --template string     	: The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.
+    -t, --template string     	: Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

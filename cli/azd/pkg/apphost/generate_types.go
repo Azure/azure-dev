@@ -37,11 +37,21 @@ type genContainerApp struct {
 	Volumes []*Volume
 }
 
+type genContainerAppIngressPort struct {
+	External   bool
+	TargetPort int
+}
+
+type genContainerAppIngressAdditionalPortMappings struct {
+	genContainerAppIngressPort
+	ExposedPort int
+}
+
 type genContainerAppIngress struct {
-	External      bool
-	TargetPort    int
-	Transport     string
-	AllowInsecure bool
+	genContainerAppIngressPort
+	Transport              string
+	AllowInsecure          bool
+	AdditionalPortMappings []genContainerAppIngressAdditionalPortMappings
 }
 
 type genContainer struct {

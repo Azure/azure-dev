@@ -219,6 +219,14 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
 {{- if $value.Ingress}}
       ingress: {
+{{- if $value.Ingress.AdditionalPortMappings }}
+        additionalPortMappings: [
+{{- range $additionalPort := $value.Ingress.AdditionalPortMappings }}
+          { targetPort: {{ $additionalPort.TargetPort }}
+          external: {{ $additionalPort.External }} }
+{{- end}}
+        ]
+{{- end}}
         external: {{$value.Ingress.External}}
         targetPort: {{$value.Ingress.TargetPort}}
         transport: '{{$value.Ingress.Transport}}'

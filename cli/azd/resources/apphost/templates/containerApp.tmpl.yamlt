@@ -34,11 +34,18 @@ properties:
 {{- end}}
 {{- if .Ingress}}
     ingress:
+{{- if .Ingress.AdditionalPortMappings }}
+      additionalPortMappings:
+{{- range $additionalPort := .Ingress.AdditionalPortMappings }}
+      - targetPort: {{ $additionalPort.TargetPort }}
+        external: {{ $additionalPort.External }}
+{{- end}}
+{{- end}}
       external: {{ .Ingress.External }}
       targetPort: {{ "{{ .TargetPort }}" }}
       transport: {{ .Ingress.Transport }}
       allowInsecure: {{ .Ingress.AllowInsecure }}
-{{- end}}
+{{- end }}
     registries:
     - server: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
       identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}

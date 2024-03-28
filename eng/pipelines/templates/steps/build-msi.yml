@@ -50,6 +50,7 @@ steps:
     displayName: ${{ parameters.Title }}
     condition: ${{ parameters.Condition }}
     inputs:
+      msbuildVersion: 17.0
       solution: cli/installer/windows.sln
       msbuildArguments: >-
         /p:RunWixToolsOutOfProc=true

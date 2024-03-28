@@ -44,6 +44,10 @@ extern "C"
     // - allowPrompt: whether to display an interactive login window when necessary
     __declspec(dllexport) WrappedAuthResult *Authenticate(const char *authority, const char *scope, const char *accountID, bool allowPrompt);
 
+    // SignInSilently authenticates an account inferred from the OS e.g. the active Windows user, without displaying UI.
+    // It returns an error when that's impossible.
+    __declspec(dllexport) WrappedAuthResult *SignInSilently();
+
     // Logout disassociates all accounts from the application.
     __declspec(dllexport) void Logout();
 

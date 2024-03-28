@@ -20,6 +20,10 @@ func LogIn(authority, clientID, scope string) (string, error) {
 	return "", errNotSupported
 }
 
+func LogInSilently(clientID string) (string, error) {
+	return "", errNotSupported
+}
+
 func Logout(clientID string) error {
 	return errNotSupported
 }

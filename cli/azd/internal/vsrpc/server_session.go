@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -29,9 +30,9 @@ type serverSession struct {
 	// rootPath is the path to the root of the solution.
 	rootPath string
 	// root container points to server.rootContainer
-	rootContainer *ioc.NestedContainer
-	authEndpoint  string
-	authKey       string
+	rootContainer            *ioc.NestedContainer
+	externalServicesEndpoint string
+	externalServicesKey      string
 }
 
 // newSession creates a new session and returns the session ID and session. newSession is safe to call by multiple
@@ -120,7 +121,7 @@ func (s *serverSession) newContainer() (*container, error) {
 		}),
 	})
 
-	c.MustRegisterScoped(func() input.Console {
+	c.MustRegisterScoped(func(client httputil.HttpClient) input.Console {
 		stdout := outWriter
 		stderr := errWriter
 		stdin := strings.NewReader("")
@@ -133,7 +134,13 @@ func (s *serverSession) newContainer() (*container, error) {
 				Stdin:  stdin,
 				Stdout: stdout,
 				Stderr: stderr,
-			}, &output.NoneFormatter{})
+			},
+			&output.NoneFormatter{},
+			&input.ExternalPromptConfiguration{
+				Endpoint: s.externalServicesEndpoint,
+				Key:      s.externalServicesKey,
+				Client:   client,
+			})
 	})
 
 	c.MustRegisterScoped(func(console input.Console) io.Writer {
@@ -156,8 +163,8 @@ func (s *serverSession) newContainer() (*container, error) {
 
 	c.MustRegisterScoped(func() auth.ExternalAuthConfiguration {
 		return auth.ExternalAuthConfiguration{
-			Endpoint: s.authEndpoint,
-			Key:      s.authKey,
+			Endpoint: s.externalServicesEndpoint,
+			Key:      s.externalServicesKey,
 		}
 	})
 

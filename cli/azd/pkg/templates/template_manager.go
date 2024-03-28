@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"golang.org/x/exp/slices"
 )
 
@@ -167,9 +166,6 @@ func PromptTemplate(
 		return nil, fmt.Errorf("prompting for template: %w", err)
 	}
 
-	// If stdin is not interactive (non-tty), we ensure the options are not formatted.
-	isInteractive := console.IsSpinnerInteractive()
-
 	templateChoices := []*Template{}
 	duplicateNames := []string{}
 
@@ -187,14 +183,14 @@ func PromptTemplate(
 	}
 
 	templateNames := make([]string, 0, len(templates)+1)
+	templateDetails := make([]string, 0, len(templates)+1)
 
 	// Prepend the minimal template option to guarantee first selection
 	minimalChoice := "Minimal"
-	if isInteractive {
-		minimalChoice += "\n"
-	}
 
 	templateNames = append(templateNames, minimalChoice)
+	templateDetails = append(templateDetails, "")
+
 	for _, template := range templates {
 		templateChoice := template.Name
 
@@ -203,10 +199,7 @@ func PromptTemplate(
 			templateChoice += fmt.Sprintf(" (%s)", template.Source)
 		}
 
-		if isInteractive {
-			repoPath := output.WithGrayFormat("(%s)", template.RepositoryPath)
-			templateChoice += fmt.Sprintf("\n  %s\n", repoPath)
-		}
+		templateDetails = append(templateDetails, template.RepositoryPath)
 
 		if slices.Contains(templateNames, templateChoice) {
 			duplicateNames = append(duplicateNames, templateChoice)
@@ -216,9 +209,10 @@ func PromptTemplate(
 	}
 
 	selected, err := console.Select(ctx, input.ConsoleOptions{
-		Message:      message,
-		Options:      templateNames,
-		DefaultValue: templateNames[0],
+		Message:       message,
+		Options:       templateNames,
+		OptionDetails: templateDetails,
+		DefaultValue:  templateNames[0],
 	})
 
 	// separate this prompt from the next log

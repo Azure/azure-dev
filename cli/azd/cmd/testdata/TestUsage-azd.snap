@@ -14,6 +14,7 @@ Commands
     template 	: Find and view template details. (Beta)
 
   Manage Azure resources and app deployments
+    binding  	: Create bindings for the service.
     deploy   	: Deploy the application's code to Azure.
     down     	: Delete Azure resources for an application.
     env      	: Manage environments.

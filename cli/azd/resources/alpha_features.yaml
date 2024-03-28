@@ -2,6 +2,8 @@
   description: "Support infrastructure deployments at resource group scope."
 - id: infraSynth
   description: "Enable the `infra synth` command to write generated infrastructure to disk."
+- id: serviceBinding
+  description: "Enable the `binding` command to create or delete service bindings."
 - id: aks.helm
   description: "Enable Helm support for AKS deployments."
 - id: aks.kustomize

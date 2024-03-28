@@ -1,0 +1,24 @@
+
+Manage your application bindings. (Beta)
+
+Usage
+  azd binding <service> [flags]
+
+Flags
+        --docs               	: Opens the documentation for azd binding in your web browser.
+    -e, --environment string 	: The name of the environment to use.
+    -h, --help               	: Gets help for binding.
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Examples
+  Create bindings for all services in the current project.
+    azd binding --all
+
+  Create bindings for the service named 'api'.
+    azd binding api
+
+

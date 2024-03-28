@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/binding"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
@@ -597,6 +598,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(provisioning.NewManager)
 	container.MustRegisterScoped(provisioning.NewPrincipalIdProvider)
 	container.MustRegisterScoped(prompt.NewDefaultPrompter)
+
+	// Binding
+	container.MustRegisterSingleton(binding.NewLinkerManager)
+	container.MustRegisterSingleton(binding.NewBindingManager)
 
 	// Other
 	container.MustRegisterSingleton(createClock)

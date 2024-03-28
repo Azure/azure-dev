@@ -26,12 +26,10 @@ func Test_SwaBuild(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath", args.Cwd)
+			require.Equal(t, "projectPath/service/path", args.Cwd)
 			require.Equal(t, []string{
 				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"build",
-				"--app-location", "service/path",
-				"--output-location", "build",
 			}, args.Args)
 
 			return exec.RunResult{
@@ -58,12 +56,10 @@ func Test_SwaBuild(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath", args.Cwd)
+			require.Equal(t, "projectPath/service/path", args.Cwd)
 			require.Equal(t, []string{
 				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"build",
-				"--app-location", "service/path",
-				"--output-location", "build",
 			}, args.Args)
 
 			return exec.RunResult{
@@ -95,7 +91,7 @@ func Test_SwaDeploy(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath", args.Cwd)
+			require.Equal(t, "projectPath/service/path", args.Cwd)
 			require.Equal(t, []string{
 				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"deploy",
@@ -103,8 +99,6 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--app-location", "service/path",
-				"--output-location", "build",
 				"--env", "default",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
@@ -145,7 +139,7 @@ func Test_SwaDeploy(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath", args.Cwd)
+			require.Equal(t, "projectPath/service/path", args.Cwd)
 			require.Equal(t, []string{
 				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"deploy",
@@ -153,8 +147,6 @@ func Test_SwaDeploy(t *testing.T) {
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--app-location", "service/path",
-				"--output-location", "build",
 				"--env", "default",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",

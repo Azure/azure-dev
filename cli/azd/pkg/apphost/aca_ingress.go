@@ -165,6 +165,10 @@ func validateInput(bindings map[string]*Binding) error {
 		if _, ok := validSchemes[binding.Scheme]; !ok {
 			return fmt.Errorf("binding %q has invalid scheme %q", name, binding.Scheme)
 		}
+
+		if binding.Scheme == acaIngressSchemaTcp && binding.ContainerPort == nil {
+			return fmt.Errorf("binding %q has scheme %q but no container port", name, binding.Scheme)
+		}
 	}
 
 	return nil

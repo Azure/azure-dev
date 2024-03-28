@@ -138,8 +138,9 @@ func TestBuildAcaIngress(t *testing.T) {
 	// Test case 6: external non-HTTP(s) endpoints
 	bindings = map[string]*Binding{
 		"a": {
-			Scheme:   acaIngressSchemaTcp,
-			External: true,
+			Scheme:        acaIngressSchemaTcp,
+			ContainerPort: to.Ptr(99),
+			External:      true,
 		},
 		"b": {
 			Scheme:        acaIngressSchemaTcp,
@@ -216,4 +217,11 @@ func TestBuildAcaIngress(t *testing.T) {
 	ingress, err = buildAcaIngress(bindings, 8080)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedIngress, ingress)
+
+	// Test case 11: tcp with no port
+	bindings = map[string]*Binding{"a": {Scheme: acaIngressSchemaTcp}}
+	ingress, err = buildAcaIngress(bindings, 8080)
+	assert.Error(t, err)
+	assert.EqualError(t, err, `binding "a" has scheme "tcp" but no container port`)
+	assert.Nil(t, ingress)
 }

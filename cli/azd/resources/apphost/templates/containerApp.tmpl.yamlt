@@ -34,6 +34,13 @@ properties:
 {{- end}}
 {{- if .Ingress}}
     ingress:
+{{- if .Ingress.AdditionalPortMappings }}
+      additionalPortMappings:
+{{- range $additionalPort := .Ingress.AdditionalPortMappings }}
+      - targetPort: {{ $additionalPort.TargetPort }}
+        external: {{ $additionalPort.External }}
+{{- end}}
+{{- end}}
       external: {{ .Ingress.External }}
       targetPort: {{ "{{ .TargetPort }}" }}
       transport: {{ .Ingress.Transport }}

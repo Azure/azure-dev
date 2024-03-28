@@ -375,7 +375,8 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			envManager := &mockenv.MockEnvManager{}
 			envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-			i := NewInitializer(console, git.NewGitCli(realRunner), nil, lazy.From[environment.Manager](envManager))
+			i := NewInitializer(
+				console, git.NewGitCli(realRunner), nil, lazy.From[environment.Manager](envManager))
 			err := i.writeCoreAssets(context.Background(), azdCtx)
 			require.NoError(t, err)
 

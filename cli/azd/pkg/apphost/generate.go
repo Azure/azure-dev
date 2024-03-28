@@ -706,8 +706,8 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 }
 
 // uniqueFnvNumber generates a unique FNV hash number for the given string value.
-// It uses the FNV-1a hash algorithm to calculate the hash value.
-// The generated hash number is returned as a hexadecimal string.
+// It uses the FNV-1a hash algorithm to calculate a 32-bit hash value.
+// The generated 32-bit hash number is returned as an 8-length hexadecimal string.
 func uniqueFnvNumber(val string) string {
 	hash := fnv.New32a()
 	hash.Write([]byte(val))

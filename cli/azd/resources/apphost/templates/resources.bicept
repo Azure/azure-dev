@@ -226,7 +226,7 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
           external: {{ $additionalPort.External }} }
 {{- end}}
         ]
-{{- end}}      
+{{- end}}
         external: {{$value.Ingress.External}}
         targetPort: {{$value.Ingress.TargetPort}}
         transport: '{{$value.Ingress.Transport}}'

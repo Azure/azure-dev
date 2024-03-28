@@ -45,7 +45,7 @@ properties:
       targetPort: {{ "{{ .TargetPort }}" }}
       transport: {{ .Ingress.Transport }}
       allowInsecure: {{ .Ingress.AllowInsecure }}
-{{- end}}
+{{- end }}
     registries:
     - server: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
       identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}

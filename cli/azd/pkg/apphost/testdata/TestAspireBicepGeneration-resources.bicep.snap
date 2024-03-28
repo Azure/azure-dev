@@ -63,8 +63,8 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   tags: tags
 }
 
-resource postgres2kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: replace('postgres-2kv-${resourceToken}', '-', '')
+resource kv854251f1 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: replace('kv854251f1-${resourceToken}', '-', '')
   location: location
   properties: {
     sku: {
@@ -76,9 +76,9 @@ resource postgres2kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-resource postgres2kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(postgres2kv.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483'))
-  scope: postgres2kv
+resource kv854251f1RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(kv854251f1.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483'))
+  scope: kv854251f1
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -86,9 +86,9 @@ resource postgres2kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022
   }
 }
 
-resource postgres2kvUserReadRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(postgres2kv.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6'))
-  scope: postgres2kv
+resource kv854251f1UserReadRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(kv854251f1.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6'))
+  scope: kv854251f1
   properties: {
     principalId: principalId
     principalType: 'User'
@@ -105,6 +105,6 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.l
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
-output SERVICE_BINDING_POSTGRES_2KV_ENDPOINT string = postgres2kv.properties.vaultUri
-output SERVICE_BINDING_POSTGRES_2KV_NAME string = postgres2kv.name
+output SERVICE_BINDING_KV854251F1_ENDPOINT string = kv854251f1.properties.vaultUri
+output SERVICE_BINDING_KV854251F1_NAME string = kv854251f1.name
 

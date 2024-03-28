@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 	"log"
 	"os"
@@ -644,7 +645,7 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 		}
 	}
 	if _, keyVaultInjected := autoInjectedParams[knownParameterKeyVault]; keyVaultInjected {
-		b.addKeyVault(name+"kv", true, true)
+		b.addKeyVault("kv"+uniqueFnvNumber(name), true, true)
 	}
 
 	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams}
@@ -686,8 +687,8 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	}
 
 	if p == knownParameterKeyVault {
-		dashToUnderscore := strings.ReplaceAll(resourceName, "-", "_")
-		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(dashToUnderscore+"kv")), true, nil
+		uniqueName := "kv" + uniqueFnvNumber(resourceName)
+		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(uniqueName)), true, nil
 	}
 	if p == knownParameterPrincipalId {
 		return knownInjectedValuePrincipalId, true, nil
@@ -702,6 +703,15 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 		return knownInjectedValueLogAnalytics, true, nil
 	}
 	return finalParamValue, false, nil
+}
+
+// uniqueFnvNumber generates a unique FNV hash number for the given string value.
+// It uses the FNV-1a hash algorithm to calculate a 32-bit hash value.
+// The generated 32-bit hash number is returned as an 8-length hexadecimal string.
+func uniqueFnvNumber(val string) string {
+	hash := fnv.New32a()
+	hash.Write([]byte(val))
+	return fmt.Sprintf("%x", hash.Sum32())
 }
 
 func (b *infraGenerator) addAppInsights(name string) {

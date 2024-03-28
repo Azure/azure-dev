@@ -924,55 +924,6 @@ func (b *infraGenerator) addDockerfile(
 	}
 }
 
-func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {
-	if len(bindings) == 0 {
-		return nil, nil
-	}
-
-	if len(bindings) == 1 {
-		for _, binding := range bindings {
-			return binding, nil
-		}
-	}
-
-	var validatedBinding *Binding
-
-	for _, binding := range bindings {
-		if validatedBinding == nil {
-			validatedBinding = binding
-			continue
-		}
-
-		if validatedBinding.External != binding.External {
-			return nil, fmt.Errorf("the external property of all bindings should match")
-		}
-
-		if validatedBinding.Transport != binding.Transport {
-			return nil, fmt.Errorf("the transport property of all bindings should match")
-		}
-
-		if validatedBinding.Protocol != binding.Protocol {
-			return nil, fmt.Errorf("the protocol property of all bindings should match")
-		}
-
-		if validatedBinding.Protocol != binding.Protocol {
-			return nil, fmt.Errorf("the protocol property of all bindings should match")
-		}
-
-		if (validatedBinding.ContainerPort == nil && binding.ContainerPort != nil) ||
-			(validatedBinding.ContainerPort != nil && binding.ContainerPort == nil) {
-			return nil, fmt.Errorf("the container port property of all bindings should match")
-		}
-
-		if validatedBinding.ContainerPort != nil && binding.ContainerPort != nil &&
-			*validatedBinding.ContainerPort != *binding.ContainerPort {
-			return nil, fmt.Errorf("the container port property of all bindings should match")
-		}
-	}
-
-	return validatedBinding, nil
-}
-
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
@@ -990,7 +941,7 @@ func (b *infraGenerator) Compile() error {
 			Volumes: container.Volumes,
 		}
 
-		ingress, err := buildIngress(container.Bindings)
+		ingress, err := buildAcaIngress(container.Bindings, 80)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
 		}
@@ -1042,7 +993,7 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 		}
 
-		ingress, err := buildIngress(docker.Bindings)
+		ingress, err := buildAcaIngress(docker.Bindings, 80)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for resource %s: %w", resourceName, err)
 		}
@@ -1064,20 +1015,11 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 		}
 
-		binding, err := validateAndMergeBindings(project.Bindings)
+		i, err := buildAcaIngress(project.Bindings, 8080)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
 		}
-
-		if binding != nil {
-			projectTemplateCtx.Ingress = &genContainerAppIngress{
-				External:  binding.External,
-				Transport: binding.Transport,
-				// This port number is for dapr
-				TargetPort:    8080,
-				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
-			}
-		}
+		projectTemplateCtx.Ingress = i
 
 		for _, dapr := range b.dapr {
 			if dapr.Application == resourceName {
@@ -1163,32 +1105,6 @@ func isComplexExpression(evaluatedString string) (bool, string) {
 		return false, removeSpecialChars
 	}
 	return true, ""
-}
-
-// buildIngress builds the ingress configuration for a given set of bindings. It returns nil, nil if no ingress should
-// be configured (i.e. the bindings are empty).
-func buildIngress(bindings map[string]*Binding) (*genContainerAppIngress, error) {
-	binding, err := validateAndMergeBindings(bindings)
-	if err != nil {
-		return nil, err
-	}
-
-	if binding != nil {
-		if binding.ContainerPort == nil {
-			return nil, fmt.Errorf(
-				"binding for does not specify a container port, " +
-					"ensure WithServiceBinding for this resource specifies a hostPort value")
-		}
-
-		return &genContainerAppIngress{
-			External:      binding.External,
-			Transport:     binding.Transport,
-			TargetPort:    *binding.ContainerPort,
-			AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
-		}, nil
-	}
-
-	return nil, nil
 }
 
 // inputEmitType controls how references to inputs are emitted in the generated file.

@@ -15,7 +15,10 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
@@ -40,7 +43,6 @@ func init() {
 				"alphaSnakeUpper":        scaffold.AlphaSnakeUpper,
 				"containerAppName":       scaffold.ContainerAppName,
 				"containerAppSecretName": scaffold.ContainerAppSecretName,
-				"toDotNotation":          scaffold.ToDotNotation,
 				"fixBackSlash": func(src string) string {
 					return strings.ReplaceAll(src, "\\", "/")
 				},
@@ -85,10 +87,11 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 		switch comp.Type {
 		case "dockerfile.v0":
 			res[name] = genDockerfile{
-				Path:     *comp.Path,
-				Context:  *comp.Context,
-				Env:      comp.Env,
-				Bindings: comp.Bindings,
+				Path:      *comp.Path,
+				Context:   *comp.Context,
+				Env:       comp.Env,
+				Bindings:  comp.Bindings,
+				BuildArgs: comp.BuildArgs,
 			}
 		}
 	}
@@ -98,7 +101,8 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
-func ContainerAppManifestTemplateForProject(manifest *Manifest, projectName string) (string, error) {
+func ContainerAppManifestTemplateForProject(
+	manifest *Manifest, projectName string) (string, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -139,35 +143,51 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 
 	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
 	// this allows the template to access the auto-gen inputs from the generator
+	type genInput struct {
+		Name   string
+		Secret bool
+		Type   string
+	}
 	type autoGenInput struct {
-		Name string
-		Len  int
+		genInput
+		MetadataConfig string
+		MetadataType   azure.AzdMetadataType
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
-		AutoGenInputs map[string][]autoGenInput
+		WithMetadataParameters []autoGenInput
+		MainToResourcesParams  []genInput
 	}
-	inputs := make(map[string][]autoGenInput)
+	var parameters []autoGenInput
+	var mapToResourceParams []genInput
 
 	// order to be deterministic when writing bicep
-	genInputKeys := maps.Keys(generator.inputs)
-	slices.Sort(genInputKeys)
+	genParametersKeys := maps.Keys(generator.bicepContext.InputParameters)
+	slices.Sort(genParametersKeys)
 
-	for _, key := range genInputKeys {
-		input := generator.inputs[key]
-		parts := strings.Split(key, ".")
-		resource, inputName := handleBicepNameQuotes(parts[0]), handleBicepNameQuotes(parts[1])
-
-		resourceGenList, exists := inputs[resource]
-		if exists {
-			inputs[resource] = append(resourceGenList, autoGenInput{Name: inputName, Len: input.DefaultMinLength})
-		} else {
-			inputs[resource] = []autoGenInput{{Name: inputName, Len: input.DefaultMinLength}}
+	for _, key := range genParametersKeys {
+		parameter := generator.bicepContext.InputParameters[key]
+		parameterMetadata := ""
+		if parameter.Default != nil && parameter.Default.Generate != nil {
+			pMetadata, err := inputMetadata(*parameter.Default.Generate)
+			if err != nil {
+				return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
+			}
+			parameterMetadata = pMetadata
+		}
+		input := genInput{Name: key, Secret: parameter.Secret, Type: parameter.Type}
+		parameters = append(parameters, autoGenInput{
+			genInput:       input,
+			MetadataConfig: parameterMetadata,
+			MetadataType:   azure.AzdMetadataTypeGenerate})
+		if slices.Contains(generator.bicepContext.mappedParameters, strings.ReplaceAll(key, "-", "_")) {
+			mapToResourceParams = append(mapToResourceParams, input)
 		}
 	}
 	context := bicepContext{
 		genBicepTemplateContext: generator.bicepContext,
-		AutoGenInputs:           inputs,
+		WithMetadataParameters:  parameters,
+		MainToResourcesParams:   mapToResourceParams,
 	}
 	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
@@ -185,17 +205,53 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	return fs, nil
 }
 
-func handleBicepNameQuotes(name string) string {
-	if strings.Contains(name, " ") || strings.Contains(name, "-") || strings.Contains(name, ".") {
-		return fmt.Sprintf("'%s'", name)
+func inputMetadata(config InputDefaultGenerate) (string, error) {
+	finalLength := convert.ToValueWithDefault(config.MinLength, 0)
+	clusterLength := convert.ToValueWithDefault(config.MinLower, 0) +
+		convert.ToValueWithDefault(config.MinUpper, 0) +
+		convert.ToValueWithDefault(config.MinNumeric, 0) +
+		convert.ToValueWithDefault(config.MinSpecial, 0)
+	if clusterLength > finalLength {
+		finalLength = clusterLength
 	}
-	return name
+
+	adaptBool := func(b *bool) *bool {
+		if b == nil {
+			return b
+		}
+		return to.Ptr(!*b)
+	}
+
+	metadataModel := azure.AutoGenInput{
+		Length:     finalLength,
+		MinLower:   config.MinLower,
+		MinUpper:   config.MinUpper,
+		MinNumeric: config.MinNumeric,
+		MinSpecial: config.MinSpecial,
+		NoLower:    adaptBool(config.Lower),
+		NoUpper:    adaptBool(config.Upper),
+		NoNumeric:  adaptBool(config.Numeric),
+		NoSpecial:  adaptBool(config.Special),
+	}
+
+	metadataBytes, err := json.Marshal(metadataModel)
+	if err != nil {
+		return "", fmt.Errorf("marshalling metadata: %w", err)
+	}
+
+	// key identifiers for objects on bicep don't need quotes, unless they have special characters, like `-` or `.`.
+	// jsonSimpleKeyRegex is used to remove the quotes from the key if no needed to avoid a bicep lint warning.
+	return jsonSimpleKeyRegex.ReplaceAllString(string(metadataBytes), "${1}:"), nil
 }
 
 // GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. The azure.yaml file as well as
 // a helpful next-steps.md file.
 func GenerateProjectArtifacts(
-	ctx context.Context, projectDir string, projectName string, manifest *Manifest, appHostProject string,
+	ctx context.Context,
+	projectDir string,
+	projectName string,
+	manifest *Manifest,
+	appHostProject string,
 ) (map[string]ContentsAndMode, error) {
 	appHostRel, err := filepath.Rel(projectDir, appHostProject)
 	if err != nil {
@@ -272,10 +328,6 @@ type infraGenerator struct {
 	// keeps the value from value.v0 resources if provided.
 	valueStrings  map[string]string
 	resourceTypes map[string]string
-	// inputs on this map holds only the inputs with `Default.Generate` configuration
-	// azd uses the env.config to persist the inputs after generating a value
-	// inputs which are not default.generate are tracked within bicepContext.InputParameters
-	inputs map[string]genInput
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
@@ -306,7 +358,6 @@ func newInfraGenerator() *infraGenerator {
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
-		inputs:                       make(map[string]genInput),
 	}
 }
 
@@ -372,17 +423,6 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 // LoadManifest loads the given manifest into the generator. It should be called before [Compile].
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
 	for name, comp := range m.Resources {
-		for k, v := range comp.Inputs {
-			if v.Default != nil && v.Default.Generate != nil && v.Default.Generate.MinLength != nil {
-				input := genInput{
-					Secret: v.Secret,
-				}
-
-				input.DefaultMinLength = *v.Default.Generate.MinLength
-				// only inputs with default.generate are tracked here
-				b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
-			}
-		}
 		if err := b.extractOutputs(comp); err != nil {
 			return fmt.Errorf("extracting outputs: %w", err)
 		}
@@ -401,7 +441,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "project.v0":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings)
 		case "container.v0":
-			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs)
+			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
 			if err != nil {
@@ -413,7 +453,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return err
 			}
 		case "dockerfile.v0":
-			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings)
+			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs)
 		case "redis.v0":
 			b.addContainerAppService(name, RedisContainerAppService)
 		case "azure.keyvault.v0":
@@ -513,6 +553,10 @@ func (b *infraGenerator) requireDaprStore() string {
 
 func (b *infraGenerator) requireLogAnalyticsWorkspace() {
 	b.bicepContext.HasLogAnalyticsWorkspace = true
+}
+
+func (b *infraGenerator) requireStorageVolume() {
+	b.bicepContext.RequiresStorageVolume = true
 }
 
 func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
@@ -749,14 +793,24 @@ func (b *infraGenerator) addStorageTable(storageAccount, tableName string) {
 }
 
 func (b *infraGenerator) addContainer(
-	name string, image string, env map[string]string, bindings map[string]*Binding, inputs map[string]Input) {
+	name string,
+	image string,
+	env map[string]string,
+	bindings map[string]*Binding,
+	inputs map[string]Input,
+	volumes []*Volume) {
 	b.requireCluster()
+
+	if len(volumes) > 0 {
+		b.requireStorageVolume()
+	}
 
 	b.containers[name] = genContainer{
 		Image:    image,
 		Env:      env,
 		Bindings: bindings,
 		Inputs:   inputs,
+		Volumes:  volumes,
 	}
 }
 
@@ -855,16 +909,18 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 }
 
 func (b *infraGenerator) addDockerfile(
-	name string, path string, context string, env map[string]string, bindings map[string]*Binding,
+	name string, path string, context string, env map[string]string,
+	bindings map[string]*Binding, buildArgs map[string]string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
 
 	b.dockerfiles[name] = genDockerfile{
-		Path:     path,
-		Context:  context,
-		Env:      env,
-		Bindings: bindings,
+		Path:      path,
+		Context:   context,
+		Env:       env,
+		Bindings:  bindings,
+		BuildArgs: buildArgs,
 	}
 }
 
@@ -917,27 +973,10 @@ func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {
 	return validatedBinding, nil
 }
 
-// containsSecretInput check if the envValue contains {resourceName.inputs.foo} and if foo is a secret input
-// envValue is generated by Aspire and it can currently hold only one input alone (non complex expressions)
-func containsSecretInput(resourceName, envValue string, inputs map[string]Input) bool {
-	prefix := fmt.Sprintf("{%s.inputs.", resourceName)
-	if !strings.HasPrefix(envValue, prefix) {
-		return false
-	}
-	// remove prefix and the last character which is '}'
-	inputName := strings.TrimSuffix(strings.TrimPrefix(envValue, prefix), "}")
-
-	for name, input := range inputs {
-		if name == inputName && input.Secret {
-			return true
-		}
-	}
-	return false
-}
-
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
+var jsonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
 
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required
@@ -948,6 +987,7 @@ func (b *infraGenerator) Compile() error {
 			Image:   container.Image,
 			Env:     make(map[string]string),
 			Secrets: make(map[string]string),
+			Volumes: container.Volumes,
 		}
 
 		ingress, err := buildIngress(container.Bindings)
@@ -956,16 +996,38 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		cs.Ingress = ingress
-
+		parameters := maps.Keys(b.bicepContext.InputParameters)
+		for i, parameter := range parameters {
+			parameters[i] = strings.ReplaceAll(parameter, "-", "_")
+		}
 		for k, value := range container.Env {
-			res, err := EvalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
+			// first evaluation using inputEmitTypeYaml to know if there are secrets on the value
+			yamlString, err := EvalString(
+				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
 			if err != nil {
 				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
 			}
-			if containsSecretInput(name, value, container.Inputs) {
-				cs.Secrets[k] = res
+			// second evaluation to build the appropriate string for bicep, which only replaces parameter names
+			// without caring about secret or not
+			bicepString, err := EvalString(
+				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
+			if err != nil {
+				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
+			}
+			if isComplexExp, val := isComplexExpression(fmt.Sprintf("'%s'", bicepString)); !isComplexExp {
+				bicepString = val
+			}
+
+			if slices.Contains(parameters, bicepString) {
+				if !slices.Contains(b.bicepContext.mappedParameters, bicepString) {
+					b.bicepContext.mappedParameters = append(b.bicepContext.mappedParameters, bicepString)
+				}
+			}
+
+			if strings.Contains(yamlString, "{{ securedParameter ") {
+				cs.Secrets[k] = bicepString
 			} else {
-				cs.Env[k] = res
+				cs.Env[k] = bicepString
 			}
 		}
 
@@ -1011,19 +1073,7 @@ func (b *infraGenerator) Compile() error {
 			projectTemplateCtx.Ingress = &genContainerAppIngress{
 				External:  binding.External,
 				Transport: binding.Transport,
-
-				// TODO(ellismg): We need to inspect the target container and determine this from the exposed ports (or ask
-				// MSBuild to tell us this value when it builds the container image). For now we just assume 8080.
-				//
-				// We can get this by running `dotnet publish` and using the `--getProperty:GeneratedContainerConfiguration`
-				// flag to get the generated docker configuration.  That's a JSON object, from that we pluck off
-				// Config.ExposedPorts, which is an object that would look like:
-				//
-				// {
-				//    "8080/tcp": {}
-				// }
-				//
-				// Note that the protocol type is apparently optional.
+				// This port number is for dapr
 				TargetPort:    8080,
 				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}
@@ -1291,23 +1341,24 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs.") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
+		replaceDash := strings.ReplaceAll(resource, "-", "_")
 		outputParts := strings.SplitN(prop, ".", 2)
 		outputType := outputParts[0]
 		outputName := outputParts[1]
 		if outputType == "outputs" {
 			if emitType == inputEmitTypeYaml {
-				return fmt.Sprintf("{{ .Env.%s_%s }}", strings.ToUpper(resource), strings.ToUpper(outputName)), nil
+				return fmt.Sprintf("{{ .Env.%s_%s }}", strings.ToUpper(replaceDash), strings.ToUpper(outputName)), nil
 			}
 			if emitType == inputEmitTypeBicep {
 				// using `{{ }}` helps to check if the result of evaluating a string is a complex expression or not.
-				return fmt.Sprintf("{{%s.outputs.%s}}", resource, outputName), nil
+				return fmt.Sprintf("{{%s.outputs.%s}}", replaceDash, outputName), nil
 			}
 			return "", fmt.Errorf("unexpected output type %s", string(emitType))
 		} else {
 			if emitType == inputEmitTypeYaml {
 				return fmt.Sprintf(
 					"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
-					strings.ToUpper(resource+"kv"),
+					strings.ToUpper(replaceDash+"kv"),
 					outputName), nil
 			}
 			if emitType == inputEmitTypeBicep {
@@ -1319,7 +1370,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		param := b.bicepContext.InputParameters[resource]
 		inputType := "parameter"
 		if param.Secret {
-			inputType = "secured-parameter"
+			inputType = "securedParameter"
 		}
 		replaceDash := strings.ReplaceAll(resource, "-", "_")
 		switch emitType {
@@ -1380,12 +1431,12 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		//  a) explicit connection string key for env, like "ConnectionStrings__resource": "XXXXX"
 		//  b) a connection string field references in the value, like "FOO": "{resource.connectionString}"
 		//  c) found placeholder for a connection string within resolved value, like "{{ connectionString resource }}"
-		//  d) found placeholder for a secured-param, like "{{ secured-parameter param }}"
+		//  d) found placeholder for a secured-param, like "{{ securedParameter param }}"
 		//  e) found placeholder for a secret output, like "{{ secretOutput kv secret }}"
 		if strings.Contains(k, "ConnectionStrings__") || // a)
 			strings.Contains(value, ".connectionString}") || // b)
 			strings.Contains(resolvedValue, "{{ connectionString") || // c)
-			strings.Contains(resolvedValue, "{{ secured-parameter ") || // d)
+			strings.Contains(resolvedValue, "{{ securedParameter ") || // d)
 			strings.Contains(resolvedValue, "{{ secretOutput ") { // e)
 
 			// handle secret-outputs:
@@ -1408,7 +1459,6 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 				// as a secret within the containerApp.
 				resolvedValue = secretOutputForDeployTemplate(resolvedValue)
 			}
-			resolvedValue = strings.ReplaceAll(resolvedValue, "{{ secured-parameter ", "{{ parameter ")
 			manifestCtx.Secrets[k] = resolvedValue
 			continue
 		}

@@ -1045,7 +1045,7 @@ func (p *BicepProvider) findCompletedDeployments(
 	}
 
 	if len(matchingDeployments) == 0 {
-		return nil, fmt.Errorf("no deployments found for environment %s", envName)
+		return nil, fmt.Errorf("'%s': %w", envName, ErrDeploymentsNotFound)
 	}
 
 	return matchingDeployments, nil
@@ -1911,7 +1911,18 @@ func inputsParameter(
 		}
 		for inputName, inputInfo := range inputResourceInfo {
 			if _, has := existingRecordsForResource[inputName]; !has {
-				val, err := password.FromAlphabet(password.LettersAndDigits, inputInfo.Len)
+				val, err := password.Generate(password.GenerateConfig{
+					Length:     inputInfo.Length,
+					NoLower:    inputInfo.NoLower,
+					NoUpper:    inputInfo.NoUpper,
+					NoNumeric:  inputInfo.NoNumeric,
+					NoSpecial:  inputInfo.NoSpecial,
+					MinLower:   inputInfo.MinLower,
+					MinUpper:   inputInfo.MinUpper,
+					MinNumeric: inputInfo.MinNumeric,
+					MinSpecial: inputInfo.MinSpecial,
+				},
+				)
 				if err != nil {
 					return inputsParameter, inputsUpdated, fmt.Errorf("generating value for input %s: %w", inputName, err)
 				}
@@ -1969,34 +1980,6 @@ func (p *BicepProvider) ensureParameters(
 		// If this parameter has a default, then there is no need for us to configure it.
 		if param.DefaultValue != nil {
 			continue
-		}
-
-		// For object inputs, if the "AZD Type" is a "inputs" see if the autoGen inputs are already available in
-		// env config.
-		if p.mapBicepTypeToInterfaceType(param.Type) == ParameterTypeObject {
-			if m, has := param.AzdMetadata(); has && m.Type != nil && *m.Type == "inputs" {
-				existingInputs := make(map[string]map[string]any)
-				if _, err := p.env.Config.GetSection("inputs", &existingInputs); err != nil {
-					return nil, fmt.Errorf("reading inputs from config: %w", err)
-				}
-
-				inputsParameter, wroteNewInput, err := inputsParameter(existingInputs, m.AutoGenerate)
-				if err != nil {
-					return nil, fmt.Errorf("generating inputs: %w", err)
-				}
-
-				if wroteNewInput {
-					if err := p.env.Config.Set("inputs", existingInputs); err != nil {
-						return nil, fmt.Errorf("saving env config: %w", err)
-					}
-					if err := p.envManager.Save(ctx, p.env); err != nil {
-						return nil, fmt.Errorf("saving environment: %w", err)
-					}
-				}
-
-				configuredParameters[key] = inputsParameter
-				continue
-			}
 		}
 
 		// This required parameter was not in parameters file - see if we stored a value in config from an earlier

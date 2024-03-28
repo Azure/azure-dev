@@ -77,6 +77,7 @@ func createBlobClient(
 		config.NewUserConfigManager(fileConfigManager),
 		cloud.AzurePublic(),
 		httpClient, mockContext.Console,
+		auth.ExternalAuthConfiguration{},
 	)
 	require.NoError(t, err)
 

@@ -10,7 +10,7 @@ properties:
     activeRevisionsMode: single
     ingress:
       external: false
-      targetPort: 8080
+      targetPort: {{ .TargetPort }}
       transport: http
       allowInsecure: true
     registries:
@@ -18,15 +18,15 @@ properties:
       identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
     secrets:
       - name: connectionstrings--cache
-        value: '{{ connectionString "cache" }}'
+        value: cache:6379
       - name: connectionstrings--markdown
-        value: '{{ .Env.SERVICE_BINDING_MARKDOWN_ENDPOINT }}'
+        value: '{{ .Env.STORAGE_BLOBENDPOINT }}'
       - name: connectionstrings--messages
-        value: '{{ .Env.SERVICE_BINDING_MESSAGES_ENDPOINT }}'
+        value: '{{ .Env.STORAGE_QUEUEENDPOINT }}'
       - name: connectionstrings--pubsub
-        value: '{{ connectionString "pubsub" }}'
+        value: pubsub:6379
       - name: connectionstrings--requestlog
-        value: '{{ .Env.SERVICE_BINDING_REQUESTLOG_ENDPOINT }}'
+        value: '{{ .Env.STORAGE_TABLEENDPOINT }}'
   template:
     containers:
     - image: {{ .Image }}

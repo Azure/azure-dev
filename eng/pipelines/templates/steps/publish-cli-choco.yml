@@ -48,9 +48,11 @@ steps:
         -Version $(MSI_VERSION)
         -Tag 'azure-dev-cli_${{ parameters.CliVersion }}'
 
-  - publish: cli/installer/choco/azd.$(MSI_VERSION).nupkg
-    artifact: choco-package
+  - task: 1ES.PublishPipelineArtifact@1
     displayName: Publish Choco Package Artifact
+    inputs: 
+      targetPath: cli/installer/choco/azd.$(MSI_VERSION).nupkg
+      artifact: choco-package
 
   - pwsh: |
       # Defense in depth: Legacy argument passing may be needed here

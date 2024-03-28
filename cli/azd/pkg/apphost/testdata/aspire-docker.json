@@ -4,6 +4,12 @@
       "type": "dockerfile.v0",
       "path": "../NodeApp/Dockerfile",
       "context": "../NodeApp",
+      "buildArgs": {
+        "SOME_STRING": "Test",
+        "SOME_BOOL": "True",
+        "SOME_NUMBER": "7",
+        "SOME_NONVALUE": null
+      },
       "env": {
         "NODE_ENV": "development",
         "PORT": "{nodeapp.bindings.http.port}",
@@ -18,11 +24,29 @@
         }
       }
     },
+    "mysqlabstract-password": {
+      "type": "parameter.v0",
+      "value": "{mysqlabstract-password.inputs.value}",
+      "inputs": {
+        "value": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 20,
+              "lower": false,
+              "minNumeric": 5,
+              "minSpecial": 5
+            }
+          }
+        }
+      }
+    },
     "mysqlabstract": {
       "type": "container.v0",
       "image": "mysql:latest",
       "env": {
-        "MYSQL_ROOT_PASSWORD": "{mysqlabstract.inputs.password}"
+        "MYSQL_ROOT_PASSWORD": "{mysqlabstract-password.value}"
       },
       "bindings": {
         "tcp": {
@@ -32,18 +56,7 @@
           "containerPort": 3306
         }
       },
-      "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract.inputs.password}",
-      "inputs": {
-        "password": {
-          "type": "string",
-          "secret": true,
-          "default": {
-            "generate": {
-              "minLength": 10
-            }
-          }
-        }
-      }
+      "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract-password.value}"
     }
   }
 }

@@ -54,9 +54,6 @@ const cAuthConfigFileName = "auth.json"
 
 const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
 
-const cExternalAuthEndpointEnvVarName = "AZD_AUTH_ENDPOINT"
-const cExternalAuthKeyEnvVarName = "AZD_AUTH_KEY"
-
 // HttpClient interface as required by MSAL library.
 type HttpClient interface {
 	httputil.HttpClient
@@ -90,6 +87,12 @@ type Manager struct {
 	ghClient            *github.FederatedTokenClient
 	httpClient          HttpClient
 	console             input.Console
+	externalAuthCfg     ExternalAuthConfiguration
+}
+
+type ExternalAuthConfiguration struct {
+	Endpoint string
+	Key      string
 }
 
 func NewManager(
@@ -98,6 +101,7 @@ func NewManager(
 	cloud *cloud.Cloud,
 	httpClient HttpClient,
 	console input.Console,
+	externalAuthCfg ExternalAuthConfiguration,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -142,9 +146,11 @@ func NewManager(
 		ghClient:            ghClient,
 		httpClient:          httpClient,
 		console:             console,
+		externalAuthCfg:     externalAuthCfg,
 	}, nil
 }
 
+// LoginScopes returns the scopes that we request an access token for when checking if a user is signed in.
 func LoginScopes(cloud *cloud.Cloud) []string {
 	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
 	return []string{
@@ -191,12 +197,9 @@ func (m *Manager) CredentialForCurrentUser(
 		options = &CredentialForCurrentUserOptions{}
 	}
 
-	if endpoint, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName); hasEndpoint {
-		if key, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName); hasKey {
-			log.Printf("delegating auth to external process since %s and %s are set",
-				cExternalAuthEndpointEnvVarName, cExternalAuthKeyEnvVarName)
-			return newRemoteCredential(endpoint, key, options.TenantID, m.httpClient), nil
-		}
+	if m.UseExternalAuth() {
+		log.Printf("delegating auth to external process")
+		return newRemoteCredential(m.externalAuthCfg.Endpoint, m.externalAuthCfg.Key, options.TenantID, m.httpClient), nil
 	}
 
 	userConfig, err := m.userConfigManager.Load()
@@ -335,11 +338,9 @@ func ShouldUseCloudShellAuth() bool {
 // for service principals.
 func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error) {
 
-	if _, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName); hasEndpoint {
-		if _, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName); hasKey {
-			// When delegating to an external system, we have no way to determine what principal was used
-			return nil, nil
-		}
+	if m.UseExternalAuth() {
+		// When delegating to an external system, we have no way to determine what principal was used
+		return nil, nil
 	}
 
 	cfg, err := m.userConfigManager.Load()
@@ -729,10 +730,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 }
 
 func (m *Manager) UseExternalAuth() bool {
-	_, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName)
-	_, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName)
-
-	return hasEndpoint && hasKey
+	return m.externalAuthCfg.Endpoint != "" && m.externalAuthCfg.Key != ""
 }
 
 func (m *Manager) saveLoginForPublicClient(res public.AuthResult) error {

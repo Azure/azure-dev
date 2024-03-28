@@ -113,18 +113,6 @@ func (s *environmentService) CreateEnvironmentAsync(
 		azdEnv.DotenvSet(key, value)
 	}
 
-	var servicesToExpose = make([]string, 0)
-
-	for _, svc := range newEnv.Services {
-		if svc.IsExternal {
-			servicesToExpose = append(servicesToExpose, svc.Name)
-		}
-	}
-
-	if err := azdEnv.Config.Set("services.app.config.exposedServices", servicesToExpose); err != nil {
-		return false, fmt.Errorf("setting exposed services: %w", err)
-	}
-
 	if err := c.envManager.Save(ctx, azdEnv); err != nil {
 		return false, fmt.Errorf("saving new environment: %w", err)
 	}

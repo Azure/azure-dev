@@ -6,7 +6,6 @@ package vsrpc
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -129,27 +128,6 @@ func (s *environmentService) loadEnvironmentAsync(
 	}
 
 	ret.Services = servicesFromManifest(manifest)
-
-	var exposedServices []string
-
-	// TODO(azure/azure-dev#3284): We need to use the service name of the apphost from azure.yaml instead of assuming
-	// it will always be "app". "app" is just the default we use when creating an azure.yaml for the user.
-	val, has := e.Config.Get("services.app.config.exposedServices")
-	if has {
-		if v, ok := val.([]any); ok {
-			for _, svc := range v {
-				if s, ok := svc.(string); ok {
-					exposedServices = append(exposedServices, s)
-				}
-			}
-		}
-	}
-
-	for _, svc := range ret.Services {
-		if slices.Contains(exposedServices, svc.Name) {
-			svc.IsExternal = true
-		}
-	}
 
 	return ret, nil
 }

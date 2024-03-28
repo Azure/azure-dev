@@ -301,13 +301,9 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
-			env := environment.NewWithValues("env", map[string]string{
+			return environment.NewWithValues("env", map[string]string{
 				"DOTNET_ENVIRONMENT": "Development",
-			})
-			// set the config to skip prompting
-			e := env.Config.Set("services.test.config.exposedServices", []interface{}{"test"})
-			require.NoError(t, e)
-			return env, nil
+			}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil

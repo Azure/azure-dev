@@ -3,10 +3,12 @@ package apphost
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -356,14 +358,17 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
 
-	expectedParameter = "resources.outputs.SERVICE_BINDING_EXAMPLEKV_NAME"
+	uniqueName := strings.ToUpper("kv" + uniqueFnvNumber(resourceName))
+	expectedParameter = fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", uniqueName)
 	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
 
-	expectedParameter = "resources.outputs.SERVICE_BINDING_EXAMPLE_01KV_NAME"
-	value, inject, err = injectValueForBicepParameter(resourceName+"-01", param, "")
+	withDash := resourceName + "-01"
+	uniqueName = strings.ToUpper("kv" + uniqueFnvNumber(withDash))
+	expectedParameter = fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", uniqueName)
+	value, inject, err = injectValueForBicepParameter(withDash, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)

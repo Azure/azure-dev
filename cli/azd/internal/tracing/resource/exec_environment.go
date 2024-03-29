@@ -44,6 +44,10 @@ func execEnvFromCaller() string {
 		return fields.EnvVisualStudioCode
 	}
 
+	if strings.Contains(userAgent, internal.VsAgentPrefix) {
+		return fields.EnvVisualStudio
+	}
+
 	return ""
 }
 

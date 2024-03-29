@@ -27,14 +27,12 @@ const cDocsFlagName = "docs"
 // CobraBuilder manages the construction of the cobra command tree from nested ActionDescriptors
 type CobraBuilder struct {
 	container *ioc.NestedContainer
-	runner    *middleware.MiddlewareRunner
 }
 
 // Creates a new instance of the Cobra builder
-func NewCobraBuilder(container *ioc.NestedContainer, runner *middleware.MiddlewareRunner) *CobraBuilder {
+func NewCobraBuilder(container *ioc.NestedContainer) *CobraBuilder {
 	return &CobraBuilder{
 		container: container,
-		runner:    runner,
 	}
 }
 
@@ -105,11 +103,6 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ctx := tools.WithInstalledCheckCache(cmd.Context())
 		ioc.RegisterInstance(cb.container, ctx)
 
-		// Register any required middleware registered for the current action descriptor
-		if err := cb.registerMiddleware(descriptor); err != nil {
-			return err
-		}
-
 		// Create new container scope for the current command
 		cmdContainer, err := cb.container.NewScope()
 		if err != nil {
@@ -122,6 +115,12 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ioc.RegisterInstance(cmdContainer, args)
 		ioc.RegisterInstance(cmdContainer, cmdContainer)
 		ioc.RegisterInstance[ioc.ServiceLocator](cmdContainer, cmdContainer)
+
+		// Register any required middleware registered for the current action descriptor
+		middlewareRunner := middleware.NewMiddlewareRunner(cmdContainer)
+		if err := cb.registerMiddleware(middlewareRunner, descriptor); err != nil {
+			return err
+		}
 
 		actionName := createActionName(cmd)
 		var action actions.Action
@@ -149,7 +148,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		// Set the container that should be used for resolving middleware components
 		runOptions.WithContainer(cmdContainer)
 		// Run the middleware chain with action
-		actionResult, err := cb.runner.RunAction(ctx, runOptions, action)
+		actionResult, err := middlewareRunner.RunAction(ctx, runOptions, action)
 
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
@@ -373,7 +372,10 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 // Registers all middleware components for the current command and any parent descriptors
 // Middleware components are insure to run in the order that they were registered from the
 // root registration, down through action groups and ultimately individual actions
-func (cb *CobraBuilder) registerMiddleware(descriptor *actions.ActionDescriptor) error {
+func (cb *CobraBuilder) registerMiddleware(
+	middlewareRunner *middleware.MiddlewareRunner,
+	descriptor *actions.ActionDescriptor,
+) error {
 	chain := []*actions.MiddlewareRegistration{}
 	current := descriptor
 
@@ -404,7 +406,7 @@ func (cb *CobraBuilder) registerMiddleware(descriptor *actions.ActionDescriptor)
 	// higher up the command structure are resolved before lower registrations
 	for i := len(chain) - 1; i > -1; i-- {
 		registration := chain[i]
-		if err := cb.runner.Use(registration.Name, registration.Resolver); err != nil {
+		if err := middlewareRunner.Use(registration.Name, registration.Resolver); err != nil {
 			return err
 		}
 	}

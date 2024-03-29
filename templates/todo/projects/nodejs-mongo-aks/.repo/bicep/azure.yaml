@@ -3,16 +3,17 @@
 name: todo-nodejs-mongo-aks
 metadata:
   template: todo-nodejs-mongo-aks@0.0.1-beta
+workflows:
+  up: 
+    steps:
+      - azd: provision
+      - azd: deploy
 services:
   web:
     project: ../../web/react-fluent
-    dist: build
+    dist: dist
     language: js
     host: aks
-    hooks:
-      postdeploy:
-        shell: sh
-        run: azd env set REACT_APP_WEB_BASE_URL ${SERVICE_WEB_ENDPOINT_URL}
   api:
     project: ../../api/js
     language: js
@@ -22,5 +23,9 @@ services:
         relativePath: api
     hooks:
       postdeploy:
-        shell: sh
-        run: azd env set REACT_APP_API_BASE_URL ${SERVICE_API_ENDPOINT_URL}
+        windows:
+          shell: pwsh
+          run: azd env set REACT_APP_API_BASE_URL $env:SERVICE_API_ENDPOINT_URL
+        posix:
+          shell: sh
+          run: azd env set REACT_APP_API_BASE_URL ${SERVICE_API_ENDPOINT_URL}

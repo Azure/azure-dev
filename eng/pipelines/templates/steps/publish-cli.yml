@@ -37,6 +37,7 @@ steps:
           -DevOpsOutputFormat
       displayName: Verify and set GitHub Release Tag
 
+  # TODO: Docker stuff should be handled as per: https://github.com/Azure/azure-sdk-tools/commit/2623b00fc5b660d48e2301977602ddd8f934ac4a
   - ${{ if eq('true', parameters.PublishContainer) }}:
     - pwsh: |
         docker login `
@@ -204,8 +205,10 @@ steps:
       }
     displayName: Upload release to storage account
 
-  - publish: release
-    artifact: UploadedReleaseArtifacts
+  - task: 1ES.PublishPipelineArtifact@1
+    inputs: 
+      targetPath: release
+      artifact: UploadedReleaseArtifacts
 
   - ${{ if eq('true', parameters.PublishShield) }}:
     - template: /eng/pipelines/templates/steps/publish-shield.yml

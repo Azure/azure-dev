@@ -350,7 +350,6 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	require.Contains(t, r.Options.Path, "azd-infra")
 	require.Equal(t, DefaultModule, r.Options.Module)
 	require.Equal(t, r.cleanupDir, r.Options.Path)
-	require.NotNil(t, r.Inputs)
 
 	// If we fetch the infrastructure again, we expect that the manifest is already cached and `dotnet run` on the apphost
 	// will not be invoked again.

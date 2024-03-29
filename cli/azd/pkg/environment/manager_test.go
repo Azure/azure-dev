@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -387,6 +388,10 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() *storage.AccountConfig {
 		return storageAccountConfig
 	})
+
+	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
+		return cloud.AzurePublic()
+	})
 }
 
 type MockDataStore struct {
@@ -426,5 +431,10 @@ func (m *MockDataStore) Reload(ctx context.Context, env *Environment) error {
 
 func (m *MockDataStore) Save(ctx context.Context, env *Environment) error {
 	args := m.Called(ctx, env)
+	return args.Error(0)
+}
+
+func (m *MockDataStore) Delete(ctx context.Context, name string) error {
+	args := m.Called(ctx, name)
 	return args.Error(0)
 }

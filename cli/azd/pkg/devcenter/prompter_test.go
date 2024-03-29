@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -417,6 +418,7 @@ func newPrompterForTest(t *testing.T, mockContext *mocks.MockContext, config *Co
 		mockContext.Credentials,
 		mockContext.CoreClientOptions,
 		resourceGraphClient,
+		cloud.AzurePublic(),
 	)
 
 	require.NoError(t, err)

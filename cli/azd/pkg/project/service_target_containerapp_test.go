@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -145,7 +146,14 @@ func createContainerAppServiceTarget(
 		mockContext.ArmClientOptions,
 		mockContext.CoreClientOptions,
 	)
-	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)
+	containerHelper := NewContainerHelper(
+		env,
+		envManager,
+		clock.NewMock(),
+		containerRegistryService,
+		dockerCli,
+		cloud.AzurePublic(),
+	)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	resourceManager := NewResourceManager(env, azCli, depOpService)

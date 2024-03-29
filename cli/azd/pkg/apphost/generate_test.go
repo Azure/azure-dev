@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -66,6 +67,7 @@ func TestAspireEscaping(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireEscapingManifest, nil)
+
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
@@ -155,6 +157,14 @@ func TestAspireBicepGeneration(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+
+	for _, name := range []string{"frontend"} {
+		t.Run(name, func(t *testing.T) {
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
+			require.NoError(t, err)
+			snapshot.SnapshotT(t, tmpl)
+		})
+	}
 }
 
 func TestAspireDockerGeneration(t *testing.T) {
@@ -352,6 +362,12 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
 
+	expectedParameter = "resources.outputs.SERVICE_BINDING_EXAMPLE_01KV_NAME"
+	value, inject, err = injectValueForBicepParameter(resourceName+"-01", param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
 	param = knownParameterPrincipalId
 	expectedParameter = `"exampleParameter"`
 
@@ -438,4 +454,54 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
+}
+
+func TestHasInputs(t *testing.T) {
+	tests := []struct {
+		name   string
+		value  string
+		result bool
+	}{
+		{
+			name:   "Valid input with inputs",
+			value:  "{resource.inputs.property}",
+			result: true,
+		},
+		{
+			name:   "Valid input with inputs dash",
+			value:  "{resource-01.inputs.property}",
+			result: true,
+		},
+		{
+			name:   "Valid input with numbers",
+			value:  "{resource001.inputs.property}",
+			result: true,
+		},
+		{
+			name:   "Valid input with numbers and dash",
+			value:  "{resource-01.inputs.property}",
+			result: true,
+		},
+		{
+			name:   "No inputs - missing inputs token",
+			value:  "{resource.property}",
+			result: false,
+		},
+		{
+			name:   "No inputs - missing close",
+			value:  "{resource.inputs.property",
+			result: false,
+		},
+		{
+			name:   "No inputs - unsupported resource",
+			value:  "{resource_001.inputs.property",
+			result: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.result, hasInputs(tt.value))
+		})
+	}
 }

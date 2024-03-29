@@ -1,25 +1,51 @@
 {
   "resources": {
     "cache": {
-      "type": "redis.v0"
+      "type": "container.v0",
+      "connectionString": "{cache.bindings.tcp.host}:{cache.bindings.tcp.port}",
+      "image": "redis:7.2.4",
+      "bindings": {
+        "tcp": {
+          "scheme": "tcp",
+          "protocol": "tcp",
+          "transport": "tcp",
+          "containerPort": 6379
+        }
+      }
     },
     "pubsub": {
-      "type": "redis.v0"
+      "type": "container.v0",
+      "connectionString": "{pubsub.bindings.tcp.host}:{pubsub.bindings.tcp.port}",
+      "image": "redis:7.2.4",
+      "bindings": {
+        "tcp": {
+          "scheme": "tcp",
+          "protocol": "tcp",
+          "transport": "tcp",
+          "containerPort": 6379
+        }
+      }
     },
     "storage": {
-      "type": "azure.storage.v0"
+      "type": "azure.bicep.v0",
+      "path": "aspire.hosting.azure.bicep.storage.bicep",
+      "params": {
+        "principalId": "",
+        "principalType": "",
+        "storageName": "storage"
+      }
     },
     "requestlog": {
-      "type": "azure.storage.table.v0",
-      "parent": "storage"
+      "type": "value.v0",
+      "connectionString": "{storage.outputs.tableEndpoint}"
     },
     "markdown": {
-      "type": "azure.storage.blob.v0",
-      "parent": "storage"
+      "type": "value.v0",
+      "connectionString": "{storage.outputs.blobEndpoint}"
     },
     "messages": {
-      "type": "azure.storage.queue.v0",
-      "parent": "storage"
+      "type": "value.v0",
+      "connectionString": "{storage.outputs.queueEndpoint}"
     },
     "apiservice": {
       "type": "project.v0",

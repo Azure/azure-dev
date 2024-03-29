@@ -3,12 +3,40 @@
 name: todo-nodejs-mongo-aca
 metadata:
   template: todo-nodejs-mongo-aca@0.0.1-beta
+workflows:
+  up: 
+    steps:
+      - azd: provision
+      - azd: deploy
 services:
   web:
-    project: ../../web/react-fluent
+    project: ./src/web
     language: js
     host: containerapp
   api:
-    project: ../../api/js
+    project: ./src/api
     language: js
     host: containerapp
+# using predeploy hook for web until
+# https://github.com/Azure/azure-dev/issues/3546 is fixed
+hooks:
+  # Creates a temporary `.env.local` file for the build command. Vite will automatically use it during build.
+  # The expected/required values are mapped to the infrastructure outputs.
+  # .env.local is ignored by git, so it will not be committed if, for any reason, if deployment fails.
+  # see: https://vitejs.dev/guide/env-and-mode
+  # Note: Notice that dotenv must be a project dependency for this to work. See package.json.
+  predeploy:
+    windows:
+      shell: pwsh
+      run: 'echo "VITE_API_BASE_URL=\"$env:API_BASE_URL\"" > ./src/web/.env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$env:APPLICATIONINSIGHTS_CONNECTION_STRING\"" >> ./src/web/.env.local'
+    posix:
+      shell: sh
+      run: 'echo VITE_API_BASE_URL=\"$API_BASE_URL\" > ./src/web/.env.local && echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> ./src/web/.env.local'    
+  postdeploy:
+    windows:
+      shell: pwsh
+      run: 'rm ./src/web/.env.local'
+    posix:
+      shell: sh
+      run: 'rm ./src/web/.env.local'
+

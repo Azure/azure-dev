@@ -9,17 +9,13 @@ param environmentName string
 @description('The location used for all deployed resources')
 param location string
 
-@secure()
 @metadata({azd: {
-  type: 'inputs'
-  autoGenerate: {
-    mysqlabstract: {
-      password: { len: 10 }
-    }
-  }}
+  type: 'generate'
+  config: {length:20,noLower:true,minNumeric:5,minSpecial:5}
+  }
 })
-param inputs object
-
+@secure()
+param mysqlabstract_password string
 
 var tags = {
   'azd-env-name': environmentName
@@ -37,7 +33,7 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-    inputs: inputs
+    mysqlabstract_password: mysqlabstract_password
   }
 }
 

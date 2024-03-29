@@ -135,10 +135,24 @@ func (c *MockConsole) WaitForEnter() {
 func (c *MockConsole) EnsureBlankLine(context context.Context) {
 }
 
+func (c *MockConsole) SupportsPromptDialog() bool {
+	return false
+}
+
+func (c *MockConsole) PromptDialog(ctx context.Context, dialog input.PromptDialog) (map[string]any, error) {
+	panic("should not have been called!")
+}
+
 // Writes a single answer prompt to the console for the user to complete
 func (c *MockConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
 	c.log = append(c.log, options.Message)
 	value, err := c.respond("Prompt", options)
+	return value.(string), err
+}
+
+func (c *MockConsole) PromptDir(ctx context.Context, options input.ConsoleOptions) (string, error) {
+	c.log = append(c.log, options.Message)
+	value, err := c.respond("PromptDir", options)
 	return value.(string), err
 }
 

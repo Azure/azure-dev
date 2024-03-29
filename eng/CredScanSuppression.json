@@ -1,0 +1,12 @@
+{
+    "tool": "Credential Scanner",
+    "suppressions": [
+      {
+        "file": [ 
+          "cli/azd/pkg/auth/testdata/certificate.pem",
+          "eng/common/testproxy/dotnet-devcert.pfx"
+        ],
+        "_justification": "File contains private key used by test code."
+      }
+    ]
+  }

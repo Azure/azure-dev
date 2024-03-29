@@ -9,18 +9,48 @@ param environmentName string
 @description('The location used for all deployed resources')
 param location string
 
-@secure()
 @metadata({azd: {
-  type: 'inputs'
-  autoGenerate: {
-    mysqlabstract: {
-      'pas-sw-ord': { len: 10 }
-      password: { len: 10 }
-    }
-  }}
+  type: 'generate'
+  config: {length:15,noSpecial:true,minLower:10,minNumeric:5}
+  }
 })
-param inputs object
-
+@secure()
+param my_sql_abstract_pas_sw_ord string
+@metadata({azd: {
+  type: 'generate'
+  config: {length:10,noSpecial:true}
+  }
+})
+@secure()
+param my_sql_abstract_password string
+@metadata({azd: {
+  type: 'generate'
+  config: {length:15,noSpecial:true,minLower:10,minNumeric:5}
+  }
+})
+@secure()
+param mysqlabstract_pas_sw_ord string
+@metadata({azd: {
+  type: 'generate'
+  config: {length:10,noSpecial:true}
+  }
+})
+@secure()
+param mysqlabstract_password string
+@metadata({azd: {
+  type: 'generate'
+  config: {length:10}
+  }
+})
+@secure()
+param noVolume_pas_sw_ord string
+@metadata({azd: {
+  type: 'generate'
+  config: {length:10}
+  }
+})
+@secure()
+param noVolume_password string
 
 var tags = {
   'azd-env-name': environmentName
@@ -38,7 +68,12 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-    inputs: inputs
+    my_sql_abstract_pas_sw_ord: my_sql_abstract_pas_sw_ord
+    my_sql_abstract_password: my_sql_abstract_password
+    mysqlabstract_pas_sw_ord: mysqlabstract_pas_sw_ord
+    mysqlabstract_password: mysqlabstract_password
+    noVolume_pas_sw_ord: noVolume_pas_sw_ord
+    noVolume_password: noVolume_password
   }
 }
 

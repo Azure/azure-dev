@@ -187,7 +187,7 @@ jobs:
     templateContext:
       outputs:
       - output: pipelineArtifact
-        path: runwix.binlog
+        path: $(Pipeline.Workspace)/runwix.binlog
         condition: always()
         artifact: diagnostics-binlog
         displayName: Upload bin log

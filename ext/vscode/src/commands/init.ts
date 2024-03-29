@@ -20,12 +20,24 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
         folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'init'));
     }
 
-    const templateUrl = options?.templateUrl ?? await selectApplicationTemplate(context);
+    let templateUrl: string | undefined = options?.templateUrl;
+    let useExistingSource: boolean = false;
+    if (!templateUrl) {
+        const selection = await selectApplicationTemplate(context);
+        templateUrl = selection.templateUrl;
+        useExistingSource = selection.useExistingSource;
+    }
 
     const azureCli = await createAzureDevCli(context);
     const command = azureCli.commandBuilder
-        .withArg('init')
-        .withNamedArg('-t', {value: templateUrl, quoting: vscode.ShellQuoting.Strong});
+        .withArg('init');
+
+    if (useExistingSource) {
+        command.withArg('--from-code');
+    } else {
+        command.withNamedArg('-t', {value: templateUrl!, quoting: vscode.ShellQuoting.Strong});
+    }
+
     const workspacePath = folder?.uri;
 
     if (options?.environmentName) {

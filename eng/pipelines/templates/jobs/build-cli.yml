@@ -193,6 +193,12 @@ jobs:
         displayName: Upload bin log
 
       - output: pipelineArtifact
+        path: cli/installer/runwix.binlog
+        condition: always()
+        artifact: installer-binlog
+        displayName: Upload installer bin log        
+
+      - output: pipelineArtifact
         path: cli/azd/cover-$(AZURE_DEV_CI_OS)
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         artifact: cover-$(AZURE_DEV_CI_OS)

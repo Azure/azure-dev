@@ -13,7 +13,7 @@ parameters:
           BuildTestMsi: true
           AZURE_DEV_CI_OS: win
           Codeql.Enabled: false
-          Codeql.SkipTaskAutoInjection: false
+          Codeql.SkipTaskAutoInjection: true
           Codeql.BuildIdentifier: cli_windows
       # Linux:
       #   Pool: $(LINUXPOOL)
@@ -141,79 +141,79 @@ stages:
               artifact: linux-packages
               displayName: Publish merged linux packages
 
-      - job: ValidateCrossCompile
-        # dependsOn: 
-        #   - ${{ each build in parameters.CrossBuildMatrix }}: 
-        #     - CrossBuildCLI_${{ build.key }}
-        pool: 
-          name: $(LINUXARMPOOL)
-          image: $(LINUXARMVMIMAGE)
-          os: linux
-        timeoutInMinutes: 5
-        steps: 
-          - checkout: none 
+      # - job: ValidateCrossCompile
+      #   # dependsOn: 
+      #   #   - ${{ each build in parameters.CrossBuildMatrix }}: 
+      #   #     - CrossBuildCLI_${{ build.key }}
+      #   pool: 
+      #     name: $(LINUXARMPOOL)
+      #     image: $(LINUXARMVMIMAGE)
+      #     os: linux
+      #   timeoutInMinutes: 5
+      #   steps: 
+      #     - checkout: none 
 
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifact: azd-linux-arm64
-              targetPath: $(Build.SourcesDirectory)
+      #     - task: DownloadPipelineArtifact@2
+      #       inputs:
+      #         artifact: azd-linux-arm64
+      #         targetPath: $(Build.SourcesDirectory)
 
-          - bash: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
-            displayName: azd version
+      #     - bash: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
+      #       displayName: azd version
 
-      - job: GenerateReleaseArtifacts
-        pool:
-          name: $(LINUXPOOL)
-          image: $(LINUXVMIMAGE)
-          os: linux
+      # - job: GenerateReleaseArtifacts
+      #   pool:
+      #     name: $(LINUXPOOL)
+      #     image: $(LINUXVMIMAGE)
+      #     os: linux
 
-        steps:
-          - checkout: self
+      #   steps:
+      #     - checkout: self
 
-          - template: /eng/pipelines/templates/steps/setup-go.yml
+      #     - template: /eng/pipelines/templates/steps/setup-go.yml
 
-          # Install scripts
-          - pwsh: |
-              New-Item -ItemType Directory -Path installer
-              Copy-Item cli/installer/*install-azd.ps1 installer/
-            displayName: Copy installer scripts (*.ps1) for artifact upload
+      #     # Install scripts
+      #     - pwsh: |
+      #         New-Item -ItemType Directory -Path installer
+      #         Copy-Item cli/installer/*install-azd.ps1 installer/
+      #       displayName: Copy installer scripts (*.ps1) for artifact upload
 
-          # CLI ref docs
-          - pwsh: New-Item -ItemType Directory -Path docs
-            workingDirectory: $(Pipeline.Workspace)
-            displayName: Create docs artifact folder
+      #     # CLI ref docs
+      #     - pwsh: New-Item -ItemType Directory -Path docs
+      #       workingDirectory: $(Pipeline.Workspace)
+      #       displayName: Create docs artifact folder
 
-          - pwsh: go run docgen.go
-            workingDirectory: cli/azd/docs
-            displayName: Generate CLI documentation
+      #     - pwsh: go run docgen.go
+      #       workingDirectory: cli/azd/docs
+      #       displayName: Generate CLI documentation
 
-          - pwsh: Copy-Item $(Build.SourcesDirectory)/cli/azd/docs/md/* docs/ -Recurse
-            workingDirectory: $(Pipeline.Workspace)
-            displayName: Copy CLI docs for pipeline artifact staging
+      #     - pwsh: Copy-Item $(Build.SourcesDirectory)/cli/azd/docs/md/* docs/ -Recurse
+      #       workingDirectory: $(Pipeline.Workspace)
+      #       displayName: Copy CLI docs for pipeline artifact staging
 
-          # azure.yaml.json schema docs
-          - task: UsePythonVersion@0
-            inputs:
-              versionSpec: 3.x
+      #     # azure.yaml.json schema docs
+      #     - task: UsePythonVersion@0
+      #       inputs:
+      #         versionSpec: 3.x
 
-          - pwsh: pip install jsonschema2md
-            displayName: Install jsonschema2md
+      #     - pwsh: pip install jsonschema2md
+      #       displayName: Install jsonschema2md
 
-          - pwsh: jsonschema2md schemas/v1.0/azure.yaml.json $(Pipeline.Workspace)/docs/azure.yaml.schema.md
-            displayName: Generate azure.yaml schema
+      #     - pwsh: jsonschema2md schemas/v1.0/azure.yaml.json $(Pipeline.Workspace)/docs/azure.yaml.schema.md
+      #       displayName: Generate azure.yaml schema
 
-          # Upload docs for CLI ref and azure.yaml schema
-          - pwsh: Get-ChildItem .
-            workingDirectory: $(Pipeline.Workspace)/docs
-            displayName: Show doc artifacts to publish
+      #     # Upload docs for CLI ref and azure.yaml schema
+      #     - pwsh: Get-ChildItem .
+      #       workingDirectory: $(Pipeline.Workspace)/docs
+      #       displayName: Show doc artifacts to publish
 
-        templateContext: 
-          outputs: 
-            - output: pipelineArtifact
-              path: installer
-              artifact: install-pwsh
+      #   templateContext: 
+      #     outputs: 
+      #       - output: pipelineArtifact
+      #         path: installer
+      #         artifact: install-pwsh
 
-            - output: pipelineArtifact
-              path: $(Pipeline.Workspace)/docs/
-              artifact: docs
-              displayName: Upload generated documentation
+      #       - output: pipelineArtifact
+      #         path: $(Pipeline.Workspace)/docs/
+      #         artifact: docs
+      #         displayName: Upload generated documentation

@@ -47,11 +47,11 @@ func (s *serverService) InitializeAsync(
 	session.rootContainer = s.server.rootContainer
 
 	if options.AuthenticationEndpoint != nil {
-		session.authEndpoint = *options.AuthenticationEndpoint
+		session.externalServicesEndpoint = *options.AuthenticationEndpoint
 	}
 
 	if options.AuthenticationKey != nil {
-		session.authKey = *options.AuthenticationKey
+		session.externalServicesKey = *options.AuthenticationKey
 	}
 
 	return &Session{

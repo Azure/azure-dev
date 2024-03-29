@@ -18,11 +18,25 @@ export async function up(context: IActionContext, selectedItem?: vscode.Uri | Tr
     const command = azureCli.commandBuilder
         .withArg('up');
 
+
+    const startTime = Date.now();
+
     // Don't wait
     void executeAsTask(command.build(), getAzDevTerminalTitle(), {
         focus: true,
         alwaysRunNew: true,
         cwd: workingFolder,
         env: azureCli.env
-    }, TelemetryId.UpCli);
+    }, TelemetryId.UpCli).then(() => {
+        const endTime = Date.now();
+
+        // Calculate the time it took to deploy
+        const timeDiff = endTime - startTime;
+        const seconds = Math.floor(timeDiff / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const remainderSeconds = seconds % 60;
+
+        // Send a toast notification to the user to note that deployment has finished
+        void context.ui.showWarningMessage(vscode.l10n.t('Deployment to Azure has finished in {0} minute(s) and {1} second(s)', minutes, remainderSeconds));
+    });
 }

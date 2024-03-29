@@ -899,7 +899,7 @@ interactions:
                 - azsdk-go-armappcontainers/v3.0.0-beta.3 (go1.21.0; linux),azdev/0.0.0-dev.0 (Go go1.21.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 6182cb696fb851f6963e75beaeb7e19c
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk?api-version=2022-11-01-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk?api-version=2023-11-02-preview
         method: GET
       response:
         proto: HTTP/2.0
@@ -968,7 +968,7 @@ interactions:
                 - azsdk-go-armappcontainers/v3.0.0-beta.3 (go1.21.0; linux),azdev/0.0.0-dev.0 (Go go1.21.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 6182cb696fb851f6963e75beaeb7e19c
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk/revisions/ca-zsryxds53ljkk--otwidyt?api-version=2022-11-01-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk/revisions/ca-zsryxds53ljkk--otwidyt?api-version=2023-11-02-preview
         method: GET
       response:
         proto: HTTP/2.0
@@ -1039,7 +1039,7 @@ interactions:
                 - azsdk-go-armappcontainers/v3.0.0-beta.3 (go1.21.0; linux),azdev/0.0.0-dev.0 (Go go1.21.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 6182cb696fb851f6963e75beaeb7e19c
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk/listSecrets?api-version=2022-11-01-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk/listSecrets?api-version=2023-11-02-preview
         method: POST
       response:
         proto: HTTP/2.0
@@ -1112,7 +1112,7 @@ interactions:
                 - azsdk-go-armappcontainers/v3.0.0-beta.3 (go1.21.0; linux),azdev/0.0.0-dev.0 (Go go1.21.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 6182cb696fb851f6963e75beaeb7e19c
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk?api-version=2022-11-01-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk?api-version=2023-11-02-preview
         method: PATCH
       response:
         proto: HTTP/2.0
@@ -1250,7 +1250,7 @@ interactions:
                 - azsdk-go-armappcontainers/v3.0.0-beta.3 (go1.21.0; linux),azdev/0.0.0-dev.0 (Go go1.21.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 6182cb696fb851f6963e75beaeb7e19c
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk?api-version=2022-11-01-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l93c276/providers/Microsoft.App/containerApps/ca-zsryxds53ljkk?api-version=2023-11-02-preview
         method: GET
       response:
         proto: HTTP/2.0

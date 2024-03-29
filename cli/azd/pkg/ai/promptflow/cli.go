@@ -4,60 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type Cli struct {
-	env           *environment.Environment
-	commandRunner exec.CommandRunner
+	env    *environment.Environment
+	aiTool *ai.Tool
 }
 
-func NewCli(env *environment.Environment, commandRunner exec.CommandRunner) *Cli {
+func NewCli(env *environment.Environment, aiTool *ai.Tool) *Cli {
 	return &Cli{
-		env:           env,
-		commandRunner: commandRunner,
+		env:    env,
+		aiTool: aiTool,
 	}
-}
-
-func (c *Cli) List(ctx context.Context, workspaceName string, resourceGroupName string) ([]*Flow, error) {
-	listArgs := exec.NewRunArgs(
-		"pfazure", "flow", "list",
-		"--workspace", workspaceName,
-		"--resource-group", resourceGroupName,
-	)
-
-	result, err := c.commandRunner.Run(ctx, listArgs)
-	if err != nil {
-		return nil, fmt.Errorf("failed listing flows: %w", err)
-	}
-
-	var flows []*Flow
-	if err := json.Unmarshal([]byte(result.Stdout), &flows); err != nil {
-		return nil, fmt.Errorf("failed unmarshalling flows: %w", err)
-	}
-
-	return flows, nil
-}
-
-func (c *Cli) Get(ctx context.Context, workspaceName string, resourceGroupName string, flowName string) (*Flow, error) {
-	existingFlows, err := c.List(ctx, workspaceName, resourceGroupName)
-	if err != nil {
-		return nil, err
-	}
-
-	index := slices.IndexFunc(existingFlows, func(f *Flow) bool {
-		return f.DisplayName == flowName
-	})
-
-	if index == -1 {
-		return nil, fmt.Errorf("flow %s not found", flowName)
-	}
-
-	return existingFlows[index], nil
 }
 
 func (c *Cli) CreateOrUpdate(
@@ -71,23 +33,34 @@ func (c *Cli) CreateOrUpdate(
 		overrides = map[string]osutil.ExpandableString{}
 	}
 
-	args := exec.NewRunArgs("pfazure", "flow")
-
-	existingFlow, err := c.Get(ctx, workspaceName, resourceGroupName, flow.DisplayName)
-	if existingFlow == nil || err != nil {
-		args = args.AppendParams("create", "--flow", flow.Path)
-	} else {
-		args = args.AppendParams("update", "--flow", existingFlow.Name)
+	getArgs := []string{
+		"get",
+		"-s", c.env.GetSubscriptionId(),
+		"-w", workspaceName,
+		"-g", resourceGroupName,
+		"-n", flow.DisplayName,
 	}
 
-	args = args.AppendParams(
-		"--workspace", workspaceName,
-		"--resource-group", resourceGroupName,
+	var createOrUpdateArgs []string
+	_, err := c.aiTool.Run(ctx, ai.PromptFlowClient, getArgs...)
+	if err == nil {
+		createOrUpdateArgs = []string{"update", "-n", flow.DisplayName}
+	} else {
+		createOrUpdateArgs = []string{"create", "-n", flow.DisplayName, "-f", flow.Path}
+	}
+
+	createOrUpdateArgs = append(createOrUpdateArgs,
+		"-s", c.env.GetSubscriptionId(),
+		"-w", workspaceName,
+		"-g", resourceGroupName,
 	)
 
-	overrides["display_name"] = osutil.NewExpandableString(flow.DisplayName)
-	overrides["description"] = osutil.NewExpandableString(flow.Description)
-	overrides["type"] = osutil.NewExpandableString(string(flow.Type))
+	if flow.Description != "" {
+		overrides["description"] = osutil.NewExpandableString(flow.Description)
+	}
+	if flow.Type != "" {
+		overrides["type"] = osutil.NewExpandableString(string(flow.Type))
+	}
 
 	for key, value := range overrides {
 		expandedValue, err := value.Envsubst(c.env.Getenv)
@@ -95,17 +68,18 @@ func (c *Cli) CreateOrUpdate(
 			return nil, fmt.Errorf("failed to expand value for key %s: %w", key, err)
 		}
 
-		args = args.AppendParams("--set", fmt.Sprintf("%s=%s", key, expandedValue))
+		createOrUpdateArgs = append(createOrUpdateArgs, "--set", fmt.Sprintf("%s=%s", key, expandedValue))
 	}
 
-	_, err = c.commandRunner.Run(ctx, args)
+	result, err := c.aiTool.Run(ctx, ai.PromptFlowClient, createOrUpdateArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("flow operation failed: %w", err)
 	}
 
-	existingFlow, err = c.Get(ctx, workspaceName, resourceGroupName, flow.DisplayName)
+	var existingFlow *Flow
+	err = json.Unmarshal([]byte(result.Stdout), &existingFlow)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal flow: %w", err)
 	}
 
 	return existingFlow, nil

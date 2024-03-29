@@ -13,7 +13,6 @@ type Flow struct {
 	Description string            `json:"description"`
 	Type        FlowType          `json:"type"`
 	Path        string            `json:"path"`
-	Code        string            `json:"code"`
 	DisplayName string            `json:"display_name"`
 	Tags        map[string]string `json:"tags"`
 }

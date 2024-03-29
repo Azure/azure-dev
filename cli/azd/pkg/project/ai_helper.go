@@ -2,9 +2,7 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -19,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
-	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/wbreza/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 )
 
@@ -29,8 +26,8 @@ type AiHelper struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
 	commandRunner      exec.CommandRunner
+	aiTool             *ai.Tool
 	flowCli            *promptflow.Cli
-	pythonCli          *python.PythonCli
 	credentials        azcore.TokenCredential
 	initialized        bool
 }
@@ -41,6 +38,7 @@ func NewAiHelper(
 	armClientOptions *arm.ClientOptions,
 	credentialProvider account.SubscriptionCredentialProvider,
 	commandRunner exec.CommandRunner,
+	aiTool *ai.Tool,
 	flowCli *promptflow.Cli,
 	pythonCli *python.PythonCli,
 ) *AiHelper {
@@ -50,8 +48,8 @@ func NewAiHelper(
 		armClientOptions:   armClientOptions,
 		credentialProvider: credentialProvider,
 		commandRunner:      commandRunner,
+		aiTool:             aiTool,
 		flowCli:            flowCli,
-		pythonCli:          pythonCli,
 	}
 }
 
@@ -65,35 +63,12 @@ func (a *AiHelper) init(ctx context.Context) error {
 		return err
 	}
 
-	if err := a.initPython(ctx); err != nil {
-		return fmt.Errorf("failed initializing Python AI app: %w", err)
+	if err := a.aiTool.Initialize(ctx); err != nil {
+		return err
 	}
 
 	a.credentials = credentials
 	a.initialized = true
-	return nil
-}
-
-func (a *AiHelper) initPython(ctx context.Context) error {
-	workingDirPath := filepath.Join(a.azdCtx.GetEnvironmentWorkDirectory(a.env.Name()), "ai")
-	if _, err := os.Stat(workingDirPath); errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(workingDirPath, osutil.PermissionDirectory); err != nil {
-			return err
-		}
-	}
-
-	if err := copyFS(resources.AiPythonApp, "ai-python", workingDirPath); err != nil {
-		return err
-	}
-
-	if err := a.pythonCli.CreateVirtualEnv(ctx, workingDirPath, ".venv"); err != nil {
-		return err
-	}
-
-	if err := a.pythonCli.InstallRequirements(ctx, workingDirPath, ".venv", "requirements.txt"); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -180,21 +155,22 @@ func (a *AiHelper) CreateEnvironmentVersion(
 		nextVersion = *envContainerResponse.Properties.NextVersion
 	}
 
-	envArgs := exec.NewRunArgs(
-		"az", "ml", "environment", "create",
-		"--name", environmentName,
-		"--file", yamlFilePath,
+	environmentArgs := []string{
+		"-t", "environment",
+		"-s", a.env.GetSubscriptionId(),
 		"-g", targetResource.ResourceGroupName(),
 		"-w", workspaceName,
-		"--version", nextVersion)
+		"-f", yamlFilePath,
+		"--set", fmt.Sprintf("name=%s", environmentName),
+		"--set", fmt.Sprintf("version=%s", nextVersion),
+	}
 
-	envArgs, err = a.applyOverrides(envArgs, config.Overrides)
+	environmentArgs, err = a.applyOverrides(environmentArgs, config.Overrides)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = a.commandRunner.Run(ctx, envArgs)
-	if err != nil {
+	if _, err := a.aiTool.Run(ctx, ai.MLClient, environmentArgs...); err != nil {
 		return nil, err
 	}
 
@@ -248,21 +224,21 @@ func (a *AiHelper) CreateModelVersion(
 		return nil, fmt.Errorf("failed parsing model name value: %w", err)
 	}
 
-	createModelArgs := exec.NewRunArgs(
-		"az", "ml", "model", "create",
-		"--name", modelName,
-		"--file", yamlFilePath,
+	modelArgs := []string{
+		"-t", "model",
+		"-s", a.env.GetSubscriptionId(),
 		"-g", targetResource.ResourceGroupName(),
 		"-w", workspaceName,
-	)
+		"-f", yamlFilePath,
+		"--set", fmt.Sprintf("name=%s", modelName),
+	}
 
-	createModelArgs, err = a.applyOverrides(createModelArgs, config.Overrides)
+	modelArgs, err = a.applyOverrides(modelArgs, config.Overrides)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = a.commandRunner.Run(ctx, createModelArgs)
-	if err != nil {
+	if _, err := a.aiTool.Run(ctx, ai.MLClient, modelArgs...); err != nil {
 		return nil, err
 	}
 
@@ -352,8 +328,6 @@ func (a *AiHelper) CreateOrUpdateEndpoint(
 		return nil, err
 	}
 
-	var endpointCreateOrUpdateArgs exec.RunArgs
-
 	_, err = endpointClient.Get(
 		ctx,
 		targetResource.ResourceGroupName(),
@@ -361,32 +335,26 @@ func (a *AiHelper) CreateOrUpdateEndpoint(
 		endpointName,
 		nil,
 	)
-	if err == nil {
-		endpointCreateOrUpdateArgs = exec.NewRunArgs(
-			"az", "ml", "online-endpoint", "update",
-			"--file", yamlFilePath,
-			"-n", endpointName,
+
+	if err != nil {
+		endpointArgs := []string{
+			"-t", "online-endpoint",
+			"-s", a.env.GetSubscriptionId(),
 			"-g", targetResource.ResourceGroupName(),
 			"-w", workspaceName,
-		)
-	} else {
-		endpointCreateOrUpdateArgs = exec.NewRunArgs("az",
-			"ml", "online-endpoint", "create",
-			"--file", yamlFilePath,
-			"-n", endpointName,
-			"-g", targetResource.ResourceGroupName(),
-			"-w", workspaceName,
-		)
-	}
+			"-f", yamlFilePath,
+			"--set", fmt.Sprintf("name=%s", endpointName),
+		}
 
-	endpointCreateOrUpdateArgs, err = a.applyOverrides(endpointCreateOrUpdateArgs, config.Overrides)
-	if err != nil {
-		return nil, err
-	}
+		endpointArgs, err = a.applyOverrides(endpointArgs, config.Overrides)
+		if err != nil {
+			return nil, err
+		}
 
-	_, err = a.commandRunner.Run(ctx, endpointCreateOrUpdateArgs)
-	if err != nil {
-		return nil, err
+		_, err = a.aiTool.Run(ctx, ai.MLClient, endpointArgs...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	endpointResponse, err := endpointClient.Get(
@@ -501,25 +469,24 @@ func (a *AiHelper) DeployToEndpoint(
 	a.env.DotenvSet("FLOW_ENDPOINT_NAME", endpointName)
 	a.env.DotenvSet("FLOW_DEPLOYMENT_NAME", deploymentName)
 
-	deploymentArgs := exec.NewRunArgs("az", "ml",
-		"online-deployment", "create",
-		"--file", yamlFilePath,
-		"--name", deploymentName,
-		"--endpoint-name", endpointName,
-		"--all-traffic",
+	deploymentArgs := []string{
+		"-t", "online-deployment",
+		"-s", a.env.GetSubscriptionId(),
 		"-g", targetResource.ResourceGroupName(),
 		"-w", workspaceName,
+		"-f", yamlFilePath,
+		"--set", fmt.Sprintf("name=%s", deploymentName),
 		"--set", fmt.Sprintf("environment=%s", environmentVersionName),
 		"--set", fmt.Sprintf("model=%s", modelVersionName),
-		"--debug",
-	)
+		"--set", fmt.Sprintf("endpoint_name=%s", endpointName),
+	}
 
 	deploymentArgs, err = a.applyOverrides(deploymentArgs, config.Deployment.Overrides)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = a.commandRunner.Run(ctx, deploymentArgs)
+	_, err = a.aiTool.Run(ctx, ai.MLClient, deploymentArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -574,10 +541,11 @@ func (a *AiHelper) CreateOrUpdateFlow(
 		return nil, err
 	}
 
+	flowName = fmt.Sprintf("%s-%d", flowName, time.Now().Unix())
 	flow := &promptflow.Flow{
-		DisplayName: fmt.Sprintf("%s-%d", flowName, time.Now().Unix()),
-		Type:        promptflow.FlowTypeChat,
+		DisplayName: flowName,
 		Path:        yamlFilePath,
+		Type:        promptflow.FlowTypeChat,
 	}
 
 	updatedFlow, err := a.flowCli.CreateOrUpdate(
@@ -663,14 +631,14 @@ func (a *AiHelper) CreateOrUpdateConnection(
 	return workspaceConnection, nil
 }
 
-func (a *AiHelper) applyOverrides(args exec.RunArgs, overrides map[string]osutil.ExpandableString) (exec.RunArgs, error) {
+func (a *AiHelper) applyOverrides(args []string, overrides map[string]osutil.ExpandableString) ([]string, error) {
 	for key, value := range overrides {
 		expandedValue, err := value.Envsubst(a.env.Getenv)
 		if err != nil {
-			return exec.RunArgs{}, fmt.Errorf("failed parsing environment override %s: %w", key, err)
+			return nil, fmt.Errorf("failed parsing environment override %s: %w", key, err)
 		}
 
-		args = args.AppendParams("--set", fmt.Sprintf("%s=%s", key, expandedValue))
+		args = append(args, "--set", fmt.Sprintf("%s=%s", key, expandedValue))
 	}
 
 	return args, nil
@@ -731,23 +699,4 @@ func (a *AiHelper) createWorkspaceConnection(
 	workspaceConnection.Properties = properties
 
 	return &workspaceConnection, nil
-}
-
-func copyFS(embedFs fs.FS, root string, target string) error {
-	return fs.WalkDir(embedFs, root, func(name string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		targetPath := filepath.Join(target, name[len(root):])
-
-		if d.IsDir() {
-			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
-		}
-
-		contents, err := fs.ReadFile(embedFs, name)
-		if err != nil {
-			return fmt.Errorf("reading file: %w", err)
-		}
-		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
-	})
 }

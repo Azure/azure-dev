@@ -202,15 +202,6 @@ const configSample = `{
 	  "parameters": {
 		"bro": "xms"
 	  }
-	},
-	"services": {
-	  "app": {
-		"config": {
-		  "exposedServices": [
-			"webapp"
-		  ]
-		}
-	  }
 	}
   }`
 

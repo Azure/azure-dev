@@ -12,7 +12,7 @@ parameters:
           BuildOutputName: azd.exe
           BuildTestMsi: true
           AZURE_DEV_CI_OS: win
-          Codeql.Enabled: true
+          Codeql.Enabled: false
           Codeql.SkipTaskAutoInjection: false
           Codeql.BuildIdentifier: cli_windows
       # Linux:

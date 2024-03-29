@@ -21,12 +21,12 @@ type PromptServerRequest = {
     options: {
         message: string;
         help: string | undefined;
-        choices: SelectChoice[] | undefined;
+        choices: PromptChoice[] | undefined;
         defaultValue: string | undefined;
     }
 };
 
-type SelectChoice = {
+type PromptChoice = {
     value: string;
     detail: string | undefined;
 };
@@ -114,7 +114,7 @@ async function promptString(context: IActionContext, isPassword: boolean, messag
     });
 }
 
-async function promptSelect(context: IActionContext, isMulti: boolean, message: string, choices: SelectChoice[], defaultValue: string | undefined, help: string | undefined): Promise<string | string[]> {
+async function promptSelect(context: IActionContext, isMulti: boolean, message: string, choices: PromptChoice[], defaultValue: string | undefined, help: string | undefined): Promise<string | string[]> {
     const pickChoices: vscode.QuickPickItem[] = choices.map(choice => { return { label: choice.value, detail: choice.detail }; });
 
     const quickPickOptions: vscode.QuickPickOptions = {
@@ -184,7 +184,7 @@ function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
         return false;
     }
 
-    if (!!maybePromptServerRequest.options.choices && (!Array.isArray(maybePromptServerRequest.options.choices) || !maybePromptServerRequest.options.choices.every(isValidSelectChoice))) {
+    if (!!maybePromptServerRequest.options.choices && (!Array.isArray(maybePromptServerRequest.options.choices) || !maybePromptServerRequest.options.choices.every(isValidPromptChoice))) {
         return false;
     }
 
@@ -195,18 +195,18 @@ function isValidPromptServerRequest(obj: unknown): obj is PromptServerRequest {
     return true;
 }
 
-function isValidSelectChoice(obj: unknown): obj is SelectChoice {
+function isValidPromptChoice(obj: unknown): obj is PromptChoice {
     if (typeof obj !== 'object' || obj === null) {
         return false;
     }
 
-    const maybeSelectChoice = obj as SelectChoice;
+    const maybePromptChoice = obj as PromptChoice;
 
-    if (typeof maybeSelectChoice.value !== 'string') {
+    if (typeof maybePromptChoice.value !== 'string') {
         return false;
     }
 
-    if (!!maybeSelectChoice.detail && typeof maybeSelectChoice.detail !== 'string') {
+    if (!!maybePromptChoice.detail && typeof maybePromptChoice.detail !== 'string') {
         return false;
     }
 

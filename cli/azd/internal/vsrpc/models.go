@@ -79,6 +79,15 @@ func newInfoProgressMessage(message string) ProgressMessage {
 	}
 }
 
+func newImportantProgressMessage(message string) ProgressMessage {
+	return ProgressMessage{
+		Message:  message,
+		Severity: Info,
+		Time:     time.Now(),
+		Kind:     Important,
+	}
+}
+
 // WithMessage returns a new ProgressMessage with the given message and timestamp set to now.
 func (m ProgressMessage) WithMessage(message string) ProgressMessage {
 	m.Message = message

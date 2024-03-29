@@ -3,11 +3,10 @@ param location string = resourceGroup().location
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
-@secure()
-param inputs object
-
 
 var resourceToken = uniqueString(resourceGroup().id)
+@secure()
+param mysqlabstract_password string
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'mi-${resourceToken}'
@@ -78,8 +77,8 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
       secrets: [
         {
           name: 'mysql-root-password'
-          value: inputs.mysqlabstract.password
-        }    
+          value: mysqlabstract_password
+        }
       ]
     }
     template: {

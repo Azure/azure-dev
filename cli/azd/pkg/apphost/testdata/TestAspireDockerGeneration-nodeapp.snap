@@ -10,7 +10,7 @@ properties:
     activeRevisionsMode: single
     ingress:
       external: true
-      targetPort: 3000
+      targetPort: {{ .TargetPort }}
       transport: http
       allowInsecure: false
     registries:
@@ -18,7 +18,7 @@ properties:
       identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
     secrets:
       - name: my-sql-connection-string
-        value: Server=mysqlabstract;Port=3306;User ID=root;Password={{ index .Inputs `mysqlabstract` `password` }}
+        value: Server=mysqlabstract;Port=3306;User ID=root;Password={{ securedParameter "mysqlabstract_password" }}
   template:
     containers:
     - image: {{ .Image }}

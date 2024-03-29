@@ -259,14 +259,6 @@ func Test_CLI_VsServer(t *testing.T) {
 			cmd.Stderr = &logWriter{initialTime: time.Now(), t: t, prefix: "[t-err] "}
 			err = cmd.Run()
 			require.NoError(t, err)
-
-			if tt.IsLive {
-				// We don't currently have a way to deprovision using server mode.
-				// For now let's just clean up the resources.
-				cli.WorkingDirectory = dir
-				cli.Env = append(cli.Env, os.Environ()...)
-				_, _ = cli.RunCommand(ctx, "down", "--force", "--purge")
-			}
 		})
 	}
 }

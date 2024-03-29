@@ -25,7 +25,7 @@ jobs:
             "mcr.microsoft.com/devcontainers/base:debian",
           ]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: "Install latest devcontainer CLI"
         run: npm install -g @devcontainers/cli
@@ -37,7 +37,7 @@ jobs:
   test-scenarios:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: "Install latest devcontainer CLI"
         run: npm install -g @devcontainers/cli
@@ -49,7 +49,7 @@ jobs:
   test-global:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: "Install latest devcontainer CLI"
         run: npm install -g @devcontainers/cli

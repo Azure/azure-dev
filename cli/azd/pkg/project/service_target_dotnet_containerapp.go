@@ -527,7 +527,7 @@ func evalBindingRefWithParent(v string, parent *apphost.Resource, env *environme
 		case "host":
 			// The host name matches the containerapp name, so we can just return the resource name.
 			return resource, nil
-		case "port":
+		case "targetPort":
 			return fmt.Sprintf(`%d`, *binding.TargetPort), nil
 		case "url":
 			var urlFormatString string

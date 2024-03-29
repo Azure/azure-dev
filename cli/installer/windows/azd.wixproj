@@ -63,7 +63,8 @@
         <Error Text="The WiX Toolset v3.11 (or newer) build tools must be installed to build this project. To download the WiX Toolset, see http://wixtoolset.org/releases/" />
     </Target>
     <!-- Work around MSBuild regression: https://github.com/dotnet/msbuild/issues/8645 -->
-    <UsingTask TaskName="GenerateCompileWithObjectPath" AssemblyFile="$(WixTasksPath)" Override="true" Runtime="CLR2"/>
-    <UsingTask TaskName="ResolveWixReferences" AssemblyFile="$(WixTasksPath)" Override="true" Runtime="CLR2"/>
-    <UsingTask TaskName="WixAssignCulture" AssemblyFile="$(WixTasksPath)" Override="true" Runtime="CLR2"/>
+    <!-- Updated to CLR4 since CLR2 results in error: This assembly is built by a runtime newer than the currently loaded runtime and cannot be loaded.-->
+    <UsingTask TaskName="GenerateCompileWithObjectPath" AssemblyFile="$(WixTasksPath)" Override="true" Runtime="CLR4"/>
+    <UsingTask TaskName="ResolveWixReferences" AssemblyFile="$(WixTasksPath)" Override="true" Runtime="CLR4"/>
+    <UsingTask TaskName="WixAssignCulture" AssemblyFile="$(WixTasksPath)" Override="true" Runtime="CLR4"/>
 </Project>

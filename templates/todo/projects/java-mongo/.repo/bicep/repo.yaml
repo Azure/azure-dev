@@ -112,9 +112,6 @@ repo:
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
 
-    - from: ../../../../common/infra/bicep/app/keyvault-secret.bicep
-      to: ./infra/app/keyvault-secret.bicep
-
     - from: ../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep
       to: ./infra/app/applicationinsights-dashboard.bicep
 

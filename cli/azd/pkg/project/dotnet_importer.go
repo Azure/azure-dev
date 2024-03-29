@@ -146,6 +146,23 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 	}, nil
 }
 
+// mapToStringSlice converts a map of strings to a slice of strings.
+// Each key-value pair in the map is converted to a string in the format "key:value",
+// where the separator is specified by the `separator` parameter.
+// If the value is an empty string, only the key is included in the resulting slice.
+// The resulting slice is returned.
+func mapToStringSlice(m map[string]string, separator string) []string {
+	var result []string
+	for key, value := range m {
+		if value == "" {
+			result = append(result, key)
+		} else {
+			result = append(result, key+separator+value)
+		}
+	}
+	return result
+}
+
 func (ai *DotNetImporter) Services(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (map[string]*ServiceConfig, error) {
@@ -201,8 +218,9 @@ func (ai *DotNetImporter) Services(
 			Language:     ServiceLanguageDocker,
 			Host:         DotNetContainerAppTarget,
 			Docker: DockerProjectOptions{
-				Path:    dockerfile.Path,
-				Context: dockerfile.Context,
+				Path:      dockerfile.Path,
+				Context:   dockerfile.Context,
+				BuildArgs: mapToStringSlice(dockerfile.BuildArgs, "="),
 			},
 		}
 

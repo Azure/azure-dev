@@ -59,12 +59,32 @@ type ProgressMessage struct {
 	AdditionalInfoLink string
 }
 
+type InitializeServerOptions struct {
+	// When non nil, AuthenticationEndpoint is the endpoint to connect to for authentication. It is in the same form as
+	// expected by the AZD_AUTH_ENDPOINT environment variable. Note that both AuthenticationEndpoint and AuthenticationKey
+	// need to be set for external authentication to be used.
+	AuthenticationEndpoint *string `json:",omitempty"`
+	// When non nil, AuthenticationKey is the key to use for authenticating to the server. It is in the same form as
+	// expected by the AZD_AUTH_KEY environment variable. Note that both AuthenticationEndpoint and AuthenticationKey
+	// need to be set for external authentication to be used.
+	AuthenticationKey *string `json:",omitempty"`
+}
+
 func newInfoProgressMessage(message string) ProgressMessage {
 	return ProgressMessage{
 		Message:  message,
 		Severity: Info,
 		Time:     time.Now(),
 		Kind:     Logging,
+	}
+}
+
+func newImportantProgressMessage(message string) ProgressMessage {
+	return ProgressMessage{
+		Message:  message,
+		Severity: Info,
+		Time:     time.Now(),
+		Kind:     Important,
 	}
 }
 

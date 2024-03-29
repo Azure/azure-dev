@@ -24,8 +24,10 @@ func newServerService(server *Server) *serverService {
 }
 
 // InitializeAsync is the server implementation of:
-// ValueTask<Session> InitializeAsync(string rootPath, CancellationToken cancellationToken);
-func (s *serverService) InitializeAsync(ctx context.Context, rootPath string) (*Session, error) {
+// ValueTask<Session> InitializeAsync(string rootPath, InitializeServerOptions options, CancellationToken cancellationToken);
+func (s *serverService) InitializeAsync(
+	ctx context.Context, rootPath string, options InitializeServerOptions,
+) (*Session, error) {
 	// TODO(azure/azure-dev#3288): Ideally the Chdir would be be something we injected into components instead of it being
 	// ambient authority. We'll get there, but for now let's also just Chdir into the root folder so places where we use
 	// a relative path will work.
@@ -43,6 +45,14 @@ func (s *serverService) InitializeAsync(ctx context.Context, rootPath string) (*
 
 	session.rootPath = rootPath
 	session.rootContainer = s.server.rootContainer
+
+	if options.AuthenticationEndpoint != nil {
+		session.authEndpoint = *options.AuthenticationEndpoint
+	}
+
+	if options.AuthenticationKey != nil {
+		session.authKey = *options.AuthenticationKey
+	}
 
 	return &Session{
 		Id: id,
@@ -73,7 +83,7 @@ func (s *serverService) StopAsync(ctx context.Context) error {
 // ServeHTTP implements http.Handler.
 func (s *serverService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serveRpc(w, r, map[string]Handler{
-		"InitializeAsync": HandlerFunc1(s.InitializeAsync),
+		"InitializeAsync": HandlerFunc2(s.InitializeAsync),
 		"StopAsync":       HandlerAction0(s.StopAsync),
 	})
 }

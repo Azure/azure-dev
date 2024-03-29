@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -29,6 +30,8 @@ type serverSession struct {
 	rootPath string
 	// root container points to server.rootContainer
 	rootContainer *ioc.NestedContainer
+	authEndpoint  string
+	authKey       string
 }
 
 // newSession creates a new session and returns the session ID and session. newSession is safe to call by multiple
@@ -149,6 +152,13 @@ func (s *serverSession) newContainer() (*container, error) {
 
 	c.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
 		return lazy.From(azdCtx)
+	})
+
+	c.MustRegisterScoped(func() auth.ExternalAuthConfiguration {
+		return auth.ExternalAuthConfiguration{
+			Endpoint: s.authEndpoint,
+			Key:      s.authKey,
+		}
 	})
 
 	return &container{

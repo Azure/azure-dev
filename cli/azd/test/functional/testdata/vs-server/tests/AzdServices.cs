@@ -67,6 +67,20 @@ public class Session {
     public string Id { get; set; } = "";
 }
 
+public class InitializeServerOptions {
+    public string AuthenticationEndpoint { get; set; } = null;
+    public string AuthenticationKey { get; set; } = null;
+}
+
+[Flags]
+public enum EnvironmentDeleteMode
+{
+    None = 0,
+    Local = 1,
+    Remote = 2,
+    All = Local | Remote
+}
+
 public class ProgressMessage
 {
     public ProgressMessage(
@@ -110,7 +124,7 @@ public interface IDebugService {
 }
 
 public interface IServerService {
-    ValueTask<Session> InitializeAsync(string rootPath, CancellationToken cancellationToken);
+    ValueTask<Session> InitializeAsync(string rootPath, InitializeServerOptions options, CancellationToken cancellationToken);
     ValueTask StopAsync(CancellationToken cancellationToken);
 }
 
@@ -119,6 +133,7 @@ public interface IEnvironmentService {
     ValueTask<Environment> OpenEnvironmentAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
     ValueTask<Environment> LoadEnvironmentAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
     ValueTask<Environment> RefreshEnvironmentAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<bool> DeleteEnvironmentAsync(Session s, string envName, EnvironmentDeleteMode mode, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
     ValueTask<bool> CreateEnvironmentAsync(Session s, Environment newEnv,IObserver<ProgressMessage> outputObserver,  CancellationToken cancellationToken);
     ValueTask<bool> SetCurrentEnvironmentAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
     ValueTask<Environment> DeployAsync(Session s, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);

@@ -1,4 +1,4 @@
-import React, { FC, ReactElement } from 'react';
+import { FC, ReactElement } from 'react';
 import TodoListMenu from '../components/todoListMenu';
 import { TodoList } from '../models/todoList';
 

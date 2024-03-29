@@ -8,6 +8,11 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 // debugService is the RPC server for the '/TestDebugService/v1.0' endpoint. It is only exposed when
@@ -17,11 +22,14 @@ type debugService struct {
 	// When non-nil, TestCancelAsync will call `Done` on this wait group before waiting to observe
 	// cancellation. This allows test code to orchestrate when it sends the cancellation message and to
 	// know the RPC is ready to observe it.
-	wg *sync.WaitGroup
+	wg     *sync.WaitGroup
+	server *Server
 }
 
-func newDebugService() *debugService {
-	return &debugService{}
+func newDebugService(server *Server) *debugService {
+	return &debugService{
+		server: server,
+	}
 }
 
 // TestCancelAsync is the server implementation of:
@@ -41,8 +49,8 @@ func (s *debugService) TestCancelAsync(ctx context.Context, timeoutMs int) (bool
 	}
 }
 
-// TestCancelAsync is the server implementation of:
-// ValueTask<bool> TestIObserver(int, CancellationToken);
+// TestIObserverAsync is the server implementation of:
+// ValueTask<bool> TestIObserverAsync(int, CancellationToken);
 //
 // It emits a sequence of integers to the observer, from 0 to max, and then completes the observer, before returning.
 func (s *debugService) TestIObserverAsync(ctx context.Context, max int, observer IObserver[int]) error {
@@ -53,10 +61,48 @@ func (s *debugService) TestIObserverAsync(ctx context.Context, max int, observer
 	return nil
 }
 
+// TestPanicAsync is the server implementation of:
+// ValueTask<AccessToken> TestPanicAsync(string, CancellationToken);
+//
+// It causes a go `panic` with a given message string message.
+func (s *debugService) TestPanicAsync(ctx context.Context, message string) error {
+	panic(message)
+}
+
+// FetchTokenAsync is the server implementation of:
+// ValueTask<AccessToken> FetchTokenAsync(Session, CancellationToken);
+//
+// It fetches an access token for the current user and returns it.
+func (s *debugService) FetchTokenAsync(ctx context.Context, sessionId Session) (azcore.AccessToken, error) {
+	session, err := s.server.validateSession(ctx, sessionId)
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	var c struct {
+		cred azcore.TokenCredential `container:"type"`
+	}
+
+	container, err := session.newContainer()
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	if err := container.Fill(&c); err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	return c.cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: auth.LoginScopes(cloud.AzurePublic()),
+	})
+}
+
 // ServeHTTP implements http.Handler.
 func (s *debugService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serveRpc(w, r, map[string]Handler{
 		"TestCancelAsync":    HandlerFunc1(s.TestCancelAsync),
 		"TestIObserverAsync": HandlerAction2(s.TestIObserverAsync),
+		"TestPanicAsync":     HandlerAction1(s.TestPanicAsync),
+		"FetchTokenAsync":    HandlerFunc1(s.FetchTokenAsync),
 	})
 }

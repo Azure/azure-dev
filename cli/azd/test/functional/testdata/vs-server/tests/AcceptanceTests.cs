@@ -15,7 +15,7 @@ public class AcceptanceTests : TestBase
     public async Task ManageEnvironments()
     {
         IObserver<ProgressMessage> observer = new WriterObserver<ProgressMessage>();
-        var session = await svrSvc.InitializeAsync(_rootDir, CancellationToken.None);
+        var session = await svrSvc.InitializeAsync(_rootDir, new InitializeServerOptions(), CancellationToken.None);
         var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);
         var environments = (await esSvc.GetEnvironmentsAsync(session, observer, CancellationToken.None)).ToList();
         environments.ShouldBeEmpty();
@@ -99,13 +99,23 @@ public class AcceptanceTests : TestBase
         File.Exists(loadEnv.Services[0].Path).ShouldBeTrue();
         File.Exists(loadEnv.Services[1].Path).ShouldBeTrue();
 
+        // Delete environments
+        var deleted1 = await esSvc.DeleteEnvironmentAsync(session, e.Name, EnvironmentDeleteMode.Local, observer, CancellationToken.None);
+        deleted1.ShouldBeTrue();
+
+        var deleted2 = await esSvc.DeleteEnvironmentAsync(session, e2.Name, EnvironmentDeleteMode.All, observer, CancellationToken.None);
+        deleted2.ShouldBeTrue();
+
+        environments = (await esSvc.GetEnvironmentsAsync(session, observer, CancellationToken.None)).ToList();
+        environments.ShouldBeEmpty();
+
         await svrSvc.StopAsync(CancellationToken.None);
     }
 
     [Test]
     public async Task LiveDeployRefresh() {
         IObserver<ProgressMessage> observer = new WriterObserver<ProgressMessage>();
-        var session = await svrSvc.InitializeAsync(_rootDir, CancellationToken.None);
+        var session = await svrSvc.InitializeAsync(_rootDir, new InitializeServerOptions(), CancellationToken.None);
         var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);
 
         Environment e = new Environment(_envName) {
@@ -149,6 +159,9 @@ public class AcceptanceTests : TestBase
         refreshResult.LastDeployment.ShouldNotBeNull();
         refreshResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
         refreshResult.Resources.ShouldNotBeEmpty();
+
+        var deleted = await esSvc.DeleteEnvironmentAsync(session, e.Name, EnvironmentDeleteMode.All, observer, CancellationToken.None);
+        deleted.ShouldBeTrue();
 
         await svrSvc.StopAsync(CancellationToken.None);
     }

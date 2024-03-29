@@ -14,7 +14,7 @@ import (
 )
 
 // cSwaCliPackage is the npm package (including the version version) we execute with npx to run the SWA CLI.
-const cSwaCliPackage = "@azure/static-web-apps-cli@1.0.6"
+const cSwaCliPackage = "@azure/static-web-apps-cli@1.1.7"
 
 func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
 	return &swaCli{
@@ -25,7 +25,7 @@ func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
 type SwaCli interface {
 	tools.ExternalTool
 
-	Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error
+	//Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error
 	Deploy(
 		ctx context.Context,
 		cwd string,
@@ -77,7 +77,7 @@ func (cli *swaCli) Deploy(
 		appName,
 		environment,
 	)
-	
+
 	fullAppFolderPath := filepath.Join(cwd, appFolderPath)
 	res, err := cli.executeCommand(ctx,
 		fullAppFolderPath, "deploy",

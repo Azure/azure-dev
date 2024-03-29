@@ -1199,10 +1199,10 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			// The host name matches the containerapp name, so we can just return the resource name.
 			return resource, nil
 		case "port":
-			if binding.ContainerPort == nil {
+			if binding.TargetPort == nil {
 				return "0", nil
 			}
-			return fmt.Sprintf(`%d`, *binding.ContainerPort), nil
+			return fmt.Sprintf(`%d`, *binding.TargetPort), nil
 		case "url":
 			var urlFormatString string
 

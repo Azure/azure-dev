@@ -17,8 +17,8 @@ func buildAcaIngress(bindings map[string]*Binding, defaultIngressPort int) (*gen
 	endpointByContainerPort := make(map[string][]*Binding)
 	for _, binding := range bindings {
 		bindingKey := "default" // default is for those with no container port
-		if binding.ContainerPort != nil {
-			bindingKey = fmt.Sprintf("%d", *binding.ContainerPort)
+		if binding.TargetPort != nil {
+			bindingKey = fmt.Sprintf("%d", *binding.TargetPort)
 		}
 		endpointByContainerPort[bindingKey] = append(endpointByContainerPort[bindingKey], binding)
 	}
@@ -27,8 +27,8 @@ func buildAcaIngress(bindings map[string]*Binding, defaultIngressPort int) (*gen
 	for containerPort, bindings := range endpointByContainerPort {
 		props := &endpointGroupProperties{httpOnly: true}
 		for _, binding := range bindings {
-			if binding.ContainerPort != nil {
-				props.port = *binding.ContainerPort
+			if binding.TargetPort != nil {
+				props.port = *binding.TargetPort
 			}
 			if binding.External {
 				props.external = true
@@ -158,7 +158,7 @@ func validateInput(bindings map[string]*Binding) error {
 
 		switch binding.Scheme {
 		case acaIngressSchemaTcp:
-			if binding.ContainerPort == nil {
+			if binding.TargetPort == nil {
 				return fmt.Errorf("binding %q has scheme %q but no container port", name, binding.Scheme)
 			}
 		case acaIngressSchemaHttp:

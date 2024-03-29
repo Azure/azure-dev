@@ -52,10 +52,10 @@ func TestBuildAcaIngress(t *testing.T) {
 			Transport: acaIngressTransportHttp2,
 		},
 		"8080": {
-			ContainerPort: to.Ptr(90),
-			External:      true,
-			Scheme:        acaIngressSchemaHttp,
-			Transport:     acaIngressTransportHttp2,
+			TargetPort: to.Ptr(90),
+			External:   true,
+			Scheme:     acaIngressSchemaHttp,
+			Transport:  acaIngressTransportHttp2,
 		},
 	}
 	ingress, err = buildAcaIngress(bindings, 8080)
@@ -74,9 +74,9 @@ func TestBuildAcaIngress(t *testing.T) {
 			Transport: acaIngressTransportHttp2,
 		},
 		"other": {
-			ContainerPort: to.Ptr(90),
-			Scheme:        acaIngressSchemaHttp,
-			Transport:     acaIngressTransportHttp2,
+			TargetPort: to.Ptr(90),
+			Scheme:     acaIngressSchemaHttp,
+			Transport:  acaIngressTransportHttp2,
 		},
 	}
 	ingress, err = buildAcaIngress(bindings, 8080)
@@ -87,46 +87,46 @@ func TestBuildAcaIngress(t *testing.T) {
 	// Test case 5: More than 5 additional ports
 	bindings = map[string]*Binding{
 		"80": {
-			ContainerPort: to.Ptr(80),
-			External:      false,
-			Scheme:        acaIngressSchemaHttp,
-			Transport:     acaIngressTransportHttp2,
+			TargetPort: to.Ptr(80),
+			External:   false,
+			Scheme:     acaIngressSchemaHttp,
+			Transport:  acaIngressTransportHttp2,
 		},
 		"443": {
-			ContainerPort: to.Ptr(443),
-			External:      false,
-			Scheme:        acaIngressSchemaHttps,
-			Transport:     acaIngressTransportHttp2,
+			TargetPort: to.Ptr(443),
+			External:   false,
+			Scheme:     acaIngressSchemaHttps,
+			Transport:  acaIngressTransportHttp2,
 		},
 		"8080": {
-			ContainerPort: to.Ptr(8080),
-			External:      true,
-			Scheme:        acaIngressSchemaHttp,
-			Transport:     acaIngressTransportHttp2,
+			TargetPort: to.Ptr(8080),
+			External:   true,
+			Scheme:     acaIngressSchemaHttp,
+			Transport:  acaIngressTransportHttp2,
 		},
 		"8081": {
-			ContainerPort: to.Ptr(8081),
-			External:      false,
-			Scheme:        acaIngressSchemaHttp,
-			Transport:     acaIngressTransportHttp2,
+			TargetPort: to.Ptr(8081),
+			External:   false,
+			Scheme:     acaIngressSchemaHttp,
+			Transport:  acaIngressTransportHttp2,
 		},
 		"8082": {
-			ContainerPort: to.Ptr(8082),
-			External:      false,
-			Scheme:        acaIngressSchemaHttp,
-			Transport:     acaIngressTransportHttp2,
+			TargetPort: to.Ptr(8082),
+			External:   false,
+			Scheme:     acaIngressSchemaHttp,
+			Transport:  acaIngressTransportHttp2,
 		},
 		"8083": {
-			ContainerPort: to.Ptr(8083),
-			External:      false,
-			Scheme:        acaIngressSchemaHttp,
-			Transport:     acaIngressTransportHttp2,
+			TargetPort: to.Ptr(8083),
+			External:   false,
+			Scheme:     acaIngressSchemaHttp,
+			Transport:  acaIngressTransportHttp2,
 		},
 		"8084": {
-			ContainerPort: to.Ptr(8084),
-			External:      false,
-			Scheme:        acaIngressSchemaHttp,
-			Transport:     acaIngressTransportHttp2,
+			TargetPort: to.Ptr(8084),
+			External:   false,
+			Scheme:     acaIngressSchemaHttp,
+			Transport:  acaIngressTransportHttp2,
 		},
 	}
 	ingress, err = buildAcaIngress(bindings, 8080)
@@ -138,17 +138,17 @@ func TestBuildAcaIngress(t *testing.T) {
 	// Test case 6: external non-HTTP(s) endpoints
 	bindings = map[string]*Binding{
 		"a": {
-			Scheme:        acaIngressSchemaTcp,
-			ContainerPort: to.Ptr(99),
-			External:      true,
+			Scheme:     acaIngressSchemaTcp,
+			TargetPort: to.Ptr(99),
+			External:   true,
 		},
 		"b": {
-			Scheme:        acaIngressSchemaTcp,
-			ContainerPort: to.Ptr(33),
+			Scheme:     acaIngressSchemaTcp,
+			TargetPort: to.Ptr(33),
 		},
 		"c": {
-			ContainerPort: to.Ptr(10),
-			Scheme:        acaIngressSchemaTcp,
+			TargetPort: to.Ptr(10),
+			Scheme:     acaIngressSchemaTcp,
 		},
 	}
 	ingress, err = buildAcaIngress(bindings, 8080)
@@ -159,8 +159,8 @@ func TestBuildAcaIngress(t *testing.T) {
 	// Test case 7: no http
 	bindings = map[string]*Binding{
 		"a": {
-			Scheme:        acaIngressSchemaTcp,
-			ContainerPort: to.Ptr(33),
+			Scheme:     acaIngressSchemaTcp,
+			TargetPort: to.Ptr(33),
 		},
 	}
 	expectedIngress = &genContainerAppIngress{
@@ -192,8 +192,8 @@ func TestBuildAcaIngress(t *testing.T) {
 	// Test case 10: additional
 	bindings = map[string]*Binding{
 		"a": {
-			Scheme:        acaIngressSchemaTcp,
-			ContainerPort: to.Ptr(33),
+			Scheme:     acaIngressSchemaTcp,
+			TargetPort: to.Ptr(33),
 		},
 		"i": {
 			Scheme:   acaIngressSchemaHttp,

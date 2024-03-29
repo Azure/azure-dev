@@ -52,7 +52,7 @@
           "scheme": "tcp",
           "protocol": "tcp",
           "transport": "tcp",
-          "containerPort": 3306
+          "targetPort": 3306
         }
       },
       "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract-password.value}"
@@ -109,7 +109,7 @@
           "scheme": "tcp",
           "protocol": "tcp",
           "transport": "tcp",
-          "containerPort": 3306
+          "targetPort": 3306
         }
       },
       "connectionString": "Server={my-sql-abstract.bindings.tcp.host};Port={my-sql-abstract.bindings.tcp.port};User ID=root;Password={my-sql-abstract-password.value}"
@@ -156,7 +156,7 @@
           "scheme": "tcp",
           "protocol": "tcp",
           "transport": "tcp",
-          "containerPort": 3306
+          "targetPort": 3306
         }
       },
       "connectionString": "Server={noVolume.bindings.tcp.host};Port={noVolume.bindings.tcp.port};User ID=root;Password={noVolume-password.value}"

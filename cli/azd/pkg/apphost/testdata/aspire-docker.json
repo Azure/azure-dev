@@ -20,7 +20,7 @@
           "scheme": "http",
           "protocol": "tcp",
           "transport": "http",
-          "containerPort": 3000
+          "targetPort": 3000
         }
       }
     },
@@ -53,7 +53,7 @@
           "scheme": "tcp",
           "protocol": "tcp",
           "transport": "tcp",
-          "containerPort": 3306
+          "targetPort": 3306
         }
       },
       "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract-password.value}"

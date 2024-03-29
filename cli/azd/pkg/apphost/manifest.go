@@ -103,11 +103,11 @@ type Reference struct {
 }
 
 type Binding struct {
-	ContainerPort *int   `json:"containerPort,omitempty"`
-	Scheme        string `json:"scheme"`
-	Protocol      string `json:"protocol"`
-	Transport     string `json:"transport"`
-	External      bool   `json:"external"`
+	TargetPort *int   `json:"targetPort,omitempty"`
+	Scheme     string `json:"scheme"`
+	Protocol   string `json:"protocol"`
+	Transport  string `json:"transport"`
+	External   bool   `json:"external"`
 }
 
 type Volume struct {

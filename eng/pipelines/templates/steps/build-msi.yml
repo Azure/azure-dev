@@ -1,5 +1,5 @@
 parameters: 
-  CliVersion: $(CLI_VERSION)
+  CliVersion: 1.0.0
   Title: Build MSI
   Condition: succeeded()
   # Building for release will specify a version number directly and the MSI will

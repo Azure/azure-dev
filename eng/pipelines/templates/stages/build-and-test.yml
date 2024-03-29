@@ -15,69 +15,69 @@ parameters:
           Codeql.Enabled: true
           Codeql.SkipTaskAutoInjection: false
           Codeql.BuildIdentifier: cli_windows
-      Linux:
-        Pool: $(LINUXPOOL)
-        OSVmImage: $(LINUXVMIMAGE)
-        OS: linux
-        ImageKey: image
-        Variables: 
-            BuildTarget: azd-linux-amd64
-            BuildOutputName: azd
-            SetExecutableBit: true
-            SetShieldInfo: true
-            BuildLinuxPackages: true
-            AZURE_DEV_CI_OS: lin
-            Codeql.Enabled: true
-            Codeql.SkipTaskAutoInjection: false
-            Codeql.BuildIdentifier: cli_linux
-      Mac:
-        Pool: Azure Pipelines
-        OSVmImage: $(MACVMIMAGE)
-        OS: macOS
-        ImageKey: vmImage
-        Variables: 
-          BuildTarget: azd-darwin-amd64
-          BuildOutputName: azd
-          MacLocalSign: false
-          SetExecutableBit: true
-          AZURE_DEV_CI_OS: mac
-          # CodeQL on macOS not supported by the Azure DevOps task as-of current.
-          # Codeql.BuildIdentifier: cli_darwin
+      # Linux:
+      #   Pool: $(LINUXPOOL)
+      #   OSVmImage: $(LINUXVMIMAGE)
+      #   OS: linux
+      #   ImageKey: image
+      #   Variables: 
+      #       BuildTarget: azd-linux-amd64
+      #       BuildOutputName: azd
+      #       SetExecutableBit: true
+      #       SetShieldInfo: true
+      #       BuildLinuxPackages: true
+      #       AZURE_DEV_CI_OS: lin
+      #       Codeql.Enabled: true
+      #       Codeql.SkipTaskAutoInjection: false
+      #       Codeql.BuildIdentifier: cli_linux
+      # Mac:
+      #   Pool: Azure Pipelines
+      #   OSVmImage: $(MACVMIMAGE)
+      #   OS: macOS
+      #   ImageKey: vmImage
+      #   Variables: 
+      #     BuildTarget: azd-darwin-amd64
+      #     BuildOutputName: azd
+      #     MacLocalSign: false
+      #     SetExecutableBit: true
+      #     AZURE_DEV_CI_OS: mac
+      #     # CodeQL on macOS not supported by the Azure DevOps task as-of current.
+      #     # Codeql.BuildIdentifier: cli_darwin
   - name: CrossBuildMatrix
     type: object
     default:
       # Compliant image name required
-      LinuxARM64: 
-        Pool: $(LINUXARMPOOL)
-        OSVmImage: $(LINUXARMVMIMAGE)
-        OS: linux
-        ImageKey: image
-        HostArchitecture: Arm64
-        PreBuildSteps:
-          - pwsh: sudo tdnf install -y build-essential
-            displayName: Install build-essential
-        Variables: 
-          BuildTarget: azd-linux-arm64
-          BuildOutputName: azd
-          SetExecutableBit: true
-          GOOS: linux
-          GOARCH: arm64
-          BuildLinuxPackages: true
-      MacARM64:
-        Pool: Azure Pipelines
-        OSVmImage: $(MACVMIMAGE)
-        OS: macOS
-        ImageKey: vmImage
-        HostArchitecture: x86_64
-        PreBuildSteps: []
-        Variables: 
-          BuildTarget: azd-darwin-arm64
-          BuildOutputName: azd
-          SetExecutableBit: true
-          GOOS: darwin
-          GOARCH: arm64
-          # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
-          CGO_ENABLED: 1
+      # LinuxARM64: 
+      #   Pool: $(LINUXARMPOOL)
+      #   OSVmImage: $(LINUXARMVMIMAGE)
+      #   OS: linux
+      #   ImageKey: image
+      #   HostArchitecture: Arm64
+      #   PreBuildSteps:
+      #     - pwsh: sudo tdnf install -y build-essential
+      #       displayName: Install build-essential
+      #   Variables: 
+      #     BuildTarget: azd-linux-arm64
+      #     BuildOutputName: azd
+      #     SetExecutableBit: true
+      #     GOOS: linux
+      #     GOARCH: arm64
+      #     BuildLinuxPackages: true
+      # MacARM64:
+      #   Pool: Azure Pipelines
+      #   OSVmImage: $(MACVMIMAGE)
+      #   OS: macOS
+      #   ImageKey: vmImage
+      #   HostArchitecture: x86_64
+      #   PreBuildSteps: []
+      #   Variables: 
+      #     BuildTarget: azd-darwin-arm64
+      #     BuildOutputName: azd
+      #     SetExecutableBit: true
+      #     GOOS: darwin
+      #     GOARCH: arm64
+      #     # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
+      #     CGO_ENABLED: 1
 
 stages: 
   - stage: BuildAndTest

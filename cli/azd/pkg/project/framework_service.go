@@ -24,6 +24,7 @@ const (
 	ServiceLanguagePython     ServiceLanguageKind = "python"
 	ServiceLanguageJava       ServiceLanguageKind = "java"
 	ServiceLanguageDocker     ServiceLanguageKind = "docker"
+	ServiceLanguageSwa        ServiceLanguageKind = "swa"
 )
 
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {

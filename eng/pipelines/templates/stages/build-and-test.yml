@@ -115,8 +115,8 @@ stages:
           image: $(LINUXVMIMAGE)
           os: linux
         dependsOn:
-          - ${{ each build in parameters.CrossBuildMatrix }}: 
-            - CrossBuildCLI_${{ build.key }}
+          # - ${{ each build in parameters.CrossBuildMatrix }}: 
+          #   - CrossBuildCLI_${{ build.key }}
           - ${{ each build in parameters.BuildMatrix }}: 
             - BuildCLI_${{ build.key }}
         steps:
@@ -142,9 +142,9 @@ stages:
               displayName: Publish merged linux packages
 
       - job: ValidateCrossCompile
-        dependsOn: 
-          - ${{ each build in parameters.CrossBuildMatrix }}: 
-            - CrossBuildCLI_${{ build.key }}
+        # dependsOn: 
+        #   - ${{ each build in parameters.CrossBuildMatrix }}: 
+        #     - CrossBuildCLI_${{ build.key }}
         pool: 
           name: $(LINUXARMPOOL)
           image: $(LINUXARMVMIMAGE)

@@ -54,5 +54,6 @@ steps:
       msbuildArguments: >-
         /p:RunWixToolsOutOfProc=true
         /p:Configuration=Release
+        /bl:runwix.binlog
         $(MSI_PRODUCT_NAME_PARAM)
         $(MSI_VERSION_PARAM)

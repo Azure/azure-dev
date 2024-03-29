@@ -29,39 +29,39 @@ jobs:
     timeoutInMinutes: 180
     steps:
       - checkout: self
-      - template: /eng/pipelines/templates/steps/setup-go.yml
-        parameters:
-          Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+      # - template: /eng/pipelines/templates/steps/setup-go.yml
+      #   parameters:
+      #     Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
-      - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+      # - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
-      - task: PowerShell@2
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: eng/scripts/Set-CliVersionVariable.ps1
-        displayName: Set CLI_VERSION
+      # - task: PowerShell@2
+      #   inputs:
+      #     pwsh: true
+      #     targetType: filePath
+      #     filePath: eng/scripts/Set-CliVersionVariable.ps1
+      #   displayName: Set CLI_VERSION
 
-      - task: PowerShell@2
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: eng/scripts/Set-CliBuildVariables.ps1
-          arguments: -BuildReason $(Build.Reason)
-        displayName: Set CLI build run variables
+      # - task: PowerShell@2
+      #   inputs:
+      #     pwsh: true
+      #     targetType: filePath
+      #     filePath: eng/scripts/Set-CliBuildVariables.ps1
+      #     arguments: -BuildReason $(Build.Reason)
+      #   displayName: Set CLI build run variables
 
-      - task: PowerShell@2
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: cli/azd/ci-build.ps1
-          arguments: >-
-            -Version $(CLI_VERSION)
-            -SourceVersion $(Build.SourceVersion)
-            -CodeCoverageEnabled
-            -BuildRecordMode
-          workingDirectory: cli/azd
-        displayName: Build Go Binary (For tests)
+      # - task: PowerShell@2
+      #   inputs:
+      #     pwsh: true
+      #     targetType: filePath
+      #     filePath: cli/azd/ci-build.ps1
+      #     arguments: >-
+      #       -Version $(CLI_VERSION)
+      #       -SourceVersion $(Build.SourceVersion)
+      #       -CodeCoverageEnabled
+      #       -BuildRecordMode
+      #     workingDirectory: cli/azd
+      #   displayName: Build Go Binary (For tests)
 
       - template: /eng/pipelines/templates/steps/build-msi.yml
         parameters:
@@ -186,6 +186,12 @@ jobs:
 
     templateContext:
       outputs:
+      - output: pipelineArtifact
+        path: runwix.binlog
+        condition: always()
+        artifact: diagnostics-binlog
+        displayName: Upload bin log
+
       - output: pipelineArtifact
         path: cli/azd/cover-$(AZURE_DEV_CI_OS)
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

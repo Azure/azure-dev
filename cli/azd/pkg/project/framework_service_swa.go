@@ -96,10 +96,21 @@ func (p *swaProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			if err := p.swa.Build(
+
+			previewerWriter := p.console.ShowPreviewer(ctx,
+				&input.ShowPreviewerOptions{
+					Prefix:       "  ",
+					MaxLineCount: 8,
+					Title:        "Build SWA Project",
+				})
+			err := p.swa.Build(
 				ctx,
 				serviceConfig.Path(),
-			); err != nil {
+				previewerWriter,
+			)
+			p.console.StopPreviewer(ctx, false)
+
+			if err != nil {
 				task.SetError(fmt.Errorf("swa build: %w", err))
 				return
 			}

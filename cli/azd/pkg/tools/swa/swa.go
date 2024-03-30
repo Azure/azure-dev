@@ -6,8 +6,10 @@ package swa
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -25,7 +27,7 @@ func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
 type SwaCli interface {
 	tools.ExternalTool
 
-	Build(ctx context.Context, cwd string) error
+	Build(ctx context.Context, cwd string, buildProgress io.Writer) error
 	Deploy(
 		ctx context.Context,
 		cwd string,
@@ -33,8 +35,6 @@ type SwaCli interface {
 		subscriptionId string,
 		resourceGroup string,
 		appName string,
-		appFolderPath string,
-		outputRelativeFolderPath string,
 		environment string,
 		deploymentToken string,
 	) (string, error)
@@ -45,13 +45,17 @@ type swaCli struct {
 	commandRunner exec.CommandRunner
 }
 
-func (cli *swaCli) Build(ctx context.Context, cwd string) error {
+func (cli *swaCli) Build(ctx context.Context, cwd string, buildProgress io.Writer) error {
 	fullAppFolderPath := filepath.Join(cwd)
-	_, err := cli.executeCommand(ctx,
-		fullAppFolderPath, "build")
+	result, err := cli.run(ctx, fullAppFolderPath, buildProgress, "build", "-V")
 
 	if err != nil {
 		return fmt.Errorf("swa build: %w", err)
+	}
+
+	output := result.Stdout
+	if strings.Contains(output, "No build options were defined") {
+		return fmt.Errorf("swa build: %s", output)
 	}
 
 	return nil
@@ -64,8 +68,6 @@ func (cli *swaCli) Deploy(
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
-	appFolderPath string,
-	outputRelativeFolderPath string,
 	environment string,
 	deploymentToken string,
 ) (string, error) {
@@ -78,9 +80,8 @@ func (cli *swaCli) Deploy(
 		environment,
 	)
 
-	fullAppFolderPath := filepath.Join(cwd, appFolderPath)
 	res, err := cli.executeCommand(ctx,
-		fullAppFolderPath, "deploy",
+		cwd, "deploy",
 		"--tenant-id", tenantId,
 		"--subscription-id", subscriptionId,
 		"--resource-group", resourceGroup,
@@ -110,10 +111,18 @@ func (cli *swaCli) InstallUrl() string {
 }
 
 func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
+	return cli.run(ctx, cwd, nil, args...)
+}
+
+func (cli *swaCli) run(ctx context.Context, cwd string, buildProgress io.Writer, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("npx", "-y", cSwaCliPackage).
 		AppendParams(args...).
 		WithCwd(cwd)
+
+	if buildProgress != nil {
+		runArgs = runArgs.WithStdOut(buildProgress).WithStdErr(buildProgress)
+	}
 
 	return cli.commandRunner.Run(ctx, runArgs)
 }

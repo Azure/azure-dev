@@ -93,15 +93,13 @@ func (at *staticWebAppTarget) Deploy(
 			}
 
 			// SWA performs a zip & deploy of the specified output folder and deploys it to the configured environment
-			task.SetProgress(NewServiceProgress("Uploading deployment artifacts"))
+			task.SetProgress(NewServiceProgress("swa cli deploy"))
 			res, err := at.swa.Deploy(ctx,
-				serviceConfig.Project.Path,
+				serviceConfig.Path(),
 				at.env.GetTenantId(),
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
-				serviceConfig.RelativePath,
-				packageOutput.PackagePath,
 				DefaultStaticWebAppEnvironmentName,
 				*deploymentToken)
 

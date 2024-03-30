@@ -60,15 +60,7 @@ func (at *staticWebAppTarget) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packagePath := serviceConfig.OutputPath
-			if strings.TrimSpace(packagePath) == "" {
-				packagePath = "build"
-			}
-
-			task.SetResult(&ServicePackageResult{
-				Build:       packageOutput.Build,
-				PackagePath: packagePath,
-			})
+			task.SetResult(packageOutput)
 		},
 	)
 }

@@ -25,7 +25,7 @@ func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
 type SwaCli interface {
 	tools.ExternalTool
 
-	Build(ctx context.Context, cwd string, appFolderPath string) error
+	Build(ctx context.Context, cwd string) error
 	Deploy(
 		ctx context.Context,
 		cwd string,
@@ -45,8 +45,8 @@ type swaCli struct {
 	commandRunner exec.CommandRunner
 }
 
-func (cli *swaCli) Build(ctx context.Context, cwd string, appFolderPath string) error {
-	fullAppFolderPath := filepath.Join(cwd, appFolderPath)
+func (cli *swaCli) Build(ctx context.Context, cwd string) error {
+	fullAppFolderPath := filepath.Join(cwd)
 	_, err := cli.executeCommand(ctx,
 		fullAppFolderPath, "build")
 

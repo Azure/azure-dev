@@ -99,7 +99,6 @@ func (p *swaProject) Build(
 			if err := p.swa.Build(
 				ctx,
 				serviceConfig.Path(),
-				serviceConfig.RelativePath,
 			); err != nil {
 				task.SetError(fmt.Errorf("swa build: %w", err))
 				return

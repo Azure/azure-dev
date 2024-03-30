@@ -6,6 +6,7 @@ package swa
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
+
+var testPath = filepath.Join("projectPath", "service", "path")
 
 func Test_SwaBuild(t *testing.T) {
 	ran := false
@@ -26,7 +29,7 @@ func Test_SwaBuild(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "projectPath/service/path", args.Cwd)
+			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
 				"-y", cSwaCliPackage,
 				"build", "-V",
@@ -42,7 +45,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, nil
 		})
 
-		err := swacli.Build(context.Background(), "./projectPath/service/path", nil)
+		err := swacli.Build(context.Background(), testPath, nil)
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
@@ -56,7 +59,7 @@ func Test_SwaBuild(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "projectPath/service/path", args.Cwd)
+			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
 				"-y", cSwaCliPackage,
 				"build", "-V",
@@ -69,7 +72,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, errors.New("exit code: 1")
 		})
 
-		err := swacli.Build(context.Background(), "./projectPath/service/path", nil)
+		err := swacli.Build(context.Background(), testPath, nil)
 		require.True(t, ran)
 		require.EqualError(
 			t,
@@ -91,7 +94,7 @@ func Test_SwaDeploy(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath/service/path", args.Cwd)
+			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
 				"-y", cSwaCliPackage,
 				"deploy",
@@ -116,7 +119,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 		_, err := swacli.Deploy(
 			context.Background(),
-			"./projectPath/service/path",
+			testPath,
 			"tenantID",
 			"subscriptionID",
 			"resourceGroupID",
@@ -137,7 +140,7 @@ func Test_SwaDeploy(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath/service/path", args.Cwd)
+			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
 				"-y", cSwaCliPackage,
 				"deploy",
@@ -159,7 +162,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 		_, err := swacli.Deploy(
 			context.Background(),
-			"./projectPath/service/path",
+			testPath,
 			"tenantID",
 			"subscriptionID",
 			"resourceGroupID",

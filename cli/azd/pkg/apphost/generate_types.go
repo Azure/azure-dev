@@ -57,7 +57,7 @@ type genContainerAppIngress struct {
 type genContainer struct {
 	Image    string
 	Env      map[string]string
-	Bindings map[string]*Binding
+	Bindings map[WithIndexKey]*Binding
 	Inputs   map[string]Input
 	Volumes  []*Volume
 }
@@ -66,14 +66,14 @@ type genDockerfile struct {
 	Path      string
 	Context   string
 	Env       map[string]string
-	Bindings  map[string]*Binding
+	Bindings  map[WithIndexKey]*Binding
 	BuildArgs map[string]string
 }
 
 type genProject struct {
 	Path     string
 	Env      map[string]string
-	Bindings map[string]*Binding
+	Bindings map[WithIndexKey]*Binding
 }
 
 type genAppConfig struct{}

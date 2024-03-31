@@ -16,7 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-// Use URL from https://learn.microsoft.com/en-us/azure/cloud-shell/msi-authorization
+// Use URL from https://learn.microsoft.com/azure/cloud-shell/msi-authorization
 const cLocalTokenUrl = "http://localhost:50342/oauth2/token" //#nosec G101 -- This is a false positive
 
 const cDefaultSuffix = "/.default"

@@ -744,7 +744,7 @@ func (b *infraGenerator) addSqlDatabase(sqlAccount, dbName string) {
 }
 
 func (b *infraGenerator) addProject(
-	name string, path string, env map[string]string, bindings map[string]*Binding,
+	name string, path string, env map[string]string, bindings map[WithIndexKey]*Binding,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -806,7 +806,7 @@ func (b *infraGenerator) addContainer(
 	name string,
 	image string,
 	env map[string]string,
-	bindings map[string]*Binding,
+	bindings map[WithIndexKey]*Binding,
 	inputs map[string]Input,
 	volumes []*Volume) {
 	b.requireCluster()
@@ -920,7 +920,7 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 
 func (b *infraGenerator) addDockerfile(
 	name string, path string, context string, env map[string]string,
-	bindings map[string]*Binding, buildArgs map[string]string,
+	bindings map[WithIndexKey]*Binding, buildArgs map[string]string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -1193,11 +1193,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		var has bool
 
 		if targetType == "project.v0" {
-			binding, has = b.projects[resource].Bindings[parts[0]]
+			binding, has = BindingByName(b.projects[resource].Bindings, parts[0])
 		} else if targetType == "container.v0" {
-			binding, has = b.containers[resource].Bindings[parts[0]]
+			binding, has = BindingByName(b.containers[resource].Bindings, parts[0])
 		} else if targetType == "dockerfile.v0" {
-			binding, has = b.dockerfiles[resource].Bindings[parts[0]]
+			binding, has = BindingByName(b.dockerfiles[resource].Bindings, parts[0])
 		}
 
 		if !has {

@@ -2,136 +2,36 @@ package apphost
 
 import (
 	"fmt"
+	"log"
 )
 
 // buildAcaIngress builds the Azure Container Apps ingress configuration from the provided bindings.
-func buildAcaIngress(bindings map[string]*Binding, defaultIngressPort int) (*genContainerAppIngress, error) {
+func buildAcaIngress(bindings map[WithIndexKey]*Binding, defaultIngressPort int) (*genContainerAppIngress, error) {
 	if len(bindings) == 0 {
 		return nil, nil
 	}
 
-	if err := validateInput(bindings); err != nil {
+	if err := validateBindings(bindings); err != nil {
+		return nil, err
+	}
+	acaPorts := mapBindingsToPorts(bindings)
+
+	if err := validateExternalBindings(acaPorts); err != nil {
 		return nil, err
 	}
 
-	endpointByContainerPort := make(map[string][]*Binding)
-	for _, binding := range bindings {
-		bindingKey := "default" // default is for those with no container port
-		if binding.TargetPort != nil {
-			bindingKey = fmt.Sprintf("%d", *binding.TargetPort)
-		}
-		endpointByContainerPort[bindingKey] = append(endpointByContainerPort[bindingKey], binding)
-	}
+	ingress := httpIngress(acaPorts)
 
-	endpointByContainerPortProperties := make(map[string]*endpointGroupProperties)
-	for containerPort, bindings := range endpointByContainerPort {
-		props := &endpointGroupProperties{httpOnly: true}
-		for _, binding := range bindings {
-			if binding.TargetPort != nil {
-				props.port = *binding.TargetPort
-			}
-			if binding.External {
-				props.external = true
-			}
-			if binding.Scheme != acaIngressSchemaHttp && binding.Scheme != acaIngressSchemaHttps {
-				props.httpOnly = false
-			}
-			if binding.Transport == acaIngressTransportHttp2 {
-				props.hasHttp2 = true
-			}
-		}
-		endpointByContainerPortProperties[containerPort] = props
-	}
-
-	countExternalGroups := 0
-	for _, props := range endpointByContainerPortProperties {
-		if props.external {
-			countExternalGroups++
-		}
-		if props.external && !props.httpOnly {
-			return nil, fmt.Errorf("External non-HTTP(s) endpoints are not supported")
-		}
-	}
-	if countExternalGroups > 1 {
-		return nil, fmt.Errorf("Multiple external endpoints are not supported")
-	}
-
-	var httpOnlyGroups []string
-	for groupKey, props := range endpointByContainerPortProperties {
-		if props.httpOnly {
-			httpOnlyGroups = append(httpOnlyGroups, groupKey)
-		}
-	}
-
-	var ingress string
-	if len(httpOnlyGroups) == 1 {
-		ingress = httpOnlyGroups[0]
-	}
-
-	if ingress == "" {
-		// We have more than one, pick prefer external one
-		var externalHttpOnly []string
-		for _, groupKey := range httpOnlyGroups {
-			if endpointByContainerPortProperties[groupKey].external {
-				externalHttpOnly = append(externalHttpOnly, groupKey)
-			}
-		}
-
-		if len(externalHttpOnly) == 1 {
-			ingress = externalHttpOnly[0]
-		} else if len(httpOnlyGroups) > 1 {
-			return nil, fmt.Errorf("Multiple internal only HTTP(s) endpoints are not supported")
-		}
-	}
-
-	additionalPortsCount := len(endpointByContainerPort)
+	additionalPortsCount := len(acaPorts)
 	if ingress != "" {
 		additionalPortsCount--
 	}
 	if additionalPortsCount > 5 {
-		return nil, fmt.Errorf("More than 5 additional ports are not supported. " +
-			"See https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview#tcp for more details.")
+		log.Println("More than 5 additional ports are not supported. " +
+			"See https://learn.microsoft.com/azure/container-apps/ingress-overview#tcp for more details.")
 	}
 
-	finalIngress := &genContainerAppIngress{}
-
-	if ingress != "" {
-		props := endpointByContainerPortProperties[ingress]
-
-		finalIngress.External = props.external
-		finalIngress.TargetPort = defaultIngressPort
-		finalIngress.Transport = acaIngressSchemaHttp
-		if props.hasHttp2 {
-			finalIngress.Transport = acaIngressTransportHttp2
-		}
-		if props.hasHttp2 || !props.external {
-			finalIngress.AllowInsecure = true
-		}
-
-	} else {
-		port := 0
-		for groupKey := range endpointByContainerPort {
-			port = endpointByContainerPortProperties[groupKey].port
-			ingress = groupKey
-			break
-		}
-		finalIngress.Transport = acaIngressSchemaTcp
-		finalIngress.TargetPort = port
-	}
-
-	for groupKey, props := range endpointByContainerPortProperties {
-		if groupKey == ingress {
-			continue
-		}
-		finalIngress.AdditionalPortMappings = append(finalIngress.AdditionalPortMappings,
-			genContainerAppIngressAdditionalPortMappings{
-				genContainerAppIngressPort: genContainerAppIngressPort{
-					TargetPort: props.port,
-				},
-			})
-	}
-
-	return finalIngress, nil
+	return pickIngress(acaPorts, ingress, defaultIngressPort)
 }
 
 type endpointGroupProperties struct {
@@ -150,23 +50,208 @@ const (
 	acaIngressProtocolHttp   string = "http"
 )
 
-func validateInput(bindings map[string]*Binding) error {
+func validateBindings(bindings map[WithIndexKey]*Binding) error {
 	for name, binding := range bindings {
 		if binding == nil {
-			return fmt.Errorf("binding %q is empty", name)
+			return fmt.Errorf("binding %q is empty", name.string)
 		}
 
 		switch binding.Scheme {
 		case acaIngressSchemaTcp:
 			if binding.TargetPort == nil {
-				return fmt.Errorf("binding %q has scheme %q but no container port", name, binding.Scheme)
+				return fmt.Errorf("binding %q has scheme %q but no container port", name.string, binding.Scheme)
 			}
 		case acaIngressSchemaHttp:
 		case acaIngressSchemaHttps:
 		default:
-			return fmt.Errorf("binding %q has invalid scheme %q", name, binding.Scheme)
+			return fmt.Errorf("binding %q has invalid scheme %q", name.string, binding.Scheme)
 		}
 	}
 
 	return nil
+}
+
+// bindingGroup allows to move the key name and index from the binding to the group, so the name and order is not lost.
+type bindingGroup struct {
+	*Binding
+	name  string
+	order int
+}
+
+// groupBindingsByPort groups the bindings by the container port.
+// bindings with no container port are grouped under the "default" key.
+func groupBindingsByPort(bindings map[WithIndexKey]*Binding) map[string][]*bindingGroup {
+	endpointByContainerPort := make(map[string][]*bindingGroup)
+	for key, binding := range bindings {
+		bindingKey := "default" // default is for those with no container port
+		if binding.TargetPort != nil {
+			bindingKey = fmt.Sprintf("%d", *binding.TargetPort)
+		}
+		endpointByContainerPort[bindingKey] = append(endpointByContainerPort[bindingKey], &bindingGroup{
+			Binding: binding,
+			name:    key.string,
+			order:   key.Index,
+		})
+	}
+	return endpointByContainerPort
+}
+
+// groupProperties iterate over the bindings from a group and returns the properties of the group.
+// Properties:
+// port, external, httpOnly, hasHttp2
+func groupProperties(endpointByTargetPort map[string][]*bindingGroup) map[string]*endpointGroupProperties {
+	endpointByTargetPortProperties := make(map[string]*endpointGroupProperties)
+	for containerPort, bindings := range endpointByTargetPort {
+		props := &endpointGroupProperties{httpOnly: true}
+		for _, binding := range bindings {
+			if binding.TargetPort != nil {
+				props.port = *binding.TargetPort
+			}
+			if binding.External {
+				props.external = true
+			}
+			if binding.Scheme != acaIngressSchemaHttp && binding.Scheme != acaIngressSchemaHttps {
+				props.httpOnly = false
+			}
+			if binding.Transport == acaIngressTransportHttp2 {
+				props.hasHttp2 = true
+			}
+		}
+		endpointByTargetPortProperties[containerPort] = props
+	}
+	return endpointByTargetPortProperties
+}
+
+// validateExternalBindings check the there is not more than one binding group exported or if there are non-http bindings
+// exported.
+func validateExternalBindings(endpointByTargetPortProperties map[string]*acaPort) error {
+	countExternalGroups := 0
+	for _, props := range endpointByTargetPortProperties {
+		if props.external {
+			countExternalGroups++
+		}
+		if props.external && !props.httpOnly {
+			return fmt.Errorf("External non-HTTP(s) endpoints are not supported")
+		}
+	}
+	if countExternalGroups > 1 {
+		return fmt.Errorf("Multiple external endpoints are not supported")
+	}
+	return nil
+}
+
+// endpointByTargetPortProperties try to find the right http ingress group to use.
+// If there is just one http group, it will be used.
+// If there are more than one http group, take the one which is external, and if there is no external one, take the group
+// which contains the first http binding referenced in the manifest (the one with the lowest index key).
+func httpIngress(endpointByTargetPortProperties map[string]*acaPort) string {
+	var httpOnlyGroups []string
+	for groupKey, props := range endpointByTargetPortProperties {
+		if props.httpOnly {
+			httpOnlyGroups = append(httpOnlyGroups, groupKey)
+		}
+	}
+
+	var ingress string
+	if len(httpOnlyGroups) == 1 {
+		ingress = httpOnlyGroups[0]
+	}
+
+	if ingress == "" {
+		// We have more than one, pick prefer external one
+		var externalHttpOnly []string
+		for _, httpGroup := range httpOnlyGroups {
+			if endpointByTargetPortProperties[httpGroup].external {
+				externalHttpOnly = append(externalHttpOnly, httpGroup)
+			}
+		}
+
+		if len(externalHttpOnly) == 1 {
+			ingress = externalHttpOnly[0]
+		} else if len(httpOnlyGroups) > 1 {
+			minIndex := 0
+			// iterate the groups which are http only.
+			// then, update the ingress to the group name where we find the binding with the lowest index.
+			for _, httpGroup := range httpOnlyGroups {
+				port := endpointByTargetPortProperties[httpGroup]
+				for _, binding := range port.bindings {
+					if ingress == "" || binding.order < minIndex {
+						minIndex = binding.order
+						ingress = httpGroup
+					}
+				}
+			}
+		}
+	}
+	return ingress
+}
+
+type acaPort struct {
+	*endpointGroupProperties
+	bindings []*bindingGroup
+}
+
+func mapBindingsToPorts(bindings map[WithIndexKey]*Binding) map[string]*acaPort {
+	endpointByTargetPort := groupBindingsByPort(bindings)
+	endpointByTargetPortProperties := groupProperties(endpointByTargetPort)
+
+	mergedResult := make(map[string]*acaPort, len(endpointByTargetPort))
+	for groupKey := range endpointByTargetPort {
+		mergedResult[groupKey] = &acaPort{
+			endpointGroupProperties: endpointByTargetPortProperties[groupKey],
+			bindings:                endpointByTargetPort[groupKey],
+		}
+	}
+	return mergedResult
+}
+
+func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress string, defaultPort int) (
+	*genContainerAppIngress, error) {
+	finalIngress := &genContainerAppIngress{}
+	ingress := httpIngress
+	if ingress != "" {
+		props := endpointByTargetPortProperties[ingress]
+
+		finalIngress.External = props.external
+		finalIngress.TargetPort = props.port
+		if finalIngress.TargetPort == 0 {
+			finalIngress.TargetPort = defaultPort
+		}
+		finalIngress.Transport = acaIngressSchemaHttp
+		if props.hasHttp2 {
+			finalIngress.Transport = acaIngressTransportHttp2
+		}
+		if props.hasHttp2 || !props.external {
+			finalIngress.AllowInsecure = true
+		}
+
+	} else {
+		// ingress still empty b/c no http ingress. pick the first group with lowest index
+		minIndex := 0
+		for groupKey, group := range endpointByTargetPortProperties {
+			for _, binding := range group.bindings {
+				if ingress == "" || binding.order < minIndex {
+					minIndex = binding.order
+					ingress = groupKey
+				}
+			}
+		}
+		port := endpointByTargetPortProperties[ingress].port
+		finalIngress.Transport = acaIngressSchemaTcp
+		finalIngress.TargetPort = port
+	}
+
+	for groupKey, props := range endpointByTargetPortProperties {
+		if groupKey == ingress {
+			continue
+		}
+		finalIngress.AdditionalPortMappings = append(finalIngress.AdditionalPortMappings,
+			genContainerAppIngressAdditionalPortMappings{
+				genContainerAppIngressPort: genContainerAppIngressPort{
+					TargetPort: props.port,
+				},
+			})
+	}
+
+	return finalIngress, nil
 }

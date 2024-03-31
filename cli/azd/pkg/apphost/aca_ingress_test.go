@@ -9,18 +9,18 @@ import (
 
 func TestBuildAcaIngress(t *testing.T) {
 	// Test case 1: Empty bindings
-	ingress, err := buildAcaIngress(map[string]*Binding{}, 8080)
+	ingress, err := buildAcaIngress(map[WithIndexKey]*Binding{}, 8080)
 	assert.NoError(t, err)
 	assert.Nil(t, ingress)
 
 	// Test case 2: Common project
-	bindings := map[string]*Binding{
-		"http": {
+	bindings := map[WithIndexKey]*Binding{
+		{string: "http", Index: 0}: {
 			Scheme:    acaIngressSchemaHttp,
 			Transport: acaIngressTransportHttp,
 			Protocol:  acaIngressProtocolHttp,
 		},
-		"https": {
+		{string: "https", Index: 1}: {
 			Scheme:    acaIngressSchemaHttps,
 			Transport: acaIngressTransportHttp2,
 			Protocol:  acaIngressProtocolHttp,
@@ -40,18 +40,18 @@ func TestBuildAcaIngress(t *testing.T) {
 	assert.Equal(t, expectedIngress, ingress)
 
 	// Test case 3: Multiple external endpoints
-	bindings = map[string]*Binding{
-		"80": {
+	bindings = map[WithIndexKey]*Binding{
+		{string: "80", Index: 0}: {
 			External:  true,
 			Scheme:    acaIngressSchemaHttp,
 			Transport: acaIngressTransportHttp2,
 		},
-		"443": {
+		{string: "443", Index: 1}: {
 			External:  true,
 			Scheme:    acaIngressSchemaHttps,
 			Transport: acaIngressTransportHttp2,
 		},
-		"8080": {
+		{string: "8080", Index: 2}: {
 			TargetPort: to.Ptr(90),
 			External:   true,
 			Scheme:     acaIngressSchemaHttp,
@@ -63,90 +63,18 @@ func TestBuildAcaIngress(t *testing.T) {
 	assert.EqualError(t, err, "Multiple external endpoints are not supported")
 	assert.Nil(t, ingress)
 
-	// Test case 4: Multiple internal only HTTP(s) endpoints
-	bindings = map[string]*Binding{
-		"http": {
-			Scheme:    acaIngressSchemaHttp,
-			Transport: acaIngressTransportHttp2,
-		},
-		"https": {
-			Scheme:    acaIngressSchemaHttps,
-			Transport: acaIngressTransportHttp2,
-		},
-		"other": {
-			TargetPort: to.Ptr(90),
-			Scheme:     acaIngressSchemaHttp,
-			Transport:  acaIngressTransportHttp2,
-		},
-	}
-	ingress, err = buildAcaIngress(bindings, 8080)
-	assert.Error(t, err)
-	assert.EqualError(t, err, "Multiple internal only HTTP(s) endpoints are not supported")
-	assert.Nil(t, ingress)
-
-	// Test case 5: More than 5 additional ports
-	bindings = map[string]*Binding{
-		"80": {
-			TargetPort: to.Ptr(80),
-			External:   false,
-			Scheme:     acaIngressSchemaHttp,
-			Transport:  acaIngressTransportHttp2,
-		},
-		"443": {
-			TargetPort: to.Ptr(443),
-			External:   false,
-			Scheme:     acaIngressSchemaHttps,
-			Transport:  acaIngressTransportHttp2,
-		},
-		"8080": {
-			TargetPort: to.Ptr(8080),
-			External:   true,
-			Scheme:     acaIngressSchemaHttp,
-			Transport:  acaIngressTransportHttp2,
-		},
-		"8081": {
-			TargetPort: to.Ptr(8081),
-			External:   false,
-			Scheme:     acaIngressSchemaHttp,
-			Transport:  acaIngressTransportHttp2,
-		},
-		"8082": {
-			TargetPort: to.Ptr(8082),
-			External:   false,
-			Scheme:     acaIngressSchemaHttp,
-			Transport:  acaIngressTransportHttp2,
-		},
-		"8083": {
-			TargetPort: to.Ptr(8083),
-			External:   false,
-			Scheme:     acaIngressSchemaHttp,
-			Transport:  acaIngressTransportHttp2,
-		},
-		"8084": {
-			TargetPort: to.Ptr(8084),
-			External:   false,
-			Scheme:     acaIngressSchemaHttp,
-			Transport:  acaIngressTransportHttp2,
-		},
-	}
-	ingress, err = buildAcaIngress(bindings, 8080)
-	assert.Error(t, err)
-	assert.EqualError(t, err, "More than 5 additional ports are not supported. "+
-		"See https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview#tcp for more details.")
-	assert.Nil(t, ingress)
-
 	// Test case 6: external non-HTTP(s) endpoints
-	bindings = map[string]*Binding{
-		"a": {
+	bindings = map[WithIndexKey]*Binding{
+		{string: "a", Index: 0}: {
 			Scheme:     acaIngressSchemaTcp,
 			TargetPort: to.Ptr(99),
 			External:   true,
 		},
-		"b": {
+		{string: "b", Index: 0}: {
 			Scheme:     acaIngressSchemaTcp,
 			TargetPort: to.Ptr(33),
 		},
-		"c": {
+		{string: "c", Index: 1}: {
 			TargetPort: to.Ptr(10),
 			Scheme:     acaIngressSchemaTcp,
 		},
@@ -157,8 +85,8 @@ func TestBuildAcaIngress(t *testing.T) {
 	assert.Nil(t, ingress)
 
 	// Test case 7: no http
-	bindings = map[string]*Binding{
-		"a": {
+	bindings = map[WithIndexKey]*Binding{
+		{string: "a", Index: 0}: {
 			Scheme:     acaIngressSchemaTcp,
 			TargetPort: to.Ptr(33),
 		},
@@ -176,26 +104,26 @@ func TestBuildAcaIngress(t *testing.T) {
 	assert.Equal(t, expectedIngress, ingress)
 
 	// Test case 8: empty
-	bindings = map[string]*Binding{"a": nil}
+	bindings = map[WithIndexKey]*Binding{{string: "a", Index: 0}: nil}
 	ingress, err = buildAcaIngress(bindings, 8080)
 	assert.Error(t, err)
 	assert.EqualError(t, err, `binding "a" is empty`)
 	assert.Nil(t, ingress)
 
 	// Test case 9: invalid schema
-	bindings = map[string]*Binding{"a": {Scheme: "invalid"}}
+	bindings = map[WithIndexKey]*Binding{{string: "a", Index: 0}: {Scheme: "invalid"}}
 	ingress, err = buildAcaIngress(bindings, 8080)
 	assert.Error(t, err)
 	assert.EqualError(t, err, `binding "a" has invalid scheme "invalid"`)
 	assert.Nil(t, ingress)
 
 	// Test case 10: additional
-	bindings = map[string]*Binding{
-		"a": {
+	bindings = map[WithIndexKey]*Binding{
+		{string: "a", Index: 0}: {
 			Scheme:     acaIngressSchemaTcp,
 			TargetPort: to.Ptr(33),
 		},
-		"i": {
+		{string: "i", Index: 1}: {
 			Scheme:   acaIngressSchemaHttp,
 			External: true,
 		},
@@ -219,7 +147,7 @@ func TestBuildAcaIngress(t *testing.T) {
 	assert.Equal(t, expectedIngress, ingress)
 
 	// Test case 11: tcp with no port
-	bindings = map[string]*Binding{"a": {Scheme: acaIngressSchemaTcp}}
+	bindings = map[WithIndexKey]*Binding{{string: "a", Index: 0}: {Scheme: acaIngressSchemaTcp}}
 	ingress, err = buildAcaIngress(bindings, 8080)
 	assert.Error(t, err)
 	assert.EqualError(t, err, `binding "a" has scheme "tcp" but no container port`)

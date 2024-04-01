@@ -53,7 +53,7 @@ export async function createAzureDevCli(context: IActionContext): Promise<AzureD
 export function scheduleAzdVersionCheck(): void {
     const oneSecond = 1 * 1000;
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const minimumSupportedVersion = semver.coerce('0.8.0')!;
+    const minimumSupportedVersion = semver.coerce('1.8.0')!;
 
     setTimeout(async () => {
         const versionResult = await getAzdVersion();

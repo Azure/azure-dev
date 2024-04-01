@@ -582,7 +582,6 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 			)
 		}
 	} else if serviceConfig.Host == StaticWebAppTarget {
-		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageSwa), &compositeFramework); err != nil {
 			return nil, fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",

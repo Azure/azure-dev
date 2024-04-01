@@ -13,6 +13,7 @@ import { ChooseWorkspaceFolderStep } from './agent/wizard/ChooseWorkspaceFolderS
 import { ChooseTemplateStep } from './agent/wizard/ChooseTemplateStep';
 import { EnvironmentNameStep } from './agent/wizard/EnvironmentNameStep';
 import { AzdInitStep } from './agent/wizard/AzdInitStep';
+import { ShowReadmeStep } from './agent/wizard/ShowReadmeStep';
 
 export async function init(context: IActionContext & { skipExecute?: boolean }, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri, options?: Partial<InitWizardContext>): Promise<void> {
     const wizardContext = context as InitWizardContext;
@@ -29,6 +30,7 @@ export async function init(context: IActionContext & { skipExecute?: boolean }, 
 
     const executeSteps = [
         new AzdInitStep(),
+        new ShowReadmeStep(),
     ];
 
     const wizard = new AzureWizard(

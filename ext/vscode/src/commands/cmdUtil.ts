@@ -50,7 +50,7 @@ export async function getWorkingFolder(context: IActionContext, selectedFile?: v
     return folderPath;
 }
 
-export async function pickAzureYamlFile(context: IActionContext): Promise<vscode.Uri | undefined> {
+async function pickAzureYamlFile(context: IActionContext): Promise<vscode.Uri | undefined> {
     let filePath: vscode.Uri | undefined = undefined;
 
     const azureYamlFileUris = await vscode.workspace.findFiles(AzureYamlGlobPattern);
@@ -100,7 +100,7 @@ export async function selectApplicationTemplate(context: IActionContext): Promis
 
     const template = await context.ui.showQuickPick(choices, {
         canPickMany: false,
-        title: vscode.l10n.t('Select application template')
+        placeHolder: vscode.l10n.t('Select application template or use existing source code')
     });
 
     if (template.id === UseExistingSource) {
@@ -144,22 +144,4 @@ function sha256(s: string): string {
     const hash = createHash('sha256');
     const retval = hash.update(s).digest('hex');
     return retval;
-}
-
-export async function showReadmeFile(folder: vscode.Uri | undefined): Promise<void> {
-    // The whole action is "best effort" -- if folder/file do not exist, just do nothing.
-
-    if (!folder) {
-        return;
-    }
-
-    const candidates: string[] = ["README.md", "README.MD", "readme.md"];
-
-    for (const fname of candidates) {
-        const fullPath = vscode.Uri.joinPath(folder, fname);
-        if (await fileExists(fullPath)) {
-            void vscode.commands.executeCommand('markdown.showPreview', fullPath, { 'sideBySide': false });
-            return;
-        }
-    }
 }

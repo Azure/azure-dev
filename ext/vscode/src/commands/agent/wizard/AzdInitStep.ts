@@ -7,7 +7,7 @@ import { InitWizardContext } from './InitWizardContext';
 import { Progress } from 'vscode';
 import { createAzureDevCli } from '../../../utils/azureDevCli';
 import { executeAsTask } from '../../../utils/executeAsTask';
-import { getAzDevTerminalTitle, showReadmeFile } from '../../cmdUtil';
+import { getAzDevTerminalTitle } from '../../cmdUtil';
 import { TelemetryId } from '../../../telemetry/telemetryId';
 
 export class AzdInitStep extends AzureWizardExecuteStep<InitWizardContext> {
@@ -22,6 +22,8 @@ export class AzdInitStep extends AzureWizardExecuteStep<InitWizardContext> {
 
         if (!wizardContext.fromSource) {
             command.withNamedArg('-t', {value: wizardContext.templateUrl!, quoting: vscode.ShellQuoting.Strong});
+        } else {
+            command.withArg('--from-code');
         }
 
         // Wait
@@ -29,9 +31,7 @@ export class AzdInitStep extends AzureWizardExecuteStep<InitWizardContext> {
             alwaysRunNew: true,
             cwd: workspacePath.fsPath,
             env: azureCli.env
-        }, TelemetryId.InitCli).then(() => {
-            void showReadmeFile(workspacePath);
-        });
+        }, TelemetryId.InitCli);
     }
 
     public shouldExecute(): boolean {

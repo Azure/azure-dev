@@ -18,7 +18,6 @@ export async function up(context: IActionContext, selectedItem?: vscode.Uri | Tr
     const command = azureCli.commandBuilder
         .withArg('up');
 
-
     const startTime = Date.now();
 
     // Don't wait

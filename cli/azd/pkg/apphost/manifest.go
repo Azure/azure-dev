@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/psanford/memfs"
@@ -45,7 +46,7 @@ type Resource struct {
 
 	// Bindings is present on container.v0, project.v0 and dockerfile.v0 resources, and is a map of binding names to
 	// binding details.
-	Bindings map[string]*Binding `json:"bindings,omitempty"`
+	Bindings custommaps.WithOrder[Binding] `json:"bindings,omitempty"`
 
 	// Env is present on project.v0, container.v0 and dockerfile.v0 resources, and is a map of environment variable
 	// names to value  expressions. The value expressions are simple expressions like "{redis.connectionString}" or
@@ -103,11 +104,11 @@ type Reference struct {
 }
 
 type Binding struct {
-	ContainerPort *int   `json:"containerPort,omitempty"`
-	Scheme        string `json:"scheme"`
-	Protocol      string `json:"protocol"`
-	Transport     string `json:"transport"`
-	External      bool   `json:"external"`
+	TargetPort *int   `json:"targetPort,omitempty"`
+	Scheme     string `json:"scheme"`
+	Protocol   string `json:"protocol"`
+	Transport  string `json:"transport"`
+	External   bool   `json:"external"`
 }
 
 type Volume struct {

@@ -1534,7 +1534,7 @@ func (p *BicepProvider) getApiManagementsToPurge(
 //
 // Since that's behavior we'd like to support, we run a purge operation for each AppConfiguration after it has been deleted.
 //
-// See https://learn.microsoft.com/en-us/azure/azure-app-configuration/concept-soft-delete for more information
+// See https://learn.microsoft.com/azure/azure-app-configuration/concept-soft-delete for more information
 // on this feature.
 func (p *BicepProvider) purgeAppConfigs(
 	ctx context.Context,

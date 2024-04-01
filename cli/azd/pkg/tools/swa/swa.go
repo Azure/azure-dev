@@ -54,6 +54,11 @@ func (cli *swaCli) Build(ctx context.Context, cwd string, buildProgress io.Write
 	}
 
 	output := result.Stdout
+	// when swa cli does not find swa.config.json, it shows the message:
+	//    No build options were defined.
+	//    If your app needs a build step, run "swa init" to set your project configuration
+	//    or use option flags to set your build commands and paths.
+	// Azd used this as an error for the customer and return the full message.
 	if strings.Contains(output, "No build options were defined") {
 		return fmt.Errorf("swa build: %s", output)
 	}

@@ -5,13 +5,14 @@ import * as vscode from 'vscode';
 import { AzureWizardPromptStep } from '@microsoft/vscode-azext-utils';
 import { InitWizardContext } from './InitWizardContext';
 import { quickPickWorkspaceFolder } from '../../../utils/quickPickWorkspaceFolder';
+import { UpWizardContext } from './UpWizardContext';
 
-export class ChooseWorkspaceFolderStep extends AzureWizardPromptStep<InitWizardContext> {
-    public async prompt(wizardContext: InitWizardContext): Promise<void> {
-        wizardContext.workspaceFolder = await quickPickWorkspaceFolder(wizardContext, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'init'));
+export class ChooseWorkspaceFolderStep extends AzureWizardPromptStep<InitWizardContext | UpWizardContext> {
+    public async prompt(wizardContext: InitWizardContext | UpWizardContext): Promise<void> {
+        wizardContext.workspaceFolder = await quickPickWorkspaceFolder(wizardContext, vscode.l10n.t('To run this command you must first open a folder or workspace in VS Code.'));
     }
 
-    public shouldPrompt(wizardContext: InitWizardContext): boolean {
+    public shouldPrompt(wizardContext: InitWizardContext | UpWizardContext): boolean {
         return !wizardContext.workspaceFolder;
     }
 }

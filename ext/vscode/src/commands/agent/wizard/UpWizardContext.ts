@@ -4,14 +4,8 @@
 import * as vscode from 'vscode';
 import { IActionContext } from '@microsoft/vscode-azext-utils';
 
-export interface InitWizardContext extends IActionContext {
+export interface UpWizardContext extends IActionContext {
     workspaceFolder?: vscode.WorkspaceFolder;
 
-    templateUrl?: string;
-    fromSource?: boolean;
-
-    environmentName?: string;
-
-    subscriptionId?: string;
-    location?: string;
+    startTime?: number;
 }

@@ -4,7 +4,6 @@
 import * as vscode from 'vscode';
 import { AzureWizardExecuteStep } from '@microsoft/vscode-azext-utils';
 import { InitWizardContext } from './InitWizardContext';
-import { Progress } from 'vscode';
 import { createAzureDevCli } from '../../../utils/azureDevCli';
 import { executeAsTask } from '../../../utils/executeAsTask';
 import { getAzDevTerminalTitle } from '../../cmdUtil';
@@ -13,7 +12,7 @@ import { TelemetryId } from '../../../telemetry/telemetryId';
 export class AzdInitStep extends AzureWizardExecuteStep<InitWizardContext> {
     public priority: number = 200;
 
-    public async execute(wizardContext: InitWizardContext, progress: Progress<{ message?: string | undefined; increment?: number | undefined; }>): Promise<void> {
+    public async execute(wizardContext: InitWizardContext): Promise<void> {
         const azureCli = await createAzureDevCli(wizardContext);
         const command = azureCli.commandBuilder
             .withArg('init')
@@ -24,6 +23,14 @@ export class AzdInitStep extends AzureWizardExecuteStep<InitWizardContext> {
             command.withNamedArg('-t', {value: wizardContext.templateUrl!, quoting: vscode.ShellQuoting.Strong});
         } else {
             command.withArg('--from-code');
+        }
+
+        if (wizardContext.subscriptionId) {
+            command.withNamedArg('--subscription', wizardContext.subscriptionId);
+        }
+
+        if (wizardContext.location) {
+            command.withNamedArg('--location', wizardContext.location);
         }
 
         // Wait

@@ -4,10 +4,8 @@
 import * as vscode from 'vscode';
 import { AzExtUserInputWithInputQueue, AzureUserInputQueue, IAzureUserInput, callWithTelemetryAndErrorHandling, registerCommand, type IActionContext } from '@microsoft/vscode-azext-utils';
 import { SimpleCommandConfig, SkillCommandConfig as SkillCommandConfigAgent, WizardCommandConfig } from 'vscode-azure-agent-api';
-// import { agentInit } from './agentInit';
-import { agentUp } from './agentUp';
-// import { agentInitWithEnvironment } from './agentInitWithEnvironment';
 import { init } from '../init';
+import { up } from '../up';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AzdCommand = { handler: (context: IActionContext, ...args: any[]) => Promise<any> };
@@ -35,6 +33,10 @@ async function runWizardCommandWithoutExecution(command: WizardCommandConfig, ui
         await callWithTelemetryAndErrorHandling('azure-dev.commands.cli.init.viaAgent', async (context) => {
             return await init({ ...context, ui: ui, skipExecute: true });
         });
+    } else if (command.commandId === 'azure-dev.commands.cli.up') {
+        await callWithTelemetryAndErrorHandling('azure-dev.commands.cli.up.viaAgent', async (context) => {
+            return await up({ ...context, ui: ui, skipExecute: true });
+        });
     } else {
         throw new Error('Unknown command: ' + command.commandId);
     }
@@ -45,6 +47,11 @@ async function runWizardCommandWithInputs(command: WizardCommandConfig, inputsQu
         await callWithTelemetryAndErrorHandling('azure-dev.commands.cli.init.viaAgentActual', async (context) => {
             const azureUserInput = new AzExtUserInputWithInputQueue(context, inputsQueue);
             return await init({ ...context, ui: azureUserInput });
+        });
+    } else if (command.commandId === 'azure-dev.commands.cli.up') {
+        await callWithTelemetryAndErrorHandling('azure-dev.commands.cli.up.viaAgentActual', async (context) => {
+            const azureUserInput = new AzExtUserInputWithInputQueue(context, inputsQueue);
+            return await up({ ...context, ui: azureUserInput });
         });
     } else {
         throw new Error('Unknown command: ' + command.commandId);
@@ -61,12 +68,11 @@ const agentCommands: CommandConfig[] = [
         requiresAzureLogin: false,
     } satisfies WizardCommandConfig,
     {
-        type: 'skill',
+        type: 'wizard',
         name: 'azdUp',
-        commandId: 'azure-dev.commands.agent.up',
+        commandId: 'azure-dev.commands.cli.up',
         displayName: 'Deploy to Azure with Azure Developer CLI',
         intentDescription: 'This is best when users ask to deploy their application to Azure.',
         requiresAzureLogin: true,
-        handler: agentUp,
-    } satisfies SkillCommandConfig,
+    } satisfies WizardCommandConfig,
 ];

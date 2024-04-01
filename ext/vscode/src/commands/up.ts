@@ -2,40 +2,35 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import { IActionContext } from "@microsoft/vscode-azext-utils";
-import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
-import { createAzureDevCli } from '../utils/azureDevCli';
-import { executeAsTask } from '../utils/executeAsTask';
-import { TelemetryId } from '../telemetry/telemetryId';
-import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
-import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { AzureWizard, IActionContext } from "@microsoft/vscode-azext-utils";
+import { TreeViewModel } from '../utils/isTreeViewModel';
+import { UpWizardContext } from './agent/wizard/UpWizardContext';
+import { ChooseWorkspaceFolderStep } from './agent/wizard/ChooseWorkspaceFolderStep';
+import { AzdUpStep } from './agent/wizard/AzdUpStep';
+import { ToastUpDurationStep } from './agent/wizard/ToastUpDurationStep';
 
-export async function up(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
-    const workingFolder = await getWorkingFolder(context, selectedFile);
+export async function up(context: IActionContext & { skipExecute?: boolean }, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+    const wizardContext = context as UpWizardContext;
 
-    const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder
-        .withArg('up');
+    const promptSteps = [
+        new ChooseWorkspaceFolderStep(),
+    ];
 
-    const startTime = Date.now();
+    const executeSteps = [
+        new AzdUpStep(),
+        new ToastUpDurationStep(),
+    ];
 
-    // Don't wait
-    void executeAsTask(command.build(), getAzDevTerminalTitle(), {
-        focus: true,
-        alwaysRunNew: true,
-        cwd: workingFolder,
-        env: azureCli.env
-    }, TelemetryId.UpCli).then(() => {
-        const endTime = Date.now();
+    const wizard = new AzureWizard(
+        wizardContext,
+        {
+            promptSteps,
+            executeSteps,
+            skipExecute: !!context.skipExecute,
+            title: vscode.l10n.t('Deploying with Azure Developer CLI'),
+        }
+    );
 
-        // Calculate the time it took to deploy
-        const timeDiff = endTime - startTime;
-        const seconds = Math.floor(timeDiff / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const remainderSeconds = seconds % 60;
-
-        // Send a toast notification to the user to note that deployment has finished
-        void context.ui.showWarningMessage(vscode.l10n.t('Deployment to Azure has finished in {0} minute(s) and {1} second(s)', minutes, remainderSeconds));
-    });
+    await wizard.prompt();
+    await wizard.execute();
 }

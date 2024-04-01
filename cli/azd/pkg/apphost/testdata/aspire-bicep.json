@@ -16,7 +16,9 @@
           "values": [
             "one",
             "two"
-          ]
+          ],
+          "tags": "",
+          "environmentName": ""
         }
       },
       "administrator-login": {

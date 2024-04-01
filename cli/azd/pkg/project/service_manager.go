@@ -568,11 +568,11 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		)
 	}
 
+	var compositeFramework CompositeFrameworkService
 	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
 	// project that handles the containerization.
 	requiresLanguage := serviceConfig.Language != ServiceLanguageDocker && serviceConfig.Language != ServiceLanguageNone
 	if serviceConfig.Host.RequiresContainer() && requiresLanguage {
-		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			return nil, fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",
@@ -581,12 +581,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 				err,
 			)
 		}
-
-		compositeFramework.SetSource(frameworkService)
-		frameworkService = compositeFramework
-	}
-
-	if serviceConfig.Host == StaticWebAppTarget {
+	} else if serviceConfig.Host == StaticWebAppTarget {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageSwa), &compositeFramework); err != nil {
 			return nil, fmt.Errorf(
@@ -596,9 +591,10 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 				err,
 			)
 		}
-		compositeFramework.SetSource(frameworkService)
-		frameworkService = compositeFramework
 	}
+
+	compositeFramework.SetSource(frameworkService)
+	frameworkService = compositeFramework
 
 	return frameworkService, nil
 }

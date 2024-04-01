@@ -42,7 +42,7 @@
       },
       "volumes": [
         {
-          "name": "volumeOne",
+          "name": "Project.AppHost-volumeOne",
           "target": "/data/db",
           "readOnly": false
         }
@@ -106,7 +106,7 @@
       },
       "volumes": [
         {
-          "name": "volume-two",
+          "name": "Project.AppHost-volume-two",
           "target": "/data/db",
           "readOnly": true
         }

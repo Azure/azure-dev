@@ -41,15 +41,21 @@ func init() {
 		Option("missingkey=error").
 		Funcs(
 			template.FuncMap{
-				"bicepName":              scaffold.BicepName,
+				"bicepName": scaffold.BicepName,
+				"mergeBicepName": func(src ...string) string {
+					return scaffold.BicepName(strings.Join(src, "-"))
+				},
 				"alphaSnakeUpper":        scaffold.AlphaSnakeUpper,
 				"containerAppName":       scaffold.ContainerAppName,
 				"containerAppSecretName": scaffold.ContainerAppSecretName,
 				"fixBackSlash": func(src string) string {
 					return strings.ReplaceAll(src, "\\", "/")
 				},
-				"dashToUnderscore": func(src string) string {
+				"bicepParameterName": func(src string) string {
 					return strings.ReplaceAll(src, "-", "_")
+				},
+				"removeDot": func(src string) string {
+					return strings.ReplaceAll(src, ".", "")
 				},
 				"envFormat": scaffold.EnvFormat,
 			},

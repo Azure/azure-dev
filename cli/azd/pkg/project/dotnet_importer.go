@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,7 +95,7 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bo
 }
 
 func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *ServiceConfig) (*Infra, error) {
-	manifest, err := ai.ReadManifestEnsureExposedServices(ctx, svcConfig)
+	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
@@ -168,7 +167,7 @@ func (ai *DotNetImporter) Services(
 ) (map[string]*ServiceConfig, error) {
 	services := make(map[string]*ServiceConfig)
 
-	manifest, err := ai.ReadManifestEnsureExposedServices(ctx, svcConfig)
+	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
@@ -247,7 +246,7 @@ func (ai *DotNetImporter) Services(
 func (ai *DotNetImporter) SynthAllInfrastructure(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
-	manifest, err := ai.ReadManifestEnsureExposedServices(ctx, svcConfig)
+	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
 		return nil, fmt.Errorf("generating apphost manifest: %w", err)
 	}
@@ -363,77 +362,5 @@ func (ai *DotNetImporter) ReadManifest(ctx context.Context, svcConfig *ServiceCo
 	}
 
 	ai.cache[cacheKey] = manifest
-	return manifest, nil
-}
-
-// ReadManifestEnsureExposedServices calls ReadManifest. It also reads the value of
-// the `services.<name>.config.exposedServices` property from the environment and sets the `External` property on
-// each binding for the exposed services. If this key does not exist in the config for the environment, the user
-// is prompted to select which services should be exposed. This can happen after an environment is created with
-// `azd env new`.
-func (ai *DotNetImporter) ReadManifestEnsureExposedServices(
-	ctx context.Context,
-	svcConfig *ServiceConfig) (*apphost.Manifest, error) {
-	manifest, err := ai.ReadManifest(ctx, svcConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	env, err := ai.lazyEnv.GetValue()
-	if err == nil {
-		if cfgValue, has := env.Config.Get(fmt.Sprintf("services.%s.config.exposedServices", svcConfig.Name)); has {
-			if exposedServices, is := cfgValue.([]interface{}); !is {
-				log.Printf("services.%s.config.exposedServices is not an array, ignoring setting.", svcConfig.Name)
-			} else {
-				for idx, name := range exposedServices {
-					if strName, ok := name.(string); !ok {
-						log.Printf("services.%s.config.exposedServices[%d] is not a string, ignoring value.",
-							svcConfig.Name, idx)
-					} else {
-						// This can happen if the user has removed a service from their app host that they previously
-						// had and had exposed (or changed the service such that it no longer has any bindings).
-						if binding, has := manifest.Resources[strName]; !has || binding.Bindings == nil {
-							log.Printf("service %s does not exist or has no bindings, ignoring value.", strName)
-							continue
-						}
-
-						for _, binding := range manifest.Resources[strName].Bindings {
-							binding.External = true
-						}
-					}
-				}
-			}
-		} else {
-			selector := apphost.NewIngressSelector(manifest, ai.console)
-			exposed, err := selector.SelectPublicServices(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("selecting public services: %w", err)
-			}
-
-			for _, name := range exposed {
-				for _, binding := range manifest.Resources[name].Bindings {
-					binding.External = true
-				}
-			}
-
-			err = env.Config.Set(fmt.Sprintf("services.%s.config.exposedServices", svcConfig.Name), exposed)
-			if err != nil {
-				return nil, err
-			}
-
-			envManager, err := ai.lazyEnvManager.GetValue()
-			if err != nil {
-				return nil, err
-			}
-
-			if err := envManager.Save(ctx, env); err != nil {
-				return nil, err
-			}
-
-		}
-	} else {
-		log.Printf("unexpected error fetching environment: %s, exposed services may not be correct", err)
-	}
-
 	return manifest, nil
 }

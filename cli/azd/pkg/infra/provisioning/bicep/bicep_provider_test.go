@@ -1247,20 +1247,20 @@ func TestInputsParameter(t *testing.T) {
 	autoGenParameters := map[string]map[string]azure.AutoGenInput{
 		"resource1": {
 			"input1": {
-				Len: 10,
+				Length: 10,
 			},
 			"input3": {
-				Len: 8,
+				Length: 8,
 			},
 		},
 		"resource2": {
 			"input2": {
-				Len: 12,
+				Length: 12,
 			},
 		},
 		"resource3": {
 			"input4": {
-				Len: 6,
+				Length: 6,
 			},
 		},
 	}
@@ -1290,13 +1290,13 @@ func TestInputsParameter(t *testing.T) {
 		t, expectedInputsParameter["resource1"]["input1"], result["resource1"]["input1"])
 	// generated - only check length
 	require.Equal(
-		t, autoGenParameters["resource1"]["input3"].Len, len(result["resource1"]["input3"].(string)))
+		t, autoGenParameters["resource1"]["input3"].Length, uint(len(result["resource1"]["input3"].(string))))
 
 	require.Equal(t, expectedInputsParameter["resource2"], result["resource2"])
 
 	// generated - only check length
 	require.Equal(
-		t, autoGenParameters["resource3"]["input4"].Len, len(result["resource3"]["input4"].(string)))
+		t, autoGenParameters["resource3"]["input4"].Length, uint(len(result["resource3"]["input4"].(string))))
 
 	require.Equal(t, expectedInputsUpdated, inputsUpdated)
 }

@@ -433,3 +433,8 @@ func (m *MockDataStore) Save(ctx context.Context, env *Environment) error {
 	args := m.Called(ctx, env)
 	return args.Error(0)
 }
+
+func (m *MockDataStore) Delete(ctx context.Context, name string) error {
+	args := m.Called(ctx, name)
+	return args.Error(0)
+}

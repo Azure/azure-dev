@@ -158,28 +158,6 @@ func ContainerAppSecretName(name string) string {
 	return strings.ReplaceAll(strings.ToLower(name), "_", "-")
 }
 
-// alphanumericAndDashesRegex is a regular expression pattern used to match alphanumeric characters and dashes enclosed
-// in square brackets.
-var alphanumericAndDashesRegex = regexp.MustCompile(`(\['[a-zA-Z0-9\-]+'\])`)
-
-// ToDotNotation receives a string and if it is on the form of "${inputs['resourceName']['inputName']}" it returns a new
-// string using dot notation, i.e. "${inputs.resourceName.InputName}".
-// Otherwise, the original string is returned adding quotes.
-// Note: If resourceName or inputName container `-`
-func ToDotNotation(s string) string {
-	if strings.HasPrefix(s, "${inputs['") && strings.HasSuffix(s, "']}") {
-		updated := alphanumericAndDashesRegex.ReplaceAllStringFunc(s, func(sub string) string {
-			noBrackets := strings.TrimRight(strings.TrimLeft(sub, "['"), "']")
-			if !strings.Contains(noBrackets, "-") {
-				return "." + noBrackets
-			}
-			return sub
-		})
-		return strings.TrimRight(strings.TrimLeft(updated, "${"), "}")
-	}
-	return fmt.Sprintf("'%s'", s)
-}
-
 // camelCaseRegex is a regular expression used to match camel case patterns.
 // It matches a lowercase letter or digit followed by an uppercase letter.
 var camelCaseRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)

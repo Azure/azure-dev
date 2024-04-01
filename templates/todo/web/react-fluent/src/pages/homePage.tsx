@@ -1,4 +1,4 @@
-import React, { useEffect, useContext, useMemo, useState, Fragment } from 'react';
+import { useEffect, useContext, useMemo, useState, Fragment } from 'react';
 import { IconButton, IContextualMenuProps, IIconProps, Stack, Text, Shimmer, ShimmerElementType } from '@fluentui/react';
 import TodoItemListPane from '../components/todoItemListPane';
 import { TodoItem, TodoItemState } from '../models';
@@ -11,7 +11,7 @@ import { ListActions } from '../actions/listActions';
 import { stackItemPadding, stackPadding, titleStackStyles } from '../ux/styles';
 import { useNavigate, useParams } from 'react-router-dom';
 import { bindActionCreators } from '../actions/actionCreators';
-import { withApplicationInsights } from '../components/telemetry';
+import WithApplicationInsights from '../components/telemetryWithAppInsights.tsx';
 
 const HomePage = () => {
     const navigate = useNavigate();
@@ -157,4 +157,6 @@ const HomePage = () => {
     );
 };
 
-export default withApplicationInsights(HomePage, 'Homepage');
+const HomePageWithTelemetry = WithApplicationInsights(HomePage, 'HomePage');
+
+export default HomePageWithTelemetry;

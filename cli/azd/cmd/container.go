@@ -122,7 +122,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			Stdin:  cmd.InOrStdin(),
 			Stdout: cmd.OutOrStdout(),
 			Stderr: cmd.ErrOrStderr(),
-		}, formatter)
+		}, formatter, nil)
 	})
 
 	container.MustRegisterSingleton(

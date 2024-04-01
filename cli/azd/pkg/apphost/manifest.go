@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/psanford/memfs"
@@ -45,7 +46,7 @@ type Resource struct {
 
 	// Bindings is present on container.v0, project.v0 and dockerfile.v0 resources, and is a map of binding names to
 	// binding details.
-	Bindings map[WithIndexKey]*Binding `json:"bindings,omitempty"`
+	Bindings custommaps.WithOrder[Binding] `json:"bindings,omitempty"`
 
 	// Env is present on project.v0, container.v0 and dockerfile.v0 resources, and is a map of environment variable
 	// names to value  expressions. The value expressions are simple expressions like "{redis.connectionString}" or
@@ -108,30 +109,6 @@ type Binding struct {
 	Protocol   string `json:"protocol"`
 	Transport  string `json:"transport"`
 	External   bool   `json:"external"`
-}
-
-// WithIndexKey keeps the insertion order of the bindings.
-type WithIndexKey struct {
-	string
-	Index int
-}
-
-var withIndexCounter = 0
-
-func (o *WithIndexKey) UnmarshalText(text []byte) error {
-	o.string = string(text)
-	o.Index = withIndexCounter
-	withIndexCounter++
-	return nil
-}
-
-func BindingByName(bindings map[WithIndexKey]*Binding, name string) (*Binding, bool) {
-	for k, v := range bindings {
-		if k.string == name {
-			return v, true
-		}
-	}
-	return nil, false
 }
 
 type Volume struct {

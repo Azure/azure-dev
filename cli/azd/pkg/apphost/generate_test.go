@@ -182,14 +182,6 @@ func TestAspireDockerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	// The App Host manifest does not set the external bit for project resources. Instead, `azd` or whatever tool consumes
-	// the manifest should prompt the user to select which services should be exposed. For this test, we manually set the
-	// external bit on the resources on the webfrontend resource to simulate the user selecting the webfrontend to be
-	// exposed.
-	for _, value := range m.Resources["nodeapp"].Bindings {
-		value.External = true
-	}
-
 	for _, name := range []string{"nodeapp"} {
 		t.Run(name, func(t *testing.T) {
 			tmpl, err := ContainerAppManifestTemplateForProject(m, name)

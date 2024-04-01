@@ -3,11 +3,13 @@ package apphost
 import (
 	"fmt"
 	"log"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 )
 
 // buildAcaIngress builds the Azure Container Apps ingress configuration from the provided bindings.
-func buildAcaIngress(bindings map[WithIndexKey]*Binding, defaultIngressPort int) (*genContainerAppIngress, error) {
-	if len(bindings) == 0 {
+func buildAcaIngress(bindings custommaps.WithOrder[Binding], defaultIngressPort int) (*genContainerAppIngress, error) {
+	if len(bindings.OrderedKeys()) == 0 {
 		return nil, nil
 	}
 
@@ -50,29 +52,33 @@ const (
 	acaIngressProtocolHttp   string = "http"
 )
 
-func validateBindings(bindings map[WithIndexKey]*Binding) error {
-	for name, binding := range bindings {
+func validateBindings(bindings custommaps.WithOrder[Binding]) error {
+	for _, name := range bindings.OrderedKeys() {
+		binding, found := bindings.Get(name)
+		if !found {
+			return fmt.Errorf("binding %q not found", name)
+		}
 		if binding == nil {
-			return fmt.Errorf("binding %q is empty", name.string)
+			return fmt.Errorf("binding %q is empty", name)
 		}
 
 		switch binding.Scheme {
 		case acaIngressSchemaTcp:
 			if binding.TargetPort == nil {
-				return fmt.Errorf("binding %q has scheme %q but no container port", name.string, binding.Scheme)
+				return fmt.Errorf("binding %q has scheme %q but no container port", name, binding.Scheme)
 			}
 		case acaIngressSchemaHttp:
 		case acaIngressSchemaHttps:
 		default:
-			return fmt.Errorf("binding %q has invalid scheme %q", name.string, binding.Scheme)
+			return fmt.Errorf("binding %q has invalid scheme %q", name, binding.Scheme)
 		}
 	}
 
 	return nil
 }
 
-// bindingGroup allows to move the key name and index from the binding to the group, so the name and order is not lost.
-type bindingGroup struct {
+// bindingWithOrder allows to move the key name and index from the binding to the group, so the name and order is not lost.
+type bindingWithOrder struct {
 	*Binding
 	name  string
 	order int
@@ -80,17 +86,18 @@ type bindingGroup struct {
 
 // groupBindingsByPort groups the bindings by the container port.
 // bindings with no container port are grouped under the "default" key.
-func groupBindingsByPort(bindings map[WithIndexKey]*Binding) map[string][]*bindingGroup {
-	endpointByContainerPort := make(map[string][]*bindingGroup)
-	for key, binding := range bindings {
+func groupBindingsByPort(bindings custommaps.WithOrder[Binding]) map[string][]*bindingWithOrder {
+	endpointByContainerPort := make(map[string][]*bindingWithOrder)
+	for order, name := range bindings.OrderedKeys() {
+		binding, _ := bindings.Get(name)
 		bindingKey := "default" // default is for those with no container port
 		if binding.TargetPort != nil {
 			bindingKey = fmt.Sprintf("%d", *binding.TargetPort)
 		}
-		endpointByContainerPort[bindingKey] = append(endpointByContainerPort[bindingKey], &bindingGroup{
+		endpointByContainerPort[bindingKey] = append(endpointByContainerPort[bindingKey], &bindingWithOrder{
 			Binding: binding,
-			name:    key.string,
-			order:   key.Index,
+			name:    name,
+			order:   order,
 		})
 	}
 	return endpointByContainerPort
@@ -99,7 +106,7 @@ func groupBindingsByPort(bindings map[WithIndexKey]*Binding) map[string][]*bindi
 // groupProperties iterate over the bindings from a group and returns the properties of the group.
 // Properties:
 // port, external, httpOnly, hasHttp2
-func groupProperties(endpointByTargetPort map[string][]*bindingGroup) map[string]*endpointGroupProperties {
+func groupProperties(endpointByTargetPort map[string][]*bindingWithOrder) map[string]*endpointGroupProperties {
 	endpointByTargetPortProperties := make(map[string]*endpointGroupProperties)
 	for containerPort, bindings := range endpointByTargetPort {
 		props := &endpointGroupProperties{httpOnly: true}
@@ -188,10 +195,10 @@ func httpIngress(endpointByTargetPortProperties map[string]*acaPort) string {
 
 type acaPort struct {
 	*endpointGroupProperties
-	bindings []*bindingGroup
+	bindings []*bindingWithOrder
 }
 
-func mapBindingsToPorts(bindings map[WithIndexKey]*Binding) map[string]*acaPort {
+func mapBindingsToPorts(bindings custommaps.WithOrder[Binding]) map[string]*acaPort {
 	endpointByTargetPort := groupBindingsByPort(bindings)
 	endpointByTargetPortProperties := groupProperties(endpointByTargetPort)
 

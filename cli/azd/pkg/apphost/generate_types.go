@@ -1,5 +1,7 @@
 package apphost
 
+import "github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+
 type genAppInsight struct{}
 
 type genStorageAccount struct {
@@ -57,7 +59,7 @@ type genContainerAppIngress struct {
 type genContainer struct {
 	Image    string
 	Env      map[string]string
-	Bindings map[WithIndexKey]*Binding
+	Bindings custommaps.WithOrder[Binding]
 	Inputs   map[string]Input
 	Volumes  []*Volume
 }
@@ -66,14 +68,14 @@ type genDockerfile struct {
 	Path      string
 	Context   string
 	Env       map[string]string
-	Bindings  map[WithIndexKey]*Binding
+	Bindings  custommaps.WithOrder[Binding]
 	BuildArgs map[string]string
 }
 
 type genProject struct {
 	Path     string
 	Env      map[string]string
-	Bindings map[WithIndexKey]*Binding
+	Bindings custommaps.WithOrder[Binding]
 }
 
 type genAppConfig struct{}

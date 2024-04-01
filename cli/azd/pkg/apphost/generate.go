@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
@@ -744,7 +745,7 @@ func (b *infraGenerator) addSqlDatabase(sqlAccount, dbName string) {
 }
 
 func (b *infraGenerator) addProject(
-	name string, path string, env map[string]string, bindings map[WithIndexKey]*Binding,
+	name string, path string, env map[string]string, bindings custommaps.WithOrder[Binding],
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -806,7 +807,7 @@ func (b *infraGenerator) addContainer(
 	name string,
 	image string,
 	env map[string]string,
-	bindings map[WithIndexKey]*Binding,
+	bindings custommaps.WithOrder[Binding],
 	inputs map[string]Input,
 	volumes []*Volume) {
 	b.requireCluster()
@@ -920,7 +921,7 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 
 func (b *infraGenerator) addDockerfile(
 	name string, path string, context string, env map[string]string,
-	bindings map[WithIndexKey]*Binding, buildArgs map[string]string,
+	bindings custommaps.WithOrder[Binding], buildArgs map[string]string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -1193,11 +1194,14 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		var has bool
 
 		if targetType == "project.v0" {
-			binding, has = BindingByName(b.projects[resource].Bindings, parts[0])
+			bindings := b.projects[resource].Bindings
+			binding, has = bindings.Get(parts[0])
 		} else if targetType == "container.v0" {
-			binding, has = BindingByName(b.containers[resource].Bindings, parts[0])
+			bindings := b.containers[resource].Bindings
+			binding, has = bindings.Get(parts[0])
 		} else if targetType == "dockerfile.v0" {
-			binding, has = BindingByName(b.dockerfiles[resource].Bindings, parts[0])
+			bindings := b.dockerfiles[resource].Bindings
+			binding, has = bindings.Get(parts[0])
 		}
 
 		if !has {

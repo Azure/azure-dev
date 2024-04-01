@@ -20,7 +20,8 @@
           "scheme": "http",
           "protocol": "tcp",
           "transport": "http",
-          "targetPort": 3000
+          "targetPort": 3000,
+          "external": true
         }
       }
     },

@@ -419,6 +419,38 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
 
+	param = knownParameterEnvironmentName
+	expectedParameter = `"exampleParameter"`
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
+
+	param = knownParameterEnvironmentName
+	expectedParameter = knownInjectedValueEnvironmentName
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
+	param = knownParameterTags
+	expectedParameter = `"exampleParameter"`
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
+
+	param = knownParameterTags
+	expectedParameter = knownInjectedValueTags
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
 	param = knownParameterLogAnalytics
 	expectedParameter = `"exampleParameter"`
 

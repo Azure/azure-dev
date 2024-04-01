@@ -4,10 +4,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { IActionContext, IAzureQuickPickItem, UserCancelledError } from '@microsoft/vscode-azext-utils';
+import { IActionContext, IAzureAgentInput, IAzureQuickPickItem, IAzureQuickPickOptions, UserCancelledError } from '@microsoft/vscode-azext-utils';
 import { createAzureDevCli } from "../utils/azureDevCli";
 import { execAsync } from "../utils/process";
 import { fileExists } from '../utils/fileUtils';
+import { AgentQuickPickItem } from 'vscode-azure-agent-api';
 
 const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].[yY][aA][mM][lL]';
 
@@ -94,13 +95,19 @@ export async function selectApplicationTemplate(context: IActionContext): Promis
         .build();
     const result = await execAsync(command, azureCli.spawnOptions());
     const templates = JSON.parse(result.stdout) as { name: string, description: string, repositoryPath: string }[];
-    const choices = templates.map(t => { return { label: t.name, detail: t.description, data: t.repositoryPath } as IAzureQuickPickItem<string>; });
-    choices.unshift({ label: vscode.l10n.t('Use another template...'), data: '', id: UseCustomTemplate });
-    choices.unshift({ label: vscode.l10n.t('Use existing source code...'), data: '', id: UseExistingSource });
+    const choices = templates.map(t => { return { label: t.name, detail: t.description, data: t.repositoryPath, agentMetadata: { } } as AgentQuickPickItem<IAzureQuickPickItem<string>>; });
+    choices.unshift({ label: vscode.l10n.t('Use another template...'), data: '', id: UseCustomTemplate, agentMetadata: { }});
+    choices.unshift({ label: vscode.l10n.t('Use existing source code...'), data: '', id: UseExistingSource, agentMetadata: { } });
 
-    const template = await context.ui.showQuickPick(choices, {
+    const ui = context.ui as IAzureAgentInput;
+
+    const template = await ui.showQuickPick<IAzureQuickPickItem<string>, IAzureQuickPickOptions>(choices, {
         canPickMany: false,
-        placeHolder: vscode.l10n.t('Select application template or use existing source code')
+        placeHolder: vscode.l10n.t('Select application template or use existing source code'),
+        agentMetadata: {
+            parameterDisplayTitle: vscode.l10n.t('Template'),
+            parameterDisplayDescription: vscode.l10n.t('Which Azure Developer CLI source template to use'),
+        }
     });
 
     if (template.id === UseExistingSource) {

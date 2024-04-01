@@ -148,6 +148,14 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
           name: 'my-sql-abstract'
           env: [
             {
+              name: 'resolve_http_binding'
+              value: 'http://mysqlabstract.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}'
+            }
+            {
+              name: 'resolve_tcp_binding'
+              value: 'tcp://mysqlabstract.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}:3306'
+            }
+            {
               name: 'MYSQL_ROOT_PASSWORD'
               secretRef: 'mysql-root-password'
             }
@@ -181,9 +189,14 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
+        additionalPortMappings: [
+          { targetPort: 3306
+          external: false }
+        ]
         external: false
-        targetPort: 3306
-        transport: 'tcp'
+        targetPort: 80
+        transport: 'http'
+        allowInsecure: true
       }
       secrets: [
         {

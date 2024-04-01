@@ -653,16 +653,20 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 }
 
 const (
-	knownParameterKeyVault      string = "keyVaultName"
-	knownParameterPrincipalId   string = "principalId"
-	knownParameterPrincipalType string = "principalType"
-	knownParameterPrincipalName string = "principalName"
-	knownParameterLogAnalytics  string = "logAnalyticsWorkspaceId"
+	knownParameterKeyVault        string = "keyVaultName"
+	knownParameterPrincipalId     string = "principalId"
+	knownParameterPrincipalType   string = "principalType"
+	knownParameterPrincipalName   string = "principalName"
+	knownParameterLogAnalytics    string = "logAnalyticsWorkspaceId"
+	knownParameterTags            string = "tags"
+	knownParameterEnvironmentName string = "environmentName"
 
-	knownInjectedValuePrincipalId   string = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
-	knownInjectedValuePrincipalType string = "'ServicePrincipal'"
-	knownInjectedValuePrincipalName string = "resources.outputs.MANAGED_IDENTITY_NAME"
-	knownInjectedValueLogAnalytics  string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
+	knownInjectedValuePrincipalId     string = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
+	knownInjectedValuePrincipalType   string = "'ServicePrincipal'"
+	knownInjectedValuePrincipalName   string = "resources.outputs.MANAGED_IDENTITY_NAME"
+	knownInjectedValueLogAnalytics    string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
+	knownInjectedValueTags            string = "tags"
+	knownInjectedValueEnvironmentName string = "environmentName"
 )
 
 // injectValueForBicepParameter checks for aspire-manifest and azd conventions rules for auto injecting values for
@@ -701,6 +705,12 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	}
 	if p == knownParameterLogAnalytics {
 		return knownInjectedValueLogAnalytics, true, nil
+	}
+	if p == knownParameterTags {
+		return knownInjectedValueTags, true, nil
+	}
+	if p == knownParameterEnvironmentName {
+		return knownInjectedValueEnvironmentName, true, nil
 	}
 	return finalParamValue, false, nil
 }

@@ -7,10 +7,12 @@ import { selectApplicationTemplate } from '../../cmdUtil';
 
 export class ChooseTemplateStep extends AzureWizardPromptStep<InitWizardContext> {
     public async prompt(wizardContext: InitWizardContext): Promise<void> {
-        wizardContext.templateUrl = await selectApplicationTemplate(wizardContext);
+        const { useExistingSource, templateUrl } = await selectApplicationTemplate(wizardContext);
+        wizardContext.templateUrl = templateUrl;
+        wizardContext.fromSource = useExistingSource;
     }
 
     public shouldPrompt(wizardContext: InitWizardContext): boolean {
-        return !wizardContext.templateUrl && !wizardContext.fromSource;
+        return wizardContext.templateUrl === undefined && wizardContext.fromSource === undefined;
     }
 }

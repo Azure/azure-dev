@@ -186,60 +186,15 @@ module sqlService 'br/public:avm/res/sql/server:0.2.0' = {
   }
 }
 
-module deploymentScript 'br/public:avm/res/resources/deployment-script:0.1.3' = {
-  name: 'deployment-script'
+module sqldeploymentscript '../../../../../common/infra/bicep/app/sql-deployment-script.bicep' = {
   scope: rg
+  name: 'sqldeploymentscript'
   params: {
-    kind: 'AzureCLI'
-    name: 'deployment-script'
-    azCliVersion: '2.37.0'
     location: location
-    retentionInterval: 'PT1H'
-    timeout: 'PT5M'
-    cleanupPreference: 'OnSuccess'
-    environmentVariables:{
-      secureList: [
-        {
-          name: 'APPUSERNAME'
-          value: appUser
-        }
-        {
-          name: 'APPUSERPASSWORD'
-          secureValue: appUserPassword
-        }
-        {
-          name: 'DBNAME'
-          value: !empty(sqlDatabaseName) ? sqlDatabaseName : 'Todo'
-        }
-        {
-          name: 'DBSERVER'
-          value: '${sqlService.outputs.name}${environment().suffixes.sqlServerHostname}'
-        }
-        {
-          name: 'SQLCMDPASSWORD'
-          secureValue: sqlAdminPassword
-        }
-        {
-          name: 'SQLADMIN'
-          value: sqlAdmin
-        }
-      ]
-    }
-    scriptContent: '''
-wget https://github.com/microsoft/go-sqlcmd/releases/download/v0.8.1/sqlcmd-v0.8.1-linux-x64.tar.bz2
-tar x -f sqlcmd-v0.8.1-linux-x64.tar.bz2 -C .
-
-cat <<SCRIPT_END > ./initDb.sql
-drop user if exists ${APPUSERNAME}
-go
-create user ${APPUSERNAME} with password = '${APPUSERPASSWORD}'
-go
-alter role db_owner add member ${APPUSERNAME}
-go
-SCRIPT_END
-
-./sqlcmd -S ${DBSERVER} -d ${DBNAME} -U ${SQLADMIN} -i ./initDb.sql
-    '''
+    appUserPassword: appUserPassword
+    sqlAdminPassword: sqlAdminPassword
+    sqlDatabaseName: !empty(sqlDatabaseName) ? sqlDatabaseName : 'Todo'
+    sqlServiceName: sqlService.outputs.name
   }
 }
 
@@ -359,8 +314,7 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output REACT_APP_API_BASE_URL string = useAPIM ? 'https://${apim.outputs.name}.azure-api.net/todo' : 'https://${api.outputs.defaultHostname}'
-output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
+output API_BASE_URL string = useAPIM ? 'https://${apim.outputs.name}.azure-api.net/todo' : 'https://${api.outputs.defaultHostname}'
 output REACT_APP_WEB_BASE_URL string = 'https://${web.outputs.defaultHostname}'
 output USE_APIM bool = useAPIM
 output SERVICE_API_ENDPOINTS array = useAPIM ? [ 'https://${apim.outputs.name}.azure-api.net/todo', 'https://${api.outputs.defaultHostname}' ]: []

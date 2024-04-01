@@ -121,6 +121,9 @@ repo:
 
     - from: ../../../../common/infra/bicep/app/apim-api-settings.bicep
       to: ./infra/app/apim-api-settings.bicep
+    
+    - from: ../../../../common/infra/bicep/app/sql-deployment-script.bicep
+      to: ./infra/app/sql-deployment-script.bicep
 
     - from: ./../../
       to: ./

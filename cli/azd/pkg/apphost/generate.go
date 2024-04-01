@@ -1221,12 +1221,16 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			var urlFormatString string
 
 			if binding.External {
-				urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+				urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
 			} else {
-				urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+				urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
+			}
+			var port string
+			if binding.TargetPort != nil {
+				port = fmt.Sprintf(":%d", *binding.TargetPort)
 			}
 
-			return fmt.Sprintf(urlFormatString, binding.Scheme, resource), nil
+			return fmt.Sprintf(urlFormatString, binding.Scheme, resource, port), nil
 		default:
 			return "",
 				fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[host|port|url] but was: %s", v)

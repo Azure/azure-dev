@@ -30,7 +30,7 @@ type Prompter interface {
 type DefaultPrompter struct {
 	console        input.Console
 	env            *environment.Environment
-	accountManager account.Manager
+	accountManager account.Account
 	azCli          azcli.AzCli
 	portalUrlBase  string
 }
@@ -38,7 +38,7 @@ type DefaultPrompter struct {
 func NewDefaultPrompter(
 	env *environment.Environment,
 	console input.Console,
-	accountManager account.Manager,
+	accountManager account.Account,
 	azCli azcli.AzCli,
 	portalUrlBase cloud.PortalUrlBase,
 ) Prompter {

@@ -190,7 +190,7 @@ type loginAction struct {
 	writer            io.Writer
 	console           input.Console
 	authManager       *auth.Manager
-	accountSubManager *account.SubscriptionsManager
+	accountSubManager account.Account
 	flags             *loginFlags
 	annotations       CmdAnnotations
 	commandRunner     exec.CommandRunner
@@ -203,7 +203,7 @@ func newAuthLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	authManager *auth.Manager,
-	accountSubManager *account.SubscriptionsManager,
+	accountSubManager account.Account,
 	flags *authLoginFlags,
 	console input.Console,
 	annotations CmdAnnotations,
@@ -228,7 +228,7 @@ func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	authManager *auth.Manager,
-	accountSubManager *account.SubscriptionsManager,
+	accountSubManager account.Account,
 	flags *loginFlags,
 	console input.Console,
 	annotations CmdAnnotations,

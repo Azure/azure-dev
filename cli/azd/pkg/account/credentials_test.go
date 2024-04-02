@@ -5,7 +5,7 @@ package account
 
 import (
 	"context"
-	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,27 +28,24 @@ func TestSubscriptionCredentialProvider(t *testing.T) {
 		tenant2: &dummyCredential{},
 	}
 
-	subToTenant := map[string]string{
-		sub1: tenant1,
-		sub2: tenant2,
+	provider := &account{
+		cache: &InMemorySubCache{
+			stored: []Subscription{
+				{
+					Id:                 sub1,
+					UserAccessTenantId: tenant1,
+				},
+				{
+					Id:                 sub2,
+					UserAccessTenantId: tenant2,
+				},
+			},
+		},
+		tenantCredentials: sync.Map{},
+		principalInfo:     &principalInfoProviderMock{},
 	}
-
-	provider := NewSubscriptionCredentialProvider(
-		subscriptionTenantResolverFunc(func(ctx context.Context, subscriptionId string) (string, error) {
-			if tenantId, has := subToTenant[subscriptionId]; has {
-				return tenantId, nil
-			} else {
-				return "", errors.New("unknown subscription")
-			}
-		}),
-		multiTenantCredentialProviderFunc(func(ctx context.Context, tenantId string) (azcore.TokenCredential, error) {
-			if credential, has := tenantToCred[tenantId]; has {
-				return credential, nil
-			} else {
-				return nil, errors.New("unknown tenant")
-			}
-		}),
-	)
+	provider.tenantCredentials.Store(tenant1, tenantToCred[tenant1])
+	provider.tenantCredentials.Store(tenant2, tenantToCred[tenant2])
 
 	t.Run("Success", func(t *testing.T) {
 		cred1, err := provider.CredentialForSubscription(context.Background(), sub1)
@@ -64,23 +61,6 @@ func TestSubscriptionCredentialProvider(t *testing.T) {
 		_, err := provider.CredentialForSubscription(context.Background(), "11111111-1111-1111-1111-111111111111")
 		assert.Error(t, err)
 	})
-}
-
-// subscriptionTenantResolverFunc implements [SubscriptionTenantResolver] using a provided function.
-type subscriptionTenantResolverFunc func(ctx context.Context, subscriptionId string) (string, error)
-
-func (r subscriptionTenantResolverFunc) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
-	return r(ctx, subscriptionId)
-}
-
-// multiTenantCredentialProviderFunc implements [auth.MultiTenantCredentialProviderF] using a provided function.
-type multiTenantCredentialProviderFunc func(ctx context.Context, tenantId string) (azcore.TokenCredential, error)
-
-func (p multiTenantCredentialProviderFunc) GetTokenCredential(
-	ctx context.Context,
-	tenantId string,
-) (azcore.TokenCredential, error) {
-	return p(ctx, tenantId)
 }
 
 // dummyCredential implements [azcore.TokenCredential] and returns a fixed token.

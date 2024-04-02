@@ -7,8 +7,14 @@ import (
 	"log"
 	"os"
 	"slices"
+	"sync"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 // JSON document path locations for default subscription & location
@@ -24,11 +30,20 @@ var defaultLocation Location = Location{
 	RegionalDisplayName: "(US) East US 2",
 }
 
-type Manager interface {
+// Handles getting and setting configuration
+//   - Defaults
+//
+// Handles subscriptions and tenants related to the account (API calls) -- move to client
+// Handles caching around subscriptions and tenants (possible -- this is all local data)
+//   - Who is responsible for lazy loading the cache?
+//
+// Handles middle-tier presentation of "subscriptions and locations"
+// In VS, we have a "subscription picker" that is a dropdown of subscriptions
+type Account interface {
 	Clear(ctx context.Context) error
 	HasDefaultSubscription() bool
 	HasDefaultLocation() bool
-	GetAccountDefaults(ctx context.Context) (*Account, error)
+	GetAccountDefaults(ctx context.Context) (*Config, error)
 	GetDefaultLocationName(ctx context.Context) string
 	GetDefaultSubscriptionID(ctx context.Context) string
 	GetSubscriptions(ctx context.Context) ([]Subscription, error)
@@ -36,21 +51,51 @@ type Manager interface {
 	GetLocations(ctx context.Context, subscriptionId string) ([]Location, error)
 	SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error)
 	SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error)
+
+	GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error)
+	GetLocation(ctx context.Context, subscriptionId, locationName string) (Location, error)
+
+	ClearSubscriptions(ctx context.Context) error
+	RefreshSubscriptions(ctx context.Context) error
+
+	// Resolve the tenant ID required by the current account to access the given subscription.
+	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
+
+	CredentialForSubscription(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error)
+	CredentialForTenant(ctx context.Context, tenantId string) (azcore.TokenCredential, error)
 }
 
-// Manages azd account configuration
-type manager struct {
+// Represents an azd account.
+type account struct {
 	// Path to the local azd user configuration file
 	filePath      string
 	configManager config.FileConfigManager
 	config        config.Config
-	subManager    *SubscriptionsManager
+
+	auth  *auth.Manager
+	cloud *cloud.Cloud
+
+	armClientOptions *arm.ClientOptions
+
+	// In-memory store for tenant credentials. Since azcore.TokenCredential is usually backed by a publicClient
+	// that holds an in-memory cache, we need to hold on to azcore.TokenCredential instances to maintain that cache.
+	// It also allows us to call EnsureLoggedInCredential once.
+	tenantCredentials sync.Map
+
+	// Typically auth.Manager
+	principalInfo principalInfoProvider
+
+	cache   subCache
+	console input.Console
 }
 
 // Creates a new Account Manager instance
 func NewManager(
+	auth *auth.Manager,
+	cloud *cloud.Cloud,
 	configManager config.FileConfigManager,
-	subManager *SubscriptionsManager) (Manager, error) {
+	armClientOptions *arm.ClientOptions,
+	console input.Console) (Account, error) {
 	filePath, err := config.GetUserConfigFilePath()
 	if err != nil {
 		return nil, err
@@ -66,18 +111,28 @@ func NewManager(
 		}
 	}
 
-	return &manager{
-		filePath:      filePath,
-		subManager:    subManager,
-		configManager: configManager,
-		config:        azdConfig,
+	cache, err := newSubCache()
+	if err != nil {
+		return nil, err
+	}
+
+	return &account{
+		auth:             auth,
+		armClientOptions: armClientOptions,
+		cloud:            cloud,
+		filePath:         filePath,
+		configManager:    configManager,
+		config:           azdConfig,
+		console:          console,
+		principalInfo:    auth,
+		cache:            cache,
 	}, nil
 }
 
 // Gets the default subscription for the logged in account.
 // 1. Returns AZD config defaults if exists
 // 2. Returns Coded location default if needed
-func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
+func (m *account) GetAccountDefaults(ctx context.Context) (*Config, error) {
 	subscription, err := m.getDefaultSubscription(ctx)
 	if err != nil {
 		// logging the error, but we don't want to fail, as this could only
@@ -96,7 +151,7 @@ func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 		}
 	}
 
-	return &Account{
+	return &Config{
 		DefaultSubscription: subscription,
 		DefaultLocation:     location,
 	}, nil
@@ -104,13 +159,13 @@ func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 
 // Gets the available Azure subscriptions for the current logged in account, across all tenants the user has access to.
 // Applies the default subscription on the matching account
-func (m *manager) GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscription, error) {
+func (m *account) GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscription, error) {
 	defaultSubscription, err := m.getDefaultSubscription(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	subscriptions, err := m.subManager.GetSubscriptions(ctx)
+	subscriptions, err := m.GetSubscriptions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -132,14 +187,9 @@ func (m *manager) GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscri
 	return results, nil
 }
 
-// Gets the available Azure subscriptions for the current logged in account, across all tenants the user has access to.
-func (m *manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
-	return m.subManager.GetSubscriptions(ctx)
-}
-
 // Gets the available Azure locations for the specified Azure subscription.
-func (m *manager) GetLocations(ctx context.Context, subscriptionId string) ([]Location, error) {
-	locations, err := m.subManager.ListLocations(ctx, subscriptionId)
+func (m *account) GetLocations(ctx context.Context, subscriptionId string) ([]Location, error) {
+	locations, err := m.ListLocations(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving Azure location for account '%s': %w", subscriptionId, err)
 	}
@@ -148,8 +198,8 @@ func (m *manager) GetLocations(ctx context.Context, subscriptionId string) ([]Lo
 }
 
 // Sets the default Azure subscription for the current logged in principal.
-func (m *manager) SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
-	subscription, err := m.subManager.GetSubscription(ctx, subscriptionId)
+func (m *account) SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
+	subscription, err := m.GetSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting account for id '%s'", subscriptionId)
 	}
@@ -172,8 +222,8 @@ func (m *manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 }
 
 // Sets the default Azure location for the current logged in principal.
-func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error) {
-	locations, err := m.subManager.ListLocations(ctx, subscriptionId)
+func (m *account) SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error) {
+	locations, err := m.ListLocations(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving locations: %w", err)
 	}
@@ -202,21 +252,21 @@ func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 }
 
 // HasDefaultSubscription returns true if a default subscription has been configured (i.e defaults.subscription is set)
-func (m *manager) HasDefaultSubscription() bool {
+func (m *account) HasDefaultSubscription() bool {
 	_, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
 
 	return hasDefaultSubscription
 }
 
 // HasDefaultLocation returns true if a default location has been configured (i.e defaults.location is set)
-func (m *manager) HasDefaultLocation() bool {
+func (m *account) HasDefaultLocation() bool {
 	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
 
 	return hasDefaultLocation
 }
 
 // Clears any persisted defaults in the AZD config
-func (m *manager) Clear(ctx context.Context) error {
+func (m *account) Clear(ctx context.Context) error {
 	err := m.config.Unset("defaults")
 	if err != nil {
 		return fmt.Errorf("failed clearing defaults: %w", err)
@@ -232,7 +282,7 @@ func (m *manager) Clear(ctx context.Context) error {
 
 // Returns the default subscription ID stored in configuration.
 // If configuration is not found or invalid, an empty string is returned.
-func (m *manager) GetDefaultSubscriptionID(ctx context.Context) string {
+func (m *account) GetDefaultSubscriptionID(ctx context.Context) string {
 	// Get the default subscription ID from azd configuration
 	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
 	if !ok {
@@ -250,7 +300,7 @@ func (m *manager) GetDefaultSubscriptionID(ctx context.Context) string {
 // Returns the default subscription for the current logged in principal
 // If set in config will return the configured subscription
 // otherwise will return nil.
-func (m *manager) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
+func (m *account) getDefaultSubscription(ctx context.Context) (*Subscription, error) {
 	// Get the default subscription ID from azd configuration
 	configSubscriptionId, ok := m.config.Get(defaultSubscriptionKeyPath)
 
@@ -259,7 +309,7 @@ func (m *manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 	}
 
 	subscriptionId := fmt.Sprint(configSubscriptionId)
-	subscription, err := m.subManager.GetSubscription(ctx, subscriptionId)
+	subscription, err := m.GetSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf(
 			`the subscription id '%s' is either invalid or you no longer have access. 
@@ -278,7 +328,7 @@ func (m *manager) getDefaultSubscription(ctx context.Context) (*Subscription, er
 
 // Gets the default Azure location name stored in configuration.
 // If configuration is not found or invalid, a default location (eastus2) is returned.
-func (m *manager) GetDefaultLocationName(ctx context.Context) string {
+func (m *account) GetDefaultLocationName(ctx context.Context) string {
 	configLocation, ok := m.config.Get(defaultLocationKeyPath)
 	if !ok {
 		return defaultLocation.Name
@@ -294,14 +344,14 @@ func (m *manager) GetDefaultLocationName(ctx context.Context) string {
 
 // Gets the default Azure location stored in configuration
 // When specified in azd config, will return the location when valid, otherwise azd global default (eastus2)
-func (m *manager) getDefaultLocation(ctx context.Context, subscriptionId string) (*Location, error) {
+func (m *account) getDefaultLocation(ctx context.Context, subscriptionId string) (*Location, error) {
 	configLocation, ok := m.config.Get(defaultLocationKeyPath)
 	if !ok {
 		return &defaultLocation, nil
 	}
 
 	locationName := fmt.Sprint(configLocation)
-	allLocations, err := m.subManager.ListLocations(ctx, subscriptionId)
+	allLocations, err := m.ListLocations(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving account locations: %w", err)
 	}

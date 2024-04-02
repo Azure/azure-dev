@@ -100,7 +100,7 @@ type ProvisionAction struct {
 	projectConfig    *project.ProjectConfig
 	writer           io.Writer
 	console          input.Console
-	subManager       *account.SubscriptionsManager
+	subManager       account.Account
 	importManager    *project.ImportManager
 	portalUrlBase    string
 }
@@ -117,7 +117,7 @@ func NewProvisionAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	subManager *account.SubscriptionsManager,
+	subManager account.Account,
 	portalUrlBase cloud.PortalUrlBase,
 ) actions.Action {
 	return &ProvisionAction{

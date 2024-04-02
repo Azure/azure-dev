@@ -29,7 +29,7 @@ func newLogoutCmd(parent string) *cobra.Command {
 
 type logoutAction struct {
 	authManager       *auth.Manager
-	accountSubManager *account.SubscriptionsManager
+	accountSubManager account.Account
 	formatter         output.Formatter
 	writer            io.Writer
 	console           input.Console
@@ -38,7 +38,7 @@ type logoutAction struct {
 
 func newLogoutAction(
 	authManager *auth.Manager,
-	accountSubManager *account.SubscriptionsManager,
+	accountSubManager account.Account,
 	formatter output.Formatter,
 	writer io.Writer,
 	console input.Console,

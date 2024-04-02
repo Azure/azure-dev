@@ -539,10 +539,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.MustRegisterScoped(auth.NewManager)
 	container.MustRegisterSingleton(azcli.NewUserProfileService)
-	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)
-	container.MustRegisterSingleton(account.NewSubscriptionsManager)
-	container.MustRegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.MustRegisterSingleton(azcli.NewManagedClustersService)
 	container.MustRegisterSingleton(azcli.NewAdService)
 	container.MustRegisterSingleton(azcli.NewContainerRegistryService)
@@ -551,7 +548,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterSingleton(azcli.NewSpringService)
 
-	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
+	container.MustRegisterSingleton(func(subManager account.Account) account.SubscriptionTenantResolver {
 		return subManager
 	})
 

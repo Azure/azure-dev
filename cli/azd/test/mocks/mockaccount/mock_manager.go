@@ -7,12 +7,49 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
+var _ account.Account = &MockAccountManager{}
+
 type MockAccountManager struct {
 	DefaultLocation     string
 	DefaultSubscription string
 
 	Subscriptions []account.Subscription
 	Locations     []account.Location
+}
+
+// ClearSubscriptions implements account.Account.
+func (a *MockAccountManager) ClearSubscriptions(ctx context.Context) error {
+	panic("unimplemented")
+}
+
+// GetLocation implements account.Account.
+func (a *MockAccountManager) GetLocation(ctx context.Context, subscriptionId string, locationName string) (account.Location, error) {
+	panic("unimplemented")
+}
+
+// GetSubscription implements account.Account.
+func (a *MockAccountManager) GetSubscription(ctx context.Context, subscriptionId string) (*account.Subscription, error) {
+	panic("unimplemented")
+}
+
+// RefreshSubscriptions implements account.Account.
+func (a *MockAccountManager) RefreshSubscriptions(ctx context.Context) error {
+	panic("unimplemented")
+}
+
+// CredentialForSubscription implements account.Account.
+func (a *MockAccountManager) CredentialForSubscription(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error) {
+	panic("unimplemented")
+}
+
+// CredentialForTenant implements account.Account.
+func (a *MockAccountManager) CredentialForTenant(ctx context.Context, tenantId string) (azcore.TokenCredential, error) {
+	panic("unimplemented")
+}
+
+// LookupTenant implements account.Account.
+func (a *MockAccountManager) LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
+	panic("unimplemented")
 }
 
 func (a *MockAccountManager) Clear(ctx context.Context) error {
@@ -29,8 +66,8 @@ func (a *MockAccountManager) HasDefaultLocation() bool {
 	return a.DefaultLocation != ""
 }
 
-func (a *MockAccountManager) GetAccountDefaults(ctx context.Context) (*account.Account, error) {
-	return &account.Account{
+func (a *MockAccountManager) GetAccountDefaults(ctx context.Context) (*account.Config, error) {
+	return &account.Config{
 		DefaultSubscription: &account.Subscription{
 			Id:                 a.DefaultSubscription,
 			Name:               "",

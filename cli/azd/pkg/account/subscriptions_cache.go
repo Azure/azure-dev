@@ -25,18 +25,14 @@ type SubscriptionsCache struct {
 	inMemoryLock sync.RWMutex
 }
 
-func NewSubscriptionsCache() (*SubscriptionsCache, error) {
+func newSubCache() (*SubscriptionsCache, error) {
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("loading stored user subscriptions: %w", err)
 	}
 
-	return NewSubscriptionsCacheWithDir(filepath.Join(configDir, cSubscriptionsCacheFile))
-}
-
-func NewSubscriptionsCacheWithDir(cachePath string) (*SubscriptionsCache, error) {
 	return &SubscriptionsCache{
-		cachePath: cachePath,
+		cachePath: filepath.Join(configDir, cSubscriptionsCacheFile),
 	}, nil
 }
 

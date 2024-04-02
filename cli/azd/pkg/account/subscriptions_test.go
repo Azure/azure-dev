@@ -8,8 +8,12 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -127,7 +131,7 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 					return mockarmresources.IsListSubscriptions(request) && mockhttp.HasBearerToken(request, tenantID)
 				})
 
-				// If error is registered, use the error
+				// If error is regisered, use the error
 				if err, ok := tt.args.subscriptionErrors[tenant]; ok {
 					whenTenantRequest.SetNonRetriableError(err)
 					continue
@@ -156,14 +160,25 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 				principalInfo = tt.args.principalInfo
 			}
 
-			subManager := &SubscriptionsManager{
-				service: NewSubscriptionsService(
-					&mocks.MockMultiTenantCredentialProvider{},
-					armClientOptions(mockHttp),
-				),
-				cache:         NewBypassSubscriptionsCache(),
-				principalInfo: principalInfo,
-				console:       mockinput.NewMockConsole(),
+			subManager := &account{
+				armClientOptions:  armClientOptions(mockHttp),
+				cache:             NewBypassSubscriptionsCache(),
+				principalInfo:     principalInfo,
+				console:           mockinput.NewMockConsole(),
+				tenantCredentials: sync.Map{},
+			}
+			subManager.tenantCredentials.Store("", &dummyCredential{})
+
+			for _, tenant := range tt.args.tenants {
+				id := *tenant.TenantID
+				subManager.tenantCredentials.Store(id, &mocks.MockCredentials{
+					GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+						return azcore.AccessToken{
+							Token:     id,
+							ExpiresOn: time.Now(),
+						}, nil
+					},
+				})
 			}
 
 			got, err := subManager.ListSubscriptions(ctx)

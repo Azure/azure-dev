@@ -1,7 +1,7 @@
 package account
 
-// AZD Account configuration
-type Account struct {
+// Account configuration
+type Config struct {
 	DefaultSubscription *Subscription `json:"defaultSubscription"`
 	DefaultLocation     *Location     `json:"defaultLocation"`
 }

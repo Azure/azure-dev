@@ -110,7 +110,7 @@ type DeployAction struct {
 	projectManager      project.ProjectManager
 	serviceManager      project.ServiceManager
 	resourceManager     project.ResourceManager
-	accountManager      account.Manager
+	accountManager      account.Account
 	azCli               azcli.AzCli
 	portalUrlBase       string
 	formatter           output.Formatter
@@ -130,7 +130,7 @@ func NewDeployAction(
 	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
 	environment *environment.Environment,
-	accountManager account.Manager,
+	accountManager account.Account,
 	portalUrlBase cloud.PortalUrlBase,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,

@@ -163,10 +163,13 @@ func (at *containerAppTarget) validateTargetResource(
 	}
 
 	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
-			return err
-		}
-	}
+        // Check if the resource type is either AzureResourceTypeContainerApp or AzureResourceTypeContainerAppJob
+        if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
+            if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerAppJob); err != nil {
+                return err
+            }
+        }
+    }
 
 	return nil
 }

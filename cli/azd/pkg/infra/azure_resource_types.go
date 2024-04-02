@@ -15,6 +15,7 @@ const (
 	AzureResourceTypeCDNProfile              AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeContainerAppJob         AzureResourceType = "Microsoft.App/jobs"
 	AzureResourceTypeSpringApp               AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
@@ -72,6 +73,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Static Web App"
 	case AzureResourceTypeContainerApp:
 		return "Container App"
+	case AzureResourceTypeContainerAppJob:
+		return "Container App Job"
 	case AzureResourceTypeContainerAppEnvironment:
 		return "Container Apps Environment"
 	case AzureResourceTypeServiceBusNamespace:

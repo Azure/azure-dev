@@ -3,6 +3,11 @@ location: {{ "{{ .Env.AZURE_LOCATION }}" }}
 identity:
   type: UserAssigned
   userAssignedIdentities:
+{{- if (gt (len .UserAssignedIdentities) 0) }}
+{{- range $name, $value := .UserAssignedIdentities }}
+    {{ $value.ResourceId }}: {}
+{{- end}}
+{{- end}}
     ? {{ `"{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}"` }}
     : {}
 properties:

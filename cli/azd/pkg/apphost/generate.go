@@ -425,6 +425,33 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 		}
 
 	}
+	// from user assigned identities
+	if resource.UserAssignedIdentities != nil {
+		for _, value := range resource.UserAssignedIdentities {
+			outputs, err := evaluateForOutputs(value.ClientId)
+			if err != nil {
+				return err
+			}
+			resourceOutputs, err := evaluateForOutputs(value.ResourceId)
+			if err != nil {
+				return err
+			}
+
+			for key, output := range resourceOutputs {
+				if _, ok := outputs[key]; !ok {
+					outputs[key] = output
+				}
+			}
+
+			for key, output := range outputs {
+				if strings.Contains(output.Value, ".outputs.") {
+					b.bicepContext.OutputParameters[key] = output
+				} else {
+					b.bicepContext.OutputSecretParameters[key] = output
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -447,7 +474,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "azure.appinsights.v0":
 			b.addAppInsights(name)
 		case "project.v0":
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings)
+			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.UserAssignedIdentities)
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
 		case "dapr.v0":
@@ -752,14 +779,20 @@ func (b *infraGenerator) addSqlDatabase(sqlAccount, dbName string) {
 
 func (b *infraGenerator) addProject(
 	name string, path string, env map[string]string, bindings custommaps.WithOrder[Binding],
+	userAssignedIdentities []UserAssignedIdentity,
 ) {
+	if userAssignedIdentities == nil {
+		userAssignedIdentities = []UserAssignedIdentity{}
+	}
+
 	b.requireCluster()
 	b.requireContainerRegistry()
 
 	b.projects[name] = genProject{
-		Path:     path,
-		Env:      env,
-		Bindings: bindings,
+		Path:                   path,
+		Env:                    env,
+		Bindings:               bindings,
+		UserAssignedIdentities: userAssignedIdentities,
 	}
 }
 
@@ -1026,10 +1059,11 @@ func (b *infraGenerator) Compile() error {
 
 	for resourceName, project := range b.projects {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:            resourceName,
-			Env:             make(map[string]string),
-			Secrets:         make(map[string]string),
-			KeyVaultSecrets: make(map[string]string),
+			Name:                   resourceName,
+			Env:                    make(map[string]string),
+			Secrets:                make(map[string]string),
+			KeyVaultSecrets:        make(map[string]string),
+			UserAssignedIdentities: []*UserAssignedIdentity{},
 		}
 
 		i, err := buildAcaIngress(project.Bindings, 8080)
@@ -1060,6 +1094,9 @@ func (b *infraGenerator) Compile() error {
 			}
 		}
 
+		if err := b.buildUserAssignedIdentities(project.UserAssignedIdentities, project.Env, &projectTemplateCtx); err != nil {
+			return err
+		}
 		if err := b.buildEnvBlock(project.Env, &projectTemplateCtx); err != nil {
 			return err
 		}
@@ -1344,6 +1381,48 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 
 		return "", fmt.Errorf("unsupported resource type %s referenced in binding expression", targetType)
 	}
+}
+
+// buildUserAssignedIdentities both maps a new env for the Client ID in to the project and creates any required
+// environment variables necessary within the template context (for example when the IDs are sourced through Bicep).
+func (b *infraGenerator) buildUserAssignedIdentities(
+	userAssignedIdentities []UserAssignedIdentity,
+	env map[string]string,
+	manifestCtx *genContainerAppManifestTemplateContext,
+) error {
+	for _, value := range userAssignedIdentities {
+		clientId, err := EvalString(value.ClientId, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
+		if err != nil {
+			return fmt.Errorf("evaluating value for clientId: %w", err)
+		}
+
+		resourceId, err := EvalString(value.ResourceId, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
+		if err != nil {
+			return fmt.Errorf("evaluating value for resourceId: %w", err)
+		}
+
+		clientIdYamlString, err := yaml.Marshal(clientId)
+		if err != nil {
+			return fmt.Errorf("marshalling env value: %w", err)
+		}
+
+		resourceIdYamlString, err := yaml.Marshal(resourceId)
+		if err != nil {
+			return fmt.Errorf("marshalling env value: %w", err)
+		}
+
+		resolvedClientId := string(clientIdYamlString[0 : len(clientIdYamlString)-1])
+		resolvedResourceId := string(resourceIdYamlString[0 : len(resourceIdYamlString)-1])
+
+		env[value.EnvPrefix+"_CLIENT_ID"] = value.ClientId
+		manifestCtx.UserAssignedIdentities = append(manifestCtx.UserAssignedIdentities, &UserAssignedIdentity{
+			EnvPrefix:  value.EnvPrefix,
+			ClientId:   resolvedClientId,
+			ResourceId: resolvedResourceId,
+		})
+	}
+
+	return nil
 }
 
 // buildEnvBlock creates the environment map in the template context. It does this by copying the values from the given map,

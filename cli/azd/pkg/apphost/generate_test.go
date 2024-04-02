@@ -35,6 +35,9 @@ var aspireEscapingManifest []byte
 //go:embed testdata/aspire-container.json
 var aspireContainerManifest []byte
 
+//go:embed testdata/aspire-project-uai.json
+var aspireProjectUaiManifest []byte
+
 // mockPublishManifest mocks the dotnet run --publisher manifest command to return a fixed manifest.
 func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[string]string) {
 	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -73,6 +76,57 @@ func TestAspireEscaping(t *testing.T) {
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
+	require.NoError(t, err)
+
+	for _, name := range []string{"api"} {
+		t.Run(name, func(t *testing.T) {
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
+			require.NoError(t, err)
+			snapshot.SnapshotT(t, tmpl)
+		})
+	}
+}
+
+func TestAspireProjectUserAssignedIdentities(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	filesFromManifest := make(map[string]string)
+	ignoredBicepContent := "bicep file contents"
+	filesFromManifest["test.bicep"] = ignoredBicepContent
+	mockPublishManifest(mockCtx, aspireProjectUaiManifest, filesFromManifest)
+
+	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
+	require.NoError(t, err)
+
+	files, err := BicepTemplate(m)
+	require.NoError(t, err)
+
+	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		// only capturing main.bicep to ensure output variables are captured successfully from the bicep
+		if path != "main.bicep" {
+			return nil
+		}
+		contents, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+		t.Run(path, func(t *testing.T) {
+			snapshot.SnapshotT(t, string(contents))
+		})
+		return nil
+	})
 	require.NoError(t, err)
 
 	for _, name := range []string{"api"} {

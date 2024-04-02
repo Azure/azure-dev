@@ -77,6 +77,9 @@ type Resource struct {
 	// For a bicep.v0 resource, defines the input parameters for the bicep file.
 	Params map[string]any `json:"params,omitempty"`
 
+	// UserAssignedIdentities is optionally present on a project.v0 resource.
+	UserAssignedIdentities []UserAssignedIdentity `json:userAssignedIdentities,omitempty`
+
 	// parameter.v0 uses value field to define the value of the parameter.
 	Value string
 
@@ -109,6 +112,12 @@ type Binding struct {
 	Protocol   string `json:"protocol"`
 	Transport  string `json:"transport"`
 	External   bool   `json:"external"`
+}
+
+type UserAssignedIdentity struct {
+	EnvPrefix  string `json:"env"`
+	ClientId   string `json:"clientId"`
+	ResourceId string `json:"resourceId"`
 }
 
 type Volume struct {

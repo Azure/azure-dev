@@ -1,0 +1,40 @@
+{
+  "resources": {
+    "identities": {
+      "type": "azure.bicep.v0",
+      "path": "test.bicep"
+    },
+    "api": {
+      "type": "project.v0",
+      "path": "..\\MyBlog.Api\\MyBlog.Api.csproj",
+      "env": {
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true"
+      },
+      "bindings": {
+        "http": {
+          "scheme": "http",
+          "protocol": "tcp",
+          "transport": "http"
+        },
+        "https": {
+          "scheme": "https",
+          "protocol": "tcp",
+          "transport": "http"
+        }
+      },
+      "userAssignedIdentities": [
+        {
+          "clientId": "00000000-0000-0000-0000-000000000000",
+          "resourceId": "/subscriptions/\u003Csubscription_id\u003E/resourcegroups/my-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/my-user",
+          "env": "TEST"
+        },
+        {
+          "clientId": "{identities.outputs.clientId}",
+          "resourceId": "{identities.outputs.resourceId}",
+          "env": "TEST2"
+        }
+      ]
+    }
+  }
+}

@@ -224,6 +224,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 // Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
 func Test_CLI_Aspire_Deploy(t *testing.T) {
+	t.Skip("depends on new aspire release")
 	if cfg.CI && os.Getenv("AZURE_RECORD_MODE") != "live" {
 		t.Skip("skipping live test")
 	}

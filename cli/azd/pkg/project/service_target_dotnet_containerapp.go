@@ -208,6 +208,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 					// stores the parameter value.
 					"securedParameter": fns.Parameter,
 					"secretOutput":     fns.kvSecret,
+					"targetPortOrDefault": func(targetPortFromManifest int) int {
+						// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
+						if portNumber == 0 {
+							return targetPortFromManifest
+						}
+						return portNumber
+					},
 				}).
 				Parse(manifest)
 			if err != nil {
@@ -226,15 +233,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			builder := strings.Builder{}
 			err = tmpl.Execute(&builder, struct {
-				Env        map[string]string
-				Image      string
-				Inputs     map[string]any
-				TargetPort int
+				Env    map[string]string
+				Image  string
+				Inputs map[string]any
 			}{
-				Env:        at.env.Dotenv(),
-				Image:      remoteImageName,
-				Inputs:     inputs,
-				TargetPort: portNumber,
+				Env:    at.env.Dotenv(),
+				Image:  remoteImageName,
+				Inputs: inputs,
 			})
 			if err != nil {
 				task.SetError(fmt.Errorf("failed executing template file: %w", err))

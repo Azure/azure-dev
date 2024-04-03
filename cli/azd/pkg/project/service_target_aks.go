@@ -764,14 +764,14 @@ func (t *aksTarget) getServiceEndpoints(
 		for _, resource := range service.Status.LoadBalancer.Ingress {
 			endpoints = append(
 				endpoints,
-				fmt.Sprintf("http://%s, (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
+				fmt.Sprintf("http://%s (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
 			)
 		}
 	} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
 		for index, ip := range service.Spec.ClusterIps {
 			endpoints = append(
 				endpoints,
-				fmt.Sprintf("http://%s:%d, (Service: %s, Type: ClusterIP)",
+				fmt.Sprintf("http://%s:%d (Service: %s, Type: ClusterIP)",
 					ip,
 					service.Spec.Ports[index].Port,
 					service.Metadata.Name,
@@ -816,7 +816,7 @@ func (t *aksTarget) getIngressEndpoints(
 			return nil, fmt.Errorf("failed constructing service endpoints, %w", err)
 		}
 
-		endpoints = append(endpoints, fmt.Sprintf("%s, (Ingress, Type: LoadBalancer)", endpointUrl))
+		endpoints = append(endpoints, fmt.Sprintf("%s (Ingress, Type: LoadBalancer)", endpointUrl))
 	}
 
 	return endpoints, nil

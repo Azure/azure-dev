@@ -520,7 +520,7 @@
         "mocha": "~10",
         "node-loader": "~2",
         "ts-loader": "~9",
-        "typescript": "~5.1",
+        "typescript": "~5.3",
         "webpack": "~5",
         "webpack-bundle-analyzer": "~4",
         "webpack-cli": "~5"
@@ -533,6 +533,7 @@
         "dotenv": "~16",
         "rxjs": "~7",
         "semver": "~7",
+        "typechat": "~0.1",
         "vscode-azure-agent-api": "https://github.com/microsoft/vscode-azure-agent/releases/download/api-v1.0.0-beta.10/vscode-azure-agent-api-1.0.0-beta.10.tgz",
         "yaml": "~2",
         "zod": "~3"

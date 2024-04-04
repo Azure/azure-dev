@@ -6,6 +6,7 @@ import { AzExtUserInputWithInputQueue, AzureUserInputQueue, IAzureUserInput, cal
 import { SimpleCommandConfig, SkillCommandConfig as SkillCommandConfigAgent, WizardCommandConfig } from 'vscode-azure-agent-api';
 import { init } from '../init';
 import { up } from '../up';
+import { azdSkillCommand } from './azdSkillCommand';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AzdCommand = { handler: (context: IActionContext, ...args: any[]) => Promise<any> };
@@ -75,4 +76,13 @@ const agentCommands: CommandConfig[] = [
         intentDescription: 'This is best when users ask to deploy their application to Azure.',
         requiresAzureLogin: true,
     } satisfies WizardCommandConfig,
+    {
+        type: 'skill',
+        name: 'azdSkill',
+        commandId: 'azure-dev.commands.cli.skill',
+        displayName: 'Azure Developer CLI Skill',
+        intentDescription: 'This is best when users ask to do something magical.',
+        requiresAzureLogin: false,
+        handler: azdSkillCommand
+    } satisfies SkillCommandConfig
 ];

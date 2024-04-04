@@ -23,6 +23,8 @@ export async function init(context: IActionContext & { skipExecute?: boolean }, 
     wizardContext.templateUrl = options?.templateUrl;
     wizardContext.fromSource = options?.fromSource;
     wizardContext.environmentName = options?.environmentName;
+    wizardContext.location = options?.location;
+    wizardContext.subscriptionId = options?.subscriptionId;
 
     const promptSteps = [
         new ChooseWorkspaceFolderStep(),

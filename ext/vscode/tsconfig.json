@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
-        "module": "commonjs",
+        "module": "NodeNext",
         "target": "es2020",
         "outDir": "out",
         "lib": [
@@ -17,7 +17,7 @@
         "noImplicitAny": true,
         "noImplicitReturns": true,
         "strictNullChecks": true,
-        "skipLibCheck": true // Ignore typing issues in libraries
+        "skipLibCheck": true, // Ignore typing issues in libraries
     },
     "exclude": [
         "node_modules",

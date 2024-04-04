@@ -3,8 +3,8 @@
 
 import * as vscode from 'vscode';
 import * as dotenv from 'dotenv';
-import * as dayjs from 'dayjs';
-import * as duration from 'dayjs/plugin/duration';
+import { default as dayjs } from 'dayjs';
+import { default as duration } from 'dayjs/plugin/duration';
 dayjs.extend(duration);
 import { callWithTelemetryAndErrorHandling, IActionContext } from '@microsoft/vscode-azext-utils';
 import { TaskPseudoterminal } from './taskPseudoterminal';
@@ -50,9 +50,9 @@ export class DotEnvTaskProvider implements vscode.TaskProvider {
     }
 
     private executeTaskWithTelemetry(
-        taskName: string, 
-        resolvedDefinition: DotEnvTaskDefinition, 
-        writer: PseudoterminalWriter, 
+        taskName: string,
+        resolvedDefinition: DotEnvTaskDefinition,
+        writer: PseudoterminalWriter,
         ct: vscode.CancellationToken
     ): Promise<number> {
         return callWithTelemetryAndErrorHandling(TelemetryId.DotEnvTask, async (context: IActionContext) => {
@@ -75,10 +75,10 @@ export class DotEnvTaskProvider implements vscode.TaskProvider {
     }
 
     private async executeTask(
-        context: IActionContext, 
-        dotEnvTaskName: string, 
-        resolvedDefinition: DotEnvTaskDefinition, 
-        writer: PseudoterminalWriter, 
+        context: IActionContext,
+        dotEnvTaskName: string,
+        resolvedDefinition: DotEnvTaskDefinition,
+        writer: PseudoterminalWriter,
         ct: vscode.CancellationToken
     ): Promise<DotEnvTaskResult> {
         const resolvedFile = vscode.Uri.file(resolveVariables(resolvedDefinition.file));
@@ -123,9 +123,9 @@ export class DotEnvTaskProvider implements vscode.TaskProvider {
 }
 
 async function executeChildTask(
-    context: IActionContext, 
-    target: vscode.Task, 
-    envVars: { [key: string]: string }, 
+    context: IActionContext,
+    target: vscode.Task,
+    envVars: { [key: string]: string },
     writer: PseudoterminalWriter
 ): Promise<DotEnvTaskResult> {
     const haveExecution = target.execution && (target.execution instanceof vscode.ProcessExecution || target.execution instanceof vscode.ShellExecution);
@@ -155,11 +155,11 @@ async function executeChildTask(
     // We have to invoke the execution property setter to make the changes effective.
     target.execution = execution;
 
-    // Opt out of the VS Code logic that ensures tasks with the same command line have at most one instance running. 
+    // Opt out of the VS Code logic that ensures tasks with the same command line have at most one instance running.
     // Any constraints like this should apply to our "dotenv" task, and not to tasks launched by us.
     target.definition.idRandomizer = Math.random();
     const startTime = dayjs();
-    
+
     const taskExecution = await vscode.tasks.executeTask(target);
     writer.writeLine(vscode.l10n.t("Child task '{0}' started", target.name));
 

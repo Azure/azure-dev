@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
-	"github.com/azure/azure-dev/cli/azd/pkg/ai/promptflow"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -581,8 +580,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(npm.NewNpmCli)
 	container.MustRegisterSingleton(python.NewPythonCli)
 	container.MustRegisterSingleton(swa.NewSwaCli)
-	container.MustRegisterSingleton(promptflow.NewCli)
-	container.MustRegisterScoped(ai.NewTool)
+	container.MustRegisterScoped(ai.NewPythonBridge)
 	container.MustRegisterScoped(project.NewAiHelper)
 
 	// Provisioning
@@ -596,18 +594,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Service Targets
 	serviceTargetMap := map[project.ServiceTargetKind]any{
-		project.NonSpecifiedTarget:       project.NewAppServiceTarget,
-		project.AppServiceTarget:         project.NewAppServiceTarget,
-		project.AzureFunctionTarget:      project.NewFunctionAppTarget,
-		project.ContainerAppTarget:       project.NewContainerAppTarget,
-		project.StaticWebAppTarget:       project.NewStaticWebAppTarget,
-		project.AksTarget:                project.NewAksTarget,
-		project.SpringAppTarget:          project.NewSpringAppTarget,
-		project.DotNetContainerAppTarget: project.NewDotNetContainerAppTarget,
-		project.AiModelTarget:            project.NewAiModel,
-		project.AiEndpointTarget:         project.NewAiEndpoint,
-		project.AiEnvironmentTarget:      project.NewAiEnvironment,
-		project.AiFlowTarget:             project.NewAiFlow,
+		project.NonSpecifiedTarget:            project.NewAppServiceTarget,
+		project.AppServiceTarget:              project.NewAppServiceTarget,
+		project.AzureFunctionTarget:           project.NewFunctionAppTarget,
+		project.ContainerAppTarget:            project.NewContainerAppTarget,
+		project.StaticWebAppTarget:            project.NewStaticWebAppTarget,
+		project.AksTarget:                     project.NewAksTarget,
+		project.SpringAppTarget:               project.NewSpringAppTarget,
+		project.DotNetContainerAppTarget:      project.NewDotNetContainerAppTarget,
+		project.MachineLearningEndpointTarget: project.NewMachineLearningEndpointTarget,
 	}
 
 	for target, constructor := range serviceTargetMap {

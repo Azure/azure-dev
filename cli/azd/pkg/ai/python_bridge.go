@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -24,7 +23,7 @@ const (
 	MLClient         ScriptPath = "ml_client.py"
 )
 
-type Tool struct {
+type PythonBridge struct {
 	azdCtx        *azdcontext.AzdContext
 	env           *environment.Environment
 	pythonCli     *python.PythonCli
@@ -33,13 +32,13 @@ type Tool struct {
 	initialized   bool
 }
 
-func NewTool(
+func NewPythonBridge(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	pythonCli *python.PythonCli,
 	commandRunner exec.CommandRunner,
-) *Tool {
-	return &Tool{
+) *PythonBridge {
+	return &PythonBridge{
 		azdCtx:        azdCtx,
 		env:           env,
 		pythonCli:     pythonCli,
@@ -47,7 +46,7 @@ func NewTool(
 	}
 }
 
-func (t *Tool) Initialize(ctx context.Context) error {
+func (t *PythonBridge) Initialize(ctx context.Context) error {
 	if t.initialized {
 		return nil
 	}
@@ -61,7 +60,7 @@ func (t *Tool) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func (t *Tool) initPython(ctx context.Context) error {
+func (t *PythonBridge) initPython(ctx context.Context) error {
 	envDir := t.azdCtx.EnvironmentRoot(t.env.Name())
 	targetDir := filepath.Join(envDir, "ai")
 	if _, err := os.Stat(targetDir); errors.Is(err, os.ErrNotExist) {
@@ -87,21 +86,21 @@ func (t *Tool) initPython(ctx context.Context) error {
 	return nil
 }
 
-func (t *Tool) Run(ctx context.Context, scriptName ScriptPath, args ...string) (*exec.RunResult, error) {
+func (t *PythonBridge) Run(ctx context.Context, scriptName ScriptPath, args ...string) (*exec.RunResult, error) {
 	allArgs := append([]string{string(scriptName)}, args...)
 	runArgs := exec.
 		NewRunArgs("python", allArgs...).
 		WithCwd(t.workingDir)
 
-	fmt.Printf("EXECUTING: python %s\n", strings.Join(allArgs, " "))
+	//fmt.Printf("EXECUTING: python %s\n", strings.Join(allArgs, " "))
 
 	result, err := t.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed running Python script: %w", err)
 	}
 
-	fmt.Printf("STDOUT: %s\n", result.Stdout)
-	fmt.Printf("STDERR: %s\n", result.Stderr)
+	// fmt.Printf("STDOUT: %s\n", result.Stdout)
+	// fmt.Printf("STDERR: %s\n", result.Stderr)
 
 	return &result, nil
 }

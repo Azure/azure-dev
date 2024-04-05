@@ -47,15 +47,6 @@ type ServiceConfig struct {
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }
 
-type AiAppOptions struct {
-	Name           string `yaml:"name,omitempty"`
-	Workspace      string `yaml:"workspace,omitempty"`
-	Environment    string `yaml:"environment,omitempty"`
-	Model          string `yaml:"model,omitempty"`
-	Path           string `yaml:"path,omitempty"`
-	DeploymentPath string `yaml:"deploymentPath,omitempty"`
-}
-
 type DotNetContainerAppOptions struct {
 	Manifest    *apphost.Manifest
 	ProjectName string

@@ -19,18 +19,15 @@ import (
 type ServiceTargetKind string
 
 const (
-	NonSpecifiedTarget       ServiceTargetKind = ""
-	AppServiceTarget         ServiceTargetKind = "appservice"
-	ContainerAppTarget       ServiceTargetKind = "containerapp"
-	AzureFunctionTarget      ServiceTargetKind = "function"
-	StaticWebAppTarget       ServiceTargetKind = "staticwebapp"
-	SpringAppTarget          ServiceTargetKind = "springapp"
-	AksTarget                ServiceTargetKind = "aks"
-	DotNetContainerAppTarget ServiceTargetKind = "containerapp-dotnet"
-	AiModelTarget            ServiceTargetKind = "ml.model"
-	AiEndpointTarget         ServiceTargetKind = "ml.endpoint"
-	AiEnvironmentTarget      ServiceTargetKind = "ml.environment"
-	AiFlowTarget             ServiceTargetKind = "ai.flow"
+	NonSpecifiedTarget            ServiceTargetKind = ""
+	AppServiceTarget              ServiceTargetKind = "appservice"
+	ContainerAppTarget            ServiceTargetKind = "containerapp"
+	AzureFunctionTarget           ServiceTargetKind = "function"
+	StaticWebAppTarget            ServiceTargetKind = "staticwebapp"
+	SpringAppTarget               ServiceTargetKind = "springapp"
+	AksTarget                     ServiceTargetKind = "aks"
+	DotNetContainerAppTarget      ServiceTargetKind = "containerapp-dotnet"
+	MachineLearningEndpointTarget ServiceTargetKind = "ml.endpoint"
 )
 
 // RequiresContainer returns true if the service target runs a container image.
@@ -56,10 +53,7 @@ func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
 		StaticWebAppTarget,
 		SpringAppTarget,
 		AksTarget,
-		AiEnvironmentTarget,
-		AiModelTarget,
-		AiEndpointTarget,
-		AiFlowTarget:
+		MachineLearningEndpointTarget:
 
 		return kind, nil
 	}
@@ -146,10 +140,6 @@ func resourceTypeMismatchError(
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
 	supportedTargets := []ServiceTargetKind{
 		AksTarget,
-		AiEnvironmentTarget,
-		AiModelTarget,
-		AiEndpointTarget,
-		AiFlowTarget,
 	}
 
 	return slices.Contains(supportedTargets, st)

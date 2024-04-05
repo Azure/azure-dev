@@ -3,9 +3,7 @@
 
 import argparse
 from azure.identity import AzureDeveloperCliCredential
-from azure.core.credentials import TokenCredential
 from azure.ai.ml import MLClient, load_environment, load_model, load_online_endpoint, load_online_deployment
-from promptflow.azure import PFClient
 
 def create_or_update_environment(client: MLClient, file_path: str, overrides: list[dict]):
     environment = load_environment(source=file_path, params_override=overrides)

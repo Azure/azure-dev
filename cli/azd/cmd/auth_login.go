@@ -530,7 +530,19 @@ func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.Co
 		// interactive browser login will 404 when attempting to redirect to localhost
 		// (since azd launches a localhost server running remotely and the login response is accepted locally).
 		// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
-		useDevCode = runningOnCodespacesBrowser(ctx, commandRunner)
+		if runningOnCodespacesBrowser(ctx, commandRunner) {
+			codespaceName := os.Getenv("CODESPACE_NAME")
+			url := fmt.Sprintf("https://github.com/codespaces/%s?editor=vscode", codespaceName)
+			fmt.Println(`Due to security policies that prevent authenticating with Azure and Microsoft 
+				accounts directly from the browser, you are required to open this project in Visual Studio Code Desktop.`)
+			fmt.Println(`This restriction is in place to ensure the security of your account 
+				details and to comply with best practices for authentication workflows.`)
+			fmt.Printf("Please use the following link to proceed with opening your Codespace in Visual Studio Code Desktop: %s.\n",
+				output.WithLinkFormat(url))
+
+			os.Exit(0) // Exiting the application
+			return false, fmt.Errorf("running in Codespaces browser, exiting")
+		}
 	}
 
 	if auth.ShouldUseCloudShellAuth() {

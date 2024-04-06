@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/blang/semver/v4"
 )
 
@@ -205,7 +206,7 @@ func (cli *dotNetCli) PublishContainer(
 		return 0, fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
 	}
 
-	port, err := cli.getTargetPort(result.Stdout)
+	port, err := cli.getTargetPort(result.Stdout, project)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get dotnet target port: %w", err)
 	}
@@ -213,10 +214,23 @@ func (cli *dotNetCli) PublishContainer(
 	return port, nil
 }
 
-func (cli *dotNetCli) getTargetPort(result string) (int, error) {
+func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 	var targetPorts []targetPort
 	var configOutput responseContainerConfiguration
 
+	// make sure result only contains json config output
+	result = strings.Split(result, "\n\r\n\r")[0]
+
+	// if empty string or there's no config output
+	if result == "" || !strings.Contains(result, "{\"config\":") {
+		return 0, &azcli.ErrorWithSuggestion{
+			Err: fmt.Errorf("empty dotnet configuration output"),
+			Suggestion: fmt.Sprintf("project '%s' isn't enabled for container support. To enable SDK "+
+				"container support, set the 'EnableSdkContainerSupport' property to true in your project file",
+				project,
+			),
+		}
+	}
 	if err := json.Unmarshal([]byte(result), &configOutput); err != nil {
 		return 0, fmt.Errorf("unmarshal dotnet configuration output '%s' failed: %w", result, err)
 	}

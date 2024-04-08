@@ -4,34 +4,28 @@
 
 ### Features Added
 
-- [[3569]](https://github.com/Azure/azure-dev/pull/3569) Add `--from-code ` flag to initialize from existing code when running `azd init`
+- [[3569]](https://github.com/Azure/azure-dev/pull/3569) Adds `--from-code ` flag to initialize from existing code when running `azd init`
 - Dotnet Aspire:
   - [[3612]](https://github.com/Azure/azure-dev/pull/3612) Supports Aspire apps with multiple exposed ports
-  - [[3073]](https://github.com/Azure/azure-dev/pull/3073) Discover export port from the result of `dotnet publish`
-  - [[3285]](https://github.com/Azure/azure-dev/pull/3285) Implement `DeleteEnvironmentAsync` RPC for Aspire Server
-  - [[3364]](https://github.com/Azure/azure-dev/pull/3364) Allows azd to delegate prompting behavior to an external host
-  - [[3285]](https://github.com/Azure/azure-dev/pull/3285) Support more input generation in Aspire manifest
-  - [[3467]](https://github.com/Azure/azure-dev/pull/3467) Expose spinner updates in Visual Studio
-  - [[3545]](https://github.com/Azure/azure-dev/pull/3545) Updates Aspire generator to use the build args from the dockerfile resources
+  - [[3484]](https://github.com/Azure/azure-dev/pull/3484) Discovers export port from the result of `dotnet publish`
+  - [[3560]](https://github.com/Azure/azure-dev/pull/3560) VS-Server: Implements `DeleteEnvironmentAsync` RPC for Aspire Server
+  - [[3364]](https://github.com/Azure/azure-dev/pull/3364) Supports prompting behavior to an external host
   - [[3556]](https://github.com/Azure/azure-dev/pull/3556) Adds Aspire volumes support
-  - [[3484]](https://github.com/Azure/azure-dev/pull/3484) Discovers exposed port from the result of `dotnet publish`
-  - [[3560]](https://github.com/Azure/azure-dev/pull/3560) VS-Server: Implements `DeleteEnvironmentAsync`
 
 ### Breaking Changes
 
-- [[3589]](https://github.com/Azure/azure-dev/pull/3589) Add secure() for secrets in container apps. The `container-app.bicep` and `container-app-upsert.bicep` modules now mark the secrets parameter as secure(), and expect secrets to be an object (versus an array). You will need to reformat your array of [{name: 'secret-name', value: secretValue}, ...] as an object like {'secret-name': secretValue, ...} instead. Thanks @pamelafox for the contribution
+- [[3589]](https://github.com/Azure/azure-dev/pull/3589) Adds secure() for secrets in container apps. The `container-app.bicep` and `container-app-upsert.bicep` modules now mark the secrets parameter as secure(), and expect secrets to be an object (versus an array). You will need to reformat your array of [{name: 'secret-name', value: secretValue}, ...] as an object like {'secret-name': secretValue, ...} instead. Thanks @pamelafox for the contribution
 - [[3594]](https://github.com/Azure/azure-dev/pull/3594) Updates Node.js version to 20
 - [[3578]](https://github.com/Azure/azure-dev/issues/3578) Updates Node.js version to 20 for [installing `azd` GitHub Action](https://github.com/Azure/setup-azd)
 
 ### Bugs Fixed
 
-- [[3651]](https://github.com/Azure/azure-dev/pull/3651) Fix invalid url in `todo-nodejs-mongo-aks`
-- [[3496]](https://github.com/Azure/azure-dev/pull/3496) Fix Azure Key Vault name generated from Azure Cosmos DB resource is too long
+- [[3651]](https://github.com/Azure/azure-dev/pull/3651) Fixes invalid url in `todo-nodejs-mongo-aks`
+- [[3610]](https://github.com/Azure/azure-dev/pull/3610) Fixes too long auto-generated Azure Key Vault name by using Hash
 - [[3638]](https://github.com/Azure/azure-dev/pull/3638) Fixes `InvalidAuthenticationTokenTenant` error
 - Dotnet Aspire: 
-  - [[3434]](https://github.com/Azure/azure-dev/pull/3434) Fix calling `azd infra synth` doesn't produce the autogenerate inputs
   - [[3650]](https://github.com/Azure/azure-dev/pull/3650) Writes default port to manifest for docker
-  - [[3432]](https://github.com/Azure/azure-dev/pull/3432) Set build args for dockerfile
+  - [[3545]](https://github.com/Azure/azure-dev/pull/3545) Updates Aspire generator to use the build args from the dockerfile resources
   - [[3554]](https://github.com/Azure/azure-dev/pull/3554) Fixes `azd infra synth` doesn't convert dashes to underscores in `containerApp.tmpl.yaml`
 
 ### Other Changes

@@ -5,6 +5,7 @@ aspnet
 ASPNETCORE
 asyncio
 autouse
+azconfig
 azdo
 azdeveloper
 borderless

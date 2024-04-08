@@ -1,0 +1,14 @@
+apiVersion: azconfig.io/v1
+kind: AzureAppConfigurationProvider
+metadata:
+  name: todo-api-config-provider
+spec:
+  endpoint: {{.Env.AZURE_APP_CONFIGURATION_ENDPOINT}}
+  target:
+    configMapName: todo-api-config
+  auth:
+    managedIdentityClientId: {{.Env.AZURE_AKS_IDENTITY_CLIENT_ID}}
+  configuration:
+    selectors:
+      - keyFilter: "*"
+        labelFilter: todo-api

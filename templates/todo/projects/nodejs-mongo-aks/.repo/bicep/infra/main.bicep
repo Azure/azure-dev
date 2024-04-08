@@ -21,6 +21,7 @@ param containerRegistryName string = ''
 
 param applicationInsightsDashboardName string = ''
 param applicationInsightsName string = ''
+param configStoreName string = ''
 param cosmosAccountName string = ''
 param cosmosDatabaseName string = ''
 param keyVaultName string = ''
@@ -101,12 +102,36 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
   }
 }
 
+// Manage configuration in Azure App Configuration
+module azappconfig '../../../../../../common/infra/bicep/core/config/configstore.bicep' = {
+  name: 'azappconfig'
+  scope: rg
+  params: {
+    name: !empty(configStoreName) ? configStoreName : '${abbrs.appConfigurationStores}${resourceToken}'
+    location: location
+    tags: tags
+    keyValueNames: [
+      'AZURE_AKS_IDENTITY_CLIENT_ID$todo-api'
+      'AZURE_KEY_VAULT_ENDPOINT$todo-api'
+      'APPLICATIONINSIGHTS_CONNECTION_STRING$todo-api'
+      'REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING$todo-web'
+    ]
+    keyValueValues: [
+      aks.outputs.clusterIdentity.clientId
+      keyVault.outputs.endpoint
+      monitoring.outputs.applicationInsightsConnectionString
+      monitoring.outputs.applicationInsightsConnectionString
+    ]
+    principalId: aks.outputs.clusterIdentity.objectId
+  }
+}
+
 // Data outputs
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
+output AZURE_APP_CONFIGURATION_ENDPOINT string = azappconfig.outputs.endpoint
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
@@ -114,4 +139,3 @@ output AZURE_TENANT_ID string = tenant().tenantId
 output AZURE_AKS_CLUSTER_NAME string = aks.outputs.clusterName
 output AZURE_AKS_IDENTITY_CLIENT_ID string = aks.outputs.clusterIdentity.clientId
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = aks.outputs.containerRegistryLoginServer
-output AZURE_CONTAINER_REGISTRY_NAME string = aks.outputs.containerRegistryName

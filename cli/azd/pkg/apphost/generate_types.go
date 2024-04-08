@@ -1,5 +1,7 @@
 package apphost
 
+import "github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+
 type genAppInsight struct{}
 
 type genStorageAccount struct {
@@ -34,33 +36,46 @@ type genContainerApp struct {
 	Env     map[string]string
 	Secrets map[string]string
 	Ingress *genContainerAppIngress
+	Volumes []*Volume
+}
+
+type genContainerAppIngressPort struct {
+	External   bool
+	TargetPort int
+}
+
+type genContainerAppIngressAdditionalPortMappings struct {
+	genContainerAppIngressPort
+	ExposedPort int
 }
 
 type genContainerAppIngress struct {
-	External      bool
-	TargetPort    int
-	Transport     string
-	AllowInsecure bool
+	genContainerAppIngressPort
+	Transport              string
+	AllowInsecure          bool
+	AdditionalPortMappings []genContainerAppIngressAdditionalPortMappings
 }
 
 type genContainer struct {
 	Image    string
 	Env      map[string]string
-	Bindings map[string]*Binding
+	Bindings custommaps.WithOrder[Binding]
 	Inputs   map[string]Input
+	Volumes  []*Volume
 }
 
 type genDockerfile struct {
-	Path     string
-	Context  string
-	Env      map[string]string
-	Bindings map[string]*Binding
+	Path      string
+	Context   string
+	Env       map[string]string
+	Bindings  custommaps.WithOrder[Binding]
+	BuildArgs map[string]string
 }
 
 type genProject struct {
 	Path     string
 	Env      map[string]string
-	Bindings map[string]*Binding
+	Bindings custommaps.WithOrder[Binding]
 }
 
 type genAppConfig struct{}
@@ -92,11 +107,6 @@ type genDaprComponent struct {
 	Version  string
 }
 
-type genInput struct {
-	Secret           bool
-	DefaultMinLength int
-}
-
 type genSqlServer struct {
 	Databases []string
 }
@@ -117,6 +127,7 @@ type genBicepTemplateContext struct {
 	HasDaprStore                    bool
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
+	RequiresStorageVolume           bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount
@@ -131,6 +142,8 @@ type genBicepTemplateContext struct {
 	OutputParameters                map[string]genOutputParameter
 	OutputSecretParameters          map[string]genOutputParameter
 	BicepModules                    map[string]genBicepModules
+	// parameters to be passed from main.bicep to resources.bicep
+	mappedParameters []string
 }
 
 type genContainerAppManifestTemplateContext struct {

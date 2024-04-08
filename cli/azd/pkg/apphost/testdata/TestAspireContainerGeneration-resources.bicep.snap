@@ -3,11 +3,20 @@ param location string = resourceGroup().location
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
-@secure()
-param inputs object
-
 
 var resourceToken = uniqueString(resourceGroup().id)
+@secure()
+param my_sql_abstract_pas_sw_ord string
+@secure()
+param my_sql_abstract_password string
+@secure()
+param mysqlabstract_pas_sw_ord string
+@secure()
+param mysqlabstract_password string
+@secure()
+param noVolume_pas_sw_ord string
+@secure()
+param noVolume_password string
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'mi-${resourceToken}'
@@ -26,6 +35,40 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
   tags: tags
 }
 
+resource storageVolume 'Microsoft.Storage/storageAccounts@2022-05-01' = {
+  name: 'vol${resourceToken}'
+  location: location
+  kind: 'StorageV2'
+  sku: {
+    name: 'Standard_LRS'
+  }
+  properties: {
+    largeFileSharesState: 'Enabled'
+  }
+}
+
+resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileServices@2022-05-01' = {
+  parent: storageVolume
+  name: 'default'
+}
+
+resource mySqlAbstractProjectAppHostVolumeTwoFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: take('${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}', 32)
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
+  }
+}
+resource mysqlabstractProjectAppHostVolumeOneFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: take('${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}', 32)
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
+  }
+}
+
 resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
   name: 'cae-${resourceToken}'
   location: location
@@ -41,8 +84,171 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   tags: tags
 }
 
+resource mySqlAbstractProjectAppHostVolumeTwoStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: take('${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}', 32)
+  properties: {
+    azureFile: {
+      shareName: '${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+      accessMode: 'ReadOnly'
+    }
+  }
+}
+
+resource mysqlabstractProjectAppHostVolumeOneStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: take('${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}', 32)
+  properties: {
+    azureFile: {
+      shareName: '${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+      accessMode: 'ReadWrite'
+    }
+  }
+}
+
+resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
+  name: 'my-sql-abstract'
+  location: location
+  dependsOn: [storageVolume]
+  properties: {
+    environmentId: containerAppEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        targetPort: 3306
+        transport: 'tcp'
+      }
+      secrets: [
+        {
+          name: 'mysql-root-password'
+          value: my_sql_abstract_password
+        }
+        {
+          name: 'specialchar'
+          value: my_sql_abstract_pas_sw_ord
+        }
+      ]
+    }
+    template: {
+      volumes: [
+        {
+          name: '${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}'
+          storageType: 'AzureFile'
+          storageName: mySqlAbstractProjectAppHostVolumeTwoStore.name
+        }
+      ]
+      containers: [
+        {
+          image: 'mysql:latest'
+          name: 'my-sql-abstract'
+          env: [
+            {
+              name: 'resolve_http_binding'
+              value: 'http://mysqlabstract.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}'
+            }
+            {
+              name: 'resolve_tcp_binding'
+              value: 'tcp://mysqlabstract.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}:3306'
+            }
+            {
+              name: 'MYSQL_ROOT_PASSWORD'
+              secretRef: 'mysql-root-password'
+            }
+            {
+              name: 'SpecialChar'
+              secretRef: 'specialchar'
+            }
+          ]
+          volumeMounts: [
+            {
+              volumeName: '${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}'
+              mountPath: '/data/db'
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+      }
+    }
+  }
+  tags: union(tags, {'aspire-resource-name': 'my-sql-abstract'})
+}
+
 resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
   name: 'mysqlabstract'
+  location: location
+  dependsOn: [storageVolume]
+  properties: {
+    environmentId: containerAppEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        additionalPortMappings: [
+          { targetPort: 3306
+          external: false }
+        ]
+        external: false
+        targetPort: 80
+        transport: 'http'
+        allowInsecure: true
+      }
+      secrets: [
+        {
+          name: 'mysql-root-password'
+          value: mysqlabstract_password
+        }
+        {
+          name: 'specialchar'
+          value: mysqlabstract_pas_sw_ord
+        }
+      ]
+    }
+    template: {
+      volumes: [
+        {
+          name: '${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}'
+          storageType: 'AzureFile'
+          storageName: mysqlabstractProjectAppHostVolumeOneStore.name
+        }
+      ]
+      containers: [
+        {
+          image: 'mysql:latest'
+          name: 'mysqlabstract'
+          env: [
+            {
+              name: 'MYSQL_ROOT_PASSWORD'
+              secretRef: 'mysql-root-password'
+            }
+            {
+              name: 'SpecialChar'
+              secretRef: 'specialchar'
+            }
+          ]
+          volumeMounts: [
+            {
+              volumeName: '${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}'
+              mountPath: '/data/db'
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+      }
+    }
+  }
+  tags: union(tags, {'aspire-resource-name': 'mysqlabstract'})
+}
+
+resource noVolume 'Microsoft.App/containerApps@2023-05-02-preview' = {
+  name: 'novolume'
   location: location
   properties: {
     environmentId: containerAppEnvironment.id
@@ -56,19 +262,19 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
       secrets: [
         {
           name: 'mysql-root-password'
-          value: inputs.mysqlabstract.password
+          value: noVolume_password
         }
         {
           name: 'specialchar'
-          value: inputs.mysqlabstract['pas-sw-ord']
-        }    
+          value: noVolume_pas_sw_ord
+        }
       ]
     }
     template: {
       containers: [
         {
           image: 'mysql:latest'
-          name: 'mysqlabstract'
+          name: 'noVolume'
           env: [
             {
               name: 'MYSQL_ROOT_PASSWORD'
@@ -86,7 +292,7 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
       }
     }
   }
-  tags: union(tags, {'aspire-resource-name': 'mysqlabstract'})
+  tags: union(tags, {'aspire-resource-name': 'noVolume'})
 }
 
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId

@@ -118,6 +118,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			task.SetProgress(NewServiceProgress("Pushing container image"))
 
 			var remoteImageName string
+			var portNumber int
 
 			if serviceConfig.Language == ServiceLanguageDocker {
 				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
@@ -133,7 +134,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else {
 				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
 
-				err = at.dotNetCli.PublishContainer(
+				portNumber, err = at.dotNetCli.PublishContainer(
 					ctx,
 					serviceConfig.Path(),
 					"Release",
@@ -202,7 +203,18 @@ func (at *dotnetContainerAppTarget) Deploy(
 					"urlHost":          fns.UrlHost,
 					"connectionString": fns.ConnectionString,
 					"parameter":        fns.Parameter,
+					// securedParameter gets a parameter the same way as parameter, but supporting the securedParameter
+					// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
+					// stores the parameter value.
+					"securedParameter": fns.Parameter,
 					"secretOutput":     fns.kvSecret,
+					"targetPortOrDefault": func(targetPortFromManifest int) int {
+						// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
+						if portNumber == 0 {
+							return targetPortFromManifest
+						}
+						return portNumber
+					},
 				}).
 				Parse(manifest)
 			if err != nil {
@@ -515,13 +527,13 @@ func evalBindingRefWithParent(v string, parent *apphost.Resource, env *environme
 				"bindings.<binding-name>.<property> but was: %s", v)
 		}
 
-		binding := *parent.Bindings[bindParts[0]]
+		binding, _ := parent.Bindings.Get(bindParts[0])
 		switch bindParts[1] {
 		case "host":
 			// The host name matches the containerapp name, so we can just return the resource name.
 			return resource, nil
-		case "port":
-			return fmt.Sprintf(`%d`, *binding.ContainerPort), nil
+		case "targetPort":
+			return fmt.Sprintf(`%d`, *binding.TargetPort), nil
 		case "url":
 			var urlFormatString string
 

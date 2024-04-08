@@ -193,8 +193,9 @@ func (s *EnvironmentStore) Save(ctx context.Context, env *environment.Environmen
 }
 
 // Delete implements environment.RemoteDataStore.
+// Since the remote data store doesn't store environment configuration / metadata,
+// we only delete the local storage.
 func (s *EnvironmentStore) Delete(ctx context.Context, name string) error {
-	// TODO: Is the user expected to be able to delete from DevCenter?
 	return s.local.Delete(ctx, name)
 }
 

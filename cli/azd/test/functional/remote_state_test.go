@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -70,25 +69,12 @@ func createBlobClient(
 	storageConfig *storage.AccountConfig,
 	httpClient auth.HttpClient,
 ) storage.BlobClient {
-	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-
-	authManager, err := auth.NewManager(
-		fileConfigManager,
-		config.NewUserConfigManager(fileConfigManager),
-		cloud.AzurePublic(),
-		httpClient, mockContext.Console,
-		auth.ExternalAuthConfiguration{},
-	)
-	require.NoError(t, err)
-
-	credentials, err := authManager.CredentialForCurrentUser(*mockContext.Context, nil)
-	require.NoError(t, err)
-
 	coreClientOptions := azsdk.NewClientOptionsBuilderFactory(httpClient, "azd", cloud.AzurePublic()).
 		NewClientOptionsBuilder().
 		BuildCoreClientOptions()
 
-	sdkClient, err := storage.NewBlobSdkClient(credentials, storageConfig, coreClientOptions, cloud.AzurePublic())
+	sdkClient, err := storage.NewBlobSdkClient(
+		mockContext.MultiTenantCredentialProvider, storageConfig, coreClientOptions, cloud.AzurePublic())
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)
 

@@ -4,6 +4,12 @@
       "type": "dockerfile.v0",
       "path": "../NodeApp/Dockerfile",
       "context": "../NodeApp",
+      "buildArgs": {
+        "SOME_STRING": "Test",
+        "SOME_BOOL": "True",
+        "SOME_NUMBER": "7",
+        "SOME_NONVALUE": null
+      },
       "env": {
         "NODE_ENV": "development",
         "PORT": "{nodeapp.bindings.http.port}",
@@ -14,7 +20,26 @@
           "scheme": "http",
           "protocol": "tcp",
           "transport": "http",
-          "containerPort": 3000
+          "targetPort": 3000,
+          "external": true
+        }
+      }
+    },
+    "mysqlabstract-password": {
+      "type": "parameter.v0",
+      "value": "{mysqlabstract-password.inputs.value}",
+      "inputs": {
+        "value": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 20,
+              "lower": false,
+              "minNumeric": 5,
+              "minSpecial": 5
+            }
+          }
         }
       }
     },
@@ -22,28 +47,17 @@
       "type": "container.v0",
       "image": "mysql:latest",
       "env": {
-        "MYSQL_ROOT_PASSWORD": "{mysqlabstract.inputs.password}"
+        "MYSQL_ROOT_PASSWORD": "{mysqlabstract-password.value}"
       },
       "bindings": {
         "tcp": {
           "scheme": "tcp",
           "protocol": "tcp",
           "transport": "tcp",
-          "containerPort": 3306
+          "targetPort": 3306
         }
       },
-      "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract.inputs.password}",
-      "inputs": {
-        "password": {
-          "type": "string",
-          "secret": true,
-          "default": {
-            "generate": {
-              "minLength": 10
-            }
-          }
-        }
-      }
+      "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract-password.value}"
     }
   }
 }

@@ -51,7 +51,7 @@ func (m *MockEnvManager) ConfigPath(env *environment.Environment) string {
 	return args.String(0)
 }
 
-func (m *MockEnvManager) Delete(ctx context.Context, name string, options *environment.DeleteOptions) error {
+func (m *MockEnvManager) Delete(ctx context.Context, name string) error {
 	args := m.Called(name)
 	return args.Error(0)
 }

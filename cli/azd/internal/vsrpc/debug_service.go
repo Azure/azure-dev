@@ -80,7 +80,7 @@ func (s *debugService) FetchTokenAsync(ctx context.Context, sessionId Session) (
 	}
 
 	var c struct {
-		cred azcore.TokenCredential `container:"type"`
+		credProvider auth.MultiTenantCredentialProvider `container:"type"`
 	}
 
 	container, err := session.newContainer()
@@ -92,7 +92,12 @@ func (s *debugService) FetchTokenAsync(ctx context.Context, sessionId Session) (
 		return azcore.AccessToken{}, err
 	}
 
-	return c.cred.GetToken(ctx, policy.TokenRequestOptions{
+	cred, err := c.credProvider.GetTokenCredential(ctx, "")
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	return cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: auth.LoginScopes(cloud.AzurePublic()),
 	})
 }

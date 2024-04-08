@@ -1,14 +1,44 @@
 # Release History
 
-## 1.8.0-beta.1 (Unreleased)
+## 1.8.0 (2024-04-09)
 
 ### Features Added
 
+- [[3569]](https://github.com/Azure/azure-dev/pull/3569) Add `--from-code ` flag to initialize from existing code when running `azd init`
+- Dotnet Aspire:
+  - [[3612]](https://github.com/Azure/azure-dev/pull/3612) Supports Aspire apps with multiple exposed ports
+  - [[3073]](https://github.com/Azure/azure-dev/pull/3073) Discover export port from the result of `dotnet publish`
+  - [[3285]](https://github.com/Azure/azure-dev/pull/3285) Implement `DeleteEnvironmentAsync` RPC for Aspire Server
+  - [[3364]](https://github.com/Azure/azure-dev/pull/3364) Allows azd to delegate prompting behavior to an external host
+  - [[3285]](https://github.com/Azure/azure-dev/pull/3285) Support more input generation in Aspire manifest
+  - [[3467]](https://github.com/Azure/azure-dev/pull/3467) Expose spinner updates in Visual Studio
+  - [[3545]](https://github.com/Azure/azure-dev/pull/3545) Updates Aspire generator to use the build args from the dockerfile resources
+  - [[3556]](https://github.com/Azure/azure-dev/pull/3556) Adds Aspire volumes support
+  - [[3484]](https://github.com/Azure/azure-dev/pull/3484) Discovers exposed port from the result of `dotnet publish`
+  - [[3560]](https://github.com/Azure/azure-dev/pull/3560) VS-Server: Implements `DeleteEnvironmentAsync`
+
 ### Breaking Changes
+
+- [[3589]](https://github.com/Azure/azure-dev/pull/3589) Add secure() for secrets in container apps. The `container-app.bicep` and `container-app-upsert.bicep` modules now mark the secrets parameter as secure(), and expect secrets to be an object (versus an array). You will need to reformat your array of [{name: 'secret-name', value: secretValue}, ...] as an object like {'secret-name': secretValue, ...} instead. Thanks @pamelafox for the contribution
+- [[3594]](https://github.com/Azure/azure-dev/pull/3594) Updates Node.js version to 20
+- [[3578]](https://github.com/Azure/azure-dev/issues/3578) Updates Node.js version to 20 for [installing `azd` GitHub Action](https://github.com/Azure/setup-azd)
 
 ### Bugs Fixed
 
+- [[3651]](https://github.com/Azure/azure-dev/pull/3651) Fix invalid url in `todo-nodejs-mongo-aks`
+- [[3496]](https://github.com/Azure/azure-dev/pull/3496) Fix Azure Key Vault name generated from Azure Cosmos DB resource is too long
+- [[3638]](https://github.com/Azure/azure-dev/pull/3638) Fixes `InvalidAuthenticationTokenTenant` error
+- Dotnet Aspire: 
+  - [[3434]](https://github.com/Azure/azure-dev/pull/3434) Fix calling `azd infra synth` doesn't produce the autogenerate inputs
+  - [[3650]](https://github.com/Azure/azure-dev/pull/3650) Writes default port to manifest for docker
+  - [[3432]](https://github.com/Azure/azure-dev/pull/3432) Set build args for dockerfile
+  - [[3554]](https://github.com/Azure/azure-dev/pull/3554) Fixes `azd infra synth` doesn't convert dashes to underscores in `containerApp.tmpl.yaml`
+
 ### Other Changes
+
+- [[3522]](https://github.com/Azure/azure-dev/pull/3522) Fixes typo in `next-steps.md`. Thanks @mikekistler for the contribution
+- [[3495]](https://github.com/Azure/azure-dev/pull/3495) Updates `infra/core` to adapt more azdevify templates
+- [[3171]](https://github.com/Azure/azure-dev/pull/3171) Updates web project `react-fluentui` to use `vite`
 
 ## 1.7.0 (2024-03-12)
 
@@ -29,7 +59,6 @@
 - [[3445]](https://github.com/Azure/azure-dev/pull/3445) Fixes concurrent map issues in dev center client
 - [[3390]](https://github.com/Azure/azure-dev/pull/3390) Fixes issues where the ADE configuration was not being refreshed during `azd init` or `azd provision` in dev center
 - [[3382]](https://github.com/Azure/azure-dev/pull/3382) Cleans empty secrets and variables before setting them again
-- [[3448]](https://github.com/Azure/azure-dev/pull/3448) Fixes issues where `azd infra synth` doesn't generate autogenerate inputs
 - [[3506]](https://github.com/Azure/azure-dev/pull/3506) Fixes service config handlers referencing stale components
 - [[3513]](https://github.com/Azure/azure-dev/pull/3513) Fixes rules for setting secret environment variables in Aspire
 - [[3516]](https://github.com/Azure/azure-dev/pull/3516) Fixes issues where output bicep is invalid when using dash in resource names

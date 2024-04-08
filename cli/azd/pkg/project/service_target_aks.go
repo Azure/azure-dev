@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -36,6 +37,8 @@ const (
 var (
 	featureHelm      alpha.FeatureId = alpha.MustFeatureKey("aks.helm")
 	featureKustomize alpha.FeatureId = alpha.MustFeatureKey("aks.kustomize")
+
+	endpointRegex = regexp.MustCompile(`^(.*?)\s*(?:\(.*?\))?$`)
 )
 
 // The AKS configuration options
@@ -270,11 +273,13 @@ func (t *aksTarget) Deploy(
 				// The AKS endpoints contain some additional identifying information
 				// Split on common to pull out the URL as the first segment
 				// The last endpoint in the array will be the most publicly exposed
-				endpointParts := strings.Split(endpoints[len(endpoints)-1], ",")
-				t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", endpointParts[0])
-				if err := t.envManager.Save(ctx, t.env); err != nil {
-					task.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
-					return
+				matches := endpointRegex.FindStringSubmatch(endpoints[len(endpoints)-1])
+				if len(matches) > 1 {
+					t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", matches[1])
+					if err := t.envManager.Save(ctx, t.env); err != nil {
+						task.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
+						return
+					}
 				}
 			}
 

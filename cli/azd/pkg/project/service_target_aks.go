@@ -38,6 +38,8 @@ var (
 	featureHelm      alpha.FeatureId = alpha.MustFeatureKey("aks.helm")
 	featureKustomize alpha.FeatureId = alpha.MustFeatureKey("aks.kustomize")
 
+	// Finds URLS in the endpoints that contain additional metadata
+	// Example: http://10.0.101.18:80 (Service: todo-api, Type: ClusterIP)
 	endpointRegex = regexp.MustCompile(`^(.*?)\s*(?:\(.*?\))?$`)
 )
 

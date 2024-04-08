@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/wbreza/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 )
 
 type machineLearningEndpointTarget struct {
@@ -157,7 +157,13 @@ func (m *machineLearningEndpointTarget) Deploy(
 			endpointName := filepath.Base(targetResource.ResourceName())
 
 			task.SetProgress(NewServiceProgress(fmt.Sprintf("Deploying endpoint '%s'", endpointName)))
-			onlineDeployment, err := m.aiHelper.DeployToEndpoint(ctx, workspaceScope, serviceConfig, endpointName, endpointConfig)
+			onlineDeployment, err := m.aiHelper.DeployToEndpoint(
+				ctx,
+				workspaceScope,
+				serviceConfig,
+				endpointName,
+				endpointConfig,
+			)
 			if err != nil {
 				task.SetError(err)
 				return

@@ -24,7 +24,7 @@ import (
 func newEnvRemoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rm <environment>",
-		Short: "Removes an environment.",
+		Short: "Remove an environment.",
 
 		// We want to support the usual -e / --environment arguments as all our commands which take environments do, but for
 		// ergonomics, we'd also like you to be able to run `azd env rm some-environment-name` to behave the same way as
@@ -103,7 +103,7 @@ func newEnvRemoveAction(
 func (er *envRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command title
 	er.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Removes an environment (azd env rm)",
+		Title: "Remove an environment (azd env rm)",
 		TitleNote: "Azure resources are not deleted when running 'azd env rm'." +
 			" To delete Azure resources, run 'azd down' instead.",
 	})

@@ -149,12 +149,18 @@ func Test_CLI_Env_Management(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, defEnvName)
 
+	environmentList = envList(ctx, t, cli)
+	require.Len(t, environmentList, 2)
+
 	// Verify removing an environment that is not the default
 	err = azdCtx.SetDefaultEnvironmentName(envName2)
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "env", "rm", envName, "--no-prompt")
+	_, err = cli.RunCommand(ctx, "env", "rm", envName, "--force")
 	require.NoError(t, err)
+
+	environmentList = envList(ctx, t, cli)
+	require.Len(t, environmentList, 1)
 
 	defEnvName, err = azdCtx.GetDefaultEnvironmentName()
 	require.NoError(t, err)

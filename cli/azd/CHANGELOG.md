@@ -53,6 +53,7 @@
 - [[3445]](https://github.com/Azure/azure-dev/pull/3445) Fixes concurrent map issues in dev center client
 - [[3390]](https://github.com/Azure/azure-dev/pull/3390) Fixes issues where the ADE configuration was not being refreshed during `azd init` or `azd provision` in dev center
 - [[3382]](https://github.com/Azure/azure-dev/pull/3382) Cleans empty secrets and variables before setting them again
+- [[3448]](https://github.com/Azure/azure-dev/pull/3448) Fixes issues where `azd infra synth` doesn't generate autogenerate inputs
 - [[3506]](https://github.com/Azure/azure-dev/pull/3506) Fixes service config handlers referencing stale components
 - [[3513]](https://github.com/Azure/azure-dev/pull/3513) Fixes rules for setting secret environment variables in Aspire
 - [[3516]](https://github.com/Azure/azure-dev/pull/3516) Fixes issues where output bicep is invalid when using dash in resource names

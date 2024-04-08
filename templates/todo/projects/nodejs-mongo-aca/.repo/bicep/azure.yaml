@@ -7,7 +7,7 @@ workflows:
   up: 
     steps:
       - azd: provision
-      - azd: deploy
+      - azd: deploy --all
 services:
   web:
     project: ./src/web

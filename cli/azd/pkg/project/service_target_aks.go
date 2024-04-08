@@ -273,7 +273,7 @@ func (t *aksTarget) Deploy(
 
 			if len(endpoints) > 0 {
 				// The AKS endpoints contain some additional identifying information
-				// Split on common to pull out the URL as the first segment
+				// Regex is used to pull the URL ignoring the additional metadata
 				// The last endpoint in the array will be the most publicly exposed
 				matches := endpointRegex.FindStringSubmatch(endpoints[len(endpoints)-1])
 				if len(matches) > 1 {

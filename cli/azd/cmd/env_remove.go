@@ -53,28 +53,14 @@ func newEnvRemoveCmd() *cobra.Command {
 
 type envRemoveFlags struct {
 	internal.EnvFlag
-	global       *internal.GlobalCommandOptions
-	removeLocal  bool
-	removeRemote bool
-	force        bool
+	global *internal.GlobalCommandOptions
+	force  bool
 }
 
 func (er *envRemoveFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	er.EnvFlag.Bind(local, global)
 	er.global = global
 	local.BoolVar(&er.force, "force", false, "Skips confirmation before performing removal.")
-	local.BoolVar(
-		&er.removeLocal,
-		"local",
-		false,
-		"Removes the environment locally without removing any remote resources.",
-	)
-	local.BoolVar(
-		&er.removeRemote,
-		"remote",
-		false,
-		"Removes the environment remotely only.",
-	)
 }
 
 func newEnvRemoveFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envRemoveFlags {
@@ -115,10 +101,6 @@ func newEnvRemoveAction(
 }
 
 func (er *envRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if er.flags.removeLocal && er.flags.removeRemote {
-		return nil, errors.New("cannot specify both --local and --remote")
-	}
-
 	// Command title
 	er.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Removes an environment (azd env rm)",
@@ -165,28 +147,7 @@ func (er *envRemoveAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		}
 	}
 
-	var deleteRemote bool
-	if er.flags.removeLocal {
-		deleteRemote = false
-	} else if er.flags.removeRemote {
-		//TODO: Remove remote -- not local?
-		deleteRemote = true
-	} else if env.HasRemote {
-		deleteRemote, err = er.console.Confirm(ctx,
-			input.ConsoleOptions{
-				Message: fmt.Sprintf(
-					"This environment is stored remotely. Would you like to remove remote resources for '%s'?", env.Name),
-				DefaultValue: true,
-			})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	deleteOptions := &environment.DeleteOptions{
-		DeleteRemote: deleteRemote,
-	}
-	err = er.envManager.Delete(ctx, env.Name, deleteOptions)
+	err = er.envManager.Delete(ctx, env.Name)
 	if err != nil {
 		return nil, err
 	}

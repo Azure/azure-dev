@@ -14,7 +14,7 @@ Available Commands
   list      	: List environments.
   new       	: Create a new environment and set it as the default.
   refresh   	: Refresh environment settings by using information from a previous infrastructure provision.
-  rm        	: Removes an environment.
+  rm        	: Remove an environment.
   select    	: Set the default environment.
   set       	: Manage your environment settings.
 

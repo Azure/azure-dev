@@ -1,5 +1,5 @@
 
-Removes an environment.
+Remove an environment.
 
 Usage
   azd env rm <environment> [flags]
@@ -7,6 +7,7 @@ Usage
 Flags
         --docs               	: Opens the documentation for azd env rm in your web browser.
     -e, --environment string 	: The name of the environment to use.
+        --force              	: Skips confirmation before performing removal.
     -h, --help               	: Gets help for rm.
 
 Global Flags

@@ -5,8 +5,8 @@
 ### Features Added
 
 - [[3569]](https://github.com/Azure/azure-dev/pull/3569) Adds `--from-code ` flag to initialize from existing code when running `azd init`
-- [[3364]](https://github.com/Azure/azure-dev/pull/3364) Supports prompting behavior to an external host
 - Dotnet Aspire:
+  - [[3364]](https://github.com/Azure/azure-dev/pull/3364) Supports prompting behavior to an external host
   - [[3612]](https://github.com/Azure/azure-dev/pull/3612) Supports Aspire apps with multiple exposed ports
   - [[3484]](https://github.com/Azure/azure-dev/pull/3484) Discovers export port from the result of `dotnet publish`
   - [[3560]](https://github.com/Azure/azure-dev/pull/3560) VS-Server: Implements `DeleteEnvironmentAsync` RPC for Aspire Server

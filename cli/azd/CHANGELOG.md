@@ -11,6 +11,7 @@
   - [[3560]](https://github.com/Azure/azure-dev/pull/3560) VS-Server: Implements `DeleteEnvironmentAsync` RPC for Aspire Server
   - [[3364]](https://github.com/Azure/azure-dev/pull/3364) Supports prompting behavior to an external host
   - [[3556]](https://github.com/Azure/azure-dev/pull/3556) Adds Aspire volumes support
+  - [[3561]](https://github.com/Azure/azure-dev/pull/3561) Supports more input generation in Aspire manifest
 
 ### Breaking Changes
 
@@ -20,7 +21,7 @@
 
 ### Bugs Fixed
 
-- [[3651]](https://github.com/Azure/azure-dev/pull/3651) Fixes invalid url in `todo-nodejs-mongo-aks`
+- [[3651]](https://github.com/Azure/azure-dev/pull/3651) Fixes trailing comma for `todo-nodejs-mongo-aks` template's invalid url in GitHub Action
 - [[3610]](https://github.com/Azure/azure-dev/pull/3610) Fixes too long auto-generated Azure Key Vault name by using Hash
 - [[3638]](https://github.com/Azure/azure-dev/pull/3638) Fixes `InvalidAuthenticationTokenTenant` error
 - Dotnet Aspire: 

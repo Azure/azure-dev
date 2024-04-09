@@ -21,7 +21,6 @@ import (
 )
 
 func Test_StorageBlobClient(t *testing.T) {
-	t.Skip("Skip to produce builds and fix later")
 	runTestWithRemoteState(t, func(storageConfig *storage.AccountConfig) {
 		t.Run("Crud", func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())

@@ -5,26 +5,26 @@
 ### Features Added
 
 - [[3569]](https://github.com/Azure/azure-dev/pull/3569) Adds `--from-code ` flag to initialize from existing code when running `azd init`
+- [[3364]](https://github.com/Azure/azure-dev/pull/3364) Supports prompting behavior to an external host
 - Dotnet Aspire:
   - [[3612]](https://github.com/Azure/azure-dev/pull/3612) Supports Aspire apps with multiple exposed ports
   - [[3484]](https://github.com/Azure/azure-dev/pull/3484) Discovers export port from the result of `dotnet publish`
   - [[3560]](https://github.com/Azure/azure-dev/pull/3560) VS-Server: Implements `DeleteEnvironmentAsync` RPC for Aspire Server
-  - [[3364]](https://github.com/Azure/azure-dev/pull/3364) Supports prompting behavior to an external host
   - [[3556]](https://github.com/Azure/azure-dev/pull/3556) Adds Aspire volumes support
   - [[3561]](https://github.com/Azure/azure-dev/pull/3561) Supports more input generation in Aspire manifest
 
 ### Breaking Changes
 
 - [[3589]](https://github.com/Azure/azure-dev/pull/3589) Adds secure() for secrets in container apps. The `container-app.bicep` and `container-app-upsert.bicep` modules now mark the secrets parameter as secure(), and expect secrets to be an object (versus an array). You will need to reformat your array of [{name: 'secret-name', value: secretValue}, ...] as an object like {'secret-name': secretValue, ...} instead. Thanks @pamelafox for the contribution
-- [[3594]](https://github.com/Azure/azure-dev/pull/3594) Updates Node.js version to 20
+- [[3594]](https://github.com/Azure/azure-dev/pull/3594) Updates Node.js version to 20 for templates and pipelines
 - [[3578]](https://github.com/Azure/azure-dev/issues/3578) Updates Node.js version to 20 for [installing `azd` GitHub Action](https://github.com/Azure/setup-azd)
 
 ### Bugs Fixed
 
 - [[3651]](https://github.com/Azure/azure-dev/pull/3651) Fixes trailing comma for `todo-nodejs-mongo-aks` template's invalid url in GitHub Action
-- [[3610]](https://github.com/Azure/azure-dev/pull/3610) Fixes too long auto-generated Azure Key Vault name by using Hash
 - [[3638]](https://github.com/Azure/azure-dev/pull/3638) Fixes `InvalidAuthenticationTokenTenant` error
 - Dotnet Aspire: 
+  - [[3610]](https://github.com/Azure/azure-dev/pull/3610) Fixes too long auto-generated Azure Key Vault name by using Hash
   - [[3650]](https://github.com/Azure/azure-dev/pull/3650) Writes default port to manifest for docker
   - [[3545]](https://github.com/Azure/azure-dev/pull/3545) Updates Aspire generator to use the build args from the dockerfile resources
   - [[3554]](https://github.com/Azure/azure-dev/pull/3554) Fixes `azd infra synth` doesn't convert dashes to underscores in `containerApp.tmpl.yaml`

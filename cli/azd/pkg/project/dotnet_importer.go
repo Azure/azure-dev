@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -101,12 +100,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	useResourceGroupScopedDeployment := false
-	if v, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_USE_RESOURCE_GROUP_DEPLOYMENTS")); err == nil {
-		useResourceGroupScopedDeployment = v
-	}
-
-	files, err := apphost.BicepTemplate(manifest, useResourceGroupScopedDeployment)
+	files, err := apphost.BicepTemplate(manifest, false)
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -250,7 +244,7 @@ func (ai *DotNetImporter) Services(
 }
 
 func (ai *DotNetImporter) SynthAllInfrastructure(
-	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
+	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig, useResourceGroupScope bool,
 ) (fs.FS, error) {
 	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
@@ -259,13 +253,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 
 	generatedFS := memfs.New()
 
-	useResourceGroupScopedDeployment := false
-
-	if v, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_USE_RESOURCE_GROUP_DEPLOYMENTS")); err == nil {
-		useResourceGroupScopedDeployment = v
-	}
-
-	infraFS, err := apphost.BicepTemplate(manifest, useResourceGroupScopedDeployment)
+	infraFS, err := apphost.BicepTemplate(manifest, useResourceGroupScope)
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)
 	}

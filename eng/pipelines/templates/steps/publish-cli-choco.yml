@@ -59,14 +59,14 @@ steps:
       targetPath: $(Build.ArtifactStagingDirectory)/choco-package
       artifact: choco-package
 
-  # - pwsh: |
-  #     # Defense in depth: Legacy argument passing may be needed here
-  #     $PSNativeCommandArgumentPassing = 'Legacy'
+  - pwsh: |
+      # Defense in depth: Legacy argument passing may be needed here
+      $PSNativeCommandArgumentPassing = 'Legacy'
 
-  #     Write-Host 'Pushing Choco Package...'
-  #     choco push azd.$(MSI_VERSION).nupkg `
-  #       --source https://push.chocolatey.org/ `
-  #       --api-key ${{ parameters.ChocoApiKey }}
-  #   condition: eq(variables['SubmitChocoPackage'], 'true')
-  #   displayName: Push Choco Package
-  #   workingDirectory: cli/installer/choco
+      Write-Host 'Pushing Choco Package...'
+      choco push azd.$(MSI_VERSION).nupkg `
+        --source https://push.chocolatey.org/ `
+        --api-key ${{ parameters.ChocoApiKey }}
+    condition: eq(variables['SubmitChocoPackage'], 'true')
+    displayName: Push Choco Package
+    workingDirectory: cli/installer/choco

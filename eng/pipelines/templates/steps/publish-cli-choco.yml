@@ -48,10 +48,15 @@ steps:
         -Version $(MSI_VERSION)
         -Tag 'azure-dev-cli_${{ parameters.CliVersion }}'
 
+  - pwsh: |
+      New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/choco-package -Force
+      Copy-Item cli/installer/choco/*.nupkg $(Build.ArtifactStagingDirectory)/choco-package
+    displayName: Copy Choco Package to Artifact Staging Directory for upload
+
   - task: 1ES.PublishPipelineArtifact@1
     displayName: Publish Choco Package Artifact
     inputs: 
-      targetPath: cli/installer/choco/azd.$(MSI_VERSION).nupkg
+      targetPath: $(Build.ArtifactStagingDirectory)/choco-package
       artifact: choco-package
 
   - pwsh: |

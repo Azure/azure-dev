@@ -166,7 +166,9 @@ func pathHasModule(path, module string) (bool, error) {
 
 }
 
-func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig, useResourceGroupScope bool) (fs.FS, error) {
+func (im *ImportManager) SynthAllInfrastructure(
+	ctx context.Context, projectConfig *ProjectConfig, useResourceGroupScope bool,
+) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if len(projectConfig.Services) != 1 {

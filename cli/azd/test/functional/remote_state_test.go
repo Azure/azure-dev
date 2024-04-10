@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -20,7 +21,6 @@ import (
 )
 
 func Test_StorageBlobClient(t *testing.T) {
-	t.Skip("Skip to produce builds and fix later")
 	runTestWithRemoteState(t, func(storageConfig *storage.AccountConfig) {
 		t.Run("Crud", func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
@@ -74,8 +74,19 @@ func createBlobClient(
 		NewClientOptionsBuilder().
 		BuildCoreClientOptions()
 
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+
+	authManager, err := auth.NewManager(
+		fileConfigManager,
+		config.NewUserConfigManager(fileConfigManager),
+		cloud.AzurePublic(),
+		httpClient, mockContext.Console,
+		auth.ExternalAuthConfiguration{},
+	)
+	require.NoError(t, err)
+
 	sdkClient, err := storage.NewBlobSdkClient(
-		mockContext.MultiTenantCredentialProvider, storageConfig, coreClientOptions, cloud.AzurePublic())
+		auth.NewMultiTenantCredentialProvider(authManager), storageConfig, coreClientOptions, cloud.AzurePublic())
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)
 

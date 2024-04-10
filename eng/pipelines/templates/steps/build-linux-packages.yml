@@ -11,8 +11,6 @@ steps:
   - pwsh: docker build . -f fpm.Dockerfile -t fpm --build-arg prefix="$(docker-mirror-tag-prefix)/"
     condition: ${{ parameters.Condition }}
     workingDirectory: cli/installer/fpm
-    # This task is idempotent and can sometimes fail in recoverable ways
-    retryCountOnTaskFailure: 3
     displayName: Build fpm container
 
   - task: PowerShell@2

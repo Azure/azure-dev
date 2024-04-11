@@ -13,8 +13,8 @@ steps:
     displayName: Build fpm container (1ES)
     inputs:
       image: fpm
-      path: $(Build.SourcesDirectory)/cli/installer/fpm
-      dockerfile: $(Build.SourcesDirectory)/cli/instatller/fpm/fpm.Dockerfile
+      context: $(Build.SourcesDirectory)/cli/installer/fpm
+      dockerfile: fpm.Dockerfile
       enableNetwork: true
       useBuildKit: true
 

@@ -12,7 +12,8 @@ steps:
   - task: 1ES.BuildContainerImage@1
     displayName: Build fpm container (1ES)
     inputs:
-      image: fpm
+      # Use "latest" tag because build_docker_image.py fails if there is no tag
+      image: fpm:latest
       path: $(Build.SourcesDirectory)/cli/installer/fpm
       dockerfile: $(Build.SourcesDirectory)/cli/installer/fpm/fpm.Dockerfile
       enableNetwork: true

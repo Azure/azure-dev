@@ -526,22 +526,17 @@
         "webpack-cli": "~5"
     },
     "dependencies": {
-        "@microsoft/vscode-azext-azureauth": "~2.3",
         "@microsoft/vscode-azext-utils": "~2.4",
         "@microsoft/vscode-azureresources-api": "~2",
         "dayjs": "~1",
         "dotenv": "~16",
         "rxjs": "~7",
         "semver": "~7",
-        "typechat": "~0.1",
-        "vscode-azure-agent-api": "https://github.com/microsoft/vscode-azure-agent/releases/download/api-v1.0.0-beta.10/vscode-azure-agent-api-1.0.0-beta.10.tgz",
-        "yaml": "~2",
-        "zod": "~3"
+        "vscode-azure-agent-api": "file:vscode-azure-agent-api-1.0.0-beta.10.tgz",
+        "yaml": "~2"
     },
     "agentMetadata": {
         "version": "1.0",
-        "getCommandsCommandId": "azure-dev.commands.agent.getCommands",
-        "runWizardCommandWithoutExecutionCommandId": "azure-dev.commands.agent.runWizardCommandWithoutExecution",
-        "runWizardCommandWithInputsCommandId": "azure-dev.commands.agent.runWizardCommandWithInputs"
+        "getCommandsCommandId": "azure-dev.commands.agent.getCommands"
     }
 }

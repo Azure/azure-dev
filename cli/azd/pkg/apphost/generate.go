@@ -1215,6 +1215,14 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		}
 
 		switch parts[1] {
+		case "scheme":
+			return binding.Scheme, nil
+		case "protocol":
+			return binding.Protocol, nil
+		case "transport":
+			return binding.Scheme, nil
+		case "external":
+			return fmt.Sprintf("%t", binding.External), nil
 		case "host":
 			// The host name matches the containerapp name, so we can just return the resource name.
 			return resource, nil
@@ -1239,7 +1247,8 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			return fmt.Sprintf(urlFormatString, binding.Scheme, resource, port), nil
 		default:
 			return "",
-				fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[host|port|url] but was: %s", v)
+				fmt.Errorf("malformed binding expression, expected "+
+					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
 	case targetType == "postgres.database.v0" ||
 		targetType == "redis.v0" ||

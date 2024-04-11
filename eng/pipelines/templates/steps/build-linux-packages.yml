@@ -13,14 +13,10 @@ steps:
     displayName: Build fpm container (1ES)
     inputs:
       image: fpm
-      path: cli/installer/fpm
+      path: $(Build.SourcesDirectory)/cli/installer/fpm
       dockerfile: cli/instatller/fpm/fpm.Dockerfile
       enableNetwork: true
-
-  # - pwsh: docker build . -f fpm.Dockerfile -t fpm --build-arg prefix="$(docker-mirror-tag-prefix)/"
-  #   condition: ${{ parameters.Condition }}
-  #   workingDirectory: cli/installer/fpm
-  #   displayName: Build fpm container
+      useBuildKit: true
 
   - task: PowerShell@2
     condition: ${{ parameters.Condition }}

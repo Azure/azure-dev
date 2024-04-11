@@ -30,6 +30,7 @@ var defaultLocation Location = Location{
 	RegionalDisplayName: "(US) East US 2",
 }
 
+// Account represents the logged in Azure user's account.
 // Handles getting and setting configuration
 //   - Defaults
 //

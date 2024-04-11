@@ -14,7 +14,7 @@ steps:
     inputs:
       image: fpm
       path: $(Build.SourcesDirectory)/cli/installer/fpm/
-      dockerfile: fpm.Dockerfile
+      dockerfile: $(Build.SourcesDirectory)/cli/installer/fpm/fpm.Dockerfile
       enableNetwork: true
       useBuildKit: true
 

@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/cbl-mariner/base/ruby:3
 
-RUN gem install fpm
+RUN tdnf install -y tar && gem install fpm
 
 WORKDIR /work
 

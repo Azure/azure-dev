@@ -10,6 +10,7 @@ steps:
 
 
   - task: 1ES.BuildContainerImage@1
+    condition: ${{ parameters.Condition }}
     displayName: Build fpm container (1ES)
     inputs:
       # Use "latest" tag because build_docker_image.py fails if there is no tag

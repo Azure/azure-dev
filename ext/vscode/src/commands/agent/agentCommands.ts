@@ -31,7 +31,7 @@ const agentCommands: CommandConfig[] = [
         name: 'azdSkill',
         commandId: 'azure-dev.commands.agent.skill',
         displayName: 'Azure Developer CLI Skill',
-        intentDescription: 'This is best when users ask to do something magical.',
+        intentDescription: 'This is best when users ask to set up, initialize, or deploy their application. This is not best when users ask an informational question.',
         requiresAzureLogin: false,
         handler: azdSkillCommand
     } satisfies SkillCommandConfig

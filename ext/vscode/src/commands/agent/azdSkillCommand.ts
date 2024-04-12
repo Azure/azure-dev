@@ -18,21 +18,21 @@ export async function azdSkillCommand(context: IActionContext, args: SkillComman
     const workspaceInitialized = await isWorkspaceInitialized(context);
 
     if (!azdInstalled) {
-        responseStream.markdown(vscode.l10n.t('- First things first, it looks like the Azure Developer CLI is not installed. Let\'s get that taken care of.'));
+        responseStream.markdown(vscode.l10n.t('First things first, it looks like the Azure Developer CLI is not installed. Let\'s get that taken care of.'));
         responseStream.button({ title: vscode.l10n.t('Install Azure Developer CLI'), command: 'azure-dev.commands.cli.install' });
     }
 
     if (!azdLoggedIn) {
-        responseStream.markdown(vscode.l10n.t('- You\'ll need to be logged in with the Azure Developer CLI. Click below to sign in.'));
+        responseStream.markdown(vscode.l10n.t('You\'ll need to be logged in with the Azure Developer CLI. Click below to sign in.'));
         responseStream.button({ title: vscode.l10n.t('Sign in with Azure Developer CLI'), command: 'azure-dev.commands.cli.login' });
     }
 
     if (!workspaceInitialized) {
-        responseStream.markdown(vscode.l10n.t('- It looks like the workspace is not set up for use with the Azure Developer CLI.'));
+        responseStream.markdown(vscode.l10n.t('It looks like the workspace is not set up for use with the Azure Developer CLI.'));
         responseStream.button({ title: vscode.l10n.t('Initialize workspace'), command: 'azure-dev.commands.cli.init' });
     }
 
-    responseStream.markdown(vscode.l10n.t('- All that\'s left is to deploy your application to Azure!'));
+    responseStream.markdown(vscode.l10n.t('All that\'s left is to deploy your application to Azure!'));
     responseStream.button({ title: vscode.l10n.t('Deploy to Azure'), command: 'azure-dev.commands.cli.up' });
 
     return {

@@ -28,7 +28,7 @@ export async function azdSkillCommand(context: IActionContext, args: SkillComman
     }
 
     if (!workspaceInitialized) {
-        responseStream.markdown(vscode.l10n.t('- It looks like the workspace is not set up for use with the Azure Development CLI.'));
+        responseStream.markdown(vscode.l10n.t('- It looks like the workspace is not set up for use with the Azure Developer CLI.'));
         responseStream.button({ title: vscode.l10n.t('Initialize workspace'), command: 'azure-dev.commands.cli.init' });
     }
 

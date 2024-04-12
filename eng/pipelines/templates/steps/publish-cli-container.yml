@@ -63,7 +63,7 @@ steps:
       $tags = "${{ parameters.DockerImageTags }}" -split ';'
       $items = @()
       foreach ($tag in $tags) {
-        $items += "release:latest ${{ parameters.AcrHost }}/azure-dev:$tag"
+        $items += "${{ parameters.AcrHost }}/azure-dev:$tag"
       }
       $imageNames = $items -join ','
       Write-Host "Image Names: $imageNames"

@@ -308,7 +308,7 @@ stages:
                       }
                     displayName: Upload version.txt to storage account
 
-  - stage: Publish_Integration
+  - stage: PublishIntegration
     dependsOn: Sign
 
     variables: 
@@ -409,14 +409,20 @@ stages:
               PublishArm64Binaries: true
 
               ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
-                PublishContainer: true
-                DockerImageTags: pr-$(PRNumber)
                 StorageAccountName: $(azdev-storage-account-name)
                 StorageAccountKey: $(azdev-storage-account-key)
               ${{ else }}:
-                PublishContainer: false
                 StorageAccountName: $(azdev-storage-account-name-pr)
                 StorageAccountKey: $(azdev-storage-account-key-pr)
+
+
+          - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
+            - template: /eng/pipelines/templates/steps/publish-cli-container.yml
+              parameters:
+                DockerImageTags: pr-$(PRNumber)
+                ReleaseSyndicatedDockerContainer: false
+                # Artifacts are already downloaded in publish-cli.yml
+                DownloadArtifacts: false
 
 
           - pwsh: |

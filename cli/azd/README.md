@@ -1,3 +1,5 @@
+TEST THAT WILL CAUSE A CLI BUILD
+
 # Azure Developer CLI (azd)
 
 ## VS Code

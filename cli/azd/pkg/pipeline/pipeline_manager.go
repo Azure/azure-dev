@@ -56,6 +56,7 @@ type PipelineManagerArgs struct {
 	PipelineRoleNames            []string
 	PipelineProvider             string
 	PipelineAuthTypeName         string
+	PipelineClientSecretDuration time.Duration
 }
 
 // CredentialOptions represents the options for configuring credentials for a pipeline.
@@ -309,7 +310,8 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		spinnerMessage := "Configuring client credentials for service principal"
 		pm.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-		creds, err := pm.adService.ResetPasswordCredentials(ctx, subscriptionId, servicePrincipal.AppId)
+		creds, err := pm.adService.ResetPasswordCredentials(
+			ctx, subscriptionId, servicePrincipal.AppId, pm.args.PipelineClientSecretDuration)
 		pm.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 		if err != nil {
 			return result, fmt.Errorf("failed to reset password credentials: %w", err)

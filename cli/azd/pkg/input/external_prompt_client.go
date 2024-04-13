@@ -3,6 +3,7 @@ package input
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -115,7 +116,13 @@ func (c *externalPromptClient) PromptDialog(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.key))
 
-	res, err := c.pipeline.Do(req)
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)
 	}

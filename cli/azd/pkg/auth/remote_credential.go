@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -61,7 +62,13 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", rc.key))
 
-	res, err := rc.httpClient.Do(req)
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	res, err := client.Do(req)
 	if err != nil {
 		return azcore.AccessToken{}, fmt.Errorf("making request: %w", err)
 	}

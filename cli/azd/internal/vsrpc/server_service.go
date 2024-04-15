@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 )
@@ -77,7 +78,9 @@ func (s *serverService) InitializeAsync(
 			MinVersion: tls.VersionTLS12,
 		}
 
-		client := &http.Client{}
+		client := &http.Client{
+			Timeout: 5 * time.Second,
+		}
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.TLSClientConfig = tlsConfig
 		client.Transport = transport
@@ -94,6 +97,8 @@ func (s *serverService) InitializeAsync(
 		}
 
 		session.externalServicesClient = client
+	} else {
+		session.externalServicesClient = http.DefaultClient
 	}
 
 	return &Session{

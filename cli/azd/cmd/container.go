@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -533,7 +534,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		endpoint := os.Getenv("AZD_AUTH_ENDPOINT")
 		key := os.Getenv("AZD_AUTH_KEY")
 
-		client := &http.Client{}
+		client := &http.Client{
+			Timeout: 5 * time.Second,
+		}
 		if len(cert) > 0 {
 			certBytes, decodeErr := base64.StdEncoding.DecodeString(cert)
 			if decodeErr != nil {

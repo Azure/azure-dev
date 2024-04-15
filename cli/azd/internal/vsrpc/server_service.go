@@ -5,9 +5,6 @@ package vsrpc
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,6 +13,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // serverService is the RPC server for the '/ServerService/v1.0' endpoint.
@@ -61,29 +59,14 @@ func (s *serverService) InitializeAsync(
 	}
 
 	if options.AuthenticationCertificate != nil {
-		certBytes, decodeErr := base64.StdEncoding.DecodeString(*options.AuthenticationCertificate)
-		if decodeErr != nil {
-			return nil, fmt.Errorf("failed to decode the server certificate: %w", decodeErr)
+		transport, err := httputil.TlsEnabledTransport(*options.AuthenticationCertificate)
+		if err != nil {
+			return nil, err
 		}
-
-		cert, certParseErr := x509.ParseCertificate(certBytes)
-		if certParseErr != nil {
-			return nil, fmt.Errorf("failed to decode the server certificate: %w", certParseErr)
-		}
-
-		caCertPool := x509.NewCertPool()
-		caCertPool.AddCert(cert)
-		tlsConfig := &tls.Config{
-			RootCAs:    caCertPool,
-			MinVersion: tls.VersionTLS12,
-		}
-
 		client := &http.Client{
-			Timeout: 5 * time.Second,
+			Timeout:   5 * time.Second,
+			Transport: transport,
 		}
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.TLSClientConfig = tlsConfig
-		client.Transport = transport
 
 		endpointUrl, err := url.Parse(session.externalServicesEndpoint)
 		if err != nil {

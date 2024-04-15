@@ -2,9 +2,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -538,27 +535,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			Timeout: 5 * time.Second,
 		}
 		if len(cert) > 0 {
-			certBytes, decodeErr := base64.StdEncoding.DecodeString(cert)
-			if decodeErr != nil {
+			transport, err := httputil.TlsEnabledTransport(cert)
+			if err != nil {
 				return auth.ExternalAuthConfiguration{},
-					fmt.Errorf("failed to decode provided AZD_AUTH_CERT: %w", decodeErr)
+					fmt.Errorf("parsing AZD_AUTH_CERT: %w", err)
 			}
-
-			cert, certParseErr := x509.ParseCertificate(certBytes)
-			if certParseErr != nil {
-				return auth.ExternalAuthConfiguration{},
-					fmt.Errorf("failed to decode provided AZD_AUTH_CERT: %w", certParseErr)
-			}
-
-			caCertPool := x509.NewCertPool()
-			caCertPool.AddCert(cert)
-			tlsConfig := &tls.Config{
-				RootCAs:    caCertPool,
-				MinVersion: tls.VersionTLS12,
-			}
-
-			transport := http.DefaultTransport.(*http.Transport).Clone()
-			transport.TLSClientConfig = tlsConfig
 			client.Transport = transport
 
 			endpointUrl, err := url.Parse(endpoint)

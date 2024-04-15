@@ -73,13 +73,14 @@ func (s *serverService) InitializeAsync(
 		caCertPool := x509.NewCertPool()
 		caCertPool.AddCert(cert)
 		tlsConfig := &tls.Config{
-			RootCAs: caCertPool,
+			RootCAs:    caCertPool,
+			MinVersion: tls.VersionTLS12,
 		}
 
-		client := http.DefaultClient
-		client.Transport = &http.Transport{
-			TLSClientConfig: tlsConfig,
-		}
+		client := &http.Client{}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = tlsConfig
+		client.Transport = transport
 
 		endpointUrl, err := url.Parse(session.externalServicesEndpoint)
 		if err != nil {

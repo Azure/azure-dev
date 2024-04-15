@@ -533,7 +533,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		endpoint := os.Getenv("AZD_AUTH_ENDPOINT")
 		key := os.Getenv("AZD_AUTH_KEY")
 
-		httpClient := http.DefaultClient
+		client := &http.Client{}
 		if len(cert) > 0 {
 			certBytes, decodeErr := base64.StdEncoding.DecodeString(cert)
 			if decodeErr != nil {
@@ -550,12 +550,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			caCertPool := x509.NewCertPool()
 			caCertPool.AddCert(cert)
 			tlsConfig := &tls.Config{
-				RootCAs: caCertPool,
+				RootCAs:    caCertPool,
+				MinVersion: tls.VersionTLS12,
 			}
 
-			httpClient.Transport = &http.Transport{
-				TLSClientConfig: tlsConfig,
-			}
+			transport := http.DefaultTransport.(*http.Transport).Clone()
+			transport.TLSClientConfig = tlsConfig
+			client.Transport = transport
 
 			endpointUrl, err := url.Parse(endpoint)
 			if err != nil {
@@ -571,7 +572,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 		return auth.ExternalAuthConfiguration{
 			Endpoint: endpoint,
-			Client:   httpClient,
+			Client:   client,
 			Key:      key,
 		}, nil
 	})

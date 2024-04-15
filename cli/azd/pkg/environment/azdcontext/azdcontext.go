@@ -68,10 +68,12 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 	return config.DefaultEnvironment, nil
 }
 
+// ProjectState represents the state of the project.
 type ProjectState struct {
 	DefaultEnvironment string
 }
 
+// SetProjectState persists the state of the project to the file system, like the default environment.
 func (c *AzdContext) SetProjectState(state ProjectState) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
 	config := configFile{

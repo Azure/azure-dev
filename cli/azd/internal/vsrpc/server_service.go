@@ -5,8 +5,13 @@ package vsrpc
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -52,6 +57,42 @@ func (s *serverService) InitializeAsync(
 
 	if options.AuthenticationKey != nil {
 		session.externalServicesKey = *options.AuthenticationKey
+	}
+
+	if options.AuthenticationCertificate != nil {
+		certBytes, decodeErr := base64.StdEncoding.DecodeString(*options.AuthenticationCertificate)
+		if decodeErr != nil {
+			return nil, fmt.Errorf("failed to decode the server certificate: %w", decodeErr)
+		}
+
+		cert, certParseErr := x509.ParseCertificate(certBytes)
+		if certParseErr != nil {
+			return nil, fmt.Errorf("failed to decode the server certificate: %w", certParseErr)
+		}
+
+		caCertPool := x509.NewCertPool()
+		caCertPool.AddCert(cert)
+		tlsConfig := &tls.Config{
+			RootCAs: caCertPool,
+		}
+
+		client := http.DefaultClient
+		client.Transport = &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+
+		endpointUrl, err := url.Parse(session.externalServicesEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid endpoint '%s': %w", session.externalServicesEndpoint, err)
+		}
+
+		if endpointUrl.Scheme != "https" {
+			return nil,
+				fmt.Errorf("invalid endpoint '%s': scheme must be 'https' when certificate is provided",
+					session.externalServicesEndpoint)
+		}
+
+		session.externalServicesClient = client
 	}
 
 	return &Session{

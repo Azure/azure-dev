@@ -6,13 +6,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -33,6 +33,7 @@ type serverSession struct {
 	rootContainer            *ioc.NestedContainer
 	externalServicesEndpoint string
 	externalServicesKey      string
+	externalServicesClient   *http.Client
 }
 
 // newSession creates a new session and returns the session ID and session. newSession is safe to call by multiple
@@ -121,7 +122,7 @@ func (s *serverSession) newContainer() (*container, error) {
 		}),
 	})
 
-	c.MustRegisterScoped(func(client httputil.HttpClient) input.Console {
+	c.MustRegisterScoped(func() input.Console {
 		stdout := outWriter
 		stderr := errWriter
 		stdin := strings.NewReader("")
@@ -139,7 +140,7 @@ func (s *serverSession) newContainer() (*container, error) {
 			&input.ExternalPromptConfiguration{
 				Endpoint: s.externalServicesEndpoint,
 				Key:      s.externalServicesKey,
-				Client:   client,
+				Client:   s.externalServicesClient,
 			})
 	})
 
@@ -165,6 +166,7 @@ func (s *serverSession) newContainer() (*container, error) {
 		return auth.ExternalAuthConfiguration{
 			Endpoint: s.externalServicesEndpoint,
 			Key:      s.externalServicesKey,
+			Client:   s.externalServicesClient,
 		}
 	})
 

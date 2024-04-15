@@ -101,11 +101,9 @@ module "web" {
 
   app_settings = {
     "SCM_DO_BUILD_DURING_DEPLOYMENT"                  = "false"
-    "REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING" = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
-    "REACT_APP_API_BASE_URL"                          = module.api.URI
   }
 
-  app_command_line = "./entrypoint.sh -o ./env-config.js && pm2 serve /home/site/wwwroot --no-daemon --spa"
+  app_command_line = "pm2 serve /home/site/wwwroot --no-daemon --spa"
 }
 
 # ------------------------------------------------------------------------------------------------------

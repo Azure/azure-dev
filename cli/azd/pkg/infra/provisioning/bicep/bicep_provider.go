@@ -1045,7 +1045,7 @@ func (p *BicepProvider) findCompletedDeployments(
 	}
 
 	if len(matchingDeployments) == 0 {
-		return nil, fmt.Errorf("no deployments found for environment %s", envName)
+		return nil, fmt.Errorf("'%s': %w", envName, ErrDeploymentsNotFound)
 	}
 
 	return matchingDeployments, nil
@@ -1534,7 +1534,7 @@ func (p *BicepProvider) getApiManagementsToPurge(
 //
 // Since that's behavior we'd like to support, we run a purge operation for each AppConfiguration after it has been deleted.
 //
-// See https://learn.microsoft.com/en-us/azure/azure-app-configuration/concept-soft-delete for more information
+// See https://learn.microsoft.com/azure/azure-app-configuration/concept-soft-delete for more information
 // on this feature.
 func (p *BicepProvider) purgeAppConfigs(
 	ctx context.Context,
@@ -1911,7 +1911,18 @@ func inputsParameter(
 		}
 		for inputName, inputInfo := range inputResourceInfo {
 			if _, has := existingRecordsForResource[inputName]; !has {
-				val, err := password.FromAlphabet(password.LettersAndDigits, inputInfo.Len)
+				val, err := password.Generate(password.GenerateConfig{
+					Length:     inputInfo.Length,
+					NoLower:    inputInfo.NoLower,
+					NoUpper:    inputInfo.NoUpper,
+					NoNumeric:  inputInfo.NoNumeric,
+					NoSpecial:  inputInfo.NoSpecial,
+					MinLower:   inputInfo.MinLower,
+					MinUpper:   inputInfo.MinUpper,
+					MinNumeric: inputInfo.MinNumeric,
+					MinSpecial: inputInfo.MinSpecial,
+				},
+				)
 				if err != nil {
 					return inputsParameter, inputsUpdated, fmt.Errorf("generating value for input %s: %w", inputName, err)
 				}
@@ -1951,6 +1962,11 @@ func (p *BicepProvider) ensureParameters(
 
 	configModified := false
 
+	var parameterPrompts []struct {
+		key   string
+		param azure.ArmTemplateParameterDefinition
+	}
+
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
 
@@ -1971,68 +1987,86 @@ func (p *BicepProvider) ensureParameters(
 			continue
 		}
 
-		// For object inputs, if the "AZD Type" is a "inputs" see if the autoGen inputs are already available in
-		// env config.
-		if p.mapBicepTypeToInterfaceType(param.Type) == ParameterTypeObject {
-			if m, has := param.AzdMetadata(); has && m.Type != nil && *m.Type == "inputs" {
-				existingInputs := make(map[string]map[string]any)
-				if _, err := p.env.Config.GetSection("inputs", &existingInputs); err != nil {
-					return nil, fmt.Errorf("reading inputs from config: %w", err)
-				}
-
-				inputsParameter, wroteNewInput, err := inputsParameter(existingInputs, m.AutoGenerate)
-				if err != nil {
-					return nil, fmt.Errorf("generating inputs: %w", err)
-				}
-
-				if wroteNewInput {
-					if err := p.env.Config.Set("inputs", existingInputs); err != nil {
-						return nil, fmt.Errorf("saving env config: %w", err)
-					}
-					if err := p.envManager.Save(ctx, p.env); err != nil {
-						return nil, fmt.Errorf("saving environment: %w", err)
-					}
-				}
-
-				configuredParameters[key] = inputsParameter
-				continue
-			}
-		}
-
 		// This required parameter was not in parameters file - see if we stored a value in config from an earlier
 		// prompt and if so use it.
 		configKey := fmt.Sprintf("infra.parameters.%s", key)
 
 		if v, has := p.env.Config.Get(configKey); has {
-
-			if !isValueAssignableToParameterType(p.mapBicepTypeToInterfaceType(param.Type), v) {
+			if isValueAssignableToParameterType(p.mapBicepTypeToInterfaceType(param.Type), v) {
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: v,
+				}
+				continue
+			} else {
 				// The saved value is no longer valid (perhaps the user edited their template to change the type of a)
 				// parameter and then re-ran `azd provision`. Forget the saved value (if we can) and prompt for a new one.
 				_ = p.env.Config.Unset("infra.parameters.%s")
 			}
+		}
 
-			configuredParameters[key] = azure.ArmParameterValue{
-				Value: v,
+		// No saved value for this required parameter, we'll need to prompt for it.
+		parameterPrompts = append(parameterPrompts, struct {
+			key   string
+			param azure.ArmTemplateParameterDefinition
+		}{key: key, param: param})
+	}
+
+	if len(parameterPrompts) > 0 {
+		if p.console.SupportsPromptDialog() {
+
+			dialog := input.PromptDialog{
+				Title: "Configure required deployment parameters",
+				Description: "The following parameters are required for deployment. " +
+					"Provide values for each parameter. They will be saved for future deployments.",
 			}
-			continue
-		}
 
-		// Otherwise, prompt for the value.
-		value, err := p.promptForParameter(ctx, key, param)
-		if err != nil {
-			return nil, fmt.Errorf("prompting for value: %w", err)
-		}
+			for _, prompt := range parameterPrompts {
+				dialog.Prompts = append(dialog.Prompts, p.promptDialogItemForParameter(prompt.key, prompt.param))
+			}
 
-		if err := p.env.Config.Set(configKey, value); err == nil {
-			configModified = true
+			values, err := p.console.PromptDialog(ctx, dialog)
+			if err != nil {
+				return nil, fmt.Errorf("prompting for values: %w", err)
+			}
+
+			for _, prompt := range parameterPrompts {
+				configKey := fmt.Sprintf("infra.parameters.%s", prompt.key)
+				value := values[prompt.key]
+
+				if err := p.env.Config.Set(configKey, value); err == nil {
+					configModified = true
+				} else {
+					// errors from config.Set are panics, so we can't recover from them
+					// For example, the value is not serializable to JSON
+					log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
+				}
+
+				configuredParameters[prompt.key] = azure.ArmParameterValue{
+					Value: value,
+				}
+			}
 		} else {
-			// errors from config.Set are panics, so we can't recover from them
-			// For example, the value is not serializable to JSON
-			log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
-		}
+			for _, prompt := range parameterPrompts {
+				configKey := fmt.Sprintf("infra.parameters.%s", prompt.key)
 
-		configuredParameters[key] = azure.ArmParameterValue{
-			Value: value,
+				// Otherwise, prompt for the value.
+				value, err := p.promptForParameter(ctx, prompt.key, prompt.param)
+				if err != nil {
+					return nil, fmt.Errorf("prompting for value: %w", err)
+				}
+
+				if err := p.env.Config.Set(configKey, value); err == nil {
+					configModified = true
+				} else {
+					// errors from config.Set are panics, so we can't recover from them
+					// For example, the value is not serializable to JSON
+					log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
+				}
+
+				configuredParameters[prompt.key] = azure.ArmParameterValue{
+					Value: value,
+				}
+			}
 		}
 	}
 

@@ -53,6 +53,7 @@ type initFlags struct {
 	subscription   string
 	location       string
 	global         *internal.GlobalCommandOptions
+	fromCode       bool
 	internal.EnvFlag
 }
 
@@ -63,7 +64,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"t",
 		"",
 		//nolint:lll
-		"The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
+		"Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
 	)
 	local.StringVarP(
 		&i.templateBranch,
@@ -77,6 +78,13 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"s",
 		"",
 		"Name or ID of an Azure subscription to use for the new environment",
+	)
+	local.BoolVarP(
+		&i.fromCode,
+		"from-code",
+		"",
+		false,
+		"Initializes a new application from your existing code.",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 	i.EnvFlag.Bind(local, global)
@@ -159,8 +167,15 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		initTypeSelect = initAppTemplate
 	}
 
-	if i.flags.templatePath == "" && existingProject {
-		// no explicit --template, and azure.yaml exists, only initialize environment
+	if i.flags.fromCode {
+		if i.flags.templatePath != "" {
+			return nil, errors.New("only one of init modes: --template, or --from-code should be set")
+		}
+		initTypeSelect = initFromApp
+	}
+
+	if i.flags.templatePath == "" && !i.flags.fromCode && existingProject {
+		// only initialize environment when no mode is set explicitly
 		initTypeSelect = initEnvironment
 	}
 
@@ -384,8 +399,8 @@ func getCmdInitHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Initialize a new application in your current directory.",
 		[]string{
 			formatHelpNote(
-				fmt.Sprintf("Running %s without a template will prompt "+
-					"you to start with a minimal template or select from a curated list of presets.",
+				fmt.Sprintf("Running %s without flags specified will prompt "+
+					"you to initialize using your existing code, or from a template.",
 					output.WithHighLightFormat("init"),
 				)),
 			formatHelpNote(

@@ -10,7 +10,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -123,7 +122,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			Stdin:  cmd.InOrStdin(),
 			Stdout: cmd.OutOrStdout(),
 			Stderr: cmd.ErrOrStderr(),
-		}, formatter)
+		}, formatter, nil)
 	})
 
 	container.MustRegisterSingleton(
@@ -489,13 +488,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			BuildArmClientOptions()
 	})
 
-	container.MustRegisterSingleton(func(
-		credential azcore.TokenCredential,
-		armClientOptions *arm.ClientOptions,
-	) (*armresourcegraph.Client, error) {
-		return armresourcegraph.NewClient(credential, armClientOptions)
-	})
-
 	container.MustRegisterSingleton(templates.NewTemplateManager)
 	container.MustRegisterSingleton(templates.NewSourceManager)
 	container.MustRegisterScoped(project.NewResourceManager)
@@ -554,10 +546,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
-	})
-
-	container.MustRegisterScoped(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
-		return authManager.CredentialForCurrentUser(ctx, nil)
 	})
 
 	// Tools

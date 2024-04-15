@@ -84,7 +84,8 @@ func (s *environmentService) CreateEnvironmentAsync(
 			c.azdContext.ProjectDirectory(),
 			filepath.Base(c.azdContext.ProjectDirectory()),
 			manifest,
-			hosts[0].Path)
+			hosts[0].Path,
+		)
 		if err != nil {
 			return false, fmt.Errorf("generating project artifacts: %w", err)
 		}
@@ -110,18 +111,6 @@ func (s *environmentService) CreateEnvironmentAsync(
 
 	for key, value := range newEnv.Values {
 		azdEnv.DotenvSet(key, value)
-	}
-
-	var servicesToExpose = make([]string, 0)
-
-	for _, svc := range newEnv.Services {
-		if svc.IsExternal {
-			servicesToExpose = append(servicesToExpose, svc.Name)
-		}
-	}
-
-	if err := azdEnv.Config.Set("services.app.config.exposedServices", servicesToExpose); err != nil {
-		return false, fmt.Errorf("setting exposed services: %w", err)
 	}
 
 	if err := c.envManager.Save(ctx, azdEnv); err != nil {

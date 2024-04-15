@@ -63,7 +63,8 @@ param ingressEnabled bool = true
 param revisionMode string = 'Single'
 
 @description('The secrets required for the container')
-param secrets array = []
+@secure()
+param secrets object = {}
 
 @description('The service binds associated with the container')
 param serviceBinds array = []
@@ -123,7 +124,10 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
         appProtocol: daprAppProtocol
         appPort: ingressEnabled ? targetPort : 0
       } : { enabled: false }
-      secrets: secrets
+      secrets: [for secret in items(secrets): {
+        name: secret.key
+        value: secret.value
+      }]
       service: !empty(serviceType) ? { type: serviceType } : null
       registries: usePrivateRegistry ? [
         {

@@ -233,6 +233,24 @@ func (m *Manager) CredentialForCurrentUser(
 			}
 			return cloudShellCredential, nil
 		}
+		if oneauth.Supported && strings.EqualFold(os.Getenv("IsDevBox"), "True") {
+			// Try logging in the active OS account. If that fails for any reason, tell the user to run `azd auth login`.
+			if err := m.LoginWithBrokerAccount(); err == nil {
+				if config, err := m.readAuthConfig(); err == nil {
+					user, err := readUserProperties(config)
+					if err == nil && user != nil && user.HomeAccountID != nil && *user.HomeAccountID != "" {
+						tenant := options.TenantID
+						if tenant == "" {
+							tenant = "organizations"
+						}
+						authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenant
+						return oneauth.NewCredential(authority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
+							HomeAccountID: *user.HomeAccountID,
+						})
+					}
+				}
+			}
+		}
 		return nil, ErrNoCurrentUser
 	}
 
@@ -538,11 +556,25 @@ func (m *Manager) LoginInteractive(
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
 }
 
+// LoginWithBrokerAccount logs in an account provided by the system authentication broker via OneAuth.
+// For example, it will log in the user currently signed in to Windows. This method never prompts for
+// user interaction and returns an error when the broker doesn't provide an account.
+func (m *Manager) LoginWithBrokerAccount() error {
+	accountID, err := oneauth.LogInSilently(cAZD_CLIENT_ID)
+	if err == nil {
+		err = m.saveUserProperties(&userProperties{
+			FromOneAuth:   true,
+			HomeAccountID: &accountID,
+		})
+	}
+	return err
+}
+
+// LoginWithOneAuth starts OneAuth's interactive login flow.
 func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes []string) error {
 	if len(scopes) == 0 {
 		scopes = m.LoginScopes()
 	}
-
 	authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenantID
 	accountID, err := oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
 	if err == nil {

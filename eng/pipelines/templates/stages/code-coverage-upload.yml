@@ -1,0 +1,78 @@
+parameters:
+  - name: DownloadArtifacts
+    type: object
+    default:
+      - cover-win
+      - cover-lin
+      - cover-mac
+stages: 
+- stage: CodeCoverage_Upload
+  condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+  dependsOn: BuildAndTest
+
+  variables:
+    - template: /eng/pipelines/templates/variables/globals.yml
+    - template: /eng/pipelines/templates/variables/image.yml
+
+  jobs:
+  - job: Upload
+    pool:
+      name: $(LINUXPOOL)
+      image: $(LINUXVMIMAGE)
+      os: linux
+    steps:
+      - template: /eng/pipelines/templates/steps/setup-go.yml
+      - template: /eng/pipelines/templates/steps/download-artifacts.yml
+        parameters:
+          Artifacts: ${{ parameters.DownloadArtifacts }}
+
+      - pwsh: |
+          New-Item -ItemType Directory -Force -Path cover
+          New-Item -ItemType Directory -Force -Path cover-int
+          New-Item -ItemType Directory -Force -Path cover-unit
+
+          $unitCoverage = (Get-ChildItem cover-*/unit).FullName -join ","
+          $integrationCoverage = (Get-ChildItem cover-*/int).FullName -join ","
+
+          # Merge unit test coverage across platforms
+          go tool covdata merge -i="$unitCoverage" -o cover-unit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Merge integration test coverage across platforms
+          go tool covdata merge -i="$integrationCoverage" -o cover-int
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Merge unit and integration code coverage
+          go tool covdata merge -i="cover-unit,cover-int" -o cover
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Convert to text format
+          go tool covdata textfmt -i=cover -o cover.out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          go install github.com/axw/gocov/gocov@latest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go install github.com/AlekSi/gocov-xml@latest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        displayName: Merge code coverage files
+
+      - task: PublishCodeCoverageResults@1
+        inputs:
+          codeCoverageTool: Cobertura
+          summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
+        displayName: Publish Code Coverage to DevOps
+    
+    templateContext: 
+      outputs: 
+        - output: pipelineArtifact
+          path: cover-unit
+          artifact: cover-unit
+          displayName: Upload unit test code coverage
+
+        - output: pipelineArtifact
+          path: cover-int
+          artifact: cover-int
+          displayName: Upload integration test code coverage

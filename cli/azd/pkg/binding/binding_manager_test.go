@@ -95,11 +95,11 @@ func TestGetTargetResourceInfo(t *testing.T) {
 		},
 		{
 			name:         "Test with sub-resource key names",
-			resourceType: TargetTypeSpringApp,
+			resourceType: TargetTypeSql,
 			resourceName: "Resource2",
 			env: map[string]string{
-				fmt.Sprintf(BindingResourceKey, "RESOURCE2"):     "Value1",
-				fmt.Sprintf(BindingResourceKey, "RESOURCE2_APP"): "Value2",
+				fmt.Sprintf(BindingResourceKey, "RESOURCE2"):          "Value1",
+				fmt.Sprintf(BindingResourceKey, "RESOURCE2_DATABASE"): "Value2",
 			},
 			expected:  []string{"Value1", "Value2"},
 			expectErr: false,
@@ -140,11 +140,21 @@ func TestGetStoreResourceInfo(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name:         "Test with fallback key name",
+			name:         "Test with appconfig fallback key name",
 			storeType:    StoreTypeAppConfig,
 			resourceName: "Resource1",
 			env: map[string]string{
-				BindingStoreFallbackKey: "Value1",
+				BindingStoreFallbackKey[StoreTypeAppConfig]: "Value1",
+			},
+			expected:  []string{"Value1"},
+			expectErr: false,
+		},
+		{
+			name:         "Test with keyvault fallback key name",
+			storeType:    StoreTypeKeyVault,
+			resourceName: "Resource1",
+			env: map[string]string{
+				BindingStoreFallbackKey[StoreTypeKeyVault]: "Value1",
 			},
 			expected:  []string{"Value1"},
 			expectErr: false,
@@ -186,23 +196,23 @@ func TestGetTargetSecretInfo(t *testing.T) {
 	}{
 		{
 			name:         "Test with default keys",
-			resourceType: TargetTypePostgreSqlFlexible,
+			resourceType: TargetTypePostgreSql,
 			resourceName: "Resource1",
 			env: map[string]string{
-				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_USERNAME":        "Value1",
-				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_SECRET_KEYVAULT": "Value2",
-				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_SECRET_NAME":     "Value3",
+				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_USERNAME":      "Value1",
+				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_KEYVAULT_NAME": "Value2",
+				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_SECRET_NAME":   "Value3",
 			},
 			expected:  []string{"Value1", "Value2", "Value3"},
 			expectErr: false,
 		},
 		{
 			name:         "Test with fallback keys",
-			resourceType: TargetTypePostgreSqlFlexible,
+			resourceType: TargetTypePostgreSql,
 			resourceName: "Resource1",
 			env: map[string]string{
 				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_USERNAME":    "Value1",
-				BindingKeyvaultFallbackKey:                                    "Value2",
+				BindingStoreFallbackKey[StoreTypeKeyVault]:                    "Value2",
 				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_SECRET_NAME": "Value3",
 			},
 			expected:  []string{"Value1", "Value2", "Value3"},
@@ -210,7 +220,7 @@ func TestGetTargetSecretInfo(t *testing.T) {
 		},
 		{
 			name:         "Test with missing key: keyvault name",
-			resourceType: TargetTypePostgreSqlFlexible,
+			resourceType: TargetTypePostgreSql,
 			resourceName: "Resource1",
 			env: map[string]string{
 				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_SECRET_NAME": "Value1",
@@ -221,10 +231,10 @@ func TestGetTargetSecretInfo(t *testing.T) {
 		},
 		{
 			name:         "Test with missing key: keyvault secret name",
-			resourceType: TargetTypePostgreSqlFlexible,
+			resourceType: TargetTypePostgreSql,
 			resourceName: "Resource1",
 			env: map[string]string{
-				BindingKeyvaultFallbackKey:                                 "Value1",
+				BindingStoreFallbackKey[StoreTypeKeyVault]:                 "Value1",
 				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_USERNAME": "Value2",
 			},
 			expected:  nil,
@@ -232,11 +242,11 @@ func TestGetTargetSecretInfo(t *testing.T) {
 		},
 		{
 			name:         "Test with missing key: user name",
-			resourceType: TargetTypePostgreSqlFlexible,
+			resourceType: TargetTypePostgreSql,
 			resourceName: "Resource1",
 			env: map[string]string{
-				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_SECRET_KEYVAULT": "Value1",
-				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_SECRET_NAME":     "Value2",
+				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_KEYVAULT_NAME": "Value1",
+				fmt.Sprintf(BindingResourceKey, "RESOURCE1") + "_SECRET_NAME":   "Value2",
 			},
 			expected:  nil,
 			expectErr: true,
@@ -324,7 +334,7 @@ func TestGetResourceId(t *testing.T) {
 			args: args{
 				subscriptionId:    "subId",
 				resourceGroupName: "rgName",
-				resourceType:      SourceTypeWebApp,
+				resourceType:      SourceTypeAppService,
 				resourceName:      "sourceResource",
 				env: map[string]string{
 					fmt.Sprintf(BindingSourceFallbackKey, "SOURCERESOURCE"): "sourceResourceValue",
@@ -367,7 +377,7 @@ func TestGetResourceId(t *testing.T) {
 			args: args{
 				subscriptionId:    "subId",
 				resourceGroupName: "rgName",
-				resourceType:      SourceTypeWebApp,
+				resourceType:      SourceTypeAppService,
 				resourceName:      "missingResource",
 				env:               map[string]string{},
 			},

@@ -9,8 +9,8 @@ type BindingConfig struct {
 	Name           string             `yaml:"name"`
 	TargetType     TargetResourceType `yaml:"targetType"`
 	TargetResource string             `yaml:"targetResource"`
-	StoreType      StoreResourceType  `yaml:"StoreResourceType"`
-	StoreResource  string             `yaml:"storeResource"`
+	AppConfig      string             `yaml:"appConfig"`
+	KeyVault       string             `yaml:"keyVault"`
 }
 
 // Describe a binding source service
@@ -24,17 +24,17 @@ type BindingSource struct {
 type SourceResourceType string
 
 const (
-	SourceTypeWebApp       SourceResourceType = "appservice"
-	SourceTypeFunctionApp  SourceResourceType = "functionapp"
+	SourceTypeAppService   SourceResourceType = "appservice"
 	SourceTypeContainerApp SourceResourceType = "containerapp"
+	SourceTypeFunctionApp  SourceResourceType = "functionapp"
 	SourceTypeSpringApp    SourceResourceType = "springapp"
 )
 
 func (sourceType SourceResourceType) IsValid() bool {
 	switch sourceType {
-	case SourceTypeWebApp,
-		SourceTypeFunctionApp,
+	case SourceTypeAppService,
 		SourceTypeContainerApp,
+		SourceTypeFunctionApp,
 		SourceTypeSpringApp:
 		return true
 	}
@@ -45,47 +45,38 @@ func (sourceType SourceResourceType) IsValid() bool {
 type TargetResourceType string
 
 const (
-	TargetTypeStorageAccount     TargetResourceType = "storage"
-	TargetTypeCosmosDB           TargetResourceType = "cosmos"
-	TargetTypePostgreSqlFlexible TargetResourceType = "postgresql-flexible"
-	TargetTypeMysqlFlexible      TargetResourceType = "mysql-flexible"
-	TargetTypeSql                TargetResourceType = "sql"
-	TargetTypeRedis              TargetResourceType = "redis"
-	TargetTypeRedisEnterprise    TargetResourceType = "redis-enterprise"
-	TargetTypeKeyVault           TargetResourceType = "keyvault"
-	TargetTypeEventHub           TargetResourceType = "eventhub"
-	TargetTypeAppConfig          TargetResourceType = "appconfig"
-	TargetTypeServiceBus         TargetResourceType = "servicebus"
-	TargetTypeSignalR            TargetResourceType = "signalr"
-	TargetTypeWebPubSub          TargetResourceType = "webpubsub"
-	TargetTypeAppInsights        TargetResourceType = "app-insights"
+	TargetTypeAppInsights     TargetResourceType = "appinsights"
+	TargetTypeCosmosDB        TargetResourceType = "cosmos"
+	TargetTypeEventHub        TargetResourceType = "eventhub"
+	TargetTypeMysql           TargetResourceType = "mysql"      // mysql flexible server
+	TargetTypePostgreSql      TargetResourceType = "postgresql" // postgresql flexible server
+	TargetTypeRedis           TargetResourceType = "redis"
+	TargetTypeRedisEnterprise TargetResourceType = "redis-enterprise"
+	TargetTypeServiceBus      TargetResourceType = "servicebus"
+	TargetTypeSignalR         TargetResourceType = "signalr"
+	TargetTypeSql             TargetResourceType = "sql"
+	TargetTypeStorageAccount  TargetResourceType = "storage"
+	TargetTypeWebPubSub       TargetResourceType = "webpubsub"
+
 	// compute service as target
-	TargetTypeWebApp       TargetResourceType = "webapp"
-	TargetTypeFunctionApp  TargetResourceType = "functionapp"
 	TargetTypeContainerApp TargetResourceType = "containerapp"
-	TargetTypeSpringApp    TargetResourceType = "springapp"
 )
 
 func (targetType TargetResourceType) IsValid() bool {
 	switch targetType {
-	case TargetTypeStorageAccount,
+	case TargetTypeAppInsights,
 		TargetTypeCosmosDB,
-		TargetTypePostgreSqlFlexible,
-		TargetTypeMysqlFlexible,
-		TargetTypeSql,
+		TargetTypeEventHub,
+		TargetTypeMysql,
+		TargetTypePostgreSql,
 		TargetTypeRedis,
 		TargetTypeRedisEnterprise,
-		TargetTypeKeyVault,
-		TargetTypeEventHub,
-		TargetTypeAppConfig,
 		TargetTypeServiceBus,
 		TargetTypeSignalR,
+		TargetTypeSql,
+		TargetTypeStorageAccount,
 		TargetTypeWebPubSub,
-		TargetTypeAppInsights,
-		TargetTypeWebApp,
-		TargetTypeFunctionApp,
-		TargetTypeContainerApp,
-		TargetTypeSpringApp:
+		TargetTypeContainerApp:
 		return true
 	}
 	return false
@@ -93,10 +84,7 @@ func (targetType TargetResourceType) IsValid() bool {
 
 func (targetType TargetResourceType) IsComputeService() bool {
 	switch targetType {
-	case TargetTypeWebApp,
-		TargetTypeFunctionApp,
-		TargetTypeContainerApp,
-		TargetTypeSpringApp:
+	case TargetTypeContainerApp:
 		return true
 	}
 	return false
@@ -107,13 +95,13 @@ type StoreResourceType string
 
 const (
 	StoreTypeAppConfig StoreResourceType = "appconfig"
-	// StoreTypeKeyVault  StoreResourceType = "keyvault"
+	StoreTypeKeyVault  StoreResourceType = "keyvault"
 )
 
 func (storeType StoreResourceType) IsValid() bool {
 	switch storeType {
-	case StoreTypeAppConfig:
-		// StoreTypeKeyVault:
+	case StoreTypeAppConfig,
+		StoreTypeKeyVault:
 		return true
 	}
 	return false
@@ -137,12 +125,11 @@ var SourceSubResourceSuffix = map[interface{}][]string{
 // E.g., for database service, we need also know the database name beside server name
 // to create a service linker resource
 var TargetSubResourceSuffix = map[interface{}][]string{
-	TargetTypePostgreSqlFlexible: {"DATABASE"},
-	TargetTypeMysqlFlexible:      {"DATABASE"},
-	TargetTypeSql:                {"DATABASE"},
-	TargetTypeRedis:              {"DATABASE"},
-	TargetTypeRedisEnterprise:    {"DATABASE"},
-	TargetTypeSpringApp:          {"APP"},
+	TargetTypePostgreSql:      {"DATABASE"},
+	TargetTypeMysql:           {"DATABASE"},
+	TargetTypeSql:             {"DATABASE"},
+	TargetTypeRedis:           {"DATABASE"},
+	TargetTypeRedisEnterprise: {"DATABASE"},
 }
 
 // When target resource has secret info suffix, we also look for key
@@ -153,22 +140,20 @@ var TargetSubResourceSuffix = map[interface{}][]string{
 // This is not a perfect solution, we may improve this in the future if the secret
 // can be got from other ways.
 var TargetSecretInfoSuffix = map[interface{}][]string{
-	TargetTypePostgreSqlFlexible: {"USERNAME", "SECRET_KEYVAULT", "SECRET_NAME"},
-	TargetTypeMysqlFlexible:      {"USERNAME", "SECRET_KEYVAULT", "SECRET_NAME"},
-	TargetTypeSql:                {"USERNAME", "SECRET_KEYVAULT", "SECRET_NAME"},
+	TargetTypePostgreSql: {"USERNAME", "KEYVAULT_NAME", "SECRET_NAME"},
+	TargetTypeMysql:      {"USERNAME", "KEYVAULT_NAME", "SECRET_NAME"},
+	TargetTypeSql:        {"USERNAME", "KEYVAULT_NAME", "SECRET_NAME"},
 }
 
 // Binding store fall back key name.
-// We will look for this key name as an app config store name
+// We will look for this key name as the binding store name
 // if user doesn't provide the binding store resource using `<BindingResourceKey>`
-const BindingStoreFallbackKey = "BINDING_STORE_NAME"
+var BindingStoreFallbackKey = map[interface{}]string{
+	StoreTypeAppConfig: "BINDING_APPCONFIG_NAME",
+	StoreTypeKeyVault:  "BINDING_KEYVAULT_NAME",
+}
 
 // Binding source fall back key name.
 // We will look for this key name as the source service name
 // if user doesn't provide the binding source resource using `<BindingResourceKey>`
 const BindingSourceFallbackKey = "SERVICE_%s_NAME"
-
-// Binding keyvault fall back key name.
-// We will look for this key name as the keyvault where we assume the target secret
-// is stored, if user doesn't provide the target secret info using `<BindingResourceKey>`
-const BindingKeyvaultFallbackKey = "BINDING_SECRET_KEYVAULT"

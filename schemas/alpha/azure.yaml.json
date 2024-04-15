@@ -178,19 +178,18 @@
                                 "targetType": {
                                     "type": "string",
                                     "enum": [
-                                        "storage",
+                                        "appinsights",
                                         "cosmos",
-                                        "postgresql-flexible",
-                                        "mysql-flexible",
-                                        "sql",
+                                        "eventhub",
+                                        "mysql",
+                                        "postgresql",
                                         "redis",
                                         "redis-enterprise",
-                                        "eventhub",
-                                        "appconfig",
                                         "servicebus",
                                         "signalr",
-                                        "webpubsub",
-                                        "app-insights"
+                                        "sql",
+                                        "storage",
+                                        "webpubsub"
                                     ],
                                     "title": "Target resource type for the binding",
                                     "description": "The type of the target resource that current service will talk to. (Example: storage)"
@@ -200,19 +199,15 @@
                                     "title": "Target resource name for the binding",
                                     "description": "The target resource logical name. The CLI will use this name to find the target resource info in the .env file"
                                 },
-                                "storeType": {
+                                "appConfig": {
                                     "type": "string",
-                                    "enum": [
-                                        "appconfig"
-                                    ],
-                                    "title": "Store resource type for the binding",
-                                    "description": "Optional. The type of the store resource that the binding information will be stored. (Default: appconfig)"  
+                                    "title": "App config name to store the binding configs",
+                                    "description": "Optional. The app config resource logical name. The CLI will use this name to find the app config resource info in the .env file"
                                 },
-                                "storeResource": {
+                                "keyVault": {
                                     "type": "string",
-                                    "title": "Store resource name for the binding",
-                                    "description": "Optional. The store resource logical name. The CLI will use this name to find the store resource info in the .env file"
-
+                                    "title": "Keyvault name to store the sensitive binding configs",
+                                    "description": "Optional. The keyvault resource logical name. The CLI will use this name to find the keyvault resource info in the .env file"
                                 }
                             }
                         }

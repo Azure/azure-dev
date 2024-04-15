@@ -229,7 +229,7 @@ func convertServiceKindToSourceType(
 ) (binding.SourceResourceType, error) {
 	switch kind {
 	case project.AppServiceTarget:
-		return binding.SourceTypeWebApp, nil
+		return binding.SourceTypeAppService, nil
 	case project.AzureFunctionTarget:
 		return binding.SourceTypeFunctionApp, nil
 	case project.ContainerAppTarget,

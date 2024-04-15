@@ -62,7 +62,7 @@ func (sc *linkerManager) Get(
 		return nil, err
 	}
 
-	resp, err := linkerClient.Get(ctx, linkerConfig.SourceResourceId, linkerConfig.Name, nil)
+	resp, err := linkerClient.Get(ctx, linkerConfig.SourceId, linkerConfig.Name, nil)
 	return &resp.LinkerResource, err
 }
 
@@ -79,7 +79,7 @@ func (sc *linkerManager) Create(
 
 	linkerResource := constructLinkerResource(linkerConfig)
 	poller, err := linkerClient.BeginCreateOrUpdate(
-		ctx, linkerConfig.SourceResourceId, linkerConfig.Name, linkerResource, nil)
+		ctx, linkerConfig.SourceId, linkerConfig.Name, linkerResource, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (sc *linkerManager) Delete(
 		return err
 	}
 
-	poller, err := linkerClient.BeginDelete(ctx, linkerConfig.SourceResourceId, linkerConfig.Name, nil)
+	poller, err := linkerClient.BeginDelete(ctx, linkerConfig.SourceId, linkerConfig.Name, nil)
 	if err != nil {
 		return err
 	}
@@ -131,31 +131,55 @@ func (sc *linkerManager) createServiceLinkerClient(
 func constructLinkerResource(
 	linkerConfig *LinkerConfig,
 ) armservicelinker.LinkerResource {
-	// Fixed to use secret as auth type for azd
 	secretAuthType := armservicelinker.AuthTypeSecret
+	easyAuthType := armservicelinker.AuthTypeEasyAuthMicrosoftEntraID
 	azureResourceType := armservicelinker.TargetServiceTypeAzureResource
 	secretTypeRawValue := armservicelinker.SecretTypeRawValue
+	networkOptOut := armservicelinker.ActionTypeOptOut
 
-	return armservicelinker.LinkerResource{
+	// construct linker resource
+	linkerResource := armservicelinker.LinkerResource{
 		Properties: &armservicelinker.LinkerProperties{
-			AuthInfo: &armservicelinker.SecretAuthInfo{
-				AuthType: &secretAuthType,
-				Name:     &linkerConfig.DBUserName,
-				SecretInfo: &armservicelinker.ValueSecretInfo{
-					SecretType: &secretTypeRawValue,
-					Value:      &linkerConfig.DBSecret,
-				},
-			},
 			TargetService: &armservicelinker.AzureResource{
 				Type: &azureResourceType,
-				ID:   &linkerConfig.TargetResourceId,
+				ID:   &linkerConfig.TargetId,
+			},
+			PublicNetworkSolution: &armservicelinker.PublicNetworkSolution{
+				Action: &networkOptOut,
 			},
 			ConfigurationInfo: &armservicelinker.ConfigurationInfo{
 				ConfigurationStore: &armservicelinker.ConfigurationStore{
-					AppConfigurationID: &linkerConfig.StoreResourceId,
+					AppConfigurationID: &linkerConfig.AppConfigId,
 				},
 			},
 			ClientType: &linkerConfig.ClientType,
 		},
 	}
+
+	if linkerConfig.TargetType.IsComputeService() {
+		// use easy auth type for compute service
+		linkerResource.Properties.AuthInfo = &armservicelinker.EasyAuthMicrosoftEntraIDAuthInfo{
+			AuthType: &easyAuthType,
+		}
+	} else {
+		// use secret auth type for other services
+		linkerResource.Properties.AuthInfo = &armservicelinker.SecretAuthInfo{
+			AuthType: &secretAuthType,
+			Name:     &linkerConfig.DBUserName,
+			SecretInfo: &armservicelinker.ValueSecretInfo{
+				SecretType: &secretTypeRawValue,
+				Value:      &linkerConfig.DBSecret,
+			},
+		}
+	}
+
+	// if keyvault is provided, save secret info in the binding to keyvault
+	// and use appconfig to reference the keyvault
+	if linkerConfig.KeyVaultId != "" {
+		linkerResource.Properties.SecretStore = &armservicelinker.SecretStore{
+			KeyVaultID: &linkerConfig.KeyVaultId,
+		}
+	}
+
+	return linkerResource
 }

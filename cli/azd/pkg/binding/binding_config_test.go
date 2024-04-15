@@ -10,7 +10,7 @@ func TestSourceResourceType_IsValid(t *testing.T) {
 		s    SourceResourceType
 		want bool
 	}{
-		{"Valid SourceTypeWebApp", SourceTypeWebApp, true},
+		{"Valid SourceTypeAppService", SourceTypeAppService, true},
 		{"Valid SourceTypeFunctionApp", SourceTypeFunctionApp, true},
 		{"Invalid SourceResourceType", SourceResourceType("invalid"), false},
 	}
@@ -47,22 +47,20 @@ func TestTargetResourceType_IsValid(t *testing.T) {
 		s    TargetResourceType
 		want bool
 	}{
-		{"Valid TargetTypeStorageAccount", TargetTypeStorageAccount, true},
+		{"Valid TargetTypeAppInsights", TargetTypeAppInsights, true},
 		{"Valid TargetTypeCosmosDB", TargetTypeCosmosDB, true},
-		{"Valid TargetTypePostgreSqlFlexible", TargetTypePostgreSqlFlexible, true},
-		{"Valid TargetTypeMysqlFlexible", TargetTypeMysqlFlexible, true},
-		{"Valid TargetTypeSql", TargetTypeSql, true},
+		{"Valid TargetTypeEventHub", TargetTypeEventHub, true},
+		{"Valid TargetTypeMysqlFlexible", TargetTypeMysql, true},
+		{"Valid TargetTypePostgreSqlFlexible", TargetTypePostgreSql, true},
 		{"Valid TargetTypeRedis", TargetTypeRedis, true},
 		{"Valid TargetTypeRedisEnterprise", TargetTypeRedisEnterprise, true},
-		{"Valid TargetTypeKeyVault", TargetTypeKeyVault, true},
-		{"Valid TargetTypeEventHub", TargetTypeEventHub, true},
-		{"Valid TargetTypeAppConfig", TargetTypeAppConfig, true},
 		{"Valid TargetTypeServiceBus", TargetTypeServiceBus, true},
 		{"Valid TargetTypeSignalR", TargetTypeSignalR, true},
+		{"Valid TargetTypeSql", TargetTypeSql, true},
+		{"Valid TargetTypeStorageAccount", TargetTypeStorageAccount, true},
 		{"Valid TargetTypeWebPubSub", TargetTypeWebPubSub, true},
-		{"Valid TargetTypeAppInsights", TargetTypeAppInsights, true},
-		{"Valid TargetTypeWebApp", TargetTypeWebApp, true},
-		{"Valid TargetTypeFunctionApp", TargetTypeFunctionApp, true},
+		{"Valid TargetTypeContainerApp", TargetTypeContainerApp, true},
+
 		{"Invalid TargetResourceType", TargetResourceType("invalid"), false},
 	}
 	for _, tt := range tests {

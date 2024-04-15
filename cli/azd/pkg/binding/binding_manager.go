@@ -25,13 +25,6 @@ type BindingManager interface {
 		bindingSource *BindingSource,
 		bindingConfigs []*BindingConfig,
 	) error
-	DeleteBindings(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		bindingSource *BindingSource,
-		bindingConfigs []*BindingConfig,
-	) error
 }
 
 type bindingManager struct {
@@ -108,31 +101,6 @@ func (bm *bindingManager) CreateBindings(
 	return nil
 }
 
-// Delete all bindings of a service (each binding corresponds to a service linker resource)
-func (bm *bindingManager) DeleteBindings(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	bindingSource *BindingSource,
-	bindingConfigs []*BindingConfig,
-) error {
-	// get binding resource info from .env file, converting binding configs to linker configs
-	linkerConfigs, err := convertBindingsToLinkers(
-		ctx, bm.kvs, subscriptionId, resourceGroupName, bindingSource, bindingConfigs, bm.env.Dotenv())
-	if err != nil {
-		return err
-	}
-
-	// delete service linker resource for each binding
-	for _, linkerConfig := range linkerConfigs {
-		err := bm.linkerManager.Delete(ctx, subscriptionId, linkerConfig)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Check if the binding source service is valid, including the hosting service type and expected
 // source service related environment variables in .env file
 func validateBindingSource(
@@ -167,11 +135,6 @@ func validateBindingConfig(
 		return fmt.Errorf("target resource type: '%s' is not supported", binding.TargetType)
 	}
 
-	// validate store resource type
-	if binding.StoreType != "" && !binding.StoreType.IsValid() {
-		return fmt.Errorf("store resource type: '%s' is not supported", binding.StoreType)
-	}
-
 	// validate target resource info in the binding
 	_, err := getTargetResourceInfo(binding.TargetType, binding.TargetResource, env)
 	if err != nil {
@@ -179,7 +142,7 @@ func validateBindingConfig(
 	}
 
 	// validate store resource info in the binding
-	_, err = getStoreResourceInfo(binding.StoreType, binding.StoreResource, env)
+	_, err = getStoreResourceInfo(StoreTypeAppConfig, binding.AppConfig, env)
 	if err != nil {
 		return err
 	}
@@ -238,13 +201,8 @@ func convertBindingsToLinkers(
 			return linkerConfigs, err
 		}
 
-		// complete store type if not specified
-		if bindingConfig.StoreType == "" {
-			bindingConfig.StoreType = StoreTypeAppConfig
-		}
-
-		storeId, err := getResourceId(subscriptionId, resourceGroupName, bindingConfig.StoreType,
-			bindingConfig.StoreResource, env)
+		appconfigId, err := getResourceId(subscriptionId, resourceGroupName, StoreTypeAppConfig,
+			bindingConfig.AppConfig, env)
 		if err != nil {
 			return linkerConfigs, err
 		}
@@ -252,8 +210,6 @@ func convertBindingsToLinkers(
 		// For some database target resources, we need the secret to create a connection.
 		// So we expect the secret is stored in a keyvault when running `azd provision`,
 		// and the user specifies the keyvault secret name when defining the binding.
-		// This is not a perfect solution, but it's the best we can do for now. We may
-		// improve this in the future.
 		userName, secret := "", ""
 		if TargetSecretInfoSuffix[bindingConfig.TargetType] != nil {
 			userName, secret, err = getTargetSecret(ctx, kvs, subscriptionId, bindingConfig.TargetType,
@@ -263,14 +219,29 @@ func convertBindingsToLinkers(
 			}
 		}
 
+		// When binding has sensitive configs (for example, the storage account key),
+		// use could specify a keyvault to save the secret, and the appconfig will reference
+		// the keyvault secret.
+		keyvaultId := ""
+		if bindingConfig.KeyVault != "" {
+			keyvaultId, err = getResourceId(subscriptionId, resourceGroupName, StoreTypeKeyVault,
+				bindingConfig.KeyVault, env)
+			if err != nil {
+				return linkerConfigs, err
+			}
+		}
+
 		linkerConfigs = append(linkerConfigs, &LinkerConfig{
-			Name:             getLinkerName(bindingConfig),
-			SourceResourceId: sourceId,
-			TargetResourceId: targetId,
-			StoreResourceId:  storeId,
-			DBUserName:       userName,
-			DBSecret:         secret,
-			ClientType:       bindingSource.ClientType,
+			Name:        getLinkerName(bindingConfig),
+			SourceType:  bindingSource.SourceType,
+			SourceId:    sourceId,
+			TargetType:  bindingConfig.TargetType,
+			TargetId:    targetId,
+			AppConfigId: appconfigId,
+			KeyVaultId:  keyvaultId,
+			DBUserName:  userName,
+			DBSecret:    secret,
+			ClientType:  bindingSource.ClientType,
 		})
 	}
 
@@ -418,7 +389,7 @@ func getStoreResourceInfo(
 	// if expected keys for store does not exist, we look for the fallback key
 	resourceInfo, err := getExpectedValuesInEnv(expectedKeys, env)
 	if err != nil {
-		expectedKeys = []string{BindingStoreFallbackKey}
+		expectedKeys = []string{BindingStoreFallbackKey[storeType]}
 		resourceInfo, err = getExpectedValuesInEnv(expectedKeys, env)
 	}
 
@@ -442,7 +413,7 @@ func getTargetSecretInfo(
 		// if expected keys for secret does not exist, we look for the fallback key
 		resourceInfo, err := getExpectedValuesInEnv(expectedKeys, env)
 		if err != nil {
-			expectedKeys[1] = BindingKeyvaultFallbackKey
+			expectedKeys[1] = BindingStoreFallbackKey[StoreTypeKeyVault]
 			resourceInfo, err = getExpectedValuesInEnv(expectedKeys, env)
 		}
 

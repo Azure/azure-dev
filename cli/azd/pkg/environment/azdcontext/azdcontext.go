@@ -68,14 +68,24 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 	return config.DefaultEnvironment, nil
 }
 
-func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
+type ProjectState struct {
+	DefaultEnvironment string
+}
+
+func (c *AzdContext) SetProjectState(state ProjectState) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
 	config := configFile{
 		Version:            ConfigFileVersion,
-		DefaultEnvironment: name,
+		DefaultEnvironment: state.DefaultEnvironment,
 	}
 
-	return writeConfig(path, config)
+	if err := writeConfig(path, config); err != nil {
+		return err
+	}
+
+	// make sure to ignore the environment directory
+	path = filepath.Join(c.EnvironmentDirectory(), ".gitignore")
+	return os.WriteFile(path, []byte("*"), osutil.PermissionFile)
 }
 
 // Creates context with project directory set to the desired directory.

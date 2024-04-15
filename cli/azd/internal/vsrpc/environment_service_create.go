@@ -117,7 +117,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 		return false, fmt.Errorf("saving new environment: %w", err)
 	}
 
-	if err := c.azdContext.SetDefaultEnvironmentName(newEnv.Name); err != nil {
+	if err := c.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: newEnv.Name}); err != nil {
 		return false, fmt.Errorf("saving default environment: %w", err)
 	}
 

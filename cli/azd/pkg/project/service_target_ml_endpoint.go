@@ -38,12 +38,10 @@ type EndpointDeployment struct {
 }
 
 func (m *machineLearningEndpointTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	// Implement the Initialize method here.
 	return nil
 }
 
 func (m *machineLearningEndpointTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
-	// Implement the RequiredExternalTools method here.
 	return nil
 }
 
@@ -80,6 +78,13 @@ func (m *machineLearningEndpointTarget) Deploy(
 
 		deployResult := &EndpointDeployment{}
 
+		// Initialize the AI project that will be used for the python bridge
+		task.SetProgress(NewServiceProgress("Initializing AI project"))
+		if err := m.aiHelper.Init(ctx); err != nil {
+			task.SetError(fmt.Errorf("failed initializing AI project: %w", err))
+			return
+		}
+
 		// Ensure the workspace is valid
 		if err := m.aiHelper.EnsureWorkspace(ctx, workspaceScope); err != nil {
 			task.SetError(
@@ -95,13 +100,7 @@ func (m *machineLearningEndpointTarget) Deploy(
 
 		// Deploy flow
 		if endpointConfig.Flow != nil {
-			flowName, err := endpointConfig.Flow.Name.Envsubst(m.env.Getenv)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetProgress(NewServiceProgress(fmt.Sprintf("Deploying flow '%s'", flowName)))
+			task.SetProgress(NewServiceProgress("Deploying prompt flow"))
 			flow, err := m.aiHelper.CreateOrUpdateFlow(ctx, workspaceScope, serviceConfig, endpointConfig.Flow)
 			if err != nil {
 				task.SetError(err)
@@ -113,13 +112,7 @@ func (m *machineLearningEndpointTarget) Deploy(
 
 		// Deploy environment
 		if endpointConfig.Environment != nil {
-			envName, err := endpointConfig.Environment.Name.Envsubst(m.env.Getenv)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring environment '%s'", envName)))
+			task.SetProgress(NewServiceProgress("Configuring environment"))
 			envVersion, err := m.aiHelper.CreateEnvironmentVersion(
 				ctx,
 				workspaceScope,
@@ -136,13 +129,7 @@ func (m *machineLearningEndpointTarget) Deploy(
 
 		// Deploy models
 		if endpointConfig.Model != nil {
-			modelName, err := endpointConfig.Model.Name.Envsubst(m.env.Getenv)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring model '%s'", modelName)))
+			task.SetProgress(NewServiceProgress("Configuring model"))
 			modelVersion, err := m.aiHelper.CreateModelVersion(ctx, workspaceScope, serviceConfig, endpointConfig.Model)
 			if err != nil {
 				task.SetError(err)
@@ -154,9 +141,8 @@ func (m *machineLearningEndpointTarget) Deploy(
 
 		// Deploy endpoints
 		if endpointConfig.Deployment != nil {
+			task.SetProgress(NewServiceProgress("Deploying to endpoint"))
 			endpointName := filepath.Base(targetResource.ResourceName())
-
-			task.SetProgress(NewServiceProgress(fmt.Sprintf("Deploying endpoint '%s'", endpointName)))
 			onlineDeployment, err := m.aiHelper.DeployToEndpoint(
 				ctx,
 				workspaceScope,

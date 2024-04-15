@@ -16,7 +16,7 @@ func TestExpandableStringYaml(t *testing.T) {
 	err := yaml.Unmarshal([]byte(`"${foo}"`), &e)
 	assert.NoError(t, err)
 
-	assert.Equal(t, "${foo}", e.template)
+	assert.Equal(t, "${foo}", e.Template)
 
 	marshalled, err := yaml.Marshal(e)
 	assert.NoError(t, err)

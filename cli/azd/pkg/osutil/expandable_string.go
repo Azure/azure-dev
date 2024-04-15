@@ -11,24 +11,24 @@ import (
 
 func NewExpandableString(template string) ExpandableString {
 	return ExpandableString{
-		template: template,
+		Template: template,
 	}
 }
 
 // ExpandableString is a string that has ${foo} style references inside which can be evaluated.
 type ExpandableString struct {
-	template string
+	Template string
 }
 
 // Envsubst evaluates the template, substituting values as [envsubst.Eval] would.
 func (e ExpandableString) Envsubst(mapping func(string) string) (string, error) {
-	return envsubst.Eval(e.template, mapping)
+	return envsubst.Eval(e.Template, mapping)
 }
 
 // MustEnvsubst evaluates the template, substituting values as [envsubst.Eval] would and panics if there
 // is an error (for example, the string is malformed).
 func (e ExpandableString) MustEnvsubst(mapping func(string) string) string {
-	if v, err := envsubst.Eval(e.template, mapping); err != nil {
+	if v, err := envsubst.Eval(e.Template, mapping); err != nil {
 		panic(fmt.Sprintf("MustEnvsubst: %v", err))
 	} else {
 		return v
@@ -36,7 +36,7 @@ func (e ExpandableString) MustEnvsubst(mapping func(string) string) string {
 }
 
 func (e ExpandableString) MarshalYAML() (interface{}, error) {
-	return e.template, nil
+	return e.Template, nil
 }
 
 func (e *ExpandableString) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -44,6 +44,6 @@ func (e *ExpandableString) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	if err := unmarshal(&s); err != nil {
 		return err
 	}
-	e.template = s
+	e.Template = s
 	return nil
 }

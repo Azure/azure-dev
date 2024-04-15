@@ -27,7 +27,7 @@ func getResourceGroupFollowUp(
 	}
 
 	subscriptionId := env.GetSubscriptionId()
-	if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
+	if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig.ResourceGroupName); err == nil {
 		defaultFollowUpText := fmt.Sprintf(
 			"You can view the resources created under the resource group %s in Azure Portal:", resourceGroupName)
 		if whatIf {

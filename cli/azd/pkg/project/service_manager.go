@@ -474,8 +474,19 @@ func (sm *serviceManager) Deploy(
 				containerEnvName = parts[len(parts)-1]
 			}
 
+			// Get any explicitly configured resource group name
+			// 1. Service level override
+			// 2. Project level override
+			resourceGroupNameTemplate := serviceConfig.ResourceGroupName
+			if resourceGroupNameTemplate.Template == "" {
+				resourceGroupNameTemplate = serviceConfig.Project.ResourceGroupName
+			}
+
 			resourceGroupName, err := sm.resourceManager.GetResourceGroupName(
-				ctx, sm.env.GetSubscriptionId(), serviceConfig.Project)
+				ctx,
+				sm.env.GetSubscriptionId(),
+				resourceGroupNameTemplate,
+			)
 			if err != nil {
 				task.SetError(fmt.Errorf("getting resource group name: %w", err))
 				return

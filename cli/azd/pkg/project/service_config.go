@@ -16,6 +16,8 @@ type ServiceConfig struct {
 	Name string `yaml:"-"`
 	// A list of dependent services that must be deployed before this service
 	DependsOn []string `yaml:"dependsOn,omitempty"`
+	// The azure resource group to deploy the service to
+	ResourceGroupName osutil.ExpandableString `yaml:"resourceGroup,omitempty"`
 	// The name used to override the default azure resource name
 	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
 	// The relative path to the project folder from the project root

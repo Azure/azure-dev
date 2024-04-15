@@ -48,7 +48,7 @@ func NewAiHelper(
 	}
 }
 
-func (a *AiHelper) init(ctx context.Context) error {
+func (a *AiHelper) Init(ctx context.Context) error {
 	if a.initialized {
 		return nil
 	}
@@ -71,10 +71,6 @@ func (a *AiHelper) EnsureWorkspace(
 	ctx context.Context,
 	scope *ai.Scope,
 ) error {
-	if err := a.init(ctx); err != nil {
-		return err
-	}
-
 	workspaceClient, err := armmachinelearning.NewWorkspacesClient(
 		scope.SubscriptionId(),
 		a.credentials,
@@ -109,10 +105,6 @@ func (a *AiHelper) CreateEnvironmentVersion(
 	serviceConfig *ServiceConfig,
 	config *ai.ComponentConfig,
 ) (*armmachinelearning.EnvironmentVersion, error) {
-	if err := a.init(ctx); err != nil {
-		return nil, err
-	}
-
 	yamlFilePath := filepath.Join(serviceConfig.Path(), config.Path)
 	_, err := os.Stat(yamlFilePath)
 	if err != nil {
@@ -131,6 +123,10 @@ func (a *AiHelper) CreateEnvironmentVersion(
 	environmentName, err := config.Name.Envsubst(a.env.Getenv)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing environment name value: %w", err)
+	}
+
+	if environmentName == "" {
+		environmentName = fmt.Sprintf("%s-environment", serviceConfig.Name)
 	}
 
 	nextVersion := "1"
@@ -196,10 +192,6 @@ func (a *AiHelper) CreateModelVersion(
 	serviceConfig *ServiceConfig,
 	config *ai.ComponentConfig,
 ) (*armmachinelearning.ModelVersion, error) {
-	if err := a.init(ctx); err != nil {
-		return nil, err
-	}
-
 	yamlFilePath := filepath.Join(serviceConfig.Path(), config.Path)
 	_, err := os.Stat(yamlFilePath)
 	if err != nil {
@@ -209,6 +201,10 @@ func (a *AiHelper) CreateModelVersion(
 	modelName, err := config.Name.Envsubst(a.env.Getenv)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing model name value: %w", err)
+	}
+
+	if modelName == "" {
+		modelName = fmt.Sprintf("%s-model", serviceConfig.Name)
 	}
 
 	modelArgs := []string{
@@ -282,90 +278,11 @@ func (a *AiHelper) CreateModelVersion(
 	return &modelVersionResponse.ModelVersion, nil
 }
 
-func (a *AiHelper) CreateOrUpdateEndpoint(
-	ctx context.Context,
-	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
-	config *ai.ComponentConfig,
-) (*armmachinelearning.OnlineEndpoint, error) {
-	if err := a.init(ctx); err != nil {
-		return nil, err
-	}
-
-	endpointName, err := config.Name.Envsubst(a.env.Getenv)
-	if err != nil {
-		return nil, fmt.Errorf("failed parsing endpoint name value: %w", err)
-	}
-
-	yamlFilePath := filepath.Join(serviceConfig.Path(), config.Path)
-	_, err = os.Stat(yamlFilePath)
-	if err != nil {
-		return nil, err
-	}
-
-	endpointClient, err := armmachinelearning.NewOnlineEndpointsClient(
-		scope.SubscriptionId(),
-		a.credentials,
-		a.armClientOptions,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = endpointClient.Get(
-		ctx,
-		scope.ResourceGroup(),
-		scope.Workspace(),
-		endpointName,
-		nil,
-	)
-
-	if err != nil {
-		endpointArgs := []string{
-			"-t", "online-endpoint",
-			"-s", scope.SubscriptionId(),
-			"-g", scope.ResourceGroup(),
-			"-w", scope.Workspace(),
-			"-f", yamlFilePath,
-			"--set", fmt.Sprintf("name=%s", endpointName),
-		}
-
-		endpointArgs, err = a.applyOverrides(endpointArgs, config.Overrides)
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = a.pythonBridge.Run(ctx, ai.MLClient, endpointArgs...)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	endpointResponse, err := endpointClient.Get(
-		ctx,
-		scope.ResourceGroup(),
-		scope.Workspace(),
-		endpointName,
-		nil,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	a.env.DotenvSet("AZUREML_ENDPOINT_NAME", endpointName)
-
-	return &endpointResponse.OnlineEndpoint, nil
-}
-
 func (a *AiHelper) GetEndpoint(
 	ctx context.Context,
 	scope *ai.Scope,
 	endpointName string,
 ) (*armmachinelearning.OnlineEndpoint, error) {
-	if err := a.init(ctx); err != nil {
-		return nil, err
-	}
-
 	endpointClient, err := armmachinelearning.NewOnlineEndpointsClient(
 		scope.SubscriptionId(),
 		a.credentials,
@@ -396,81 +313,25 @@ func (a *AiHelper) DeployToEndpoint(
 	endpointName string,
 	config *ai.EndpointDeploymentConfig,
 ) (*armmachinelearning.OnlineDeployment, error) {
-	if err := a.init(ctx); err != nil {
+	// Get the custom environment name if configured
+	environmentVersionName, err := a.getEnvironmentVersionName(ctx, scope, serviceConfig, config)
+	if err != nil {
 		return nil, err
 	}
 
-	environmentName, err := config.Environment.Name.Envsubst(a.env.Getenv)
+	// Get the custom model name if configured
+	modelVersionName, err := a.getModelVersionName(ctx, scope, serviceConfig, config)
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing environment name value: %w", err)
+		return nil, err
 	}
 
-	modelName, err := config.Model.Name.Envsubst(a.env.Getenv)
-	if err != nil {
-		return nil, fmt.Errorf("failed parsing model name value: %w", err)
-	}
+	deploymentName := fmt.Sprintf("azd-%d", time.Now().Unix())
 
 	yamlFilePath := filepath.Join(serviceConfig.Path(), config.Deployment.Path)
 	_, err = os.Stat(yamlFilePath)
 	if err != nil {
 		return nil, err
 	}
-
-	envClient, err := armmachinelearning.NewEnvironmentContainersClient(
-		scope.SubscriptionId(),
-		a.credentials,
-		a.armClientOptions,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	envGetResponse, err := envClient.Get(
-		ctx,
-		scope.ResourceGroup(),
-		scope.Workspace(),
-		environmentName,
-		nil,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	environmentContainer := envGetResponse.EnvironmentContainer
-
-	modelClient, err := armmachinelearning.NewModelContainersClient(
-		scope.SubscriptionId(),
-		a.credentials,
-		a.armClientOptions,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	modelGetResponse, err := modelClient.Get(
-		ctx,
-		scope.ResourceGroup(),
-		scope.Workspace(),
-		modelName,
-		nil,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	modelContainer := modelGetResponse.ModelContainer
-
-	deploymentName := fmt.Sprintf("azd-%d", time.Now().Unix())
-	modelVersionName := fmt.Sprintf(
-		"azureml:%s:%s",
-		*modelContainer.Name,
-		*modelContainer.Properties.LatestVersion,
-	)
-	environmentVersionName := fmt.Sprintf(
-		"azureml:%s:%s",
-		*environmentContainer.Name,
-		*environmentContainer.Properties.LatestVersion,
-	)
 
 	a.env.DotenvSet("AZUREML_ENDPOINT_NAME", endpointName)
 	a.env.DotenvSet("AZUREML_DEPLOYMENT_NAME", deploymentName)
@@ -482,9 +343,15 @@ func (a *AiHelper) DeployToEndpoint(
 		"-w", scope.Workspace(),
 		"-f", yamlFilePath,
 		"--set", fmt.Sprintf("name=%s", deploymentName),
-		"--set", fmt.Sprintf("environment=%s", environmentVersionName),
-		"--set", fmt.Sprintf("model=%s", modelVersionName),
 		"--set", fmt.Sprintf("endpoint_name=%s", endpointName),
+	}
+
+	if environmentVersionName != "" {
+		deploymentArgs = append(deploymentArgs, "--set", fmt.Sprintf("environment=%s", environmentVersionName))
+	}
+
+	if modelVersionName != "" {
+		deploymentArgs = append(deploymentArgs, "--set", fmt.Sprintf("model=%s", modelVersionName))
 	}
 
 	deploymentArgs, err = a.applyOverrides(deploymentArgs, config.Deployment.Overrides)
@@ -527,13 +394,13 @@ func (a *AiHelper) CreateOrUpdateFlow(
 	serviceConfig *ServiceConfig,
 	config *ai.ComponentConfig,
 ) (*ai.Flow, error) {
-	if err := a.init(ctx); err != nil {
-		return nil, err
-	}
-
 	flowName, err := config.Name.Envsubst(a.env.Getenv)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing flow name value: %w", err)
+	}
+
+	if flowName == "" {
+		flowName = fmt.Sprintf("%s-flow", serviceConfig.Name)
 	}
 
 	flowPath := filepath.Join(serviceConfig.Path(), config.Path)
@@ -585,6 +452,100 @@ func (a *AiHelper) CreateOrUpdateFlow(
 	a.env.DotenvSet("AZUREML_FLOW_NAME", flowName)
 
 	return existingFlow, nil
+}
+
+func (a *AiHelper) getEnvironmentVersionName(
+	ctx context.Context,
+	scope *ai.Scope,
+	serviceConfig *ServiceConfig,
+	config *ai.EndpointDeploymentConfig,
+) (string, error) {
+	if config.Environment == nil {
+		return "", nil
+	}
+
+	environmentName, err := config.Environment.Name.Envsubst(a.env.Getenv)
+	if err != nil {
+		return "", fmt.Errorf("failed parsing environment name value: %w", err)
+	}
+
+	if environmentName == "" {
+		environmentName = fmt.Sprintf("%s-environment", serviceConfig.Name)
+	}
+
+	envClient, err := armmachinelearning.NewEnvironmentContainersClient(
+		scope.SubscriptionId(),
+		a.credentials,
+		a.armClientOptions,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	envGetResponse, err := envClient.Get(
+		ctx,
+		scope.ResourceGroup(),
+		scope.Workspace(),
+		environmentName,
+		nil,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	environmentContainer := envGetResponse.EnvironmentContainer
+	return fmt.Sprintf(
+		"azureml:%s:%s",
+		*environmentContainer.Name,
+		*environmentContainer.Properties.LatestVersion,
+	), nil
+}
+
+func (a *AiHelper) getModelVersionName(
+	ctx context.Context,
+	scope *ai.Scope,
+	serviceConfig *ServiceConfig,
+	config *ai.EndpointDeploymentConfig,
+) (string, error) {
+	if config.Model == nil {
+		return "", nil
+	}
+
+	modelName, err := config.Model.Name.Envsubst(a.env.Getenv)
+	if err != nil {
+		return "", fmt.Errorf("failed parsing model name value: %w", err)
+	}
+
+	if modelName == "" {
+		modelName = fmt.Sprintf("%s-model", serviceConfig.Name)
+	}
+
+	modelClient, err := armmachinelearning.NewModelContainersClient(
+		scope.SubscriptionId(),
+		a.credentials,
+		a.armClientOptions,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	modelGetResponse, err := modelClient.Get(
+		ctx,
+		scope.ResourceGroup(),
+		scope.Workspace(),
+		modelName,
+		nil,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	modelContainer := modelGetResponse.ModelContainer
+	return fmt.Sprintf(
+		"azureml:%s:%s",
+		*modelContainer.Name,
+		*modelContainer.Properties.LatestVersion,
+	), nil
 }
 
 func (a *AiHelper) applyOverrides(args []string, overrides map[string]osutil.ExpandableString) ([]string, error) {

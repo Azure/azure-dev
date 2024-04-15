@@ -521,6 +521,7 @@
         "node-loader": "~2",
         "ts-loader": "~9",
         "typescript": "~5.1",
+        "vscode-azure-agent-api": "file:vscode-azure-agent-api-1.0.0-beta.10.tgz",
         "webpack": "~5",
         "webpack-bundle-analyzer": "~4",
         "webpack-cli": "~5"
@@ -532,7 +533,6 @@
         "dotenv": "~16",
         "rxjs": "~7",
         "semver": "~7",
-        "vscode-azure-agent-api": "file:vscode-azure-agent-api-1.0.0-beta.10.tgz",
         "yaml": "~2"
     },
     "agentMetadata": {

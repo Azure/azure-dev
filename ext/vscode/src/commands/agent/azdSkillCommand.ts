@@ -3,7 +3,7 @@
 
 import * as vscode from 'vscode';
 import { IActionContext } from '@microsoft/vscode-azext-utils';
-import { SkillCommandArgs, SkillCommandResult } from 'vscode-azure-agent-api';
+import { type SkillCommandArgs, type SkillCommandResult } from 'vscode-azure-agent-api';
 import { getAzdLoginStatus } from '../../utils/azureDevCli';
 
 export async function azdSkillCommand(context: IActionContext, args: SkillCommandArgs): Promise<SkillCommandResult> {

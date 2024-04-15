@@ -3,7 +3,7 @@
 
 import * as vscode from 'vscode';
 import { registerCommand, type IActionContext } from '@microsoft/vscode-azext-utils';
-import { SimpleCommandConfig, SkillCommandConfig as SkillCommandConfigAgent, WizardCommandConfig } from 'vscode-azure-agent-api';
+import { type SimpleCommandConfig, type SkillCommandConfig as SkillCommandConfigAgent, type WizardCommandConfig } from 'vscode-azure-agent-api';
 import { azdSkillCommand } from './azdSkillCommand';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

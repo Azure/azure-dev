@@ -87,7 +87,7 @@ func (c *AzdContext) SetProjectState(state ProjectState) error {
 
 	// make sure to ignore the environment directory
 	path = filepath.Join(c.EnvironmentDirectory(), ".gitignore")
-	return os.WriteFile(path, []byte("*"), osutil.PermissionFile)
+	return os.WriteFile(path, []byte("# .azure is not intended to be committed\n*"), osutil.PermissionFile)
 }
 
 // Creates context with project directory set to the desired directory.

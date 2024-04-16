@@ -18,10 +18,18 @@ const (
 	Test         ProviderKind = "test"
 )
 
+type DeploymentScope string
+
+const (
+	DeploymentScopeResourceGroup DeploymentScope = "resourceGroup"
+	DeploymentScopeSubscription  DeploymentScope = "subscription"
+)
+
 type Options struct {
-	Provider ProviderKind `yaml:"provider,omitempty"`
-	Path     string       `yaml:"path,omitempty"`
-	Module   string       `yaml:"module,omitempty"`
+	Provider        ProviderKind    `yaml:"provider,omitempty"`
+	Path            string          `yaml:"path,omitempty"`
+	Module          string          `yaml:"module,omitempty"`
+	DeploymentScope DeploymentScope `yaml:"deploymentScope,omitempty"`
 	// Not expected to be defined at azure.yaml
 	IgnoreDeploymentState bool `yaml:"-"`
 }

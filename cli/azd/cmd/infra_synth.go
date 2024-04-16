@@ -25,8 +25,7 @@ import (
 type infraSynthFlags struct {
 	global *internal.GlobalCommandOptions
 	*internal.EnvFlag
-	force           bool
-	deploymentScope string
+	force bool
 }
 
 func newInfraSynthFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraSynthFlags {
@@ -42,8 +41,6 @@ func (f *infraSynthFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComm
 	f.global = global
 	f.EnvFlag.Bind(local, global)
 	local.BoolVar(&f.force, "force", false, "Overwrite any existing files without prompting")
-	local.StringVar(&f.deploymentScope, "deployment-scope", "subscription",
-		"The deployment scope to use when generating infrastructure, one of: subscription, resourceGroup.")
 }
 
 func newInfraSynthCmd() *cobra.Command {
@@ -92,22 +89,10 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	a.console.WarnForFeature(ctx, infraSynthFeature)
-
-	var useResourceGroupScope bool
-
-	switch a.flags.deploymentScope {
-	case "subscription":
-		useResourceGroupScope = false
-	case "resourceGroup":
-		useResourceGroupScope = true
-	default:
-		return nil, fmt.Errorf("invalid scope %q, must be one of: subscription, resourceGroup", a.flags.deploymentScope)
-	}
-
 	spinnerMessage := "Synthesizing infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	synthFS, err := a.importManager.SynthAllInfrastructure(ctx, a.projectConfig, useResourceGroupScope)
+	synthFS, err := a.importManager.SynthAllInfrastructure(ctx, a.projectConfig)
 	if err != nil {
 		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, err

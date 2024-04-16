@@ -100,7 +100,8 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate(manifest, false)
+	useResourceGroupScope := svcConfig.Infra.DeploymentScope == provisioning.DeploymentScopeResourceGroup
+	files, err := apphost.BicepTemplate(manifest, useResourceGroupScope)
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -244,7 +245,7 @@ func (ai *DotNetImporter) Services(
 }
 
 func (ai *DotNetImporter) SynthAllInfrastructure(
-	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig, useResourceGroupScope bool,
+	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
 	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
@@ -253,6 +254,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 
 	generatedFS := memfs.New()
 
+	useResourceGroupScope := svcConfig.Infra.DeploymentScope == provisioning.DeploymentScopeResourceGroup
 	infraFS, err := apphost.BicepTemplate(manifest, useResourceGroupScope)
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)

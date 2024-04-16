@@ -207,7 +207,7 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 
 	go p.pollForEnvironment(pollingContext, envName)
 
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, _ = poller.PollUntilDone(ctx, nil)
 	if err != nil {
 		p.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, fmt.Errorf("failed creating environment: %w", err)
@@ -446,7 +446,7 @@ func (p *ProvisionProvider) pollForEnvironment(ctx context.Context, envName stri
 			// After the resource group has been created
 			// We can start polling for a new deployment that started after we started polling
 			deployment, err := p.manager.Deployment(ctx, environment, func(d *armresources.DeploymentExtended) bool {
-				return d.Properties.Timestamp.After(pollStartTime)
+				return *d.Properties.ProvisioningState == "Running" && d.Properties.Timestamp.After(pollStartTime)
 			})
 
 			if err != nil || deployment == nil {

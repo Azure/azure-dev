@@ -3,7 +3,9 @@ package devcenter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -255,6 +257,7 @@ func (m *manager) LatestArmDeployment(
 		return nil, fmt.Errorf("failed listing deployments: %w", err)
 	}
 
+	// Sorts the deployments by timestamp in descending order
 	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) bool {
 		return x.Properties.Timestamp.After(*y.Properties.Timestamp)
 	})
@@ -265,15 +268,19 @@ func (m *manager) LatestArmDeployment(
 		tagEnvTypeName, envTypeOk := d.Tags[DeploymentTagEnvironmentType]
 		tagEnvName, envOk := d.Tags[DeploymentTagEnvironmentName]
 
-		if !devCenterOk || !projectOk || !envTypeOk || !envOk {
-			return false
-		}
+		// ARM runner deployments contain the deployment tags for the specific environment
+		isArmDeployment := devCenterOk && *tagDevCenterName == m.config.Name &&
+			projectOk && *tagProjectName == m.config.Project &&
+			envTypeOk && *tagEnvTypeName == m.config.EnvironmentType &&
+			envOk && *tagEnvName == env.Name
 
-		if *tagDevCenterName == m.config.Name ||
-			*tagProjectName == m.config.Project ||
-			*tagEnvTypeName == m.config.EnvironmentType ||
-			*tagEnvName == env.Name {
+		// Support for untagged Bicep ADE deployments
+		// If the deployment is not tagged but starts with the current date and is running
+		// this is another indication that this is the latest running Bicep deployment
+		isBicepDeployment := !isArmDeployment &&
+			strings.HasPrefix(*d.Name, fmt.Sprintf("%s-", time.Now().UTC().Format("2006-01-02")))
 
+		if isArmDeployment || isBicepDeployment {
 			if filter == nil {
 				return true
 			}
@@ -303,7 +310,9 @@ func (m *manager) Outputs(
 		return nil, fmt.Errorf("failed parsing resource group id: %w", err)
 	}
 
-	latestDeployment, err := m.LatestArmDeployment(ctx, env, nil)
+	latestDeployment, err := m.LatestArmDeployment(ctx, env, func(d *armresources.DeploymentExtended) bool {
+		return *d.Properties.ProvisioningState == "Succeeded"
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed getting latest deployment: %w", err)
 	}

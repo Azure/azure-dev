@@ -6,9 +6,10 @@ import * as os from 'os';
 import * as vscode from 'vscode';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { callWithTelemetryAndErrorHandling, IActionContext } from '@microsoft/vscode-azext-utils';
-import { startAuthServer } from './authServer';
+import { startAuthServer } from './servers/authServer';
 import { isAzdCommand } from './azureDevCli';
 import { VsCodeAuthenticationCredential } from './VsCodeAuthenticationCredential';
+import { startPromptServer } from './servers/promptServer';
 
 type ExecuteAsTaskOptions = {
     workspaceFolder?: vscode.WorkspaceFolder;
@@ -25,20 +26,31 @@ export function executeAsTask(command: string, name: string, options?: ExecuteAs
 
         const env = {...options.env};
 
-        let useIntegratedAuth = vscode.workspace.getConfiguration('azure-dev').get<boolean>('auth.useIntegratedAuth', false);
+        const configuration = vscode.workspace.getConfiguration('azure-dev');
+        let useIntegratedAuth = configuration.get<boolean>('auth.useIntegratedAuth', false);
+        let useExternalPrompting = configuration.get<boolean>('useVisualStudioCodeForPrompts', true);
 
         if (!isAzdCommand(command)) {
             useIntegratedAuth = false;
+            useExternalPrompting = false;
         }
 
         let authServer: http.Server | undefined;
-
         if (useIntegratedAuth) {
             const { server, endpoint, key } = await startAuthServer(new VsCodeAuthenticationCredential());
 
+            authServer = server;
             env['AZD_AUTH_ENDPOINT'] = endpoint;
             env['AZD_AUTH_KEY'] = key;
-            authServer = server;
+        }
+
+        let promptServer: http.Server | undefined;
+        if (useExternalPrompting) {
+            const { server, endpoint, key } = await startPromptServer();
+
+            promptServer = server;
+            env['AZD_UI_PROMPT_ENDPOINT'] = endpoint;
+            env['AZD_UI_PROMPT_KEY'] = key;
         }
 
         const task = new vscode.Task(
@@ -74,6 +86,7 @@ export function executeAsTask(command: string, name: string, options?: ExecuteAs
             const disposable = vscode.tasks.onDidEndTaskProcess(e => {
                 if (e.execution === taskExecution) {
                     authServer?.close();
+                    promptServer?.close();
                     disposable.dispose();
 
                     if (e.exitCode && !(options?.suppressErrors)) {

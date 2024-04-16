@@ -15,6 +15,7 @@ export async function enableDevCenterMode(context: IActionContext): Promise<void
         .withArg('devcenter');
 
     await execAsync(command.build(), azureCli.spawnOptions());
+    // External prompting does not apply
     void vscode.window.showInformationMessage(vscode.l10n.t('Azure Developer CLI\'s Dev Center mode has been enabled.'));
 }
 
@@ -26,5 +27,6 @@ export async function disableDevCenterMode(context: IActionContext): Promise<voi
         .withArg('platform.type');
 
     await execAsync(command.build(), azureCli.spawnOptions());
+    // External prompting does not apply
     void vscode.window.showInformationMessage(vscode.l10n.t('Azure Developer CLI\'s Dev Center mode has been disabled.'));
 }

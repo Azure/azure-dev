@@ -20,6 +20,7 @@ export abstract class SkipIfOneStep<TWizardContext extends IActionContext, TItem
         } else if (picks.length === 1) {
             return picks[0].data;
         } else {
+            // External prompting does not apply
             return (await context.ui.showQuickPick(picks, { placeHolder: this.promptTitle })).data;
         }
     }

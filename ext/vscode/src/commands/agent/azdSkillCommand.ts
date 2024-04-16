@@ -17,6 +17,10 @@ export async function azdSkillCommand(context: IActionContext, args: SkillComman
     const azdLoggedIn = azdInstalled && loginStatus.status === 'success';
     const workspaceInitialized = await isWorkspaceInitialized(context);
 
+    context.telemetry.properties.azdInstalled = azdInstalled.toString();
+    context.telemetry.properties.azdLoggedIn = azdLoggedIn.toString();
+    context.telemetry.properties.workspaceInitialized = workspaceInitialized.toString();
+
     if (!azdInstalled) {
         responseStream.markdown(vscode.l10n.t('First things first, it looks like the Azure Developer CLI is not installed. Let\'s get that taken care of.'));
         responseStream.button({ title: vscode.l10n.t('Install Azure Developer CLI'), command: 'azure-dev.commands.cli.install' });

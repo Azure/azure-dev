@@ -46,6 +46,7 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
 
     // Don't wait
     void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+        focus: true,
         alwaysRunNew: true,
         cwd: workspacePath.fsPath,
         env: azureCli.env

@@ -39,31 +39,34 @@ type EndpointDeployment struct {
 }
 
 func (m *machineLearningEndpointTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	return serviceConfig.Project.AddHandler("postprovision", func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-		// TODO: Move target resource to here.
-		projectName := m.env.Getenv("AZUREML_AI_PROJECT_NAME")
-		aiStudioLink := ai.AzureAiStudioLink(
-			m.env.GetTenantId(),
-			m.env.GetSubscriptionId(),
-			m.env.Getenv("AZUREML_RESOURCE_GROUP"),
-			projectName,
-		)
+	return serviceConfig.Project.AddHandler(
+		"postprovision",
+		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+			// TODO: Move target resource to here.
+			projectName := m.env.Getenv("AZUREML_AI_PROJECT_NAME")
+			aiStudioLink := ai.AzureAiStudioLink(
+				m.env.GetTenantId(),
+				m.env.GetSubscriptionId(),
+				m.env.Getenv("AZUREML_RESOURCE_GROUP"),
+				projectName,
+			)
 
-		err := m.env.Config.Set("provision.links.aiStudio", &output.Link{
-			Name:        "Azure AI Studio",
-			Description: fmt.Sprintf("View the %s project in Azure AI studio:", projectName),
-			Url:         aiStudioLink,
-		})
-		if err != nil {
-			return fmt.Errorf("failed setting aiStudio link: %w", err)
-		}
+			err := m.env.Config.Set("provision.links.aiStudio", &output.Link{
+				Name:        "Azure AI Studio",
+				Description: fmt.Sprintf("View the %s project in Azure AI studio:", projectName),
+				Url:         aiStudioLink,
+			})
+			if err != nil {
+				return fmt.Errorf("failed setting aiStudio link: %w", err)
+			}
 
-		if err := m.envManager.Save(ctx, m.env); err != nil {
-			return fmt.Errorf("failed saving environment: %w", err)
-		}
+			if err := m.envManager.Save(ctx, m.env); err != nil {
+				return fmt.Errorf("failed saving environment: %w", err)
+			}
 
-		return nil
-	})
+			return nil
+		},
+	)
 }
 
 func (m *machineLearningEndpointTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {

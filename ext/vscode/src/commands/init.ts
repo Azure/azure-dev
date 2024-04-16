@@ -9,8 +9,9 @@ import { executeAsTask } from '../utils/executeAsTask';
 import { getAzDevTerminalTitle, selectApplicationTemplate, showReadmeFile } from './cmdUtil';
 import { TelemetryId } from '../telemetry/telemetryId';
 
-interface InitCommandOptions {
+export interface InitCommandOptions {
     templateUrl?: string;
+    useExistingSource?: boolean;
     environmentName?: string;
 }
 
@@ -21,8 +22,8 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
     }
 
     let templateUrl: string | undefined = options?.templateUrl;
-    let useExistingSource: boolean = false;
-    if (!templateUrl) {
+    let useExistingSource: boolean = !!options?.useExistingSource;
+    if (!templateUrl && !useExistingSource) {
         const selection = await selectApplicationTemplate(context);
         templateUrl = selection.templateUrl;
         useExistingSource = selection.useExistingSource;

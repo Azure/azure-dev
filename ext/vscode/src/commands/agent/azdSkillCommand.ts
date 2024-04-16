@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { IActionContext } from '@microsoft/vscode-azext-utils';
 import { type SkillCommandArgs, type SkillCommandResult } from 'vscode-azure-agent-api';
 import { getAzdLoginStatus } from '../../utils/azureDevCli';
+import { InitCommandOptions } from '../init';
 
 export async function azdSkillCommand(context: IActionContext, args: SkillCommandArgs): Promise<SkillCommandResult> {
     const responseStream = args.agentRequest.responseStream;
@@ -33,7 +34,11 @@ export async function azdSkillCommand(context: IActionContext, args: SkillComman
 
     if (!workspaceInitialized) {
         responseStream.markdown(vscode.l10n.t('It looks like the workspace is not set up for use with the Azure Developer CLI.'));
-        responseStream.button({ title: vscode.l10n.t('Initialize workspace'), command: 'azure-dev.commands.cli.init' });
+        responseStream.button({ title: vscode.l10n.t('Initialize workspace'), command: 'azure-dev.commands.cli.init', arguments: [
+            /* selectedFile */ undefined,
+            /* allSelectedFiles */ undefined,
+            /* options */ { useExistingSource: true } satisfies InitCommandOptions // Assume they have existing source or they wouldn't be here
+        ] });
     }
 
     responseStream.markdown(vscode.l10n.t('All that\'s left is to deploy your application to Azure!'));

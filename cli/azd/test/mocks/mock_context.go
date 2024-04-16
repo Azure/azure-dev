@@ -71,9 +71,6 @@ func registerCommonMocks(mockContext *MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() ioc.ServiceLocator {
 		return mockContext.Container
 	})
-	mockContext.Container.MustRegisterSingleton(func() azcore.TokenCredential {
-		return mockContext.Credentials
-	})
 	mockContext.Container.MustRegisterSingleton(func() httputil.HttpClient {
 		return mockContext.HttpClient
 	})

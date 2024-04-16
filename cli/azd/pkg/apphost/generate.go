@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
@@ -40,15 +41,21 @@ func init() {
 		Option("missingkey=error").
 		Funcs(
 			template.FuncMap{
-				"bicepName":              scaffold.BicepName,
+				"bicepName": scaffold.BicepName,
+				"mergeBicepName": func(src ...string) string {
+					return scaffold.BicepName(strings.Join(src, "-"))
+				},
 				"alphaSnakeUpper":        scaffold.AlphaSnakeUpper,
 				"containerAppName":       scaffold.ContainerAppName,
 				"containerAppSecretName": scaffold.ContainerAppSecretName,
 				"fixBackSlash": func(src string) string {
 					return strings.ReplaceAll(src, "\\", "/")
 				},
-				"dashToUnderscore": func(src string) string {
+				"bicepParameterName": func(src string) string {
 					return strings.ReplaceAll(src, "-", "_")
+				},
+				"removeDot": func(src string) string {
+					return strings.ReplaceAll(src, ".", "")
 				},
 				"envFormat": scaffold.EnvFormat,
 			},
@@ -744,7 +751,7 @@ func (b *infraGenerator) addSqlDatabase(sqlAccount, dbName string) {
 }
 
 func (b *infraGenerator) addProject(
-	name string, path string, env map[string]string, bindings map[string]*Binding,
+	name string, path string, env map[string]string, bindings custommaps.WithOrder[Binding],
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -806,7 +813,7 @@ func (b *infraGenerator) addContainer(
 	name string,
 	image string,
 	env map[string]string,
-	bindings map[string]*Binding,
+	bindings custommaps.WithOrder[Binding],
 	inputs map[string]Input,
 	volumes []*Volume) {
 	b.requireCluster()
@@ -920,7 +927,7 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 
 func (b *infraGenerator) addDockerfile(
 	name string, path string, context string, env map[string]string,
-	bindings map[string]*Binding, buildArgs map[string]string,
+	bindings custommaps.WithOrder[Binding], buildArgs map[string]string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -932,55 +939,6 @@ func (b *infraGenerator) addDockerfile(
 		Bindings:  bindings,
 		BuildArgs: buildArgs,
 	}
-}
-
-func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {
-	if len(bindings) == 0 {
-		return nil, nil
-	}
-
-	if len(bindings) == 1 {
-		for _, binding := range bindings {
-			return binding, nil
-		}
-	}
-
-	var validatedBinding *Binding
-
-	for _, binding := range bindings {
-		if validatedBinding == nil {
-			validatedBinding = binding
-			continue
-		}
-
-		if validatedBinding.External != binding.External {
-			return nil, fmt.Errorf("the external property of all bindings should match")
-		}
-
-		if validatedBinding.Transport != binding.Transport {
-			return nil, fmt.Errorf("the transport property of all bindings should match")
-		}
-
-		if validatedBinding.Protocol != binding.Protocol {
-			return nil, fmt.Errorf("the protocol property of all bindings should match")
-		}
-
-		if validatedBinding.Protocol != binding.Protocol {
-			return nil, fmt.Errorf("the protocol property of all bindings should match")
-		}
-
-		if (validatedBinding.ContainerPort == nil && binding.ContainerPort != nil) ||
-			(validatedBinding.ContainerPort != nil && binding.ContainerPort == nil) {
-			return nil, fmt.Errorf("the container port property of all bindings should match")
-		}
-
-		if validatedBinding.ContainerPort != nil && binding.ContainerPort != nil &&
-			*validatedBinding.ContainerPort != *binding.ContainerPort {
-			return nil, fmt.Errorf("the container port property of all bindings should match")
-		}
-	}
-
-	return validatedBinding, nil
 }
 
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
@@ -1000,7 +958,7 @@ func (b *infraGenerator) Compile() error {
 			Volumes: container.Volumes,
 		}
 
-		ingress, err := buildIngress(container.Bindings)
+		ingress, err := buildAcaIngress(container.Bindings, 80)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
 		}
@@ -1052,7 +1010,7 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 		}
 
-		ingress, err := buildIngress(docker.Bindings)
+		ingress, err := buildAcaIngress(docker.Bindings, 80)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for resource %s: %w", resourceName, err)
 		}
@@ -1074,20 +1032,11 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 		}
 
-		binding, err := validateAndMergeBindings(project.Bindings)
+		i, err := buildAcaIngress(project.Bindings, 8080)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
 		}
-
-		if binding != nil {
-			projectTemplateCtx.Ingress = &genContainerAppIngress{
-				External:  binding.External,
-				Transport: binding.Transport,
-				// This port number is for dapr
-				TargetPort:    8080,
-				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
-			}
-		}
+		projectTemplateCtx.Ingress = i
 
 		for _, dapr := range b.dapr {
 			if dapr.Application == resourceName {
@@ -1175,32 +1124,6 @@ func isComplexExpression(evaluatedString string) (bool, string) {
 	return true, ""
 }
 
-// buildIngress builds the ingress configuration for a given set of bindings. It returns nil, nil if no ingress should
-// be configured (i.e. the bindings are empty).
-func buildIngress(bindings map[string]*Binding) (*genContainerAppIngress, error) {
-	binding, err := validateAndMergeBindings(bindings)
-	if err != nil {
-		return nil, err
-	}
-
-	if binding != nil {
-		if binding.ContainerPort == nil {
-			return nil, fmt.Errorf(
-				"binding for does not specify a container port, " +
-					"ensure WithServiceBinding for this resource specifies a hostPort value")
-		}
-
-		return &genContainerAppIngress{
-			External:      binding.External,
-			Transport:     binding.Transport,
-			TargetPort:    *binding.ContainerPort,
-			AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
-		}, nil
-	}
-
-	return nil, nil
-}
-
 // inputEmitType controls how references to inputs are emitted in the generated file.
 type inputEmitType string
 
@@ -1277,11 +1200,14 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		var has bool
 
 		if targetType == "project.v0" {
-			binding, has = b.projects[resource].Bindings[parts[0]]
+			bindings := b.projects[resource].Bindings
+			binding, has = bindings.Get(parts[0])
 		} else if targetType == "container.v0" {
-			binding, has = b.containers[resource].Bindings[parts[0]]
+			bindings := b.containers[resource].Bindings
+			binding, has = bindings.Get(parts[0])
 		} else if targetType == "dockerfile.v0" {
-			binding, has = b.dockerfiles[resource].Bindings[parts[0]]
+			bindings := b.dockerfiles[resource].Bindings
+			binding, has = bindings.Get(parts[0])
 		}
 
 		if !has {
@@ -1289,24 +1215,40 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		}
 
 		switch parts[1] {
+		case "scheme":
+			return binding.Scheme, nil
+		case "protocol":
+			return binding.Protocol, nil
+		case "transport":
+			return binding.Scheme, nil
+		case "external":
+			return fmt.Sprintf("%t", binding.External), nil
 		case "host":
 			// The host name matches the containerapp name, so we can just return the resource name.
 			return resource, nil
-		case "port":
-			return fmt.Sprintf(`%d`, *binding.ContainerPort), nil
+		case "targetPort", "port":
+			if binding.TargetPort == nil {
+				return "0", nil
+			}
+			return fmt.Sprintf(`%d`, *binding.TargetPort), nil
 		case "url":
 			var urlFormatString string
 
 			if binding.External {
-				urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+				urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
 			} else {
-				urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+				urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
+			}
+			var port string
+			if binding.TargetPort != nil {
+				port = fmt.Sprintf(":%d", *binding.TargetPort)
 			}
 
-			return fmt.Sprintf(urlFormatString, binding.Scheme, resource), nil
+			return fmt.Sprintf(urlFormatString, binding.Scheme, resource, port), nil
 		default:
 			return "",
-				fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[host|port|url] but was: %s", v)
+				fmt.Errorf("malformed binding expression, expected "+
+					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
 	case targetType == "postgres.database.v0" ||
 		targetType == "redis.v0" ||

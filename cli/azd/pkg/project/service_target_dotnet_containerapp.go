@@ -208,6 +208,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 					// stores the parameter value.
 					"securedParameter": fns.Parameter,
 					"secretOutput":     fns.kvSecret,
+					"targetPortOrDefault": func(targetPortFromManifest int) int {
+						// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
+						if portNumber == 0 {
+							return targetPortFromManifest
+						}
+						return portNumber
+					},
 				}).
 				Parse(manifest)
 			if err != nil {
@@ -226,15 +233,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			builder := strings.Builder{}
 			err = tmpl.Execute(&builder, struct {
-				Env        map[string]string
-				Image      string
-				Inputs     map[string]any
-				TargetPort int
+				Env    map[string]string
+				Image  string
+				Inputs map[string]any
 			}{
-				Env:        at.env.Dotenv(),
-				Image:      remoteImageName,
-				Inputs:     inputs,
-				TargetPort: portNumber,
+				Env:    at.env.Dotenv(),
+				Image:  remoteImageName,
+				Inputs: inputs,
 			})
 			if err != nil {
 				task.SetError(fmt.Errorf("failed executing template file: %w", err))
@@ -522,13 +527,13 @@ func evalBindingRefWithParent(v string, parent *apphost.Resource, env *environme
 				"bindings.<binding-name>.<property> but was: %s", v)
 		}
 
-		binding := *parent.Bindings[bindParts[0]]
+		binding, _ := parent.Bindings.Get(bindParts[0])
 		switch bindParts[1] {
 		case "host":
 			// The host name matches the containerapp name, so we can just return the resource name.
 			return resource, nil
-		case "port":
-			return fmt.Sprintf(`%d`, *binding.ContainerPort), nil
+		case "targetPort":
+			return fmt.Sprintf(`%d`, *binding.TargetPort), nil
 		case "url":
 			var urlFormatString string
 

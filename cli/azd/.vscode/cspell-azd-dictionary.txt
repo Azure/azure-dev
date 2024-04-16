@@ -69,6 +69,7 @@ createdby
 csharpapp
 csharpapptest
 cupaloy
+custommaps
 deletedservices
 devcenter
 devcenters
@@ -192,10 +193,11 @@ Truef
 typeflag
 unhide
 unmarshaled
-upgrader
+unmarshalled
 unmarshalling
 unsetenvs
 unsets
+upgrader
 utsname
 vsrpc
 vuejs

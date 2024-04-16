@@ -52,17 +52,17 @@ resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileService
   name: 'default'
 }
 
-resource my_sql_abstract_volume_twoFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+resource mySqlAbstractProjectAppHostVolumeTwoFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
-  name: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
+  name: take('${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}', 32)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
   }
 }
-resource mysqlabstract_volumeOneFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+resource mysqlabstractProjectAppHostVolumeOneFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
-  name: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
+  name: take('${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}', 32)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -84,12 +84,12 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   tags: tags
 }
 
-resource my_sql_abstract_volume_twoStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+resource mySqlAbstractProjectAppHostVolumeTwoStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   parent: containerAppEnvironment
-  name: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
+  name: take('${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}', 32)
   properties: {
     azureFile: {
-      shareName: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
+      shareName: '${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}'
       accountName: storageVolume.name
       accountKey: storageVolume.listKeys().keys[0].value
       accessMode: 'ReadOnly'
@@ -97,12 +97,12 @@ resource my_sql_abstract_volume_twoStore 'Microsoft.App/managedEnvironments/stor
   }
 }
 
-resource mysqlabstract_volumeOneStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+resource mysqlabstractProjectAppHostVolumeOneStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   parent: containerAppEnvironment
-  name: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
+  name: take('${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}', 32)
   properties: {
     azureFile: {
-      shareName: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
+      shareName: '${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}'
       accountName: storageVolume.name
       accountKey: storageVolume.listKeys().keys[0].value
       accessMode: 'ReadWrite'
@@ -137,9 +137,9 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
     template: {
       volumes: [
         {
-          name: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
+          name: '${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}'
           storageType: 'AzureFile'
-          storageName: my_sql_abstract_volume_twoStore.name
+          storageName: mySqlAbstractProjectAppHostVolumeTwoStore.name
         }
       ]
       containers: [
@@ -147,6 +147,14 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
           image: 'mysql:latest'
           name: 'my-sql-abstract'
           env: [
+            {
+              name: 'resolve_http_binding'
+              value: 'http://mysqlabstract.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}'
+            }
+            {
+              name: 'resolve_tcp_binding'
+              value: 'tcp://mysqlabstract.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}:3306'
+            }
             {
               name: 'MYSQL_ROOT_PASSWORD'
               secretRef: 'mysql-root-password'
@@ -158,7 +166,7 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
           ]
           volumeMounts: [
             {
-              volumeName: '${toLower('my-sql-abstract')}-${toLower('volume-two')}'
+              volumeName: '${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}'
               mountPath: '/data/db'
             }
           ]
@@ -181,9 +189,14 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
+        additionalPortMappings: [
+          { targetPort: 3306
+          external: false }
+        ]
         external: false
-        targetPort: 3306
-        transport: 'tcp'
+        targetPort: 80
+        transport: 'http'
+        allowInsecure: true
       }
       secrets: [
         {
@@ -199,9 +212,9 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
     template: {
       volumes: [
         {
-          name: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
+          name: '${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}'
           storageType: 'AzureFile'
-          storageName: mysqlabstract_volumeOneStore.name
+          storageName: mysqlabstractProjectAppHostVolumeOneStore.name
         }
       ]
       containers: [
@@ -220,7 +233,7 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
           ]
           volumeMounts: [
             {
-              volumeName: '${toLower('mysqlabstract')}-${toLower('volumeOne')}'
+              volumeName: '${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}'
               mountPath: '/data/db'
             }
           ]

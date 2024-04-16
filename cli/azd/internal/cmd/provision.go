@@ -344,19 +344,30 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 	}
 
+	followUpLinks := []string{
+		getResourceGroupFollowUp(
+			ctx,
+			p.formatter,
+			p.portalUrlBase,
+			p.projectConfig,
+			p.resourceManager,
+			p.env,
+			false,
+		),
+	}
+
+	var additionalLinks map[string]*output.Link
+
+	if ok, err := p.env.Config.GetSection("provision.links", &additionalLinks); ok && err == nil {
+		for _, link := range additionalLinks {
+			followUpLinks = append(followUpLinks, fmt.Sprintf("%s\n%s", link.Description, output.WithLinkFormat(link.Url)))
+		}
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf(
-				"Your application was provisioned in Azure in %s.", ux.DurationAsText(since(startTime))),
-			FollowUp: getResourceGroupFollowUp(
-				ctx,
-				p.formatter,
-				p.portalUrlBase,
-				p.projectConfig,
-				p.resourceManager,
-				p.env,
-				false,
-			),
+			Header:   fmt.Sprintf("Your application was provisioned in Azure in %s.", ux.DurationAsText(since(startTime))),
+			FollowUp: strings.Join(followUpLinks, "\n\n"),
 		},
 	}, nil
 }

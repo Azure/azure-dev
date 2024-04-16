@@ -5,7 +5,10 @@ import * as vscode from 'vscode';
 import { IActionContext } from '@microsoft/vscode-azext-utils';
 import { type SkillCommandArgs, type SkillCommandResult } from 'vscode-azure-agent-api';
 import { getAzdLoginStatus } from '../../utils/azureDevCli';
-import { InitCommandOptions } from '../init';
+import { InitCommandArguments } from '../init';
+import { InstallCliCommandArguments } from '../installCli';
+import { LoginCliCommandArguments } from '../loginCli';
+import { UpCommandArguments } from '../up';
 
 export async function azdSkillCommand(context: IActionContext, args: SkillCommandArgs): Promise<SkillCommandResult> {
     const responseStream = args.agentRequest.responseStream;
@@ -24,12 +27,17 @@ export async function azdSkillCommand(context: IActionContext, args: SkillComman
 
     if (!azdInstalled) {
         responseStream.markdown(vscode.l10n.t('First things first, it looks like the Azure Developer CLI is not installed. Let\'s get that taken care of.'));
-        responseStream.button({ title: vscode.l10n.t('Install Azure Developer CLI'), command: 'azure-dev.commands.cli.install' });
+        responseStream.button({ title: vscode.l10n.t('Install Azure Developer CLI'), command: 'azure-dev.commands.cli.install', arguments: [
+            /* shouldPrompt */ true,
+            /* fromAgent */ true,
+        ] satisfies InstallCliCommandArguments});
     }
 
     if (!azdLoggedIn) {
         responseStream.markdown(vscode.l10n.t('You\'ll need to be logged in with the Azure Developer CLI. Click below to sign in.'));
-        responseStream.button({ title: vscode.l10n.t('Sign in with Azure Developer CLI'), command: 'azure-dev.commands.cli.login' });
+        responseStream.button({ title: vscode.l10n.t('Sign in with Azure Developer CLI'), command: 'azure-dev.commands.cli.login', arguments: [
+            /* fromAgent */ true,
+        ] satisfies LoginCliCommandArguments});
     }
 
     if (!workspaceInitialized) {
@@ -37,12 +45,16 @@ export async function azdSkillCommand(context: IActionContext, args: SkillComman
         responseStream.button({ title: vscode.l10n.t('Initialize workspace'), command: 'azure-dev.commands.cli.init', arguments: [
             /* selectedFile */ undefined,
             /* allSelectedFiles */ undefined,
-            /* options */ { useExistingSource: true } satisfies InitCommandOptions // Assume they have existing source or they wouldn't be here
-        ] });
+            /* options */ { useExistingSource: true },
+            /* fromAgent */ true,
+        ] satisfies InitCommandArguments});
     }
 
     responseStream.markdown(vscode.l10n.t('All that\'s left is to deploy your application to Azure!'));
-    responseStream.button({ title: vscode.l10n.t('Deploy to Azure'), command: 'azure-dev.commands.cli.up' });
+    responseStream.button({ title: vscode.l10n.t('Deploy to Azure'), command: 'azure-dev.commands.cli.up', arguments: [
+        /* selectedFile */ undefined,
+        /* fromAgent */ true,
+    ] satisfies UpCommandArguments });
 
     return {
         chatAgentResult: { }

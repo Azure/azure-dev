@@ -9,13 +9,20 @@ import { executeAsTask } from '../utils/executeAsTask';
 import { getAzDevTerminalTitle, selectApplicationTemplate, showReadmeFile } from './cmdUtil';
 import { TelemetryId } from '../telemetry/telemetryId';
 
-export interface InitCommandOptions {
+interface InitCommandOptions {
     templateUrl?: string;
     useExistingSource?: boolean;
     environmentName?: string;
 }
 
-export async function init(context: IActionContext, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri, options?: InitCommandOptions): Promise<void> {
+/**
+ * A tuple representing the arguments that must be passed to the `init` command when executed via {@link vscode.commands.executeCommand}
+ */
+export type InitCommandArguments = [vscode.Uri | undefined, vscode.Uri[] | undefined, InitCommandOptions | undefined, boolean | undefined];
+
+export async function init(context: IActionContext, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri[], options?: InitCommandOptions, fromAgent: boolean = false): Promise<void> {
+    context.telemetry.properties.fromAgent = fromAgent.toString();
+
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'init'));

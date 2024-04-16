@@ -1,6 +1,9 @@
 package httputil
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,4 +27,31 @@ func ReadRawResponse[T any](response *http.Response) (*T, error) {
 	}
 
 	return instance, nil
+}
+
+// TlsEnabledTransport returns a http.Transport that has TLS configured to use the provided
+// Base64 DER-encoded certificate. The returned http.Transport inherits defaults from http.DefaultTransport.
+func TlsEnabledTransport(derBytes string) (*http.Transport, error) {
+	certBytes, decodeErr := base64.StdEncoding.DecodeString(derBytes)
+	if decodeErr != nil {
+		return nil,
+			fmt.Errorf("failed to decode provided server cert: %w", decodeErr)
+	}
+
+	cert, certParseErr := x509.ParseCertificate(certBytes)
+	if certParseErr != nil {
+		return nil,
+			fmt.Errorf("failed to parse provided server cert: %w", certParseErr)
+	}
+
+	caCertPool := x509.NewCertPool()
+	caCertPool.AddCert(cert)
+	tlsConfig := &tls.Config{
+		RootCAs:    caCertPool,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = tlsConfig
+	return transport, nil
 }

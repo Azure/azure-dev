@@ -199,12 +199,12 @@
                                     "title": "Target resource name for the binding",
                                     "description": "The target resource logical name. The CLI will use this name to find the target resource info in the .env file"
                                 },
-                                "appConfig": {
+                                "appconfig": {
                                     "type": "string",
                                     "title": "App config name to store the binding configs",
                                     "description": "Optional. The app config resource logical name. The CLI will use this name to find the app config resource info in the .env file"
                                 },
-                                "keyVault": {
+                                "keyvault": {
                                     "type": "string",
                                     "title": "Keyvault name to store the sensitive binding configs",
                                     "description": "Optional. The keyvault resource logical name. The CLI will use this name to find the keyvault resource info in the .env file"

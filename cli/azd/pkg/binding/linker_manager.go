@@ -132,7 +132,6 @@ func constructLinkerResource(
 	linkerConfig *LinkerConfig,
 ) armservicelinker.LinkerResource {
 	secretAuthType := armservicelinker.AuthTypeSecret
-	easyAuthType := armservicelinker.AuthTypeEasyAuthMicrosoftEntraID
 	azureResourceType := armservicelinker.TargetServiceTypeAzureResource
 	secretTypeRawValue := armservicelinker.SecretTypeRawValue
 	networkOptOut := armservicelinker.ActionTypeOptOut
@@ -157,9 +156,10 @@ func constructLinkerResource(
 	}
 
 	if linkerConfig.TargetType.IsComputeService() {
-		// use easy auth type for compute service
-		linkerResource.Properties.AuthInfo = &armservicelinker.EasyAuthMicrosoftEntraIDAuthInfo{
-			AuthType: &easyAuthType,
+		// should use easy auth type for compute service when service connector is ready
+		// now still use secret auth type
+		linkerResource.Properties.AuthInfo = &armservicelinker.SecretAuthInfo{
+			AuthType: &secretAuthType,
 		}
 	} else {
 		// use secret auth type for other services

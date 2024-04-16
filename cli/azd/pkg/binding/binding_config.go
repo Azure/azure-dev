@@ -9,8 +9,8 @@ type BindingConfig struct {
 	Name           string             `yaml:"name"`
 	TargetType     TargetResourceType `yaml:"targetType"`
 	TargetResource string             `yaml:"targetResource"`
-	AppConfig      string             `yaml:"appConfig"`
-	KeyVault       string             `yaml:"keyVault"`
+	AppConfig      string             `yaml:"appconfig"`
+	KeyVault       string             `yaml:"keyvault"`
 }
 
 // Describe a binding source service

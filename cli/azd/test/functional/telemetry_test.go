@@ -256,8 +256,8 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 
 	// We do require that infra folder exist, however, so put it back with a module which will throw during provisioning.
 	require.NoError(t, os.MkdirAll(infraPath, osutil.PermissionDirectoryOwnerOnly))
-	// main.something will allow azd to continue until trying to find and build bicep.
-	file, err := os.Create(filepath.Join(infraPath, "main.something"))
+	// empty main.bicep but with no parameters file.
+	file, err := os.Create(filepath.Join(infraPath, "main.bicep"))
 	require.NoError(t, err)
 	defer file.Close()
 
@@ -295,9 +295,6 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 			traceId = span.SpanContext.TraceID
 
 			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
-
 			require.Contains(t, m, fields.EnvNameKey)
 			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
 

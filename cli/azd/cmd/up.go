@@ -77,18 +77,16 @@ func newUpAction(
 	env *environment.Environment,
 	_ auth.LoggedInGuard,
 	projectConfig *project.ProjectConfig,
-	provisioningManager *provisioning.Manager,
 	importManager *project.ImportManager,
 	workflowRunner *workflow.Runner,
 ) actions.Action {
 	return &upAction{
-		flags:               flags,
-		console:             console,
-		env:                 env,
-		projectConfig:       projectConfig,
-		provisioningManager: provisioningManager,
-		importManager:       importManager,
-		workflowRunner:      workflowRunner,
+		flags:          flags,
+		console:        console,
+		env:            env,
+		projectConfig:  projectConfig,
+		importManager:  importManager,
+		workflowRunner: workflowRunner,
 	}
 }
 
@@ -98,11 +96,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 	defer func() { _ = infra.Cleanup() }()
-
-	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
-	if err != nil {
-		return nil, err
-	}
 
 	startTime := time.Now()
 

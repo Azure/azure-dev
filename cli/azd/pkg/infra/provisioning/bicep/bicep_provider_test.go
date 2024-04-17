@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -211,10 +212,9 @@ func TestPlanForResourceGroup(t *testing.T) {
 		armTemplate := azure.ArmTemplate{
 			Schema:         "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
 			ContentVersion: "1.0.0.0",
-			Parameters: azure.ArmTemplateParameterDefinitions{
-				"environmentName": {Type: "string"},
-				"location":        {Type: "string"},
-			},
+			Parameters: custommaps.NewWithOrder(
+				[]string{"environmentName", "location"},
+				[]*azure.ArmTemplateParameterDefinition{{Type: "string"}, {Type: "string"}}),
 			Outputs: azure.ArmTemplateOutputs{
 				"WEBSITE_URL": {Type: "string"},
 			},
@@ -411,10 +411,9 @@ func prepareBicepMocks(
 	armTemplate := azure.ArmTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 		ContentVersion: "1.0.0.0",
-		Parameters: azure.ArmTemplateParameterDefinitions{
-			"environmentName": {Type: "string"},
-			"location":        {Type: "string"},
-		},
+		Parameters: custommaps.NewWithOrder(
+			[]string{"environmentName", "location"},
+			[]*azure.ArmTemplateParameterDefinition{{Type: "string"}, {Type: "string"}}),
 		Outputs: azure.ArmTemplateOutputs{
 			"WEBSITE_URL": {Type: "string"},
 		},
@@ -818,10 +817,9 @@ func TestFindCompletedDeployments(t *testing.T) {
 		armTemplate := azure.ArmTemplate{
 			Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 			ContentVersion: "1.0.0.0",
-			Parameters: azure.ArmTemplateParameterDefinitions{
-				"environmentName": {Type: "string"},
-				"location":        {Type: "string"},
-			},
+			Parameters: custommaps.NewWithOrder(
+				[]string{"environmentName", "location"},
+				[]*azure.ArmTemplateParameterDefinition{{Type: "string"}, {Type: "string"}}),
 			Outputs: azure.ArmTemplateOutputs{
 				"WEBSITE_URL": {Type: "string"},
 			},
@@ -955,59 +953,58 @@ func TestUserDefinedTypes(t *testing.T) {
 
 	template := compiled.Template
 
-	stringParam, exists := template.Parameters["stringParam"]
+	stringParam, exists := template.Parameters.Get("stringParam")
 	require.True(t, exists)
 	require.Equal(t, "string", stringParam.Type)
 	require.Equal(t, "foo", stringParam.DefaultValue)
 	require.Nil(t, stringParam.AllowedValues)
 
-	stringLimitedParam, exists := template.Parameters["stringLimitedParam"]
+	stringLimitedParam, exists := template.Parameters.Get("stringLimitedParam")
 	require.True(t, exists)
 	require.Equal(t, "string", stringLimitedParam.Type)
 	require.NotNil(t, stringLimitedParam.AllowedValues)
 	require.Equal(t, []interface{}{"arm", "azure", "bicep"}, *stringLimitedParam.AllowedValues)
 
-	intType, exists := template.Parameters["intType"]
+	intType, exists := template.Parameters.Get("intType")
 	require.True(t, exists)
 	require.Equal(t, "int", intType.Type)
 	require.NotNil(t, intType.AllowedValues)
 	require.Equal(t, []interface{}{float64(10)}, *intType.AllowedValues)
 
-	boolParam, exists := template.Parameters["boolParam"]
+	boolParam, exists := template.Parameters.Get("boolParam")
 	require.True(t, exists)
 	require.Equal(t, "bool", boolParam.Type)
 	require.NotNil(t, boolParam.AllowedValues)
 	require.Equal(t, []interface{}{true}, *boolParam.AllowedValues)
 
-	arrayStringType, exists := template.Parameters["arrayParam"]
+	arrayStringType, exists := template.Parameters.Get("arrayParam")
 	require.True(t, exists)
 	require.Equal(t, "array", arrayStringType.Type)
 	require.Nil(t, arrayStringType.AllowedValues)
 
-	arrayLimitedParam, exists := template.Parameters["arrayLimitedParam"]
+	arrayLimitedParam, exists := template.Parameters.Get("arrayLimitedParam")
 	require.True(t, exists)
 	require.Equal(t, "array", arrayLimitedParam.Type)
 	require.NotNil(t, arrayLimitedParam.AllowedValues)
 	require.Equal(t, []interface{}{"a", "b", "c"}, *arrayLimitedParam.AllowedValues)
 
-	mixedParam, exists := template.Parameters["mixedParam"]
+	mixedParam, exists := template.Parameters.Get("mixedParam")
 	require.True(t, exists)
 	require.Equal(t, "array", mixedParam.Type)
 	require.NotNil(t, mixedParam.AllowedValues)
 	require.Equal(
 		t, []interface{}{"fizz", float64(42), nil, map[string]interface{}{"an": "object"}}, *mixedParam.AllowedValues)
 
-	objectParam, exists := template.Parameters["objectParam"]
+	objectParam, exists := template.Parameters.Get("objectParam")
 	require.True(t, exists)
 	require.Equal(t, "object", objectParam.Type)
 	require.Nil(t, objectParam.AllowedValues)
 	require.NotNil(t, objectParam.Properties)
 	require.Equal(
 		t,
-		azure.ArmTemplateParameterDefinitions{
-			"name": {Type: "string"},
-			"sku":  {Type: "string"},
-		},
+		custommaps.NewWithOrder(
+			[]string{"name", "sku"},
+			[]*azure.ArmTemplateParameterDefinition{{Type: "string"}, {Type: "string"}}),
 		objectParam.Properties)
 	require.NotNil(t, objectParam.AdditionalProperties)
 	require.Equal(

@@ -32,6 +32,18 @@ func (b *WithOrder[T]) Get(key string) (*T, bool) {
 	return v, ok
 }
 
+// Set updates the value associated with the given key or inserts a new key-value pair at the end.
+func (b *WithOrder[T]) Set(key string, value *T) {
+	if _, exists := b.innerMap[key]; !exists {
+		b.keys = append(b.keys, key)
+	}
+	b.innerMap[key] = value
+}
+
+func (cr WithOrder[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(cr.innerMap)
+}
+
 func (b *WithOrder[T]) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &b.innerMap); err != nil {
 		return err
@@ -40,9 +52,14 @@ func (b *WithOrder[T]) UnmarshalJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 
 	// read the start of the object
-	_, err := dec.Token()
+	startToken, err := dec.Token()
 	if err != nil {
 		return err
+	}
+
+	if startToken == nil {
+		// empty object or null
+		return nil
 	}
 
 	for {
@@ -62,5 +79,19 @@ func (b *WithOrder[T]) UnmarshalJSON(data []byte) error {
 		if err := dec.Decode(&b); err != nil {
 			return err
 		}
+	}
+}
+
+func NewWithOrder[T any](orderedKeys []string, orderedValues []*T) WithOrder[T] {
+	if len(orderedKeys) != len(orderedValues) {
+		panic("orderedKeys and orderedValues must have the same length")
+	}
+	innerMap := make(map[string]*T)
+	for i, key := range orderedKeys {
+		innerMap[key] = orderedValues[i]
+	}
+	return WithOrder[T]{
+		innerMap: innerMap,
+		keys:     orderedKeys,
 	}
 }

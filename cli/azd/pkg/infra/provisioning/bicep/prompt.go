@@ -20,7 +20,7 @@ import (
 // promptDialogItemForParameter builds the input.PromptDialogItem for the given required parameter.
 func (p *BicepProvider) promptDialogItemForParameter(
 	key string,
-	param azure.ArmTemplateParameterDefinition,
+	param *azure.ArmTemplateParameterDefinition,
 ) input.PromptDialogItem {
 	help, _ := param.Description()
 	paramType := p.mapBicepTypeToInterfaceType(param.Type)
@@ -75,7 +75,7 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 func (p *BicepProvider) promptForParameter(
 	ctx context.Context,
 	key string,
-	param azure.ArmTemplateParameterDefinition,
+	param *azure.ArmTemplateParameterDefinition,
 ) (any, error) {
 	securedParam := "parameter"
 	isSecuredParam := param.Secure()

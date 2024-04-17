@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -140,7 +141,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		if compileResult == nil {
 			return true
 		}
-		if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
+		if locationParam, defined := compileResult.Template.Parameters.Get("location"); defined {
 			if locationParam.AllowedValues != nil {
 				return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
 					allowedValueString, goodCast := allowedValue.(string)
@@ -503,14 +504,16 @@ func (p *BicepProvider) latestDeploymentResult(
 
 // parametersHash generates a hash from its name and final value.
 // The final value is either the parameter default value or the value from the params input.
-func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, params azure.ArmParameters) (string, error) {
+func parametersHash(templateParameters custommaps.WithOrder[azure.ArmTemplateParameterDefinition],
+	params azure.ArmParameters) (string, error) {
 	hash256 := sha256.New()
 
 	// Get the parameter name and its final value.
 	// Any other change on the parameter definition would break the template-hash
-	nameAndValueParams := make(map[string]any, len(templateParameters))
+	nameAndValueParams := make(map[string]any, len(templateParameters.OrderedKeys()))
 
-	for paramName, paramDefinition := range templateParameters {
+	for _, paramName := range templateParameters.OrderedKeys() {
+		paramDefinition, _ := templateParameters.Get(paramName)
 		pValue := paramDefinition.DefaultValue
 		if param, exists := params[paramName]; exists {
 			pValue = param.Value
@@ -1741,7 +1744,8 @@ func (p *BicepProvider) compileBicep(
 	}
 
 	// update user-defined parameters
-	for paramKey, param := range template.Parameters {
+	for _, paramKey := range template.Parameters.OrderedKeys() {
+		param, _ := template.Parameters.Get(paramKey)
 		paramRef := param.Ref
 		isUserDefinedType := paramRef != ""
 		if isUserDefinedType {
@@ -1749,11 +1753,11 @@ func (p *BicepProvider) compileBicep(
 			if err != nil {
 				return nil, err
 			}
-			paramDefinition, findDefinition := template.Definitions[definitionKeyName]
+			paramDefinition, findDefinition := template.Definitions.Get(definitionKeyName)
 			if !findDefinition {
 				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
 			}
-			template.Parameters[paramKey] = azure.ArmTemplateParameterDefinition{
+			template.Parameters.Set(paramKey, &azure.ArmTemplateParameterDefinition{
 				// Take this values from the parameter definition
 				Type:                 paramDefinition.Type,
 				AllowedValues:        paramDefinition.AllowedValues,
@@ -1766,7 +1770,7 @@ func (p *BicepProvider) compileBicep(
 				// Keep this values from the original parameter
 				DefaultValue: param.DefaultValue,
 				// Note: Min/MaxLength and Min/MaxValue can't be used on user-defined types. No need to handle it here.
-			}
+			})
 		}
 	}
 
@@ -1779,7 +1783,7 @@ func (p *BicepProvider) compileBicep(
 			if err != nil {
 				return nil, err
 			}
-			paramDefinition, findDefinition := template.Definitions[definitionKeyName]
+			paramDefinition, findDefinition := template.Definitions.Get(definitionKeyName)
 			if !findDefinition {
 				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
 			}
@@ -1839,7 +1843,8 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*D
 	parameters := make(map[string]InputParameter)
 	outputs := make(map[string]OutputParameter)
 
-	for key, param := range bicepTemplate.Parameters {
+	for _, key := range bicepTemplate.Parameters.OrderedKeys() {
+		param, _ := bicepTemplate.Parameters.Get(key)
 		parameters[key] = InputParameter{
 			Type:         string(p.mapBicepTypeToInterfaceType(param.Type)),
 			DefaultValue: param.DefaultValue,
@@ -1952,23 +1957,21 @@ func (p *BicepProvider) ensureParameters(
 		return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
 	}
 
-	if len(template.Parameters) == 0 {
+	parametersOrderedKeys := template.Parameters.OrderedKeys()
+	parametersCount := len(parametersOrderedKeys)
+	if parametersCount == 0 {
 		return azure.ArmParameters{}, nil
 	}
-	configuredParameters := make(azure.ArmParameters, len(template.Parameters))
-
-	sortedKeys := maps.Keys(template.Parameters)
-	slices.Sort(sortedKeys)
-
+	configuredParameters := make(azure.ArmParameters, parametersCount)
 	configModified := false
 
 	var parameterPrompts []struct {
 		key   string
-		param azure.ArmTemplateParameterDefinition
+		param *azure.ArmTemplateParameterDefinition
 	}
 
-	for _, key := range sortedKeys {
-		param := template.Parameters[key]
+	for _, key := range parametersOrderedKeys {
+		param, _ := template.Parameters.Get(key)
 
 		// If a value is explicitly configured via a parameters file, use it.
 		// unless the parameter value inference is nil/empty
@@ -2007,7 +2010,7 @@ func (p *BicepProvider) ensureParameters(
 		// No saved value for this required parameter, we'll need to prompt for it.
 		parameterPrompts = append(parameterPrompts, struct {
 			key   string
-			param azure.ArmTemplateParameterDefinition
+			param *azure.ArmTemplateParameterDefinition
 		}{key: key, param: param})
 	}
 

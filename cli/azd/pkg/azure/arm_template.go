@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"path"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 )
 
 type DeploymentScope string
@@ -24,11 +26,11 @@ type RawArmTemplate = json.RawMessage
 // at https://learn.microsoft.com/azure/azure-resource-manager/templates/syntax, but only exposes portions of the
 // object that azd cares about.
 type ArmTemplate struct {
-	Schema         string                          `json:"$schema"`
-	ContentVersion string                          `json:"contentVersion"`
-	Parameters     ArmTemplateParameterDefinitions `json:"parameters"`
-	Outputs        ArmTemplateOutputs              `json:"outputs"`
-	Definitions    ArmTemplateParameterDefinitions `json:"definitions"`
+	Schema         string                                               `json:"$schema"`
+	ContentVersion string                                               `json:"contentVersion"`
+	Parameters     custommaps.WithOrder[ArmTemplateParameterDefinition] `json:"parameters"`
+	Outputs        ArmTemplateOutputs                                   `json:"outputs"`
+	Definitions    custommaps.WithOrder[ArmTemplateParameterDefinition] `json:"definitions"`
 }
 
 var cResourceDeploymentTemplateSchemaLower = strings.ToLower("deploymentTemplate.json")
@@ -56,8 +58,6 @@ func (t ArmTemplate) TargetScope() (DeploymentScope, error) {
 	}
 }
 
-type ArmTemplateParameterDefinitions map[string]ArmTemplateParameterDefinition
-
 type ArmTemplateOutputs map[string]ArmTemplateOutput
 
 type ArmTemplateParameterAdditionalProperties struct {
@@ -70,17 +70,17 @@ type ArmTemplateParameterAdditionalProperties struct {
 }
 
 type ArmTemplateParameterDefinition struct {
-	Type                 string                                   `json:"type"`
-	DefaultValue         any                                      `json:"defaultValue"`
-	AllowedValues        *[]any                                   `json:"allowedValues,omitempty"`
-	MinValue             *int                                     `json:"minValue,omitempty"`
-	MaxValue             *int                                     `json:"maxValue,omitempty"`
-	MinLength            *int                                     `json:"minLength,omitempty"`
-	MaxLength            *int                                     `json:"maxLength,omitempty"`
-	Metadata             map[string]json.RawMessage               `json:"metadata"`
-	Ref                  string                                   `json:"$ref"`
-	Properties           ArmTemplateParameterDefinitions          `json:"properties,omitempty"`
-	AdditionalProperties ArmTemplateParameterAdditionalProperties `json:"additionalProperties,omitempty"`
+	Type                 string                                               `json:"type"`
+	DefaultValue         any                                                  `json:"defaultValue"`
+	AllowedValues        *[]any                                               `json:"allowedValues,omitempty"`
+	MinValue             *int                                                 `json:"minValue,omitempty"`
+	MaxValue             *int                                                 `json:"maxValue,omitempty"`
+	MinLength            *int                                                 `json:"minLength,omitempty"`
+	MaxLength            *int                                                 `json:"maxLength,omitempty"`
+	Metadata             map[string]json.RawMessage                           `json:"metadata"`
+	Ref                  string                                               `json:"$ref"`
+	Properties           custommaps.WithOrder[ArmTemplateParameterDefinition] `json:"properties,omitempty"`
+	AdditionalProperties ArmTemplateParameterAdditionalProperties             `json:"additionalProperties,omitempty"`
 }
 
 func (d *ArmTemplateParameterDefinition) Secure() bool {

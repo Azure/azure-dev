@@ -117,6 +117,10 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 }
 
 func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) error {
+	if len(env.Config.SecretKeys()) > 0 {
+		return fmt.Errorf("saving secrets with remote state enabled is not supported.")
+	}
+
 	// Update configuration
 	cfgWriter := new(bytes.Buffer)
 

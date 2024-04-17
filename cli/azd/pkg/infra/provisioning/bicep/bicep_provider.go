@@ -1938,6 +1938,11 @@ func inputsParameter(
 	}, wroteNewInput, nil
 }
 
+type parameterPrompts struct {
+	key   string
+	param *azure.ArmTemplateParameterDefinition
+}
+
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
 func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
@@ -1962,10 +1967,7 @@ func (p *BicepProvider) ensureParameters(
 
 	configModified := false
 
-	var parameterPrompts []struct {
-		key   string
-		param azure.ArmTemplateParameterDefinition
-	}
+	var promptForParams []parameterPrompts
 
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
@@ -2005,69 +2007,16 @@ func (p *BicepProvider) ensureParameters(
 		}
 
 		// No saved value for this required parameter, we'll need to prompt for it.
-		parameterPrompts = append(parameterPrompts, struct {
-			key   string
-			param azure.ArmTemplateParameterDefinition
-		}{key: key, param: param})
+		promptForParams = append(promptForParams, parameterPrompts{key: key, param: &param})
 	}
 
-	if len(parameterPrompts) > 0 {
-		if p.console.SupportsPromptDialog() {
+	promptedParameters, configModified, err := p.promptParameters(ctx, promptForParams)
+	if err != nil {
+		return nil, fmt.Errorf("prompting for parameters: %w", err)
+	}
 
-			dialog := input.PromptDialog{
-				Title: "Configure required deployment parameters",
-				Description: "The following parameters are required for deployment. " +
-					"Provide values for each parameter. They will be saved for future deployments.",
-			}
-
-			for _, prompt := range parameterPrompts {
-				dialog.Prompts = append(dialog.Prompts, p.promptDialogItemForParameter(prompt.key, prompt.param))
-			}
-
-			values, err := p.console.PromptDialog(ctx, dialog)
-			if err != nil {
-				return nil, fmt.Errorf("prompting for values: %w", err)
-			}
-
-			for _, prompt := range parameterPrompts {
-				configKey := fmt.Sprintf("infra.parameters.%s", prompt.key)
-				value := values[prompt.key]
-
-				if err := p.env.Config.Set(configKey, value); err == nil {
-					configModified = true
-				} else {
-					// errors from config.Set are panics, so we can't recover from them
-					// For example, the value is not serializable to JSON
-					log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
-				}
-
-				configuredParameters[prompt.key] = azure.ArmParameterValue{
-					Value: value,
-				}
-			}
-		} else {
-			for _, prompt := range parameterPrompts {
-				configKey := fmt.Sprintf("infra.parameters.%s", prompt.key)
-
-				// Otherwise, prompt for the value.
-				value, err := p.promptForParameter(ctx, prompt.key, prompt.param)
-				if err != nil {
-					return nil, fmt.Errorf("prompting for value: %w", err)
-				}
-
-				if err := p.env.Config.Set(configKey, value); err == nil {
-					configModified = true
-				} else {
-					// errors from config.Set are panics, so we can't recover from them
-					// For example, the value is not serializable to JSON
-					log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
-				}
-
-				configuredParameters[prompt.key] = azure.ArmParameterValue{
-					Value: value,
-				}
-			}
-		}
+	for key, value := range promptedParameters {
+		configuredParameters[key] = value
 	}
 
 	if configModified {
@@ -2077,6 +2026,65 @@ func (p *BicepProvider) ensureParameters(
 	}
 	p.ensureParamsInMemoryCache = maps.Clone(configuredParameters)
 	return configuredParameters, nil
+}
+
+func (p *BicepProvider) promptParameters(
+	ctx context.Context, parameterPrompts []parameterPrompts) (azure.ArmParameters, bool, error) {
+	if len(parameterPrompts) == 0 {
+		return nil, false, nil
+	}
+
+	configModified := false
+	configuredParameters := make(azure.ArmParameters)
+	values := make(map[string]any)
+	if p.console.SupportsPromptDialog() {
+		dialog := input.PromptDialog{
+			Title: "Configure required deployment parameters",
+			Description: "The following parameters are required for deployment. " +
+				"Provide values for each parameter. They will be saved for future deployments.",
+		}
+
+		for _, prompt := range parameterPrompts {
+			dialog.Prompts = append(dialog.Prompts, p.promptDialogItemForParameter(prompt.key, *prompt.param))
+		}
+
+		valuesFromDialog, err := p.console.PromptDialog(ctx, dialog)
+		if err != nil {
+			return nil, false, fmt.Errorf("prompting for values: %w", err)
+		}
+		values = valuesFromDialog
+	} else {
+		for _, prompt := range parameterPrompts {
+			// Otherwise, prompt for the value.
+			value, err := p.promptForParameter(ctx, prompt.key, *prompt.param)
+			if err != nil {
+				return nil, false, fmt.Errorf("prompting for value: %w", err)
+			}
+			values[prompt.key] = value
+		}
+	}
+
+	for _, prompt := range parameterPrompts {
+		configKey := fmt.Sprintf("infra.parameters.%s", prompt.key)
+		value := values[prompt.key]
+
+		setFn := p.env.Config.Set
+		if strings.HasPrefix(prompt.param.Type, "secure") {
+			setFn = p.env.Config.SetSecret
+		}
+		if err := setFn(configKey, value); err != nil {
+			// errors from config.Set are panics, so we can't recover from them
+			// For example, the value is not serializable to JSON
+			log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
+		}
+
+		configModified = true
+		configuredParameters[prompt.key] = azure.ArmParameterValue{
+			Value: value,
+		}
+	}
+
+	return configuredParameters, configModified, nil
 }
 
 // Convert the ARM parameters file value into a value suitable for deployment

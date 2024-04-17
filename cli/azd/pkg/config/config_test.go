@@ -236,3 +236,111 @@ type testConfig struct {
 	B string
 	C string
 }
+
+func Test_Paths(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   *config
+		expected []string
+	}{
+		{
+			name: "EmptyConfig",
+			config: &config{
+				data: map[string]any{},
+			},
+			expected: []string{},
+		},
+		{
+			name: "ConfigWith1Paths",
+			config: &config{
+				data: map[string]any{
+					"paths": []string{
+						"/path1",
+						"/path2",
+						"/path3",
+					},
+				},
+			},
+			expected: []string{
+				"paths",
+			},
+		},
+		{
+			name: "ConfigWith2levels",
+			config: &config{
+				data: map[string]any{
+					"path1": map[string]any{
+						"level1": "level1",
+					},
+					"path2": "value2",
+				},
+			},
+			expected: []string{
+				"path1.level1", "path2",
+			},
+		},
+		{
+			name: "ConfigWith3levelsPaths",
+			config: &config{
+				data: map[string]any{
+					"path1": map[string]any{
+						"level1": "level1",
+					},
+					"path2": "value2",
+					"path3": map[string]any{
+						"level1": map[string]any{
+							"level2": "level2",
+						},
+					},
+				},
+			},
+			expected: []string{
+				"path1.level1", "path2", "path3.level1.level2",
+			},
+		},
+		{
+			name: "ConfigWith2levelstop",
+			config: &config{
+				data: map[string]any{
+					"path1": map[string]any{
+						"level1": "level1",
+						"level2": "level1",
+					},
+				},
+			},
+			expected: []string{
+				"path1.level1", "path1.level2",
+			},
+		},
+		{
+			name: "ConfigWith2levelstop",
+			config: &config{
+				data: map[string]any{
+					"path1": map[string]any{
+						"level1": "level1",
+						"level2": "level1",
+					},
+					"path2": map[string]any{
+						"level1": "level1",
+						"level2": map[string]any{
+							"level3":  "level3",
+							"level31": "level31",
+						},
+					},
+				},
+			},
+			expected: []string{
+				"path1.level1", "path1.level2", "path2.level1", "path2.level2.level3", "path2.level2.level31",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			paths := test.config.Paths()
+			for _, path := range test.expected {
+				require.Contains(t, paths, path)
+			}
+		})
+	}
+}

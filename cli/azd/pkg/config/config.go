@@ -16,10 +16,13 @@ import (
 // Configuration data is stored in user's home directory @ ~/.azd/config.json
 type Config interface {
 	Raw() map[string]any
+	Paths() []string
 	Get(path string) (any, bool)
 	GetString(path string) (string, bool)
 	GetSection(path string, section any) (bool, error)
 	Set(path string, value any) error
+	SetSecret(path string, value any) error
+	SecretKeys() map[string]struct{}
 	Unset(path string) error
 	IsEmpty() bool
 }
@@ -37,13 +40,15 @@ func NewConfig(data map[string]any) Config {
 	}
 
 	return &config{
-		data: data,
+		data:    data,
+		secrets: map[string]struct{}{},
 	}
 }
 
 // Top level AZD configuration
 type config struct {
-	data map[string]any
+	data    map[string]any
+	secrets map[string]struct{}
 }
 
 // Returns a value indicating whether the configuration is empty
@@ -54,6 +59,28 @@ func (c *config) IsEmpty() bool {
 // Gets the raw values stored in the configuration as a Go map
 func (c *config) Raw() map[string]any {
 	return c.data
+}
+
+// Paths returns the list of paths from the configuration.
+func (c *config) Paths() []string {
+	return paths(c.data)
+}
+
+// paths recursively traverses a map and returns a list of all the paths to the leaf nodes.
+// The start parameter is the initial map to start traversing from.
+// It returns a slice of strings representing the paths to the leaf nodes.
+func paths(start map[string]any) []string {
+	var all []string
+	for path, value := range start {
+		if node, isNode := value.(map[string]any); isNode {
+			for _, child := range paths(node) {
+				all = append(all, fmt.Sprintf("%s.%s", path, child))
+			}
+		} else {
+			all = append(all, path)
+		}
+	}
+	return all
 }
 
 // Sets a value at the specified location
@@ -83,8 +110,22 @@ func (c *config) Set(path string, value any) error {
 		currentNode = node
 		depth++
 	}
-
+	// make sure calling set overrides a path which might have been marked as a secret
+	delete(c.secrets, path)
 	return nil
+}
+
+// Sets a value at the specified location
+func (c *config) SetSecret(path string, value any) error {
+	if err := c.Set(path, value); err != nil {
+		return err
+	}
+	c.secrets[path] = struct{}{}
+	return nil
+}
+
+func (c *config) SecretKeys() map[string]struct{} {
+	return c.secrets
 }
 
 // Removes any values stored at the specified path

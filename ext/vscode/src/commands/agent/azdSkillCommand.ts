@@ -24,9 +24,10 @@ export async function azdSkillCommand(context: IActionContext, args: SkillComman
     context.telemetry.properties.azdInstalled = azdInstalled.toString();
     context.telemetry.properties.azdLoggedIn = azdLoggedIn.toString();
     context.telemetry.properties.workspaceInitialized = workspaceInitialized.toString();
+    let step = 1;
 
     if (!azdInstalled) {
-        responseStream.markdown(vscode.l10n.t('First things first, it looks like the Azure Developer CLI is not installed. Let\'s get that taken care of.'));
+        responseStream.markdown(vscode.l10n.t('{0}. First things first, it looks like the Azure Developer CLI is not installed. Let\'s get that taken care of.', step++));
         responseStream.button({ title: vscode.l10n.t('Install Azure Developer CLI'), command: 'azure-dev.commands.cli.install', arguments: [
             /* shouldPrompt */ true,
             /* fromAgent */ true,
@@ -34,14 +35,14 @@ export async function azdSkillCommand(context: IActionContext, args: SkillComman
     }
 
     if (!azdLoggedIn) {
-        responseStream.markdown(vscode.l10n.t('You\'ll need to be logged in with the Azure Developer CLI. Click below to sign in.'));
+        responseStream.markdown(vscode.l10n.t('{0}. You\'ll need to be logged in with the Azure Developer CLI. Click below to sign in, using the `azd auth login` command.', step++));
         responseStream.button({ title: vscode.l10n.t('Sign in with Azure Developer CLI'), command: 'azure-dev.commands.cli.login', arguments: [
             /* fromAgent */ true,
         ] satisfies LoginCliCommandArguments});
     }
 
     if (!workspaceInitialized) {
-        responseStream.markdown(vscode.l10n.t('It looks like the workspace is not set up for use with the Azure Developer CLI.'));
+        responseStream.markdown(vscode.l10n.t('{0}. It looks like the workspace is not set up for use with the Azure Developer CLI. We\'ll use the `azd init` command to set it up.', step++));
         responseStream.button({ title: vscode.l10n.t('Initialize workspace'), command: 'azure-dev.commands.cli.init', arguments: [
             /* selectedFile */ undefined,
             /* allSelectedFiles */ undefined,
@@ -50,7 +51,7 @@ export async function azdSkillCommand(context: IActionContext, args: SkillComman
         ] satisfies InitCommandArguments});
     }
 
-    responseStream.markdown(vscode.l10n.t('All that\'s left is to deploy your application to Azure!'));
+    responseStream.markdown(vscode.l10n.t('{0}. All that\'s left is to deploy your application to Azure! Using the `azd up` command, your application will be deployed.', step++));
     responseStream.button({ title: vscode.l10n.t('Deploy to Azure'), command: 'azure-dev.commands.cli.up', arguments: [
         /* selectedFile */ undefined,
         /* fromAgent */ true,

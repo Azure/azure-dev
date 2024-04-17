@@ -98,6 +98,8 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
+// Initialize initializes provider state from the options.
+// It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
 	p.projectPath = projectPath
 	p.options = options

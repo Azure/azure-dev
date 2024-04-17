@@ -1,4 +1,3 @@
-api-version: 2024-02-02-preview
 location: {{ .Env.AZURE_LOCATION }}
 identity:
   type: UserAssigned
@@ -9,9 +8,6 @@ properties:
   environmentId: {{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}
   configuration:
     activeRevisionsMode: single
-    runtime:
-      dotnet:
-        autoConfigureDataProtection: true
     ingress:
       external: false
       targetPort: {{ targetPortOrDefault 8080 }}

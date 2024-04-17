@@ -47,6 +47,7 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 type loginFlags struct {
 	onlyCheckStatus        bool
 	browser                bool
+	managedIdentity        bool
 	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
@@ -120,6 +121,12 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	)
 	// ensure the flag behaves as a common boolean flag which is set to true when used without any other arg
 	f.NoOptDefVal = "true"
+	local.BoolVar(
+		&lf.managedIdentity,
+		"managed-identity",
+		false,
+		"Use a managed identity to authenticate.",
+	)
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.Var(
 		&lf.clientSecret,
@@ -178,6 +185,10 @@ func newLoginCmd(parent string) *cobra.Command {
 
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret,
 		--client-certificate, or --federated-credential-provider.
+
+		To log in using a managed identity, pass --managed-identity, which will use the system assigned managed identity.
+		To use a user assigned managed identity, pass --client-id in addition to --managed-identity with the client id of
+		the user assigned managed identity you wish to use.
 		`),
 		Annotations: map[string]string{
 			loginCmdParentAnnotation: parent,
@@ -399,7 +410,17 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 }
 
 func (la *loginAction) login(ctx context.Context) error {
-	if la.flags.clientID != "" {
+	if la.flags.managedIdentity {
+		if _, err := la.authManager.LoginWithManagedIdentity(
+			ctx, la.flags.clientID,
+		); err != nil {
+			return fmt.Errorf("logging in: %w", err)
+		}
+
+		return nil
+	}
+
+	if !la.flags.managedIdentity && la.flags.clientID != "" {
 		if la.flags.tenantID == "" {
 			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
 		}

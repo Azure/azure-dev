@@ -304,6 +304,12 @@ func (m *Manager) CredentialForCurrentUser(
 				}
 			}
 		}
+	} else if currentUser.ManagedIdentity {
+		clientID := ""
+		if currentUser.ClientID != nil {
+			clientID = *currentUser.ClientID
+		}
+		return m.newCredentialFromManagedIdentity(clientID)
 	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
 		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
 		if err != nil {
@@ -418,6 +424,20 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 	}
 
 	return currentUser.TenantID, nil
+}
+
+func (m *Manager) newCredentialFromManagedIdentity(clientID string) (azcore.TokenCredential, error) {
+	options := &azidentity.ManagedIdentityCredentialOptions{}
+	if clientID != "" {
+		options.ID = azidentity.ClientID(clientID)
+	}
+
+	cred, err := azidentity.NewManagedIdentityCredential(options)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %w", err)
+	}
+
+	return cred, nil
 }
 
 func (m *Manager) newCredentialFromClientSecret(
@@ -648,6 +668,24 @@ func (m *Manager) LoginWithDeviceCode(
 
 }
 
+func (m *Manager) LoginWithManagedIdentity(ctx context.Context, clientID string) (azcore.TokenCredential, error) {
+	options := &azidentity.ManagedIdentityCredentialOptions{}
+	if clientID != "" {
+		options.ID = azidentity.ClientID(clientID)
+	}
+
+	cred, err := azidentity.NewManagedIdentityCredential(options)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %w", err)
+	}
+
+	if err := m.saveLoginForManagedIdentity(clientID); err != nil {
+		return nil, err
+	}
+
+	return cred, nil
+}
+
 func (m *Manager) LoginWithServicePrincipalSecret(
 	ctx context.Context, tenantId, clientId, clientSecret string,
 ) (azcore.TokenCredential, error) {
@@ -772,6 +810,18 @@ func (m *Manager) UseExternalAuth() bool {
 
 func (m *Manager) saveLoginForPublicClient(res public.AuthResult) error {
 	if err := m.saveUserProperties(&userProperties{HomeAccountID: &res.Account.HomeAccountID}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *Manager) saveLoginForManagedIdentity(clientID string) error {
+	props := &userProperties{ManagedIdentity: true}
+	if clientID != "" {
+		props.ClientID = &clientID
+	}
+	if err := m.saveUserProperties(props); err != nil {
 		return err
 	}
 
@@ -963,10 +1013,11 @@ type federatedAuth struct {
 // either an home account id (when logging in using a public client) or a client and tenant id (when using a confidential
 // client).
 type userProperties struct {
-	HomeAccountID *string `json:"homeAccountId,omitempty"`
-	FromOneAuth   bool    `json:"fromOneAuth,omitempty"`
-	ClientID      *string `json:"clientId,omitempty"`
-	TenantID      *string `json:"tenantId,omitempty"`
+	ManagedIdentity bool    `json:"managedIdentity,omitempty"`
+	HomeAccountID   *string `json:"homeAccountId,omitempty"`
+	FromOneAuth     bool    `json:"fromOneAuth,omitempty"`
+	ClientID        *string `json:"clientId,omitempty"`
+	TenantID        *string `json:"tenantId,omitempty"`
 }
 
 func readUserProperties(cfg config.Config) (*userProperties, error) {

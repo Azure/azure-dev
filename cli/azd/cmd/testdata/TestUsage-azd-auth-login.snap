@@ -12,6 +12,7 @@ Flags
         --docs                                 	: Opens the documentation for azd auth login in your web browser.
         --federated-credential-provider string 	: The provider to use to acquire a federated token to authenticate with.
     -h, --help                                 	: Gets help for login.
+        --managed-identity                     	: Use a managed identity to authenticate.
         --redirect-port int                    	: Choose the port to be used as part of the redirect URI during interactive login.
         --tenant-id string                     	: The tenant id or domain name to authenticate with.
         --use-device-code                      	: When true, log in by using a device code instead of a browser.

@@ -28,12 +28,15 @@ func NewManager() Manager {
 	return &manager{}
 }
 
+const infraParametersKey = "infra.parameters"
+const vaultIdKey = "vaultId"
+
 // Saves the azd configuration to the specified file path
 func (c *manager) Save(config Config, writer io.Writer) error {
-	paramsKey := "infra.parameters"
-	_, exists := config.Get(paramsKey)
-	if !exists {
-		// no infra parameters, so this is user config, no need to save secrets
+	_, hasInfraParams := config.Get(infraParametersKey)
+	secretKeys := config.SecretKeys()
+	if !hasInfraParams || len(secretKeys) == 0 {
+		// no infra parameters, or no secrets in config
 		configJson, err := json.MarshalIndent(config.Raw(), "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed marshalling config JSON: %w", err)
@@ -44,70 +47,58 @@ func (c *manager) Save(config Config, writer io.Writer) error {
 
 	// config has infra.parameters. Handle secrets
 	configPaths := config.Paths()
-	secretKeys := config.SecretKeys()
-	sanitizedConfig := NewEmptyConfig()
-	secrets := make(map[string]any)
+	withNoSecretsConfig := NewEmptyConfig()
+	configSecrets := make(map[string]any)
 
+	// split config into secrets and non-secrets
 	for _, path := range configPaths {
 		value, _ := config.Get(path)
 		if _, isSecret := secretKeys[path]; !isSecret {
-			// none secrets are directly copied
-			if err := sanitizedConfig.Set(path, value); err != nil {
+			if err := withNoSecretsConfig.Set(path, value); err != nil {
 				return fmt.Errorf("failed setting config value: %w", err)
 			}
 			continue
 		}
-		secrets[path] = value
+		configSecrets[path] = value
 	}
 
-	if len(secrets) > 0 {
-		userConfigManager := NewUserConfigManager(NewFileConfigManager(c))
-		uConfig, err := userConfigManager.Load()
+	userSecretsManager := newUserSecretsManager(NewFileConfigManager(c))
+	userVault, err := userSecretsManager.Load()
+	if err != nil {
+		return fmt.Errorf("failed loading user vault: %w", err)
+	}
+
+	vaultIdNode, vaultExists := config.Get(vaultIdKey)
+	var vaultId string
+	if vaultExists {
+		vaultIdCast, castOk := vaultIdNode.(string)
+		if !castOk {
+			return fmt.Errorf("failed casting vault id to string")
+		}
+		vaultId = vaultIdCast
+	} else {
+		vaultUuid, err := uuid.NewRandom()
 		if err != nil {
-			return fmt.Errorf("failed loading user config: %w", err)
+			return fmt.Errorf("failed generating vault id: %w", err)
 		}
-
-		uConfigSecretsNode, exists := uConfig.Get("secrets")
-		var uConfigSecretsMap map[string]any
-		if exists {
-			castMap, ok := uConfigSecretsNode.(map[string]any)
-			if !ok {
-				return fmt.Errorf("failed to convert secrets to map")
-			}
-			uConfigSecretsMap = castMap
-		}
-		updateUserConfig := false
-		for path, value := range secrets {
-			var existingSecretKey string
-			for sKey, existingValue := range uConfigSecretsMap {
-				if existingValue == value {
-					existingSecretKey = sKey
-					break
-				}
-			}
-			if existingSecretKey == "" {
-				updateUserConfig = true
-				secretUUID := uuid.New().String()
-				if err := sanitizedConfig.Set(path, secretUUID); err != nil {
-					return fmt.Errorf("failed setting config value: %w", err)
-				}
-				if err := uConfig.Set("secrets."+secretUUID, value); err != nil {
-					return fmt.Errorf("failed setting user config value: %w", err)
-				}
-			} else {
-				if err := sanitizedConfig.Set(path, existingSecretKey); err != nil {
-					return fmt.Errorf("failed setting config value: %w", err)
-				}
-			}
-		}
-		if updateUserConfig {
-			if err := userConfigManager.Save(uConfig); err != nil {
-				return fmt.Errorf("failed saving user config: %w", err)
-			}
-		}
+		vaultId = vaultUuid.String()
+	}
+	// Set in memory only, no need to persist this as we will persist it with withNoSecretsConfig
+	if err := config.Set(vaultIdKey, vaultId); err != nil {
+		return fmt.Errorf("failed setting vault id in config: %w", err)
+	}
+	if err := withNoSecretsConfig.Set(vaultIdKey, vaultId); err != nil {
+		return fmt.Errorf("failed setting vault id in config: %w", err)
 	}
 
-	configJson, err := json.MarshalIndent(sanitizedConfig.Raw(), "", "  ")
+	if err := userVault.Set(vaultId, configSecrets); err != nil {
+		return fmt.Errorf("failed setting secrets in vault: %w", err)
+	}
+	if err := userSecretsManager.Save(userVault); err != nil {
+		return fmt.Errorf("failed saving user vault: %w", err)
+	}
+
+	configJson, err := json.MarshalIndent(withNoSecretsConfig.Raw(), "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed marshalling config JSON: %w", err)
 	}
@@ -132,40 +123,33 @@ func (c *manager) Load(reader io.Reader) (Config, error) {
 		return nil, fmt.Errorf("failed parsing configuration: %w", err)
 	}
 
-	// secrets resolution for infra secured params
-	paramsKey := "infra.parameters"
-	paramsNode, exists := config.Get(paramsKey)
-	if !exists {
+	// secrets resolution based on vaultId
+	var vaultId string
+	hasVaultId, err := config.GetSection(vaultIdKey, &vaultId)
+	if err != nil {
+		return nil, fmt.Errorf("failed getting vault id: %w", err)
+	}
+	if !hasVaultId {
 		return config, nil
 	}
-	// found `infra.parameters`, so this is azd config, it is save to read user config
-	userConfigManager := NewUserConfigManager(NewFileConfigManager(c))
-	uConfig, err := userConfigManager.Load()
+
+	userSecretsManager := newUserSecretsManager(NewFileConfigManager(c))
+	userSecretsConfig, err := userSecretsManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed loading user config: %w", err)
 	}
-	secretsKey := "secrets"
-	secretsNode, exists := uConfig.Get(secretsKey)
-	if !exists {
-		return config, nil
+	var vault map[string]any
+	hasVault, err := userSecretsConfig.GetSection(vaultId, &vault)
+	if err != nil {
+		return nil, fmt.Errorf("failed getting vault: %w", err)
 	}
-	secretsMap, ok := secretsNode.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("failed to convert secrets to map")
+	if !hasVault {
+		return nil, fmt.Errorf("vault not found")
 	}
-	paramsMap, ok := paramsNode.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("failed to convert parameters to map")
-	}
-	for key, value := range paramsMap {
-		secretId, castOk := value.(string)
-		if !castOk {
-			return nil, fmt.Errorf("failed to convert parameter value to string")
-		}
-		if secretValue, isSecret := secretsMap[secretId]; isSecret {
-			if err := config.SetSecret(fmt.Sprintf("%s.%s", paramsKey, key), secretValue); err != nil {
-				return nil, fmt.Errorf("failed setting secret value: %w", err)
-			}
+
+	for key, value := range vault {
+		if err := config.SetSecret(key, value); err != nil {
+			return nil, fmt.Errorf("failed setting secret value: %w", err)
 		}
 	}
 

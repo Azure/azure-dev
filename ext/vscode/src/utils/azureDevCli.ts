@@ -20,7 +20,7 @@ const AzdLoginCheckCacheLifetime = 15 * 60 * 1000; // 15 minutes
 let azdInstallAttempted: boolean = false;
 const azdLoginChecker = new AsyncLazy<LoginStatus | undefined>(getAzdLoginStatus, AzdLoginCheckCacheLifetime);
 
-interface LoginStatus {
+export interface LoginStatus {
     readonly status: 'success' | 'unauthenticated' | string;
     readonly expiresOn?: string;
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -53,13 +52,12 @@ func newUpCmd() *cobra.Command {
 }
 
 type upAction struct {
-	flags               *upFlags
-	console             input.Console
-	env                 *environment.Environment
-	projectConfig       *project.ProjectConfig
-	provisioningManager *provisioning.Manager
-	importManager       *project.ImportManager
-	workflowRunner      *workflow.Runner
+	flags          *upFlags
+	console        input.Console
+	env            *environment.Environment
+	projectConfig  *project.ProjectConfig
+	importManager  *project.ImportManager
+	workflowRunner *workflow.Runner
 }
 
 var defaultUpWorkflow = &workflow.Workflow{

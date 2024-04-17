@@ -8,18 +8,19 @@ import (
 )
 
 // buildAcaIngress builds the Azure Container Apps ingress configuration from the provided bindings.
-func buildAcaIngress(bindings custommaps.WithOrder[Binding], defaultIngressPort int) (*genContainerAppIngress, error) {
+func buildAcaIngress(
+	bindings custommaps.WithOrder[Binding], defaultIngressPort int) (*genContainerAppIngress, []string, error) {
 	if len(bindings.OrderedKeys()) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	if err := validateBindings(bindings); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	acaPorts := mapBindingsToPorts(bindings)
 
 	if err := validateExternalBindings(acaPorts); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ingress := httpIngress(acaPorts)
@@ -213,11 +214,15 @@ func mapBindingsToPorts(bindings custommaps.WithOrder[Binding]) map[string]*acaP
 }
 
 func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress string, defaultPort int) (
-	*genContainerAppIngress, error) {
+	*genContainerAppIngress, []string, error) {
 	finalIngress := &genContainerAppIngress{}
+	var bindingNamesFromIngress []string
 	ingress := httpIngress
 	if ingress != "" {
 		props := endpointByTargetPortProperties[ingress]
+		for _, binding := range props.bindings {
+			bindingNamesFromIngress = append(bindingNamesFromIngress, binding.name)
+		}
 
 		finalIngress.External = props.external
 		finalIngress.TargetPort = props.port
@@ -243,7 +248,11 @@ func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress
 				}
 			}
 		}
-		port := endpointByTargetPortProperties[ingress].port
+		selectedIngress := endpointByTargetPortProperties[ingress]
+		for _, binding := range selectedIngress.bindings {
+			bindingNamesFromIngress = append(bindingNamesFromIngress, binding.name)
+		}
+		port := selectedIngress.port
 		finalIngress.Transport = acaIngressSchemaTcp
 		finalIngress.TargetPort = port
 	}
@@ -260,5 +269,5 @@ func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress
 			})
 	}
 
-	return finalIngress, nil
+	return finalIngress, bindingNamesFromIngress, nil
 }

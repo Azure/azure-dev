@@ -958,12 +958,13 @@ func (b *infraGenerator) Compile() error {
 			Volumes: container.Volumes,
 		}
 
-		ingress, err := buildAcaIngress(container.Bindings, 80)
+		ingress, bindingsFromIngress, err := buildAcaIngress(container.Bindings, 80)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
 		}
 
 		cs.Ingress = ingress
+		cs.IngressBindings = bindingsFromIngress
 		parameters := maps.Keys(b.bicepContext.InputParameters)
 		for i, parameter := range parameters {
 			parameters[i] = strings.ReplaceAll(parameter, "-", "_")
@@ -1010,12 +1011,13 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 		}
 
-		ingress, err := buildAcaIngress(docker.Bindings, 80)
+		ingress, bindingsFromIngress, err := buildAcaIngress(docker.Bindings, 80)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for resource %s: %w", resourceName, err)
 		}
 
 		projectTemplateCtx.Ingress = ingress
+		projectTemplateCtx.IngressBindings = bindingsFromIngress
 
 		if err := b.buildEnvBlock(docker.Env, &projectTemplateCtx); err != nil {
 			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
@@ -1032,11 +1034,12 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 		}
 
-		i, err := buildAcaIngress(project.Bindings, 8080)
+		i, bindingsFromIngress, err := buildAcaIngress(project.Bindings, 8080)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
 		}
 		projectTemplateCtx.Ingress = i
+		projectTemplateCtx.IngressBindings = bindingsFromIngress
 
 		for _, dapr := range b.dapr {
 			if dapr.Application == resourceName {

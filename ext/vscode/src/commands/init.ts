@@ -11,18 +11,26 @@ import { TelemetryId } from '../telemetry/telemetryId';
 
 interface InitCommandOptions {
     templateUrl?: string;
+    useExistingSource?: boolean;
     environmentName?: string;
 }
 
-export async function init(context: IActionContext, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri, options?: InitCommandOptions): Promise<void> {
+/**
+ * A tuple representing the arguments that must be passed to the `init` command when executed via {@link vscode.commands.executeCommand}
+ */
+export type InitCommandArguments = [vscode.Uri | undefined, vscode.Uri[] | undefined, InitCommandOptions | undefined, boolean | undefined];
+
+export async function init(context: IActionContext, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri[], options?: InitCommandOptions, fromAgent: boolean = false): Promise<void> {
+    context.telemetry.properties.fromAgent = fromAgent.toString();
+
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'init'));
     }
 
     let templateUrl: string | undefined = options?.templateUrl;
-    let useExistingSource: boolean = false;
-    if (!templateUrl) {
+    let useExistingSource: boolean = !!options?.useExistingSource;
+    if (!templateUrl && !useExistingSource) {
         const selection = await selectApplicationTemplate(context);
         templateUrl = selection.templateUrl;
         useExistingSource = selection.useExistingSource;
@@ -46,6 +54,7 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
 
     // Don't wait
     void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+        focus: true,
         alwaysRunNew: true,
         cwd: workspacePath.fsPath,
         env: azureCli.env

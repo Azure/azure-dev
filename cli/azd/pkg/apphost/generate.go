@@ -1236,6 +1236,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		var binding *Binding
 		var has bool
 		bindingName := parts[0]
+		bindingProperty := parts[1]
 
 		if targetType == "project.v0" {
 			bindings := b.projects[resource].Bindings
@@ -1251,8 +1252,16 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		if !has {
 			return "", fmt.Errorf("unknown binding referenced in binding expression: %s for resource %s", parts[0], resource)
 		}
+		bindingDetails, exists := b.allServicesIngress[resource]
+		if !exists {
+			return "", fmt.Errorf("binding reference to resource %s without ingress", resource)
+		}
+		var bindingMappedToIngress bool
+		if slices.Contains(bindingDetails.ingressBindings, bindingName) {
+			bindingMappedToIngress = true
+		}
 
-		switch parts[1] {
+		switch bindingProperty {
 		case "scheme":
 			return binding.Scheme, nil
 		case "protocol":
@@ -1264,22 +1273,20 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		case "host":
 			// The host name matches the containerapp name, so we can just return the resource name.
 			return resource, nil
-		case "targetPort", "port":
-			if binding.TargetPort == nil {
-				return "0", nil
+		case "targetPort":
+			resolvedTargetPort, err := bindingTargetPort(bindingName, binding, bindingMappedToIngress)
+			if err != nil {
+				return "", err
 			}
-			return fmt.Sprintf(`%d`, *binding.TargetPort), nil
+			return resolvedTargetPort, nil
+		case "port":
+			resolvedPort, err := bindingPort(bindingName, binding, bindingMappedToIngress)
+			if err != nil {
+				return "", err
+			}
+			return resolvedPort, nil
 		case "url":
 			var urlFormatString string
-
-			bindingDetails, exists := b.allServicesIngress[resource]
-			if !exists {
-				return "", fmt.Errorf("binding reference to resource %s without ingress", resource)
-			}
-			var bindingMappedToIngress bool
-			if slices.Contains(bindingDetails.ingressBindings, bindingName) {
-				bindingMappedToIngress = true
-			}
 
 			if bindingMappedToIngress {
 				if binding.External {
@@ -1291,8 +1298,12 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				urlFormatString = "%s://%s%s"
 			}
 			var port string
-			if binding.TargetPort != nil {
-				port = fmt.Sprintf(":%d", *binding.TargetPort)
+			resolvedPort, err := bindingPort(bindingName, binding, bindingMappedToIngress)
+			if err != nil {
+				return "", err
+			}
+			if resolvedPort != "" {
+				port = fmt.Sprintf(":%s", resolvedPort)
 			}
 
 			return fmt.Sprintf(urlFormatString, binding.Scheme, resource, port), nil
@@ -1395,6 +1406,42 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 
 		return "", fmt.Errorf("unsupported resource type %s referenced in binding expression", targetType)
 	}
+}
+
+func bindingPort(bindingName string, binding *Binding, bindingMappedToIngress bool) (string, error) {
+	if bindingMappedToIngress && (binding.Scheme == "http" || binding.Scheme == "https") {
+		// main ingress with Http doesn't use a port in url
+		return "", nil
+	}
+	if binding.Port != nil {
+		return fmt.Sprintf("%d", *binding.Port), nil
+	}
+
+	// additionalPorts not defining a `port` means they use the target port as the port and target port
+	resolveTargetPort, err := bindingTargetPort(bindingName, binding, bindingMappedToIngress)
+	if err == nil {
+		return resolveTargetPort, nil
+	}
+	if resolveTargetPort != "" {
+		return resolveTargetPort, nil
+	}
+
+	return "", fmt.Errorf("binding %s does not have a port or target port and it is not mapped to the ingress", bindingName)
+}
+
+func bindingTargetPort(bindingName string, binding *Binding, bindingMappedToIngress bool) (string, error) {
+	if bindingMappedToIngress {
+		if binding.Scheme == "http" {
+			return "80", nil
+		}
+		if binding.Scheme == "https" {
+			return "443", nil
+		}
+	}
+	if binding.TargetPort != nil {
+		return fmt.Sprintf("%d", *binding.TargetPort), nil
+	}
+	return "", fmt.Errorf("binding %s does not have a target port and it is not mapped to the ingress", bindingName)
 }
 
 // buildEnvBlock creates the environment map in the template context. It does this by copying the values from the given map,

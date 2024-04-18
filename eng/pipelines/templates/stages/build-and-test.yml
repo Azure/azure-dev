@@ -10,7 +10,6 @@ parameters:
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         ImageKey: image
-        HostArchitecture: x86_64
         Variables: 
           BuildTarget: azd-linux-arm64
           BuildOutputName: azd
@@ -23,7 +22,6 @@ parameters:
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
         ImageKey: vmImage
-        HostArchitecture: x86_64
         Variables: 
           BuildTarget: azd-darwin-arm64
           BuildOutputName: azd
@@ -60,7 +58,6 @@ stages:
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
-            HostArchitecture: ${{ build.value.HostArchitecture }}
             Variables: ${{ build.value.Variables }}
 
       - job: MergeLinuxPackages

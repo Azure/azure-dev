@@ -13,8 +13,6 @@ parameters:
   - name: Variables
     type: object
     default: {}
-  - name: HostArchitecture
-    type: string
 
 jobs:
   - job: CrossBuildCLI_${{ parameters.NameSuffix }}
@@ -27,7 +25,6 @@ jobs:
       name: ${{ parameters.Pool }}
       ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
       os: ${{ parameters.OS }}
-      hostArchitecture: ${{ parameters.HostArchitecture }}
 
     timeoutInMinutes: 20
 

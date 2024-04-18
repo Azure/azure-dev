@@ -13,7 +13,8 @@
       "env": {
         "NODE_ENV": "development",
         "PORT": "{nodeapp.bindings.http.port}",
-        "MY_SQL_CONNECTION_STRING": "{mysqlabstract.connectionString}"
+        "MY_SQL_CONNECTION_STRING": "{mysqlabstract.connectionString}",
+        "connectionStringUrl": "{nodeapp.bindings.http.url}"
       },
       "bindings": {
         "http": {

@@ -29,7 +29,9 @@ properties:
       - name: NODE_ENV
         value: development
       - name: PORT
-        value: "3000"
+        value: ""
+      - name: connectionStringUrl
+        value: http://nodeapp.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
       - name: MY_SQL_CONNECTION_STRING
         secretRef: my-sql-connection-string
     scale:

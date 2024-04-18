@@ -1,4 +1,7 @@
 {{define "containerApp.tmpl.yaml" -}}
+{{- if .AutoConfigureDataProtection -}}
+api-version: 2024-02-02-preview
+{{end -}}
 location: {{ "{{ .Env.AZURE_LOCATION }}" }}
 identity:
   type: UserAssigned
@@ -9,6 +12,11 @@ properties:
   environmentId: {{ "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}" }}
   configuration:
     activeRevisionsMode: single
+{{- if .AutoConfigureDataProtection}}
+    runtime:
+      dotnet:
+        autoConfigureDataProtection: true
+{{- end}}
 {{- if .Dapr}}
     dapr:
       appId: {{ .Dapr.AppId }}

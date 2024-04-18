@@ -2,16 +2,29 @@ import { AppConfig, DatabaseConfig, ObservabilityConfig } from "./appConfig";
 import dotenv from "dotenv";
 import { DefaultAzureCredential } from "@azure/identity";
 import { SecretClient } from "@azure/keyvault-secrets";
+import { load } from "@azure/app-configuration-provider";
 import { logger } from "../config/observability";
 import { IConfig } from "config";
 
 export const getConfig: () => Promise<AppConfig> = async () => {
-    // Load any ENV vars from local .env file
-    if (process.env.NODE_ENV !== "production") {
+    logger.info(`Loading configuration in ${process.env.NODE_ENV} environment...`);
+    if (process.env.NODE_ENV == "production") {
+        // Load ENV variables from Azure App Configuration when using binding
+        if (process.env.AZURE_APPCONFIGURATION_ENDPOINT) {
+            logger.info("Loading ENV variables from Azure App Configuration...");
+            await populateEnvironmentFromAppConfig();
+        }
+        // Load ENV variables from Azure KeyVault by default
+        else {
+            logger.info("Loading ENV variables from Azure KeyVault...");
+            await populateEnvironmentFromKeyVault();
+        }
+    }
+    else {
+        // For local dev/debug, prepare AZURE_COSMOS_API2COSMOS_CONNECTIONSTRING, AZURE_APPINSIGHTS_CONNECTIONSTRING in src/api/.env file
+        logger.info("Loading ENV variables from local .env file...");
         dotenv.config();
     }
-
-    await populateEnvironmentFromKeyVault();
 
     // Load configuration after Azure KeyVault population is complete
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -66,6 +79,39 @@ const populateEnvironmentFromKeyVault = async () => {
     }
     catch (err: any) {
         logger.error(`Error authenticating with Azure KeyVault.  Ensure your managed identity or service principal has GET/LIST permissions. Error: ${err}`);
+        throw err;
+    }
+};
+
+const populateEnvironmentFromAppConfig = async () => {
+    // If Azure AppConfig endpoint is defined
+    // 1. Login with Default credential (managed identity or service principal)
+    // 2. Overlay App Config configurations on top of ENV vars (Read from KeyVault secret if is KeyVault references)
+    const endpoint = process.env.AZURE_APPCONFIGURATION_ENDPOINT || "";
+
+    if (!endpoint) {
+        logger.warn("AZURE_APPCONFIGURATION_ENDPOINT has not been set. Configuration will be loaded from current environment.");
+        return;
+    }
+
+    try {
+        logger.info("Populating environment from Azure AppConfiguration...");
+        const credential = new DefaultAzureCredential();
+
+        const settings = await load(endpoint, credential, {
+            keyVaultOptions: {
+                // Access keyvault using the same idenity, make sure the permission is set correctly.
+                credential: credential
+            }
+        });
+
+        for (const [key, value] of settings) {
+            logger.info(`Setting read from app config ${key}=${value}`);
+            process.env[key] = value;
+        }
+    }
+    catch (err: any) {
+        logger.error(`Error authenticating with Azure App Configuration or Keyvault. Ensure your managed identity or service principal has GET/LIST permissions. Error: ${err}`);
         throw err;
     }
 };

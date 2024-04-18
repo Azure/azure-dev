@@ -63,12 +63,12 @@ module app '../../../../../common/infra/bicep/core/host/container-app-upsert.bic
         value: appConfiguration.properties.endpoint
       }
       {
-        name: 'API_ALLOW_ORIGINS'
-        value: corsAcaUrl
-      }
-      {
         name: 'NODE_ENV'
         value: 'production'
+      }
+      {
+        name: 'API_ALLOW_ORIGINS'
+        value: corsAcaUrl
       }
     ]
     targetPort: 3100

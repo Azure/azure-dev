@@ -24,6 +24,7 @@
     ]
   },
   "dependencies": {
+    "@azure/app-configuration-provider": "1.0.0-preview.4",
     "@azure/identity": "4.0.1",
     "@azure/keyvault-secrets": "^4.7.0",
     "applicationinsights": "^2.5.1",

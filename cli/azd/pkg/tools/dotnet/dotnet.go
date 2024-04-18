@@ -225,7 +225,7 @@ func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 	if result == "" || !strings.Contains(result, "{\"config\":") {
 		return 0, &azcli.ErrorWithSuggestion{
 			Err: fmt.Errorf("empty dotnet configuration output"),
-			Suggestion: fmt.Sprintf("project '%s' isn't enabled for container support. To enable SDK "+
+			Suggestion: fmt.Sprintf("Ensure project '%s' is enabled for container support and try again. To enable SDK "+
 				"container support, set the 'EnableSdkContainerSupport' property to true in your project file",
 				project,
 			),
@@ -250,8 +250,6 @@ func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 		}
 	}
 
-	// TODO Handle Target Port for multiple ports - return error says it is not supported
-	// return port[0].port, nil
 	if len(exposedPortOutput) < 1 {
 		return 0, fmt.Errorf("multiple dotnet port %s detected", targetPorts)
 	}

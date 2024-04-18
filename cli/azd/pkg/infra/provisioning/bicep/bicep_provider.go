@@ -122,13 +122,15 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 	return err
 }
 
+var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")
+
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
 // values are unset. This also requires that the Bicep module can be compiled.
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	modulePath := p.modulePath()
 	compileResult, compileErr := p.compileBicep(ctx, modulePath)
 	if compileErr != nil {
-		return compileErr
+		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
 	}
 
 	var filterLocation = func(loc account.Location) bool {

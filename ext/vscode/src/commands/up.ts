@@ -13,7 +13,7 @@ import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 /**
  * A tuple representing the arguments that must be passed to the `up` command when executed via {@link vscode.commands.executeCommand}
  */
-export type UpCommandArguments = [vscode.Uri | TreeViewModel | undefined, boolean | undefined];
+export type UpCommandArguments = [ vscode.Uri | TreeViewModel | undefined, boolean? ];
 
 export async function up(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel, fromAgent: boolean = false): Promise<void> {
     context.telemetry.properties.fromAgent = fromAgent.toString();

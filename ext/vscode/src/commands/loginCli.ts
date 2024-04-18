@@ -9,7 +9,7 @@ import { getAzDevTerminalTitle } from './cmdUtil';
 /**
  * A tuple representing the arguments that must be passed to the `loginCli` command when executed via {@link vscode.commands.executeCommand}
  */
-export type LoginCliCommandArguments = [ boolean | undefined];
+export type LoginCliCommandArguments = [ boolean? ];
 
 export async function loginCli(context: IActionContext, fromAgent: boolean = false): Promise<void> {
     context.telemetry.properties.fromAgent = fromAgent.toString();

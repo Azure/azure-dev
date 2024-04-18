@@ -16,7 +16,7 @@ const MacTerminalCommand = LinuxTerminalCommand; // Same as Linux
 /**
  * A tuple representing the arguments that must be passed to the `installCli` command when executed via {@link vscode.commands.executeCommand}
  */
-export type InstallCliCommandArguments = [boolean | undefined, boolean | undefined];
+export type InstallCliCommandArguments = [ boolean?, boolean? ];
 
 export async function installCli(context: IActionContext, shouldPrompt: boolean = true, fromAgent: boolean = false): Promise<void> {
     context.telemetry.properties.fromAgent = fromAgent.toString();

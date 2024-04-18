@@ -18,7 +18,7 @@ interface InitCommandOptions {
 /**
  * A tuple representing the arguments that must be passed to the `init` command when executed via {@link vscode.commands.executeCommand}
  */
-export type InitCommandArguments = [vscode.Uri | undefined, vscode.Uri[] | undefined, InitCommandOptions | undefined, boolean | undefined];
+export type InitCommandArguments = [ vscode.Uri | undefined, vscode.Uri[] | undefined, InitCommandOptions | undefined, boolean? ];
 
 export async function init(context: IActionContext, selectedFile?: vscode.Uri, allSelectedFiles?: vscode.Uri[], options?: InitCommandOptions, fromAgent: boolean = false): Promise<void> {
     context.telemetry.properties.fromAgent = fromAgent.toString();

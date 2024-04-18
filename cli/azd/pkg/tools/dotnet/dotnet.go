@@ -208,7 +208,7 @@ func (cli *dotNetCli) PublishContainer(
 
 	port, err := cli.getTargetPort(result.Stdout, project)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get dotnet target port: %w", err)
+		return 0, fmt.Errorf("failed to get dotnet target port: %w with dotnet publish output '%s'", err, result.Stdout)
 	}
 
 	return port, nil
@@ -232,7 +232,7 @@ func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 		}
 	}
 	if err := json.Unmarshal([]byte(result), &configOutput); err != nil {
-		return 0, fmt.Errorf("unmarshal dotnet configuration output '%s' failed: %w", result, err)
+		return 0, fmt.Errorf("unmarshal dotnet configuration output: %w", err)
 	}
 	var exposedPortOutput []string
 	for key := range configOutput.Config.ExposedPorts {
@@ -253,13 +253,12 @@ func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 	// TODO Handle Target Port for multiple ports - return error says it is not supported
 	// return port[0].port, nil
 	if len(exposedPortOutput) < 1 {
-		return 0, fmt.Errorf(
-			"multiple dotnet port %s detected", targetPorts)
+		return 0, fmt.Errorf("multiple dotnet port %s detected", targetPorts)
 	}
 
 	port, err := strconv.Atoi(targetPorts[0].port)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert port %s to integer: %w", targetPorts[0].port, err)
+		return 0, fmt.Errorf("convert port %s to integer: %w", targetPorts[0].port, err)
 	}
 	return port, nil
 }

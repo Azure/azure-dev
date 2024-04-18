@@ -54,6 +54,7 @@ type AzCli interface {
 		resourceGroup string,
 		appName string,
 		deployZipFile io.Reader,
+		buildProgress io.Writer,
 	) (*string, error)
 	DeployFunctionAppUsingZipFile(
 		ctx context.Context,

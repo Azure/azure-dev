@@ -81,6 +81,7 @@ func (cli *azCli) DeployAppServiceZip(
 	resourceGroup string,
 	appName string,
 	deployZipFile io.Reader,
+	buildProgress io.Writer,
 ) (*string, error) {
 	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
@@ -92,7 +93,7 @@ func (cli *azCli) DeployAppServiceZip(
 		return nil, err
 	}
 
-	response, err := client.Deploy(ctx, deployZipFile)
+	response, err := client.Deploy(ctx, deployZipFile, subscriptionId, resourceGroup, appName, buildProgress)
 	if err != nil {
 		return nil, err
 	}

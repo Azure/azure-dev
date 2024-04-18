@@ -44,7 +44,7 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 		return nil, err
 	}
 
-	response, err := client.Deploy(ctx, deployZipFile)
+	response, err := client.Deploy(ctx, deployZipFile, subscriptionId, resourceGroup, appName, nil)
 	if err != nil {
 		return nil, err
 	}

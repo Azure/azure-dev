@@ -13,24 +13,27 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type appServiceTarget struct {
-	env *environment.Environment
-	cli azcli.AzCli
+	env     *environment.Environment
+	cli     azcli.AzCli
+	console input.Console
 }
 
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
+	console input.Console,
 ) ServiceTarget {
-
 	return &appServiceTarget{
-		env: env,
-		cli: azCli,
+		env:     env,
+		cli:     azCli,
+		console: console,
 	}
 }
 
@@ -80,7 +83,7 @@ func (st *appServiceTarget) Deploy(
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+			if err := st.validateTargetResource(targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
@@ -95,13 +98,19 @@ func (st *appServiceTarget) Deploy(
 			defer zipFile.Close()
 
 			task.SetProgress(NewServiceProgress("Uploading deployment package"))
+			buildProgress := st.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
+				Title:        "Updating deployment status",
+				MaxLineCount: 8,
+			})
 			res, err := st.cli.DeployAppServiceZip(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				zipFile,
+				buildProgress,
 			)
+			st.console.StopPreviewer(ctx, false)
 			if err != nil {
 				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
 				return
@@ -156,8 +165,6 @@ func (st *appServiceTarget) Endpoints(
 }
 
 func (st *appServiceTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {

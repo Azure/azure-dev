@@ -13,6 +13,8 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -20,13 +22,22 @@ const (
 	deployStatusInterval = 10 * time.Second
 )
 
+var (
+	deploymentBuildStatusBuildFailed       armappservice.DeploymentBuildStatus = "BuildFailed"
+	deploymentBuildStatusBuildInProgress   armappservice.DeploymentBuildStatus = "BuildInProgress"
+	deploymentBuildStatusRuntimeFailed     armappservice.DeploymentBuildStatus = "RuntimeFailed"
+	deploymentBuildStatusRuntimeStarting   armappservice.DeploymentBuildStatus = "RuntimeStarting"
+	deploymentBuildStatusRuntimeSuccessful armappservice.DeploymentBuildStatus = "RuntimeSuccessful"
+)
+
 // ZipDeployClient wraps usage of app service zip deploy used for application deployments
 // More info can be found at the following:
 // https://github.com/MicrosoftDocs/azure-docs/blob/main/includes/app-service-deploy-zip-push-rest.md
 // https://github.com/projectkudu/kudu/wiki/REST-API
 type ZipDeployClient struct {
-	hostName string
-	pipeline runtime.Pipeline
+	hostName                 string
+	pipeline                 runtime.Pipeline
+	deploymentStatusResponse DeployStatusResponse
 }
 
 type DeployResponse struct {
@@ -82,6 +93,37 @@ func NewZipDeployClient(
 	}, nil
 }
 
+func (c *ZipDeployClient) getDeploymentStatusSyntax() string {
+	if c.hostName == "" {
+		return ""
+	}
+	url := c.hostName + "/api/deployments/"
+	return url
+}
+
+func (c *ZipDeployClient) getLatestDeploymentUrl() string {
+	if c.getDeploymentStatusSyntax() == "" {
+		return ""
+	}
+	return c.getDeploymentStatusSyntax() + "latest"
+}
+
+func (c *ZipDeployClient) getDeploymentLog(deploymentId string) string {
+	if c.getDeploymentStatusSyntax() == "" {
+		return ""
+	}
+	log := c.getDeploymentStatusSyntax() + deploymentId + "/log"
+	return log
+}
+
+func (c *ZipDeployClient) getDeploymentUrl(deploymentId string) string {
+	if c.getDeploymentStatusSyntax() == "" {
+		return ""
+	}
+	url := c.getDeploymentStatusSyntax() + deploymentId
+	return url
+}
+
 // Begins a zip deployment and returns a poller to check for status
 func (c *ZipDeployClient) BeginDeploy(
 	ctx context.Context,
@@ -114,11 +156,33 @@ func (c *ZipDeployClient) BeginDeploy(
 }
 
 // Deploys the specified application zip to the azure app service and waits for completion
-func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader) (*DeployResponse, error) {
+func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader, subscriptionId string, resourceGroup string, appName string, buildProgress io.Writer) (*DeployResponse, error) {
+	buildProgress.Write([]byte("Test previewer\n"))
 	poller, err := c.BeginDeploy(ctx, zipFile)
 	if err != nil {
 		return nil, err
 	}
+
+	// go func to track progress
+	// cancelProgress := make(chan bool)
+	// defer func() { cancelProgress <- true }()
+	// go func() {
+	// 	initialDelay := 3 * time.Second
+	// 	regularDelay := 10 * time.Second
+	// 	timer := time.NewTimer(initialDelay)
+	// 	for {
+	// 		select {
+	// 		case <-cancelProgress:
+	// 			timer.Stop()
+	// 			return
+	// 		case <-timer.C:
+	// 			// client fetch progress from web app
+	// 			fmt.Println(deployResult)
+	// 			timer.Reset(regularDelay)
+	// 		}
+	// 	}
+
+	// }()
 
 	response, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
 		Frequency: deployStatusInterval,
@@ -127,7 +191,165 @@ func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader) (*Deplo
 		return nil, err
 	}
 
+	buildProgress.Write([]byte("Polling Until Done\n"))
+	// Deployment API currently only supports Linux Web Apps
+	if buildProgress != nil {
+		deployResult, err := poller.Result(ctx)
+		if err != nil {
+			return nil, err
+		}
+		latestDeploymentUrl := c.getLatestDeploymentUrl()
+		buildProgress.Write([]byte("latestDeploymentUrl\n"))
+		if latestDeploymentUrl != "" {
+			buildProgress.Write([]byte("Before loop\n"))
+			deploymentMessage, err := c.checkRunTimeStatus(ctx, subscriptionId, resourceGroup, appName, deployResult.DeployStatus.Id, latestDeploymentUrl)
+			if err != nil {
+				return nil, err
+			}
+			if deploymentMessage != "" {
+				buildProgress.Write([]byte(deploymentMessage))
+			}
+
+			return nil, err
+		}
+	}
+
+	// progress
+	// loop until success message
+	// client := webClientStatus()
+	// for {
+	//   client fetch progress from web-app
+	//   if success, break
+	// }
 	return response, nil
+}
+
+func (c *ZipDeployClient) checkRunTimeStatus(ctx context.Context, subscriptionId, resourceGroup, appName, deploymentId, latestDeploymentUrl string) (string, error) {
+	startTime := time.Now()
+	elapsedTime := 0 * time.Second
+	maxTime := 1000 * time.Second
+	var status *armappservice.DeploymentBuildStatus
+	var properties *armappservice.CsmDeploymentStatusProperties
+
+	for elapsedTime < maxTime {
+		elapsedTime = time.Since(startTime)
+		res, err := getProductionSiteDeploymentStatus(ctx, subscriptionId, resourceGroup, appName, deploymentId)
+		if err != nil {
+			return "", err
+		}
+
+		properties = res.CsmDeploymentStatus.Properties
+		status = properties.Status
+		if status != nil {
+			// Do we want to change UI for this
+			switch *status {
+			case deploymentBuildStatusRuntimeStarting:
+				return fmt.Sprintf("In progress instances: %v, Successful instances: %v\n",
+					int(*properties.NumberOfInstancesInProgress),
+					int(*properties.NumberOfInstancesSuccessful)), nil
+			case deploymentBuildStatusRuntimeSuccessful:
+				return "Deployment success", nil
+			case deploymentBuildStatusRuntimeFailed:
+				errorString := ""
+				inProgressNumber := int(*properties.NumberOfInstancesInProgress)
+				successNumber := int(*properties.NumberOfInstancesSuccessful)
+				failNumber := int(*properties.NumberOfInstancesFailed)
+				totalNumber := inProgressNumber + successNumber + failNumber
+				errors := properties.Errors
+				errorExtendedCode := errors[0].ExtendedCode
+				errorMessage := errors[0].Message
+				failLog := properties.FailedInstancesLogs
+
+				if successNumber > 0 {
+					errorString += fmt.Sprintf("Site started with errors: %d/%d instances failed to start successfully\n",
+						failNumber, totalNumber)
+				} else if totalNumber > 0 {
+					errorString += fmt.Sprintf("Deployment failed. In progress instances: %d, Successful instances: %d, Failed Instances: %d\n",
+						inProgressNumber, successNumber, failNumber)
+				}
+
+				if len(errors) > 0 {
+					if errorMessage != nil {
+						errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
+					} else if errorExtendedCode != nil {
+						errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
+					}
+				}
+
+				if len(failLog) > 0 {
+					errorString += fmt.Sprintf("Please check the runtime logs for more info: %s\n", *failLog[0])
+				}
+				return "", fmt.Errorf(errorString)
+			case deploymentBuildStatusBuildFailed:
+				errorString := "Deployment failed because the build process failed\n"
+				errors := properties.Errors
+				errorExtendedCode := errors[0].ExtendedCode
+				errorMessage := errors[0].Message
+				failLog := properties.FailedInstancesLogs
+
+				if len(errors) > 0 {
+					if errorMessage != nil {
+						errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
+					} else if errorExtendedCode != nil {
+						errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
+					}
+				}
+				var deploymentLog string
+				if len(failLog) == 0 {
+					deploymentLog = latestDeploymentUrl
+				} else {
+					deploymentLog = *failLog[0]
+				}
+				errorString += fmt.Sprintf("Please check the build logs for more info: %s\n", deploymentLog)
+				return "", fmt.Errorf(errorString)
+			}
+		}
+	}
+	if elapsedTime >= maxTime && *status != deploymentBuildStatusRuntimeSuccessful {
+		if *status == deploymentBuildStatusBuildInProgress {
+			return "", fmt.Errorf("timeout reached while build was still in progress. Navigate to %s to check the build logs for your app", c.getDeploymentLog(deploymentId))
+		}
+		errorString := fmt.Sprintf("Timeout reached while tracking deployment status, however, the deployment"+
+			" operation is still on-going. Navigate to %s to check the deployment status of your app",
+			c.getDeploymentUrl(deploymentId))
+		inProgressNumber := int(*properties.NumberOfInstancesInProgress)
+		successNumber := int(*properties.NumberOfInstancesSuccessful)
+		failNumber := int(*properties.NumberOfInstancesFailed)
+		if inProgressNumber+successNumber+failNumber > 0 {
+			errorString += fmt.Sprintf("In progress instances: %d, Successful instances: %d, Failed Instances: %d\n",
+				inProgressNumber, successNumber, failNumber)
+
+		}
+		return fmt.Sprintf("%T", *status), nil
+	}
+	return fmt.Sprintf("%T", *status), nil
+}
+
+// Example definition: https://github.com/Azure/azure-rest-api-specs/tree/main/specification/web/resource-manager/Microsoft.Web/stable/2022-03-01/examples/GetSiteDeploymentStatus.json
+func getProductionSiteDeploymentStatus(ctx context.Context, subscriptionId, resourceGroup, appName, deploymentId string) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
+	var result armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse
+
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return result, fmt.Errorf("obtaining azure credential: %v", err)
+	}
+
+	client, err := armappservice.NewWebAppsClient(subscriptionId, cred, nil)
+	if err != nil {
+		return result, fmt.Errorf("creating web app client: %v", err)
+	}
+
+	poller, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, deploymentId, nil)
+	if err != nil {
+		return result, fmt.Errorf("getting deployment status: %v", err)
+	}
+
+	res, err := poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return result, err
+	}
+
+	return res, nil
 }
 
 // Creates the HTTP request for the zip deployment operation

@@ -259,7 +259,8 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	// empty main.bicep but with no parameters file.
 	file, err := os.Create(filepath.Join(infraPath, "main.bicep"))
 	require.NoError(t, err)
-	defer file.Close()
+	err = file.Close()
+	require.NoError(t, err)
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up", "--trace-log-file", traceFilePath)
 	require.Error(t, err)

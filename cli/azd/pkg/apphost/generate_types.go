@@ -149,7 +149,6 @@ type genBicepTemplateContext struct {
 type genContainerAppManifestTemplateContext struct {
 	Name            string
 	Ingress         *genContainerAppIngress
-	IngressBindings []string
 	Env             map[string]string
 	Secrets         map[string]string
 	KeyVaultSecrets map[string]string

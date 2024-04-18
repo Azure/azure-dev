@@ -339,6 +339,7 @@ type infraGenerator struct {
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
+	allServicesIngress           map[string]ingressDetails
 }
 
 func newInfraGenerator() *infraGenerator {
@@ -946,25 +947,68 @@ var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
 var jsonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
 
+type ingressDetails struct {
+	// aca ingress definition
+	ingress *genContainerAppIngress
+	// list of bindings from the service which are bind to the the ingress
+	ingressBindings []string
+}
+
+func (b *infraGenerator) compileIngress() error {
+	result := make(map[string]ingressDetails)
+	for name, container := range b.containers {
+		ingress, bindingsFromIngress, err := buildAcaIngress(container.Bindings, 80)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
+	for name, docker := range b.dockerfiles {
+		ingress, bindingsFromIngress, err := buildAcaIngress(docker.Bindings, 80)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
+	for name, project := range b.projects {
+		ingress, bindingsFromIngress, err := buildAcaIngress(project.Bindings, 8080)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
+	b.allServicesIngress = result
+	return nil
+}
+
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required
 // infrastructure.
 func (b *infraGenerator) Compile() error {
+	// compile the ingress for all services
+	// All services's ingress must be compiled before resolving the environment variables below.
+	if err := b.compileIngress(); err != nil {
+		return err
+	}
+
 	for name, container := range b.containers {
 		cs := genContainerApp{
 			Image:   container.Image,
 			Env:     make(map[string]string),
 			Secrets: make(map[string]string),
 			Volumes: container.Volumes,
+			Ingress: b.allServicesIngress[name].ingress,
 		}
 
-		ingress, bindingsFromIngress, err := buildAcaIngress(container.Bindings, 80)
-		if err != nil {
-			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
-		}
-
-		cs.Ingress = ingress
-		cs.IngressBindings = bindingsFromIngress
 		parameters := maps.Keys(b.bicepContext.InputParameters)
 		for i, parameter := range parameters {
 			parameters[i] = strings.ReplaceAll(parameter, "-", "_")
@@ -1009,15 +1053,8 @@ func (b *infraGenerator) Compile() error {
 			Env:             make(map[string]string),
 			Secrets:         make(map[string]string),
 			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
 		}
-
-		ingress, bindingsFromIngress, err := buildAcaIngress(docker.Bindings, 80)
-		if err != nil {
-			return fmt.Errorf("configuring ingress for resource %s: %w", resourceName, err)
-		}
-
-		projectTemplateCtx.Ingress = ingress
-		projectTemplateCtx.IngressBindings = bindingsFromIngress
 
 		if err := b.buildEnvBlock(docker.Env, &projectTemplateCtx); err != nil {
 			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
@@ -1032,14 +1069,8 @@ func (b *infraGenerator) Compile() error {
 			Env:             make(map[string]string),
 			Secrets:         make(map[string]string),
 			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
 		}
-
-		i, bindingsFromIngress, err := buildAcaIngress(project.Bindings, 8080)
-		if err != nil {
-			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
-		}
-		projectTemplateCtx.Ingress = i
-		projectTemplateCtx.IngressBindings = bindingsFromIngress
 
 		for _, dapr := range b.dapr {
 			if dapr.Application == resourceName {
@@ -1201,16 +1232,17 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 
 		var binding *Binding
 		var has bool
+		bindingName := parts[0]
 
 		if targetType == "project.v0" {
 			bindings := b.projects[resource].Bindings
-			binding, has = bindings.Get(parts[0])
+			binding, has = bindings.Get(bindingName)
 		} else if targetType == "container.v0" {
 			bindings := b.containers[resource].Bindings
-			binding, has = bindings.Get(parts[0])
+			binding, has = bindings.Get(bindingName)
 		} else if targetType == "dockerfile.v0" {
 			bindings := b.dockerfiles[resource].Bindings
-			binding, has = bindings.Get(parts[0])
+			binding, has = bindings.Get(bindingName)
 		}
 
 		if !has {
@@ -1237,10 +1269,23 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		case "url":
 			var urlFormatString string
 
-			if binding.External {
-				urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
+			bindingDetails, exists := b.allServicesIngress[resource]
+			if !exists {
+				return "", fmt.Errorf("binding reference to resource %s without ingress", resource)
+			}
+			var bindingMappedToIngress bool
+			if slices.Contains(bindingDetails.ingressBindings, bindingName) {
+				bindingMappedToIngress = true
+			}
+
+			if bindingMappedToIngress {
+				if binding.External {
+					urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
+				} else {
+					urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
+				}
 			} else {
-				urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
+				urlFormatString = "%s://%s%s"
 			}
 			var port string
 			if binding.TargetPort != nil {

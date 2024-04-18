@@ -69,6 +69,11 @@
                     "host"
                 ],
                 "properties": {
+                    "resourceGroup": {
+                        "type": "string",
+                        "title": "Name of the Azure resource group that contains the resource",
+                        "description": "By default, the CLI will discover the Azure resource within texpandable_string_testhe default resource group. When specified, the CLI will instead find the Azure resource within the matching resource group. Supports environment variable substitution."
+                    },
                     "resourceName": {
                         "type": "string",
                         "title": "Name of the Azure resource that implements the service",

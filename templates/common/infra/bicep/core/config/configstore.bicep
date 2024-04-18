@@ -45,4 +45,5 @@ module configStoreAccess '../security/configstore-access.bicep' = {
   dependsOn: [configStore]
 }
 
+output name string = configStore.name
 output endpoint string = configStore.properties.endpoint

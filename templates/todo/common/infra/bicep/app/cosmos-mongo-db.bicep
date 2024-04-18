@@ -36,5 +36,6 @@ module cosmos '../../../../../common/infra/bicep/core/database/cosmos/mongo/cosm
 }
 
 output connectionStringKey string = cosmos.outputs.connectionStringKey
+output accountName string = accountName
 output databaseName string = cosmos.outputs.databaseName
 output endpoint string = cosmos.outputs.endpoint

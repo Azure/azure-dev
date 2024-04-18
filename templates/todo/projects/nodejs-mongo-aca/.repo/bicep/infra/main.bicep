@@ -14,6 +14,7 @@ param location string
 //      "value": "myGroupName"
 // }
 param apiContainerAppName string = ''
+param appConfigName string = ''
 param applicationInsightsDashboardName string = ''
 param applicationInsightsName string = ''
 param containerAppsEnvironmentName string = ''
@@ -46,8 +47,8 @@ param webApiBaseUrl string = ''
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var apiContainerAppNameOrDefault = '${abbrs.appContainerApps}web-${resourceToken}'
-var corsAcaUrl = 'https://${apiContainerAppNameOrDefault}.${containerApps.outputs.defaultDomain}'
+var webContainerAppNameOrDefault = '${abbrs.appContainerApps}web-${resourceToken}'
+var corsAcaUrl = 'https://${webContainerAppNameOrDefault}.${containerApps.outputs.defaultDomain}'
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -94,16 +95,27 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
   }
 }
 
+// Managed identity for Api backend
+module apiIdentity '../../../../../../common/infra/bicep/core/security/user-assigned-managed-identity.bicep' = {
+  scope: rg
+  name: 'apiIdentity'
+  params: {
+  identityName: '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
+  location: location
+  tags: tags
+  }
+}
+
 // Api backend
-module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
+module api '../../../../../common/infra/bicep/app/api-container-app-binding.bicep' = {
   name: 'api'
   scope: rg
   params: {
     name: !empty(apiContainerAppName) ? apiContainerAppName : '${abbrs.appContainerApps}api-${resourceToken}'
     location: location
     tags: tags
-    identityName: '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    identityName: apiIdentity.outputs.identityName
+    appConfigName: appConfig.outputs.name
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
     containerRegistryHostSuffix: containerRegistryHostSuffix
@@ -135,6 +147,18 @@ module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bic
     location: location
     tags: tags
     principalId: principalId
+  }
+}
+
+// App Configuration for service bindings
+module appConfig '../../../../../../common/infra/bicep/core/config/configstore.bicep' = {
+  name: 'appConfig'
+  scope: rg
+  params: {
+    name: !empty(appConfigName) ? appConfigName :'${abbrs.appConfigurationStores}${resourceToken}'
+    location: location
+    tags: tags
+    principalId: apiIdentity.outputs.principalId
   }
 }
 
@@ -196,7 +220,13 @@ output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output API_BASE_URL string = useAPIM ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
 output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
-output SERVICE_API_NAME string = api.outputs.SERVICE_API_NAME
-output SERVICE_WEB_NAME string = web.outputs.SERVICE_WEB_NAME
 output USE_APIM bool = useAPIM
 output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.SERVICE_API_URI, api.outputs.SERVICE_API_URI ]: []
+
+// Bindings
+output SERVICE_API_NAME string = api.outputs.SERVICE_API_NAME
+output SERVICE_WEB_NAME string = web.outputs.SERVICE_WEB_NAME
+output BINDING_APPCONFIG_NAME string = appConfig.outputs.name
+output BINDING_KEYVAULT_NAME string = keyVault.outputs.name
+output BINDING_RESOURCE_COSMOSACCOUNT string = cosmos.outputs.accountName
+output BINDING_RESOURCE_APPINSIGHT string = monitoring.outputs.applicationInsightsName

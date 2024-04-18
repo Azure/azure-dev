@@ -72,7 +72,7 @@ repo:
         patterns:
           - "**/main.bicep"
 
-      - from: api-container-app.bicep
+      - from: api-container-app-binding.bicep
         to: api.bicep
         patterns:
           - "**/main.bicep"
@@ -100,7 +100,7 @@ repo:
     - from: ../../../../common/infra/bicep/app/web-container-app.bicep
       to: ./infra/app/web.bicep
 
-    - from: ../../../../common/infra/bicep/app/api-container-app.bicep
+    - from: ../../../../common/infra/bicep/app/api-container-app-binding.bicep
       to: ./infra/app/api.bicep
 
     - from: ../../../../common/infra/bicep/app/apim-api.bicep

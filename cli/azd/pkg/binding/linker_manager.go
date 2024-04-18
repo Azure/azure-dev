@@ -185,7 +185,8 @@ func constructLinkerResource(
 	if len(linkerConfig.CustomKeys) > 0 {
 		customKeysPtr := make(map[string]*string)
 		for key, value := range linkerConfig.CustomKeys {
-			customKeysPtr[key] = &value
+			valueCopy := value
+			customKeysPtr[key] = &valueCopy
 		}
 		linkerResource.Properties.ConfigurationInfo.CustomizedKeys = customKeysPtr
 	}

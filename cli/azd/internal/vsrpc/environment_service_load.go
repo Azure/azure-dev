@@ -21,9 +21,9 @@ import (
 // already cached) and is faster than `LoadEnvironmentAsync` in cases where we have not cached the manifest. This means
 // the Services array of the returned environment may be empty.
 func (s *environmentService) OpenEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -43,9 +43,9 @@ func (s *environmentService) OpenEnvironmentAsync(
 // the environment (like service endpoints) may not be available. Use `RefreshEnvironmentAsync` to load the environment and
 // fetch information from Azure.
 func (s *environmentService) LoadEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}

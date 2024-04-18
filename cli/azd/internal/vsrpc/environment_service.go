@@ -30,9 +30,9 @@ func newEnvironmentService(server *Server) *environmentService {
 // GetEnvironmentsAsync is the server implementation of:
 // ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(Session, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) GetEnvironmentsAsync(
-	ctx context.Context, sessionId Session, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, observer IObserver[ProgressMessage],
 ) ([]*EnvironmentInfo, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -69,9 +69,9 @@ func (s *environmentService) GetEnvironmentsAsync(
 // SetCurrentEnvironmentAsync is the server implementation of:
 // ValueTask<bool> SetCurrentEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) SetCurrentEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return false, err
 	}
@@ -105,9 +105,9 @@ const (
 // DeleteEnvironmentAsync is the server implementation of:
 // ValueTask<bool> DeleteEnvironmentAsync(Session, string, IObserver<ProgressMessage>, int, CancellationToken);
 func (s *environmentService) DeleteEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, mode int, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, mode int, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return false, err
 	}

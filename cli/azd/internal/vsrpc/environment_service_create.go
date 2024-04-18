@@ -18,9 +18,9 @@ import (
 // CreateEnvironmentAsync is the server implementation of:
 // ValueTask<bool> CreateEnvironmentAsync(Session, Environment, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) CreateEnvironmentAsync(
-	ctx context.Context, sessionId Session, newEnv Environment, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, newEnv Environment, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return false, err
 	}

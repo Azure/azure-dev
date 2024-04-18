@@ -26,9 +26,9 @@ import (
 // to accept some loss of information in favor of a faster load time, use `LoadEnvironmentAsync` instead, which does not
 // contact azure to compute service endpoints or last deployment information.
 func (s *environmentService) RefreshEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}

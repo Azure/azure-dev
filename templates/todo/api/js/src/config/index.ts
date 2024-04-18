@@ -100,7 +100,7 @@ const populateEnvironmentFromAppConfig = async () => {
 
         const settings = await load(endpoint, credential, {
             keyVaultOptions: {
-                // Access keyvault using the same idenity, make sure the permission is set correctly.
+                // Access keyvault using the same identity, make sure the permission is set correctly.
                 credential: credential
             }
         });

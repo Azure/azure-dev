@@ -1,3 +1,4 @@
+APPCONFIGURATION
 APPLICATIONINSIGHTS
 appservice
 asgi
@@ -14,6 +15,7 @@ codepaths
 Codespaces
 configfile
 configurer
+CONNECTIONSTRING
 containerapp
 CUSTOMHANDLER
 databind

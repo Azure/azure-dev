@@ -208,6 +208,14 @@
                                     "type": "string",
                                     "title": "Keyvault name to store the sensitive binding configs",
                                     "description": "Optional. The keyvault resource logical name. The CLI will use this name to find the keyvault resource info in the .env file"
+                                },
+                                "customKeys": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "string"
+                                    },
+                                    "title": "Customization keys for the binding",
+                                    "description": "Optional. A map where the keys are the original keys and the values are the customized keys."
                                 }
                             }
                         }

@@ -242,6 +242,7 @@ func convertBindingsToLinkers(
 			DBUserName:  userName,
 			DBSecret:    secret,
 			ClientType:  bindingSource.ClientType,
+			CustomKeys:  bindingConfig.CustomKeys,
 		})
 	}
 

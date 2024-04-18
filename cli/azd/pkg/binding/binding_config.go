@@ -11,6 +11,7 @@ type BindingConfig struct {
 	TargetResource string             `yaml:"targetResource"`
 	AppConfig      string             `yaml:"appconfig"`
 	KeyVault       string             `yaml:"keyvault"`
+	CustomKeys     map[string]string  `yaml:"customKeys"`
 }
 
 // Describe a binding source service

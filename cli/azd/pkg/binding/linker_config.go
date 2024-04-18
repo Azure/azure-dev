@@ -17,6 +17,7 @@ type LinkerConfig struct {
 	DBUserName  string
 	DBSecret    string
 	ClientType  armservicelinker.ClientType
+	CustomKeys  map[string]string
 }
 
 // Resource id formats supported by service linker as source resource

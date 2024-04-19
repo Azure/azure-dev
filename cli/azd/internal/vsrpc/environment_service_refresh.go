@@ -20,7 +20,7 @@ import (
 )
 
 // RefreshEnvironmentAsync is the server implementation of:
-// ValueTask<Environment> RefreshEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<Environment> RefreshEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken);
 //
 // RefreshEnvironmentAsync loads the specified environment, and fetches information about it from Azure. If you are willing
 // to accept some loss of information in favor of a faster load time, use `LoadEnvironmentAsync` instead, which does not

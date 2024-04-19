@@ -13,7 +13,7 @@ import (
 )
 
 // DeployAsync is the server implementation of:
-// ValueTask<Environment> DeployAsync(Session, string, IObserver<ProgressMessage>, CancellationToken)
+// ValueTask<Environment> DeployAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken)
 //
 // While it is named simply `DeployAsync`, it behaves as if the user had run `azd provision` and `azd deploy`.
 func (s *environmentService) DeployAsync(

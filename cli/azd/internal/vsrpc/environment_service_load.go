@@ -15,7 +15,7 @@ import (
 )
 
 // OpenEnvironmentAsync is the server implementation of:
-// ValueTask<Environment> OpenEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<Environment> OpenEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken);
 //
 // OpenEnvironmentAsync loads the specified environment, without connecting to Azure or fetching a manifest (unless it is
 // already cached) and is faster than `LoadEnvironmentAsync` in cases where we have not cached the manifest. This means
@@ -37,7 +37,7 @@ func (s *environmentService) OpenEnvironmentAsync(
 }
 
 // LoadEnvironmentAsync is the server implementation of:
-// ValueTask<Environment> LoadEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<Environment> LoadEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken);
 //
 // LoadEnvironmentAsync loads the specified environment, without connecting to Azure. Because of this, certain properties of
 // the environment (like service endpoints) may not be available. Use `RefreshEnvironmentAsync` to load the environment and

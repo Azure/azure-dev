@@ -73,8 +73,8 @@ func (s *debugService) TestPanicAsync(ctx context.Context, message string) error
 // ValueTask<AccessToken> FetchTokenAsync(Session, CancellationToken);
 //
 // It fetches an access token for the current user and returns it.
-func (s *debugService) FetchTokenAsync(ctx context.Context, rc RequestContext) (azcore.AccessToken, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+func (s *debugService) FetchTokenAsync(ctx context.Context, sessionId Session) (azcore.AccessToken, error) {
+	session, err := s.server.validateSession(ctx, sessionId)
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}

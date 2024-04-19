@@ -28,7 +28,7 @@ func newEnvironmentService(server *Server) *environmentService {
 }
 
 // GetEnvironmentsAsync is the server implementation of:
-// ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(Session, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(RequestContext, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) GetEnvironmentsAsync(
 	ctx context.Context, rc RequestContext, observer IObserver[ProgressMessage],
 ) ([]*EnvironmentInfo, error) {
@@ -67,7 +67,7 @@ func (s *environmentService) GetEnvironmentsAsync(
 }
 
 // SetCurrentEnvironmentAsync is the server implementation of:
-// ValueTask<bool> SetCurrentEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<bool> SetCurrentEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) SetCurrentEnvironmentAsync(
 	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (bool, error) {
@@ -103,7 +103,7 @@ const (
 )
 
 // DeleteEnvironmentAsync is the server implementation of:
-// ValueTask<bool> DeleteEnvironmentAsync(Session, string, IObserver<ProgressMessage>, int, CancellationToken);
+// ValueTask<bool> DeleteEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, int, CancellationToken);
 func (s *environmentService) DeleteEnvironmentAsync(
 	ctx context.Context, rc RequestContext, name string, mode int, observer IObserver[ProgressMessage],
 ) (bool, error) {

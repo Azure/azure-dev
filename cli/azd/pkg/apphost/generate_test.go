@@ -182,7 +182,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	for _, name := range []string{"nodeapp"} {
+	for _, name := range []string{"nodeapp", "api"} {
 		t.Run(name, func(t *testing.T) {
 			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
 			require.NoError(t, err)

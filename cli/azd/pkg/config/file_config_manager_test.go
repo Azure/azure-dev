@@ -51,6 +51,9 @@ func Test_Secrets_GetSet(t *testing.T) {
 	err := azdConfig.SetSecret("secrets.password", expectedPassword)
 	require.NoError(t, err)
 
+	err = azdConfig.SetSecret("infra.provisioning.sqlPassword", expectedPassword)
+	require.NoError(t, err)
+
 	err = configManager.Save(azdConfig, configFilePath)
 	require.NoError(t, err)
 
@@ -58,7 +61,11 @@ func Test_Secrets_GetSet(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, updatedConfig)
 
-	value, ok := updatedConfig.GetSecret("secrets.password")
+	userPassword, ok := updatedConfig.GetSecret("secrets.password")
 	require.True(t, ok)
-	require.Equal(t, expectedPassword, value)
+	require.Equal(t, expectedPassword, userPassword)
+
+	sqlPassword, ok := updatedConfig.GetSecret("infra.provisioning.sqlPassword")
+	require.True(t, ok)
+	require.Equal(t, expectedPassword, sqlPassword)
 }

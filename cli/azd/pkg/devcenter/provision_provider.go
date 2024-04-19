@@ -207,7 +207,7 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 
 	go p.pollForEnvironment(pollingContext, envName)
 
-	_, _ = poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
 		p.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, fmt.Errorf("failed creating environment: %w", err)

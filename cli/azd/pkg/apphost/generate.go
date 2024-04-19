@@ -110,7 +110,7 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
 func ContainerAppManifestTemplateForProject(
-	manifest *Manifest, projectName string) (string, error) {
+	manifest *Manifest, projectName string, autoConfigureDataProtection bool) (string, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -123,7 +123,10 @@ func ContainerAppManifestTemplateForProject(
 
 	var buf bytes.Buffer
 
-	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", generator.containerAppTemplateContexts[projectName])
+	tmplCtx := generator.containerAppTemplateContexts[projectName]
+	tmplCtx.AutoConfigureDataProtection = autoConfigureDataProtection
+
+	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {
 		return "", fmt.Errorf("executing template: %w", err)
 	}

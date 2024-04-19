@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -27,10 +28,11 @@ type hostCheckResult struct {
 
 // DotNetImporter is an importer that is able to import projects and infrastructure from a manifest produced by a .NET App.
 type DotNetImporter struct {
-	dotnetCli      dotnet.DotNetCli
-	console        input.Console
-	lazyEnv        *lazy.Lazy[*environment.Environment]
-	lazyEnvManager *lazy.Lazy[environment.Manager]
+	dotnetCli           dotnet.DotNetCli
+	console             input.Console
+	lazyEnv             *lazy.Lazy[*environment.Environment]
+	lazyEnvManager      *lazy.Lazy[environment.Manager]
+	alphaFeatureManager *alpha.FeatureManager
 
 	// TODO(ellismg): This cache exists because we end up needing the same manifest multiple times for a single logical
 	// operation and it is expensive to generate. We should consider if this is the correct location for the cache or if
@@ -55,14 +57,16 @@ func NewDotNetImporter(
 	console input.Console,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
+	alphaFeatureManager *alpha.FeatureManager,
 ) *DotNetImporter {
 	return &DotNetImporter{
-		dotnetCli:      dotnetCli,
-		console:        console,
-		lazyEnv:        lazyEnv,
-		lazyEnvManager: lazyEnvManager,
-		cache:          make(map[manifestCacheKey]*apphost.Manifest),
-		hostCheck:      make(map[string]hostCheckResult),
+		dotnetCli:           dotnetCli,
+		console:             console,
+		lazyEnv:             lazyEnv,
+		lazyEnvManager:      lazyEnvManager,
+		alphaFeatureManager: alphaFeatureManager,
+		cache:               make(map[manifestCacheKey]*apphost.Manifest),
+		hostCheck:           make(map[string]hostCheckResult),
 	}
 }
 
@@ -243,6 +247,8 @@ func (ai *DotNetImporter) Services(
 	return services, nil
 }
 
+var autoConfigureDataProtectionFeature = alpha.MustFeatureKey("aspire.autoConfigureDataProtection")
+
 func (ai *DotNetImporter) SynthAllInfrastructure(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
@@ -291,11 +297,14 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return nil, err
 	}
 
+	autoConfigureDataProtection := ai.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature)
+
 	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
 	writeManifestForResource := func(name string, path string) error {
-		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(manifest, name)
+		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
+			manifest, name, autoConfigureDataProtection)
 		if err != nil {
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}

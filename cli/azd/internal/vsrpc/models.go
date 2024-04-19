@@ -68,6 +68,9 @@ type InitializeServerOptions struct {
 	// expected by the AZD_AUTH_KEY environment variable. Note that both AuthenticationEndpoint and AuthenticationKey
 	// need to be set for external authentication to be used.
 	AuthenticationKey *string `json:",omitempty"`
+	// When non nil, AuthenticationCertificate is a base64-encoded x509 certificate used to trust and
+	// secure the communications to the server. It is in the same form as the AZD_AUTH_CERT environment variable.
+	AuthenticationCertificate *string `json:",omitempty"`
 }
 
 func newInfoProgressMessage(message string) ProgressMessage {

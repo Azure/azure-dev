@@ -93,6 +93,7 @@ type Manager struct {
 type ExternalAuthConfiguration struct {
 	Endpoint string
 	Key      string
+	Client   httputil.HttpClient
 }
 
 func NewManager(
@@ -199,7 +200,11 @@ func (m *Manager) CredentialForCurrentUser(
 
 	if m.UseExternalAuth() {
 		log.Printf("delegating auth to external process")
-		return newRemoteCredential(m.externalAuthCfg.Endpoint, m.externalAuthCfg.Key, options.TenantID, m.httpClient), nil
+		return newRemoteCredential(
+			m.externalAuthCfg.Endpoint,
+			m.externalAuthCfg.Key,
+			options.TenantID,
+			m.externalAuthCfg.Client), nil
 	}
 
 	userConfig, err := m.userConfigManager.Load()

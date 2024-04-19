@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/blang/semver/v4"
 )
 
@@ -205,20 +206,33 @@ func (cli *dotNetCli) PublishContainer(
 		return 0, fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
 	}
 
-	port, err := cli.getTargetPort(result.Stdout)
+	port, err := cli.getTargetPort(result.Stdout, project)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get dotnet target port: %w", err)
+		return 0, fmt.Errorf("failed to get dotnet target port: %w with dotnet publish output '%s'", err, result.Stdout)
 	}
 
 	return port, nil
 }
 
-func (cli *dotNetCli) getTargetPort(result string) (int, error) {
+func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 	var targetPorts []targetPort
 	var configOutput responseContainerConfiguration
 
+	// make sure result only contains json config output
+	result = strings.Split(result, "\n\r\n\r")[0]
+
+	// if empty string or there's no config output
+	if result == "" || !strings.Contains(result, "{\"config\":") {
+		return 0, &azcli.ErrorWithSuggestion{
+			Err: fmt.Errorf("empty dotnet configuration output"),
+			Suggestion: fmt.Sprintf("Ensure project '%s' is enabled for container support and try again. To enable SDK "+
+				"container support, set the 'EnableSdkContainerSupport' property to true in your project file",
+				project,
+			),
+		}
+	}
 	if err := json.Unmarshal([]byte(result), &configOutput); err != nil {
-		return 0, fmt.Errorf("unmarshal dotnet configuration output '%s' failed: %w", result, err)
+		return 0, fmt.Errorf("unmarshal dotnet configuration output: %w", err)
 	}
 	var exposedPortOutput []string
 	for key := range configOutput.Config.ExposedPorts {
@@ -236,16 +250,13 @@ func (cli *dotNetCli) getTargetPort(result string) (int, error) {
 		}
 	}
 
-	// TODO Handle Target Port for multiple ports - return error says it is not supported
-	// return port[0].port, nil
 	if len(exposedPortOutput) < 1 {
-		return 0, fmt.Errorf(
-			"multiple dotnet port %s detected", targetPorts)
+		return 0, fmt.Errorf("multiple dotnet port %s detected", targetPorts)
 	}
 
 	port, err := strconv.Atoi(targetPorts[0].port)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert port %s to integer: %w", targetPorts[0].port, err)
+		return 0, fmt.Errorf("convert port %s to integer: %w", targetPorts[0].port, err)
 	}
 	return port, nil
 }

@@ -62,12 +62,6 @@ func (c *manager) Save(config Config, writer io.Writer) error {
 		configSecrets[path] = value
 	}
 
-	userSecretsManager := newUserSecretsManager(NewFileConfigManager(c))
-	userVault, err := userSecretsManager.Load()
-	if err != nil {
-		return fmt.Errorf("failed loading user vault: %w", err)
-	}
-
 	vaultIdNode, vaultExists := config.Get(vaultIdKey)
 	var vaultId string
 	if vaultExists {
@@ -77,12 +71,14 @@ func (c *manager) Save(config Config, writer io.Writer) error {
 		}
 		vaultId = vaultIdCast
 	} else {
-		vaultUuid, err := uuid.NewRandom()
-		if err != nil {
-			return fmt.Errorf("failed generating vault id: %w", err)
-		}
-		vaultId = vaultUuid.String()
+		vaultId = uuid.New().String()
 	}
+	userSecretsManager := newEnvVaultManager(vaultId, NewFileConfigManager(c))
+	userVault, err := userSecretsManager.Load()
+	if err != nil {
+		return fmt.Errorf("failed loading user vault: %w", err)
+	}
+
 	// Set in memory only, no need to persist this as we will persist it with withNoSecretsConfig
 	if err := config.Set(vaultIdKey, vaultId); err != nil {
 		return fmt.Errorf("failed setting vault id in config: %w", err)
@@ -91,8 +87,10 @@ func (c *manager) Save(config Config, writer io.Writer) error {
 		return fmt.Errorf("failed setting vault id in config: %w", err)
 	}
 
-	if err := userVault.Set(vaultId, configSecrets); err != nil {
-		return fmt.Errorf("failed setting secrets in vault: %w", err)
+	for key, value := range configSecrets {
+		if err := userVault.Set(key, value); err != nil {
+			return fmt.Errorf("failed setting secret in vault: %w", err)
+		}
 	}
 	if err := userSecretsManager.Save(userVault); err != nil {
 		return fmt.Errorf("failed saving user vault: %w", err)
@@ -133,23 +131,21 @@ func (c *manager) Load(reader io.Reader) (Config, error) {
 		return config, nil
 	}
 
-	userSecretsManager := newUserSecretsManager(NewFileConfigManager(c))
-	userSecretsConfig, err := userSecretsManager.Load()
+	envVaultManager := newEnvVaultManager(vaultId, NewFileConfigManager(c))
+	envVault, err := envVaultManager.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed loading user config: %w", err)
+		return nil, fmt.Errorf("failed loading env vault: %w", err)
 	}
-	var vault map[string]any
-	hasVault, err := userSecretsConfig.GetSection(vaultId, &vault)
+	var infraParams map[string]any
+	hasInfraParams, err := envVault.GetSection(infraParametersKey, &infraParams)
 	if err != nil {
-		return nil, fmt.Errorf("failed getting vault: %w", err)
+		return nil, fmt.Errorf("failed getting infra parameters: %w", err)
 	}
-	if !hasVault {
-		return nil, fmt.Errorf("vault not found")
-	}
-
-	for key, value := range vault {
-		if err := config.SetSecret(key, value); err != nil {
-			return nil, fmt.Errorf("failed setting secret value: %w", err)
+	if hasInfraParams {
+		for key, value := range infraParams {
+			if err := config.SetSecret(fmt.Sprintf("%s.%s", infraParametersKey, key), value); err != nil {
+				return nil, fmt.Errorf("failed setting secret value: %w", err)
+			}
 		}
 	}
 

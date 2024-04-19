@@ -8,41 +8,43 @@ import (
 	"path/filepath"
 )
 
-type userSecretsManager struct {
+type envVaultManager struct {
+	vaultId string
 	manager FileConfigManager
 }
 
-func newUserSecretsManager(configManager FileConfigManager) UserConfigManager {
-	return &userSecretsManager{
+func newEnvVaultManager(vaultId string, configManager FileConfigManager) UserConfigManager {
+	return &envVaultManager{
 		manager: configManager,
+		vaultId: vaultId,
 	}
 }
 
-func (m *userSecretsManager) Load() (Config, error) {
+func (m *envVaultManager) Load() (Config, error) {
 	var userVault Config
 
-	secretsFilePath, err := getUserSecretsFilePath()
+	vaultsFilePath, err := getUserSecretsFilePath(m.vaultId)
 	if err != nil {
 		return nil, err
 	}
 
-	userVault, err = m.manager.Load(secretsFilePath)
+	userVault, err = m.manager.Load(vaultsFilePath)
 	if err != nil {
 		// Ignore missing file errors
 		// File will automatically be created on first `set` operation
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("creating empty vault since '%s' did not exist.", secretsFilePath)
+			log.Printf("creating empty vault since '%s' did not exist.", vaultsFilePath)
 			return NewConfig(nil), nil
 		}
 
-		return nil, fmt.Errorf("failed loading user vault from '%s'. %w", secretsFilePath, err)
+		return nil, fmt.Errorf("failed loading user vault from '%s'. %w", vaultsFilePath, err)
 	}
 
 	return userVault, nil
 }
 
-func (m *userSecretsManager) Save(c Config) error {
-	userSecretsFilePath, err := getUserSecretsFilePath()
+func (m *envVaultManager) Save(c Config) error {
+	userSecretsFilePath, err := getUserSecretsFilePath(m.vaultId)
 	if err != nil {
 		return fmt.Errorf("failed getting user vault file path. %w", err)
 	}
@@ -55,11 +57,11 @@ func (m *userSecretsManager) Save(c Config) error {
 	return nil
 }
 
-func getUserSecretsFilePath() (string, error) {
+func getUserSecretsFilePath(vaultId string) (string, error) {
 	configPath, err := GetUserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("failed getting user vault file path '%s'. %w", configPath, err)
 	}
 
-	return filepath.Join(configPath, ".secrets", "vault.json"), nil
+	return filepath.Join(configPath, ".envVaults", vaultId+".json"), nil
 }

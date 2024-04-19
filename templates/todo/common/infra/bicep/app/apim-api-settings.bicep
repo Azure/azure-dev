@@ -1,3 +1,4 @@
+@description('Resource name for the existing apim service')
 param name string
 
 @description('Resource name to uniquely identify this API within the API Management service instance')
@@ -7,6 +8,8 @@ param apiName string
 @description('Relative URL uniquely identifying this API and all of its resource paths within the API Management service instance. It is appended to the API endpoint base URL specified during the service instance creation to form a public URL for this API.')
 @minLength(1)
 param apiPath string
+
+@description('Resource name for the existing applicationInsights service')
 param applicationInsightsName string
 
 @description('Resource name for backend Web App or Function App')

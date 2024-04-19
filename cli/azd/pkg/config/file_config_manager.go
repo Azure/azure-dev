@@ -42,6 +42,28 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 		return nil, err
 	}
 
+	vaultId, ok := azdConfig.GetString("vault")
+	if ok {
+		configPath, err := GetUserConfigDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed getting user config directory: %w", err)
+		}
+
+		vaultPath := filepath.Join(configPath, "vaults", fmt.Sprintf("%s.json", vaultId))
+		vaultConfig, err := m.Load(vaultPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed loading vault configuration from '%s': %w", vaultPath, err)
+		}
+
+		baseConfig, ok := azdConfig.(*config)
+		if !ok {
+			return nil, fmt.Errorf("failed casting azd configuration to config")
+		}
+
+		baseConfig.vaultId = vaultId
+		baseConfig.vault = vaultConfig
+	}
+
 	return azdConfig, nil
 }
 
@@ -60,6 +82,25 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 	err = m.manager.Save(c, file)
 	if err != nil {
 		return err
+	}
+
+	baseConfig, ok := c.(*config)
+	if !ok {
+		return fmt.Errorf("failed casting azd configuration to config")
+	}
+
+	if baseConfig.vaultId != "" {
+		configPath, err := GetUserConfigDir()
+		if err != nil {
+			return fmt.Errorf("failed getting user config directory: %w", err)
+		}
+
+		vaultPath := filepath.Join(configPath, "vaults", fmt.Sprintf("%s.json", baseConfig.vaultId))
+		if err = os.MkdirAll(filepath.Dir(vaultPath), osutil.PermissionDirectory); err != nil {
+			return fmt.Errorf("failed creating vaults directory: %w", err)
+		}
+
+		return m.Save(baseConfig.vault, vaultPath)
 	}
 
 	return nil

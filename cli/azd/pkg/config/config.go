@@ -7,9 +7,13 @@
 package config
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // Azd configuration for the current user
@@ -20,6 +24,8 @@ type Config interface {
 	GetString(path string) (string, bool)
 	GetSection(path string, section any) (bool, error)
 	Set(path string, value any) error
+	GetSecret(path string) (string, bool)
+	SetSecret(path string, value string) error
 	Unset(path string) error
 	IsEmpty() bool
 }
@@ -43,7 +49,9 @@ func NewConfig(data map[string]any) Config {
 
 // Top level AZD configuration
 type config struct {
-	data map[string]any
+	vaultId string
+	vault   Config
+	data    map[string]any
 }
 
 // Returns a value indicating whether the configuration is empty
@@ -54,6 +62,39 @@ func (c *config) IsEmpty() bool {
 // Gets the raw values stored in the configuration as a Go map
 func (c *config) Raw() map[string]any {
 	return c.data
+}
+
+func (c *config) SetSecret(path string, value string) error {
+	if c.vaultId == "" {
+		c.vault = NewConfig(nil)
+		c.vaultId = uuid.New().String()
+		c.Set("vault", c.vaultId)
+	}
+
+	pathId := uuid.New().String()
+	vaultRef := fmt.Sprintf("vault://%s/%s", c.vaultId, pathId)
+	c.vault.Set(pathId, base64.StdEncoding.EncodeToString([]byte(value)))
+
+	return c.Set(path, vaultRef)
+}
+
+func (c *config) GetSecret(path string) (string, bool) {
+	vaultRef, ok := c.GetString(path)
+	if !ok {
+		return "", false
+	}
+
+	encodedValue, ok := c.vault.GetString(filepath.Base(vaultRef))
+	if !ok {
+		return "", false
+	}
+
+	bytes, err := base64.StdEncoding.DecodeString(encodedValue)
+	if err != nil {
+		return "", false
+	}
+
+	return string(bytes), true
 }
 
 // Sets a value at the specified location

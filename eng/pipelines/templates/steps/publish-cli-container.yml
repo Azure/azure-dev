@@ -16,7 +16,7 @@ parameters:
     default: $(azdev-acr-host-test)
   - name: SyndicatedAcrHost
     type: string
-    default: not-valid
+    default:  $(azdev-acr-host-test)
     # TODO: Uncomment before merging
     # default: $(azdev-acr-syndicated-host)
 
@@ -42,8 +42,10 @@ steps:
       scriptLocation: inlineScript
       inlineScript: |
         az acr login --name ${{ parameters.AcrHost}}
-        # TODO: only if publishing to syndicated host
-        # az acr login --name ${{ parameters.SyndicatedAcrHost }}
+
+        if ($${{ parameters.ReleaseSyndicatedDockerContainer }}) {
+          az acr login --name ${{ parameters.SyndicatedAcrHost }}
+        }
 
   - pwsh: |
       New-Item -ItemType Directory -Path cli/bin
@@ -65,32 +67,20 @@ steps:
       foreach ($tag in $tags) {
         $items += "${{ parameters.AcrHost }}/azure-dev:$tag"
       }
+
+      if ($${{ parameters.ReleaseSyndicatedDockerContainer }}) {
+        foreach ($tag in $tags) {
+          $items += "${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
+        }
+      }
+
       $imageNames = $items -join ','
       Write-Host "Image Names: $imageNames"
       Write-Host "##vso[task.setvariable variable=ImageNames]$imageNames"
-
     displayName: Tag release container
-
-  # - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
-  #   - pwsh: |
-  #       $tags = "${{ parameters.DockerImageTags }}" -split ';'
-  #       foreach ($tag in $tags) {
-  #         Write-Host "docker tag release:latest ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
-  #         docker tag release:latest ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag
-  #       }
-  #     displayName: Tag release for syndication
-
-  # - pwsh: |
-  #     docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
-  #   displayName: Push container tags (latest)
 
   - task: 1ES.PushContainerImage@1
     displayName: Push container tags
     inputs:
       localImage: release:latest
       remoteImage: $(ImageNames)
-
-  # - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
-  #   - pwsh: |
-  #       docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
-  #     displayName: Push container tags (syndicated release)

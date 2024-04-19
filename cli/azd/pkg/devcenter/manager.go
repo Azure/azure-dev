@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -271,10 +272,10 @@ func (m *manager) LatestArmDeployment(
 		tagEnvName, envOk := d.Tags[DeploymentTagEnvironmentName]
 
 		// ARM runner deployments contain the deployment tags for the specific environment
-		isArmDeployment := devCenterOk && *tagDevCenterName == m.config.Name &&
-			projectOk && *tagProjectName == m.config.Project &&
-			envTypeOk && *tagEnvTypeName == m.config.EnvironmentType &&
-			envOk && *tagEnvName == env.Name
+		isArmDeployment := devCenterOk && strings.EqualFold(*tagDevCenterName, m.config.Name) &&
+			projectOk && strings.EqualFold(*tagProjectName, m.config.Project) &&
+			envTypeOk && strings.EqualFold(*tagEnvTypeName, m.config.EnvironmentType) &&
+			envOk && strings.EqualFold(*tagEnvName, env.Name)
 
 		// Support for untagged Bicep ADE deployments
 		// If the deployment is not tagged but starts with the current date and is running

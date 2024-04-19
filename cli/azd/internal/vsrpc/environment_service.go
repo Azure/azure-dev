@@ -28,7 +28,8 @@ func newEnvironmentService(server *Server) *environmentService {
 }
 
 // GetEnvironmentsAsync is the server implementation of:
-// ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(RequestContext, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(
+// RequestContext, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) GetEnvironmentsAsync(
 	ctx context.Context, rc RequestContext, observer IObserver[ProgressMessage],
 ) ([]*EnvironmentInfo, error) {

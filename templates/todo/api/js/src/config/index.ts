@@ -8,25 +8,24 @@ import { IConfig } from "config";
 
 export const getConfig: () => Promise<AppConfig> = async () => {
     logger.info(`Loading configuration in ${process.env.NODE_ENV} environment...`);
-    if (process.env.NODE_ENV == "production") {
-        // Load ENV variables from Azure App Configuration when using binding
-        if (process.env.AZURE_APPCONFIGURATION_ENDPOINT) {
-            logger.info("Loading ENV variables from Azure App Configuration...");
-            await populateEnvironmentFromAppConfig();
-        }
-        // Load ENV variables from Azure KeyVault by default
-        else {
-            logger.info("Loading ENV variables from Azure KeyVault...");
-            await populateEnvironmentFromKeyVault();
-        }
-    }
-    else {
-        // For local dev/debug, prepare AZURE_COSMOS_API2COSMOS_CONNECTIONSTRING, AZURE_APPINSIGHTS_CONNECTIONSTRING in src/api/.env file
-        logger.info("Loading ENV variables from local .env file...");
+    // For local dev/debug, prepare AZURE_COSMOS_CONNECTION_STRING, AZURE_APPINSIGHTS_CONNECTIONSTRING in src/api/.env file
+    if (process.env.NODE_ENV?.toLowerCase() != "production") {
+        logger.info("Loading ENV variables from .env file...");
         dotenv.config();
     }
+    
+    // Load ENV variables from Azure App Configuration when using binding
+    if (process.env.AZURE_APPCONFIGURATION_ENDPOINT) {
+        logger.info("Loading ENV variables from Azure App Configuration...");
+        await populateEnvironmentFromAppConfig();
+    }
+    // Load ENV variables from Azure KeyVault by default
+    else {
+        logger.info("Loading ENV variables from Azure KeyVault...");
+        await populateEnvironmentFromKeyVault();
+    }
 
-    // Load configuration after Azure KeyVault population is complete
+    // Load configuration after population into environment variables is complete
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const config: IConfig = require("config") as IConfig;
     const databaseConfig = config.get<DatabaseConfig>("database");
@@ -106,12 +105,11 @@ const populateEnvironmentFromAppConfig = async () => {
         });
 
         for (const [key, value] of settings) {
-            logger.info(`Setting read from app config ${key}=${value}`);
             process.env[key] = value;
         }
     }
     catch (err: any) {
-        logger.error(`Error authenticating with Azure App Configuration or Keyvault. Ensure your managed identity or service principal has GET/LIST permissions. Error: ${err}`);
+        logger.error(`Error reading configs from Azure App Configuration or Keyvault. Ensure your managed identity or service principal has GET/LIST permissions. Error: ${err}`);
         throw err;
     }
 };

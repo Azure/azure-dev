@@ -1256,9 +1256,9 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		if !exists {
 			return "", fmt.Errorf("binding reference to resource %s without ingress", resource)
 		}
-		var bindingMappedToIngress bool
+		var bindingMappedToMainIngress bool
 		if slices.Contains(bindingDetails.ingressBindings, bindingName) {
-			bindingMappedToIngress = true
+			bindingMappedToMainIngress = true
 		}
 
 		switch bindingProperty {
@@ -1274,21 +1274,16 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			// The host name matches the containerapp name, so we can just return the resource name.
 			return resource, nil
 		case "targetPort":
-			resolvedTargetPort, err := bindingTargetPort(bindingName, binding, bindingMappedToIngress)
-			if err != nil {
-				return "", err
+			if binding.TargetPort != nil {
+				return fmt.Sprintf("%d", *binding.TargetPort), nil
 			}
-			return resolvedTargetPort, nil
+			return acaTemplatedTargetPort, nil
 		case "port":
-			resolvedPort, err := bindingPort(bindingName, binding, bindingMappedToIngress)
-			if err != nil {
-				return "", err
-			}
-			return resolvedPort, nil
+			return bindingPort(binding, bindingMappedToMainIngress)
 		case "url":
 			var urlFormatString string
 
-			if bindingMappedToIngress {
+			if bindingMappedToMainIngress {
 				if binding.External {
 					urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
 				} else {
@@ -1298,7 +1293,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				urlFormatString = "%s://%s%s"
 			}
 			var port string
-			resolvedPort, err := bindingPort(bindingName, binding, bindingMappedToIngress)
+			resolvedPort, err := urlPort(binding, bindingMappedToMainIngress)
 			if err != nil {
 				return "", err
 			}
@@ -1408,40 +1403,62 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	}
 }
 
-func bindingPort(bindingName string, binding *Binding, bindingMappedToIngress bool) (string, error) {
-	if bindingMappedToIngress && (binding.Scheme == "http" || binding.Scheme == "https") {
+// urlPort returns the port to be used when resolving a binding.
+// The port for the url is not always the same as the port for the binding It depends on the Ingress configuration.
+// If the binding is mapped to the ingress and it is http, the port is not used in the URL, as it would be the default
+// (80 or 443).
+// When not mapped to main ingress, but as an additional port, if the binding has a port defined, it is used. Otherwise
+// the port is calculated from the target port.
+func urlPort(binding *Binding, bindingMappedToMainIngress bool) (string, error) {
+	if bindingMappedToMainIngress && (binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
 		// main ingress with Http doesn't use a port in url
 		return "", nil
 	}
 	if binding.Port != nil {
 		return fmt.Sprintf("%d", *binding.Port), nil
 	}
-
 	// additionalPorts not defining a `port` means they use the target port as the port and target port
-	resolveTargetPort, err := bindingTargetPort(bindingName, binding, bindingMappedToIngress)
-	if err == nil {
-		return resolveTargetPort, nil
-	}
-	if resolveTargetPort != "" {
-		return resolveTargetPort, nil
-	}
-
-	return "", fmt.Errorf("binding %s does not have a port or target port and it is not mapped to the ingress", bindingName)
+	return urlPortFromTargetPort(binding, bindingMappedToMainIngress)
 }
 
-func bindingTargetPort(bindingName string, binding *Binding, bindingMappedToIngress bool) (string, error) {
-	if bindingMappedToIngress {
-		if binding.Scheme == "http" {
-			return "80", nil
+func bindingPort(binding *Binding, bindingMappedToMainIngress bool) (string, error) {
+	if bindingMappedToMainIngress && (binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
+		if binding.Scheme == acaIngressSchemaHttp {
+			return acaDefaultHttpPort, nil
 		}
-		if binding.Scheme == "https" {
-			return "443", nil
+		if binding.Scheme == acaIngressSchemaHttps {
+			return acaDefaultHttpsPort, nil
+		}
+	}
+	if binding.Port != nil {
+		return fmt.Sprintf("%d", *binding.Port), nil
+	}
+	if binding.TargetPort != nil {
+		// Case: non-http binding w/o a port defined, but with a target port defined. (dockerfile.v0, container.v0)
+		// with non-external ingress is an example here.
+		return fmt.Sprintf("%d", *binding.TargetPort), nil
+	}
+	// no port or target port. This is the case for project.v0 where azd would get the port.
+	return acaTemplatedTargetPort, nil
+}
+
+// urlPortFromTargetPort returns the port to be used when resolving a binding from the target port.
+func urlPortFromTargetPort(binding *Binding, bindingMappedToMainIngress bool) (string, error) {
+	if bindingMappedToMainIngress {
+		if binding.Scheme == acaIngressSchemaHttp {
+			return acaDefaultHttpPort, nil
+		}
+		if binding.Scheme == acaIngressSchemaHttps {
+			return acaDefaultHttpsPort, nil
 		}
 	}
 	if binding.TargetPort != nil {
 		return fmt.Sprintf("%d", *binding.TargetPort), nil
 	}
-	return "", fmt.Errorf("binding %s does not have a target port and it is not mapped to the ingress", bindingName)
+	// if the binding is not mapped to the main ingress and doesn't have a port defined, it uses the templated target port,
+	// which is resolved on deployment time, after building the container (dotnet publish for project.v0)
+	// dockerfile.v0 and container.v0 always have the target port defined in the binding.
+	return acaTemplatedTargetPort, nil
 }
 
 // buildEnvBlock creates the environment map in the template context. It does this by copying the values from the given map,

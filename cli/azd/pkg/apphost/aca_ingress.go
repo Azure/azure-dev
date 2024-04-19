@@ -50,7 +50,10 @@ const (
 	acaIngressSchemaHttps    string = "https"
 	acaIngressTransportHttp2 string = "http2"
 	acaIngressTransportHttp  string = "http"
-	acaIngressProtocolHttp   string = "http"
+	acaDefaultHttpPort       string = "80"
+	acaDefaultHttpsPort      string = "443"
+	// a target port that is resolved at deployment time
+	acaTemplatedTargetPort string = "{{ targetPortOrDefault 0 }}"
 )
 
 func validateBindings(bindings custommaps.WithOrder[Binding]) error {

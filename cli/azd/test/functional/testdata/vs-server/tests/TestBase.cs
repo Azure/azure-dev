@@ -3,6 +3,7 @@
 
 using Microsoft.Extensions.Configuration;
 using System.Net.WebSockets;
+using System.Security.Cryptography.X509Certificates;
 using StreamJsonRpc;
 
 namespace AzdVsServerTests;
@@ -17,6 +18,10 @@ public class TestBase
     protected string _rootDir = string.Empty;
 
     protected string _location = string.Empty;
+
+    protected string _certBytes = string.Empty;
+
+    protected string[] _projects;
 
     // Environment name for live tests
     protected string _envName = string.Empty;
@@ -41,32 +46,33 @@ public class TestBase
         _rootDir = config["ROOT_DIR"] ?? System.IO.Directory.GetCurrentDirectory();
         _location = config["AZURE_LOCATION"] ?? "westus2";
         _envName = config["AZURE_ENV_NAME"] ?? "vs-server-env";
-        certBytes = config["CERTIFICATE_BYTES"] ?? throw new InvalidOperationException("CERTIFICATE_BYTES is not set");
+        _projects = config["APP_HOST_PATHS"].Split(",");
+        _certBytes = config["CERTIFICATE_BYTES"] ?? throw new InvalidOperationException("CERTIFICATE_BYTES is not set");
 
         var host = $"wss://127.0.0.1:{_port}";
         var expectedCert = new X509Certificate2(Convert.FromBase64String(_certBytes));
 
         ClientWebSocket wsClientES = new ClientWebSocket();
         wsClientES.Options.RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => {
-            return certificate != null && certificate.Equals(expectedCert);
+            return certificate != null && certificate.Equals(expectedCert!);
         };
         await wsClientES.ConnectAsync(new Uri($"{host}/EnvironmentService/v1.0"), CancellationToken.None);
 
         ClientWebSocket wsClientAS = new ClientWebSocket();
         wsClientAS.Options.RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => {
-            return certificate != null && certificate.Equals(expectedCert);
+            return certificate != null && certificate.Equals(expectedCert!);
         };
         await wsClientAS.ConnectAsync(new Uri($"{host}/AspireService/v1.0"), CancellationToken.None);
 
         ClientWebSocket wsClientSS = new ClientWebSocket();
         wsClientSS.Options.RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => {
-            return certificate != null && certificate.Equals(expectedCert);
+            return certificate != null && certificate.Equals(expectedCert!);
         };
         await wsClientSS.ConnectAsync(new Uri($"{host}/ServerService/v1.0"), CancellationToken.None);
 
         ClientWebSocket wsClientDS = new ClientWebSocket();
         wsClientDS.Options.RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => {
-            return certificate != null && certificate.Equals(expectedCert);
+            return certificate != null && certificate.Equals(expectedCert!);
         };
         await wsClientDS.ConnectAsync(new Uri($"{host}/TestDebugService/v1.0"), CancellationToken.None);
 

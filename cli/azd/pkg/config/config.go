@@ -64,20 +64,26 @@ func (c *config) Raw() map[string]any {
 	return c.data
 }
 
+// SetSecret stores the secrets at the specified path within a local user vault
 func (c *config) SetSecret(path string, value string) error {
 	if c.vaultId == "" {
 		c.vault = NewConfig(nil)
 		c.vaultId = uuid.New().String()
-		c.Set("vault", c.vaultId)
+		if err := c.Set("vault", c.vaultId); err != nil {
+			return fmt.Errorf("failed setting vault id: %w", err)
+		}
 	}
 
 	pathId := uuid.New().String()
 	vaultRef := fmt.Sprintf("vault://%s/%s", c.vaultId, pathId)
-	c.vault.Set(pathId, base64.StdEncoding.EncodeToString([]byte(value)))
+	if err := c.vault.Set(pathId, base64.StdEncoding.EncodeToString([]byte(value))); err != nil {
+		return fmt.Errorf("failed setting secret value: %w", err)
+	}
 
 	return c.Set(path, vaultRef)
 }
 
+// GetSecret retrieves the secret stored at the specified path from a local user vault
 func (c *config) GetSecret(path string) (string, bool) {
 	vaultRef, ok := c.GetString(path)
 	if !ok {

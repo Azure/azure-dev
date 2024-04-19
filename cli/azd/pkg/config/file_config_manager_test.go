@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -60,6 +61,10 @@ func Test_Secrets_GetSet(t *testing.T) {
 	updatedConfig, err := configManager.Load(configFilePath)
 	require.NoError(t, err)
 	require.NotNil(t, updatedConfig)
+
+	userPasswordConfigValue, ok := updatedConfig.GetString("secrets.password")
+	require.True(t, ok)
+	require.True(t, strings.HasPrefix(userPasswordConfigValue, "vault://"))
 
 	userPassword, ok := updatedConfig.GetSecret("secrets.password")
 	require.True(t, ok)

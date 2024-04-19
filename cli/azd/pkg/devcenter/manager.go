@@ -3,9 +3,8 @@ package devcenter
 import (
 	"context"
 	"fmt"
-	"strings"
+	"regexp"
 	"sync"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -16,6 +15,9 @@ import (
 	"go.uber.org/multierr"
 	"golang.org/x/exp/slices"
 )
+
+// ADE Bicep deployments have a name of a date like string followed by a number
+var bicepDeploymentNameRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-\d+$`)
 
 // DeploymentFilterPredicate is a predicate function for filtering deployments
 type DeploymentFilterPredicate func(d *armresources.DeploymentExtended) bool
@@ -277,8 +279,7 @@ func (m *manager) LatestArmDeployment(
 		// Support for untagged Bicep ADE deployments
 		// If the deployment is not tagged but starts with the current date and is running
 		// this is another indication that this is the latest running Bicep deployment
-		isBicepDeployment := !isArmDeployment &&
-			strings.HasPrefix(*d.Name, fmt.Sprintf("%s-", time.Now().UTC().Format("2006-01-02")))
+		isBicepDeployment := !isArmDeployment && bicepDeploymentNameRegex.MatchString(*d.Name)
 
 		if isArmDeployment || isBicepDeployment {
 			if filter == nil {

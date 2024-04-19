@@ -313,7 +313,7 @@ func (m *manager) Outputs(
 	}
 
 	latestDeployment, err := m.LatestArmDeployment(ctx, env, func(d *armresources.DeploymentExtended) bool {
-		return *d.Properties.ProvisioningState == "Succeeded"
+		return *d.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed getting latest deployment: %w", err)

@@ -34,7 +34,7 @@ properties:
       - name: http_ep
         value: http://api.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
       - name: http_host
-        value: api
+        value: http://api.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
       - name: http_port
         value: "80"
       - name: http_scheme

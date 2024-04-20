@@ -224,6 +224,22 @@ func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress
 	if ingress != "" {
 		props := endpointByTargetPortProperties[ingress]
 		for _, binding := range props.bindings {
+			if props.httpOnly && binding.Port != nil && binding.Scheme == acaIngressSchemaHttp && *binding.Port != 80 {
+				// Main ingress http with non default port rule
+				return nil, nil,
+					fmt.Errorf(
+						"Binding %s can't be mapped to main ingress because it has port %d defined. "+
+							"main ingress only supports port 80 for http scheme.",
+						binding.name, *binding.Port)
+			}
+			if props.httpOnly && binding.Port != nil && binding.Scheme == acaIngressSchemaHttps && *binding.Port != 443 {
+				// Main ingress https with non default port rule
+				return nil, nil,
+					fmt.Errorf(
+						"Binding %s can't be mapped to main ingress because it has port %d defined. "+
+							"main ingress only supports port 443 for https scheme.",
+						binding.name, *binding.Port)
+			}
 			bindingNamesFromIngress = append(bindingNamesFromIngress, binding.name)
 		}
 

@@ -1271,7 +1271,17 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		case "external":
 			return fmt.Sprintf("%t", binding.External), nil
 		case "host":
-			// The host name matches the containerapp name, so we can just return the resource name.
+			// If the binding is mapped to the main ingress (internal or external) and it is http/https, resolution
+			// expects full domain name, like `resource.internal.FQDN` or `resource.FQDN`.
+			if bindingMappedToMainIngress &&
+				(binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
+				if binding.External {
+					return fmt.Sprintf("%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
+						binding.Scheme, resource), nil
+				}
+				return fmt.Sprintf("%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
+					binding.Scheme, resource), nil
+			}
 			return resource, nil
 		case "targetPort":
 			if binding.TargetPort != nil {

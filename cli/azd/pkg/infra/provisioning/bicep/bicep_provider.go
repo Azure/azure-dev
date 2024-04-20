@@ -1995,6 +1995,19 @@ func (p *BicepProvider) ensureParameters(
 			}
 		}
 
+		if param.IsAutoGen() {
+			// IsAutoGen already checked the azdMetadata exists
+			azdMetadata, _ := param.AzdMetadata()
+			genValue, err := autoGenerate(key, azdMetadata)
+			if err != nil {
+				return nil, err
+			}
+			configuredParameters[key] = azure.ArmParameterValue{
+				Value: genValue,
+			}
+			continue
+		}
+
 		// No saved value for this required parameter, we'll need to prompt for it.
 		parameterPrompts = append(parameterPrompts, struct {
 			key   string

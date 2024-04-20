@@ -102,6 +102,7 @@ func (st *appServiceTarget) Deploy(
 				Title:        "Updating deployment status",
 				MaxLineCount: 8,
 			})
+
 			res, err := st.cli.DeployAppServiceZip(
 				ctx,
 				targetResource.SubscriptionId(),

@@ -2005,6 +2005,12 @@ func (p *BicepProvider) ensureParameters(
 			configuredParameters[key] = azure.ArmParameterValue{
 				Value: genValue,
 			}
+			if err := p.env.Config.Set(configKey, genValue); err != nil {
+				// errors from config.Set are panics, so we can't recover from them
+				// For example, the value is not serializable to JSON
+				log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
+			}
+			configModified = true
 			continue
 		}
 

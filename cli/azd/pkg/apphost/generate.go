@@ -1276,11 +1276,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			if bindingMappedToMainIngress &&
 				(binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
 				if binding.External {
-					return fmt.Sprintf("%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
-						binding.Scheme, resource), nil
+					return fmt.Sprintf("%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
+						resource), nil
 				}
-				return fmt.Sprintf("%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
-					binding.Scheme, resource), nil
+				return fmt.Sprintf("%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
+					resource), nil
 			}
 			return resource, nil
 		case "targetPort":

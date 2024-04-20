@@ -28,7 +28,7 @@ hooks:
   predeploy:
     windows:
       shell: pwsh
-      run: 'echo "VITE_API_BASE_URL=\"$env:API_BASE_URL\"" > ./src/web/.env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$env:APPLICATIONINSIGHTS_CONNECTION_STRING\"" >> ./src/web/.env.local'
+      run: 'echo "VITE_API_BASE_URL=""$env:API_BASE_URL""" > ./src/web/.env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=""$env:APPLICATIONINSIGHTS_CONNECTION_STRING""" >> ./src/web/.env.local'
     posix:
       shell: sh
       run: 'echo VITE_API_BASE_URL=\"$API_BASE_URL\" > ./src/web/.env.local && echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> ./src/web/.env.local'    

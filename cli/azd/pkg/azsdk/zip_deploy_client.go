@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -35,9 +36,8 @@ var (
 // https://github.com/MicrosoftDocs/azure-docs/blob/main/includes/app-service-deploy-zip-push-rest.md
 // https://github.com/projectkudu/kudu/wiki/REST-API
 type ZipDeployClient struct {
-	hostName                 string
-	pipeline                 runtime.Pipeline
-	deploymentStatusResponse DeployStatusResponse
+	hostName string
+	pipeline runtime.Pipeline
 }
 
 type DeployResponse struct {
@@ -102,24 +102,15 @@ func (c *ZipDeployClient) getDeploymentStatusSyntax() string {
 }
 
 func (c *ZipDeployClient) getLatestDeploymentUrl() string {
-	if c.getDeploymentStatusSyntax() == "" {
-		return ""
-	}
 	return c.getDeploymentStatusSyntax() + "latest"
 }
 
 func (c *ZipDeployClient) getDeploymentLog(deploymentId string) string {
-	if c.getDeploymentStatusSyntax() == "" {
-		return ""
-	}
 	log := c.getDeploymentStatusSyntax() + deploymentId + "/log"
 	return log
 }
 
 func (c *ZipDeployClient) getDeploymentUrl(deploymentId string) string {
-	if c.getDeploymentStatusSyntax() == "" {
-		return ""
-	}
 	url := c.getDeploymentStatusSyntax() + deploymentId
 	return url
 }
@@ -157,32 +148,54 @@ func (c *ZipDeployClient) BeginDeploy(
 
 // Deploys the specified application zip to the azure app service and waits for completion
 func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader, subscriptionId string, resourceGroup string, appName string, buildProgress io.Writer) (*DeployResponse, error) {
-	buildProgress.Write([]byte("Test previewer\n"))
-	poller, err := c.BeginDeploy(ctx, zipFile)
+	var res *http.Response
+	var deploymentId string
+	withCaptureResponseCtx := policy.WithCaptureResponse(ctx, &res)
+
+	poller, err := c.BeginDeploy(withCaptureResponseCtx, zipFile)
 	if err != nil {
 		return nil, err
 	}
 
-	// go func to track progress
-	// cancelProgress := make(chan bool)
-	// defer func() { cancelProgress <- true }()
-	// go func() {
-	// 	initialDelay := 3 * time.Second
-	// 	regularDelay := 10 * time.Second
-	// 	timer := time.NewTimer(initialDelay)
-	// 	for {
-	// 		select {
-	// 		case <-cancelProgress:
-	// 			timer.Stop()
-	// 			return
-	// 		case <-timer.C:
-	// 			// client fetch progress from web app
-	// 			fmt.Println(deployResult)
-	// 			timer.Reset(regularDelay)
-	// 		}
-	// 	}
+	currentTime := time.Now()
+	cancelProgress := make(chan bool)
 
-	// }()
+	// If host name is not empty for web apps
+	if c.getDeploymentStatusSyntax() != "" && buildProgress != nil {
+		// Deployment API currently only supports Linux Web Apps
+		defer func() { cancelProgress <- true }()
+		go func() {
+			// get deployment id
+			if res == nil {
+				panic("http.Response is nil, unable to get deployment id")
+			} else {
+				deploymentId = res.Header.Get("Scm-Deployment-Id")
+			}
+
+			initialDelay := 3 * time.Second
+			regularDelay := 10 * time.Second
+			timer := time.NewTimer(initialDelay)
+
+			for {
+				select {
+				case <-cancelProgress:
+					timer.Stop()
+					return
+				case <-timer.C:
+					deploymentMessage, err := c.checkRunTimeStatus(ctx, currentTime, subscriptionId, resourceGroup, appName, deploymentId)
+					if err != nil {
+						log.Printf("checking deployment status fail, skip monitoring deployment status: %s", err.Error())
+					}
+
+					if deploymentMessage != "" {
+						buildProgress.Write([]byte(deploymentMessage))
+					}
+
+					timer.Reset(regularDelay)
+				}
+			}
+		}()
+	}
 
 	response, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
 		Frequency: deployStatusInterval,
@@ -191,138 +204,107 @@ func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader, subscri
 		return nil, err
 	}
 
-	buildProgress.Write([]byte("Polling Until Done\n"))
-	// Deployment API currently only supports Linux Web Apps
-	if buildProgress != nil {
-		deployResult, err := poller.Result(ctx)
-		if err != nil {
-			return nil, err
-		}
-		latestDeploymentUrl := c.getLatestDeploymentUrl()
-		buildProgress.Write([]byte("latestDeploymentUrl\n"))
-		if latestDeploymentUrl != "" {
-			buildProgress.Write([]byte("Before loop\n"))
-			deploymentMessage, err := c.checkRunTimeStatus(ctx, subscriptionId, resourceGroup, appName, deployResult.DeployStatus.Id, latestDeploymentUrl)
-			if err != nil {
-				return nil, err
-			}
-			if deploymentMessage != "" {
-				buildProgress.Write([]byte(deploymentMessage))
-			}
-
-			return nil, err
-		}
-	}
-
-	// progress
-	// loop until success message
-	// client := webClientStatus()
-	// for {
-	//   client fetch progress from web-app
-	//   if success, break
-	// }
 	return response, nil
 }
 
-func (c *ZipDeployClient) checkRunTimeStatus(ctx context.Context, subscriptionId, resourceGroup, appName, deploymentId, latestDeploymentUrl string) (string, error) {
-	startTime := time.Now()
-	elapsedTime := 0 * time.Second
+func (c *ZipDeployClient) checkRunTimeStatus(ctx context.Context, currentTime time.Time, subscriptionId, resourceGroup, appName, deploymentId string) (string, error) {
+	res, err := getProductionSiteDeploymentStatus(ctx, subscriptionId, resourceGroup, appName, deploymentId)
+	if err != nil {
+		return "", err
+	}
+
+	properties := res.CsmDeploymentStatus.Properties
+	status := properties.Status
+	errorString := ""
+	deploymentResult := ""
+	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
+	successNumber := int(*properties.NumberOfInstancesSuccessful)
+	failNumber := int(*properties.NumberOfInstancesFailed)
+	totalNumber := inProgressNumber + successNumber + failNumber
+	failLog := properties.FailedInstancesLogs
+	runTime := time.Since(currentTime)
 	maxTime := 1000 * time.Second
-	var status *armappservice.DeploymentBuildStatus
-	var properties *armappservice.CsmDeploymentStatusProperties
 
-	for elapsedTime < maxTime {
-		elapsedTime = time.Since(startTime)
-		res, err := getProductionSiteDeploymentStatus(ctx, subscriptionId, resourceGroup, appName, deploymentId)
-		if err != nil {
-			return "", err
-		}
-
-		properties = res.CsmDeploymentStatus.Properties
-		status = properties.Status
-		if status != nil {
-			// Do we want to change UI for this
-			switch *status {
-			case deploymentBuildStatusRuntimeStarting:
-				return fmt.Sprintf("In progress instances: %v, Successful instances: %v\n",
-					int(*properties.NumberOfInstancesInProgress),
-					int(*properties.NumberOfInstancesSuccessful)), nil
-			case deploymentBuildStatusRuntimeSuccessful:
-				return "Deployment success", nil
-			case deploymentBuildStatusRuntimeFailed:
-				errorString := ""
-				inProgressNumber := int(*properties.NumberOfInstancesInProgress)
-				successNumber := int(*properties.NumberOfInstancesSuccessful)
-				failNumber := int(*properties.NumberOfInstancesFailed)
-				totalNumber := inProgressNumber + successNumber + failNumber
-				errors := properties.Errors
-				errorExtendedCode := errors[0].ExtendedCode
-				errorMessage := errors[0].Message
-				failLog := properties.FailedInstancesLogs
-
-				if successNumber > 0 {
-					errorString += fmt.Sprintf("Site started with errors: %d/%d instances failed to start successfully\n",
-						failNumber, totalNumber)
-				} else if totalNumber > 0 {
-					errorString += fmt.Sprintf("Deployment failed. In progress instances: %d, Successful instances: %d, Failed Instances: %d\n",
-						inProgressNumber, successNumber, failNumber)
-				}
-
-				if len(errors) > 0 {
-					if errorMessage != nil {
-						errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
-					} else if errorExtendedCode != nil {
-						errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
-					}
-				}
-
-				if len(failLog) > 0 {
-					errorString += fmt.Sprintf("Please check the runtime logs for more info: %s\n", *failLog[0])
-				}
-				return "", fmt.Errorf(errorString)
-			case deploymentBuildStatusBuildFailed:
-				errorString := "Deployment failed because the build process failed\n"
-				errors := properties.Errors
-				errorExtendedCode := errors[0].ExtendedCode
-				errorMessage := errors[0].Message
-				failLog := properties.FailedInstancesLogs
-
-				if len(errors) > 0 {
-					if errorMessage != nil {
-						errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
-					} else if errorExtendedCode != nil {
-						errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
-					}
-				}
-				var deploymentLog string
-				if len(failLog) == 0 {
-					deploymentLog = latestDeploymentUrl
-				} else {
-					deploymentLog = *failLog[0]
-				}
-				errorString += fmt.Sprintf("Please check the build logs for more info: %s\n", deploymentLog)
-				return "", fmt.Errorf(errorString)
+	// Print out err instead of return err
+	if status != nil {
+		switch *status {
+		case deploymentBuildStatusRuntimeStarting:
+			return fmt.Sprintf("In progress instances: %d, Successful instances: %d\n", inProgressNumber, successNumber), nil
+		case deploymentBuildStatusRuntimeSuccessful:
+			return "Deployment success", nil
+		case deploymentBuildStatusRuntimeFailed:
+			if successNumber > 0 {
+				deploymentResult += fmt.Sprintf("Site started with errors: %d/%d instances failed to start successfully\n",
+					failNumber, totalNumber)
+			} else if totalNumber > 0 {
+				deploymentResult += fmt.Sprintf("Deployment failed. In progress instances: %d, Successful instances: %d, Failed Instances: %d\n",
+					inProgressNumber, successNumber, failNumber)
 			}
+
+			errors := properties.Errors
+			errorExtendedCode := errors[0].ExtendedCode
+			errorMessage := errors[0].Message
+
+			if len(errors) > 0 {
+				if errorMessage != nil {
+					errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
+				} else if errorExtendedCode != nil {
+					errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
+				}
+			}
+
+			if len(failLog) > 0 {
+				deploymentResult += fmt.Sprintf("Please check the runtime logs for more info: %s\n", *failLog[0])
+			}
+
+			return deploymentResult, fmt.Errorf(errorString)
+		case deploymentBuildStatusBuildFailed:
+			deploymentResult += "Deployment failed because the build process failed\n"
+			errors := properties.Errors
+			errorExtendedCode := errors[0].ExtendedCode
+			errorMessage := errors[0].Message
+
+			if len(errors) > 0 {
+				if errorMessage != nil {
+					errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
+				} else if errorExtendedCode != nil {
+					errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
+				}
+			}
+
+			var deploymentLog string
+
+			if len(failLog) == 0 {
+				deploymentLog = c.getLatestDeploymentUrl()
+			} else {
+				deploymentLog = *failLog[0]
+			}
+
+			deploymentResult += fmt.Sprintf("Please check the build logs for more info: %s\n", deploymentLog)
+
+			return deploymentResult, fmt.Errorf(errorString)
 		}
 	}
-	if elapsedTime >= maxTime && *status != deploymentBuildStatusRuntimeSuccessful {
+
+	if runTime > maxTime && *status != deploymentBuildStatusRuntimeSuccessful {
 		if *status == deploymentBuildStatusBuildInProgress {
-			return "", fmt.Errorf("timeout reached while build was still in progress. Navigate to %s to check the build logs for your app", c.getDeploymentLog(deploymentId))
+			return fmt.Sprintf("Timeout reached while build was still in progress. Navigate to %s to check the build logs for your app", c.getDeploymentLog(deploymentId)), nil
 		}
-		errorString := fmt.Sprintf("Timeout reached while tracking deployment status, however, the deployment"+
+
+		deploymentResult += fmt.Sprintf("Timeout reached while tracking deployment status, however, the deployment"+
 			" operation is still on-going. Navigate to %s to check the deployment status of your app",
 			c.getDeploymentUrl(deploymentId))
-		inProgressNumber := int(*properties.NumberOfInstancesInProgress)
-		successNumber := int(*properties.NumberOfInstancesSuccessful)
-		failNumber := int(*properties.NumberOfInstancesFailed)
+
 		if inProgressNumber+successNumber+failNumber > 0 {
-			errorString += fmt.Sprintf("In progress instances: %d, Successful instances: %d, Failed Instances: %d\n",
+			deploymentResult += fmt.Sprintf("In progress instances: %d, Successful instances: %d, Failed Instances: %d\n",
 				inProgressNumber, successNumber, failNumber)
 
 		}
-		return fmt.Sprintf("%T", *status), nil
+
+		return deploymentResult, nil
 	}
-	return fmt.Sprintf("%T", *status), nil
+
+	return deploymentResult, nil
 }
 
 // Example definition: https://github.com/Azure/azure-rest-api-specs/tree/main/specification/web/resource-manager/Microsoft.Web/stable/2022-03-01/examples/GetSiteDeploymentStatus.json

@@ -53,7 +53,7 @@ func restoreDotnetWorkload(t *testing.T) {
 
 // Test_CLI_Aspire_DetectGen tests the detection and generation of an Aspire project.
 func Test_CLI_Aspire_DetectGen(t *testing.T) {
-	//restoreDotnetWorkload(t)
+	restoreDotnetWorkload(t)
 
 	sn := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(""))
 	snRoot := filepath.Join("testdata", "snaps", "aspire-full")

@@ -88,18 +88,6 @@ func (d *ArmTemplateParameterDefinition) Secure() bool {
 	return lowerCase == "secureobject" || lowerCase == "securestring"
 }
 
-func (param *ArmTemplateParameterDefinition) IsAutoGen() bool {
-	azdMetadata, hasMetadata := param.AzdMetadata()
-	if !hasMetadata {
-		return false
-	}
-	if !strings.Contains(strings.ToLower(param.Type), "string") {
-		// only string or secureString types are auto-gen
-		return false
-	}
-	return azdMetadata.Type != nil && *azdMetadata.Type == AzdMetadataTypeGenerate
-}
-
 type AutoGenInput struct {
 	Length     uint  `json:"length,omitempty"`
 	NoLower    *bool `json:"noLower,omitempty"`

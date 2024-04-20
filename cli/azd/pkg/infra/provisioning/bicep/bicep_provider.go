@@ -1960,11 +1960,12 @@ func (p *BicepProvider) ensureParameters(
 
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
+		parameterType := p.mapBicepTypeToInterfaceType(param.Type)
 
 		// If a value is explicitly configured via a parameters file, use it.
 		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
-			paramValue := armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value, param.DefaultValue)
+			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
 			if paramValue != nil {
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: paramValue,
@@ -1983,7 +1984,7 @@ func (p *BicepProvider) ensureParameters(
 		configKey := fmt.Sprintf("infra.parameters.%s", key)
 
 		if v, has := p.env.Config.Get(configKey); has {
-			if isValueAssignableToParameterType(p.mapBicepTypeToInterfaceType(param.Type), v) {
+			if isValueAssignableToParameterType(parameterType, v) {
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: v,
 				}
@@ -1995,9 +1996,13 @@ func (p *BicepProvider) ensureParameters(
 			}
 		}
 
-		if param.IsAutoGen() {
-			// IsAutoGen already checked the azdMetadata exists
-			azdMetadata, _ := param.AzdMetadata()
+		// If the parameter is tagged with {type: "generate"}, skip prompting.
+		// We generate it once, then save to config for next attempts.`.
+		azdMetadata, hasMetadata := param.AzdMetadata()
+		if hasMetadata && parameterType == ParameterTypeString && azdMetadata.Type != nil &&
+			*azdMetadata.Type == azure.AzdMetadataTypeGenerate {
+
+			// - generate once
 			genValue, err := autoGenerate(key, azdMetadata)
 			if err != nil {
 				return nil, err
@@ -2005,6 +2010,7 @@ func (p *BicepProvider) ensureParameters(
 			configuredParameters[key] = azure.ArmParameterValue{
 				Value: genValue,
 			}
+			// - save to config for next attempts
 			if err := p.env.Config.Set(configKey, genValue); err != nil {
 				// errors from config.Set are panics, so we can't recover from them
 				// For example, the value is not serializable to JSON

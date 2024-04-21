@@ -147,7 +147,13 @@ func (c *ZipDeployClient) BeginDeploy(
 }
 
 // Deploys the specified application zip to the azure app service and waits for completion
-func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader, subscriptionId string, resourceGroup string, appName string, buildProgress io.Writer) (*DeployResponse, error) {
+func (c *ZipDeployClient) Deploy(
+	ctx context.Context,
+	zipFile io.Reader,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	buildProgress io.Writer) (*DeployResponse, error) {
 	var res *http.Response
 	var deploymentId string
 	withCaptureResponseCtx := policy.WithCaptureResponse(ctx, &res)
@@ -188,7 +194,10 @@ func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader, subscri
 					}
 
 					if deploymentMessage != "" {
-						buildProgress.Write([]byte(deploymentMessage))
+						_, err := buildProgress.Write([]byte(deploymentMessage))
+						if err != nil {
+							log.Printf("failed writing deployment status: %s", err.Error())
+						}
 					}
 
 					timer.Reset(regularDelay)
@@ -207,7 +216,13 @@ func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader, subscri
 	return response, nil
 }
 
-func (c *ZipDeployClient) checkRunTimeStatus(ctx context.Context, currentTime time.Time, subscriptionId, resourceGroup, appName, deploymentId string) (string, error) {
+func (c *ZipDeployClient) checkRunTimeStatus(
+	ctx context.Context,
+	currentTime time.Time,
+	subscriptionId,
+	resourceGroup,
+	appName,
+	deploymentId string) (string, error) {
 	res, err := getProductionSiteDeploymentStatus(ctx, subscriptionId, resourceGroup, appName, deploymentId)
 	if err != nil {
 		return "", err
@@ -237,7 +252,8 @@ func (c *ZipDeployClient) checkRunTimeStatus(ctx context.Context, currentTime ti
 				deploymentResult += fmt.Sprintf("Site started with errors: %d/%d instances failed to start successfully\n",
 					failNumber, totalNumber)
 			} else if totalNumber > 0 {
-				deploymentResult += fmt.Sprintf("Deployment failed. In progress instances: %d, Successful instances: %d, Failed Instances: %d\n",
+				deploymentResult += fmt.Sprintf("Deployment failed. In progress instances: %d, "+
+					"Successful instances: %d, Failed Instances: %d\n",
 					inProgressNumber, successNumber, failNumber)
 			}
 
@@ -288,7 +304,9 @@ func (c *ZipDeployClient) checkRunTimeStatus(ctx context.Context, currentTime ti
 
 	if runTime > maxTime && *status != deploymentBuildStatusRuntimeSuccessful {
 		if *status == deploymentBuildStatusBuildInProgress {
-			return fmt.Sprintf("Timeout reached while build was still in progress. Navigate to %s to check the build logs for your app", c.getDeploymentLog(deploymentId)), nil
+			return fmt.Sprintf("Timeout reached while build was still in progress. "+
+				"Navigate to %s to check the build logs for your app",
+				c.getDeploymentLog(deploymentId)), nil
 		}
 
 		deploymentResult += fmt.Sprintf("Timeout reached while tracking deployment status, however, the deployment"+
@@ -307,23 +325,29 @@ func (c *ZipDeployClient) checkRunTimeStatus(ctx context.Context, currentTime ti
 	return deploymentResult, nil
 }
 
+// nolint:lll
 // Example definition: https://github.com/Azure/azure-rest-api-specs/tree/main/specification/web/resource-manager/Microsoft.Web/stable/2022-03-01/examples/GetSiteDeploymentStatus.json
-func getProductionSiteDeploymentStatus(ctx context.Context, subscriptionId, resourceGroup, appName, deploymentId string) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
+func getProductionSiteDeploymentStatus(
+	ctx context.Context,
+	subscriptionId,
+	resourceGroup,
+	appName,
+	deploymentId string) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
 	var result armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse
 
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		return result, fmt.Errorf("obtaining azure credential: %v", err)
+		return result, fmt.Errorf("obtaining azure credential: %w", err)
 	}
 
 	client, err := armappservice.NewWebAppsClient(subscriptionId, cred, nil)
 	if err != nil {
-		return result, fmt.Errorf("creating web app client: %v", err)
+		return result, fmt.Errorf("creating web app client: %w", err)
 	}
 
 	poller, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, deploymentId, nil)
 	if err != nil {
-		return result, fmt.Errorf("getting deployment status: %v", err)
+		return result, fmt.Errorf("getting deployment status: %w", err)
 	}
 
 	res, err := poller.PollUntilDone(ctx, nil)

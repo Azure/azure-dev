@@ -98,6 +98,8 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
+// Initialize initializes provider state from the options.
+// It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
 	p.projectPath = projectPath
 	p.options = options
@@ -120,26 +122,18 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 	return err
 }
 
+var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")
+
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
-// values are unset.
-//
-// An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
-// AZURE_LOCATION value. Additionally, for resource group scoped deployments, an AZURE_RESOURCE_GROUP value is required.
+// values are unset. This also requires that the Bicep module can be compiled.
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	modulePath := p.modulePath()
 	compileResult, compileErr := p.compileBicep(ctx, modulePath)
 	if compileErr != nil {
-		log.Printf("Unable to compile bicep module for initializing environment. error: %v", compileErr)
-		log.Printf("Initializing environment w/o arm template info.")
+		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
 	}
 
-	if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, func(loc account.Location) bool {
-		// compileResult can be nil if the infra folder is missing and azd couldn't get a template information.
-		// A template information can be used to apply filters to the initial values (like location).
-		// But if there's not template, azd will continue with azd env init.
-		if compileResult == nil {
-			return true
-		}
+	var filterLocation = func(loc account.Location) bool {
 		if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
 			if locationParam.AllowedValues != nil {
 				return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
@@ -149,23 +143,18 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			}
 		}
 		return true
-	}); err != nil {
+	}
+
+	if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation); err != nil {
 		return err
 	}
 
-	// If there's not template, just behave as if we are in a subscription scope (and don't ask about
-	// AZURE_RESOURCE_GROUP). Future operations which try to use the infrastructure may fail, but that's ok. These
-	// failures will have reasonable error messages.
-	//
-	// We want to handle the case where the provider can `Initialize` even without a template, because we do this
-	// in a few of our end to end telemetry tests to speed things up.
-	if compileErr != nil {
-		return nil
+	// for .bicep, azd must load a parameters.json file and create the ArmParameters
+	if isBicepFile(modulePath) {
+		if _, err := p.ensureParameters(ctx, compileResult.Template); err != nil {
+			return err
+		}
 	}
-
-	// prompt parameters during initialization and ignore any errors.
-	// This strategy takes advantage of the bicep compilation from initialization and allows prompting for required inputs
-	_, _ = p.ensureParameters(ctx, compileResult.Template)
 
 	scope, err := compileResult.Template.TargetScope()
 	if err != nil {
@@ -567,9 +556,8 @@ func logDS(msg string, v ...any) {
 
 // Provisioning the infrastructure within the specified template
 func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
-
 	if p.ignoreDeploymentState {
-		logDS("Azure Deployment State is disabled by --ignore-ads arg.")
+		logDS("Azure Deployment State is disabled by --no-state arg.")
 	}
 
 	bicepDeploymentData, err := p.plan(ctx)
@@ -1685,6 +1673,8 @@ type compileBicepResult struct {
 	Parameters azure.ArmParameters
 }
 
+// compileBicep compiles the bicep module at the given path and returns the compiled ARM template and parameters.
+// The results of the compilation are cached in memory.
 func (p *BicepProvider) compileBicep(
 	ctx context.Context, modulePath string,
 ) (*compileBicepResult, error) {
@@ -1870,7 +1860,8 @@ func (p *BicepProvider) deployModule(
 	return target.Deploy(ctx, armTemplate, armParameters, tags)
 }
 
-// Gets the folder path to the specified module
+// Returns either the bicep or bicepparam module file located in the infrastructure root.
+// The bicepparam file is preferred over bicep file.
 func (p *BicepProvider) modulePath() string {
 	infraRoot := p.options.Path
 	moduleName := p.options.Module
@@ -1969,11 +1960,12 @@ func (p *BicepProvider) ensureParameters(
 
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
+		parameterType := p.mapBicepTypeToInterfaceType(param.Type)
 
 		// If a value is explicitly configured via a parameters file, use it.
 		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
-			paramValue := armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value, param.DefaultValue)
+			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
 			if paramValue != nil {
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: paramValue,
@@ -1992,7 +1984,7 @@ func (p *BicepProvider) ensureParameters(
 		configKey := fmt.Sprintf("infra.parameters.%s", key)
 
 		if v, has := p.env.Config.Get(configKey); has {
-			if isValueAssignableToParameterType(p.mapBicepTypeToInterfaceType(param.Type), v) {
+			if isValueAssignableToParameterType(parameterType, v) {
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: v,
 				}
@@ -2002,6 +1994,30 @@ func (p *BicepProvider) ensureParameters(
 				// parameter and then re-ran `azd provision`. Forget the saved value (if we can) and prompt for a new one.
 				_ = p.env.Config.Unset("infra.parameters.%s")
 			}
+		}
+
+		// If the parameter is tagged with {type: "generate"}, skip prompting.
+		// We generate it once, then save to config for next attempts.`.
+		azdMetadata, hasMetadata := param.AzdMetadata()
+		if hasMetadata && parameterType == ParameterTypeString && azdMetadata.Type != nil &&
+			*azdMetadata.Type == azure.AzdMetadataTypeGenerate {
+
+			// - generate once
+			genValue, err := autoGenerate(key, azdMetadata)
+			if err != nil {
+				return nil, err
+			}
+			configuredParameters[key] = azure.ArmParameterValue{
+				Value: genValue,
+			}
+			// - save to config for next attempts
+			if err := p.env.Config.Set(configKey, genValue); err != nil {
+				// errors from config.Set are panics, so we can't recover from them
+				// For example, the value is not serializable to JSON
+				log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
+			}
+			configModified = true
+			continue
 		}
 
 		// No saved value for this required parameter, we'll need to prompt for it.

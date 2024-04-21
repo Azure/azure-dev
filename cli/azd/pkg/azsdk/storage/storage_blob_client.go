@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
@@ -164,7 +165,7 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 
 // createClient creates a new blob client and caches it for future use
 func NewBlobSdkClient(
-	credential azcore.TokenCredential,
+	credentialProvider auth.MultiTenantCredentialProvider,
 	accountConfig *AccountConfig,
 	coreClientOptions *azcore.ClientOptions,
 	cloud *cloud.Cloud,
@@ -175,6 +176,12 @@ func NewBlobSdkClient(
 
 	if accountConfig.Endpoint == "" {
 		accountConfig.Endpoint = cloud.StorageEndpointSuffix
+	}
+
+	// Use home tenant ID
+	credential, err := credentialProvider.GetTokenCredential(context.Background(), "")
+	if err != nil {
+		return nil, err
 	}
 
 	serviceUrl := fmt.Sprintf("https://%s.blob.%s", accountConfig.AccountName, accountConfig.Endpoint)

@@ -9,16 +9,13 @@ properties:
   configuration:
     activeRevisionsMode: single
     ingress:
-      external: false
+      external: true
       targetPort: {{ targetPortOrDefault 8080 }}
       transport: http
-      allowInsecure: true
+      allowInsecure: false
     registries:
     - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
       identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
-    secrets:
-      - name: connectionstrings--db
-        value: '{{ connectionString "db" }}'
   template:
     containers:
     - image: {{ .Image }}
@@ -26,12 +23,24 @@ properties:
       env:
       - name: AZURE_CLIENT_ID
         value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
+      - name: ASPNETCORE_FORWARDEDHEADERS_ENABLED
+        value: "true"
       - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
         value: "true"
       - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
         value: "true"
-      - name: ConnectionStrings__db
-        secretRef: connectionstrings--db
+      - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY
+        value: in_memory
+      - name: http_ep
+        value: http://api.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
+      - name: http_host
+        value: api.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
+      - name: http_port
+        value: "80"
+      - name: http_scheme
+        value: http
+      - name: http_targetPort
+        value: '{{ targetPortOrDefault 0 }}'
     scale:
       minReplicas: 1
 tags:

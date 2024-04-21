@@ -1,61 +1,15 @@
 parameters: 
   - name: BuildMatrix
     type: object
-    default:
-      Windows:
-        Pool: $(WINDOWSPOOL)
-        OSVmImage: $(WINDOWSVMIMAGE)
-        OS: windows
-        ImageKey: image
-        Variables: 
-          BuildTarget: azd-windows-amd64.exe
-          BuildOutputName: azd.exe
-          BuildTestMsi: true
-          AZURE_DEV_CI_OS: win
-          Codeql.Enabled: true
-          Codeql.SkipTaskAutoInjection: false
-          Codeql.BuildIdentifier: cli_windows
-      Linux:
-        Pool: $(LINUXPOOL)
-        OSVmImage: $(LINUXVMIMAGE)
-        OS: linux
-        ImageKey: image
-        Variables: 
-            BuildTarget: azd-linux-amd64
-            BuildOutputName: azd
-            SetExecutableBit: true
-            SetShieldInfo: true
-            BuildLinuxPackages: true
-            AZURE_DEV_CI_OS: lin
-            Codeql.Enabled: true
-            Codeql.SkipTaskAutoInjection: false
-            Codeql.BuildIdentifier: cli_linux
-      Mac:
-        Pool: Azure Pipelines
-        OSVmImage: $(MACVMIMAGE)
-        OS: macOS
-        ImageKey: vmImage
-        Variables: 
-          BuildTarget: azd-darwin-amd64
-          BuildOutputName: azd
-          MacLocalSign: false
-          SetExecutableBit: true
-          AZURE_DEV_CI_OS: mac
-          # CodeQL on macOS not supported by the Azure DevOps task as-of current.
-          # Codeql.BuildIdentifier: cli_darwin
   - name: CrossBuildMatrix
     type: object
     default:
       # Compliant image name required
       LinuxARM64: 
-        Pool: $(LINUXARMPOOL)
-        OSVmImage: $(LINUXARMVMIMAGE)
+        Pool: $(LINUXPOOL)
+        OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         ImageKey: image
-        HostArchitecture: Arm64
-        PreBuildSteps:
-          - pwsh: sudo tdnf install -y build-essential
-            displayName: Install build-essential
         Variables: 
           BuildTarget: azd-linux-arm64
           BuildOutputName: azd
@@ -68,8 +22,6 @@ parameters:
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
         ImageKey: vmImage
-        HostArchitecture: x86_64
-        PreBuildSteps: []
         Variables: 
           BuildTarget: azd-darwin-arm64
           BuildOutputName: azd
@@ -93,6 +45,7 @@ stages:
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
+            UploadArtifact: ${{ build.value.UploadArtifact}}
             Variables: ${{ build.value.Variables }}
 
       # This is separated today because Skip.LiveTest is a queue-time variable
@@ -105,8 +58,6 @@ stages:
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
-            PreBuildSteps: ${{ build.value.PreBuildSteps }}
-            HostArchitecture: ${{ build.value.HostArchitecture }}
             Variables: ${{ build.value.Variables }}
 
       - job: MergeLinuxPackages

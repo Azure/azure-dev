@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -37,6 +38,7 @@ type dotnetContainerAppTarget struct {
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
 	keyvaultService     keyvault.KeyVaultService
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -56,6 +58,7 @@ func NewDotNetContainerAppTarget(
 	cosmosDbService cosmosdb.CosmosDbService,
 	sqlDbService sqldb.SqlDbService,
 	keyvaultService keyvault.KeyVaultService,
+	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceTarget {
 	return &dotnetContainerAppTarget{
 		env:                 env,
@@ -66,6 +69,7 @@ func NewDotNetContainerAppTarget(
 		cosmosDbService:     cosmosDbService,
 		sqlDbService:        sqlDbService,
 		keyvaultService:     keyvaultService,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -159,6 +163,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 				projectRoot = filepath.Dir(projectRoot)
 			}
 
+			autoConfigureDataProtection := at.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature)
+
 			manifestPath := filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml")
 			if _, err := os.Stat(manifestPath); err == nil {
 				log.Printf("using container app manifest from %s", manifestPath)
@@ -178,6 +184,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
 					serviceConfig.DotNetContainerApp.Manifest,
 					serviceConfig.DotNetContainerApp.ProjectName,
+					autoConfigureDataProtection,
 				)
 				if err != nil {
 					task.SetError(fmt.Errorf("generating container app manifest: %w", err))
@@ -208,6 +215,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 					// stores the parameter value.
 					"securedParameter": fns.Parameter,
 					"secretOutput":     fns.kvSecret,
+					"targetPortOrDefault": func(targetPortFromManifest int) int {
+						// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
+						if portNumber == 0 {
+							return targetPortFromManifest
+						}
+						return portNumber
+					},
 				}).
 				Parse(manifest)
 			if err != nil {
@@ -226,15 +240,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			builder := strings.Builder{}
 			err = tmpl.Execute(&builder, struct {
-				Env        map[string]string
-				Image      string
-				Inputs     map[string]any
-				TargetPort int
+				Env    map[string]string
+				Image  string
+				Inputs map[string]any
 			}{
-				Env:        at.env.Dotenv(),
-				Image:      remoteImageName,
-				Inputs:     inputs,
-				TargetPort: portNumber,
+				Env:    at.env.Dotenv(),
+				Image:  remoteImageName,
+				Inputs: inputs,
 			})
 			if err != nil {
 				task.SetError(fmt.Errorf("failed executing template file: %w", err))

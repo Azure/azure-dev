@@ -77,7 +77,7 @@ func TestAspireEscaping(t *testing.T) {
 
 	for _, name := range []string{"api"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
@@ -162,7 +162,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 
 	for _, name := range []string{"frontend"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
@@ -182,9 +182,9 @@ func TestAspireDockerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	for _, name := range []string{"nodeapp"} {
+	for _, name := range []string{"nodeapp", "api"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})

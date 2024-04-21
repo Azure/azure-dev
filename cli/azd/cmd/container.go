@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -488,13 +489,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			BuildArmClientOptions()
 	})
 
-	container.MustRegisterSingleton(func(
-		credential azcore.TokenCredential,
-		armClientOptions *arm.ClientOptions,
-	) (*armresourcegraph.Client, error) {
-		return armresourcegraph.NewClient(credential, armClientOptions)
-	})
-
 	container.MustRegisterSingleton(templates.NewTemplateManager)
 	container.MustRegisterSingleton(templates.NewSourceManager)
 	container.MustRegisterScoped(project.NewResourceManager)
@@ -531,11 +525,37 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(config.NewUserConfigManager)
 	container.MustRegisterSingleton(config.NewManager)
 	container.MustRegisterSingleton(config.NewFileConfigManager)
-	container.MustRegisterScoped(func() auth.ExternalAuthConfiguration {
-		return auth.ExternalAuthConfiguration{
-			Endpoint: os.Getenv("AZD_AUTH_ENDPOINT"),
-			Key:      os.Getenv("AZD_AUTH_KEY"),
+	container.MustRegisterScoped(func() (auth.ExternalAuthConfiguration, error) {
+		cert := os.Getenv("AZD_AUTH_CERT")
+		endpoint := os.Getenv("AZD_AUTH_ENDPOINT")
+		key := os.Getenv("AZD_AUTH_KEY")
+
+		client := &http.Client{}
+		if len(cert) > 0 {
+			transport, err := httputil.TlsEnabledTransport(cert)
+			if err != nil {
+				return auth.ExternalAuthConfiguration{},
+					fmt.Errorf("parsing AZD_AUTH_CERT: %w", err)
+			}
+			client.Transport = transport
+
+			endpointUrl, err := url.Parse(endpoint)
+			if err != nil {
+				return auth.ExternalAuthConfiguration{},
+					fmt.Errorf("invalid AZD_AUTH_ENDPOINT value '%s': %w", endpoint, err)
+			}
+
+			if endpointUrl.Scheme != "https" {
+				return auth.ExternalAuthConfiguration{},
+					fmt.Errorf("invalid AZD_AUTH_ENDPOINT value '%s': scheme must be 'https' when certificate is provided",
+						endpoint)
+			}
 		}
+		return auth.ExternalAuthConfiguration{
+			Endpoint: endpoint,
+			Client:   client,
+			Key:      key,
+		}, nil
 	})
 	container.MustRegisterScoped(auth.NewManager)
 	container.MustRegisterSingleton(azcli.NewUserProfileService)
@@ -553,10 +573,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
-	})
-
-	container.MustRegisterScoped(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
-		return authManager.CredentialForCurrentUser(ctx, nil)
 	})
 
 	// Tools

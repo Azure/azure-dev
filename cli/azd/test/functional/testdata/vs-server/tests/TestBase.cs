@@ -4,6 +4,7 @@
 using Microsoft.Extensions.Configuration;
 using System.Net.WebSockets;
 using StreamJsonRpc;
+using System.Security.Cryptography.X509Certificates;
 
 namespace AzdVsServerTests;
 
@@ -41,7 +42,7 @@ public class TestBase
         _rootDir = config["ROOT_DIR"] ?? System.IO.Directory.GetCurrentDirectory();
         _location = config["AZURE_LOCATION"] ?? "westus2";
         _envName = config["AZURE_ENV_NAME"] ?? "vs-server-env";
-        certBytes = config["CERTIFICATE_BYTES"] ?? throw new InvalidOperationException("CERTIFICATE_BYTES is not set");
+        var _certBytes = config["CERTIFICATE_BYTES"] ?? throw new InvalidOperationException("CERTIFICATE_BYTES is not set");
 
         var host = $"wss://127.0.0.1:{_port}";
         var expectedCert = new X509Certificate2(Convert.FromBase64String(_certBytes));

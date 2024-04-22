@@ -29,14 +29,13 @@ module resources 'resources.bicep' = {
   }
 }
 
-module storage 'storage/aspire.hosting.azure.bicep.storage.bicep' = {
+module storage 'storage/storage.module.bicep' = {
   name: 'storage'
   scope: rg
   params: {
     location: location
     principalId: resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID
     principalType: 'ServicePrincipal'
-    storageName: 'storage'
   }
 }
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID

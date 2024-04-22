@@ -65,7 +65,7 @@ The sample pipelines included within the `todo` templates provide support for us
 You need to set `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` secret for GitHub to use a federated credential.
 You can use the [github cli](https://cli.github.com) to set secrets for your GitHub repository.
 
-The `client id` and `tenant id` are the ones from a `Service Principal` which has configured a federated credential for the GitHub repository you are using. You can follow [these steps](https://learn.microsoft.com/en-us/azure/active-directory/workload-identities/workload-identity-federation-create-trust?pivots=identity-wif-apps-methods-azp#github-actions) to set up the federated credential for the app registration (Service principal).
+The `client id` and `tenant id` are the ones from a `Service Principal` which has configured a federated credential for the GitHub repository you are using. You can follow [these steps](https://learn.microsoft.com/azure/active-directory/workload-identities/workload-identity-federation-create-trust?pivots=identity-wif-apps-methods-azp#github-actions) to set up the federated credential for the app registration (Service principal).
 
 #### Client Secret with GitHub
 
@@ -93,7 +93,7 @@ For reusing an existing connection, you would only need to set the name of the e
       azureSubscription: service-connection-name
 ```
 
-The service connection from Azure DevOps is equivalent to the Service Principal used on GitHub, but the service connection must be first created within Azure DevOps. Learn more about creating service connections for Azure DevOps [here](https://learn.microsoft.com/en-us/azure/devops/pipelines/library/service-endpoints?view=azure-devops&tabs=yaml).
+The service connection from Azure DevOps is equivalent to the Service Principal used on GitHub, but the service connection must be first created within Azure DevOps. Learn more about creating service connections for Azure DevOps [here](https://learn.microsoft.com/azure/devops/pipelines/library/service-endpoints?view=azure-devops&tabs=yaml).
 
 ### Azd environment configuration
 
@@ -107,7 +107,7 @@ If you have run `azd provision` locally, you can get these values by running `az
 
 ## Create Azure DevOps pipeline
 
-For Azure DevOps, you need to manually create the pipeline by using a yml definition. You can follow [this these](https://learn.microsoft.com/en-us/azure/devops/pipelines/create-first-pipeline?view=azure-devops&tabs=java%2Ctfs-2018-2%2Cbrowser) to learn how to use the existing yml definition.
+For Azure DevOps, you need to manually create the pipeline by using a yml definition. You can follow [this these](https://learn.microsoft.com/azure/devops/pipelines/create-first-pipeline?view=azure-devops&tabs=java%2Ctfs-2018-2%2Cbrowser) to learn how to use the existing yml definition.
 
 This is not required on GitHub, as the GitHub actions is automatically created as soon as the yml file is pushed into an specific folder.
 

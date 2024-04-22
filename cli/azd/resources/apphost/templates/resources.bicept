@@ -15,7 +15,7 @@ var resourceToken = uniqueString(resourceGroup().id)
 {{- if $parameter.Secret }}
 @secure()
 {{- end}}
-param {{dashToUnderscore $parameter.Name}} {{$parameter.Type}}
+param {{bicepParameterName $parameter.Name}} {{$parameter.Type}}
 {{- end}}
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -77,9 +77,9 @@ resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileService
 }
 {{range $name, $value := .ContainerApps}}
 {{- range $volume := $value.Volumes}}
-resource {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
-  name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}', 32)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -105,12 +105,12 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
 }
 {{range $name, $value := .ContainerApps}}
 {{- range $volume := $value.Volumes}}
-resource {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+resource {{mergeBicepName $name $volume.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   parent: containerAppEnvironment
-  name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}', 32)
   properties: {
     azureFile: {
-      shareName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+      shareName: '${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}'
       accountName: storageVolume.name
       accountKey: storageVolume.listKeys().keys[0].value
 {{- if $volume.ReadOnly }}
@@ -219,6 +219,14 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
 {{- if $value.Ingress}}
       ingress: {
+{{- if $value.Ingress.AdditionalPortMappings }}
+        additionalPortMappings: [
+{{- range $additionalPort := $value.Ingress.AdditionalPortMappings }}
+          { targetPort: {{ $additionalPort.TargetPort }}
+          external: {{ $additionalPort.External }} }
+{{- end}}
+        ]
+{{- end}}
         external: {{$value.Ingress.External}}
         targetPort: {{$value.Ingress.TargetPort}}
         transport: '{{$value.Ingress.Transport}}'
@@ -243,9 +251,9 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
       volumes: [
 {{- range $volume := $value.Volumes}}
         {
-          name: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+          name: '${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}'
           storageType: 'AzureFile'
-          storageName: {{dashToUnderscore $name}}_{{dashToUnderscore $volume.Name}}Store.name
+          storageName: {{mergeBicepName $name $volume.Name}}Store.name
         }
 {{- end}}
       ]
@@ -274,7 +282,7 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
           volumeMounts: [
 {{- range $volume := $value.Volumes}}
             {
-              volumeName: '${toLower('{{$name}}')}-${toLower('{{$volume.Name}}')}'
+              volumeName: '${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}'
               mountPath: '{{$volume.Target}}'
             }
 {{- end}}

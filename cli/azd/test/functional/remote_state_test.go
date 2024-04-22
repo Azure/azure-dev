@@ -70,6 +70,10 @@ func createBlobClient(
 	storageConfig *storage.AccountConfig,
 	httpClient auth.HttpClient,
 ) storage.BlobClient {
+	coreClientOptions := azsdk.NewClientOptionsBuilderFactory(httpClient, "azd", cloud.AzurePublic()).
+		NewClientOptionsBuilder().
+		BuildCoreClientOptions()
+
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 
 	authManager, err := auth.NewManager(
@@ -81,14 +85,8 @@ func createBlobClient(
 	)
 	require.NoError(t, err)
 
-	credentials, err := authManager.CredentialForCurrentUser(*mockContext.Context, nil)
-	require.NoError(t, err)
-
-	coreClientOptions := azsdk.NewClientOptionsBuilderFactory(httpClient, "azd", cloud.AzurePublic()).
-		NewClientOptionsBuilder().
-		BuildCoreClientOptions()
-
-	sdkClient, err := storage.NewBlobSdkClient(credentials, storageConfig, coreClientOptions, cloud.AzurePublic())
+	sdkClient, err := storage.NewBlobSdkClient(
+		auth.NewMultiTenantCredentialProvider(authManager), storageConfig, coreClientOptions, cloud.AzurePublic())
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)
 

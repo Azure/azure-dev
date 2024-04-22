@@ -89,7 +89,7 @@
             "label": "Web npm start",
             "detail": "Helper task--use 'Start Web' task to ensure environment is set up correctly",
             "type": "shell",
-            "command": "npm run dev",
+            "command": "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" npm run dev",
             "options": {
                 "cwd": "${workspaceFolder}/src/web/",
                 "env": {

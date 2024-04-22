@@ -9,7 +9,7 @@ type Domain struct {
 
 // Well-known domains. Domains can also be subdomains, thus should be evaluated as such.
 //
-// Taken from https://learn.microsoft.com/en-us/azure/security/fundamentals/azure-domains.
+// Taken from https://learn.microsoft.com/azure/security/fundamentals/azure-domains.
 var Domains = []Domain{
 	// Order here matters, as it likely determines evaluation precedence due to short-circuiting.
 	{"dev.azure.com", "azdo"},

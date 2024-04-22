@@ -87,6 +87,7 @@ func (s *Server) Serve(l net.Listener) error {
 		ReadHeaderTimeout: 1 * time.Second,
 		Handler:           mux,
 	}
+
 	return server.Serve(l)
 }
 

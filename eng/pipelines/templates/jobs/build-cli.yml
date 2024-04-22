@@ -13,6 +13,9 @@ parameters:
   - name: Variables
     type: object
     default: {}
+  - name: UploadArtifact
+    type: boolean
+    default: true
 
 jobs: 
   - job: BuildCLI_${{ parameters.NameSuffix }}
@@ -72,14 +75,10 @@ jobs:
           ShouldBuildForRelease: true
 
       - template: /eng/pipelines/templates/steps/install-terraform.yml
+
       - template: /eng/pipelines/templates/steps/install-kubectl.yml
 
-      - task: DockerInstaller@0
-        displayName: Docker Installer
-        condition: and(succeeded(), contains('${{ parameters.OS }}', 'macOS'))
-        inputs:
-          dockerVersion: 17.09.0-ce
-          releaseType: stable
+      - template: /eng/pipelines/templates/steps/install-docker.yml
 
       # Live testing uses dotnet 8.0.x in the WebApp project deployment
       - task: UseDotNet@2
@@ -198,11 +197,12 @@ jobs:
         artifact: shield-standalone
         displayName: Upload standalone shield json
 
-      - output: pipelineArtifact
-        path: $(Build.ArtifactStagingDirectory)/build-output
-        artifact: $(BuildTarget)
-        condition: succeeded()
-        displayName: Upload azd binary to artifact store
+      - ${{ if eq(parameters.UploadArtifact, true) }}:
+        - output: pipelineArtifact
+          path: $(Build.ArtifactStagingDirectory)/build-output
+          artifact: $(BuildTarget)
+          condition: succeeded()
+          displayName: Upload azd binary to artifact store
 
       - output: pipelineArtifact
         path: cli/installer/windows/bin/Release

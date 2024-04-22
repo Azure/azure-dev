@@ -42,7 +42,7 @@
       },
       "volumes": [
         {
-          "name": "volumeOne",
+          "name": "Project.AppHost-volumeOne",
           "target": "/data/db",
           "readOnly": false
         }
@@ -52,7 +52,12 @@
           "scheme": "tcp",
           "protocol": "tcp",
           "transport": "tcp",
-          "containerPort": 3306
+          "targetPort": 3306
+        },
+        "http" : {
+          "scheme": "http",
+          "protocol": "http",
+          "transport": "http"
         }
       },
       "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract-password.value}"
@@ -95,11 +100,13 @@
       "image": "mysql:latest",
       "env": {
         "MYSQL_ROOT_PASSWORD": "{my-sql-abstract-password.value}",
-        "SpecialChar": "{my-sql-abstract-pas-sw-ord.value}"
+        "SpecialChar": "{my-sql-abstract-pas-sw-ord.value}",
+        "resolve_tcp_binding": "{mysqlabstract.bindings.tcp.url}",
+        "resolve_http_binding": "{mysqlabstract.bindings.http.url}"
       },
       "volumes": [
         {
-          "name": "volume-two",
+          "name": "Project.AppHost-volume-two",
           "target": "/data/db",
           "readOnly": true
         }
@@ -109,7 +116,7 @@
           "scheme": "tcp",
           "protocol": "tcp",
           "transport": "tcp",
-          "containerPort": 3306
+          "targetPort": 3306
         }
       },
       "connectionString": "Server={my-sql-abstract.bindings.tcp.host};Port={my-sql-abstract.bindings.tcp.port};User ID=root;Password={my-sql-abstract-password.value}"
@@ -156,7 +163,7 @@
           "scheme": "tcp",
           "protocol": "tcp",
           "transport": "tcp",
-          "containerPort": 3306
+          "targetPort": 3306
         }
       },
       "connectionString": "Server={noVolume.bindings.tcp.host};Port={noVolume.bindings.tcp.port};User ID=root;Password={noVolume-password.value}"

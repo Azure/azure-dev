@@ -1,3 +1,5 @@
+using Aspire.Hosting;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 // redis instance the app will use for output caching
@@ -9,7 +11,7 @@ var redisPubSub     = builder.AddRedis("pubsub");
 // azure storage account the app will use for blob & table storage
 var azureStorage    = builder
                         .AddAzureStorage("storage")
-                            .UseEmulator();
+                            .RunAsEmulator();
 
 // azure table storage for storing request data
 var requestTable    = azureStorage.AddTables("requestlog");

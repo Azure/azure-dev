@@ -230,7 +230,6 @@ func (c *ZipDeployClient) checkRunTimeStatus(
 
 	properties := res.CsmDeploymentStatus.Properties
 	status := properties.Status
-	errorString := ""
 	deploymentResult := ""
 	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
 	successNumber := int(*properties.NumberOfInstancesSuccessful)
@@ -240,13 +239,10 @@ func (c *ZipDeployClient) checkRunTimeStatus(
 	runTime := time.Since(currentTime)
 	maxTime := 1000 * time.Second
 
-	// Print out err instead of return err
 	if status != nil {
 		switch *status {
 		case deploymentBuildStatusRuntimeStarting:
 			return fmt.Sprintf("In progress instances: %d, Successful instances: %d\n", inProgressNumber, successNumber), nil
-		case deploymentBuildStatusRuntimeSuccessful:
-			return "Deployment success", nil
 		case deploymentBuildStatusRuntimeFailed:
 			if successNumber > 0 {
 				deploymentResult += fmt.Sprintf("Site started with errors: %d/%d instances failed to start successfully\n",
@@ -263,9 +259,9 @@ func (c *ZipDeployClient) checkRunTimeStatus(
 
 			if len(errors) > 0 {
 				if errorMessage != nil {
-					errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
+					deploymentResult += fmt.Sprintf("Error: %s\n", *errorMessage)
 				} else if errorExtendedCode != nil {
-					errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
+					deploymentResult += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
 				}
 			}
 
@@ -273,7 +269,7 @@ func (c *ZipDeployClient) checkRunTimeStatus(
 				deploymentResult += fmt.Sprintf("Please check the runtime logs for more info: %s\n", *failLog[0])
 			}
 
-			return deploymentResult, fmt.Errorf(errorString)
+			return deploymentResult, nil
 		case deploymentBuildStatusBuildFailed:
 			deploymentResult += "Deployment failed because the build process failed\n"
 			errors := properties.Errors
@@ -282,9 +278,9 @@ func (c *ZipDeployClient) checkRunTimeStatus(
 
 			if len(errors) > 0 {
 				if errorMessage != nil {
-					errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
+					deploymentResult += fmt.Sprintf("Error: %s\n", *errorMessage)
 				} else if errorExtendedCode != nil {
-					errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
+					deploymentResult += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
 				}
 			}
 
@@ -298,7 +294,11 @@ func (c *ZipDeployClient) checkRunTimeStatus(
 
 			deploymentResult += fmt.Sprintf("Please check the build logs for more info: %s\n", deploymentLog)
 
-			return deploymentResult, fmt.Errorf(errorString)
+			return deploymentResult, nil
+		case deploymentBuildStatusRuntimeSuccessful:
+			return fmt.Sprintf("Deployment runtime success. In progress instances: %d, "+
+				"Successful instances: %d, Failed Instances: %d\n",
+				inProgressNumber, successNumber, failNumber), nil
 		}
 	}
 

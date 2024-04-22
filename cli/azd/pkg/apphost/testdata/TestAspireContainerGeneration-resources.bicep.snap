@@ -153,7 +153,7 @@ resource mySqlAbstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
             }
             {
               name: 'resolve_tcp_binding'
-              value: 'tcp://mysqlabstract.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}:3306'
+              value: 'tcp://mysqlabstract:3306'
             }
             {
               name: 'MYSQL_ROOT_PASSWORD'

@@ -19,23 +19,23 @@ type CurrentPrincipalIdProvider interface {
 func NewPrincipalIdProvider(
 	env *environment.Environment,
 	userProfileService *azcli.UserProfileService,
-	subResolver account.SubscriptionTenantResolver,
+	account account.Account,
 ) CurrentPrincipalIdProvider {
 	return &principalIDProvider{
 		env:                env,
 		userProfileService: userProfileService,
-		subResolver:        subResolver,
+		account:            account,
 	}
 }
 
 type principalIDProvider struct {
 	env                *environment.Environment
 	userProfileService *azcli.UserProfileService
-	subResolver        account.SubscriptionTenantResolver
+	account            account.Account
 }
 
 func (p *principalIDProvider) CurrentPrincipalId(ctx context.Context) (string, error) {
-	tenantId, err := p.subResolver.LookupTenant(ctx, p.env.GetSubscriptionId())
+	tenantId, err := p.account.LookupTenant(ctx, p.env.GetSubscriptionId())
 	if err != nil {
 		return "", fmt.Errorf("getting tenant id for subscription %s. Error: %w", p.env.GetSubscriptionId(), err)
 	}

@@ -19,13 +19,6 @@ import (
 	"go.uber.org/multierr"
 )
 
-// SubscriptionTenantResolver allows resolving the correct tenant ID
-// that allows the current account access to a given subscription.
-type SubscriptionTenantResolver interface {
-	// Resolve the tenant ID required by the current account to access the given subscription.
-	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
-}
-
 type principalInfoProvider interface {
 	GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error)
 }

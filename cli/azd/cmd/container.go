@@ -548,10 +548,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterSingleton(azcli.NewSpringService)
 
-	container.MustRegisterSingleton(func(subManager account.Account) account.SubscriptionTenantResolver {
-		return subManager
-	})
-
 	container.MustRegisterScoped(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
 		return authManager.CredentialForCurrentUser(ctx, nil)
 	})

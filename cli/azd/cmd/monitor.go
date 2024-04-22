@@ -62,7 +62,7 @@ func newMonitorCmd() *cobra.Command {
 type monitorAction struct {
 	azdCtx               *azdcontext.AzdContext
 	env                  *environment.Environment
-	subResolver          account.SubscriptionTenantResolver
+	acc                  account.Account
 	azCli                azcli.AzCli
 	deploymentOperations azapi.DeploymentOperations
 	console              input.Console
@@ -73,7 +73,7 @@ type monitorAction struct {
 func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
-	subResolver account.SubscriptionTenantResolver,
+	acc account.Account,
 	azCli azcli.AzCli,
 	deploymentOperations azapi.DeploymentOperations,
 	console input.Console,
@@ -87,7 +87,7 @@ func newMonitorAction(
 		deploymentOperations: deploymentOperations,
 		console:              console,
 		flags:                flags,
-		subResolver:          subResolver,
+		acc:                  acc,
 		portalUrlBase:        string(portalUrlBase),
 	}
 }
@@ -138,7 +138,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("application does not contain an Application Insights dashboard")
 	}
 
-	tenantId, err := m.subResolver.LookupTenant(ctx, m.env.GetSubscriptionId())
+	tenantId, err := m.acc.LookupTenant(ctx, m.env.GetSubscriptionId())
 	if err != nil {
 		return nil, err
 	}

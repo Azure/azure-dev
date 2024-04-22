@@ -2,54 +2,119 @@ package mockaccount
 
 import (
 	"context"
+	"os"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
 var _ account.Account = &MockAccountManager{}
 
+type anyCredential struct{}
+
+func (a *anyCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{
+		Token:     "ABC123",
+		ExpiresOn: time.Now().Add(time.Hour * 1),
+	}, nil
+
+}
+
+func LoggedInFakeAccount() *MockAccountManager {
+	return &MockAccountManager{
+		DefaultLocation:     "eastus",
+		DefaultSubscription: "12345678-1234-1234-1234-123456789012",
+		Subscriptions: []account.Subscription{
+			{
+				Id:                 "12345678-1234-1234-1234-123456789012",
+				Name:               "My Subscription",
+				TenantId:           "12345678-1234-1234-1234-123456789012",
+				UserAccessTenantId: "12345678-1234-1234-1234-123456789012",
+			},
+		},
+		Locations: []account.Location{
+			{
+				Name:                "eastus",
+				DisplayName:         "East US",
+				RegionalDisplayName: "East US",
+			},
+		},
+		TenantCredentials: map[string]azcore.TokenCredential{
+			"12345678-1234-1234-1234-123456789012": &anyCredential{},
+			// home tenant credential
+			"": &anyCredential{},
+		},
+	}
+}
+
 type MockAccountManager struct {
 	DefaultLocation     string
 	DefaultSubscription string
 
-	Subscriptions []account.Subscription
-	Locations     []account.Location
+	TenantCredentials map[string]azcore.TokenCredential
+	Subscriptions     []account.Subscription
+	Locations         []account.Location
 }
 
 // ClearSubscriptions implements account.Account.
 func (a *MockAccountManager) ClearSubscriptions(ctx context.Context) error {
-	panic("unimplemented")
+	a.Subscriptions = nil
+	return nil
 }
 
 // GetLocation implements account.Account.
 func (a *MockAccountManager) GetLocation(ctx context.Context, subscriptionId string, locationName string) (account.Location, error) {
-	panic("unimplemented")
+	for _, loc := range a.Locations {
+		if loc.Name == locationName {
+			return loc, nil
+		}
+	}
+
+	return account.Location{}, os.ErrNotExist
 }
 
 // GetSubscription implements account.Account.
 func (a *MockAccountManager) GetSubscription(ctx context.Context, subscriptionId string) (*account.Subscription, error) {
-	panic("unimplemented")
+	for _, sub := range a.Subscriptions {
+		if sub.Id == subscriptionId {
+			return &sub, nil
+		}
+	}
+
+	return nil, os.ErrNotExist
 }
 
 // RefreshSubscriptions implements account.Account.
 func (a *MockAccountManager) RefreshSubscriptions(ctx context.Context) error {
-	panic("unimplemented")
+	return nil
 }
 
 // CredentialForSubscription implements account.Account.
 func (a *MockAccountManager) CredentialForSubscription(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error) {
-	panic("unimplemented")
+	tenantId, err := a.LookupTenant(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.TenantCredentials[tenantId], nil
 }
 
 // CredentialForTenant implements account.Account.
 func (a *MockAccountManager) CredentialForTenant(ctx context.Context, tenantId string) (azcore.TokenCredential, error) {
-	panic("unimplemented")
+	return a.TenantCredentials[tenantId], nil
 }
 
 // LookupTenant implements account.Account.
 func (a *MockAccountManager) LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
-	panic("unimplemented")
+	for _, sub := range a.Subscriptions {
+		if sub.Id == subscriptionId {
+			return sub.UserAccessTenantId, nil
+		}
+	}
+
+	return "", os.ErrNotExist
 }
 
 func (a *MockAccountManager) Clear(ctx context.Context) error {

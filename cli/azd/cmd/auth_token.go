@@ -56,7 +56,7 @@ type authTokenAction struct {
 	formatter          output.Formatter
 	writer             io.Writer
 	envResolver        environment.EnvironmentResolver
-	subResolver        account.SubscriptionTenantResolver
+	acc                account.Account
 	flags              *authTokenFlags
 	cloud              *cloud.Cloud
 }
@@ -67,13 +67,13 @@ func newAuthTokenAction(
 	writer io.Writer,
 	flags *authTokenFlags,
 	envResolver environment.EnvironmentResolver,
-	subResolver account.SubscriptionTenantResolver,
+	acc account.Account,
 	cloud *cloud.Cloud,
 ) actions.Action {
 	return &authTokenAction{
 		credentialProvider: credentialProvider,
 		envResolver:        envResolver,
-		subResolver:        subResolver,
+		acc:                acc,
 		formatter:          formatter,
 		writer:             writer,
 		flags:              flags,
@@ -84,7 +84,7 @@ func newAuthTokenAction(
 func getTenantIdFromAzdEnv(
 	ctx context.Context,
 	envResolver environment.EnvironmentResolver,
-	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
+	acc account.Account) (tenantId string, err error) {
 	azdEnv, err := envResolver(ctx)
 	if err != nil {
 		// No azd env, return empty tenantId
@@ -97,7 +97,7 @@ func getTenantIdFromAzdEnv(
 		return tenantId, nil
 	}
 
-	tenantId, err = subResolver.LookupTenant(ctx, subIdAtAzdEnv)
+	tenantId, err = acc.LookupTenant(ctx, subIdAtAzdEnv)
 	if err != nil {
 		return tenantId, fmt.Errorf(
 			"resolving the Azure Directory from azd environment (%s): %w",
@@ -110,7 +110,7 @@ func getTenantIdFromAzdEnv(
 
 func getTenantIdFromEnv(
 	ctx context.Context,
-	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
+	acc account.Account) (tenantId string, err error) {
 
 	subIdAtSysEnv, found := os.LookupEnv(environment.SubscriptionIdEnvVarName)
 	if !found {
@@ -118,7 +118,7 @@ func getTenantIdFromEnv(
 		return tenantId, nil
 	}
 
-	tenantId, err = subResolver.LookupTenant(ctx, subIdAtSysEnv)
+	tenantId, err = acc.LookupTenant(ctx, subIdAtSysEnv)
 	if err != nil {
 		return tenantId, fmt.Errorf(
 			"resolving the Azure Directory from system environment (%s): %w", environment.SubscriptionIdEnvVarName, err)
@@ -138,7 +138,7 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 	tenantId := a.flags.tenantID
 	// 2) From azd env
 	if tenantId == "" {
-		tenantIdFromAzdEnv, err := getTenantIdFromAzdEnv(ctx, a.envResolver, a.subResolver)
+		tenantIdFromAzdEnv, err := getTenantIdFromAzdEnv(ctx, a.envResolver, a.acc)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +146,7 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 	// 3) From system env
 	if tenantId == "" {
-		tenantIdFromSysEnv, err := getTenantIdFromEnv(ctx, a.subResolver)
+		tenantIdFromSysEnv, err := getTenantIdFromEnv(ctx, a.acc)
 		if err != nil {
 			return nil, err
 		}

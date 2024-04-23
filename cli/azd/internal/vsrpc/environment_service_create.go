@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -33,10 +32,9 @@ func (s *environmentService) CreateEnvironmentAsync(
 	}
 
 	var c struct {
-		azdContext          *azdcontext.AzdContext `container:"type"`
-		dotnetCli           dotnet.DotNetCli       `container:"type"`
-		envManager          environment.Manager    `container:"type"`
-		alphaFeatureManager *alpha.FeatureManager  `container:"type"`
+		azdContext *azdcontext.AzdContext `container:"type"`
+		dotnetCli  dotnet.DotNetCli       `container:"type"`
+		envManager environment.Manager    `container:"type"`
 	}
 
 	container, err := session.newContainer()

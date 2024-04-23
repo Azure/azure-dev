@@ -55,6 +55,7 @@ BUILDID
 BUILDNUMBER
 buildpacks
 byoi
+centralusstage
 cflags
 circleci
 cmdrecord
@@ -88,6 +89,7 @@ envname
 errcheck
 errorinfo
 errorlint
+EUAP
 executil
 Frontends
 funcapp

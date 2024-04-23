@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -32,9 +33,10 @@ func (s *environmentService) CreateEnvironmentAsync(
 	}
 
 	var c struct {
-		azdContext *azdcontext.AzdContext `container:"type"`
-		dotnetCli  dotnet.DotNetCli       `container:"type"`
-		envManager environment.Manager    `container:"type"`
+		azdContext          *azdcontext.AzdContext `container:"type"`
+		dotnetCli           dotnet.DotNetCli       `container:"type"`
+		envManager          environment.Manager    `container:"type"`
+		alphaFeatureManager *alpha.FeatureManager  `container:"type"`
 	}
 
 	container, err := session.newContainer()
@@ -80,7 +82,8 @@ func (s *environmentService) CreateEnvironmentAsync(
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
 
-		files, err := apphost.GenerateProjectArtifacts(
+		appHostManager := apphost.NewAppHostManager(c.alphaFeatureManager)
+		files, err := appHostManager.GenerateProjectArtifacts(
 			ctx,
 			c.azdContext.ProjectDirectory(),
 			filepath.Base(c.azdContext.ProjectDirectory()),

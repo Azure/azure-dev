@@ -41,8 +41,9 @@ type DotNetImporter struct {
 	cache   map[manifestCacheKey]*apphost.Manifest
 	cacheMu sync.Mutex
 
-	hostCheck   map[string]hostCheckResult
-	hostCheckMu sync.Mutex
+	hostCheck      map[string]hostCheckResult
+	hostCheckMu    sync.Mutex
+	appHostManager *apphost.AppHostManager
 }
 
 // manifestCacheKey is the key we use when caching manifests. It is a combination of the project path and the
@@ -67,6 +68,7 @@ func NewDotNetImporter(
 		alphaFeatureManager: alphaFeatureManager,
 		cache:               make(map[manifestCacheKey]*apphost.Manifest),
 		hostCheck:           make(map[string]hostCheckResult),
+		appHostManager:      apphost.NewAppHostManager(alphaFeatureManager),
 	}
 }
 
@@ -104,7 +106,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate(manifest)
+	files, err := ai.appHostManager.BicepTemplate(manifest)
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -259,7 +261,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 
 	generatedFS := memfs.New()
 
-	infraFS, err := apphost.BicepTemplate(manifest)
+	infraFS, err := ai.appHostManager.BicepTemplate(manifest)
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)
 	}
@@ -303,7 +305,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
 	writeManifestForResource := func(name string, path string) error {
-		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
+		containerAppManifest, err := ai.appHostManager.ContainerAppManifestTemplateForProject(
 			manifest, name, autoConfigureDataProtection)
 		if err != nil {
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -74,10 +76,10 @@ func TestAspireEscaping(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-
+	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
 	for _, name := range []string{"api"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
+			tmpl, err := appHostManager.ContainerAppManifestTemplateForProject(m, name, false)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
@@ -97,7 +99,8 @@ func TestAspireStorageGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m)
+	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
+	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -139,7 +142,8 @@ func TestAspireBicepGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m)
+	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
+	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -162,7 +166,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 
 	for _, name := range []string{"frontend"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
+			tmpl, err := appHostManager.ContainerAppManifestTemplateForProject(m, name, false)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
@@ -181,16 +185,55 @@ func TestAspireDockerGeneration(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
+	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
 
 	for _, name := range []string{"nodeapp", "api"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
+			tmpl, err := appHostManager.ContainerAppManifestTemplateForProject(m, name, false)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
 	}
 
-	files, err := BicepTemplate(m)
+	files, err := appHostManager.BicepTemplate(m)
+	require.NoError(t, err)
+
+	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		contents, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+		t.Run(path, func(t *testing.T) {
+			snapshot.SnapshotT(t, string(contents))
+		})
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestAspireDashboardGeneration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
+	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
+	require.NoError(t, err)
+	alphaConfig := config.NewEmptyConfig()
+	alphaConfig.Set("alpha.aspire.dashboard", "on")
+	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(alphaConfig))
+
+	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -225,7 +268,8 @@ func TestAspireContainerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m)
+	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
+	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {

@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -60,6 +62,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 				git.NewGitCli(mockContext.CommandRunner),
 				dotnet.NewDotNetCli(mockContext.CommandRunner),
 				lazy.From[environment.Manager](mockEnv),
+				mockContext.AlphaFeaturesManager,
 			)
 			err := i.Initialize(*mockContext.Context, azdCtx, &templates.Template{RepositoryPath: "local"}, "")
 			require.NoError(t, err)
@@ -104,6 +107,7 @@ func Test_Initializer_DevCenter(t *testing.T) {
 		git.NewGitCli(mockContext.CommandRunner),
 		dotnet.NewDotNetCli(mockContext.CommandRunner),
 		lazy.From[environment.Manager](mockEnv),
+		mockContext.AlphaFeaturesManager,
 	)
 	err := i.Initialize(*mockContext.Context, azdCtx, template, "")
 	require.NoError(t, err)
@@ -174,6 +178,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				git.NewGitCli(mockRunner),
 				dotnet.NewDotNetCli(mockRunner),
 				lazy.From[environment.Manager](mockEnv),
+				alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 			)
 			err = i.Initialize(context.Background(), azdCtx, &templates.Template{RepositoryPath: "local"}, "")
 			require.NoError(t, err)
@@ -376,7 +381,11 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 			i := NewInitializer(
-				console, git.NewGitCli(realRunner), nil, lazy.From[environment.Manager](envManager))
+				console,
+				git.NewGitCli(realRunner),
+				nil,
+				lazy.From[environment.Manager](envManager),
+				alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
 			err := i.writeCoreAssets(context.Background(), azdCtx)
 			require.NoError(t, err)
 

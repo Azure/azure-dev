@@ -18,6 +18,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
@@ -35,6 +36,8 @@ const DaprPubSubComponentType = "pubsub"
 
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
+
+var aspireDashboard = alpha.MustFeatureKey("aspire.dashboard")
 
 func init() {
 	tmpl, err := template.New("templates").
@@ -107,11 +110,19 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 	return res
 }
 
+type AppHostManager struct {
+	alphaFeatureManager *alpha.FeatureManager
+}
+
+func NewAppHostManager(alphaFeatureManager *alpha.FeatureManager) *AppHostManager {
+	return &AppHostManager{alphaFeatureManager: alphaFeatureManager}
+}
+
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
-func ContainerAppManifestTemplateForProject(
+func (m *AppHostManager) ContainerAppManifestTemplateForProject(
 	manifest *Manifest, projectName string, autoConfigureDataProtection bool) (string, error) {
-	generator := newInfraGenerator()
+	generator := newInfraGenerator(m.alphaFeatureManager)
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return "", err
@@ -136,8 +147,8 @@ func ContainerAppManifestTemplateForProject(
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
-	generator := newInfraGenerator()
+func (m *AppHostManager) BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
+	generator := newInfraGenerator(m.alphaFeatureManager)
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
@@ -257,7 +268,7 @@ func inputMetadata(config InputDefaultGenerate) (string, error) {
 
 // GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. The azure.yaml file as well as
 // a helpful next-steps.md file.
-func GenerateProjectArtifacts(
+func (m *AppHostManager) GenerateProjectArtifacts(
 	ctx context.Context,
 	projectDir string,
 	projectName string,
@@ -269,7 +280,7 @@ func GenerateProjectArtifacts(
 		return nil, err
 	}
 
-	generator := newInfraGenerator()
+	generator := newInfraGenerator(m.alphaFeatureManager)
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
@@ -343,9 +354,10 @@ type infraGenerator struct {
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
 	allServicesIngress           map[string]ingressDetails
+	alphaFeatureManager          *alpha.FeatureManager
 }
 
-func newInfraGenerator() *infraGenerator {
+func newInfraGenerator(alphaFeatureManager *alpha.FeatureManager) *infraGenerator {
 	return &infraGenerator{
 		bicepContext: genBicepTemplateContext{
 			AppInsights:                     make(map[string]genAppInsight),
@@ -370,6 +382,7 @@ func newInfraGenerator() *infraGenerator {
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
+		alphaFeatureManager:          alphaFeatureManager,
 	}
 }
 
@@ -434,6 +447,9 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 
 // LoadManifest loads the given manifest into the generator. It should be called before [Compile].
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
+	if ad := b.alphaFeatureManager.IsEnabled(aspireDashboard); ad {
+		b.bicepContext.AspireDashboard = ad
+	}
 	for name, comp := range m.Resources {
 		if err := b.extractOutputs(comp); err != nil {
 			return fmt.Errorf("extracting outputs: %w", err)

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -33,6 +35,7 @@ type Initializer struct {
 	gitCli         git.GitCli
 	dotnetCli      dotnet.DotNetCli
 	lazyEnvManager *lazy.Lazy[environment.Manager]
+	appHostManager *apphost.AppHostManager
 }
 
 func NewInitializer(
@@ -40,12 +43,14 @@ func NewInitializer(
 	gitCli git.GitCli,
 	dotnetCli dotnet.DotNetCli,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
+	alphaFeatureManager *alpha.FeatureManager,
 ) *Initializer {
 	return &Initializer{
 		console:        console,
 		gitCli:         gitCli,
 		lazyEnvManager: lazyEnvManager,
 		dotnetCli:      dotnetCli,
+		appHostManager: apphost.NewAppHostManager(alphaFeatureManager),
 	}
 }
 

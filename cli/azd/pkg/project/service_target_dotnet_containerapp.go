@@ -39,6 +39,7 @@ type dotnetContainerAppTarget struct {
 	sqlDbService        sqldb.SqlDbService
 	keyvaultService     keyvault.KeyVaultService
 	alphaFeatureManager *alpha.FeatureManager
+	appHostManager      *apphost.AppHostManager
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -70,6 +71,7 @@ func NewDotNetContainerAppTarget(
 		sqlDbService:        sqlDbService,
 		keyvaultService:     keyvaultService,
 		alphaFeatureManager: alphaFeatureManager,
+		appHostManager:      apphost.NewAppHostManager(alphaFeatureManager),
 	}
 }
 
@@ -181,7 +183,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 					serviceConfig.DotNetContainerApp.ProjectPath,
 					serviceConfig.DotNetContainerApp.ProjectName)
 
-				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
+				generatedManifest, err := at.appHostManager.ContainerAppManifestTemplateForProject(
 					serviceConfig.DotNetContainerApp.Manifest,
 					serviceConfig.DotNetContainerApp.ProjectName,
 					autoConfigureDataProtection,

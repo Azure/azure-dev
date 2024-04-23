@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -41,7 +40,6 @@ func NewInitializer(
 	gitCli git.GitCli,
 	dotnetCli dotnet.DotNetCli,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
-	alphaFeatureManager *alpha.FeatureManager,
 ) *Initializer {
 	return &Initializer{
 		console:        console,

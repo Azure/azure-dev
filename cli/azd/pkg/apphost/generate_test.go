@@ -230,7 +230,8 @@ func TestAspireDashboardGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 	alphaConfig := config.NewEmptyConfig()
-	alphaConfig.Set("alpha.aspire.dashboard", "on")
+	err = alphaConfig.Set("alpha.aspire.dashboard", "on")
+	require.NoError(t, err)
 	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(alphaConfig))
 
 	files, err := appHostManager.BicepTemplate(m)

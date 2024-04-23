@@ -6,6 +6,10 @@
 
 - [[#3754]](https://github.com/Azure/azure-dev/pull/3754) A small change to the Install, Login, Initialize App, Up, and Pipeline Config commands to make them programmatically accessible.
 
+### Breaking Changes
+
+- [[#3621]](https://github.com/Azure/azure-dev/pull/3621) The Azure Developer CLI is now required to be at version 1.8.0 or higher. If an older version is installed, you will be prompted to update.
+
 ## 0.8.1 (2024-03-06)
 
 ### Features Added

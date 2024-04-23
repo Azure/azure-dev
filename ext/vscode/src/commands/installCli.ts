@@ -13,7 +13,14 @@ const WindowsTerminalCommand = `powershell -ex AllSigned -c "Invoke-RestMethod '
 const LinuxTerminalCommand = `curl -fsSL https://aka.ms/install-azd.sh | bash`;
 const MacTerminalCommand = LinuxTerminalCommand; // Same as Linux
 
-export async function installCli(context: IActionContext, shouldPrompt: boolean = true): Promise<void> {
+/**
+ * A tuple representing the arguments that must be passed to the `installCli` command when executed via {@link vscode.commands.executeCommand}
+ */
+export type InstallCliCommandArguments = [ boolean?, boolean? ];
+
+export async function installCli(context: IActionContext, shouldPrompt: boolean = true, fromAgent: boolean = false): Promise<void> {
+    context.telemetry.properties.fromAgent = fromAgent.toString();
+
     if (shouldPrompt) {
         const message = vscode.l10n.t('This will install or update the Azure Developer CLI. Do you want to continue?');
         // Don't need to check the result, if the user chooses cancel a UserCancelledError will be thrown

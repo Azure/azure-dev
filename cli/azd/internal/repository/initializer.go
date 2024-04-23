@@ -50,9 +50,9 @@ func NewInitializer(
 		gitCli:         gitCli,
 		lazyEnvManager: lazyEnvManager,
 		dotnetCli:      dotnetCli,
-		appHostManager: apphost.NewAppHostManager(apphost.AppHostManagerOptions{
+		appHostManager: &apphost.AppHostManager{
 			AspireDashboard: alphaFeatureManager.IsEnabled(apphost.AspireDashboardFeature),
-		}),
+		},
 	}
 }
 

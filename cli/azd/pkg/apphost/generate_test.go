@@ -74,7 +74,7 @@ func TestAspireEscaping(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
+	appHostManager := &AppHostManager{AspireDashboard: false}
 	for _, name := range []string{"api"} {
 		t.Run(name, func(t *testing.T) {
 			tmpl, err := appHostManager.ContainerAppManifestTemplateForProject(m, name, false)
@@ -97,7 +97,7 @@ func TestAspireStorageGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
+	appHostManager := &AppHostManager{AspireDashboard: false}
 	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 
@@ -140,7 +140,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
+	appHostManager := &AppHostManager{AspireDashboard: false}
 	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 
@@ -183,7 +183,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
+	appHostManager := &AppHostManager{AspireDashboard: false}
 
 	for _, name := range []string{"nodeapp", "api"} {
 		t.Run(name, func(t *testing.T) {
@@ -227,7 +227,7 @@ func TestAspireDashboardGeneration(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: true})
+	appHostManager := &AppHostManager{AspireDashboard: true}
 
 	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
@@ -264,7 +264,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
+	appHostManager := &AppHostManager{AspireDashboard: false}
 	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 

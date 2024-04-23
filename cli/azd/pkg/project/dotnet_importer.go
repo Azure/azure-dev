@@ -68,9 +68,9 @@ func NewDotNetImporter(
 		alphaFeatureManager: alphaFeatureManager,
 		cache:               make(map[manifestCacheKey]*apphost.Manifest),
 		hostCheck:           make(map[string]hostCheckResult),
-		appHostManager: apphost.NewAppHostManager(apphost.AppHostManagerOptions{
+		appHostManager: &apphost.AppHostManager{
 			AspireDashboard: alphaFeatureManager.IsEnabled(apphost.AspireDashboardFeature),
-		}),
+		},
 	}
 }
 

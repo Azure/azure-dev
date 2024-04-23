@@ -111,22 +111,14 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 }
 
 type AppHostManager struct {
-	aspireDashboard bool
-}
-
-type AppHostManagerOptions struct {
 	AspireDashboard bool
-}
-
-func NewAppHostManager(options AppHostManagerOptions) *AppHostManager {
-	return &AppHostManager{aspireDashboard: options.AspireDashboard}
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
 func (m *AppHostManager) ContainerAppManifestTemplateForProject(
 	manifest *Manifest, projectName string, autoConfigureDataProtection bool) (string, error) {
-	generator := newInfraGenerator(infraGeneratorOptions{dashboard: m.aspireDashboard})
+	generator := newInfraGenerator(infraGeneratorOptions{dashboard: m.AspireDashboard})
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return "", err
@@ -152,7 +144,7 @@ func (m *AppHostManager) ContainerAppManifestTemplateForProject(
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
 func (m *AppHostManager) BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
-	generator := newInfraGenerator(infraGeneratorOptions{dashboard: m.aspireDashboard})
+	generator := newInfraGenerator(infraGeneratorOptions{dashboard: m.AspireDashboard})
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
@@ -284,7 +276,7 @@ func (m *AppHostManager) GenerateProjectArtifacts(
 		return nil, err
 	}
 
-	generator := newInfraGenerator(infraGeneratorOptions{dashboard: m.aspireDashboard})
+	generator := newInfraGenerator(infraGeneratorOptions{dashboard: m.AspireDashboard})
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err

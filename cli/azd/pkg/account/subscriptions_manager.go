@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"go.uber.org/multierr"
@@ -128,25 +129,35 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 		return nil, err
 	}
 
-	accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{})
+	accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes:   auth.LoginScopes(cloud.AzurePublic()),
+		TenantID: "",
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	// Use the object ID of the user in the home tenant ID as the unique user key to cache on.
-	oid, err := auth.GetOidFromAccessToken(accessToken.Token)
+	claims, err := auth.GetClaimsFromAccessToken(accessToken.Token)
 	if err != nil {
 		return nil, err
 	}
 
-	subscriptions, err := m.cache.Load(oid)
+	var uid string
+	if oid, ok := claims["oid"]; ok {
+		uid = oid.(string)
+	} else if sub, ok := claims["sub"]; ok {
+		uid = sub.(string)
+	}
+
+	subscriptions, err := m.cache.Load(uid)
 	if err != nil {
 		subscriptions, err = m.ListSubscriptions(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("listing subscriptions: %w", err)
 		}
 
-		err = m.cache.Save(oid, subscriptions)
+		err = m.cache.Save(uid, subscriptions)
 		if err != nil {
 			return nil, fmt.Errorf("saving subscriptions to cache: %w", err)
 		}

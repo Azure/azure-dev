@@ -51,6 +51,29 @@ func GetOidFromAccessToken(token string) (string, error) {
 	return *claims.Oid, nil
 }
 
+// GetClaimsFromAccessToken extracts claims from an access token.
+// Access Tokens are JWT and the middle component is a base64 encoded string of a JSON object
+// with claims.
+func GetClaimsFromAccessToken(token string) (map[string]any, error) {
+	matches := jwtClaimsRegex.FindStringSubmatch(token)
+	if len(matches) != 2 {
+		return nil, errors.New("malformed access token")
+	}
+
+	bytes, err := base64.RawURLEncoding.DecodeString(matches[1])
+	if err != nil {
+		return nil, err
+	}
+
+	var claims map[string]any
+
+	if err := json.Unmarshal(bytes, &claims); err != nil {
+		return nil, err
+	}
+
+	return claims, nil
+}
+
 func getTidClaimFromAccessToken(token string) (string, error) {
 	matches := jwtClaimsRegex.FindStringSubmatch(token)
 	if len(matches) != 2 {

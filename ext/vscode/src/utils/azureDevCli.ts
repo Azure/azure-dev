@@ -20,7 +20,7 @@ const AzdLoginCheckCacheLifetime = 15 * 60 * 1000; // 15 minutes
 let azdInstallAttempted: boolean = false;
 const azdLoginChecker = new AsyncLazy<LoginStatus | undefined>(getAzdLoginStatus, AzdLoginCheckCacheLifetime);
 
-interface LoginStatus {
+export interface LoginStatus {
     readonly status: 'success' | 'unauthenticated' | string;
     readonly expiresOn?: string;
 }
@@ -59,7 +59,7 @@ export function scheduleAzdVersionCheck(): void {
         const versionResult = await getAzdVersion();
 
         if (versionResult && !semver.gte(versionResult, minimumSupportedVersion)) {
-            // We won't show a warning if AZD is not installed, but if it is installed and less than 0.8.0, we will warn
+            // We won't show a warning if AZD is not installed, but if it is installed and less than the minimum, we will warn
 
             const install: vscode.MessageItem = {
                 title: vscode.l10n.t('Update'),
@@ -197,7 +197,7 @@ async function getAzdVersion(): Promise<semver.SemVer | undefined> {
     }
 }
 
-async function getAzdLoginStatus(): Promise<LoginStatus | undefined> {
+export async function getAzdLoginStatus(): Promise<LoginStatus | undefined> {
     const cli = createCli();
     const command = cli.commandBuilder.withArgs(['auth', 'login', '--check-status', '--output', 'json']).build();
     try {

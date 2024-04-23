@@ -70,11 +70,13 @@ type genDockerfile struct {
 	Env       map[string]string
 	Bindings  custommaps.WithOrder[Binding]
 	BuildArgs map[string]string
+	Args      []string
 }
 
 type genProject struct {
 	Path     string
 	Env      map[string]string
+	Args     []string
 	Bindings custommaps.WithOrder[Binding]
 }
 
@@ -155,6 +157,7 @@ type genContainerAppManifestTemplateContext struct {
 	KeyVaultSecrets             map[string]string
 	Dapr                        *genContainerAppManifestTemplateContextDapr
 	AutoConfigureDataProtection bool
+	Args                        []string
 }
 
 type genProjectFileContext struct {

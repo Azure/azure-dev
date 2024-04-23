@@ -14,8 +14,8 @@ properties:
       transport: http
       allowInsecure: true
     registries:
-    - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
-      identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+      - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+        identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
     secrets:
       - name: connectionstrings--cache
         value: cache:6379
@@ -29,31 +29,31 @@ properties:
         value: '{{ .Env.STORAGE_TABLEENDPOINT }}'
   template:
     containers:
-    - image: {{ .Image }}
-      name: webfrontend
-      env:
-      - name: AZURE_CLIENT_ID
-        value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
-      - name: ASPNETCORE_FORWARDEDHEADERS_ENABLED
-        value: "true"
-      - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
-        value: "true"
-      - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
-        value: "true"
-      - name: services__apiservice__http__0
-        value: http://apiservice.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
-      - name: services__apiservice__https__0
-        value: https://apiservice.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
-      - name: ConnectionStrings__cache
-        secretRef: connectionstrings--cache
-      - name: ConnectionStrings__markdown
-        secretRef: connectionstrings--markdown
-      - name: ConnectionStrings__messages
-        secretRef: connectionstrings--messages
-      - name: ConnectionStrings__pubsub
-        secretRef: connectionstrings--pubsub
-      - name: ConnectionStrings__requestlog
-        secretRef: connectionstrings--requestlog
+      - image: {{ .Image }}
+        name: webfrontend
+        env:
+          - name: AZURE_CLIENT_ID
+            value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
+          - name: ASPNETCORE_FORWARDEDHEADERS_ENABLED
+            value: "true"
+          - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
+            value: "true"
+          - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
+            value: "true"
+          - name: services__apiservice__http__0
+            value: http://apiservice.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
+          - name: services__apiservice__https__0
+            value: https://apiservice.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
+          - name: ConnectionStrings__cache
+            secretRef: connectionstrings--cache
+          - name: ConnectionStrings__markdown
+            secretRef: connectionstrings--markdown
+          - name: ConnectionStrings__messages
+            secretRef: connectionstrings--messages
+          - name: ConnectionStrings__pubsub
+            secretRef: connectionstrings--pubsub
+          - name: ConnectionStrings__requestlog
+            secretRef: connectionstrings--requestlog
     scale:
       minReplicas: 1
 tags:

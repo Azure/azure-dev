@@ -252,6 +252,8 @@ func Test_CLI_VsServer(t *testing.T) {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", svr.Port))
 			cmd.Env = append(cmd.Env, "CERTIFICATE_BYTES="+*svr.CertificateBytes)
 			cmd.Env = append(cmd.Env, "ROOT_DIR="+dir)
+			cmd.Env = append(cmd.Env, "APP_HOST_PATHS="+
+				filepath.Join(dir, "AspireAzdTests.AppHost", "AspireAzdTests.AppHost.csproj"))
 			if tt.IsLive {
 				cmd.Env = append(cmd.Env, "AZURE_ENV_NAME="+envName)
 			}

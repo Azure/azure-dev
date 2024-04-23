@@ -262,10 +262,7 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx,
-		"n\n"+ // Don't expose 'apiservice' service.
-			"y\n"+ // Expose 'webfrontend' service.
-			stdinForProvision(), "up")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up")
 	require.NoError(t, err)
 
 	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))

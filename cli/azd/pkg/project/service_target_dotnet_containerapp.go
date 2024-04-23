@@ -71,7 +71,9 @@ func NewDotNetContainerAppTarget(
 		sqlDbService:        sqlDbService,
 		keyvaultService:     keyvaultService,
 		alphaFeatureManager: alphaFeatureManager,
-		appHostManager:      apphost.NewAppHostManager(alphaFeatureManager),
+		appHostManager: apphost.NewAppHostManager(apphost.AppHostManagerOptions{
+			AspireDashboard: alphaFeatureManager.IsEnabled(apphost.AspireDashboardFeature),
+		}),
 	}
 }
 

@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -76,7 +74,7 @@ func TestAspireEscaping(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
+	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
 	for _, name := range []string{"api"} {
 		t.Run(name, func(t *testing.T) {
 			tmpl, err := appHostManager.ContainerAppManifestTemplateForProject(m, name, false)
@@ -99,7 +97,7 @@ func TestAspireStorageGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
+	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
 	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 
@@ -142,7 +140,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
+	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
 	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 
@@ -185,7 +183,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
+	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
 
 	for _, name := range []string{"nodeapp", "api"} {
 		t.Run(name, func(t *testing.T) {
@@ -229,10 +227,7 @@ func TestAspireDashboardGeneration(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-	alphaConfig := config.NewEmptyConfig()
-	err = alphaConfig.Set("alpha.aspire.dashboard", "on")
-	require.NoError(t, err)
-	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(alphaConfig))
+	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: true})
 
 	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
@@ -269,7 +264,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	appHostManager := NewAppHostManager(alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()))
+	appHostManager := NewAppHostManager(AppHostManagerOptions{AspireDashboard: false})
 	files, err := appHostManager.BicepTemplate(m)
 	require.NoError(t, err)
 

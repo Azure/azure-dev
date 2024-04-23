@@ -82,7 +82,9 @@ func (s *environmentService) CreateEnvironmentAsync(
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
 
-		appHostManager := apphost.NewAppHostManager(c.alphaFeatureManager)
+		appHostManager := apphost.NewAppHostManager(apphost.AppHostManagerOptions{
+			AspireDashboard: c.alphaFeatureManager.IsEnabled(apphost.AspireDashboardFeature),
+		})
 		files, err := appHostManager.GenerateProjectArtifacts(
 			ctx,
 			c.azdContext.ProjectDirectory(),

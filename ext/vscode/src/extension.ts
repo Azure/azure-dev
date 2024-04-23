@@ -21,6 +21,9 @@ type LoadStats = {
 };
 
 interface AzdExtensionApi {
+    /**
+     * @deprecated This is only temporary and should not be relied on.
+     */
     getAzdLoginStatus(): Promise<LoginStatus | undefined>
 }
 

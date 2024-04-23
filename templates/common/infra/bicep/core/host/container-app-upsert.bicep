@@ -59,6 +59,10 @@ param imageName string = ''
 @secure()
 param secrets object = {}
 
+@description('The keyvault identities required for the container')
+@secure()
+param keyvaultIdentities object = {}
+
 @description('The environment variables for the container')
 param env array = []
 
@@ -96,6 +100,7 @@ module app 'container-app.bicep' = {
     daprAppId: daprAppId
     daprAppProtocol: daprAppProtocol
     secrets: secrets
+    keyvaultIdentities: keyvaultIdentities
     external: external
     env: env
     imageName: !empty(imageName) ? imageName : exists ? existingApp.properties.template.containers[0].image : ''

@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
@@ -27,13 +29,16 @@ type SubscriptionTenantResolver interface {
 	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
 }
 
+// Typically auth.Manager
 type principalInfoProvider interface {
 	GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error)
+	CredentialForCurrentUser(
+		ctx context.Context, options *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
 }
 
 type subCache interface {
-	Load() ([]Subscription, error)
-	Save(save []Subscription) error
+	Load(key string) ([]Subscription, error)
+	Save(key string, save []Subscription) error
 	Clear() error
 }
 
@@ -53,7 +58,7 @@ func NewSubscriptionsManager(
 	service *SubscriptionsService,
 	auth *auth.Manager,
 	console input.Console) (*SubscriptionsManager, error) {
-	cache, err := NewSubscriptionsCache()
+	cache, err := newSubCache()
 	if err != nil {
 		return nil, err
 	}
@@ -66,26 +71,11 @@ func NewSubscriptionsManager(
 	}, nil
 }
 
-// Clears stored cached subscriptions. This can only return an error is a filesystem error other than ErrNotExist occurred.
+// Clears stored cached subscriptions. This can only return an error if a filesystem error other than ErrNotExist occurred.
 func (m *SubscriptionsManager) ClearSubscriptions(ctx context.Context) error {
 	err := m.cache.Clear()
 	if err != nil {
 		return fmt.Errorf("clearing stored subscriptions: %w", err)
-	}
-
-	return nil
-}
-
-// Updates stored cached subscriptions.
-func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
-	subs, err := m.ListSubscriptions(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching subscriptions: %w", err)
-	}
-
-	err = m.cache.Save(subs)
-	if err != nil {
-		return fmt.Errorf("storing subscriptions: %w", err)
 	}
 
 	return nil
@@ -133,14 +123,30 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 // Unlike ListSubscriptions, GetSubscriptions first examines the subscriptions cache.
 // On cache miss, subscriptions are fetched, the cached is updated, before the result is returned.
 func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
-	subscriptions, err := m.cache.Load()
+	cred, err := m.principalInfo.CredentialForCurrentUser(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Use the object ID of the user in the home tenant ID as the unique user key to cache on.
+	oid, err := auth.GetOidFromAccessToken(accessToken.Token)
+	if err != nil {
+		return nil, err
+	}
+
+	subscriptions, err := m.cache.Load(oid)
 	if err != nil {
 		subscriptions, err = m.ListSubscriptions(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("listing subscriptions: %w", err)
 		}
 
-		err = m.cache.Save(subscriptions)
+		err = m.cache.Save(oid, subscriptions)
 		if err != nil {
 			return nil, fmt.Errorf("saving subscriptions to cache: %w", err)
 		}

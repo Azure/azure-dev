@@ -325,7 +325,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 
-		err := la.accountSubManager.RefreshSubscriptions(ctx)
+		_, err := la.accountSubManager.GetSubscriptions(ctx)
 		if err != nil {
 			// If this fails, the subscriptions will still be loaded on-demand.
 			// erroring out when the user interacts with subscriptions is much more user-friendly.

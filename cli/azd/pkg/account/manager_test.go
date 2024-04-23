@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -669,11 +672,11 @@ type InMemorySubCache struct {
 	stored []Subscription
 }
 
-func (imc *InMemorySubCache) Load() ([]Subscription, error) {
+func (imc *InMemorySubCache) Load(key string) ([]Subscription, error) {
 	return imc.stored, nil
 }
 
-func (imc *InMemorySubCache) Save(save []Subscription) error {
+func (imc *InMemorySubCache) Save(key string, save []Subscription) error {
 	imc.stored = save
 	return nil
 }
@@ -712,14 +715,32 @@ func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID(ctx cont
 	return nil, nil
 }
 
+// cspell: disable
+// nolint:lll
+const mockTokenOidClaim = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiJ0aGlzLWlzLWEtdGVzdCJ9.vrKZx2J7-hsydI4rzdFVHqU1S6lHqLT95VSPx2RfQ04"
+
+// cspell:enable
+
+func (p *principalInfoProviderMock) CredentialForCurrentUser(
+	ctx context.Context, options *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
+	return &mocks.MockCredentials{
+		GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+			return azcore.AccessToken{
+				Token:     mockTokenOidClaim,
+				ExpiresOn: time.Now().Add(time.Hour * 1),
+			}, nil
+		},
+	}, nil
+}
+
 type BypassSubscriptionsCache struct {
 }
 
-func (b *BypassSubscriptionsCache) Load() ([]Subscription, error) {
+func (b *BypassSubscriptionsCache) Load(key string) ([]Subscription, error) {
 	return nil, errors.New("bypass cache")
 }
 
-func (b *BypassSubscriptionsCache) Save(save []Subscription) error {
+func (b *BypassSubscriptionsCache) Save(key string, save []Subscription) error {
 	return nil
 }
 

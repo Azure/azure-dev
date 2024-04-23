@@ -12,46 +12,53 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-// The file name of the cache used for storing subscriptions accessible by the currently logged in account.
-const cSubscriptionsCacheFile = "subscriptions.cache"
+const (
+	cSubscriptionsCachePrefix = "subscriptions"
+	cSubscriptionsCacheSuffix = ".cache"
+	cSubscriptionsCacheGlob   = cSubscriptionsCachePrefix + "*" + cSubscriptionsCacheSuffix
+)
 
 // SubscriptionsCache caches the list of subscriptions accessible by the currently logged in account.
 //
 // The cache is backed by an in-memory copy, then by local file system storage.
+// The cache key should be chosen to be unique to the user, such as the user's object ID.
 type SubscriptionsCache struct {
-	cachePath string
+	cacheDir string
 
-	inMemoryCopy []Subscription
-	inMemoryLock sync.RWMutex
+	memoryCache map[string][]Subscription
+	memoryLock  sync.RWMutex
 }
 
-func NewSubscriptionsCache() (*SubscriptionsCache, error) {
+func newSubCache() (*SubscriptionsCache, error) {
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("loading stored user subscriptions: %w", err)
 	}
 
-	return NewSubscriptionsCacheWithDir(filepath.Join(configDir, cSubscriptionsCacheFile))
-}
-
-func NewSubscriptionsCacheWithDir(cachePath string) (*SubscriptionsCache, error) {
 	return &SubscriptionsCache{
-		cachePath: cachePath,
+		cacheDir:    configDir,
+		memoryCache: map[string][]Subscription{},
 	}, nil
 }
 
-// Load loads the subscriptions from cache. Returns any error reading the cache.
-func (s *SubscriptionsCache) Load() ([]Subscription, error) {
-	s.inMemoryLock.RLock()
-	if s.inMemoryCopy != nil {
-		defer s.inMemoryLock.RUnlock()
-		return s.inMemoryCopy, nil
-	}
-	s.inMemoryLock.RUnlock()
+func (s *SubscriptionsCache) cachePath(key string) string {
+	return filepath.Join(
+		s.cacheDir,
+		cSubscriptionsCachePrefix+"."+key+cSubscriptionsCacheSuffix)
+}
 
-	s.inMemoryLock.Lock()
-	defer s.inMemoryLock.Unlock()
-	cacheFile, err := os.ReadFile(s.cachePath)
+// Load loads the subscriptions from cache with the key. Returns any error reading the cache.
+func (s *SubscriptionsCache) Load(key string) ([]Subscription, error) {
+	s.memoryLock.RLock()
+	if res, ok := s.memoryCache[key]; ok {
+		defer s.memoryLock.RUnlock()
+		return res, nil
+	}
+	s.memoryLock.RUnlock()
+
+	s.memoryLock.Lock()
+	defer s.memoryLock.Unlock()
+	cacheFile, err := os.ReadFile(s.cachePath(key))
 	if err != nil {
 		return nil, err
 	}
@@ -62,38 +69,45 @@ func (s *SubscriptionsCache) Load() ([]Subscription, error) {
 		return nil, err
 	}
 
-	s.inMemoryCopy = subscriptions
+	s.memoryCache[key] = subscriptions
 	return subscriptions, nil
 }
 
-// Save saves the subscriptions to cache.
-func (s *SubscriptionsCache) Save(subscriptions []Subscription) error {
-	s.inMemoryLock.Lock()
-	defer s.inMemoryLock.Unlock()
+// Save saves the subscriptions to cache with the specified key.
+func (s *SubscriptionsCache) Save(key string, subscriptions []Subscription) error {
+	s.memoryLock.Lock()
+	defer s.memoryLock.Unlock()
 	content, err := json.Marshal(subscriptions)
 	if err != nil {
 		return fmt.Errorf("failed to marshal subscriptions: %w", err)
 	}
 
-	err = os.WriteFile(s.cachePath, content, osutil.PermissionFile)
+	err = os.WriteFile(s.cachePath(key), content, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
-	s.inMemoryCopy = subscriptions
+	s.memoryCache[key] = subscriptions
 	return err
 }
 
-// Clear removes all stored cache information. Returns an error if a filesystem error other than ErrNotExist occurred.
+// Clear removes all stored cache items. Returns an error if a filesystem error other than ErrNotExist occurred.
 func (s *SubscriptionsCache) Clear() error {
-	s.inMemoryLock.Lock()
-	defer s.inMemoryLock.Unlock()
+	s.memoryLock.Lock()
+	defer s.memoryLock.Unlock()
 
-	err := os.Remove(s.cachePath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	matches, err := filepath.Glob(filepath.Join(s.cacheDir, cSubscriptionsCacheGlob))
+	if err != nil {
 		return err
 	}
 
-	s.inMemoryCopy = []Subscription{}
+	for _, m := range matches {
+		err = os.Remove(m)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+
+	s.memoryCache = map[string][]Subscription{}
 	return nil
 }

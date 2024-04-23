@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -35,7 +34,6 @@ type Initializer struct {
 	gitCli         git.GitCli
 	dotnetCli      dotnet.DotNetCli
 	lazyEnvManager *lazy.Lazy[environment.Manager]
-	appHostManager *apphost.AppHostManager
 }
 
 func NewInitializer(
@@ -50,9 +48,6 @@ func NewInitializer(
 		gitCli:         gitCli,
 		lazyEnvManager: lazyEnvManager,
 		dotnetCli:      dotnetCli,
-		appHostManager: &apphost.AppHostManager{
-			AspireDashboard: alphaFeatureManager.IsEnabled(apphost.AspireDashboardFeature),
-		},
 	}
 }
 

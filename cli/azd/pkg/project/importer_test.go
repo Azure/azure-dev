@@ -39,9 +39,6 @@ func TestImportManagerHasService(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-		appHostManager: &apphost.AppHostManager{
-			AspireDashboard: false,
-		},
 	})
 
 	// has service
@@ -84,9 +81,6 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-		appHostManager: &apphost.AppHostManager{
-			AspireDashboard: false,
-		},
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -140,9 +134,6 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-		appHostManager: &apphost.AppHostManager{
-			AspireDashboard: false,
-		},
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -189,9 +180,6 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-		appHostManager: &apphost.AppHostManager{
-			AspireDashboard: false,
-		},
 	})
 
 	// Get defaults and error b/c no infra found and no Aspire project
@@ -241,9 +229,6 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-		appHostManager: &apphost.AppHostManager{
-			AspireDashboard: false,
-		},
 	})
 
 	// Do not use defaults
@@ -325,9 +310,6 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		}),
 		hostCheck: make(map[string]hostCheckResult),
 		cache:     make(map[manifestCacheKey]*apphost.Manifest),
-		appHostManager: &apphost.AppHostManager{
-			AspireDashboard: false,
-		},
 	})
 
 	// adding infra folder to test defaults

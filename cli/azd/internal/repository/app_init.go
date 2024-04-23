@@ -213,7 +213,7 @@ func (i *Initializer) InitFromApp(
 
 		i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
 
-		files, err := i.appHostManager.GenerateProjectArtifacts(
+		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
 			azdCtx.ProjectDirectory(),
 			filepath.Base(azdCtx.ProjectDirectory()),

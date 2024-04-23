@@ -37,7 +37,11 @@ const DaprPubSubComponentType = "pubsub"
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
 
-var AspireDashboardFeature = alpha.MustFeatureKey("aspire.dashboard")
+var aspireDashboardFeature = alpha.MustFeatureKey("aspire.dashboard")
+
+func IsAspireDashboardEnabled(alphaFeatureManager *alpha.FeatureManager) bool {
+	return alphaFeatureManager.IsEnabled(aspireDashboardFeature)
+}
 
 func init() {
 	tmpl, err := template.New("templates").
@@ -110,15 +114,16 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 	return res
 }
 
-type AppHostManager struct {
-	AspireDashboard bool
+type AppHostOptions struct {
+	AutoConfigureDataProtection bool
+	AspireDashboard             bool
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
-func (m *AppHostManager) ContainerAppManifestTemplateForProject(
-	manifest *Manifest, projectName string, autoConfigureDataProtection bool) (string, error) {
-	generator := newInfraGenerator(infraGeneratorOptions{dashboard: m.AspireDashboard})
+func ContainerAppManifestTemplateForProject(
+	manifest *Manifest, projectName string, options AppHostOptions) (string, error) {
+	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return "", err
@@ -131,7 +136,7 @@ func (m *AppHostManager) ContainerAppManifestTemplateForProject(
 	var buf bytes.Buffer
 
 	tmplCtx := generator.containerAppTemplateContexts[projectName]
-	tmplCtx.AutoConfigureDataProtection = autoConfigureDataProtection
+	tmplCtx.AutoConfigureDataProtection = options.AutoConfigureDataProtection
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {
@@ -143,8 +148,8 @@ func (m *AppHostManager) ContainerAppManifestTemplateForProject(
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func (m *AppHostManager) BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
-	generator := newInfraGenerator(infraGeneratorOptions{dashboard: m.AspireDashboard})
+func BicepTemplate(manifest *Manifest, options AppHostOptions) (*memfs.FS, error) {
+	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
 		return nil, err
@@ -152,6 +157,10 @@ func (m *AppHostManager) BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 
 	if err := generator.Compile(); err != nil {
 		return nil, err
+	}
+
+	if options.AspireDashboard {
+		generator.bicepContext.AspireDashboard = true
 	}
 
 	// use the filesystem coming from the manifest
@@ -264,7 +273,7 @@ func inputMetadata(config InputDefaultGenerate) (string, error) {
 
 // GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. The azure.yaml file as well as
 // a helpful next-steps.md file.
-func (m *AppHostManager) GenerateProjectArtifacts(
+func GenerateProjectArtifacts(
 	ctx context.Context,
 	projectDir string,
 	projectName string,
@@ -273,16 +282,6 @@ func (m *AppHostManager) GenerateProjectArtifacts(
 ) (map[string]ContentsAndMode, error) {
 	appHostRel, err := filepath.Rel(projectDir, appHostProject)
 	if err != nil {
-		return nil, err
-	}
-
-	generator := newInfraGenerator(infraGeneratorOptions{dashboard: m.AspireDashboard})
-
-	if err := generator.LoadManifest(manifest); err != nil {
-		return nil, err
-	}
-
-	if err := generator.Compile(); err != nil {
 		return nil, err
 	}
 
@@ -352,11 +351,7 @@ type infraGenerator struct {
 	allServicesIngress           map[string]ingressDetails
 }
 
-type infraGeneratorOptions struct {
-	dashboard bool
-}
-
-func newInfraGenerator(options infraGeneratorOptions) *infraGenerator {
+func newInfraGenerator() *infraGenerator {
 	return &infraGenerator{
 		bicepContext: genBicepTemplateContext{
 			AppInsights:                     make(map[string]genAppInsight),
@@ -373,7 +368,6 @@ func newInfraGenerator(options infraGeneratorOptions) *infraGenerator {
 			BicepModules:                    make(map[string]genBicepModules),
 			OutputParameters:                make(map[string]genOutputParameter),
 			OutputSecretParameters:          make(map[string]genOutputParameter),
-			AspireDashboard:                 options.dashboard,
 		},
 		containers:                   make(map[string]genContainer),
 		dapr:                         make(map[string]genDapr),

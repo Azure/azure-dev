@@ -39,7 +39,6 @@ type dotnetContainerAppTarget struct {
 	sqlDbService        sqldb.SqlDbService
 	keyvaultService     keyvault.KeyVaultService
 	alphaFeatureManager *alpha.FeatureManager
-	appHostManager      *apphost.AppHostManager
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -71,9 +70,6 @@ func NewDotNetContainerAppTarget(
 		sqlDbService:        sqlDbService,
 		keyvaultService:     keyvaultService,
 		alphaFeatureManager: alphaFeatureManager,
-		appHostManager: &apphost.AppHostManager{
-			AspireDashboard: alphaFeatureManager.IsEnabled(apphost.AspireDashboardFeature),
-		},
 	}
 }
 
@@ -167,8 +163,6 @@ func (at *dotnetContainerAppTarget) Deploy(
 				projectRoot = filepath.Dir(projectRoot)
 			}
 
-			autoConfigureDataProtection := at.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature)
-
 			manifestPath := filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml")
 			if _, err := os.Stat(manifestPath); err == nil {
 				log.Printf("using container app manifest from %s", manifestPath)
@@ -185,10 +179,12 @@ func (at *dotnetContainerAppTarget) Deploy(
 					serviceConfig.DotNetContainerApp.ProjectPath,
 					serviceConfig.DotNetContainerApp.ProjectName)
 
-				generatedManifest, err := at.appHostManager.ContainerAppManifestTemplateForProject(
+				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
 					serviceConfig.DotNetContainerApp.Manifest,
 					serviceConfig.DotNetContainerApp.ProjectName,
-					autoConfigureDataProtection,
+					apphost.AppHostOptions{
+						AutoConfigureDataProtection: at.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
+					},
 				)
 				if err != nil {
 					task.SetError(fmt.Errorf("generating container app manifest: %w", err))

@@ -41,9 +41,8 @@ type DotNetImporter struct {
 	cache   map[manifestCacheKey]*apphost.Manifest
 	cacheMu sync.Mutex
 
-	hostCheck      map[string]hostCheckResult
-	hostCheckMu    sync.Mutex
-	appHostManager *apphost.AppHostManager
+	hostCheck   map[string]hostCheckResult
+	hostCheckMu sync.Mutex
 }
 
 // manifestCacheKey is the key we use when caching manifests. It is a combination of the project path and the
@@ -68,9 +67,6 @@ func NewDotNetImporter(
 		alphaFeatureManager: alphaFeatureManager,
 		cache:               make(map[manifestCacheKey]*apphost.Manifest),
 		hostCheck:           make(map[string]hostCheckResult),
-		appHostManager: &apphost.AppHostManager{
-			AspireDashboard: alphaFeatureManager.IsEnabled(apphost.AspireDashboardFeature),
-		},
 	}
 }
 
@@ -108,7 +104,9 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := ai.appHostManager.BicepTemplate(manifest)
+	files, err := apphost.BicepTemplate(manifest, apphost.AppHostOptions{
+		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -263,7 +261,9 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 
 	generatedFS := memfs.New()
 
-	infraFS, err := ai.appHostManager.BicepTemplate(manifest)
+	infraFS, err := apphost.BicepTemplate(manifest, apphost.AppHostOptions{
+		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)
 	}
@@ -301,14 +301,14 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return nil, err
 	}
 
-	autoConfigureDataProtection := ai.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature)
-
 	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
 	writeManifestForResource := func(name string, path string) error {
-		containerAppManifest, err := ai.appHostManager.ContainerAppManifestTemplateForProject(
-			manifest, name, autoConfigureDataProtection)
+		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
+			manifest, name, apphost.AppHostOptions{
+				AutoConfigureDataProtection: ai.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
+			})
 		if err != nil {
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}

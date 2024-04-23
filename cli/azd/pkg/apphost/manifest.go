@@ -105,6 +105,7 @@ type Reference struct {
 
 type Binding struct {
 	TargetPort *int   `json:"targetPort,omitempty"`
+	Port       *int   `json:"port,omitempty"`
 	Scheme     string `json:"scheme"`
 	Protocol   string `json:"protocol"`
 	Transport  string `json:"transport"`

@@ -28,11 +28,10 @@
     },
     "storage": {
       "type": "azure.bicep.v0",
-      "path": "aspire.hosting.azure.bicep.storage.bicep",
+      "path": "storage.module.bicep",
       "params": {
         "principalId": "",
-        "principalType": "",
-        "storageName": "storage"
+        "principalType": ""
       }
     },
     "requestlog": {
@@ -52,7 +51,8 @@
       "path": "../AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj",
       "env": {
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
-        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true"
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
+        "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true"
       },
       "bindings": {
         "http": {
@@ -73,13 +73,14 @@
       "env": {
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
+        "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true",
         "ConnectionStrings__cache": "{cache.connectionString}",
         "ConnectionStrings__pubsub": "{pubsub.connectionString}",
+        "services__apiservice__http__0": "{apiservice.bindings.http.url}",
+        "services__apiservice__https__0": "{apiservice.bindings.https.url}",
         "ConnectionStrings__requestlog": "{requestlog.connectionString}",
         "ConnectionStrings__markdown": "{markdown.connectionString}",
-        "ConnectionStrings__messages": "{messages.connectionString}",
-        "services__apiservice__0": "{apiservice.bindings.http.url}",
-        "services__apiservice__1": "{apiservice.bindings.https.url}"
+        "ConnectionStrings__messages": "{messages.connectionString}"
       },
       "bindings": {
         "http": {

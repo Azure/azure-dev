@@ -10,6 +10,17 @@
 
 ### Other Changes
 
+## 1.8.1 (2024-04-23)
+
+### Features Added
+
+- [[3731]](https://github.com/Azure/azure-dev/pull/3731) Support Data Protection Runtime feature for .NET Aspire in ACA under feature flag `azd config set alpha.aspire.autoConfigureDataProtection on`
+- [[3715]](https://github.com/Azure/azure-dev/pull/3715) Improved security to prevent committing an environment to the repository
+
+### Bugs Fixed
+
+- [[3748]](https://github.com/Azure/azure-dev/pull/3748) Fix cross-build configuration
+
 ## 1.8.0 (2024-04-09)
 
 ### Features Added

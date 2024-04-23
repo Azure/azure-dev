@@ -262,7 +262,7 @@ func TestAspireArgsGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireArgs.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	manifest, err := ContainerAppManifestTemplateForProject(m, "apiservice", false)
+	manifest, err := ContainerAppManifestTemplateForProject(m, "apiservice", AppHostOptions{})
 	require.NoError(t, err)
 
 	snapshot.SnapshotT(t, manifest)

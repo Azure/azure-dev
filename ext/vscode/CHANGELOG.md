@@ -1,14 +1,10 @@
 # Release History
 
-## 0.9.0-alpha.1 (Unreleased)
+## 0.8.2 (2024-04-24)
 
 ### Features Added
 
-### Breaking Changes
-
-### Bugs Fixed
-
-### Other Changes
+- [[#3754]](https://github.com/Azure/azure-dev/pull/3754) A small change to the Install, Login, Initialize App, Up, and Pipeline Config commands to make them programmatically accessible.
 
 ## 0.8.1 (2024-03-06)
 

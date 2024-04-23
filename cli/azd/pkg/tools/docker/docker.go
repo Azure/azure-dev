@@ -98,7 +98,6 @@ func (d *docker) Build(
 		"build",
 		"-f", dockerFilePath,
 		"--platform", platform,
-		"--network", "host",
 	}
 
 	if target != "" {

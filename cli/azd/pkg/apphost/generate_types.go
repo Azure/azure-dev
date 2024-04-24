@@ -130,6 +130,7 @@ type genBicepTemplateContext struct {
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
 	RequiresStorageVolume           bool
+	AspireDashboard                 bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount

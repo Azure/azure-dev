@@ -18,6 +18,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
@@ -35,6 +36,12 @@ const DaprPubSubComponentType = "pubsub"
 
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
+
+var aspireDashboardFeature = alpha.MustFeatureKey("aspire.dashboard")
+
+func IsAspireDashboardEnabled(alphaFeatureManager *alpha.FeatureManager) bool {
+	return alphaFeatureManager.IsEnabled(aspireDashboardFeature)
+}
 
 func init() {
 	tmpl, err := template.New("templates").
@@ -108,10 +115,15 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 	return res
 }
 
+type AppHostOptions struct {
+	AutoConfigureDataProtection bool
+	AspireDashboard             bool
+}
+
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
 func ContainerAppManifestTemplateForProject(
-	manifest *Manifest, projectName string, autoConfigureDataProtection bool) (string, error) {
+	manifest *Manifest, projectName string, options AppHostOptions) (string, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -125,7 +137,7 @@ func ContainerAppManifestTemplateForProject(
 	var buf bytes.Buffer
 
 	tmplCtx := generator.containerAppTemplateContexts[projectName]
-	tmplCtx.AutoConfigureDataProtection = autoConfigureDataProtection
+	tmplCtx.AutoConfigureDataProtection = options.AutoConfigureDataProtection
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {
@@ -137,7 +149,7 @@ func ContainerAppManifestTemplateForProject(
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
+func BicepTemplate(manifest *Manifest, options AppHostOptions) (*memfs.FS, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -146,6 +158,10 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 
 	if err := generator.Compile(); err != nil {
 		return nil, err
+	}
+
+	if options.AspireDashboard {
+		generator.bicepContext.AspireDashboard = true
 	}
 
 	// use the filesystem coming from the manifest
@@ -267,16 +283,6 @@ func GenerateProjectArtifacts(
 ) (map[string]ContentsAndMode, error) {
 	appHostRel, err := filepath.Rel(projectDir, appHostProject)
 	if err != nil {
-		return nil, err
-	}
-
-	generator := newInfraGenerator()
-
-	if err := generator.LoadManifest(manifest); err != nil {
-		return nil, err
-	}
-
-	if err := generator.Compile(); err != nil {
 		return nil, err
 	}
 

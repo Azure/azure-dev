@@ -89,10 +89,19 @@ resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/stora
 {{- end }}
 {{end -}}
 {{if .HasContainerEnvironment}}
+{{- if eq false .AspireDashboard}}
 resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
+{{- end }}
+{{- if .AspireDashboard}}
+resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-preview' = {
+{{- end }}
   name: 'cae-${resourceToken}'
   location: location
   properties: {
+    workloadProfiles: [{
+      workloadProfileType: 'Consumption'
+      name: 'consumption'
+    }]
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
@@ -102,6 +111,16 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
     }
   }
   tags: tags
+{{- if .AspireDashboard }}
+
+  resource aspireDashboard 'dotNetComponents' = {
+    name: 'aspire-dashboard'
+    properties: {
+      componentType: 'AspireDashboard'
+    }
+  }
+
+{{- end }}
 }
 {{range $name, $value := .ContainerApps}}
 {{- range $volume := $value.Volumes}}

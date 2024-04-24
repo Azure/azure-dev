@@ -163,8 +163,6 @@ func (at *dotnetContainerAppTarget) Deploy(
 				projectRoot = filepath.Dir(projectRoot)
 			}
 
-			autoConfigureDataProtection := at.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature)
-
 			manifestPath := filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml")
 			if _, err := os.Stat(manifestPath); err == nil {
 				log.Printf("using container app manifest from %s", manifestPath)
@@ -184,7 +182,9 @@ func (at *dotnetContainerAppTarget) Deploy(
 				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
 					serviceConfig.DotNetContainerApp.Manifest,
 					serviceConfig.DotNetContainerApp.ProjectName,
-					autoConfigureDataProtection,
+					apphost.AppHostOptions{
+						AutoConfigureDataProtection: at.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
+					},
 				)
 				if err != nil {
 					task.SetError(fmt.Errorf("generating container app manifest: %w", err))

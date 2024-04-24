@@ -5,6 +5,8 @@ param location string = resourceGroup().location
 param tags object = {}
 
 var resourceToken = uniqueString(resourceGroup().id)
+@secure()
+param mysqlabstract_password string
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'mi-${resourceToken}'
@@ -45,7 +47,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
   tags: tags
 }
 
-resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
+resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-preview' = {
   name: 'cae-${resourceToken}'
   location: location
   properties: {
@@ -62,10 +64,17 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
     }
   }
   tags: tags
+
+  resource aspireDashboard 'dotNetComponents' = {
+    name: 'aspire-dashboard'
+    properties: {
+      componentType: 'AspireDashboard'
+    }
+  }
 }
 
-resource cache 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: 'cache'
+resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
+  name: 'mysqlabstract'
   location: location
   properties: {
     environmentId: containerAppEnvironment.id
@@ -73,15 +82,27 @@ resource cache 'Microsoft.App/containerApps@2023-05-02-preview' = {
       activeRevisionsMode: 'Single'
       ingress: {
         external: false
-        targetPort: 6379
+        targetPort: 3306
         transport: 'tcp'
       }
+      secrets: [
+        {
+          name: 'mysql-root-password'
+          value: mysqlabstract_password
+        }
+      ]
     }
     template: {
       containers: [
         {
-          image: 'redis:7.2.4'
-          name: 'cache'
+          image: 'mysql:latest'
+          name: 'mysqlabstract'
+          env: [
+            {
+              name: 'MYSQL_ROOT_PASSWORD'
+              secretRef: 'mysql-root-password'
+            }
+          ]
         }
       ]
       scale: {
@@ -89,35 +110,7 @@ resource cache 'Microsoft.App/containerApps@2023-05-02-preview' = {
       }
     }
   }
-  tags: union(tags, {'aspire-resource-name': 'cache'})
-}
-
-resource pubsub 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: 'pubsub'
-  location: location
-  properties: {
-    environmentId: containerAppEnvironment.id
-    configuration: {
-      activeRevisionsMode: 'Single'
-      ingress: {
-        external: false
-        targetPort: 6379
-        transport: 'tcp'
-      }
-    }
-    template: {
-      containers: [
-        {
-          image: 'redis:7.2.4'
-          name: 'pubsub'
-        }
-      ]
-      scale: {
-        minReplicas: 1
-      }
-    }
-  }
-  tags: union(tags, {'aspire-resource-name': 'pubsub'})
+  tags: union(tags, {'aspire-resource-name': 'mysqlabstract'})
 }
 
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId

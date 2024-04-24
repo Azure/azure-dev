@@ -84,9 +84,9 @@ stages:
           environment: azure-dev
 
           pool:
-            name: azsdk-pool-mms-win-2022-general
-            image: azsdk-pool-mms-win-2022-1espt
-            os: windows
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
+            os: linux
 
           templateContext:
             inputs:

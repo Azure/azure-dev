@@ -51,6 +51,10 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
   name: 'cae-${resourceToken}'
   location: location
   properties: {
+    workloadProfiles: [{
+      workloadProfileType: 'Consumption'
+      name: 'consumption'
+    }]
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
@@ -62,7 +66,7 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
   tags: tags
 
   resource aspireDashboard 'dotNetComponents' = {
-    name: 'dsb-${resourceToken}'
+    name: 'aspire-dashboard'
     properties: {
       componentType: 'AspireDashboard'
     }

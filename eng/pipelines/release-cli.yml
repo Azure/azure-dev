@@ -8,6 +8,8 @@ trigger:
       - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - /eng/pipelines/templates/jobs/build-cli.yml
+      - /eng/pipelines/templates/jobs/cross-build-cli.yml
 
 pr:
   paths:

@@ -26,6 +26,9 @@ var aspireDockerManifest []byte
 //go:embed testdata/aspire-storage.json
 var aspireStorageManifest []byte
 
+//go:embed testdata/aspire-args.json
+var aspireArgsManifest []byte
+
 //go:embed testdata/aspire-bicep.json
 var aspireBicepManifest []byte
 
@@ -182,7 +185,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	for _, name := range []string{"nodeapp"} {
+	for _, name := range []string{"nodeapp", "api"} {
 		t.Run(name, func(t *testing.T) {
 			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
 			require.NoError(t, err)
@@ -210,6 +213,25 @@ func TestAspireDockerGeneration(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+func TestAspireArgsGeneration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	mockPublishManifest(mockCtx, aspireArgsManifest, nil)
+	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireArgs.AppHost.csproj"), mockCli, "")
+	require.NoError(t, err)
+
+	manifest, err := ContainerAppManifestTemplateForProject(m, "apiservice", false)
+	require.NoError(t, err)
+
+	snapshot.SnapshotT(t, manifest)
 }
 
 func TestAspireContainerGeneration(t *testing.T) {

@@ -36,6 +36,9 @@ type Resource struct {
 	// BuildArgs is present on a dockerfile.v0 resource and is the --build-arg for building the docker image.
 	BuildArgs map[string]string `json:"buildArgs,omitempty"`
 
+	// Args is optionally present on project.v0 and dockerfile.v0 resources and are the arguments to pass to the container.
+	Args []string `json:"args,omitempty"`
+
 	// Parent is present on a resource which is a child of another. It is the name of the parent resource. For example, a
 	// postgres.database.v0 is a child of a postgres.server.v0, and so it would have a parent of which is the name of
 	// the server resource.
@@ -105,6 +108,7 @@ type Reference struct {
 
 type Binding struct {
 	TargetPort *int   `json:"targetPort,omitempty"`
+	Port       *int   `json:"port,omitempty"`
 	Scheme     string `json:"scheme"`
 	Protocol   string `json:"protocol"`
 	Transport  string `json:"transport"`

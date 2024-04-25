@@ -95,6 +95,11 @@ func (s *environmentService) CreateEnvironmentAsync(
 
 	initializeInAppHostDir := false
 	hostProjectDir := filepath.Dir(rc.HostProjectPath)
+	hostProjectDir, err = filepath.EvalSymlinks(hostProjectDir)
+	if err != nil {
+		return false, fmt.Errorf("normalizing path '%s': %w", hostProjectDir, err)
+	}
+
 	// Check if local project has azure.yaml file. If it exists, we're done.
 	_, err = os.Stat(filepath.Join(hostProjectDir, "azure.yaml"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -111,9 +116,14 @@ func (s *environmentService) CreateEnvironmentAsync(
 
 			for _, svc := range prjConfig.Services {
 				// check if the current app host project matches the one in root
-				if svc.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget &&
-					filepath.Join(session.rootPath, svc.RelativePath) != rc.HostProjectPath {
-					initializeInAppHostDir = true
+				if svc.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget {
+					serviceDir, err := filepath.EvalSymlinks(filepath.Join(session.rootPath, svc.RelativePath))
+					if err != nil {
+						return false, fmt.Errorf("normalizing path '%s': %w", serviceDir, err)
+					}
+					if serviceDir != rc.HostProjectPath {
+						initializeInAppHostDir = true
+					}
 				}
 
 				break

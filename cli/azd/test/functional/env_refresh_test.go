@@ -7,19 +7,28 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/stretchr/testify/require"
 )
 
+// Validates that env refresh works even without bicep defined.
 func Test_CLI_EnvRefresh_NoBicep(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	cli := azdcli.NewCLI(t)
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
@@ -27,13 +36,37 @@ func Test_CLI_EnvRefresh_NoBicep(t *testing.T) {
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
-	infraPath := filepath.Join(dir, "infra")
-	require.NoError(t, os.RemoveAll(infraPath))
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
 
-	envName := randomEnvName() + t.Name()
-	res, err := cli.RunCommandWithStdIn(ctx, envName+"\n", "env", "refresh")
-	require.Error(t, err)
-	// Verify that env refresh will attempt to fetch matching deployments.
-	// The deployment isn't expected to be found because none was created.
-	require.Contains(t, res.Stdout, provisioning.ErrDeploymentsNotFound.Error())
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+
+	// Remove .azure and infra
+	environment := filepath.Join(dir, azdcontext.EnvironmentDirectoryName)
+	require.NoError(t, os.RemoveAll(environment))
+
+	infraPath := filepath.Join(dir, "infra")
+	infraPathHidden := filepath.Join(dir, "infra-delete")
+	require.NoError(t, os.Rename(infraPath, infraPathHidden))
+
+	// Reuse same environment name
+	_, err = cli.RunCommandWithStdIn(ctx, envName+"\n", "env", "refresh")
+	require.NoError(t, err)
+
+	env, err := envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	// Env refresh should populate these values
+	assertEnvValuesStored(t, env)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+	}
+
+	// restore infra path for deletion
+	require.NoError(t, os.Rename(infraPathHidden, infraPath))
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
 }

@@ -114,10 +114,10 @@ func Test_FileConfigManager_GetSetSecretsInSection(t *testing.T) {
 	err = azdConfig.SetSecret("infra.provisioning.secret1", "secrect1Value")
 	require.NoError(t, err)
 
-	azdConfig.SetSecret("infra.provisioning.secret2", "secrect2Value")
+	err = azdConfig.SetSecret("infra.provisioning.secret2", "secrect2Value")
 	require.NoError(t, err)
 
-	azdConfig.Set("infra.provisioning.normalValue", "normalValue")
+	err = azdConfig.Set("infra.provisioning.normalValue", "normalValue")
 	require.NoError(t, err)
 
 	err = configManager.Save(azdConfig, configFilePath)

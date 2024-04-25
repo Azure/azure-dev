@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -88,14 +89,18 @@ type container struct {
 }
 
 // newContainer creates a new container for the session.
-func (s *serverSession) newContainer() (*container, error) {
+func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 	c, err := s.rootContainer.NewScopeRegistrationsOnly()
 	if err != nil {
 		return nil, err
 	}
 
 	id := s.id
-	azdCtx := azdcontext.NewAzdContextWithDirectory(s.rootPath)
+	projectDir := filepath.Dir(rc.HostProjectPath)
+	azdCtx, err := azdcontext.NewAzdContextFromWd(projectDir)
+	if err != nil {
+		return nil, err
+	}
 
 	outWriter := newWriter(fmt.Sprintf("[%s stdout] ", id))
 	errWriter := newWriter(fmt.Sprintf("[%s stderr] ", id))

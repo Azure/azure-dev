@@ -28,7 +28,7 @@ func (s *environmentService) OpenEnvironmentAsync(
 		return nil, err
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (s *environmentService) LoadEnvironmentAsync(
 		return nil, err
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}

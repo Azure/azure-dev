@@ -33,7 +33,7 @@ func (s *environmentService) RefreshEnvironmentAsync(
 		return nil, err
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}

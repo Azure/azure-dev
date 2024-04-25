@@ -8,10 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -44,7 +42,7 @@ func (s *aspireService) GetAspireHostAsync(
 		dotnetCli  dotnet.DotNetCli       `container:"type"`
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}
@@ -53,66 +51,32 @@ func (s *aspireService) GetAspireHostAsync(
 		return nil, err
 	}
 
-	// If there is an azure.yaml, load it and return the services.
-	if _, err := os.Stat(c.azdContext.ProjectPath()); err == nil {
-		var cc struct {
-			projectConfig *project.ProjectConfig `container:"type"`
-		}
-
-		if err := container.Fill(&cc); err != nil {
-			return nil, err
-		}
-
-		appHost, err := appHostForProject(ctx, cc.projectConfig, c.dotnetCli)
-		if err != nil {
-			return nil, err
-		}
-
-		hostInfo := &AspireHost{
-			Name: filepath.Base(filepath.Dir(appHost.Path())),
-			Path: appHost.Path(),
-		}
-
-		manifest, err := apphost.ManifestFromAppHost(ctx, appHost.Path(), c.dotnetCli, aspireEnv)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load app host manifest: %w", err)
-		}
-
-		hostInfo.Services = servicesFromManifest(manifest)
-
-		return hostInfo, nil
-
-	} else if errors.Is(err, os.ErrNotExist) {
-		hosts, err := appdetect.DetectAspireHosts(ctx, c.azdContext.ProjectDirectory(), c.dotnetCli)
-		if err != nil {
-			return nil, fmt.Errorf("failed to discover app host project under %s: %w", c.azdContext.ProjectPath(), err)
-		}
-
-		if len(hosts) == 0 {
-			return nil, fmt.Errorf("no app host projects found under %s", c.azdContext.ProjectPath())
-		}
-
-		if len(hosts) > 1 {
-			return nil, fmt.Errorf("multiple app host projects found under %s", c.azdContext.ProjectPath())
-		}
-
-		hostInfo := &AspireHost{
-			Name: filepath.Base(filepath.Dir(hosts[0].Path)),
-			Path: hosts[0].Path,
-		}
-
-		manifest, err := apphost.ManifestFromAppHost(ctx, hosts[0].Path, c.dotnetCli, aspireEnv)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load app host manifest: %w", err)
-		}
-
-		hostInfo.Services = servicesFromManifest(manifest)
-
-		return hostInfo, nil
-
-	} else {
-		return nil, fmt.Errorf("failed to stat project path: %w", err)
+	var cc struct {
+		projectConfig *project.ProjectConfig `container:"type"`
 	}
+
+	if err := container.Fill(&cc); err != nil {
+		return nil, err
+	}
+
+	appHost, err := appHostForProject(ctx, cc.projectConfig, c.dotnetCli)
+	if err != nil {
+		return nil, err
+	}
+
+	hostInfo := &AspireHost{
+		Name: filepath.Base(filepath.Dir(appHost.Path())),
+		Path: appHost.Path(),
+	}
+
+	manifest, err := apphost.ManifestFromAppHost(ctx, appHost.Path(), c.dotnetCli, aspireEnv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load app host manifest: %w", err)
+	}
+
+	hostInfo.Services = servicesFromManifest(manifest)
+
+	return hostInfo, nil
 
 }
 

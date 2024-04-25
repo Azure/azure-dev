@@ -101,16 +101,22 @@ var (
 	ErrNoProject = errors.New("no project exists; to create a new project, run `azd init`")
 )
 
-// Creates context with project directory set to the nearest project file found.
-//
-// The project file is first searched for in the current directory, if not found, the parent directory is searched
-// recursively up to root. If no project file is found, errNoProject is returned.
+// Creates context with project directory set to the nearest project file found by calling NewAzdContextFromWd
+// on the current working directory.
 func NewAzdContext() (*AzdContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get the current directory: %w", err)
 	}
 
+	return NewAzdContextFromWd(wd)
+}
+
+// Creates context with project directory set to the nearest project file found.
+//
+// The project file is first searched for in the working directory, if not found, the parent directory is searched
+// recursively up to root. If no project file is found, errNoProject is returned.
+func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 	// Walk up from the CWD to the root, looking for a project file. If we find one, that's
 	// the root project directory.
 	searchDir, err := filepath.Abs(wd)

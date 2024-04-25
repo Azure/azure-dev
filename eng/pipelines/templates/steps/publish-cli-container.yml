@@ -9,20 +9,14 @@ parameters:
   - name: DownloadArtifacts
     type: boolean
     default: true
-
-  # TODO: use service connection and az CLI auth
   - name: AcrHost
     type: string
-    default: $(azdev-acr-host-test)
+    default: $(azdev-acr-host)
   - name: SyndicatedAcrHost
     type: string
-    default:  $(azdev-acr-host-test)
-    # TODO: Uncomment before merging
-    # default: $(azdev-acr-syndicated-host)
+    default: $(azdev-acr-syndicated-host)
 
 steps: 
-  # TODO: Docker stuff should be handled as per: https://github.com/Azure/azure-sdk-tools/commit/2623b00fc5b660d48e2301977602ddd8f934ac4a
-
   - ${{ if eq('true', parameters.DownloadArtifacts) }}:
     # Linux binary is not signed today so download from output artifacts
     - task: DownloadPipelineArtifact@2

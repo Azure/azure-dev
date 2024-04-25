@@ -64,15 +64,15 @@ stages:
                       Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
                     displayName: Set StorageUploadLocations
 
-                  # - template: /eng/pipelines/templates/steps/publish-cli.yml
-                  #   parameters:
-                  #     CreateGitHubRelease: true
-                  #     PublishUploadLocations: $(StorageUploadLocations)
-                  #     PublishShield: true
-                  #     PublishUpdatedDocs: true
-                  #     UploadMsi: true
-                  #     PublishBrewFormula: true
-                  #     PublishArm64Binaries: true
+                  - template: /eng/pipelines/templates/steps/publish-cli.yml
+                    parameters:
+                      CreateGitHubRelease: true
+                      PublishUploadLocations: $(StorageUploadLocations)
+                      PublishShield: true
+                      PublishUpdatedDocs: true
+                      UploadMsi: true
+                      PublishBrewFormula: true
+                      PublishArm64Binaries: true
 
         - deployment: Publish_Container
           dependsOn: Publish_Release
@@ -125,222 +125,222 @@ stages:
                       DockerImageTags: $(DockerImageTags)
                       ReleaseSyndicatedDockerContainer: true
 
-    #     - deployment: Publish_Choco
-    #       dependsOn: Publish_Release
-    #       condition: >-
-    #         and(
-    #           succeeded(),
-    #           ne('true', variables['Skip.Publish'])
-    #         )
-    #       environment: azure-dev
+        - deployment: Publish_Choco
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: azure-dev
 
-    #       pool:
-    #         name: azsdk-pool-mms-win-2022-general
-    #         image: azsdk-pool-mms-win-2022-1espt
-    #         os: windows
+          pool:
+            name: azsdk-pool-mms-win-2022-general
+            image: azsdk-pool-mms-win-2022-1espt
+            os: windows
 
-    #       templateContext:
-    #         inputs:
-    #           - input: checkout
-    #             repository: self
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
 
-    #       strategy:
-    #         runOnce:
-    #           deploy:
-    #             steps:
-    #               - task: PowerShell@2
-    #                 inputs:
-    #                   pwsh: true
-    #                   targetType: filePath
-    #                   filePath: eng/scripts/Set-CliVersionVariable.ps1
-    #                 displayName: Set CLI_VERSION
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Set-CliVersionVariable.ps1
+                    displayName: Set CLI_VERSION
 
-    #               - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
-    #                 parameters:
-    #                   CliVersion: $(CLI_VERSION)
+                  - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
+                    parameters:
+                      CliVersion: $(CLI_VERSION)
 
-    #     - deployment: Publish_WinGet
-    #       dependsOn: Publish_Release
-    #       condition: >-
-    #         and(
-    #           succeeded(),
-    #           ne('true', variables['Skip.Publish'])
-    #         )
-    #       environment: azure-dev
+        - deployment: Publish_WinGet
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: azure-dev
 
-    #       pool:
-    #         name: azsdk-pool-mms-win-2022-general
-    #         image: azsdk-pool-mms-win-2022-1espt
-    #         os: windows
+          pool:
+            name: azsdk-pool-mms-win-2022-general
+            image: azsdk-pool-mms-win-2022-1espt
+            os: windows
 
-    #       templateContext:
-    #         inputs:
-    #           - input: checkout
-    #             repository: self
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
 
-    #       strategy:
-    #         runOnce:
-    #           deploy:
-    #             steps:
-    #               - task: PowerShell@2
-    #                 inputs:
-    #                   pwsh: true
-    #                   targetType: filePath
-    #                   filePath: eng/scripts/Set-CliVersionVariable.ps1
-    #                 displayName: Set CLI_VERSION
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Set-CliVersionVariable.ps1
+                    displayName: Set CLI_VERSION
 
-    #               - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
-    #                 parameters:
-    #                   CliVersion: $(CLI_VERSION)
+                  - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+                    parameters:
+                      CliVersion: $(CLI_VERSION)
 
-    #     - deployment: Increment_Version
-    #       condition: >-
-    #         and(
-    #           succeeded(),
-    #           ne('true', variables['Skip.IncrementVersion'])
-    #         )
-    #       dependsOn: Publish_Release
-    #       environment: azure-dev
+        - deployment: Increment_Version
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.IncrementVersion'])
+            )
+          dependsOn: Publish_Release
+          environment: azure-dev
 
-    #       pool:
-    #         name: azsdk-pool-mms-ubuntu-2004-general
-    #         image: azsdk-pool-mms-ubuntu-2004-1espt
-    #         os: linux
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
+            os: linux
 
-    #       templateContext:
-    #         inputs:
-    #           - input: checkout
-    #             repository: self
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
 
-    #       strategy:
-    #         runOnce:
-    #           deploy:
-    #             steps:
-    #               - task: PowerShell@2
-    #                 inputs:
-    #                   pwsh: true
-    #                   targetType: filePath
-    #                   filePath: eng/scripts/Update-CliVersion.ps1
-    #                 displayName: Increment CLI version
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Update-CliVersion.ps1
+                    displayName: Increment CLI version
 
-    #               - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-    #                 parameters:
-    #                   PRBranchName: cli-version-increment-$(Build.BuildId)
-    #                   CommitMsg: Increment CLI version after release
-    #                   PRTitle: Increment CLI version after release
+                  - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                    parameters:
+                      PRBranchName: cli-version-increment-$(Build.BuildId)
+                      CommitMsg: Increment CLI version after release
+                      PRTitle: Increment CLI version after release
 
-    # - stage: PublishVersionTxt
-    #   dependsOn: PublishCLI
+    - stage: PublishVersionTxt
+      dependsOn: PublishCLI
 
-    #   condition: >-
-    #     and(
-    #       succeeded(),
-    #       ne(variables['Skip.Release'], 'true'),
-    #       or(
-    #         eq('Manual', variables['BuildReasonOverride']),
-    #         and(
-    #           eq('', variables['BuildReasonOverride']),
-    #           eq('Manual', variables['Build.Reason'])
-    #         )
-    #       )
-    #     )
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              eq('Manual', variables['Build.Reason'])
+            )
+          )
+        )
 
-    #   variables:
-    #     - template: /eng/pipelines/templates/variables/image.yml
-    #     - template: /eng/pipelines/templates/variables/globals.yml
+      variables:
+        - template: /eng/pipelines/templates/variables/image.yml
+        - template: /eng/pipelines/templates/variables/globals.yml
 
-    #   jobs:
-    #     - deployment: Upload_Version_Txt
-    #       condition: >-
-    #         and(
-    #           succeeded(),
-    #           ne('true', variables['Skip.Publish'])
-    #         )
-    #       environment: azure-dev
+      jobs:
+        - deployment: Upload_Version_Txt
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: azure-dev
 
-    #       pool:
-    #         name: azsdk-pool-mms-win-2022-general
-    #         image: azsdk-pool-mms-win-2022-1espt
-    #         os: windows
+          pool:
+            name: azsdk-pool-mms-win-2022-general
+            image: azsdk-pool-mms-win-2022-1espt
+            os: windows
 
-    #       templateContext:
-    #         inputs:
-    #           - input: checkout
-    #             repository: self
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
 
-    #       strategy:
-    #         runOnce:
-    #           deploy:
-    #             steps:
-    #               - task: PowerShell@2
-    #                 inputs:
-    #                   pwsh: true
-    #                   targetType: filePath
-    #                   filePath: eng/scripts/Set-CliVersionVariable.ps1
-    #                 displayName: Set CLI_VERSION
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Set-CliVersionVariable.ps1
+                    displayName: Set CLI_VERSION
 
-    #               - task: PowerShell@2
-    #                 displayName: Set MSI_VERSION
-    #                 inputs:
-    #                   pwsh: true
-    #                   targetType: filePath
-    #                   filePath: eng/scripts/Get-MsiVersion.ps1
-    #                   arguments: >-
-    #                     -CliVersion '$(CLI_VERSION)'
-    #                     -DevOpsOutput
+                  - task: PowerShell@2
+                    displayName: Set MSI_VERSION
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Get-MsiVersion.ps1
+                      arguments: >-
+                        -CliVersion '$(CLI_VERSION)'
+                        -DevOpsOutput
 
-    #               - task: PowerShell@2
-    #                 displayName: Wait for WinGet package
-    #                 inputs:
-    #                   pwsh: true
-    #                   targetType: filePath
-    #                   filePath: eng/scripts/Wait-WinGetPackage.ps1
-    #                   arguments: >-
-    #                     -PackageName 'Microsoft.Azd'
-    #                     -PackageVersion '$(MSI_VERSION)'
+                  - task: PowerShell@2
+                    displayName: Wait for WinGet package
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Wait-WinGetPackage.ps1
+                      arguments: >-
+                        -PackageName 'Microsoft.Azd'
+                        -PackageVersion '$(MSI_VERSION)'
 
-    #               - task: PowerShell@2
-    #                 displayName: Wait for Choco package
-    #                 inputs:
-    #                   pwsh: true
-    #                   targetType: filePath
-    #                   filePath: eng/scripts/Wait-ChocoPackage.ps1
-    #                   arguments: >-
-    #                     -PackageName 'azd'
-    #                     -PackageVersion '$(MSI_VERSION)'
+                  - task: PowerShell@2
+                    displayName: Wait for Choco package
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Wait-ChocoPackage.ps1
+                      arguments: >-
+                        -PackageName 'azd'
+                        -PackageVersion '$(MSI_VERSION)'
 
-    #               - pwsh: |
-    #                   New-Item -ItemType Directory -Path release
-    #                   Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
-    #                 displayName: Write version.txt file for release
+                  - pwsh: |
+                      New-Item -ItemType Directory -Path release
+                      Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
+                    displayName: Write version.txt file for release
 
-    #               - pwsh: |
-    #                   $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-    #                     -CliVersion '$(CLI_VERSION)'
+                  - pwsh: |
+                      $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                        -CliVersion '$(CLI_VERSION)'
 
-    #                   $publishUploadLocations = @('release/latest')
-    #                   if ($isPublishingGa) {
-    #                     $publishUploadLocations += @('release/stable')
-    #                   }
+                      $publishUploadLocations = @('release/latest')
+                      if ($isPublishingGa) {
+                        $publishUploadLocations += @('release/stable')
+                      }
 
-    #                   Get-ChildItem release/
+                      Get-ChildItem release/
 
-    #                   foreach ($folder in $publishUploadLocations) {
-    #                     Write-Host "Upload to azd/standalone/$folder"
-    #                     az storage blob upload-batch `
-    #                       --account-name '$(azdev-storage-account-name)' `
-    #                       --account-key '$(azdev-storage-account-key)' `
-    #                       --auth-mode key `
-    #                       -s release/ `
-    #                       -d "azd/standalone/$folder" `
-    #                       --overwrite
+                      foreach ($folder in $publishUploadLocations) {
+                        Write-Host "Upload to azd/standalone/$folder"
+                        az storage blob upload-batch `
+                          --account-name '$(azdev-storage-account-name)' `
+                          --account-key '$(azdev-storage-account-key)' `
+                          --auth-mode key `
+                          -s release/ `
+                          -d "azd/standalone/$folder" `
+                          --overwrite
 
-    #                     if ($LASTEXITCODE) {
-    #                       Write-Error "Upload failed"
-    #                       exit 1
-    #                     }
-    #                   }
-    #                 displayName: Upload version.txt to storage account
+                        if ($LASTEXITCODE) {
+                          Write-Error "Upload failed"
+                          exit 1
+                        }
+                      }
+                    displayName: Upload version.txt to storage account
 
   - stage: PublishIntegration
     dependsOn: Sign
@@ -382,21 +382,20 @@ stages:
                 filePath: eng/scripts/Set-CliVersionVariable.ps1
               displayName: Set CLI_VERSION
 
-            # - template: /eng/pipelines/templates/steps/publish-cli.yml
-            #   parameters:
-            #     CreateGitHubRelease: false
-            #     PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
-            #     PublishShield: false
-            #     UploadMsi: true
-            #     PublishArm64Binaries: true
+            - template: /eng/pipelines/templates/steps/publish-cli.yml
+              parameters:
+                CreateGitHubRelease: false
+                PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
+                PublishShield: false
+                UploadMsi: true
+                PublishArm64Binaries: true
 
             - template: /eng/pipelines/templates/steps/publish-cli-container.yml
               parameters:
                 DockerImageTags: daily;$(CLI_VERSION)
                 ReleaseSyndicatedDockerContainer: false
                 # Artifacts are already downloaded in publish-cli.yml
-                # TODO: Set to false before merging
-                DownloadArtifacts: true
+                DownloadArtifacts: false
 
       - job: Publish_For_PR
         condition: >-

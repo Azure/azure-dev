@@ -188,6 +188,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte(mockGroupDeploymentOperations))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL:    request.URL,
 			},
 		}, nil
 	})
@@ -204,6 +205,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte(mockSubDeploymentOperations))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL:    request.URL,
 			},
 		}, nil
 	})
@@ -249,6 +251,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte("{}"))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL:    request.URL,
 			},
 		}, nil
 	})
@@ -264,6 +267,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte(mockSubDeploymentOperations))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL:    request.URL,
 			},
 		}, nil
 	})
@@ -307,6 +311,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte(mockSubDeploymentOperationsEmpty))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL:    request.URL,
 			},
 		}, nil
 	})
@@ -322,6 +327,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte(mockSubDeploymentOperationsEmpty))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL:    request.URL,
 			},
 		}, nil
 	})
@@ -365,6 +371,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte(mockSubDeploymentOperations))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL:    request.URL,
 			},
 		}, nil
 	})
@@ -380,6 +387,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte(mockNestedGroupDeploymentOperations))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL:    request.URL,
 			},
 		}, nil
 	})
@@ -396,6 +404,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte(mockGroupDeploymentOperations))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL:    request.URL,
 			},
 		}, nil
 	})

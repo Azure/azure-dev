@@ -7,8 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -29,6 +33,7 @@ type Manager struct {
 	alphaFeatureManager *alpha.FeatureManager
 	projectPath         string
 	options             *Options
+	fileShareService    storage.FileShareService
 }
 
 // defaultOptions for this package.
@@ -86,11 +91,53 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
+	stAccount, hasBindMountOperation := m.env.LookupEnv(operationsBindMount)
+	if hasBindMountOperation {
+		for key, value := range m.env.Dotenv() {
+			if key != operationsBindMount && strings.HasPrefix(key, operationsBindMountPrefix) {
+				valueParts := strings.Split(value, ",")
+				if len(valueParts) != 2 {
+					return nil, fmt.Errorf("invalid bind mount operation value: %s", value)
+				}
+				fileShareName, source := valueParts[0], valueParts[1]
+				if err := bindMountOperation(
+					ctx, m.fileShareService, m.env.GetSubscriptionId(), stAccount, fileShareName, source); err != nil {
+					return nil, fmt.Errorf("error binding mount: %w", err)
+				}
+			}
+		}
+	}
+
 	// make sure any spinner is stopped
 	m.console.StopSpinner(ctx, "", input.StepDone)
 
 	return deployResult, nil
 }
+
+func bindMountOperation(
+	ctx context.Context,
+	fileShareService storage.FileShareService,
+	subId, storageAccount, fileShareName, source string) error {
+
+	shareUrl := fmt.Sprintf("https://%s.file.core.windows.net/%s", storageAccount, fileShareName)
+
+	return filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			// should be ok to trim prefix + os separator because we found a file somewhere after the source
+			destination := strings.TrimPrefix(path, source+string(filepath.Separator))
+			if err := fileShareService.UploadFiles(ctx, subId, shareUrl, path, destination); err != nil {
+				return fmt.Errorf("error uploading files to file share: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+const operationsBindMountPrefix = "AZD_OPS_BIND_MOUNT_"
+const operationsBindMount = operationsBindMountPrefix + "ACCOUNT"
 
 // Preview generates the list of changes to be applied as part of the provisioning.
 func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
@@ -227,6 +274,7 @@ func NewManager(
 	env *environment.Environment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
+	fileShareService storage.FileShareService,
 ) *Manager {
 	return &Manager{
 		serviceLocator:      serviceLocator,
@@ -235,6 +283,7 @@ func NewManager(
 		env:                 env,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
+		fileShareService:    fileShareService,
 	}
 }
 

@@ -85,6 +85,9 @@ type Resource struct {
 
 	// container.v0 uses volumes field to define the volumes of the container.
 	Volumes []*Volume `json:"volumes,omitempty"`
+
+	// container.v0 uses bind mounts field to define the volumes with initial data of the container.
+	BindMounts []*BindMount `json:"bindMounts,omitempty"`
 }
 
 type DaprResourceMetadata struct {
@@ -117,6 +120,13 @@ type Binding struct {
 
 type Volume struct {
 	Name     string `json:"name,omitempty"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"readOnly"`
+}
+
+type BindMount struct {
+	Name     string `json:"-"`
+	Source   string `json:"source,omitempty"`
 	Target   string `json:"target"`
 	ReadOnly bool   `json:"readOnly"`
 }
@@ -215,6 +225,12 @@ func ManifestFromAppHost(
 		if res.Type == "dockerfile.v0" {
 			if !filepath.IsAbs(*res.Context) {
 				*res.Context = filepath.Join(manifestDir, *res.Context)
+			}
+		}
+
+		if res.BindMounts != nil {
+			for _, bindMount := range res.BindMounts {
+				bindMount.Source = filepath.Clean(filepath.Join(manifestDir, bindMount.Source))
 			}
 		}
 	}

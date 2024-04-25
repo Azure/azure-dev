@@ -31,12 +31,13 @@ type genKeyVault struct {
 }
 
 type genContainerApp struct {
-	Image   string
-	Dapr    *genContainerAppManifestTemplateContextDapr
-	Env     map[string]string
-	Secrets map[string]string
-	Ingress *genContainerAppIngress
-	Volumes []*Volume
+	Image      string
+	Dapr       *genContainerAppManifestTemplateContextDapr
+	Env        map[string]string
+	Secrets    map[string]string
+	Ingress    *genContainerAppIngress
+	Volumes    []*Volume
+	BindMounts []*BindMount
 }
 
 type genContainerAppIngressPort struct {
@@ -57,11 +58,12 @@ type genContainerAppIngress struct {
 }
 
 type genContainer struct {
-	Image    string
-	Env      map[string]string
-	Bindings custommaps.WithOrder[Binding]
-	Inputs   map[string]Input
-	Volumes  []*Volume
+	Image      string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Inputs     map[string]Input
+	Volumes    []*Volume
+	BindMounts []*BindMount
 }
 
 type genDockerfile struct {

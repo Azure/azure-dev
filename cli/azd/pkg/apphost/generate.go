@@ -460,7 +460,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "project.v0":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
 		case "container.v0":
-			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
+			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts)
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
 			if err != nil {
@@ -827,19 +827,21 @@ func (b *infraGenerator) addContainer(
 	env map[string]string,
 	bindings custommaps.WithOrder[Binding],
 	inputs map[string]Input,
-	volumes []*Volume) {
+	volumes []*Volume,
+	bindMounts []*BindMount) {
 	b.requireCluster()
 
-	if len(volumes) > 0 {
+	if len(volumes) > 0 || len(bindMounts) > 0 {
 		b.requireStorageVolume()
 	}
 
 	b.containers[name] = genContainer{
-		Image:    image,
-		Env:      env,
-		Bindings: bindings,
-		Inputs:   inputs,
-		Volumes:  volumes,
+		Image:      image,
+		Env:        env,
+		Bindings:   bindings,
+		Inputs:     inputs,
+		Volumes:    volumes,
+		BindMounts: bindMounts,
 	}
 }
 
@@ -1014,12 +1016,27 @@ func (b *infraGenerator) Compile() error {
 	}
 
 	for name, container := range b.containers {
+		var bMounts []*BindMount
+		if len(container.BindMounts) > 0 {
+			// must grant write role to the Storage File Share to upload data
+			b.bicepContext.RequiresPrincipalId = true
+		}
+		for count, bm := range container.BindMounts {
+			bMounts = append(bMounts, &BindMount{
+				// adding a name using the index. This name is used for naming the resource in bicep.
+				Name:     fmt.Sprintf("bm%d", count),
+				Source:   bm.Source,
+				Target:   bm.Target,
+				ReadOnly: bm.ReadOnly,
+			})
+		}
 		cs := genContainerApp{
-			Image:   container.Image,
-			Env:     make(map[string]string),
-			Secrets: make(map[string]string),
-			Volumes: container.Volumes,
-			Ingress: b.allServicesIngress[name].ingress,
+			Image:      container.Image,
+			Env:        make(map[string]string),
+			Secrets:    make(map[string]string),
+			Volumes:    container.Volumes,
+			BindMounts: bMounts,
+			Ingress:    b.allServicesIngress[name].ingress,
 		}
 
 		parameters := maps.Keys(b.bicepContext.InputParameters)

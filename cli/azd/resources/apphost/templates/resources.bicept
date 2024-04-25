@@ -86,6 +86,24 @@ resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/stora
   }
 }
 {{- end }}
+{{- range $bMount := $value.BindMounts}}
+resource {{mergeBicepName $name $bMount.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}', 32)
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
+  }
+}
+resource {{mergeBicepName $name $bMount.Name}}RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageVolume.id, {{mergeBicepName $name $bMount.Name}}FileShare.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd'))
+  scope: storageVolume
+  properties: {
+    principalId: principalId
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd')
+  }
+}
+{{- end }}
 {{- end }}
 {{end -}}
 {{if .HasContainerEnvironment}}
@@ -136,6 +154,25 @@ resource {{mergeBicepName $name $volume.Name}}Store 'Microsoft.App/managedEnviro
       accessMode: 'ReadOnly'
 {{- end}}
 {{- if eq false $volume.ReadOnly }}
+      accessMode: 'ReadWrite'
+{{- end}}
+    }
+  }
+}
+{{end -}}
+{{- range $bMount := $value.BindMounts}}
+resource {{mergeBicepName $name $bMount.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}', 32)
+  properties: {
+    azureFile: {
+      shareName: '${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+{{- if $bMount.ReadOnly }}
+      accessMode: 'ReadOnly'
+{{- end}}
+{{- if eq false $bMount.ReadOnly }}
       accessMode: 'ReadWrite'
 {{- end}}
     }
@@ -266,13 +303,20 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
     }
     template: {
-{{- if $value.Volumes}}
+{{- if or ($value.Volumes) ($value.BindMounts)}}
       volumes: [
 {{- range $volume := $value.Volumes}}
         {
           name: '${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}'
           storageType: 'AzureFile'
           storageName: {{mergeBicepName $name $volume.Name}}Store.name
+        }
+{{- end}}
+{{- range $bMount := $value.BindMounts}}
+        {
+          name: '${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}'
+          storageType: 'AzureFile'
+          storageName: {{mergeBicepName $name $bMount.Name}}Store.name
         }
 {{- end}}
       ]
@@ -297,12 +341,18 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
           ]
 {{- end}}
-{{- if $value.Volumes}}
+{{- if or ($value.Volumes) ($value.BindMounts)}}
           volumeMounts: [
 {{- range $volume := $value.Volumes}}
             {
               volumeName: '${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}'
               mountPath: '{{$volume.Target}}'
+            }
+{{- end}}
+{{- range $bMount := $value.BindMounts}}
+            {
+              volumeName: '${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}'
+              mountPath: '{{$bMount.Target}}'
             }
 {{- end}}
           ]
@@ -584,5 +634,13 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name
 {{end -}}
 {{range $name, $value := .SqlServers -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
+{{end -}}
+{{if .RequiresStorageVolume -}}
+output AZD_OPS_BIND_MOUNT_ACCOUNT string = storageVolume.name
+{{- end -}}
+{{range $name, $value := .ContainerApps -}}
+{{range $bMount := $value.BindMounts -}}
+output AZD_OPS_BIND_MOUNT_{{mergeBicepName $name $bMount.Name}}FileShare string = '${ {{mergeBicepName $name $bMount.Name}}FileShare.name},{{$bMount.Source}}'
+{{- end }}
 {{end -}}
 {{ end}}

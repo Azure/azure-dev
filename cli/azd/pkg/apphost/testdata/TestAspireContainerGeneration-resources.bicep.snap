@@ -306,4 +306,7 @@ output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
 output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspace.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
+output AZD_OPS_BIND_MOUNT_ACCOUNT string = storageVolume.name
+
+
 

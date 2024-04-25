@@ -108,4 +108,12 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs
 {{- range $param, $value := .OutputParameters}}
 output {{bicepParameterName $param}} {{$value.Type}} = {{bicepParameterName $value.Value}}
 {{- end -}}
+{{if .RequiresStorageVolume -}}
+output AZD_OPS_BIND_MOUNT_ACCOUNT string = resources.outputs.AZD_OPS_BIND_MOUNT_ACCOUNT
+{{end -}}
+{{range $name, $value := .ContainerApps -}}
+{{- range $bMount := $value.BindMounts -}}
+output AZD_OPS_BIND_MOUNT_{{mergeBicepName $name $bMount.Name}}FileShare string = resources.outputs.AZD_OPS_BIND_MOUNT_{{mergeBicepName $name $bMount.Name}}FileShare
+{{end -}}
+{{end -}}
 {{ end}}

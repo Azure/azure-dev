@@ -42,6 +42,7 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 		return nil, err
 	}
 
+	// If the configuration contains a vault, then also load the vault configuration
 	vaultId, ok := azdConfig.GetString("vault")
 	if ok {
 		configPath, err := GetUserConfigDir()
@@ -89,6 +90,8 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 		return fmt.Errorf("failed casting azd configuration to config")
 	}
 
+	// If the configuration contains a vault, then also save the vault configuration
+	// Vault configuration always gets saved in a separate file in the users HOME directory.
 	if baseConfig.vaultId != "" {
 		configPath, err := GetUserConfigDir()
 		if err != nil {

@@ -11,9 +11,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
+)
+
+//
+//nolint:lll
+var vaultPattern = regexp.MustCompile(
+	`^vault://[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`,
 )
 
 // Azd configuration for the current user
@@ -24,7 +31,6 @@ type Config interface {
 	GetString(path string) (string, bool)
 	GetSection(path string, section any) (bool, error)
 	Set(path string, value any) error
-	GetSecret(path string) (string, bool)
 	SetSecret(path string, value string) error
 	Unset(path string) error
 	IsEmpty() bool
@@ -81,26 +87,6 @@ func (c *config) SetSecret(path string, value string) error {
 	}
 
 	return c.Set(path, vaultRef)
-}
-
-// GetSecret retrieves the secret stored at the specified path from a local user vault
-func (c *config) GetSecret(path string) (string, bool) {
-	vaultRef, ok := c.GetString(path)
-	if !ok {
-		return "", false
-	}
-
-	encodedValue, ok := c.vault.GetString(filepath.Base(vaultRef))
-	if !ok {
-		return "", false
-	}
-
-	bytes, err := base64.StdEncoding.DecodeString(encodedValue)
-	if err != nil {
-		return "", false
-	}
-
-	return string(bytes), true
 }
 
 // Sets a value at the specified location
@@ -177,8 +163,15 @@ func (c *config) Get(path string) (any, bool) {
 	parts := strings.Split(path, ".")
 	for _, part := range parts {
 		if depth == len(parts) {
-			value, ok := currentNode[part]
-			return value, ok
+			value, foundNode := currentNode[part]
+
+			// Check if the value is a vault reference
+			// If it is, retrieve the secret from the vault
+			if vaultRef, isString := value.(string); foundNode && isString && vaultPattern.MatchString(vaultRef) {
+				return c.getSecret(vaultRef)
+			}
+
+			return value, foundNode
 		}
 		value, ok := currentNode[part]
 		if !ok {
@@ -224,4 +217,19 @@ func (c *config) GetSection(path string, section any) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// GetSecret retrieves the secret stored at the specified path from a local user vault
+func (c *config) getSecret(vaultRef string) (string, bool) {
+	encodedValue, ok := c.vault.GetString(filepath.Base(vaultRef))
+	if !ok {
+		return "", false
+	}
+
+	bytes, err := base64.StdEncoding.DecodeString(encodedValue)
+	if err != nil {
+		return "", false
+	}
+
+	return string(bytes), true
 }

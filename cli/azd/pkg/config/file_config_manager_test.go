@@ -45,7 +45,7 @@ func Test_FileConfigManager_SaveAndLoadEmptyConfig(t *testing.T) {
 	require.NotNil(t, existingConfig)
 }
 
-func Test_Secrets_GetSet(t *testing.T) {
+func Test_FileConfigManager_GetSetSecrets(t *testing.T) {
 	tempDir := t.TempDir()
 	azdConfigDir := filepath.Join(tempDir, ".azd")
 
@@ -97,4 +97,46 @@ func Test_Secrets_GetSet(t *testing.T) {
 	missingPassword, ok := updatedConfig.GetString("secrets.misingVaultRef")
 	require.False(t, ok)
 	require.Empty(t, missingPassword)
+}
+
+func Test_FileConfigManager_GetSetSecretsInSection(t *testing.T) {
+	tempDir := t.TempDir()
+	azdConfigDir := filepath.Join(tempDir, ".azd")
+
+	err := os.Setenv("AZD_CONFIG_DIR", azdConfigDir)
+	require.NoError(t, err)
+
+	// Set and save secrets
+	configFilePath := filepath.Join(tempDir, "config.json")
+	configManager := NewFileConfigManager(NewManager())
+	azdConfig := NewConfig(nil)
+
+	err = azdConfig.SetSecret("infra.provisioning.secret1", "secrect1Value")
+	require.NoError(t, err)
+
+	azdConfig.SetSecret("infra.provisioning.secret2", "secrect2Value")
+	require.NoError(t, err)
+
+	azdConfig.Set("infra.provisioning.normalValue", "normalValue")
+	require.NoError(t, err)
+
+	err = configManager.Save(azdConfig, configFilePath)
+	require.NoError(t, err)
+
+	var provisioningParams map[string]string
+	ok, err := azdConfig.GetSection("infra.provisioning", &provisioningParams)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	secret1, ok := provisioningParams["secret1"]
+	require.True(t, ok)
+	require.Equal(t, "secrect1Value", secret1)
+
+	secret2, ok := provisioningParams["secret2"]
+	require.True(t, ok)
+	require.Equal(t, "secrect2Value", secret2)
+
+	normalValue, ok := provisioningParams["normalValue"]
+	require.True(t, ok)
+	require.Equal(t, "normalValue", normalValue)
 }

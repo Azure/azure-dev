@@ -162,16 +162,15 @@ func (c *config) Get(path string) (any, bool) {
 	currentNode := c.data
 	parts := strings.Split(path, ".")
 	for _, part := range parts {
+		// When the depth is equal to the number of parts, we have reached the desired node path
+		// At this point we can perform any final processing on the node and return the result
 		if depth == len(parts) {
-			value, foundNode := currentNode[part]
-
-			// Check if the value is a vault reference
-			// If it is, retrieve the secret from the vault
-			if vaultRef, isString := value.(string); foundNode && isString && vaultPattern.MatchString(vaultRef) {
-				return c.getSecret(vaultRef)
+			value, ok := currentNode[part]
+			if !ok {
+				return value, ok
 			}
 
-			return value, foundNode
+			return c.interpolateNodeValue(value)
 		}
 		value, ok := currentNode[part]
 		if !ok {
@@ -219,7 +218,7 @@ func (c *config) GetSection(path string, section any) (bool, error) {
 	return true, nil
 }
 
-// GetSecret retrieves the secret stored at the specified path from a local user vault
+// getSecret retrieves the secret stored at the specified path from a local user vault
 func (c *config) getSecret(vaultRef string) (string, bool) {
 	encodedValue, ok := c.vault.GetString(filepath.Base(vaultRef))
 	if !ok {
@@ -232,4 +231,31 @@ func (c *config) getSecret(vaultRef string) (string, bool) {
 	}
 
 	return string(bytes), true
+}
+
+// interpolateNodeValue processes the node, iterates on any nested nodes and interpolates any vault references
+func (c *config) interpolateNodeValue(value any) (any, bool) {
+	// Check if the value is a vault reference
+	// If it is, retrieve the secret from the vault
+	if vaultRef, isString := value.(string); isString && vaultPattern.MatchString(vaultRef) {
+		return c.getSecret(vaultRef)
+	}
+
+	// If the value is a map, recursively iterate over the map and interpolate the values
+	if node, isMap := value.(map[string]any); isMap {
+		// We want to ensure we return a cloned map so that we don't modify the original data
+		// stored within the config map data structure
+		cloneMap := map[string]any{}
+
+		for key, val := range node {
+			if nodeValue, ok := c.interpolateNodeValue(val); ok {
+				cloneMap[key] = nodeValue
+			}
+		}
+
+		return cloneMap, true
+	}
+
+	// Finally, if the value is not handled above we can return the value as is
+	return value, true
 }

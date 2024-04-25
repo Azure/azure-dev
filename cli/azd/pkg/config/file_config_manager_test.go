@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -45,13 +46,20 @@ func Test_FileConfigManager_SaveAndLoadEmptyConfig(t *testing.T) {
 }
 
 func Test_Secrets_GetSet(t *testing.T) {
-	configFilePath := filepath.Join(t.TempDir(), "config.json")
+	tempDir := t.TempDir()
+	azdConfigDir := filepath.Join(tempDir, ".azd")
+
+	err := os.Setenv("AZD_CONFIG_DIR", azdConfigDir)
+	require.NoError(t, err)
+
+	// Set and save secrets
+	configFilePath := filepath.Join(tempDir, "config.json")
 	configManager := NewFileConfigManager(NewManager())
 	azdConfig := NewConfig(nil)
 
 	// Standard secrets
 	expectedPassword := "P@55w0rd!"
-	err := azdConfig.SetSecret("secrets.password", expectedPassword)
+	err = azdConfig.SetSecret("secrets.password", expectedPassword)
 	require.NoError(t, err)
 
 	err = azdConfig.SetSecret("infra.provisioning.sqlPassword", expectedPassword)
@@ -65,6 +73,13 @@ func Test_Secrets_GetSet(t *testing.T) {
 	err = configManager.Save(azdConfig, configFilePath)
 	require.NoError(t, err)
 
+	baseConfig, ok := azdConfig.(*config)
+	require.True(t, ok)
+
+	expectedVaultPath := filepath.Join(azdConfigDir, "vaults", fmt.Sprintf("%s.json", baseConfig.vaultId))
+	require.FileExists(t, expectedVaultPath)
+
+	// Load and retrieve secrets
 	updatedConfig, err := configManager.Load(configFilePath)
 	require.NoError(t, err)
 	require.NotNil(t, updatedConfig)
@@ -78,6 +93,7 @@ func Test_Secrets_GetSet(t *testing.T) {
 	require.Equal(t, expectedPassword, sqlPassword)
 
 	// Missing vault reference will return empty string
+	// even though the value appears to be a vault reference
 	missingPassword, ok := updatedConfig.GetString("secrets.misingVaultRef")
 	require.False(t, ok)
 	require.Empty(t, missingPassword)

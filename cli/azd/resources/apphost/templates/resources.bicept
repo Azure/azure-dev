@@ -75,6 +75,16 @@ resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileService
   parent: storageVolume
   name: 'default'
 }
+{{if .HasBindMounts -}}
+resource volumesAccountRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageVolume.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd'))
+  scope: storageVolume
+  properties: {
+    principalId: principalId
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd')
+  }
+}
+{{ end -}}
 {{range $name, $value := .ContainerApps}}
 {{- range $volume := $value.Volumes}}
 resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
@@ -93,14 +103,6 @@ resource {{mergeBicepName $name $bMount.Name}}FileShare 'Microsoft.Storage/stora
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
-  }
-}
-resource {{mergeBicepName $name $bMount.Name}}RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageVolume.id, {{mergeBicepName $name $bMount.Name}}FileShare.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd'))
-  scope: storageVolume
-  properties: {
-    principalId: principalId
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd')
   }
 }
 {{- end }}
@@ -637,7 +639,7 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name
 {{end -}}
 {{if .RequiresStorageVolume -}}
 output AZD_OPS_BIND_MOUNT_ACCOUNT string = storageVolume.name
-{{- end -}}
+{{ end -}}
 {{range $name, $value := .ContainerApps -}}
 {{range $bMount := $value.BindMounts -}}
 output AZD_OPS_BIND_MOUNT_{{mergeBicepName $name $bMount.Name}}FileShare string = '${ {{mergeBicepName $name $bMount.Name}}FileShare.name},{{$bMount.Source}}'

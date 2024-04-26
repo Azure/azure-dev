@@ -578,6 +578,10 @@ func (b *infraGenerator) requireStorageVolume() {
 	b.bicepContext.RequiresStorageVolume = true
 }
 
+func (b *infraGenerator) hasBindMounts() {
+	b.bicepContext.HasBindMounts = true
+}
+
 func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
 	if queues == nil {
 		queues = &[]string{}
@@ -831,8 +835,13 @@ func (b *infraGenerator) addContainer(
 	bindMounts []*BindMount) {
 	b.requireCluster()
 
-	if len(volumes) > 0 || len(bindMounts) > 0 {
+	if len(volumes) > 0 {
 		b.requireStorageVolume()
+	}
+
+	if len(bindMounts) > 0 {
+		b.requireStorageVolume()
+		b.hasBindMounts()
 	}
 
 	b.containers[name] = genContainer{

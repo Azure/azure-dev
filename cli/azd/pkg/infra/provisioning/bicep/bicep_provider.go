@@ -129,7 +129,7 @@ var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	modulePath := p.modulePath()
 
-	// for .bicepparam, we first prompt for environment values before calling compiling bicepparams file
+	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
 	if isBicepParamFile(modulePath) {
 		if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {

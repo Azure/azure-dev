@@ -29,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -2010,12 +2011,7 @@ func (p *BicepProvider) ensureParameters(
 			configuredParameters[key] = azure.ArmParameterValue{
 				Value: genValue,
 			}
-			// - save to config for next attempts
-			if err := p.env.Config.Set(configKey, genValue); err != nil {
-				// errors from config.Set are panics, so we can't recover from them
-				// For example, the value is not serializable to JSON
-				log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
-			}
+			mustSetParamAsConfig(key, genValue, p.env.Config, param.Secure())
 			configModified = true
 			continue
 		}
@@ -2046,39 +2042,29 @@ func (p *BicepProvider) ensureParameters(
 			}
 
 			for _, prompt := range parameterPrompts {
-				configKey := fmt.Sprintf("infra.parameters.%s", prompt.key)
+				key := prompt.key
 				value := values[prompt.key]
-
-				if err := p.env.Config.Set(configKey, value); err == nil {
-					configModified = true
-				} else {
-					// errors from config.Set are panics, so we can't recover from them
-					// For example, the value is not serializable to JSON
-					log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
-				}
-
-				configuredParameters[prompt.key] = azure.ArmParameterValue{
+				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
+				configModified = true
+				configuredParameters[key] = azure.ArmParameterValue{
 					Value: value,
 				}
 			}
 		} else {
 			for _, prompt := range parameterPrompts {
-				configKey := fmt.Sprintf("infra.parameters.%s", prompt.key)
+				key := prompt.key
 
 				// Otherwise, prompt for the value.
-				value, err := p.promptForParameter(ctx, prompt.key, prompt.param)
+				value, err := p.promptForParameter(ctx, key, prompt.param)
 				if err != nil {
 					return nil, fmt.Errorf("prompting for value: %w", err)
 				}
 
-				if err := p.env.Config.Set(configKey, value); err == nil {
-					configModified = true
-				} else {
-					// errors from config.Set are panics, so we can't recover from them
-					// For example, the value is not serializable to JSON
-					log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
+				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
+				configModified = true
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: value,
 				}
-
 				configuredParameters[prompt.key] = azure.ArmParameterValue{
 					Value: value,
 				}
@@ -2093,6 +2079,24 @@ func (p *BicepProvider) ensureParameters(
 	}
 	p.ensureParamsInMemoryCache = maps.Clone(configuredParameters)
 	return configuredParameters, nil
+}
+
+var configInfraParametersKey = "infra.parameters."
+
+// mustSetParamAsConfig sets the specified key-value pair in the given config.Config object.
+// If the isSecured flag is set to true, the value is set as a secret using config.SetSecret,
+// otherwise it is set using config.Set.
+// If an error occurs while setting the value, the function panics with a warning message.
+func mustSetParamAsConfig(key string, value any, config config.Config, isSecured bool) {
+	configKey := configInfraParametersKey + key
+
+	setFn := config.Set
+	if isSecured {
+		setFn = config.SetSecret
+	}
+	if err := setFn(configKey, value); err != nil {
+		log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
+	}
 }
 
 // Convert the ARM parameters file value into a value suitable for deployment

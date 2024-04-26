@@ -128,29 +128,38 @@ var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")
 // values are unset. This also requires that the Bicep module can be compiled.
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	modulePath := p.modulePath()
+
+	// for .bicepparam, we first prompt for environment values before calling compiling bicepparams file
+	// which can reference these values
+	if isBicepParamFile(modulePath) {
+		if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {
+			return err
+		}
+	}
+
 	compileResult, compileErr := p.compileBicep(ctx, modulePath)
 	if compileErr != nil {
 		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
 	}
 
-	var filterLocation = func(loc account.Location) bool {
-		if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
-			if locationParam.AllowedValues != nil {
-				return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
-					allowedValueString, goodCast := allowedValue.(string)
-					return goodCast && loc.Name == allowedValueString
-				}) != -1
-			}
-		}
-		return true
-	}
-
-	if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation); err != nil {
-		return err
-	}
-
 	// for .bicep, azd must load a parameters.json file and create the ArmParameters
 	if isBicepFile(modulePath) {
+		var filterLocation = func(loc account.Location) bool {
+			if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
+				if locationParam.AllowedValues != nil {
+					return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
+						allowedValueString, goodCast := allowedValue.(string)
+						return goodCast && loc.Name == allowedValueString
+					}) != -1
+				}
+			}
+			return true
+		}
+
+		if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation); err != nil {
+			return err
+		}
+
 		if _, err := p.ensureParameters(ctx, compileResult.Template); err != nil {
 			return err
 		}

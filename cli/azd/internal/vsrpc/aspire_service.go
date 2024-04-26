@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
@@ -38,8 +36,7 @@ func (s *aspireService) GetAspireHostAsync(
 	}
 
 	var c struct {
-		azdContext *azdcontext.AzdContext `container:"type"`
-		dotnetCli  dotnet.DotNetCli       `container:"type"`
+		dotnetCli dotnet.DotNetCli `container:"type"`
 	}
 
 	container, err := session.newContainer(rc)
@@ -51,33 +48,18 @@ func (s *aspireService) GetAspireHostAsync(
 		return nil, err
 	}
 
-	var cc struct {
-		projectConfig *project.ProjectConfig `container:"type"`
-	}
-
-	if err := container.Fill(&cc); err != nil {
-		return nil, err
-	}
-
-	appHost, err := appHostForProject(ctx, cc.projectConfig, c.dotnetCli)
-	if err != nil {
-		return nil, err
-	}
-
 	hostInfo := &AspireHost{
-		Name: filepath.Base(filepath.Dir(appHost.Path())),
-		Path: appHost.Path(),
+		Name: filepath.Base(filepath.Dir(rc.HostProjectPath)),
+		Path: rc.HostProjectPath,
 	}
 
-	manifest, err := apphost.ManifestFromAppHost(ctx, appHost.Path(), c.dotnetCli, aspireEnv)
+	manifest, err := apphost.ManifestFromAppHost(ctx, rc.HostProjectPath, c.dotnetCli, aspireEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load app host manifest: %w", err)
 	}
 
 	hostInfo.Services = servicesFromManifest(manifest)
-
 	return hostInfo, nil
-
 }
 
 // RenameAspireHostAsync is the server implementation of:

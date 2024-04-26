@@ -31,7 +31,7 @@ type Config interface {
 	GetString(path string) (string, bool)
 	GetSection(path string, section any) (bool, error)
 	Set(path string, value any) error
-	SetSecret(path string, value any) error
+	SetSecret(path string, value string) error
 	Unset(path string) error
 	IsEmpty() bool
 }
@@ -71,7 +71,7 @@ func (c *config) Raw() map[string]any {
 }
 
 // SetSecret stores the secrets at the specified path within a local user vault
-func (c *config) SetSecret(path string, value any) error {
+func (c *config) SetSecret(path string, value string) error {
 	if c.vaultId == "" {
 		c.vault = NewConfig(nil)
 		c.vaultId = uuid.New().String()
@@ -80,14 +80,9 @@ func (c *config) SetSecret(path string, value any) error {
 		}
 	}
 
-	valuesAsString, okCast := value.(string)
-	if !okCast {
-		return fmt.Errorf("non string values are not supported for secret storage")
-	}
-
-	pathId := uuid.NewString()
+	pathId := uuid.New().String()
 	vaultRef := fmt.Sprintf("vault://%s/%s", c.vaultId, pathId)
-	if err := c.vault.Set(pathId, base64.StdEncoding.EncodeToString([]byte(valuesAsString))); err != nil {
+	if err := c.vault.Set(pathId, base64.StdEncoding.EncodeToString([]byte(value))); err != nil {
 		return fmt.Errorf("failed setting secret value: %w", err)
 	}
 

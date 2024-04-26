@@ -2090,12 +2090,19 @@ var configInfraParametersKey = "infra.parameters."
 func mustSetParamAsConfig(key string, value any, config config.Config, isSecured bool) {
 	configKey := configInfraParametersKey + key
 
-	setFn := config.Set
-	if isSecured {
-		setFn = config.SetSecret
+	if !isSecured {
+		if err := config.Set(configKey, value); err != nil {
+			log.Panicf("failed setting config value: %v", err)
+		}
+		return
 	}
-	if err := setFn(configKey, value); err != nil {
-		log.Panicf(fmt.Sprintf("warning: failed to set value: %v", err))
+
+	secretString, castOk := value.(string)
+	if !castOk {
+		log.Panic("tried to set a non-string as secret. This is not supported.")
+	}
+	if err := config.SetSecret(configKey, secretString); err != nil {
+		log.Panicf("failed setting a secret in config: %v", err)
 	}
 }
 

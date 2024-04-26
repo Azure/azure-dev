@@ -12,8 +12,6 @@ import (
 	"regexp"
 	"strings"
 
-	"maps"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/joho/godotenv"
 )
@@ -146,7 +144,7 @@ func CleanName(name string) string {
 // Getenv behaves like os.Getenv, except that any keys in the `.env` file associated with this environment are considered
 // first.
 func (e *Environment) Getenv(key string) string {
-	if v, has := e.dotenv[key]; has {
+	if v, has := e.getEnvInterpolatedValue(key); has {
 		return v
 	}
 
@@ -156,7 +154,7 @@ func (e *Environment) Getenv(key string) string {
 // LookupEnv behaves like os.LookupEnv, except that any keys in the `.env` file associated with this environment are
 // considered first.
 func (e *Environment) LookupEnv(key string) (string, bool) {
-	if v, has := e.dotenv[key]; has {
+	if v, has := e.getEnvInterpolatedValue(key); has {
 		return v, true
 	}
 
@@ -166,13 +164,28 @@ func (e *Environment) LookupEnv(key string) (string, bool) {
 // DotenvDelete removes the given key from the .env file in the environment, it is a no-op if the key
 // does not exist. [Save] should be called to ensure this change is persisted.
 func (e *Environment) DotenvDelete(key string) {
+	if rawValue, has := e.dotenv[key]; has && config.VaultPattern.MatchString(rawValue) {
+		secretPath := fmt.Sprintf("environment.%s", key)
+		err := e.Config.Unset(secretPath)
+		if err != nil {
+			log.Printf("Failed to unset secret %s: %v", secretPath, err)
+		}
+	}
+
 	delete(e.dotenv, key)
 	e.deletedKeys[key] = struct{}{}
 }
 
 // Dotenv returns a copy of the key value pairs from the .env file in the environment.
 func (e *Environment) Dotenv() map[string]string {
-	return maps.Clone(e.dotenv)
+	result := map[string]string{}
+
+	for k := range e.dotenv {
+		value, _ := e.getEnvInterpolatedValue(k)
+		result[k] = value
+	}
+
+	return result
 }
 
 // DotenvSet sets the value of [key] to [value] in the .env file associated with the environment. [Save] should be
@@ -180,6 +193,18 @@ func (e *Environment) Dotenv() map[string]string {
 func (e *Environment) DotenvSet(key string, value string) {
 	e.dotenv[key] = value
 	delete(e.deletedKeys, key)
+}
+
+func (e *Environment) DotenvSetSecret(key string, value string) error {
+	secretPath := fmt.Sprintf("environment.%s", key)
+	vaultRef, err := e.Config.SetSecret(secretPath, value)
+	if err != nil {
+		return fmt.Errorf("setting secret: %w", err)
+	}
+
+	e.DotenvSet(key, vaultRef)
+
+	return nil
 }
 
 // Name gets the name of the environment
@@ -235,11 +260,28 @@ func (e *Environment) SetServiceProperty(serviceName string, propertyName string
 // can be used to pass into command runner or similar constructs.
 func (e *Environment) Environ() []string {
 	envVars := []string{}
-	for k, v := range e.dotenv {
-		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
+	for k := range e.dotenv {
+		value, _ := e.getEnvInterpolatedValue(k)
+		envVars = append(envVars, fmt.Sprintf("%s=%s", k, value))
 	}
 
 	return envVars
+}
+
+// getEnvInterpolatedValue checks if the value is a vault reference
+// If vault reference is found it will return the value from the vault
+func (e *Environment) getEnvInterpolatedValue(key string) (string, bool) {
+	rawValue, has := e.dotenv[key]
+	if !has {
+		return "", false
+	}
+
+	if config.VaultPattern.MatchString(rawValue) {
+		configKey := fmt.Sprintf("environment.%s", key)
+		return e.Config.GetString(configKey)
+	}
+
+	return rawValue, true
 }
 
 // fixupUnquotedDotenv is a workaround for behavior in how godotenv.Marshal handles numeric like values.  Marshaling

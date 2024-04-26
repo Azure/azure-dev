@@ -55,15 +55,17 @@ func Test_FileConfigManager_GetSetSecrets(t *testing.T) {
 	// Set and save secrets
 	configFilePath := filepath.Join(tempDir, "config.json")
 	configManager := NewFileConfigManager(NewManager())
-	azdConfig := NewConfig(nil)
+	azdConfig := NewConfig(nil).(*config)
 
 	// Standard secrets
 	expectedPassword := "P@55w0rd!"
-	err = azdConfig.SetSecret("secrets.password", expectedPassword)
+	vaultRef1, err := azdConfig.SetSecret("secrets.password", expectedPassword)
 	require.NoError(t, err)
+	require.NotEmpty(t, vaultRef1)
 
-	err = azdConfig.SetSecret("infra.provisioning.sqlPassword", expectedPassword)
+	vaultRef2, err := azdConfig.SetSecret("infra.provisioning.sqlPassword", expectedPassword)
 	require.NoError(t, err)
+	require.NotEmpty(t, vaultRef2)
 
 	// Missing vault reference
 	missingVaultRef := fmt.Sprintf("vault://%s/%s", uuid.New().String(), uuid.New().String())
@@ -73,10 +75,7 @@ func Test_FileConfigManager_GetSetSecrets(t *testing.T) {
 	err = configManager.Save(azdConfig, configFilePath)
 	require.NoError(t, err)
 
-	baseConfig, ok := azdConfig.(*config)
-	require.True(t, ok)
-
-	expectedVaultPath := filepath.Join(azdConfigDir, "vaults", fmt.Sprintf("%s.json", baseConfig.vaultId))
+	expectedVaultPath := filepath.Join(azdConfigDir, "vaults", fmt.Sprintf("%s.json", azdConfig.vaultId))
 	require.FileExists(t, expectedVaultPath)
 
 	// Load and retrieve secrets
@@ -111,11 +110,13 @@ func Test_FileConfigManager_GetSetSecretsInSection(t *testing.T) {
 	configManager := NewFileConfigManager(NewManager())
 	azdConfig := NewConfig(nil)
 
-	err = azdConfig.SetSecret("infra.provisioning.secret1", "secrect1Value")
+	vaultRef1, err := azdConfig.SetSecret("infra.provisioning.secret1", "secrect1Value")
 	require.NoError(t, err)
+	require.NotEmpty(t, vaultRef1)
 
-	err = azdConfig.SetSecret("infra.provisioning.secret2", "secrect2Value")
+	vaultRef2, err := azdConfig.SetSecret("infra.provisioning.secret2", "secrect2Value")
 	require.NoError(t, err)
+	require.NotEmpty(t, vaultRef2)
 
 	err = azdConfig.Set("infra.provisioning.normalValue", "normalValue")
 	require.NoError(t, err)
@@ -139,4 +140,78 @@ func Test_FileConfigManager_GetSetSecretsInSection(t *testing.T) {
 	normalValue, ok := provisioningParams["normalValue"]
 	require.True(t, ok)
 	require.Equal(t, "normalValue", normalValue)
+}
+
+func Test_FileConfigManager_UnsetSecret(t *testing.T) {
+	// Set and save secrets
+	azdConfig := NewConfig(nil).(*config)
+
+	vaultRef1, err := azdConfig.SetSecret("secrets.password1", "password1")
+	require.NoError(t, err)
+	require.NotEmpty(t, vaultRef1)
+
+	vaultRef2, err := azdConfig.SetSecret("secrets.password2", "password2")
+	require.NoError(t, err)
+	require.NotEmpty(t, vaultRef2)
+
+	require.Len(t, azdConfig.vault.Raw(), 2)
+
+	err = azdConfig.Unset("secrets.password1")
+	require.NoError(t, err)
+	require.Len(t, azdConfig.vault.Raw(), 1)
+
+	err = azdConfig.Unset("secrets.password2")
+	require.NoError(t, err)
+	require.Len(t, azdConfig.vault.Raw(), 0)
+}
+
+func Test_FileConfigManager_UnsetSectionWithSecrets(t *testing.T) {
+	// Set and save secrets
+	azdConfig := NewConfig(nil).(*config)
+
+	vaultRef1, err := azdConfig.SetSecret("secrets.password1", "password1")
+	require.NoError(t, err)
+	require.NotEmpty(t, vaultRef1)
+
+	vaultRef2, err := azdConfig.SetSecret("secrets.password2", "password2")
+	require.NoError(t, err)
+	require.NotEmpty(t, vaultRef2)
+
+	require.Len(t, azdConfig.vault.Raw(), 2)
+
+	err = azdConfig.Unset("secrets")
+	require.NoError(t, err)
+	require.Len(t, azdConfig.vault.Raw(), 0)
+}
+
+func Test_FileConfigManager_CleanUpEmptyVault(t *testing.T) {
+	tempDir := t.TempDir()
+	azdConfigDir := filepath.Join(tempDir, ".azd")
+
+	err := os.Setenv("AZD_CONFIG_DIR", azdConfigDir)
+	require.NoError(t, err)
+
+	// Set and save secrets
+	configFilePath := filepath.Join(tempDir, "config.json")
+	configManager := NewFileConfigManager(NewManager())
+	azdConfig := NewConfig(nil).(*config)
+
+	vaultRef, err := azdConfig.SetSecret("secrets.password", "P@55w0rd!")
+	require.NoError(t, err)
+	require.NotEmpty(t, vaultRef)
+
+	err = configManager.Save(azdConfig, configFilePath)
+	require.NoError(t, err)
+
+	expectedVaultPath := filepath.Join(azdConfigDir, "vaults", fmt.Sprintf("%s.json", azdConfig.vaultId))
+	require.FileExists(t, expectedVaultPath)
+
+	err = azdConfig.Unset("secrets.password")
+	require.NoError(t, err)
+
+	err = configManager.Save(azdConfig, configFilePath)
+	require.NoError(t, err)
+
+	// vault file should now be deleted since it no longer contains any secrets
+	require.NoFileExists(t, expectedVaultPath)
 }

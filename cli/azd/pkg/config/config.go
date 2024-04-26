@@ -17,9 +17,8 @@ import (
 	"github.com/google/uuid"
 )
 
-//
 //nolint:lll
-var vaultPattern = regexp.MustCompile(
+var VaultPattern = regexp.MustCompile(
 	`^vault://[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`,
 )
 
@@ -31,7 +30,7 @@ type Config interface {
 	GetString(path string) (string, bool)
 	GetSection(path string, section any) (bool, error)
 	Set(path string, value any) error
-	SetSecret(path string, value string) error
+	SetSecret(path string, value string) (string, error)
 	Unset(path string) error
 	IsEmpty() bool
 }
@@ -71,22 +70,26 @@ func (c *config) Raw() map[string]any {
 }
 
 // SetSecret stores the secrets at the specified path within a local user vault
-func (c *config) SetSecret(path string, value string) error {
+func (c *config) SetSecret(path string, value string) (string, error) {
 	if c.vaultId == "" {
 		c.vault = NewConfig(nil)
 		c.vaultId = uuid.New().String()
 		if err := c.Set("vault", c.vaultId); err != nil {
-			return fmt.Errorf("failed setting vault id: %w", err)
+			return "", fmt.Errorf("failed setting vault id: %w", err)
 		}
 	}
 
-	pathId := uuid.New().String()
-	vaultRef := fmt.Sprintf("vault://%s/%s", c.vaultId, pathId)
-	if err := c.vault.Set(pathId, base64.StdEncoding.EncodeToString([]byte(value))); err != nil {
-		return fmt.Errorf("failed setting secret value: %w", err)
+	secretId := uuid.New().String()
+	vaultRef := fmt.Sprintf("vault://%s/%s", c.vaultId, secretId)
+	if err := c.vault.Set(secretId, base64.StdEncoding.EncodeToString([]byte(value))); err != nil {
+		return "", fmt.Errorf("failed setting secret value: %w", err)
 	}
 
-	return c.Set(path, vaultRef)
+	if err := c.Set(path, vaultRef); err != nil {
+		return "", fmt.Errorf("failed setting secret reference: %w", err)
+	}
+
+	return vaultRef, nil
 }
 
 // Sets a value at the specified location
@@ -129,6 +132,10 @@ func (c *config) Unset(path string) error {
 	parts := strings.Split(path, ".")
 	for _, part := range parts {
 		if depth == len(parts) {
+			if err := c.deletedNestedSecrets(currentNode[part]); err != nil {
+				return err
+			}
+
 			delete(currentNode, part)
 			return nil
 		}
@@ -140,11 +147,9 @@ func (c *config) Unset(path string) error {
 			return nil
 		}
 
-		if value != nil {
-			node, ok = value.(map[string]any)
-			if !ok {
-				return fmt.Errorf("failed converting node at path '%s' to map", part)
-			}
+		node, ok = value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("failed converting node at path '%s' to map", part)
 		}
 
 		currentNode[part] = node
@@ -234,21 +239,21 @@ func (c *config) getSecret(vaultRef string) (string, bool) {
 }
 
 // interpolateNodeValue processes the node, iterates on any nested nodes and interpolates any vault references
-func (c *config) interpolateNodeValue(value any) (any, bool) {
+func (c *config) interpolateNodeValue(node any) (any, bool) {
 	// Check if the value is a vault reference
 	// If it is, retrieve the secret from the vault
-	if vaultRef, isString := value.(string); isString && vaultPattern.MatchString(vaultRef) {
+	if vaultRef, isString := node.(string); isString && VaultPattern.MatchString(vaultRef) {
 		return c.getSecret(vaultRef)
 	}
 
 	// If the value is a map, recursively iterate over the map and interpolate the values
-	if node, isMap := value.(map[string]any); isMap {
+	if node, isMap := node.(map[string]any); isMap {
 		// We want to ensure we return a cloned map so that we don't modify the original data
 		// stored within the config map data structure
 		cloneMap := map[string]any{}
 
-		for key, val := range node {
-			if nodeValue, ok := c.interpolateNodeValue(val); ok {
+		for key, childNode := range node {
+			if nodeValue, ok := c.interpolateNodeValue(childNode); ok {
 				cloneMap[key] = nodeValue
 			}
 		}
@@ -257,5 +262,22 @@ func (c *config) interpolateNodeValue(value any) (any, bool) {
 	}
 
 	// Finally, if the value is not handled above we can return the value as is
-	return value, true
+	return node, true
+}
+
+// deletedNestedSecrets iterates over the node and removes any nested referenced by any child nodes
+func (c *config) deletedNestedSecrets(node any) error {
+	if vaultRef, isString := node.(string); isString && VaultPattern.MatchString(vaultRef) {
+		return c.vault.Unset(filepath.Base(vaultRef))
+	}
+
+	if node, isMap := node.(map[string]any); isMap {
+		for _, childNode := range node {
+			if err := c.deletedNestedSecrets(childNode); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

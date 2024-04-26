@@ -99,11 +99,21 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 		}
 
 		vaultPath := filepath.Join(configPath, "vaults", fmt.Sprintf("%s.json", baseConfig.vaultId))
-		if err = os.MkdirAll(filepath.Dir(vaultPath), osutil.PermissionDirectory); err != nil {
-			return fmt.Errorf("failed creating vaults directory: %w", err)
-		}
 
-		return m.Save(baseConfig.vault, vaultPath)
+		// If the vault becomes empty (no secrets), then remove the vault file
+		if baseConfig.vault.IsEmpty() {
+			if err = os.Remove(vaultPath); err != nil {
+				return fmt.Errorf("failed removing vault file: %w", err)
+			}
+		} else {
+			if err = os.MkdirAll(filepath.Dir(vaultPath), osutil.PermissionDirectory); err != nil {
+				return fmt.Errorf("failed creating vaults directory: %w", err)
+			}
+
+			if err := m.Save(baseConfig.vault, vaultPath); err != nil {
+				return fmt.Errorf("failed saving vault configuration to '%s': %w", vaultPath, err)
+			}
+		}
 	}
 
 	return nil

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -127,7 +126,7 @@ func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
 		t.envManager,
 		t.env,
 		t.prompters,
-		func(_ account.Location) bool { return true },
+		nil,
 	)
 }
 

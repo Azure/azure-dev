@@ -132,9 +132,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
 	if isBicepParamFile(modulePath) {
-		if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, func(_ account.Location) bool {
-			return true
-		}); err != nil {
+		if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {
 			return err
 		}
 	}

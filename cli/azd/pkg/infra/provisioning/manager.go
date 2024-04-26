@@ -175,6 +175,7 @@ func (m *Manager) UpdateEnvironment(
 
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
 // variables are set in the environment, prompting the user for the values if they do not exist.
+// locationFilter, when non-nil, filters the locations being displayed.
 func EnsureSubscriptionAndLocation(
 	ctx context.Context,
 	envManager environment.Manager,

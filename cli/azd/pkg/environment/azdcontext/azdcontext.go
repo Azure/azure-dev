@@ -117,7 +117,7 @@ func NewAzdContext() (*AzdContext, error) {
 // The project file is first searched for in the working directory, if not found, the parent directory is searched
 // recursively up to root. If no project file is found, errNoProject is returned.
 func NewAzdContextFromWd(wd string) (*AzdContext, error) {
-	// Walk up from the CWD to the root, looking for a project file. If we find one, that's
+	// Walk up from the wd to the root, looking for a project file. If we find one, that's
 	// the root project directory.
 	searchDir, err := filepath.Abs(wd)
 	if err != nil {

@@ -210,6 +210,21 @@ func DetectAspireHosts(ctx context.Context, root string, dotnetCli dotnet.DotNet
 	return detectUnder(ctx, root, config)
 }
 
+func DetectAspireHost(ctx context.Context, directory string, dotnetCli dotnet.DotNetCli) (*Project, error) {
+	config := newConfig()
+	config.detectors = []projectDetector{
+		&dotNetAppHostDetector{
+			dotnetCli: dotnetCli,
+		},
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, fmt.Errorf("reading directory: %w", err)
+	}
+
+	return detectAny(ctx, config.detectors, directory, entries)
+}
+
 func detectUnder(ctx context.Context, root string, config detectConfig) ([]Project, error) {
 	projects := []Project{}
 

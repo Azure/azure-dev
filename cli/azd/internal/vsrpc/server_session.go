@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -96,8 +95,7 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 	}
 
 	id := s.id
-	projectDir := filepath.Dir(rc.HostProjectPath)
-	azdCtx, err := azdcontext.NewAzdContextFromWd(projectDir)
+	azdCtx, err := azdContext(rc.HostProjectPath, s.rootPath)
 	if err != nil {
 		return nil, err
 	}

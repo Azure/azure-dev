@@ -34,7 +34,7 @@ func PromptLocationWithFilter(
 	locations := make([]account.Location, 0, len(allLocations))
 
 	for _, location := range allLocations {
-		if shouldDisplay != nil && shouldDisplay(location) {
+		if shouldDisplay == nil || shouldDisplay(location) {
 			locations = append(locations, location)
 		}
 	}

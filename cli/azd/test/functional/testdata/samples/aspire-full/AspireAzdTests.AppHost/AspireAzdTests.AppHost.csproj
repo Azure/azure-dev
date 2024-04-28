@@ -15,7 +15,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Aspire.Hosting" Version="$(AspireVersion)" />
 		<PackageReference Include="Aspire.Hosting.AppHost" Version="$(AspireVersion)" />
 		<PackageReference Include="Aspire.Hosting.Azure" Version="$(AspireVersion)" />
 		<PackageReference Include="Aspire.Hosting.Azure.Redis" Version="$(AspireVersion)" />

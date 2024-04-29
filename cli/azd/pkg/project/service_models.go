@@ -78,7 +78,11 @@ func (spr *ServicePackageResult) ToString(currentIndentation string) string {
 		return uxItem.ToString(currentIndentation)
 	}
 
-	return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithLinkFormat(spr.PackagePath))
+	if spr.PackagePath != "" {
+		return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithLinkFormat(spr.PackagePath))
+	}
+
+	return ""
 }
 
 func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {

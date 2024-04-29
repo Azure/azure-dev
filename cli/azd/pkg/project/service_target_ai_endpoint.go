@@ -9,7 +9,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -43,33 +42,7 @@ type AiEndpointDeploymentResult struct {
 
 // Initialize initializes the aiEndpointTarget
 func (m *aiEndpointTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	return serviceConfig.Project.AddHandler(
-		"postprovision",
-		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-			projectName := m.env.Getenv(AiProjectNameEnvVarName)
-			aiStudioLink := ai.AzureAiStudioLink(
-				m.env.GetTenantId(),
-				m.env.GetSubscriptionId(),
-				m.env.Getenv(environment.ResourceGroupEnvVarName),
-				projectName,
-			)
-
-			err := m.env.Config.Set("provision.links.aiStudio", &output.Link{
-				Name:        "Azure AI Studio",
-				Description: fmt.Sprintf("View the %s project in Azure AI studio:", projectName),
-				Url:         aiStudioLink,
-			})
-			if err != nil {
-				return fmt.Errorf("failed setting aiStudio link: %w", err)
-			}
-
-			if err := m.envManager.Save(ctx, m.env); err != nil {
-				return fmt.Errorf("failed saving environment: %w", err)
-			}
-
-			return nil
-		},
-	)
+	return nil
 }
 
 // RequiredExternalTools returns the required external tools for the machineLearningEndpointTarget

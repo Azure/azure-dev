@@ -22,7 +22,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
 	"golang.org/x/exp/maps"
@@ -41,6 +43,36 @@ var aspireDashboardFeature = alpha.MustFeatureKey("aspire.dashboard")
 
 func IsAspireDashboardEnabled(alphaFeatureManager *alpha.FeatureManager) bool {
 	return alphaFeatureManager.IsEnabled(aspireDashboardFeature)
+}
+
+type AspireDashboard struct {
+	Link string
+}
+
+func (aspireD *AspireDashboard) ToString(currentIndentation string) string {
+	return fmt.Sprintf("%sAspire Dashboard: %s", currentIndentation, output.WithLinkFormat(aspireD.Link))
+}
+
+func (aspireD *AspireDashboard) MarshalJSON() ([]byte, error) {
+	return json.Marshal(*aspireD)
+}
+
+func AspireDashboardUrl(
+	ctx context.Context,
+	env *environment.Environment,
+	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
+	if !IsAspireDashboardEnabled(alphaFeatureManager) {
+		return nil
+	}
+
+	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")
+	if !exists {
+		return nil
+	}
+
+	return &AspireDashboard{
+		Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+	}
 }
 
 func init() {
@@ -162,6 +194,7 @@ func BicepTemplate(manifest *Manifest, options AppHostOptions) (*memfs.FS, error
 
 	if options.AspireDashboard {
 		generator.bicepContext.AspireDashboard = true
+		generator.bicepContext.RequiresPrincipalId = true
 	}
 
 	// use the filesystem coming from the manifest

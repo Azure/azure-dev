@@ -1,3 +1,4 @@
+@description('Resource name for the existing apim service')
 param name string
 
 @description('Resource name to uniquely identify this API within the API Management service instance')
@@ -8,20 +9,19 @@ param apiName string
 @minLength(1)
 param apiPath string
 
-@description('Resource name for azure application insights')
+@description('Resource name for the existing applicationInsights service')
 param applicationInsightsName string
 
 @description('Resource name for backend Web App or Function App')
 param apiAppName string = ''
 
-resource restApi 'Microsoft.ApiManagement/service/apis@2021-12-01-preview' existing = {
-  name: apiName
-  parent: apimService
-}
+// Necessary due to https://github.com/Azure/bicep/issues/9594
+// placeholderName is never deployed, it is merely used to make the child name validation pass
+var appNameForBicep = !empty(apiAppName) ? apiAppName : 'placeholderName'
 
 resource apiDiagnostics 'Microsoft.ApiManagement/service/apis/diagnostics@2021-12-01-preview' = {
   name: 'applicationinsights'
-  parent: restApi
+  parent: apimService::restApi
   properties: {
     alwaysLog: 'allErrors'
     backend: {
@@ -60,14 +60,6 @@ resource apiDiagnostics 'Microsoft.ApiManagement/service/apis/diagnostics@2021-1
   }
 }
 
-resource apimService 'Microsoft.ApiManagement/service@2021-08-01' existing = {
-  name: name
-}
-
-// Necessary due to https://github.com/Azure/bicep/issues/9594
-// placeholderName is never deployed, it is merely used to make the child name validation pass
-var appNameForBicep = !empty(apiAppName) ? apiAppName : 'placeholderName'
-
 resource apiAppProperties 'Microsoft.Web/sites/config@2022-03-01' = if (!empty(apiAppName)) {
   name: '${appNameForBicep}/web'
   kind: 'string'
@@ -94,6 +86,14 @@ resource apimLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview'
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(applicationInsightsName)) {
   name: applicationInsightsName
+}
+
+resource apimService 'Microsoft.ApiManagement/service@2021-08-01' existing = {
+  name: name
+
+  resource restApi 'apis@2021-12-01-preview' existing = {
+    name: apiName
+    }
 }
 
 output SERVICE_API_URI string = '${apimService.properties.gatewayUrl}/${apiPath}'

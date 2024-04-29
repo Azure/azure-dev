@@ -4,7 +4,6 @@
 
 ### Features Added
 
-- [[3774]](https://github.com/Azure/azure-dev/pull/3774) Add alpha feature `alpha.aspire.dashboard` to publish .NET aspire dashboards
 - [[3804]](https://github.com/Azure/azure-dev/pull/3804) Add user vault storage for development secrets
 - [[3755]](https://github.com/Azure/azure-dev/pull/3755) Store `secure()` Bicep parameters outside source tree
 

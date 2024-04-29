@@ -12,7 +12,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -491,16 +490,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			BuildArmClientOptions()
 	})
 
-	// Register ARM clients
-	// These clients can be injected where the default subscription is available
-	registerArmClient(container, armmachinelearning.NewWorkspacesClient)
-	registerArmClient(container, armmachinelearning.NewEnvironmentContainersClient)
-	registerArmClient(container, armmachinelearning.NewEnvironmentVersionsClient)
-	registerArmClient(container, armmachinelearning.NewModelContainersClient)
-	registerArmClient(container, armmachinelearning.NewModelVersionsClient)
-	registerArmClient(container, armmachinelearning.NewOnlineEndpointsClient)
-	registerArmClient(container, armmachinelearning.NewOnlineDeploymentsClient)
-
 	container.MustRegisterSingleton(templates.NewTemplateManager)
 	container.MustRegisterSingleton(templates.NewSourceManager)
 	container.MustRegisterScoped(project.NewResourceManager)
@@ -796,32 +785,3 @@ type ArmClientInitializer[T comparable] func(
 	credentials azcore.TokenCredential,
 	armClientOptions *arm.ClientOptions,
 ) (T, error)
-
-// registerArmClient registers an ARM client initializer for the specified type
-// ARM clients registered with this function will be resolved with the default subscription credentials
-// and the subscription ID defined within the current environment.
-//
-// If the ARM client is used in areas where a subscription is not guaranteed to be available,
-// then the client should be instantiated directly once a subscription id value is known.
-func registerArmClient[T comparable](container *ioc.NestedContainer, initializer ArmClientInitializer[T]) {
-	container.MustRegisterScoped(func(
-		ctx context.Context,
-		env *environment.Environment,
-		credentialProvider account.SubscriptionCredentialProvider,
-		armClientOptions *arm.ClientOptions,
-	) (T, error) {
-		var zero T
-
-		subscriptionId := env.GetSubscriptionId()
-		if subscriptionId == "" {
-			return zero, fmt.Errorf("subscription ID is not set")
-		}
-
-		credentials, err := credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-		if err != nil {
-			return zero, fmt.Errorf("getting credentials: %w", err)
-		}
-
-		return initializer(env.GetSubscriptionId(), credentials, armClientOptions)
-	})
-}

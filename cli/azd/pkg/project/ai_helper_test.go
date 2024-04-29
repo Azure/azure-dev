@@ -27,10 +27,10 @@ import (
 
 func Test_AiHelper_Init(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	env := environment.New("test")
+	env := environment.NewWithValues("test", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
 	mockPythonBridge := &mockPythonBridge{}
-	mockPythonBridge.On("Initialize", *mockContext.Context).Return(nil)
-
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
 	err := aiHelper.Initialize(*mockContext.Context)
 
@@ -405,72 +405,22 @@ func newAiHelper(
 	t *testing.T,
 	mockContext *mocks.MockContext,
 	env *environment.Environment,
-	pythonBridge ai.PythonBridge,
+	mockPythonBridge *mockPythonBridge,
 ) AiHelper {
-	subscriptionId := env.GetSubscriptionId()
-
-	workspacesClient, err := armmachinelearning.NewWorkspacesClient(
-		subscriptionId,
-		mockContext.Credentials,
-		mockContext.ArmClientOptions,
-	)
-	require.NoError(t, err)
-
-	environmentContainersClient, err := armmachinelearning.NewEnvironmentContainersClient(
-		subscriptionId,
-		mockContext.Credentials,
-		mockContext.ArmClientOptions,
-	)
-	require.NoError(t, err)
-
-	environmentVersionsClient, err := armmachinelearning.NewEnvironmentVersionsClient(
-		subscriptionId,
-		mockContext.Credentials,
-		mockContext.ArmClientOptions,
-	)
-	require.NoError(t, err)
-
-	modelContainersClient, err := armmachinelearning.NewModelContainersClient(
-		subscriptionId,
-		mockContext.Credentials,
-		mockContext.ArmClientOptions,
-	)
-	require.NoError(t, err)
-
-	modelVersionsClient, err := armmachinelearning.NewModelVersionsClient(
-		subscriptionId,
-		mockContext.Credentials,
-		mockContext.ArmClientOptions,
-	)
-	require.NoError(t, err)
-
-	onlineEndpointsClient, err := armmachinelearning.NewOnlineEndpointsClient(
-		subscriptionId,
-		mockContext.Credentials,
-		mockContext.ArmClientOptions,
-	)
-	require.NoError(t, err)
-
-	onlineDeploymentsClient, err := armmachinelearning.NewOnlineDeploymentsClient(
-		subscriptionId,
-		mockContext.Credentials,
-		mockContext.ArmClientOptions,
-	)
-	require.NoError(t, err)
-
-	return NewAiHelper(
+	aiHelper := NewAiHelper(
 		env,
 		mockContext.Clock,
+		mockPythonBridge,
 		mockContext.SubscriptionCredentialProvider,
-		pythonBridge,
-		workspacesClient,
-		environmentContainersClient,
-		environmentVersionsClient,
-		modelContainersClient,
-		modelVersionsClient,
-		onlineEndpointsClient,
-		onlineDeploymentsClient,
+		mockContext.ArmClientOptions,
 	)
+
+	mockPythonBridge.On("Initialize", *mockContext.Context).Return(nil)
+
+	err := aiHelper.Initialize(*mockContext.Context)
+	require.NoError(t, err)
+
+	return aiHelper
 }
 
 type mockPythonBridge struct {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
@@ -93,6 +94,8 @@ type aiHelper struct {
 	env                   *environment.Environment
 	clock                 clock.Clock
 	pythonBridge          ai.PythonBridge
+	credentialProvider    account.SubscriptionCredentialProvider
+	armClientOptions      *arm.ClientOptions
 	workspacesClient      *armmachinelearning.WorkspacesClient
 	envContainersClient   *armmachinelearning.EnvironmentContainersClient
 	envVersionsClient     *armmachinelearning.EnvironmentVersionsClient
@@ -107,27 +110,16 @@ type aiHelper struct {
 func NewAiHelper(
 	env *environment.Environment,
 	clock clock.Clock,
-	credentialProvider account.SubscriptionCredentialProvider,
 	pythonBridge ai.PythonBridge,
-	workspacesClient *armmachinelearning.WorkspacesClient,
-	envContainersClient *armmachinelearning.EnvironmentContainersClient,
-	envVersionsClient *armmachinelearning.EnvironmentVersionsClient,
-	modelContainersClient *armmachinelearning.ModelContainersClient,
-	modelVersionsClient *armmachinelearning.ModelVersionsClient,
-	endpointsClient *armmachinelearning.OnlineEndpointsClient,
-	deploymentsClient *armmachinelearning.OnlineDeploymentsClient,
+	credentialProvider account.SubscriptionCredentialProvider,
+	armClientOptions *arm.ClientOptions,
 ) AiHelper {
 	return &aiHelper{
-		env:                   env,
-		clock:                 clock,
-		pythonBridge:          pythonBridge,
-		workspacesClient:      workspacesClient,
-		envContainersClient:   envContainersClient,
-		envVersionsClient:     envVersionsClient,
-		modelContainersClient: modelContainersClient,
-		modelVersionsClient:   modelVersionsClient,
-		endpointsClient:       endpointsClient,
-		deploymentsClient:     deploymentsClient,
+		env:                env,
+		clock:              clock,
+		pythonBridge:       pythonBridge,
+		credentialProvider: credentialProvider,
+		armClientOptions:   armClientOptions,
 	}
 }
 
@@ -141,6 +133,29 @@ func (a *aiHelper) Initialize(ctx context.Context) error {
 	if a.initialized {
 		return nil
 	}
+
+	subscriptionId := a.env.GetSubscriptionId()
+	if subscriptionId == "" {
+		return errors.New("subscription id is not set")
+	}
+
+	credential, err := a.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	clientFactory, err := armmachinelearning.NewClientFactory(subscriptionId, credential, a.armClientOptions)
+	if err != nil {
+		return err
+	}
+
+	a.workspacesClient = clientFactory.NewWorkspacesClient()
+	a.envContainersClient = clientFactory.NewEnvironmentContainersClient()
+	a.envVersionsClient = clientFactory.NewEnvironmentVersionsClient()
+	a.modelContainersClient = clientFactory.NewModelContainersClient()
+	a.modelVersionsClient = clientFactory.NewModelVersionsClient()
+	a.endpointsClient = clientFactory.NewOnlineEndpointsClient()
+	a.deploymentsClient = clientFactory.NewOnlineDeploymentsClient()
 
 	if err := a.pythonBridge.Initialize(ctx); err != nil {
 		return err

@@ -91,25 +91,9 @@ module web 'br/public:avm/res/web/site:0.2.0' = {
     location: location
     appInsightResourceId: appInsightResourceId
     siteConfig: {
-      appCommandLine: './entrypoint.sh -o ./env-config.js && pm2 serve /home/site/wwwroot --no-daemon --spa'
-      linuxFxVersion: 'node|18-lts'
+      appCommandLine: 'pm2 serve /home/site/wwwroot --no-daemon --spa'
+      linuxFxVersion: 'node|20-lts'
       alwaysOn: true
-    }
-  }
-}
-
-// Set environment variables for the frontend
-module webAppSettings 'br/public:avm/res/web/site:0.2.0' = {
-  name: 'web-appsettings'
-  scope: rg
-  params: {
-    kind: 'app'
-    name: web.outputs.name
-    serverFarmResourceId: appServicePlan.outputs.resourceId
-    tags: union(tags, { 'azd-service-name': 'web' })
-    appSettingsKeyValuePairs: {
-      REACT_APP_API_BASE_URL: 'https://${api.outputs.defaultHostname}'
-      REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.outputs.connectionString
     }
   }
 }

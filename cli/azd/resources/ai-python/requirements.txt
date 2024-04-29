@@ -1,0 +1,6 @@
+promptflow
+promptflow-azure
+promptflow-tools
+azure-ai-ml
+azure-ai-resources
+azure-identity

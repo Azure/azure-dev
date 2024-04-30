@@ -158,16 +158,17 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			var manifest string
 
-			projectRoot := serviceConfig.Path()
-			if f, err := os.Stat(projectRoot); err == nil && !f.IsDir() {
-				projectRoot = filepath.Dir(projectRoot)
+			appHostRoot := serviceConfig.DotNetContainerApp.AppHostPath
+			if f, err := os.Stat(appHostRoot); err == nil && !f.IsDir() {
+				appHostRoot = filepath.Dir(appHostRoot)
 			}
 
-			manifestPath := filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml")
+			manifestPath := filepath.Join(
+				appHostRoot, "infra", fmt.Sprintf("%s.tmpl.yaml", serviceConfig.DotNetContainerApp.ProjectName))
 			if _, err := os.Stat(manifestPath); err == nil {
 				log.Printf("using container app manifest from %s", manifestPath)
 
-				contents, err := os.ReadFile(filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml"))
+				contents, err := os.ReadFile(manifestPath)
 				if err != nil {
 					task.SetError(fmt.Errorf("reading container app manifest: %w", err))
 					return
@@ -176,7 +177,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else {
 				log.Printf(
 					"generating container app manifest from %s for project %s",
-					serviceConfig.DotNetContainerApp.ProjectPath,
+					serviceConfig.DotNetContainerApp.AppHostPath,
 					serviceConfig.DotNetContainerApp.ProjectName)
 
 				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(

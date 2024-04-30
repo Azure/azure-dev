@@ -47,8 +47,8 @@ type ServiceConfig struct {
 
 type DotNetContainerAppOptions struct {
 	Manifest    *apphost.Manifest
+	AppHostPath string
 	ProjectName string
-	ProjectPath string
 }
 
 // Path returns the fully qualified path to the project

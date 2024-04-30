@@ -204,7 +204,7 @@ func (ai *DotNetImporter) Services(
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			Manifest:    manifest,
 			ProjectName: name,
-			ProjectPath: svcConfig.Path(),
+			AppHostPath: svcConfig.Path(),
 		}
 
 		services[svc.Name] = svc
@@ -241,7 +241,7 @@ func (ai *DotNetImporter) Services(
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			Manifest:    manifest,
 			ProjectName: name,
-			ProjectPath: svcConfig.Path(),
+			AppHostPath: svcConfig.Path(),
 		}
 
 		services[svc.Name] = svc
@@ -304,7 +304,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
-	writeManifestForResource := func(name string, path string) error {
+	writeManifestForResource := func(name string) error {
 		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
 			manifest, name, apphost.AppHostOptions{
 				AutoConfigureDataProtection: ai.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
@@ -313,7 +313,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}
 
-		normalPath, err := filepath.EvalSymlinks(path)
+		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
 		if err != nil {
 			return err
 		}
@@ -323,7 +323,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
-		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "manifests", "containerApp.tmpl.yaml")
+		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.tmpl.yaml", name))
 
 		if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
 			return err
@@ -332,14 +332,14 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
 	}
 
-	for name, path := range apphost.ProjectPaths(manifest) {
-		if err := writeManifestForResource(name, path); err != nil {
+	for name := range apphost.ProjectPaths(manifest) {
+		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}
 	}
 
-	for name, docker := range apphost.Dockerfiles(manifest) {
-		if err := writeManifestForResource(name, docker.Path); err != nil {
+	for name := range apphost.Dockerfiles(manifest) {
+		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}
 	}

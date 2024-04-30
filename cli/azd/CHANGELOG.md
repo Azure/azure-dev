@@ -10,6 +10,27 @@
 
 ### Other Changes
 
+- [[3800]](https://github.com/Azure/azure-dev/pull/3800) Write ACA Container Manifests in the `infra` directory under the AppHost during `infra synth`.
+
+**Note:** If you had previously used `infra synth`, you will need to move the container app manifests from their old location to the new one for `azd` to use them. If you do not do so, `azd` will generate the default IaC based on your current app host. To do this, move the `containerApp.tmpl.yaml` file in the `manifests` folder under each individual project into an `infra` folder next to the `.csproj` file for your project's Aspire App Hos and rename it from `containerApp.tmpl.yaml` to `<name-passed-to-AddProject>.tmpl.yaml` (e.g. `apiserver.tmpl.yaml`, if you write `builder.AddProject<...>("apiserver")`).
+
+## 1.8.2 (2024-04-30)
+
+### Features Added
+
+- [[3804]](https://github.com/Azure/azure-dev/pull/3804) Add user vault storage for development secrets
+- [[3755]](https://github.com/Azure/azure-dev/pull/3755) Store `secure()` Bicep parameters outside source tree
+
+### Bugs Fixed
+
+- [[3788]](https://github.com/Azure/azure-dev/pull/3788) Avoid panic in prompting with option details
+- [[3796]](https://github.com/Azure/azure-dev/pull/3796) Fix `env refresh` failing when no bicep files are present
+- [[3801]](https://github.com/Azure/azure-dev/pull/3801) Fix `azd provision` failing for `.bicepparam` files
+
+### Other Changes
+
+- [[3798]](https://github.com/Azure/azure-dev/pull/3798) Update provider.tf files with skip_provider_registration = "true"
+
 ## 1.8.1 (2024-04-23)
 
 ### Features Added

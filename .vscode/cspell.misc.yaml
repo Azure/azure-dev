@@ -39,3 +39,4 @@ overrides:
           - myapp
           - azdev
           - myimage
+          - azureai

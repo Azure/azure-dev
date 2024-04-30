@@ -39,6 +39,8 @@ type ServiceConfig struct {
 	// Options specific to the DotNetContainerApp target. These are set by the importer and
 	// can not be controlled via the project file today.
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
+	// Custom configuration for the service target
+	Config map[string]any `yaml:"config,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }

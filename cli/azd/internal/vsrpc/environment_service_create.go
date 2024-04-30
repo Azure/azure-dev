@@ -7,8 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -61,40 +61,21 @@ func (s *environmentService) CreateEnvironmentAsync(
 	// azd project if it does not already exist.
 	if _, err := os.Stat(c.azdContext.ProjectPath()); errors.Is(err, fs.ErrNotExist) {
 		_ = observer.OnNext(ctx, newImportantProgressMessage("Analyzing Aspire Application (this might take a moment...)"))
-		hosts, err := appdetect.DetectAspireHosts(ctx, c.azdContext.ProjectDirectory(), c.dotnetCli)
-		if err != nil {
-			return false, fmt.Errorf("failed to discover app host project under %s: %w", c.azdContext.ProjectDirectory(), err)
-		}
 
-		if len(hosts) == 0 {
-			return false, fmt.Errorf("no app host projects found under %s", c.azdContext.ProjectDirectory())
-		}
-
-		// multiple app hosts detected, create azure.yaml in the host project directory instead
-		if len(hosts) > 1 {
-			hostProjectDir := filepath.Dir(rc.HostProjectPath)
-			host, err := appdetect.DetectAspireHost(ctx, hostProjectDir, c.dotnetCli)
-			if err != nil {
-				return false, fmt.Errorf("failed to discover app host project in %s: %w", hostProjectDir, err)
-			} else if host == nil {
-				return false, fmt.Errorf("no app host project found in %s", hostProjectDir)
-			}
-
-			hosts = []appdetect.Project{*host}
-		}
-
-		manifest, err := apphost.ManifestFromAppHost(ctx, hosts[0].Path, c.dotnetCli, dotnetEnv)
+		manifest, err := apphost.ManifestFromAppHost(ctx, rc.HostProjectPath, c.dotnetCli, dotnetEnv)
 		if err != nil {
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
+
+		projectName := strings.TrimSuffix(filepath.Base(c.azdContext.ProjectDirectory()), ".AppHost")
 
 		// Write an azure.yaml file to the project.
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
 			c.azdContext.ProjectDirectory(),
-			filepath.Base(c.azdContext.ProjectDirectory()),
+			projectName,
 			manifest,
-			hosts[0].Path,
+			rc.HostProjectPath,
 		)
 		if err != nil {
 			return false, fmt.Errorf("generating project artifacts: %w", err)

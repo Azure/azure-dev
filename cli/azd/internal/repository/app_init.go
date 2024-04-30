@@ -129,7 +129,7 @@ func (i *Initializer) InitFromApp(
 			relPaths = append(relPaths, rel)
 		}
 		return fmt.Errorf(
-			"only a single Aspire app host project is supported at this time, found multiple: %s",
+			"found multiple Aspire app host projects: %s. To fix, rerun `azd init` in each app host project directory",
 			ux.ListAsText(relPaths))
 	}
 

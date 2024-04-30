@@ -294,6 +294,13 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return nil, err
 	}
 
+	// Use canonical paths for Rel comparison due to absolute paths provided by ManifestFromAppHost
+	// being possibly symlinked paths.
+	root, err := filepath.EvalSymlinks(p.Path)
+	if err != nil {
+		return nil, err
+	}
+
 	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
@@ -306,7 +313,12 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}
 
-		projectRelPath, err := filepath.Rel(p.Path, path)
+		normalPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return err
+		}
+
+		projectRelPath, err := filepath.Rel(root, normalPath)
 		if err != nil {
 			return err
 		}

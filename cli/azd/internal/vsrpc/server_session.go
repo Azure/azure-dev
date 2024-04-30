@@ -95,7 +95,7 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 	}
 
 	id := s.id
-	azdCtx, err := azdContext(rc.HostProjectPath, s.rootPath)
+	azdCtx, err := azdContext(rc.HostProjectPath)
 	if err != nil {
 		return nil, err
 	}

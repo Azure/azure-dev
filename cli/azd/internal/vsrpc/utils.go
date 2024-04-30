@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -54,26 +53,13 @@ func servicesFromManifest(manifest *apphost.Manifest) []*Service {
 //   - If the host project directory contains azure.yaml, the host project directory is used.
 //   - If the nearest project directory contains azure.yaml, and the azure.yaml has services matching the given host project,
 //     the nearest project directory is used.
-//   - Otherwise, the root directory is used by default.
-//
-// The desired effect is that in Visual Studio, we prefer using the solution directory as the context directory by default.
-// When the solution directory has an existing azure.yaml referencing a different app host project, we then
-// prefer using the app host project directory. This allows publishing multiple app host projects within a solution without
-// additional configuration.
-func azdContext(hostProjectPath string, root string) (*azdcontext.AzdContext, error) {
+//   - Otherwise, the host project directory directory is used by default.
+func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 	hostProjectDir := filepath.Dir(hostProjectPath)
 	azdCtx, err := azdcontext.NewAzdContextFromWd(hostProjectDir)
 	if errors.Is(err, azdcontext.ErrNoProject) {
-		// no project exists, use root directory as the default
-		azdCtx = azdcontext.NewAzdContextWithDirectory(root)
-
-		if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
-			return azdCtx, nil
-		} else if err != nil {
-			return nil, err
-		}
-		// If we got here, it means the "solution root" is a sibling rather than the root of the project directory
-		// If so, we want to continue validating whether the azure.yaml targets the current app host project
+		// no project exists, use host project directory as the default
+		return azdcontext.NewAzdContextWithDirectory(hostProjectDir), nil
 	} else if err != nil {
 		return nil, err
 	}
@@ -92,7 +78,7 @@ func azdContext(hostProjectPath string, root string) (*azdcontext.AzdContext, er
 	for _, svc := range prjConfig.Services {
 		if svc.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget {
 			if svc.Path() != hostProjectPath {
-				log.Printf("use app host directory: %s", hostProjectDir)
+				log.Printf("ignoring %s due to mismatch, using app host directory", azdCtx.ProjectPath())
 				return azdcontext.NewAzdContextWithDirectory(hostProjectDir), nil
 			}
 		}

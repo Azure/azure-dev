@@ -55,6 +55,14 @@
         }
       }
     },
+    "cosmos": {
+      "type": "azure.bicep.v0",
+      "connectionString": "{cosmos.secretOutputs.connectionString}",
+      "path": "cosmos.module.bicep",
+      "params": {
+        "keyVaultName": ""
+      }
+    },
     "webfrontend": {
       "type": "project.v0",
       "path": "../AspireAzdTests.Web/AspireAzdTests.Web.csproj",
@@ -68,7 +76,8 @@
         "ConnectionStrings__markdown": "{markdown.connectionString}",
         "ConnectionStrings__messages": "{messages.connectionString}",
         "services__apiservice__http__0": "{apiservice.bindings.http.url}",
-        "services__apiservice__https__0": "{apiservice.bindings.https.url}"
+        "services__apiservice__https__0": "{apiservice.bindings.https.url}",
+        "ConnectionStrings__cosmos": "{cosmos.connectionString}"
       },
       "bindings": {
         "http": {

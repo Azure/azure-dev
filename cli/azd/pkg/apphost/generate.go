@@ -1395,7 +1395,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			if emitType == inputEmitTypeYaml {
 				return fmt.Sprintf(
 					"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
-					strings.ToUpper(replaceDash+"kv"),
+					strings.ToUpper("kv"+uniqueFnvNumber(resource)),
 					outputName), nil
 			}
 			if emitType == inputEmitTypeBicep {

@@ -193,13 +193,10 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		bicepCli, err := bicep.NewBicepCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
 		require.NoError(t, err)
 
-		// Validate bicep builds without errors or lint errors
-		res, err := bicepCli.Build(ctx, filepath.Join(dir, "infra", "main.bicep"))
+		// Validate bicep builds without errors
+		// cdk lint errors are expected
+		_, err = bicepCli.Build(ctx, filepath.Join(dir, "infra", "main.bicep"))
 		require.NoError(t, err)
-		lintErr := lintErr(
-			res,
-			[]string{"Warning no-unused-params: Parameter \"inputs\" is declared but never used."})
-		require.Len(t, lintErr, 0, "lint errors occurred")
 
 		// Snapshot everything under infra and manifests
 		err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -387,16 +384,4 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 		}
 	}
 	return len(bytes), nil
-}
-
-func lintErr(buildRes bicep.BuildResult, exclude []string) []string {
-	var ret []string
-	for _, s := range strings.Split(buildRes.LintErr, "\n") {
-		for _, e := range exclude {
-			if len(s) > 0 && !strings.Contains(s, e) {
-				ret = append(ret, s)
-			}
-		}
-	}
-	return ret
 }

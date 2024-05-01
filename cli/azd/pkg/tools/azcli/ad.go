@@ -502,12 +502,12 @@ func (ad *adService) applyRoleAssignmentWithRetry(
 
 			// If the response is a 403 then the required role is missing.
 			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
-				return internal.NewErrorWithSuggestion(
-					err,
-					fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, "+
-						"Owner` or custom azure roles assigned to your subscription to perform action "+
+				return &internal.ErrorWithSuggestion{
+					Suggestion: fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, " +
+						"Owner` or custom azure roles assigned to your subscription to perform action " +
 						"'Microsoft.Authorization/roleAssignments/write', in order to manage role assignments\n"),
-				)
+					Err: err,
+				}
 			}
 
 			return retry.RetryableError(

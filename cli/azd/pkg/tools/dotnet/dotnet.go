@@ -226,13 +226,13 @@ func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 
 	// if empty string or there's no config output
 	if result == "" || obj["config"] == nil {
-		return 0, internal.NewErrorWithSuggestion(
-			fmt.Errorf("empty dotnet configuration output"),
-			fmt.Sprintf("Ensure project '%s' is enabled for container support and try again. To enable SDK "+
+		return 0, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("empty dotnet configuration output"),
+			Suggestion: fmt.Sprintf("Ensure project '%s' is enabled for container support and try again. To enable SDK "+
 				"container support, set the 'EnableSdkContainerSupport' property to true in your project file",
 				project,
 			),
-		)
+		}
 	}
 
 	var targetPorts []targetPort

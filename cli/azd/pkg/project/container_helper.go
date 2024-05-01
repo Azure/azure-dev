@@ -288,11 +288,11 @@ func (ch *ContainerHelper) Deploy(
 					log.Printf("pushing %s to registry", remoteImage)
 					task.SetProgress(NewServiceProgress("Pushing container image"))
 					if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteImage); err != nil {
-						errSuggestion := internal.NewErrorWithSuggestion(
-							err,
+						errSuggestion := &internal.ErrorWithSuggestion{
+							Err: err,
 							//nolint:lll
-							"When pushing to an external registry, ensure you have successfully authenticated by calling 'docker login' and run 'azd deploy' again",
-						)
+							Suggestion: "When pushing to an external registry, ensure you have successfully authenticated by calling 'docker login' and run 'azd deploy' again",
+						}
 
 						task.SetError(errSuggestion)
 						return

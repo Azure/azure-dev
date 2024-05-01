@@ -6,14 +6,6 @@ type ErrorWithSuggestion struct {
 	Err        error
 }
 
-// NewErrorWithSuggestion creates a new instance of the ErrorWithSuggestion
-func NewErrorWithSuggestion(err error, suggestion string) *ErrorWithSuggestion {
-	return &ErrorWithSuggestion{
-		Suggestion: suggestion,
-		Err:        err,
-	}
-}
-
 // Error returns the error message
 func (es *ErrorWithSuggestion) Error() string {
 	return es.Err.Error()
@@ -28,14 +20,6 @@ func (es *ErrorWithSuggestion) Unwrap() error {
 type ErrorWithTraceId struct {
 	TraceId string
 	Err     error
-}
-
-// NewErrorWithTraceId creates a new instance of the ErrorWithTraceId
-func NewErrorWithTraceId(err error, traceId string) *ErrorWithTraceId {
-	return &ErrorWithTraceId{
-		TraceId: traceId,
-		Err:     err,
-	}
 }
 
 // Error returns the error message

@@ -256,34 +256,34 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		errorMsg := err.Error()
 		if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
 			requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
-			return nil, internal.NewErrorWithSuggestion(
-				err,
-				fmt.Sprintf("\nSuggested Action: The selected subscription does not have access to"+
-					" Azure OpenAI Services. Please visit "+output.WithLinkFormat(requestAccessLink)+
+			return nil, &internal.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: fmt.Sprintf("\nSuggested Action: The selected subscription does not have access to" +
+					" Azure OpenAI Services. Please visit " + output.WithLinkFormat(requestAccessLink) +
 					" to request access."),
-			)
+			}
 		}
 
 		if strings.Contains(errorMsg, AINotValid) &&
 			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
-			return nil, internal.NewErrorWithSuggestion(
-				err,
-				fmt.Sprintf("\nSuggested Action: The selected "+
-					"subscription has not been enabled for use of Azure AI service and does not have quota for "+
-					"any pricing tiers. Please visit "+output.WithLinkFormat(p.portalUrlBase)+
+			return nil, &internal.ErrorWithSuggestion{
+				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
+					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
+					"any pricing tiers. Please visit " + output.WithLinkFormat(p.portalUrlBase) +
 					" and select 'Create' on specific services to request access."),
-			)
+				Err: err,
+			}
 		}
 
 		//if user haven't agree to Responsible AI terms
 		if strings.Contains(errorMsg, responsibleAITerms) {
-			return nil, internal.NewErrorWithSuggestion(
-				err,
-				fmt.Sprintf("\nSuggested Action: Please visit azure portal in "+
-					output.WithLinkFormat(p.portalUrlBase)+". Create the resource in azure portal "+
-					"to go through Responsible AI terms, and then delete it. "+
+			return nil, &internal.ErrorWithSuggestion{
+				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
+					output.WithLinkFormat(p.portalUrlBase) + ". Create the resource in azure portal " +
+					"to go through Responsible AI terms, and then delete it. " +
 					"After that, run 'azd provision' again"),
-			)
+				Err: err,
+			}
 		}
 
 		return nil, fmt.Errorf("deployment failed: %w", err)

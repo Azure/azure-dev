@@ -93,7 +93,10 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 
 		if errors.As(err, &respErr) || errors.As(err, &azureErr) ||
 			(errors.As(err, &toolExitErr) && toolExitErr.Cmd == "terraform") {
-			err = internal.NewErrorWithTraceId(err, span.SpanContext().TraceID().String())
+			err = &internal.ErrorWithTraceId{
+				Err:     err,
+				TraceId: span.SpanContext().TraceID().String(),
+			}
 		}
 	}
 

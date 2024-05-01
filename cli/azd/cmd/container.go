@@ -410,14 +410,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 									return cloudConfig, nil
 								}
 
-								return nil, internal.NewErrorWithSuggestion(
-									err,
-									fmt.Sprintf(
+								return nil, &internal.ErrorWithSuggestion{
+									Err: err,
+									Suggestion: fmt.Sprintf(
 										"Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment\n%s",
 										defaultEnvName,
 										validClouds,
 									),
-								)
+								}
 							}
 						}
 					}
@@ -433,11 +433,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					if cloud, err := cloud.NewCloud(cloudConfig); err == nil {
 						return cloud, nil
 					} else {
-						return nil, internal.NewErrorWithSuggestion(
-							err,
+						return nil, &internal.ErrorWithSuggestion{
+							Err: err,
 							//nolint:lll
-							fmt.Sprintf("Set the cloud configuration by editing the 'cloud' node in the project YAML file\n%s", validClouds),
-						)
+							Suggestion: fmt.Sprintf("Set the cloud configuration by editing the 'cloud' node in the project YAML file\n%s", validClouds),
+						}
 					}
 				}
 			}
@@ -450,10 +450,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					if cloud, err := cloud.NewCloud(value); err == nil {
 						return cloud, nil
 					} else {
-						return nil, internal.NewErrorWithSuggestion(
-							err,
-							fmt.Sprintf("Set the cloud configuration using 'azd config set cloud.name <name>'.\n%s", validClouds),
-						)
+						return nil, &internal.ErrorWithSuggestion{
+							Err:        err,
+							Suggestion: fmt.Sprintf("Set the cloud configuration using 'azd config set cloud.name <name>'.\n%s", validClouds),
+						}
 					}
 				}
 			}

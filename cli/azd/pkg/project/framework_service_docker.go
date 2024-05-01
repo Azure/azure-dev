@@ -438,13 +438,13 @@ func (p *dockerProject) packBuild(
 
 		var statusCodeErr *pack.StatusCodeError
 		if errors.As(err, &statusCodeErr) && statusCodeErr.Code == pack.StatusCodeUndetectedNoError {
-			return nil, internal.NewErrorWithSuggestion(
-				err,
-				"No Dockerfile was found, and image could not be automatically built from source. "+
+			return nil, &internal.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: "No Dockerfile was found, and image could not be automatically built from source. " +
 					fmt.Sprintf(
 						"\nSuggested action: Author a Dockerfile and save it as %s",
 						filepath.Join(svc.Path(), dockerOptions.Path)),
-			)
+			}
 		}
 
 		return nil, err

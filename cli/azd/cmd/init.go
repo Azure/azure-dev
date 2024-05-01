@@ -221,13 +221,13 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		if len(entries) == 0 {
-			return nil, internal.NewErrorWithSuggestion(
-				errors.New("no files found in the current directory"),
-				"Ensure you're in the directory where your app code is located and try again."+
-					" If you do not have code and would like to start with an app template, run '"+
-					color.BlueString("azd init")+"' and select the option to "+
-					color.MagentaString("Use a template")+".",
-			)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: errors.New("no files found in the current directory"),
+				Suggestion: "Ensure you're in the directory where your app code is located and try again." +
+					" If you do not have code and would like to start with an app template, run '" +
+					color.BlueString("azd init") + "' and select the option to " +
+					color.MagentaString("Use a template") + ".",
+			}
 		}
 
 		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() (*environment.Environment, error) {

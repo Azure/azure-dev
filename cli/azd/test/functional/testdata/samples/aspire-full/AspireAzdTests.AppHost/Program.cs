@@ -22,6 +22,9 @@ var messageQueue    = azureStorage.AddQueues("messages");
 // the back-end API the front end will call
 var apiservice = builder.AddProject<Projects.AspireAzdTests_ApiService>("apiservice");
 
+var cosmos = builder.AddAzureCosmosDB("cosmos");
+var cosmosDb = cosmos.AddDatabase("db3");
+
 // the front end app
 _ = builder
                         .AddProject<Projects.AspireAzdTests_Web>("webfrontend")
@@ -30,6 +33,7 @@ _ = builder
                             .WithReference(requestTable)
                             .WithReference(markdownBlobs)
                             .WithReference(messageQueue)
-                            .WithReference(apiservice);
+                            .WithReference(apiservice)
+                            .WithReference(cosmosDb);
 
 builder.Build().Run();

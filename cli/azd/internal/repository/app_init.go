@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -93,44 +92,8 @@ func (i *Initializer) InitFromApp(
 			return fmt.Errorf("failed to generate manifest from app host project: %w", err)
 		}
 		appHostManifests[prj.Path] = manifest
-
-		// Load projects referenced by the App Host,
-		// ensuring that projects are located under the azd project directory.
-		const parentDir = ".." + string(os.PathSeparator)
-		relParentCount := 0
-		relParentProject := ""
-
-		// Use canonical paths for Rel comparison due to absolute paths provided by ManifestFromAppHost
-		// being possibly symlinked paths.
-		compWd, err := filepath.EvalSymlinks(wd)
-		if err != nil {
-			return err
-		}
-
 		for _, path := range apphost.ProjectPaths(manifest) {
-			normalPath, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return err
-			}
-
-			rel, err := filepath.Rel(compWd, normalPath)
-			if err != nil {
-				return err
-			}
-
-			if parentCount := countPrefix(rel, parentDir); parentCount > relParentCount {
-				relParentCount = parentCount
-				relParentProject = rel
-			}
-
 			appHostForProject[filepath.Dir(path)] = prj.Path
-		}
-
-		if relParentCount > 0 {
-			return fmt.Errorf(
-				"found project %s located not under the current directory. To fix, rerun `azd init` in directory %s",
-				relParentProject,
-				filepath.Clean(filepath.Join(wd, strings.Repeat(parentDir, relParentCount))))
 		}
 	}
 
@@ -166,7 +129,7 @@ func (i *Initializer) InitFromApp(
 			relPaths = append(relPaths, rel)
 		}
 		return fmt.Errorf(
-			"only a single Aspire app host project is supported at this time, found multiple: %s",
+			"found multiple Aspire app host projects: %s. To fix, rerun `azd init` in each app host project directory",
 			ux.ListAsText(relPaths))
 	}
 
@@ -451,15 +414,4 @@ func prjConfigFromDetect(
 	}
 
 	return config, nil
-}
-
-func countPrefix(s string, prefix string) int {
-	count := 0
-	for strings.HasPrefix(s, prefix) {
-		count++
-		// len(s) >= len(prefix) guaranteed by HasPrefix
-		s = s[len(prefix):]
-	}
-
-	return count
 }

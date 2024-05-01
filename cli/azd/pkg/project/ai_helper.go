@@ -28,6 +28,7 @@ const (
 	AiHubNameEnvVarName = "AZUREAI_HUB_NAME"
 	// AiProjectNameEnvVarName is the environment variable name for the Azure AI project name
 	AiProjectNameEnvVarName = "AZUREAI_PROJECT_NAME"
+	/* #nosec G101 - Potential hardcoded credentials - false positive */
 	// AiEnvironmentEnvVarName is the environment variable name for the Azure AI environment name
 	AiEnvironmentEnvVarName = "AZUREAI_ENVIRONMENT_NAME"
 	// AiModelEnvVarName is the environment variable name for the Azure AI model name

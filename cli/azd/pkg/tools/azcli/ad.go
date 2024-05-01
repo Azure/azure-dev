@@ -45,6 +45,26 @@ func (es *ErrorWithSuggestion) Unwrap() error {
 	return es.Err
 }
 
+type ErrorWithTraceId struct {
+	TraceId string
+	Err     error
+}
+
+func NewErrorWithTraceId(traceId string, err error) *ErrorWithTraceId {
+	return &ErrorWithTraceId{
+		TraceId: traceId,
+		Err:     err,
+	}
+}
+
+func (et *ErrorWithTraceId) Error() string {
+	return et.Err.Error()
+}
+
+func (et *ErrorWithTraceId) Unwrap() error {
+	return et.Err
+}
+
 // AdService provides actions on top of Azure Active Directory (AD)
 type AdService interface {
 	GetServicePrincipal(

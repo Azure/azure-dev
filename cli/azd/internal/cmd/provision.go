@@ -33,9 +33,10 @@ type ProvisionFlags struct {
 }
 
 const (
-	AINotValid                  = "is not valid according to the validation procedure"
-	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
-	responsibleAITerms          = "until you agree to Responsible AI terms for this resource"
+	AINotValid                      = "is not valid according to the validation procedure"
+	openAIsubscriptionNoQuotaId     = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
+	responsibleAITerms              = "until you agree to Responsible AI terms for this resource"
+	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
 )
 
 func (i *ProvisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -254,6 +255,16 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 		//if user don't have access to openai
 		errorMsg := err.Error()
+		if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
+			requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
+			return nil, &azcli.ErrorWithSuggestion{
+				Suggestion: fmt.Sprintf("\nSuggested Action: The selected subscription does not have access to" +
+					" Azure OpenAI Services. Please visit " + output.WithLinkFormat(requestAccessLink) +
+					" to request access."),
+				Err: err,
+			}
+		}
+
 		if strings.Contains(errorMsg, AINotValid) &&
 			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
 			return nil, &azcli.ErrorWithSuggestion{

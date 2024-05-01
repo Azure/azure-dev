@@ -26,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -222,13 +221,13 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		if len(entries) == 0 {
-			return nil, &azcli.ErrorWithSuggestion{
-				Err: errors.New("no files found in the current directory"),
-				Suggestion: "Ensure you're in the directory where your app code is located and try again." +
-					" If you do not have code and would like to start with an app template, run '" +
-					color.BlueString("azd init") + "' and select the option to " +
-					color.MagentaString("Use a template") + ".",
-			}
+			return nil, internal.NewErrorWithSuggestion(
+				errors.New("no files found in the current directory"),
+				"Ensure you're in the directory where your app code is located and try again."+
+					" If you do not have code and would like to start with an app template, run '"+
+					color.BlueString("azd init")+"' and select the option to "+
+					color.MagentaString("Use a template")+".",
+			)
 		}
 
 		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() (*environment.Environment, error) {

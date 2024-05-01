@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -257,34 +256,34 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		errorMsg := err.Error()
 		if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
 			requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
-			return nil, &azcli.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nSuggested Action: The selected subscription does not have access to" +
-					" Azure OpenAI Services. Please visit " + output.WithLinkFormat(requestAccessLink) +
+			return nil, internal.NewErrorWithSuggestion(
+				err,
+				fmt.Sprintf("\nSuggested Action: The selected subscription does not have access to"+
+					" Azure OpenAI Services. Please visit "+output.WithLinkFormat(requestAccessLink)+
 					" to request access."),
-				Err: err,
-			}
+			)
 		}
 
 		if strings.Contains(errorMsg, AINotValid) &&
 			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
-			return nil, &azcli.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
-					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-					"any pricing tiers. Please visit " + output.WithLinkFormat(p.portalUrlBase) +
+			return nil, internal.NewErrorWithSuggestion(
+				err,
+				fmt.Sprintf("\nSuggested Action: The selected "+
+					"subscription has not been enabled for use of Azure AI service and does not have quota for "+
+					"any pricing tiers. Please visit "+output.WithLinkFormat(p.portalUrlBase)+
 					" and select 'Create' on specific services to request access."),
-				Err: err,
-			}
+			)
 		}
 
 		//if user haven't agree to Responsible AI terms
 		if strings.Contains(errorMsg, responsibleAITerms) {
-			return nil, &azcli.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
-					output.WithLinkFormat(p.portalUrlBase) + ". Create the resource in azure portal " +
-					"to go through Responsible AI terms, and then delete it. " +
+			return nil, internal.NewErrorWithSuggestion(
+				err,
+				fmt.Sprintf("\nSuggested Action: Please visit azure portal in "+
+					output.WithLinkFormat(p.portalUrlBase)+". Create the resource in azure portal "+
+					"to go through Responsible AI terms, and then delete it. "+
 					"After that, run 'azd provision' again"),
-				Err: err,
-			}
+			)
 		}
 
 		return nil, fmt.Errorf("deployment failed: %w", err)

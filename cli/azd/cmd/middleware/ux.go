@@ -5,10 +5,10 @@ import (
 	"errors"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type UxMiddleware struct {
@@ -44,8 +44,8 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	m.console.StopSpinner(ctx, "", input.Step)
 
 	if err != nil {
-		var suggestionErr *azcli.ErrorWithSuggestion
-		var errorWithTraceId *azcli.ErrorWithTraceId
+		var suggestionErr *internal.ErrorWithSuggestion
+		var errorWithTraceId *internal.ErrorWithTraceId
 		m.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", err.Error()))
 
 		if errors.As(err, &errorWithTraceId) {

@@ -47,7 +47,7 @@ func (s *environmentService) DeployAsync(
 		},
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,7 @@ param storageAccountId string
 @description('The key vault ID to use for the AI Studio Hub Resource')
 param keyVaultId string
 @description('The application insights ID to use for the AI Studio Hub Resource')
-param appInsightsId string = ''
+param applicationInsightsId string = ''
 @description('The container registry ID to use for the AI Studio Hub Resource')
 param containerRegistryId string = ''
 @description('The OpenAI Cognitive Services account name to use for the AI Studio Hub Resource')
@@ -47,7 +47,7 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-01-01-preview' =
     friendlyName: displayName
     storageAccount: storageAccountId
     keyVault: keyVaultId
-    applicationInsights: !empty(appInsightsId) ? appInsightsId : null
+    applicationInsights: !empty(applicationInsightsId) ? applicationInsightsId : null
     containerRegistry: !empty(containerRegistryId) ? containerRegistryId : null
     hbiWorkspace: false
     managedNetwork: {
@@ -55,7 +55,6 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-01-01-preview' =
     }
     v1LegacyMode: false
     publicNetworkAccess: publicNetworkAccess
-    discoveryUrl: 'https://${location}.api.azureml.ms/discovery'
   }
 
   resource contentSafetyDefaultEndpoint 'endpoints' = {

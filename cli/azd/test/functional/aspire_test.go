@@ -385,15 +385,3 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 	}
 	return len(bytes), nil
 }
-
-func lintErr(buildRes bicep.BuildResult, exclude []string) []string {
-	var ret []string
-	for _, s := range strings.Split(buildRes.LintErr, "\n") {
-		for _, e := range exclude {
-			if len(s) > 0 && !strings.Contains(s, e) {
-				ret = append(ret, s)
-			}
-		}
-	}
-	return ret
-}

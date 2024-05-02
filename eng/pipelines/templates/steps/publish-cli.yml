@@ -1,7 +1,5 @@
 parameters:
   CreateGitHubRelease: true
-  ReleaseSyndicatedDockerContainer: false
-  DockerImageTags:
   PublishUploadLocations:
   UploadInstaller: false
   UploadMsi: false
@@ -10,13 +8,6 @@ parameters:
   StorageAccountName: $(azdev-storage-account-name)
   StorageAccountKey: $(azdev-storage-account-key)
   StorageContainerName: azd
-  PublishContainer: true
-  AcrHost: $(azdev-acr-host)
-  AcrUsername: $(azdev-acr-username)
-  AcrPassword: $(azdev-acr-password)
-  SyndicatedAcrHost: $(azdev-acr-syndicated-host)
-  SyndicatedAcrUsername: $(azdev-acr-syndicated-username)
-  SyndicatedAcrPassword: $(azdev-acr-syndicated-password)
   PublishBrewFormula: false
   PublishArm64Binaries: false
   AllowPrerelease: false
@@ -36,19 +27,6 @@ steps:
           -OutputName "GH_RELEASE_TAG"
           -DevOpsOutputFormat
       displayName: Verify and set GitHub Release Tag
-
-  # TODO: Docker stuff should be handled as per: https://github.com/Azure/azure-sdk-tools/commit/2623b00fc5b660d48e2301977602ddd8f934ac4a
-  - ${{ if eq('true', parameters.PublishContainer) }}:
-    - pwsh: |
-        docker login `
-          -u '${{ parameters.AcrUsername }}' `
-          -p '${{ parameters.AcrPassword }}' `
-          ${{ parameters.AcrHost }}
-        docker login `
-          -u '${{ parameters.SyndicatedAcrUsername }}' `
-          -p '${{ parameters.SyndicatedAcrPassword }}' `
-          ${{ parameters.SyndicatedAcrHost }}
-      displayName: Authenticate for publishing
 
   # Download signed artifacts, prepare packaging
   - task: DownloadPipelineArtifact@2
@@ -135,32 +113,6 @@ steps:
         Copy-Item cli/installer/uninstall-azd.ps1 release/
       displayName: Copy install scripts to release (PR only)
 
-  - ${{ if eq('true', parameters.PublishContainer) }}:
-    # Docker build
-    - pwsh: |
-        # Move the binary to a folder where Docker can pick it up
-        New-Item -ItemType Directory -Path cli/bin
-        Copy-Item release-staging/azd-linux-amd64 cli/bin/
-
-        docker build . -f cli/Dockerfile -t release
-
-        $tags = "${{ parameters.DockerImageTags }}" -split ';'
-        foreach ($tag in $tags) {
-          Write-Host "docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag"
-          docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag
-        }
-      displayName: Docker build release container (latest)
-
-    - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
-      # Syndicated release
-      - pwsh: |
-          $tags = "${{ parameters.DockerImageTags }}" -split ';'
-          foreach ($tag in $tags) {
-            Write-Host "docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
-            docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag
-          }
-        displayName: Build and tag release container (Release)
-
   # Create release
   - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
     - task: PowerShell@2
@@ -221,16 +173,6 @@ steps:
         StorageContainerName: ${{ parameters.StorageContainerName }}
         PublishDestination: standalone/latest
 
-  - ${{ if eq('true', parameters.PublishContainer) }}:
-    - pwsh: |
-        docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
-      displayName: Push container tags (latest)
-
-    - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
-      - pwsh: |
-          docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
-        displayName: Push container tags (syndicated release)
-
   - ${{ if eq('true', parameters.PublishBrewFormula) }}:
     - pwsh: |
         $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
@@ -267,7 +209,6 @@ steps:
         CommitMsg: Update formula for azd release $(CLI_VERSION)
         TargetRepoName: homebrew-azd
         WorkingDirectory: homebrew-azd
-
 
   - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
     - task: DownloadPipelineArtifact@2

@@ -35,7 +35,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 			}
 		})
 
-		actionRan := registerAction(mockContext, "test-action", &runLog)
+		actionRan := registerAction(t, mockContext, "test-action", &runLog)
 		result, err := middlewareRunner.RunAction(*mockContext.Context, &Options{Name: "test"}, "test-action")
 
 		require.NotNil(t, result)
@@ -72,7 +72,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 			}
 		})
 
-		actionRan := registerAction(mockContext, "test-action", &runLog)
+		actionRan := registerAction(t, mockContext, "test-action", &runLog)
 		result, err := middlewareRunner.RunAction(*mockContext.Context, &Options{Name: "test"}, "test-action")
 
 		require.Nil(t, result)
@@ -114,7 +114,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 			}
 		})
 
-		actionRan := registerAction(mockContext, "test-action", &runLog)
+		actionRan := registerAction(t, mockContext, "test-action", &runLog)
 		result, err := middlewareRunner.RunAction(*mockContext.Context, &Options{Name: "test"}, "test-action")
 
 		require.NotNil(t, result)
@@ -137,7 +137,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 			})
 		})
 
-		mockContext.Container.RegisterNamedTransient("test-action", func() actions.Action {
+		err := mockContext.Container.RegisterNamedTransient("test-action", func() actions.Action {
 			return &testAction{
 				runFunc: func(ctx context.Context) (*actions.ActionResult, error) {
 					// ensure we can recover the value added by the middleware above.
@@ -152,6 +152,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 				},
 			}
 		})
+		require.NoError(t, err)
 
 		result, err := middlewareRunner.RunAction(*mockContext.Context, &Options{Name: "test"}, "test-action")
 		require.Nil(t, result)
@@ -159,10 +160,10 @@ func Test_Middleware_RunAction(t *testing.T) {
 	})
 }
 
-func registerAction(mockContext *mocks.MockContext, name string, runLog *[]string) *bool {
+func registerAction(t *testing.T, mockContext *mocks.MockContext, name string, runLog *[]string) *bool {
 	actionRan := false
 
-	mockContext.Container.RegisterNamedTransient(name, func() actions.Action {
+	err := mockContext.Container.RegisterNamedTransient(name, func() actions.Action {
 		return &testAction{
 			runFunc: func(ctx context.Context) (*actions.ActionResult, error) {
 				actionRan = true
@@ -174,6 +175,8 @@ func registerAction(mockContext *mocks.MockContext, name string, runLog *[]strin
 			},
 		}
 	})
+
+	require.NoError(t, err)
 
 	return &actionRan
 }
@@ -224,11 +227,4 @@ type middlewareFunc func(ctx context.Context, nextFn NextFn) (*actions.ActionRes
 
 func (f middlewareFunc) Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error) {
 	return f(ctx, nextFn)
-}
-
-// actionFunc is a func that implements the actions.RunAction interface
-type actionFunc func(ctx context.Context) (*actions.ActionResult, error)
-
-func (f actionFunc) Run(ctx context.Context) (*actions.ActionResult, error) {
-	return f(ctx)
 }

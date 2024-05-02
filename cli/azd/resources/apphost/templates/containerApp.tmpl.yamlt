@@ -45,8 +45,8 @@ properties:
 {{- if .Ingress.AdditionalPortMappings }}
       additionalPortMappings:
 {{- range $additionalPort := .Ingress.AdditionalPortMappings }}
-      - targetPort: {{ $additionalPort.TargetPort }}
-        external: {{ $additionalPort.External }}
+        - targetPort: {{ $additionalPort.TargetPort }}
+          external: {{ $additionalPort.External }}
 {{- end}}
 {{- end}}
       external: {{ .Ingress.External }}
@@ -55,8 +55,8 @@ properties:
       allowInsecure: {{ .Ingress.AllowInsecure }}
 {{- end }}
     registries:
-    - server: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
-      identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
+      - server: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
+        identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
 {{- if or (gt (len .Secrets) 0) (gt (len .KeyVaultSecrets) 0) }}
     secrets:
 {{- end}}
@@ -71,22 +71,28 @@ properties:
 {{- end}}
   template:
     containers:
-    - image: {{ "{{ .Image }}" }}
-      name: {{ .Name }}
-      env:
-      - name: AZURE_CLIENT_ID
-        value: {{ "{{ .Env.MANAGED_IDENTITY_CLIENT_ID }}" }}
+      - image: {{ "{{ .Image }}" }}
+        name: {{ .Name }}
+{{- if .Args }}
+        args:
+{{- range $arg := .Args}}
+          - {{$arg}}
+{{- end}}
+{{- end}}
+        env:
+          - name: AZURE_CLIENT_ID
+            value: {{ "{{ .Env.MANAGED_IDENTITY_CLIENT_ID }}" }}
 {{- range $name, $value := .Env}}
-      - name: {{$name}}
-        value: {{$value}}
+          - name: {{$name}}
+            value: {{$value}}
 {{- end}}
 {{- range $name, $value := .Secrets}}
-      - name: {{$name}}
-        secretRef: {{containerAppSecretName $name}}
+          - name: {{$name}}
+            secretRef: {{containerAppSecretName $name}}
 {{- end}}
 {{- range $name, $value := .KeyVaultSecrets}}
-      - name: {{$name}}
-        secretRef: {{containerAppSecretName $name}}
+          - name: {{$name}}
+            secretRef: {{containerAppSecretName $name}}
 {{- end}}
     scale:
       minReplicas: 1

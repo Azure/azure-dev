@@ -113,6 +113,16 @@ const (
 	Important
 )
 
+// RequestContext provides the context for a request to the server.
+// It identifies the active session and the azd project being operated on.
+type RequestContext struct {
+	// The active session.
+	Session Session
+
+	// The app host project path.
+	HostProjectPath string
+}
+
 // Session represents an active connection to the server.  It is returned by InitializeAsync and holds an opaque
 // connection id that the server can use to identify the client across multiple RPC calls (since our service is exposed
 // over multiple endpoints a single client may have multiple connections to the server, and we want a way to correlate them

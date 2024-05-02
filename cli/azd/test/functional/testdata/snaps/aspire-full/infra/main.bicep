@@ -9,6 +9,9 @@ param environmentName string
 @description('The location used for all deployed resources')
 param location string
 
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+
 
 var tags = {
   'azd-env-name': environmentName
@@ -26,9 +29,18 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
+    principalId: principalId
   }
 }
 
+module cosmos 'cosmos/cosmos.module.bicep' = {
+  name: 'cosmos'
+  scope: rg
+  params: {
+    location: location
+    keyVaultName: resources.outputs.SERVICE_BINDING_KVF2EDECB5_NAME
+  }
+}
 module storage 'storage/storage.module.bicep' = {
   name: 'storage'
   scope: rg
@@ -45,6 +57,7 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAI
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+output SERVICE_BINDING_KVF2EDECB5_ENDPOINT string = resources.outputs.SERVICE_BINDING_KVF2EDECB5_ENDPOINT
 
 output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
 output STORAGE_QUEUEENDPOINT string = storage.outputs.queueEndpoint

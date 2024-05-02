@@ -18,6 +18,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2 v2.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cosmos/armcosmos/v2 v2.6.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault v1.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3 v3.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph v0.7.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.1.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.0.0
@@ -63,7 +64,7 @@ require (
 	go.uber.org/atomic v1.9.0
 	go.uber.org/multierr v1.8.0
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
-	golang.org/x/sys v0.17.0
+	golang.org/x/sys v0.18.0
 	gopkg.in/dnaeon/go-vcr.v3 v3.1.2
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -95,9 +96,9 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.8.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.8.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.18.0 // indirect
-	golang.org/x/crypto v0.19.0 // indirect
-	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/term v0.17.0 // indirect
+	golang.org/x/crypto v0.21.0 // indirect
+	golang.org/x/net v0.23.0 // indirect
+	golang.org/x/term v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 	google.golang.org/grpc v1.56.3 // indirect

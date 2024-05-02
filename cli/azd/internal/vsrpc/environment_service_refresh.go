@@ -20,20 +20,20 @@ import (
 )
 
 // RefreshEnvironmentAsync is the server implementation of:
-// ValueTask<Environment> RefreshEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<Environment> RefreshEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken);
 //
 // RefreshEnvironmentAsync loads the specified environment, and fetches information about it from Azure. If you are willing
 // to accept some loss of information in favor of a faster load time, use `LoadEnvironmentAsync` instead, which does not
 // contact azure to compute service endpoints or last deployment information.
 func (s *environmentService) RefreshEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}

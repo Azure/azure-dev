@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -22,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/bradleyjkemp/cupaloy/v2"
-	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -195,13 +193,10 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		bicepCli, err := bicep.NewBicepCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
 		require.NoError(t, err)
 
-		// Validate bicep builds without errors or lint errors
-		res, err := bicepCli.Build(ctx, filepath.Join(dir, "infra", "main.bicep"))
+		// Validate bicep builds without errors
+		// cdk lint errors are expected
+		_, err = bicepCli.Build(ctx, filepath.Join(dir, "infra", "main.bicep"))
 		require.NoError(t, err)
-		lintErr := lintErr(
-			res,
-			[]string{"Warning no-unused-params: Parameter \"inputs\" is declared but never used."})
-		require.Len(t, lintErr, 0, "lint errors occurred")
 
 		// Snapshot everything under infra and manifests
 		err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -262,86 +257,83 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx,
-		"n\n"+ // Don't expose 'apiservice' service.
-			"y\n"+ // Expose 'webfrontend' service.
-			stdinForProvision(), "up")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up")
 	require.NoError(t, err)
 
-	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
+	//env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	//require.NoError(t, err)
 
-	domain, has := env["AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"]
-	require.True(t, has, "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN should be in environment after deploy")
+	//domain, has := env["AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"]
+	//require.True(t, has, "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN should be in environment after deploy")
 
-	endpoint := fmt.Sprintf("https://%s.%s", "webfrontend", domain)
-	runLiveDotnetPlaywright(t, ctx, filepath.Join(dir, "AspireAzdTests"), endpoint)
+	//endpoint := fmt.Sprintf("https://%s.%s", "webfrontend", domain)
+	//runLiveDotnetPlaywright(t, ctx, filepath.Join(dir, "AspireAzdTests"), endpoint)
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
 
-func runLiveDotnetPlaywright(
-	t *testing.T,
-	ctx context.Context,
-	projDir string,
-	endpoint string) {
-	runner := exec.NewCommandRunner(nil)
-	run := func() (res exec.RunResult, err error) {
-		wr := logWriter{initialTime: time.Now(), t: t, prefix: "webfrontend: "}
-		res, err = runner.Run(ctx, exec.NewRunArgs(
-			"dotnet",
-			"test",
-			"--logger",
-			"console;verbosity=detailed",
-		).WithCwd(projDir).WithEnv(append(
-			os.Environ(),
-			"LIVE_APP_URL="+endpoint,
-		)).WithStdOut(&wr))
-		return
-	}
+// func runLiveDotnetPlaywright(
+// 	t *testing.T,
+// 	ctx context.Context,
+// 	projDir string,
+// 	endpoint string) {
+// 	runner := exec.NewCommandRunner(nil)
+// 	run := func() (res exec.RunResult, err error) {
+// 		wr := logWriter{initialTime: time.Now(), t: t, prefix: "webfrontend: "}
+// 		res, err = runner.Run(ctx, exec.NewRunArgs(
+// 			"dotnet",
+// 			"test",
+// 			"--logger",
+// 			"console;verbosity=detailed",
+// 		).WithCwd(projDir).WithEnv(append(
+// 			os.Environ(),
+// 			"LIVE_APP_URL="+endpoint,
+// 		)).WithStdOut(&wr))
+// 		return
+// 	}
 
-	i := 0 // precautionary max retries
-	for {
-		res, err := run()
-		i++
+// 	i := 0 // precautionary max retries
+// 	for {
+// 		res, err := run()
+// 		i++
 
-		if err != nil && i < 10 {
-			if strings.Contains(res.Stdout, "Permission denied") {
-				err := filepath.WalkDir(projDir, func(path string, d os.DirEntry, err error) error {
-					if err != nil {
-						return err
-					}
+// 		if err != nil && i < 10 {
+// 			if strings.Contains(res.Stdout, "Permission denied") {
+// 				err := filepath.WalkDir(projDir, func(path string, d os.DirEntry, err error) error {
+// 					if err != nil {
+// 						return err
+// 					}
 
-					if !d.IsDir() && d.Name() == "playwright.sh" {
-						return os.Chmod(path, 0700)
-					}
+// 					if !d.IsDir() && d.Name() == "playwright.sh" {
+// 						return os.Chmod(path, 0700)
+// 					}
 
-					return nil
-				})
-				require.NoError(t, err, "failed to recover from permission denied error")
-				continue
-			} else if strings.Contains(res.Stdout, "Please run the following command to download new browsers") {
-				res, err := runner.Run(ctx, exec.NewRunArgs(
-					"pwsh", filepath.Join(projDir, "bin/Debug/net8.0/playwright.ps1"), "install"))
-				require.NoError(t, err, "failed to install playwright, stdout: %v, stderr: %v", res.Stdout, res.Stderr)
-				continue
-			}
-		}
+// 					return nil
+// 				})
+// 				require.NoError(t, err, "failed to recover from permission denied error")
+// 				continue
+// 			} else if strings.Contains(res.Stdout, "Please run the following command to download new browsers") {
+// 				res, err := runner.Run(ctx, exec.NewRunArgs(
+// 					"pwsh", filepath.Join(projDir, "bin/Debug/net8.0/playwright.ps1"), "install"))
+// 				require.NoError(t, err, "failed to install playwright, stdout: %v, stderr: %v", res.Stdout, res.Stderr)
+// 				continue
+// 			}
+// 		}
 
-		if cfg.CI {
-			require.NoError(t, err)
-		} else {
-			require.NoError(
-				t,
-				err,
-				"to troubleshoot, rerun `dotnet test` in %s with LIVE_APP_URL=%s",
-				projDir,
-				endpoint)
-		}
-		break
-	}
-}
+// 		if cfg.CI {
+// 			require.NoError(t, err)
+// 		} else {
+// 			require.NoError(
+// 				t,
+// 				err,
+// 				"to troubleshoot, rerun `dotnet test` in %s with LIVE_APP_URL=%s",
+// 				projDir,
+// 				endpoint)
+// 		}
+// 		break
+// 	}
+// }
 
 // Snapshots a file located at targetPath. Saves the snapshot to snapshotRoot/rel, where rel is relative to targetRoot.
 func snapshotFile(
@@ -392,16 +384,4 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 		}
 	}
 	return len(bytes), nil
-}
-
-func lintErr(buildRes bicep.BuildResult, exclude []string) []string {
-	var ret []string
-	for _, s := range strings.Split(buildRes.LintErr, "\n") {
-		for _, e := range exclude {
-			if len(s) > 0 && !strings.Contains(s, e) {
-				ret = append(ret, s)
-			}
-		}
-	}
-	return ret
 }

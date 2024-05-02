@@ -70,11 +70,13 @@ type genDockerfile struct {
 	Env       map[string]string
 	Bindings  custommaps.WithOrder[Binding]
 	BuildArgs map[string]string
+	Args      []string
 }
 
 type genProject struct {
 	Path     string
 	Env      map[string]string
+	Args     []string
 	Bindings custommaps.WithOrder[Binding]
 }
 
@@ -128,6 +130,7 @@ type genBicepTemplateContext struct {
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
 	RequiresStorageVolume           bool
+	AspireDashboard                 bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount
@@ -154,6 +157,7 @@ type genContainerAppManifestTemplateContext struct {
 	KeyVaultSecrets             map[string]string
 	Dapr                        *genContainerAppManifestTemplateContextDapr
 	AutoConfigureDataProtection bool
+	Args                        []string
 }
 
 type genProjectFileContext struct {

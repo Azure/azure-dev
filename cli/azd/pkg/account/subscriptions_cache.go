@@ -9,17 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/gofrs/flock"
 )
 
 // The file name of the cache used for storing subscriptions accessible by local accounts.
 const cSubscriptionsCacheFile = "subscriptions.cache"
-const cSubscriptionsCacheFlock = cSubscriptionsCacheFile + ".lock"
-const cSubscriptionsCacheRetryDelay = 100 * time.Millisecond
 
 // SubscriptionsCache caches the list of subscriptions accessible by local accounts.
 //
@@ -59,14 +55,6 @@ func (s *SubscriptionsCache) Load(ctx context.Context, key string) ([]Subscripti
 	s.inMemoryLock.Lock()
 	defer s.inMemoryLock.Unlock()
 
-	// get read lock
-	flock := flock.New(filepath.Join(s.cacheDir, cSubscriptionsCacheFlock))
-	_, err := flock.TryRLockContext(ctx, cSubscriptionsCacheRetryDelay)
-	if err != nil {
-		return nil, err
-	}
-	defer flock.Unlock()
-
 	// load cache from disk
 	cacheFile, err := os.ReadFile(filepath.Join(s.cacheDir, cSubscriptionsCacheFile))
 	if err != nil {
@@ -92,13 +80,6 @@ func (s *SubscriptionsCache) Load(ctx context.Context, key string) ([]Subscripti
 func (s *SubscriptionsCache) Save(ctx context.Context, key string, subscriptions []Subscription) error {
 	s.inMemoryLock.Lock()
 	defer s.inMemoryLock.Unlock()
-
-	flock := flock.New(filepath.Join(s.cacheDir, cSubscriptionsCacheFlock))
-	_, err := flock.TryLockContext(ctx, cSubscriptionsCacheRetryDelay)
-	if err != nil {
-		return err
-	}
-	defer flock.Unlock()
 
 	// Read the file if it exists
 	cacheFile, err := os.ReadFile(filepath.Join(s.cacheDir, cSubscriptionsCacheFile))
@@ -138,14 +119,7 @@ func (s *SubscriptionsCache) Clear(ctx context.Context) error {
 	s.inMemoryLock.Lock()
 	defer s.inMemoryLock.Unlock()
 
-	flock := flock.New(filepath.Join(s.cacheDir, cSubscriptionsCacheFlock))
-	_, err := flock.TryLockContext(ctx, cSubscriptionsCacheRetryDelay)
-	if err != nil {
-		return err
-	}
-	defer flock.Unlock()
-
-	err = os.Remove(filepath.Join(s.cacheDir, cSubscriptionsCacheFile))
+	err := os.Remove(filepath.Join(s.cacheDir, cSubscriptionsCacheFile))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}

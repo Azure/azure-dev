@@ -52,12 +52,14 @@ type SubscriptionsManager struct {
 	service       *SubscriptionsService
 	principalInfo principalInfoProvider
 	cache         subCache
+	cloud         *cloud.Cloud
 	console       input.Console
 }
 
 func NewSubscriptionsManager(
 	service *SubscriptionsService,
 	auth *auth.Manager,
+	cloud *cloud.Cloud,
 	console input.Console) (*SubscriptionsManager, error) {
 	cache, err := newSubCache()
 	if err != nil {
@@ -68,6 +70,7 @@ func NewSubscriptionsManager(
 		service:       service,
 		cache:         cache,
 		principalInfo: auth,
+		cloud:         cloud,
 		console:       console,
 	}, nil
 }
@@ -119,34 +122,67 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 		subscriptionId)
 }
 
-// GetSubscriptions retrieves subscriptions accessible by the current account with caching semantics.
+// getLoggedInUserId returns a stable ID for the currently logged in user.
 //
-// Unlike ListSubscriptions, GetSubscriptions first examines the subscriptions cache.
-// On cache miss, subscriptions are fetched, the cached is updated, before the result is returned.
-func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
-	cred, err := m.principalInfo.CredentialForCurrentUser(ctx, nil)
+// The user's credential is used to obtain an access token, and an ID is extracted from the token claims.
+// This implementation works well even in cases where a remote credential protocol is used to provide the credential.
+func getLoggedInUserId(ctx context.Context, principalInfo principalInfoProvider, cloud *cloud.Cloud) (string, error) {
+	cred, err := principalInfo.CredentialForCurrentUser(ctx, nil)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	// Use information from home tenant
 	accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes:   auth.LoginScopes(cloud.AzurePublic()),
+		Scopes:   auth.LoginScopes(cloud),
 		TenantID: "",
 	})
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	claims, err := auth.GetClaimsFromAccessToken(accessToken.Token)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	uid := claims.Oid
 	if uid == "" {
 		// Fallback to subject claim if `oid` isn't present. This can happen for personal accounts.
 		uid = claims.Subject
+	}
+
+	return uid, nil
+}
+
+// Updates stored cached subscriptions.
+func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
+	uid, err := getLoggedInUserId(ctx, m.principalInfo, m.cloud)
+	if err != nil {
+		return err
+	}
+
+	subs, err := m.ListSubscriptions(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching subscriptions: %w", err)
+	}
+
+	err = m.cache.Save(ctx, uid, subs)
+	if err != nil {
+		return fmt.Errorf("storing subscriptions: %w", err)
+	}
+
+	return nil
+}
+
+// GetSubscriptions retrieves subscriptions accessible by the current account with caching semantics.
+//
+// Unlike ListSubscriptions, GetSubscriptions first examines the subscriptions cache.
+// On cache miss, subscriptions are fetched, the cached is updated, before the result is returned.
+func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
+	uid, err := getLoggedInUserId(ctx, m.principalInfo, m.cloud)
+	if err != nil {
+		return nil, err
 	}
 
 	subscriptions, err := m.cache.Load(ctx, uid)

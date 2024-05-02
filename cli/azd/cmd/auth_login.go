@@ -313,8 +313,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		// Update the subscriptions cache for regular users (i.e. non-service-principals).
 		// The caching is done here to increase responsiveness of listing subscriptions in the application.
 		// It also allows an implicit command for the user to refresh cached subscriptions.
-		_, err := la.accountSubManager.GetSubscriptions(ctx)
-		if err != nil {
+		if err := la.accountSubManager.RefreshSubscriptions(ctx); err != nil {
 			// If this fails, the subscriptions will still be loaded on-demand.
 			// erroring out when the user interacts with subscriptions is much more user-friendly.
 			log.Printf("failed retrieving subscriptions: %v", err)

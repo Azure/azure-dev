@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -117,21 +116,6 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 			return err
 		}
 
-		actionName := createActionName(cmd)
-		var action actions.Action
-		if err := cmdContainer.ResolveNamed(actionName, &action); err != nil {
-			if errors.Is(err, ioc.ErrResolveInstance) {
-				return fmt.Errorf(
-					//nolint:lll
-					"failed resolving action '%s'. Ensure the ActionResolver is a valid go function that returns an `actions.Action` interface, %w",
-					actionName,
-					err,
-				)
-			}
-
-			return err
-		}
-
 		runOptions := &middleware.Options{
 			Name:        cmd.Name(),
 			CommandPath: cmd.CommandPath(),
@@ -142,8 +126,10 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// Set the container that should be used for resolving middleware components
 		runOptions.WithContainer(cmdContainer)
+
 		// Run the middleware chain with action
-		_, err = middlewareRunner.RunAction(ctx, runOptions, action)
+		actionName := createActionName(cmd)
+		_, err = middlewareRunner.RunAction(ctx, runOptions, actionName)
 
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true

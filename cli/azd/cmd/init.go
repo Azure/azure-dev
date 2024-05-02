@@ -50,6 +50,7 @@ func newInitCmd() *cobra.Command {
 type initFlags struct {
 	templatePath   string
 	templateBranch string
+	templateTags   []string
 	subscription   string
 	location       string
 	global         *internal.GlobalCommandOptions
@@ -72,6 +73,12 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"b",
 		"",
 		"The template branch to initialize from. Must be used with a template argument (--template or -t).")
+	local.StringSliceVar(
+		&i.templateTags,
+		"tags",
+		[]string{},
+		"The tag(s) used to filter template results. Supports comma-separated values.",
+	)
 	local.StringVarP(
 		&i.subscription,
 		"subscription",
@@ -162,7 +169,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	var initTypeSelect initType
-	if i.flags.templatePath != "" {
+	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
 		// an explicit --template passed, always initialize from app template
 		initTypeSelect = initAppTemplate
 	}
@@ -296,7 +303,16 @@ func (i *initAction) initializeTemplate(
 	var template *templates.Template
 
 	if i.flags.templatePath == "" {
-		template, err = templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
+		templateListOptions := &templates.ListOptions{
+			Tags: i.flags.templateTags,
+		}
+		template, err = templates.PromptTemplate(
+			ctx,
+			"Select a project template:",
+			i.templateManager,
+			i.console,
+			templateListOptions,
+		)
 		if err != nil {
 			return nil, err
 		}

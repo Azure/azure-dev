@@ -188,8 +188,9 @@ func PromptTemplate(
 	message string,
 	templateManager *TemplateManager,
 	console input.Console,
+	options *ListOptions,
 ) (*Template, error) {
-	templates, err := templateManager.ListTemplates(ctx, nil)
+	templates, err := templateManager.ListTemplates(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("prompting for template: %w", err)
 	}

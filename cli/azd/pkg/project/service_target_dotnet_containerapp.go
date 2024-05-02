@@ -124,6 +124,21 @@ func (at *dotnetContainerAppTarget) Deploy(
 			var remoteImageName string
 			var portNumber int
 
+			// This service target is shared across three different aspire resource types: "dockerfile.v0" (a reference to
+			// an project backed by a dockerfile), "container.v0" (a reference to a project backed by an existing container
+			// image), and "project.v0" (a reference to a project backed by a .NET project). Depending on the type, we have
+			// different steps for pushing the container image.
+			//
+			// For the dockerfile.v0 type, [DotNetImporter] arranges things such that we can leverage the existing support
+			// in `azd` for services backed by a Dockerfile. This causes the image to be built and pushed to ACR.
+			//
+			// For the container.v0 type, we assume the container image specified by the manifest is public and just use it
+			// directly.
+			//
+			// For the project.v0 type, we use the .NET CLI to publish the container image to ACR.
+			//
+			// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
+			// to the deployment template as a parameter named `Image`.
 			if serviceConfig.Language == ServiceLanguageDocker {
 				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
 				syncProgress(task, containerDeployTask.Progress())
@@ -135,6 +150,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 				}
 
 				remoteImageName = res.Details.(*dockerDeployResult).RemoteImageTag
+			} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
+				remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 			} else {
 				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
 

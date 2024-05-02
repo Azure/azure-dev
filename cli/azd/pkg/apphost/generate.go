@@ -80,6 +80,7 @@ func init() {
 		Option("missingkey=error").
 		Funcs(
 			template.FuncMap{
+				"toLower":   strings.ToLower,
 				"bicepName": scaffold.BicepName,
 				"mergeBicepName": func(src ...string) string {
 					return scaffold.BicepName(strings.Join(src, "-"))
@@ -140,6 +141,26 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 				Bindings:  comp.Bindings,
 				BuildArgs: comp.BuildArgs,
 				Args:      comp.Args,
+			}
+		}
+	}
+
+	return res
+}
+
+// Containers returns information about all container.v0 resources from a manifest.
+func Containers(manifest *Manifest) map[string]genContainer {
+	res := make(map[string]genContainer)
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "container.v0":
+			res[name] = genContainer{
+				Image:    *comp.Image,
+				Env:      comp.Env,
+				Bindings: comp.Bindings,
+				Inputs:   comp.Inputs,
+				Volumes:  comp.Volumes,
 			}
 		}
 	}
@@ -1046,51 +1067,27 @@ func (b *infraGenerator) Compile() error {
 		return err
 	}
 
-	for name, container := range b.containers {
+	for resourceName, container := range b.containers {
 		cs := genContainerApp{
-			Image:   container.Image,
-			Env:     make(map[string]string),
-			Secrets: make(map[string]string),
 			Volumes: container.Volumes,
-			Ingress: b.allServicesIngress[name].ingress,
 		}
 
-		parameters := maps.Keys(b.bicepContext.InputParameters)
-		for i, parameter := range parameters {
-			parameters[i] = strings.ReplaceAll(parameter, "-", "_")
-		}
-		for k, value := range container.Env {
-			// first evaluation using inputEmitTypeYaml to know if there are secrets on the value
-			yamlString, err := EvalString(
-				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
-			if err != nil {
-				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
-			}
-			// second evaluation to build the appropriate string for bicep, which only replaces parameter names
-			// without caring about secret or not
-			bicepString, err := EvalString(
-				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
-			if err != nil {
-				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
-			}
-			if isComplexExp, val := isComplexExpression(fmt.Sprintf("'%s'", bicepString)); !isComplexExp {
-				bicepString = val
-			}
+		b.bicepContext.ContainerApps[resourceName] = cs
 
-			if slices.Contains(parameters, bicepString) {
-				if !slices.Contains(b.bicepContext.mappedParameters, bicepString) {
-					b.bicepContext.mappedParameters = append(b.bicepContext.mappedParameters, bicepString)
-				}
-			}
-
-			if strings.Contains(yamlString, "{{ securedParameter ") {
-				cs.Secrets[k] = bicepString
-			} else {
-				cs.Env[k] = bicepString
-			}
+		projectTemplateCtx := genContainerAppManifestTemplateContext{
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Volumes:         container.Volumes,
 		}
 
-		b.bicepContext.ContainerApps[name] = cs
+		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
+			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
 	}
 
 	for resourceName, docker := range b.dockerfiles {

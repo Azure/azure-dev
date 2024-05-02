@@ -49,6 +49,8 @@ type DotNetContainerAppOptions struct {
 	Manifest    *apphost.Manifest
 	AppHostPath string
 	ProjectName string
+	// ContainerImage is non-empty when a prebuilt container image is being used.
+	ContainerImage string
 }
 
 // Path returns the fully qualified path to the project

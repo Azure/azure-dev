@@ -67,34 +67,6 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   tags: tags
 }
 
-resource pubsub 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: 'pubsub'
-  location: location
-  properties: {
-    environmentId: containerAppEnvironment.id
-    configuration: {
-      activeRevisionsMode: 'Single'
-      ingress: {
-        external: false
-        targetPort: 6379
-        transport: 'tcp'
-      }
-    }
-    template: {
-      containers: [
-        {
-          image: 'docker.io/library/redis:7.2.4'
-          name: 'pubsub'
-        }
-      ]
-      scale: {
-        minReplicas: 1
-      }
-    }
-  }
-  tags: union(tags, {'aspire-resource-name': 'pubsub'})
-}
-
 resource kvf2edecb5 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: replace('kvf2edecb5-${resourceToken}', '-', '')
   location: location

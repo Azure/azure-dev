@@ -38,9 +38,9 @@ type principalInfoProvider interface {
 }
 
 type subCache interface {
-	Load(key string) ([]Subscription, error)
-	Save(key string, save []Subscription) error
-	Clear() error
+	Load(ctx context.Context, key string) ([]Subscription, error)
+	Save(ctx context.Context, key string, save []Subscription) error
+	Clear(ctx context.Context) error
 }
 
 // SubscriptionsManager manages listing, storing and retrieving subscriptions for the current account.
@@ -74,7 +74,7 @@ func NewSubscriptionsManager(
 
 // Clears stored cached subscriptions. This can only return an error if a filesystem error other than ErrNotExist occurred.
 func (m *SubscriptionsManager) ClearSubscriptions(ctx context.Context) error {
-	err := m.cache.Clear()
+	err := m.cache.Clear(ctx)
 	if err != nil {
 		return fmt.Errorf("clearing stored subscriptions: %w", err)
 	}
@@ -129,6 +129,7 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 		return nil, err
 	}
 
+	// Use information from home tenant
 	accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes:   auth.LoginScopes(cloud.AzurePublic()),
 		TenantID: "",
@@ -137,27 +138,25 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 		return nil, err
 	}
 
-	// Use the object ID of the user in the home tenant ID as the unique user key to cache on.
 	claims, err := auth.GetClaimsFromAccessToken(accessToken.Token)
 	if err != nil {
 		return nil, err
 	}
 
-	var uid string
-	if oid, ok := claims["oid"]; ok {
-		uid = oid.(string)
-	} else if sub, ok := claims["sub"]; ok {
-		uid = sub.(string)
+	uid := claims.Oid
+	if uid == "" {
+		// Fallback to subject claim if `oid` isn't present. This can happen for personal accounts.
+		uid = claims.Subject
 	}
 
-	subscriptions, err := m.cache.Load(uid)
+	subscriptions, err := m.cache.Load(ctx, uid)
 	if err != nil {
 		subscriptions, err = m.ListSubscriptions(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("listing subscriptions: %w", err)
 		}
 
-		err = m.cache.Save(uid, subscriptions)
+		err = m.cache.Save(ctx, uid, subscriptions)
 		if err != nil {
 			return nil, fmt.Errorf("saving subscriptions to cache: %w", err)
 		}

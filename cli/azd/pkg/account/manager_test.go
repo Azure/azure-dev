@@ -736,15 +736,15 @@ func (p *principalInfoProviderMock) CredentialForCurrentUser(
 type BypassSubscriptionsCache struct {
 }
 
-func (b *BypassSubscriptionsCache) Load(key string) ([]Subscription, error) {
+func (b *BypassSubscriptionsCache) Load(ctx context.Context, key string) ([]Subscription, error) {
 	return nil, errors.New("bypass cache")
 }
 
-func (b *BypassSubscriptionsCache) Save(key string, save []Subscription) error {
+func (b *BypassSubscriptionsCache) Save(ctx context.Context, key string, save []Subscription) error {
 	return nil
 }
 
-func (b *BypassSubscriptionsCache) Clear() error {
+func (b *BypassSubscriptionsCache) Clear(ctx context.Context) error {
 	return nil
 }
 

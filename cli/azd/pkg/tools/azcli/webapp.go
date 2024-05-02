@@ -96,15 +96,18 @@ func checkRunTimeStatus(res armappservice.WebAppsClientGetProductionSiteDeployme
 	totalNumber := inProgressNumber + successNumber + failNumber
 	failLog := properties.FailedInstancesLogs
 	errorString := ""
+	var errorExtendedCode *string
+	var errorMessage *string
 
 	switch *status {
 	case deploymentBuildStatusBuildFailed:
 		errorString += "Deployment failed because the build process failed\n"
 		errors := properties.Errors
-		errorExtendedCode := errors[0].ExtendedCode
-		errorMessage := errors[0].Message
 
 		if len(errors) > 0 {
+			errorExtendedCode = errors[0].ExtendedCode
+			errorMessage = errors[0].Message
+
 			if errorMessage != nil {
 				errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
 			} else if errorExtendedCode != nil {
@@ -128,10 +131,11 @@ func checkRunTimeStatus(res armappservice.WebAppsClientGetProductionSiteDeployme
 		}
 
 		errors := properties.Errors
-		errorExtendedCode := errors[0].ExtendedCode
-		errorMessage := errors[0].Message
 
 		if len(errors) > 0 {
+			errorExtendedCode = errors[0].ExtendedCode
+			errorMessage = errors[0].Message
+
 			if errorMessage != nil {
 				errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
 			} else if errorExtendedCode != nil {

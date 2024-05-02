@@ -95,7 +95,6 @@ func (f *functionAppTarget) Deploy(
 			defer os.Remove(packageOutput.PackagePath)
 			defer zipFile.Close()
 
-			task.SetProgress(NewServiceProgress("Uploading deployment package"))
 			res, err := f.cli.DeployFunctionAppUsingZipFile(
 				ctx,
 				targetResource.SubscriptionId(),

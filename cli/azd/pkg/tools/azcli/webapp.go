@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+)
+
+var (
+	deploymentBuildStatusBuildFailed       armappservice.DeploymentBuildStatus = "BuildFailed"
+	deploymentBuildStatusRuntimeFailed     armappservice.DeploymentBuildStatus = "RuntimeFailed"
+	deploymentBuildStatusRuntimeSuccessful armappservice.DeploymentBuildStatus = "RuntimeSuccessful"
 )
 
 type AzCliAppServiceProperties struct {
@@ -54,10 +60,15 @@ func (cli *azCli) appServiceRepositoryHost(
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
-) (string, error) {
+) (string, bool, error) {
+	linuxWebApp := false
 	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
-		return "", err
+		return "", linuxWebApp, err
+	}
+
+	if app.Properties.SiteConfig.LinuxFxVersion != nil {
+		linuxWebApp = true
 	}
 
 	hostName := ""
@@ -69,10 +80,75 @@ func (cli *azCli) appServiceRepositoryHost(
 	}
 
 	if hostName == "" {
-		return "", fmt.Errorf("failed to find host name for webapp %s", appName)
+		return "", linuxWebApp, fmt.Errorf("failed to find host name for webapp %s", appName)
 	}
 
-	return hostName, nil
+	return hostName, linuxWebApp, nil
+}
+
+func checkRunTimeStatus(res armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, hostName string) (string, error) {
+	properties := res.CsmDeploymentStatus.Properties
+	status := properties.Status
+	deploymentResult := ""
+	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
+	successNumber := int(*properties.NumberOfInstancesSuccessful)
+	failNumber := int(*properties.NumberOfInstancesFailed)
+	totalNumber := inProgressNumber + successNumber + failNumber
+	failLog := properties.FailedInstancesLogs
+	errorString := ""
+
+	switch *status {
+	case deploymentBuildStatusBuildFailed:
+		errorString += "Deployment failed because the build process failed\n"
+		errors := properties.Errors
+		errorExtendedCode := errors[0].ExtendedCode
+		errorMessage := errors[0].Message
+
+		if len(errors) > 0 {
+			if errorMessage != nil {
+				errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
+			} else if errorExtendedCode != nil {
+				errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
+			}
+		}
+
+		if len(failLog) > 0 {
+			errorString += fmt.Sprintf("Please check the build logs for more info: %s\n", *failLog[0])
+		}
+
+		return "", fmt.Errorf(errorString)
+	case deploymentBuildStatusRuntimeFailed:
+		if successNumber > 0 {
+			errorString += fmt.Sprintf("Site started with errors: %d/%d instances failed to start successfully\n",
+				failNumber, totalNumber)
+		} else if totalNumber > 0 {
+			errorString += fmt.Sprintf("Deployment failed because the runtime process failed. In progress instances: %d, "+
+				"Successful instances: %d, Failed Instances: %d\n",
+				inProgressNumber, successNumber, failNumber)
+		}
+
+		errors := properties.Errors
+		errorExtendedCode := errors[0].ExtendedCode
+		errorMessage := errors[0].Message
+
+		if len(errors) > 0 {
+			if errorMessage != nil {
+				errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
+			} else if errorExtendedCode != nil {
+				errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
+			}
+		}
+
+		if len(failLog) > 0 {
+			errorString += fmt.Sprintf("Please check the runtime logs for more info: %s\n", *failLog[0])
+		}
+
+		return "", fmt.Errorf(errorString)
+	case deploymentBuildStatusRuntimeSuccessful:
+		return "", nil
+	}
+
+	return deploymentResult, nil
 }
 
 func (cli *azCli) DeployAppServiceZip(
@@ -81,9 +157,8 @@ func (cli *azCli) DeployAppServiceZip(
 	resourceGroup string,
 	appName string,
 	deployZipFile io.Reader,
-	buildProgress io.Writer,
 ) (*string, error) {
-	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
+	hostName, linuxWebApp, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +168,27 @@ func (cli *azCli) DeployAppServiceZip(
 		return nil, err
 	}
 
-	response, err := client.Deploy(ctx, deployZipFile, subscriptionId, resourceGroup, appName, buildProgress)
+	// Deployment Status API only support linux web app for now
+	if linuxWebApp {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
+
+		response, err := client.DeployTrackStatus(ctx, deployZipFile, credential, subscriptionId, resourceGroup, appName)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := checkRunTimeStatus(response, hostName)
+		if err != nil {
+			return nil, err
+		}
+
+		return &res, nil
+	}
+
+	response, err := client.Deploy(ctx, deployZipFile)
 	if err != nil {
 		return nil, err
 	}

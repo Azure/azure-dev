@@ -97,21 +97,13 @@ func (st *appServiceTarget) Deploy(
 			defer os.Remove(packageOutput.PackagePath)
 			defer zipFile.Close()
 
-			task.SetProgress(NewServiceProgress("Uploading deployment package"))
-			buildProgress := st.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
-				Title:        "Updating deployment status",
-				MaxLineCount: 8,
-			})
-
 			res, err := st.cli.DeployAppServiceZip(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				zipFile,
-				buildProgress,
 			)
-			st.console.StopPreviewer(ctx, false)
 			if err != nil {
 				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
 				return

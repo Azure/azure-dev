@@ -67,7 +67,7 @@ func (cli *azCli) appServiceRepositoryHost(
 		return "", linuxWebApp, err
 	}
 
-	if app.Properties.SiteConfig.LinuxFxVersion != nil {
+	if app.Properties != nil && app.Properties.SiteConfig != nil && app.Properties.SiteConfig.LinuxFxVersion != nil {
 		linuxWebApp = true
 	}
 
@@ -100,26 +100,8 @@ func checkRunTimeStatus(res armappservice.WebAppsClientGetProductionSiteDeployme
 	var errorMessage *string
 
 	switch *status {
-	case deploymentBuildStatusBuildFailed:
-		errorString += "Deployment failed because the build process failed\n"
-		errors := properties.Errors
-
-		if len(errors) > 0 {
-			errorExtendedCode = errors[0].ExtendedCode
-			errorMessage = errors[0].Message
-
-			if errorMessage != nil {
-				errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
-			} else if errorExtendedCode != nil {
-				errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
-			}
-		}
-
-		if len(failLog) > 0 {
-			errorString += fmt.Sprintf("Please check the build logs for more info: %s\n", *failLog[0])
-		}
-
-		return "", fmt.Errorf(errorString)
+	case deploymentBuildStatusRuntimeSuccessful:
+		return "", nil
 	case deploymentBuildStatusRuntimeFailed:
 		if successNumber > 0 {
 			errorString += fmt.Sprintf("Site started with errors: %d/%d instances failed to start successfully\n",
@@ -148,8 +130,26 @@ func checkRunTimeStatus(res armappservice.WebAppsClientGetProductionSiteDeployme
 		}
 
 		return "", fmt.Errorf(errorString)
-	case deploymentBuildStatusRuntimeSuccessful:
-		return "", nil
+	case deploymentBuildStatusBuildFailed:
+		errorString += "Deployment failed because the build process failed\n"
+		errors := properties.Errors
+
+		if len(errors) > 0 {
+			errorExtendedCode = errors[0].ExtendedCode
+			errorMessage = errors[0].Message
+
+			if errorMessage != nil {
+				errorString += fmt.Sprintf("Error: %s\n", *errorMessage)
+			} else if errorExtendedCode != nil {
+				errorString += fmt.Sprintf("Extended ErrorCode: %s\n", *errorExtendedCode)
+			}
+		}
+
+		if len(failLog) > 0 {
+			errorString += fmt.Sprintf("Please check the build logs for more info: %s\n", *failLog[0])
+		}
+
+		return "", fmt.Errorf(errorString)
 	}
 
 	return deploymentResult, nil

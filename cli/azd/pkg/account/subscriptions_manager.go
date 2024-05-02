@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"go.uber.org/multierr"
@@ -49,14 +48,12 @@ type SubscriptionsManager struct {
 	service       *SubscriptionsService
 	principalInfo principalInfoProvider
 	cache         subCache
-	cloud         *cloud.Cloud
 	console       input.Console
 }
 
 func NewSubscriptionsManager(
 	service *SubscriptionsService,
 	auth *auth.Manager,
-	cloud *cloud.Cloud,
 	console input.Console) (*SubscriptionsManager, error) {
 	cache, err := newSubCache()
 	if err != nil {
@@ -67,7 +64,6 @@ func NewSubscriptionsManager(
 		service:       service,
 		cache:         cache,
 		principalInfo: auth,
-		cloud:         cloud,
 		console:       console,
 	}, nil
 }
@@ -77,6 +73,26 @@ func (m *SubscriptionsManager) ClearSubscriptions(ctx context.Context) error {
 	err := m.cache.Clear(ctx)
 	if err != nil {
 		return fmt.Errorf("clearing stored subscriptions: %w", err)
+	}
+
+	return nil
+}
+
+// Updates stored cached subscriptions.
+func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
+	claims, err := m.principalInfo.ClaimsForCurrentUser(ctx, nil)
+	if err != nil {
+		return err
+	}
+	uid := claims.LocalAccountId()
+	subs, err := m.ListSubscriptions(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching subscriptions: %w", err)
+	}
+
+	err = m.cache.Save(ctx, uid, subs)
+	if err != nil {
+		return fmt.Errorf("storing subscriptions: %w", err)
 	}
 
 	return nil
@@ -120,24 +136,17 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 		subscriptionId)
 }
 
-// Updates stored cached subscriptions.
-func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
-	claims, err := m.principalInfo.ClaimsForCurrentUser(ctx, nil)
+// GetSubscriptions retrieves subscriptions accessible by the current account with caching semantics.
+//
+// Unlike ListSubscriptions, GetSubscriptions first examines the subscriptions cache.
+// On cache miss, subscriptions are fetched, the cached is updated, before the result is returned.
+func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
+	res, err := m.getSubscriptions(ctx)
 	if err != nil {
-		return err
-	}
-	uid := claims.LocalAccountId()
-	subs, err := m.ListSubscriptions(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching subscriptions: %w", err)
+		return nil, err
 	}
 
-	err = m.cache.Save(ctx, uid, subs)
-	if err != nil {
-		return fmt.Errorf("storing subscriptions: %w", err)
-	}
-
-	return nil
+	return res.subscriptions, nil
 }
 
 type getSubscriptionsResult struct {
@@ -169,19 +178,6 @@ func (m *SubscriptionsManager) getSubscriptions(ctx context.Context) (getSubscri
 		subscriptions: subscriptions,
 		userClaims:    claims,
 	}, nil
-}
-
-// GetSubscriptions retrieves subscriptions accessible by the current account with caching semantics.
-//
-// Unlike ListSubscriptions, GetSubscriptions first examines the subscriptions cache.
-// On cache miss, subscriptions are fetched, the cached is updated, before the result is returned.
-func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
-	res, err := m.getSubscriptions(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return res.subscriptions, nil
 }
 
 func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {

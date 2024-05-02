@@ -346,7 +346,6 @@ func (m *Manager) ClaimsForCurrentUser(ctx context.Context, options *ClaimsForCu
 		return TokenClaims{}, err
 	}
 
-	// Use information from home tenant
 	accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes:   LoginScopes(m.cloud),
 		TenantID: options.TenantID,

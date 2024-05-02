@@ -86,7 +86,7 @@ func (cli *azCli) appServiceRepositoryHost(
 	return hostName, linuxWebApp, nil
 }
 
-func checkRunTimeStatus(res armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, hostName string) (string, error) {
+func checkRunTimeStatus(res armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse) (string, error) {
 	properties := res.CsmDeploymentStatus.Properties
 	status := properties.Status
 	deploymentResult := ""
@@ -180,7 +180,7 @@ func (cli *azCli) DeployAppServiceZip(
 			return nil, err
 		}
 
-		res, err := checkRunTimeStatus(response, hostName)
+		res, err := checkRunTimeStatus(response)
 		if err != nil {
 			return nil, err
 		}

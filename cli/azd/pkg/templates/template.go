@@ -25,6 +25,9 @@ type Template struct {
 	// or "{repo}" for GitHub repositories under Azure-Samples (default organization).
 	RepositoryPath string `json:"repositoryPath"`
 
+	// A list of tags associated with the template
+	Tags []string `json:"tags"`
+
 	// Additional metadata about the template
 	Metadata Metadata `json:"metadata,omitempty"`
 }
@@ -51,6 +54,7 @@ func (t *Template) Display(writer io.Writer) error {
 		{"Name", ":", t.Name},
 		{"Source", ":", t.Source},
 		{"Description", ":", t.Description},
+		{"Tags", ":", strings.Join(t.Tags, ", ")},
 	}
 
 	for _, line := range text {

@@ -15,9 +15,10 @@ import (
 )
 
 type awesomeAzdTemplate struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Source      string `json:"source"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Source      string   `json:"source"`
+	Tags        []string `json:"tags"`
 }
 
 // NewAwesomeAzdTemplateSource creates a new template source from the awesome-azd templates json file.
@@ -71,6 +72,7 @@ func NewAwesomeAzdTemplateSource(
 			Name:           template.Title,
 			Description:    template.Description,
 			RepositoryPath: repoPath,
+			Tags:           template.Tags,
 		})
 	}
 

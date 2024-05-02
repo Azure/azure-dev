@@ -6,11 +6,9 @@ import (
 	"net/http"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -715,21 +713,11 @@ func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID(ctx cont
 	return nil, nil
 }
 
-// cspell: disable
-// nolint:lll
-const mockTokenOidClaim = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiJ0aGlzLWlzLWEtdGVzdCJ9.vrKZx2J7-hsydI4rzdFVHqU1S6lHqLT95VSPx2RfQ04"
-
-// cspell:enable
-
-func (p *principalInfoProviderMock) CredentialForCurrentUser(
-	ctx context.Context, options *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
-	return &mocks.MockCredentials{
-		GetTokenFn: func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-			return azcore.AccessToken{
-				Token:     mockTokenOidClaim,
-				ExpiresOn: time.Now().Add(time.Hour * 1),
-			}, nil
-		},
+func (p *principalInfoProviderMock) ClaimsForCurrentUser(
+	ctx context.Context, options *auth.ClaimsForCurrentUserOptions) (auth.TokenClaims, error) {
+	return auth.TokenClaims{
+		UniqueName: "test_user",
+		Oid:        "test_oid",
 	}, nil
 }
 

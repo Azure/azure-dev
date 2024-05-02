@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
@@ -33,8 +31,7 @@ type SubscriptionTenantResolver interface {
 // Typically auth.Manager
 type principalInfoProvider interface {
 	GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error)
-	CredentialForCurrentUser(
-		ctx context.Context, options *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
+	ClaimsForCurrentUser(ctx context.Context, options *auth.ClaimsForCurrentUserOptions) (auth.TokenClaims, error)
 }
 
 type subCache interface {
@@ -103,65 +100,33 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 		return *principalTenantId, nil
 	}
 
-	subscriptions, err := m.GetSubscriptions(ctx)
+	res, err := m.getSubscriptions(ctx)
 	if err != nil {
 		return "", fmt.Errorf("resolving user access to subscription '%s' : %w", subscriptionId, err)
 	}
 
-	for _, sub := range subscriptions {
+	for _, sub := range res.subscriptions {
 		if sub.Id == subscriptionId {
 			return sub.UserAccessTenantId, nil
 		}
 	}
 
 	return "", fmt.Errorf(
-		"failed to resolve user access to subscription with ID '%s'. "+
+		"failed to resolve user '%s' access to subscription with ID '%s'. "+
 			"If you recently gained access to this subscription, run `azd auth login` again to reload subscriptions.\n"+
 			"Otherwise, visit this subscription in Azure Portal using the browser, "+
 			"then run `azd auth login` ",
+		res.userClaims.DisplayUsername(),
 		subscriptionId)
-}
-
-// getLoggedInUserId returns a stable ID for the currently logged in user.
-//
-// The user's credential is used to obtain an access token, and an ID is extracted from the token claims.
-// This implementation works well even in cases where a remote credential protocol is used to provide the credential.
-func getLoggedInUserId(ctx context.Context, principalInfo principalInfoProvider, cloud *cloud.Cloud) (string, error) {
-	cred, err := principalInfo.CredentialForCurrentUser(ctx, nil)
-	if err != nil {
-		return "", err
-	}
-
-	// Use information from home tenant
-	accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes:   auth.LoginScopes(cloud),
-		TenantID: "",
-	})
-	if err != nil {
-		return "", err
-	}
-
-	claims, err := auth.GetClaimsFromAccessToken(accessToken.Token)
-	if err != nil {
-		return "", err
-	}
-
-	uid := claims.Oid
-	if uid == "" {
-		// Fallback to subject claim if `oid` isn't present. This can happen for personal accounts.
-		uid = claims.Subject
-	}
-
-	return uid, nil
 }
 
 // Updates stored cached subscriptions.
 func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
-	uid, err := getLoggedInUserId(ctx, m.principalInfo, m.cloud)
+	claims, err := m.principalInfo.ClaimsForCurrentUser(ctx, nil)
 	if err != nil {
 		return err
 	}
-
+	uid := claims.LocalAccountId()
 	subs, err := m.ListSubscriptions(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching subscriptions: %w", err)
@@ -175,30 +140,48 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 	return nil
 }
 
-// GetSubscriptions retrieves subscriptions accessible by the current account with caching semantics.
-//
-// Unlike ListSubscriptions, GetSubscriptions first examines the subscriptions cache.
-// On cache miss, subscriptions are fetched, the cached is updated, before the result is returned.
-func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
-	uid, err := getLoggedInUserId(ctx, m.principalInfo, m.cloud)
+type getSubscriptionsResult struct {
+	subscriptions []Subscription
+	userClaims    auth.TokenClaims
+}
+
+func (m *SubscriptionsManager) getSubscriptions(ctx context.Context) (getSubscriptionsResult, error) {
+	claims, err := m.principalInfo.ClaimsForCurrentUser(ctx, nil)
 	if err != nil {
-		return nil, err
+		return getSubscriptionsResult{}, err
 	}
+	uid := claims.LocalAccountId()
 
 	subscriptions, err := m.cache.Load(ctx, uid)
 	if err != nil {
 		subscriptions, err = m.ListSubscriptions(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("listing subscriptions: %w", err)
+			return getSubscriptionsResult{}, fmt.Errorf("listing subscriptions: %w", err)
 		}
 
 		err = m.cache.Save(ctx, uid, subscriptions)
 		if err != nil {
-			return nil, fmt.Errorf("saving subscriptions to cache: %w", err)
+			return getSubscriptionsResult{}, fmt.Errorf("saving subscriptions to cache: %w", err)
 		}
 	}
 
-	return subscriptions, nil
+	return getSubscriptionsResult{
+		subscriptions: subscriptions,
+		userClaims:    claims,
+	}, nil
+}
+
+// GetSubscriptions retrieves subscriptions accessible by the current account with caching semantics.
+//
+// Unlike ListSubscriptions, GetSubscriptions first examines the subscriptions cache.
+// On cache miss, subscriptions are fetched, the cached is updated, before the result is returned.
+func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
+	res, err := m.getSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.subscriptions, nil
 }
 
 func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {

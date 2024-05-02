@@ -18,10 +18,11 @@ var jwtClaimsRegex = regexp.MustCompile(`^[a-zA-Z0-9-_]*\.([a-zA-Z0-9-_]*)\.[a-z
 
 // cspell: enable
 
-// TokenClaims contains claims about a user.
-// https://docs.microsoft.com/azure/active-directory/develop/id-tokens .
+// TokenClaims contains claims about a user from an access token.
+// https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference.
 type TokenClaims struct {
 	PreferredUsername string `json:"preferred_username,omitempty"`
+	UniqueName        string `json:"unique_name,omitempty"`
 	GivenName         string `json:"given_name,omitempty"`
 	FamilyName        string `json:"family_name,omitempty"`
 	MiddleName        string `json:"middle_name,omitempty"`
@@ -29,14 +30,33 @@ type TokenClaims struct {
 	Oid               string `json:"oid,omitempty"`
 	TenantId          string `json:"tid,omitempty"`
 	Subject           string `json:"sub,omitempty"`
-	UPN               string `json:"upn,omitempty"`
+	Upn               string `json:"upn,omitempty"`
 	Email             string `json:"email,omitempty"`
-	AlternativeID     string `json:"alternative_id,omitempty"`
+	AlternativeId     string `json:"alternative_id,omitempty"`
 	Issuer            string `json:"iss,omitempty"`
 	Audience          string `json:"aud,omitempty"`
 	ExpirationTime    int64  `json:"exp,omitempty"`
 	IssuedAt          int64  `json:"iat,omitempty"`
 	NotBefore         int64  `json:"nbf,omitempty"`
+}
+
+// Returns an ID associated with the account. This ID is suitable for local use, and not for any server authorization use.
+func (tc *TokenClaims) LocalAccountId() string {
+	if tc.Oid != "" {
+		return tc.Oid
+	}
+
+	return tc.Subject
+}
+
+// Returns a display name for the account.
+func (tc *TokenClaims) DisplayUsername() string {
+	if tc.PreferredUsername != "" {
+		return tc.PreferredUsername
+	}
+
+	// fallback for v1.0 token
+	return tc.UniqueName
 }
 
 func GetTenantIdFromToken(token string) (string, error) {

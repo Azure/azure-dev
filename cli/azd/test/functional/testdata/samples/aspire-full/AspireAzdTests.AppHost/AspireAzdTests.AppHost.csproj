@@ -6,7 +6,6 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<IsAspireHost>true</IsAspireHost>
-		<SelfContained>True</SelfContained>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -15,11 +14,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Aspire.Azure.Data.Tables" Version="$(AspireVersion)" />
-		<PackageReference Include="Aspire.Azure.Storage.Blobs" Version="$(AspireVersion)" />
-		<PackageReference Include="Aspire.Azure.Storage.Queues" Version="$(AspireVersion)" />
-		<PackageReference Include="Aspire.Hosting" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.AppHost" Version="$(AspireVersion)" />
 		<PackageReference Include="Aspire.Hosting.Azure" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.Azure.Redis" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.Azure.Storage" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.Azure.CosmosDB" Version="$(AspireVersion)" />
 	</ItemGroup>
 
 </Project>

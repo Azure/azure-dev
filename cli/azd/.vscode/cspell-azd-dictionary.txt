@@ -21,6 +21,7 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 armcosmos
+armmachinelearning
 armresourcegraph
 armsql
 aspnet
@@ -42,8 +43,10 @@ azdtest
 azfile
 azruntime
 azsdk
+azureai
 AZURECLI
 azureedge
+azureml
 azurestaticapps
 azuretools
 azureutil
@@ -186,6 +189,7 @@ Syncer
 teamcity
 testdata
 tmpl
+toplevel
 tracesdk
 tracetest
 trafficmanager

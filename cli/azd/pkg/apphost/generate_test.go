@@ -26,6 +26,9 @@ var aspireDockerManifest []byte
 //go:embed testdata/aspire-storage.json
 var aspireStorageManifest []byte
 
+//go:embed testdata/aspire-args.json
+var aspireArgsManifest []byte
+
 //go:embed testdata/aspire-bicep.json
 var aspireBicepManifest []byte
 
@@ -74,10 +77,9 @@ func TestAspireEscaping(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-
 	for _, name := range []string{"api"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
@@ -97,7 +99,7 @@ func TestAspireStorageGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m)
+	files, err := BicepTemplate(m, AppHostOptions{})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -139,7 +141,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m)
+	files, err := BicepTemplate(m, AppHostOptions{})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -162,7 +164,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 
 	for _, name := range []string{"frontend"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
@@ -184,13 +186,13 @@ func TestAspireDockerGeneration(t *testing.T) {
 
 	for _, name := range []string{"nodeapp", "api"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, false)
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
 	}
 
-	files, err := BicepTemplate(m)
+	files, err := BicepTemplate(m, AppHostOptions{})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -212,6 +214,60 @@ func TestAspireDockerGeneration(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestAspireDashboardGeneration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
+	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
+	require.NoError(t, err)
+
+	files, err := BicepTemplate(m, AppHostOptions{AspireDashboard: true})
+	require.NoError(t, err)
+
+	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		contents, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+		t.Run(path, func(t *testing.T) {
+			snapshot.SnapshotT(t, string(contents))
+		})
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestAspireArgsGeneration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	mockPublishManifest(mockCtx, aspireArgsManifest, nil)
+	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireArgs.AppHost.csproj"), mockCli, "")
+	require.NoError(t, err)
+
+	manifest, err := ContainerAppManifestTemplateForProject(m, "apiservice", AppHostOptions{})
+	require.NoError(t, err)
+
+	snapshot.SnapshotT(t, manifest)
+}
+
 func TestAspireContainerGeneration(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
@@ -225,7 +281,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m)
+	files, err := BicepTemplate(m, AppHostOptions{})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {

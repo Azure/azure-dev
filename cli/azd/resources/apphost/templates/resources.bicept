@@ -89,10 +89,19 @@ resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/stora
 {{- end }}
 {{end -}}
 {{if .HasContainerEnvironment}}
+{{- if eq false .AspireDashboard}}
 resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
+{{- end }}
+{{- if .AspireDashboard}}
+resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-preview' = {
+{{- end }}
   name: 'cae-${resourceToken}'
   location: location
   properties: {
+    workloadProfiles: [{
+      workloadProfileType: 'Consumption'
+      name: 'consumption'
+    }]
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
@@ -102,7 +111,27 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
     }
   }
   tags: tags
+{{- if .AspireDashboard }}
+
+  resource aspireDashboard 'dotNetComponents' = {
+    name: 'aspire-dashboard'
+    properties: {
+      componentType: 'AspireDashboard'
+    }
+  }
+
+{{- end }}
 }
+{{- if .AspireDashboard }}
+resource explicitContributorUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerAppEnvironment.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c'))
+  scope: containerAppEnvironment
+  properties: {
+    principalId: principalId
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  }
+}
+{{- end }}
 {{range $name, $value := .ContainerApps}}
 {{- range $volume := $value.Volumes}}
 resource {{mergeBicepName $name $volume.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
@@ -172,122 +201,6 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
         {
           image: '{{$value.Type}}'
           name: '{{$value.Type}}'
-        }
-      ]
-      scale: {
-        minReplicas: 1
-      }
-    }
-  }
-  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
-}
-{{end -}}
-{{range $name, $value := .ContainerApps}}
-resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: '{{containerAppName $name}}'
-  location: location
-{{- if $value.Volumes}}
-  dependsOn: [storageVolume]
-{{- end }}
-  properties: {
-    environmentId: containerAppEnvironment.id
-    configuration: {
-      activeRevisionsMode: 'Single'
-{{- if $value.Dapr}}
-      dapr: {
-        appId: {{$value.Dapr.AppId}}
-{{- if $value.Dapr.AppPort}}
-        appPort: {{$value.Dapr.AppPort}}
-{{- end}}
-{{- if $value.Dapr.AppProtocol}}
-        appProtocol: {{$value.Dapr.AppProtocol}}
-{{- end}}
-{{- if $value.Dapr.EnableApiLogging}}
-        enableApiLogging: {{$value.Dapr.EnableApiLogging}}
-{{- end}}
-        enabled: true
-{{- if $value.Dapr.HttpMaxRequestSize}}
-        httpMaxRequestSize: {{$value.Dapr.HttpMaxRequestSize}}
-{{- end}}
-{{- if $value.Dapr.HttpReadBufferSize}}
-        httpReadBufferSize: {{$value.Dapr.HttpReadBufferSize}}
-{{- end}}
-{{- if $value.Dapr.LogLevel}}
-        logLevel: {{$value.Dapr.LogLevel}}
-{{- end}}
-      }
-{{- end}}
-{{- if $value.Ingress}}
-      ingress: {
-{{- if $value.Ingress.AdditionalPortMappings }}
-        additionalPortMappings: [
-{{- range $additionalPort := $value.Ingress.AdditionalPortMappings }}
-          { targetPort: {{ $additionalPort.TargetPort }}
-          external: {{ $additionalPort.External }} }
-{{- end}}
-        ]
-{{- end}}
-        external: {{$value.Ingress.External}}
-        targetPort: {{$value.Ingress.TargetPort}}
-        transport: '{{$value.Ingress.Transport}}'
-{{- if ne $value.Ingress.Transport "tcp" }}
-        allowInsecure: {{$value.Ingress.AllowInsecure}}
-{{- end}}
-      }
-{{- end}}
-{{- if gt (len $value.Secrets) 0 }}
-      secrets: [
-{{- range $sName, $sValue := $value.Secrets}}
-        {
-          name: '{{containerAppSecretName $sName}}'
-          value: {{$sValue}}
-        }
-{{- end}}
-      ]
-{{- end}}
-    }
-    template: {
-{{- if $value.Volumes}}
-      volumes: [
-{{- range $volume := $value.Volumes}}
-        {
-          name: '${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}'
-          storageType: 'AzureFile'
-          storageName: {{mergeBicepName $name $volume.Name}}Store.name
-        }
-{{- end}}
-      ]
-{{- end}}
-      containers: [
-        {
-          image: '{{$value.Image}}'
-          name: '{{$name}}'
-{{- if or (gt (len $value.Env) 0) (gt (len $value.Secrets) 0)}}
-          env: [
-{{- range $name, $value := $value.Env}}
-            {
-              name: '{{$name}}'
-              value: '{{$value}}'
-            }
-{{- end}}
-{{- range $sName, $sValue := $value.Secrets}}
-            {
-              name: '{{$sName}}'
-              secretRef: '{{containerAppSecretName $sName}}'
-            }
-{{- end}}
-          ]
-{{- end}}
-{{- if $value.Volumes}}
-          volumeMounts: [
-{{- range $volume := $value.Volumes}}
-            {
-              volumeName: '${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}'
-              mountPath: '{{$volume.Target}}'
-            }
-{{- end}}
-          ]
-{{- end}}
         }
       ]
       scale: {
@@ -535,6 +448,11 @@ output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id
 {{if .HasContainerEnvironment -}}
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
+{{end -}}
+{{range $name, $value := .ContainerApps -}}
+{{range $volume := $value.Volumes -}}
+output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $volume.Name | alphaSnakeUpper}}_NAME string = {{mergeBicepName $name $volume.Name}}Store.name
+{{end -}}
 {{end -}}
 {{range $name, $value := .ServiceBuses -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.serviceBusEndpoint

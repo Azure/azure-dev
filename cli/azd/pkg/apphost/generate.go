@@ -18,10 +18,13 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
 	"golang.org/x/exp/maps"
@@ -36,11 +39,48 @@ const DaprPubSubComponentType = "pubsub"
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
 
+var aspireDashboardFeature = alpha.MustFeatureKey("aspire.dashboard")
+
+func IsAspireDashboardEnabled(alphaFeatureManager *alpha.FeatureManager) bool {
+	return alphaFeatureManager.IsEnabled(aspireDashboardFeature)
+}
+
+type AspireDashboard struct {
+	Link string
+}
+
+func (aspireD *AspireDashboard) ToString(currentIndentation string) string {
+	return fmt.Sprintf("%sAspire Dashboard: %s", currentIndentation, output.WithLinkFormat(aspireD.Link))
+}
+
+func (aspireD *AspireDashboard) MarshalJSON() ([]byte, error) {
+	return json.Marshal(*aspireD)
+}
+
+func AspireDashboardUrl(
+	ctx context.Context,
+	env *environment.Environment,
+	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
+	if !IsAspireDashboardEnabled(alphaFeatureManager) {
+		return nil
+	}
+
+	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")
+	if !exists {
+		return nil
+	}
+
+	return &AspireDashboard{
+		Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+	}
+}
+
 func init() {
 	tmpl, err := template.New("templates").
 		Option("missingkey=error").
 		Funcs(
 			template.FuncMap{
+				"toLower":   strings.ToLower,
 				"bicepName": scaffold.BicepName,
 				"mergeBicepName": func(src ...string) string {
 					return scaffold.BicepName(strings.Join(src, "-"))
@@ -100,6 +140,7 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 				Env:       comp.Env,
 				Bindings:  comp.Bindings,
 				BuildArgs: comp.BuildArgs,
+				Args:      comp.Args,
 			}
 		}
 	}
@@ -107,10 +148,35 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 	return res
 }
 
+// Containers returns information about all container.v0 resources from a manifest.
+func Containers(manifest *Manifest) map[string]genContainer {
+	res := make(map[string]genContainer)
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "container.v0":
+			res[name] = genContainer{
+				Image:    *comp.Image,
+				Env:      comp.Env,
+				Bindings: comp.Bindings,
+				Inputs:   comp.Inputs,
+				Volumes:  comp.Volumes,
+			}
+		}
+	}
+
+	return res
+}
+
+type AppHostOptions struct {
+	AutoConfigureDataProtection bool
+	AspireDashboard             bool
+}
+
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
 func ContainerAppManifestTemplateForProject(
-	manifest *Manifest, projectName string, autoConfigureDataProtection bool) (string, error) {
+	manifest *Manifest, projectName string, options AppHostOptions) (string, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -124,7 +190,7 @@ func ContainerAppManifestTemplateForProject(
 	var buf bytes.Buffer
 
 	tmplCtx := generator.containerAppTemplateContexts[projectName]
-	tmplCtx.AutoConfigureDataProtection = autoConfigureDataProtection
+	tmplCtx.AutoConfigureDataProtection = options.AutoConfigureDataProtection
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {
@@ -136,7 +202,7 @@ func ContainerAppManifestTemplateForProject(
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
+func BicepTemplate(manifest *Manifest, options AppHostOptions) (*memfs.FS, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -145,6 +211,11 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 
 	if err := generator.Compile(); err != nil {
 		return nil, err
+	}
+
+	if options.AspireDashboard {
+		generator.bicepContext.AspireDashboard = true
+		generator.bicepContext.RequiresPrincipalId = true
 	}
 
 	// use the filesystem coming from the manifest
@@ -266,16 +337,6 @@ func GenerateProjectArtifacts(
 ) (map[string]ContentsAndMode, error) {
 	appHostRel, err := filepath.Rel(projectDir, appHostProject)
 	if err != nil {
-		return nil, err
-	}
-
-	generator := newInfraGenerator()
-
-	if err := generator.LoadManifest(manifest); err != nil {
-		return nil, err
-	}
-
-	if err := generator.Compile(); err != nil {
 		return nil, err
 	}
 
@@ -451,7 +512,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "azure.appinsights.v0":
 			b.addAppInsights(name)
 		case "project.v0":
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings)
+			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
 		case "dapr.v0":
@@ -465,7 +526,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return err
 			}
 		case "dockerfile.v0":
-			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs)
+			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs, comp.Args)
 		case "redis.v0":
 			b.addContainerAppService(name, RedisContainerAppService)
 		case "azure.keyvault.v0":
@@ -755,7 +816,7 @@ func (b *infraGenerator) addSqlDatabase(sqlAccount, dbName string) {
 }
 
 func (b *infraGenerator) addProject(
-	name string, path string, env map[string]string, bindings custommaps.WithOrder[Binding],
+	name string, path string, env map[string]string, bindings custommaps.WithOrder[Binding], args []string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -764,6 +825,7 @@ func (b *infraGenerator) addProject(
 		Path:     path,
 		Env:      env,
 		Bindings: bindings,
+		Args:     args,
 	}
 }
 
@@ -932,6 +994,7 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 func (b *infraGenerator) addDockerfile(
 	name string, path string, context string, env map[string]string,
 	bindings custommaps.WithOrder[Binding], buildArgs map[string]string,
+	args []string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -942,6 +1005,7 @@ func (b *infraGenerator) addDockerfile(
 		Env:       env,
 		Bindings:  bindings,
 		BuildArgs: buildArgs,
+		Args:      args,
 	}
 }
 
@@ -1003,51 +1067,27 @@ func (b *infraGenerator) Compile() error {
 		return err
 	}
 
-	for name, container := range b.containers {
+	for resourceName, container := range b.containers {
 		cs := genContainerApp{
-			Image:   container.Image,
-			Env:     make(map[string]string),
-			Secrets: make(map[string]string),
 			Volumes: container.Volumes,
-			Ingress: b.allServicesIngress[name].ingress,
 		}
 
-		parameters := maps.Keys(b.bicepContext.InputParameters)
-		for i, parameter := range parameters {
-			parameters[i] = strings.ReplaceAll(parameter, "-", "_")
-		}
-		for k, value := range container.Env {
-			// first evaluation using inputEmitTypeYaml to know if there are secrets on the value
-			yamlString, err := EvalString(
-				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
-			if err != nil {
-				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
-			}
-			// second evaluation to build the appropriate string for bicep, which only replaces parameter names
-			// without caring about secret or not
-			bicepString, err := EvalString(
-				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
-			if err != nil {
-				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
-			}
-			if isComplexExp, val := isComplexExpression(fmt.Sprintf("'%s'", bicepString)); !isComplexExp {
-				bicepString = val
-			}
+		b.bicepContext.ContainerApps[resourceName] = cs
 
-			if slices.Contains(parameters, bicepString) {
-				if !slices.Contains(b.bicepContext.mappedParameters, bicepString) {
-					b.bicepContext.mappedParameters = append(b.bicepContext.mappedParameters, bicepString)
-				}
-			}
-
-			if strings.Contains(yamlString, "{{ securedParameter ") {
-				cs.Secrets[k] = bicepString
-			} else {
-				cs.Env[k] = bicepString
-			}
+		projectTemplateCtx := genContainerAppManifestTemplateContext{
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Volumes:         container.Volumes,
 		}
 
-		b.bicepContext.ContainerApps[name] = cs
+		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
+			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
 	}
 
 	for resourceName, docker := range b.dockerfiles {
@@ -1061,6 +1101,10 @@ func (b *infraGenerator) Compile() error {
 
 		if err := b.buildEnvBlock(docker.Env, &projectTemplateCtx); err != nil {
 			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		if err := b.buildArgsBlock(docker.Args, &projectTemplateCtx); err != nil {
+			return err
 		}
 
 		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
@@ -1098,6 +1142,10 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		if err := b.buildEnvBlock(project.Env, &projectTemplateCtx); err != nil {
+			return err
+		}
+
+		if err := b.buildArgsBlock(project.Args, &projectTemplateCtx); err != nil {
 			return err
 		}
 
@@ -1377,7 +1425,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			if emitType == inputEmitTypeYaml {
 				return fmt.Sprintf(
 					"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
-					strings.ToUpper(replaceDash+"kv"),
+					strings.ToUpper("kv"+uniqueFnvNumber(resource)),
 					outputName), nil
 			}
 			if emitType == inputEmitTypeBicep {
@@ -1471,6 +1519,64 @@ func urlPortFromTargetPort(binding *Binding, bindingMappedToMainIngress bool) (s
 	return acaTemplatedTargetPort, nil
 }
 
+// asYamlString converts a string to the YAML representation of the string, ensuring that it is quoted and escaped as needed.
+func asYamlString(s string) (string, error) {
+	// We want to ensure that we render these values in the YAML as strings.  If `res` was the string "true"
+	// (without the quotes), we would naturally create a value directive in yaml that looks like this:
+	//
+	// - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
+	//   value: true
+	//
+	// And YAML rules would treat the above as the value being a boolean instead of a string, which the container
+	// app service expects.
+	//
+	// YAML marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
+	// that needs to be done), which is what we want here.
+	// Do not use JSON marshall as it would escape the quotes within the string, breaking the meaning of the value.
+	// yaml marshall will use 'some text "quoted" more text' as a valid yaml string.
+	yamlString, err := yaml.Marshal(s)
+	if err != nil {
+		return "", fmt.Errorf("marshalling env value: %w", err)
+	}
+
+	// remove the trailing newline. yaml marshall will add a newline at the end of the string, as the new line is
+	// expected at the end of the yaml document. But we are getting a single value with valid yaml here, so we don't
+	// need the newline
+	return string(yamlString[0 : len(yamlString)-1]), nil
+}
+
+func (b *infraGenerator) buildArgsBlock(args []string, manifestCtx *genContainerAppManifestTemplateContext) error {
+	for argN, arg := range args {
+		resolvedArg, err := EvalString(arg, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
+		if err != nil {
+			return fmt.Errorf("evaluating value for argument %d: %w", argN, err)
+		}
+
+		// Unlike environment variables, ACA doesn't provide a way to pass secret values without baking them into the args
+		// array directly. We don't want folks to accidentally bake the plaintext value of these secrets into the container
+		// definition, so for now, we block this.
+		//
+		// This logic is similar to what we do in buildEnvBlock to detect when we need to take values and treat them as ACA
+		// secrets.
+		if strings.Contains(arg, ".connectionString}") ||
+			strings.Contains(resolvedArg, "{{ connectionString") ||
+			strings.Contains(resolvedArg, "{{ securedParameter ") ||
+			strings.Contains(resolvedArg, "{{ secretOutput ") {
+
+			return fmt.Errorf("argument %d cannot contain connection strings, secured parameters, or secret outputs. Use "+
+				"environment variables instead", argN)
+		}
+
+		yamlString, err := asYamlString(resolvedArg)
+		if err != nil {
+			return fmt.Errorf("marshalling arg value: %w", err)
+		}
+		manifestCtx.Args = append(manifestCtx.Args, yamlString)
+	}
+
+	return nil
+}
+
 // buildEnvBlock creates the environment map in the template context. It does this by copying the values from the given map,
 // evaluating any binding expressions that are present. It writes the result of the evaluation after calling json.Marshal
 // so the values may be emitted into YAML as is without worrying about escaping.
@@ -1481,28 +1587,10 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 			return fmt.Errorf("evaluating value for %s: %w", k, err)
 		}
 
-		// We want to ensure that we render these values in the YAML as strings.  If `res` was the string "true"
-		// (without the quotes), we would naturally create a value directive in yaml that looks like this:
-		//
-		// - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
-		//   value: true
-		//
-		// And YAML rules would treat the above as the value being a boolean instead of a string, which the container
-		// app service expects.
-		//
-		// YAML marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
-		// that needs to be done), which is what we want here.
-		// Do not use JSON marshall as it would escape the quotes within the string, breaking the meaning of the value.
-		// yaml marshall will use 'some text "quoted" more text' as a valid yaml string.
-		yamlString, err := yaml.Marshal(res)
+		resolvedValue, err := asYamlString(res)
 		if err != nil {
 			return fmt.Errorf("marshalling env value: %w", err)
 		}
-
-		// remove the trailing newline. yaml marshall will add a newline at the end of the string, as the new line is
-		// expected at the end of the yaml document. But we are getting a single value with valid yaml here, so we don't
-		// need the newline
-		resolvedValue := string(yamlString[0 : len(yamlString)-1])
 
 		// connectionString detection, either of:
 		//  a) explicit connection string key for env, like "ConnectionStrings__resource": "XXXXX"

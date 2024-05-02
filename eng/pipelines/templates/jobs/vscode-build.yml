@@ -82,7 +82,7 @@ jobs:
           filePath: eng/scripts/Set-ShieldInfo.ps1
           arguments: >-
             -TemplatePath eng/shields/vscode.json
-            -OutputPath $(Build.ArtifactStagingDirectory)/shield/standalone.json
+            -OutputPath $(Build.ArtifactStagingDirectory)/shield/vscode.json
             -Version "$(VSIX_VERSION)"
         displayName: Set shield info
 

@@ -214,15 +214,18 @@ func (cli *dotNetCli) PublishContainer(
 	return port, nil
 }
 
+// getTargetPort parses the output of `dotnet publish` with `/t:PublishContainer` to get the port the container exposes.
 func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
-	var targetPorts []targetPort
-	var configOutput responseContainerConfiguration
-
-	// make sure result only contains json config output
-	result = strings.Split(result, "\n\r\n\r")[0]
+	// Ensure the output is a JSON object and it has a property named "config". If not, the project needs to be configured
+	// to produce a container.
+	//
+	// We use json.NewDecoder instead of json.Unmarshal because sometimes the `dotnet` tool will put "helpful" messages like
+	// a workload being out of date at the end of stdout, which would confuse us if we tried to Unmarshal all of result.
+	var obj map[string]json.RawMessage
+	_ = json.NewDecoder(strings.NewReader(result)).Decode(&obj)
 
 	// if empty string or there's no config output
-	if result == "" || !strings.Contains(result, "{\"config\":") {
+	if result == "" || obj["config"] == nil {
 		return 0, &azcli.ErrorWithSuggestion{
 			Err: fmt.Errorf("empty dotnet configuration output"),
 			Suggestion: fmt.Sprintf("Ensure project '%s' is enabled for container support and try again. To enable SDK "+
@@ -231,7 +234,11 @@ func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 			),
 		}
 	}
-	if err := json.Unmarshal([]byte(result), &configOutput); err != nil {
+
+	var targetPorts []targetPort
+	var configOutput responseContainerConfiguration
+
+	if err := json.NewDecoder(strings.NewReader(result)).Decode(&configOutput); err != nil {
 		return 0, fmt.Errorf("unmarshal dotnet configuration output: %w", err)
 	}
 	var exposedPortOutput []string

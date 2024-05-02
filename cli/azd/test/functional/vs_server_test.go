@@ -30,7 +30,6 @@ import (
 )
 
 func Test_CLI_VsServerExternalAuth(t *testing.T) {
-	t.Skip("skiping to unblock daily build. Test needs maintenance")
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -140,7 +139,6 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 }
 
 func Test_CLI_VsServer(t *testing.T) {
-	t.Skip("skiping to unblock daily build. Test needs maintenance")
 	testDir := filepath.Join("testdata", "vs-server", "tests")
 	// List all tests
 	var stdout, stderr bytes.Buffer
@@ -250,7 +248,8 @@ func Test_CLI_VsServer(t *testing.T) {
 			cmd.Dir = testDir
 			cmd.Env = append(cmd.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, "AZURE_SUBSCRIPTION_ID="+subscriptionId)
-			cmd.Env = append(cmd.Env, "AZURE_LOCATION="+cfg.Location)
+			// forcing location to centralus to avoid overloading whatever is in cfg.Location
+			cmd.Env = append(cmd.Env, "AZURE_LOCATION=centralus")
 			cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", svr.Port))
 			cmd.Env = append(cmd.Env, "CERTIFICATE_BYTES="+*svr.CertificateBytes)
 			cmd.Env = append(cmd.Env, "ROOT_DIR="+dir)

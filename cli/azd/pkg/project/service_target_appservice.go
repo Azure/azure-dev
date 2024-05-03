@@ -13,27 +13,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type appServiceTarget struct {
-	env     *environment.Environment
-	cli     azcli.AzCli
-	console input.Console
+	env *environment.Environment
+	cli azcli.AzCli
 }
 
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
-	console input.Console,
 ) ServiceTarget {
 	return &appServiceTarget{
-		env:     env,
-		cli:     azCli,
-		console: console,
+		env: env,
+		cli: azCli,
 	}
 }
 
@@ -97,6 +93,7 @@ func (st *appServiceTarget) Deploy(
 			defer os.Remove(packageOutput.PackagePath)
 			defer zipFile.Close()
 
+			task.SetProgress(NewServiceProgress("Uploading deployment package"))
 			res, err := st.cli.DeployAppServiceZip(
 				ctx,
 				targetResource.SubscriptionId(),

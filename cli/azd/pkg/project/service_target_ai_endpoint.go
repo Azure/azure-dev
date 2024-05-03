@@ -202,6 +202,10 @@ func (m *aiEndpointTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	if err := m.aiHelper.Initialize(ctx); err != nil {
+		return nil, fmt.Errorf("failed initializing AI project: %w", err)
+	}
+
 	workspaceScope, err := m.getWorkspaceScope(serviceConfig, targetResource)
 	if err != nil {
 		return nil, err

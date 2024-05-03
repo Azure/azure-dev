@@ -28,9 +28,9 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
         folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'init'));
     }
 
-    let useExistingSource: boolean = !!options?.useExistingSource;
     let templateUrl: string | undefined = options?.templateUrl;
-    if (!useExistingSource && !templateUrl) {
+    let useExistingSource: boolean = !!options?.useExistingSource;
+    if (!templateUrl && !useExistingSource) {
         const useExistingSourceQuickPick: IAzureQuickPickItem<boolean> = {
             label: vscode.l10n.t('Use code in the current directory'),
             data: true

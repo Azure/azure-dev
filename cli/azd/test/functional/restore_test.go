@@ -74,7 +74,7 @@ func Test_CLI_Restore_Err_WorkingDirectory(t *testing.T) {
 
 	result, err = cli.RunCommand(ctx, "restore")
 	require.Error(t, err)
-	require.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
+	require.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
 }
 
 // test restore in a service directory

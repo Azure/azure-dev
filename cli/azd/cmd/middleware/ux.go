@@ -31,15 +31,6 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 
 	actionResult, err := next(ctx)
 
-	if actionResult != nil && actionResult.Message != nil {
-		displayResult := &ux.ActionResult{
-			SuccessMessage: actionResult.Message.Header,
-			FollowUp:       actionResult.Message.FollowUp,
-		}
-
-		m.console.MessageUxItem(ctx, displayResult)
-	}
-
 	// Stop the spinner always to un-hide cursor
 	m.console.StopSpinner(ctx, "", input.Step)
 
@@ -55,6 +46,15 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		if errors.As(err, &suggestionErr) {
 			m.console.Message(ctx, suggestionErr.Suggestion)
 		}
+	}
+
+	if actionResult != nil && actionResult.Message != nil {
+		displayResult := &ux.ActionResult{
+			SuccessMessage: actionResult.Message.Header,
+			FollowUp:       actionResult.Message.FollowUp,
+		}
+
+		m.console.MessageUxItem(ctx, displayResult)
 	}
 
 	return actionResult, err

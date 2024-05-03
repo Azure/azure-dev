@@ -339,6 +339,7 @@ func (m *Manager) ClaimsForCurrentUser(ctx context.Context, options *ClaimsForCu
 	if options == nil {
 		options = &ClaimsForCurrentUserOptions{}
 	}
+
 	// The user's credential is used to obtain an access token.
 	// This implementation works well even in cases where a remote credential protocol is used to provide the credential.
 	cred, err := m.CredentialForCurrentUser(ctx, options)

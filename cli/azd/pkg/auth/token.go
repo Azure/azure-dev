@@ -19,7 +19,7 @@ var jwtClaimsRegex = regexp.MustCompile(`^[a-zA-Z0-9-_]*\.([a-zA-Z0-9-_]*)\.[a-z
 // cspell: enable
 
 // TokenClaims contains claims about a user from an access token.
-// https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference.
+// https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference.
 type TokenClaims struct {
 	PreferredUsername string `json:"preferred_username,omitempty"`
 	UniqueName        string `json:"unique_name,omitempty"`
@@ -40,22 +40,26 @@ type TokenClaims struct {
 	NotBefore         int64  `json:"nbf,omitempty"`
 }
 
-// Returns an ID associated with the account. This ID is suitable for local use, and not for any server authorization use.
+// Returns an ID associated with the account.
+// This ID is suitable for local use, and not for any server authorization use.
 func (tc *TokenClaims) LocalAccountId() string {
 	if tc.Oid != "" {
 		return tc.Oid
 	}
 
+	// Fall back to sub if oid is not present.
+	// This happens, for example, for personal accounts in their home tenant.
 	return tc.Subject
 }
 
 // Returns a display name for the account.
 func (tc *TokenClaims) DisplayUsername() string {
+	// For v2.0 token, use preferred_username
 	if tc.PreferredUsername != "" {
 		return tc.PreferredUsername
 	}
 
-	// fallback for v1.0 token
+	// Fallback to unique_name for v1.0 token
 	return tc.UniqueName
 }
 

@@ -208,7 +208,9 @@ func (ch *ContainerHelper) Credentials(
 	var credential *azcli.DockerCredentials
 	credentialsError := retry.Do(
 		ctx,
-		retry.WithMaxDuration(90*time.Second, retry.NewExponential(1*time.Second)),
+		// will retry just once after 1 minute based on:
+		// https://learn.microsoft.com/en-us/azure/dns/dns-faq#how-long-does-it-take-for-dns-changes-to-take-effect-
+		retry.WithMaxRetries(1, retry.NewConstant(1*time.Minute)),
 		func(ctx context.Context) error {
 			cred, err := ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {

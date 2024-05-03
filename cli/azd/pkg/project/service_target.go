@@ -26,6 +26,7 @@ const (
 	SpringAppTarget          ServiceTargetKind = "springapp"
 	AksTarget                ServiceTargetKind = "aks"
 	DotNetContainerAppTarget ServiceTargetKind = "containerapp-dotnet"
+	AiEndpointTarget         ServiceTargetKind = "ai.endpoint"
 )
 
 // RequiresContainer returns true if the service target runs a container image.
@@ -50,7 +51,8 @@ func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
 		AzureFunctionTarget,
 		StaticWebAppTarget,
 		SpringAppTarget,
-		AksTarget:
+		AksTarget,
+		AiEndpointTarget:
 
 		return kind, nil
 	}

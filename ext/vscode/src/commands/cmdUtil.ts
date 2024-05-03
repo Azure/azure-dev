@@ -81,9 +81,10 @@ export function getAzDevTerminalTitle(): string {
     return vscode.l10n.t('az dev');
 }
 
+const UseExistingSource: string = 'azure-dev:/source/existing';
 const UseCustomTemplate: string = 'azure-dev:/template/custom';
 
-export async function selectApplicationTemplate(context: IActionContext): Promise<string> {
+export async function selectApplicationTemplate(context: IActionContext): Promise<{ templateUrl: string, useExistingSource: false } | { templateUrl: undefined, useExistingSource: true }> {
     let templateUrl: string = '';
 
     const azureCli = await createAzureDevCli(context);
@@ -95,13 +96,17 @@ export async function selectApplicationTemplate(context: IActionContext): Promis
     const templates = JSON.parse(result.stdout) as { name: string, description: string, repositoryPath: string }[];
     const choices = templates.map(t => { return { label: t.name, detail: t.description, data: t.repositoryPath } as IAzureQuickPickItem<string>; });
     choices.unshift({ label: vscode.l10n.t('Use another template...'), data: '', id: UseCustomTemplate });
+    choices.unshift({ label: vscode.l10n.t('Use existing source code...'), data: '', id: UseExistingSource });
 
     const template = await context.ui.showQuickPick(choices, {
         canPickMany: false,
         title: vscode.l10n.t('Select application template')
     });
 
-    if (template.id === UseCustomTemplate) {
+    if (template.id === UseExistingSource) {
+        context.telemetry.properties.useExistingSource = 'true';
+        return { templateUrl: undefined, useExistingSource: true };
+    } else if (template.id === UseCustomTemplate) {
         templateUrl = await context.ui.showInputBox({
             prompt: vscode.l10n.t("Enter application template repository name ('{org or user}/{repo}')")
         });
@@ -110,7 +115,7 @@ export async function selectApplicationTemplate(context: IActionContext): Promis
     }
 
     context.telemetry.properties.templateUrlHash = sha256(templateUrl.toLowerCase());
-    return templateUrl;
+    return { templateUrl: templateUrl, useExistingSource: false };
 }
 
 export type EnvironmentInfo = {

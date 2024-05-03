@@ -4,76 +4,38 @@ interactions:
     - id: 0
       args:
         - publish
-        - /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj
+        - /private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj
         - -r
         - linux-x64
         - -c
-        - Debug
-        - -p:PublishProfile=DefaultContainer
-        - -p:ContainerImageName=azd-deploy-apiservice-1708981409
-        - -p:ContainerRegistry=acrsoindfxt2muzw.azurecr.io
+        - Release
+        - /t:PublishContainer
+        - -p:ContainerImageName=azd-deploy-apiservice-1714595957
+        - -p:ContainerRegistry=acrjifu2ub5ixlly.azurecr.io
+        - --getProperty:GeneratedContainerConfiguration
       exitCode: 0
       stdout: |
-        MSBuild version 17.8.3+195e7f5a3 for .NET
-          Determining projects to restore...
-          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ServiceDefaults/AspireAzdTests.ServiceDefaults.csproj (in 526 ms).
-          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj (in 512 ms).
-          AspireAzdTests.ServiceDefaults -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ServiceDefaults/bin/Debug/net8.0/AspireAzdTests.ServiceDefaults.dll
-          AspireAzdTests.ApiService -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/bin/Debug/net8.0/linux-x64/AspireAzdTests.ApiService.dll
-          AspireAzdTests.ApiService -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/bin/Debug/net8.0/linux-x64/publish/
-        /home/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj]
-          Building image 'azd-deploy-apiservice-1708981409' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
-          Uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploading layer 'sha256:e93a3b0c33ad6a063eb30b66b8db034a88c2d3bafb098768a057200dfe687c8d' to 'acrsoindfxt2muzw.azurecr.io'.
-          Finished uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrsoindfxt2muzw.azurecr.io'.
-          Finished uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrsoindfxt2muzw.azurecr.io'.
-          Finished uploading layer 'sha256:e93a3b0c33ad6a063eb30b66b8db034a88c2d3bafb098768a057200dfe687c8d' to 'acrsoindfxt2muzw.azurecr.io'.
-          Finished uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploading config to registry at blob 'sha256:8b008c7866af996e78c2bd1af6fea62a20f8bb2f59c0fd4ea5384993e76ccc60',
-          Uploaded config to registry.
-          Uploading tag 'latest' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploaded tag 'latest' to 'acrsoindfxt2muzw.azurecr.io'.
-          Pushed image 'azd-deploy-apiservice-1708981409:latest' to registry 'acrsoindfxt2muzw.azurecr.io'.
-
-        Workload updates are available. Run `dotnet workload list` for more information.
-      stderr: ""
+        {"config":{"ExposedPorts":{"8080/tcp":{}},"Labels":{"org.opencontainers.image.created":"2024-05-01T20:39:23.6447350Z","org.opencontainers.artifact.created":"2024-05-01T20:39:23.6447350Z","org.opencontainers.image.authors":"AspireAzdTests.ApiService","org.opencontainers.image.version":"1.0.0","org.opencontainers.image.base.name":"mcr.microsoft.com/dotnet/aspnet:8.0"},"Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","APP_UID=1654","ASPNETCORE_HTTP_PORTS=8080","DOTNET_RUNNING_IN_CONTAINER=true","DOTNET_VERSION=8.0.4","ASPNET_VERSION=8.0.4"],"WorkingDir":"/app","Entrypoint":["dotnet","AspireAzdTests.ApiService.dll"],"User":"1654"},"created":"2024-05-01T20:39:25.1801860Z","rootfs":{"type":"layers","diff_ids":["sha256:52ec5a4316fadc09a4a51f82b8d7b66ead0d71bea4f75e81e25b4094c4219061","sha256:ae3d04994a15c83d5452bd23d60e4ef91d7e86bfb1d93b7b2e574d1c87c00939","sha256:047e0007fcf5fb9e266e3c2f7ee72e0198eaac468325d72b060db7a1ee731091","sha256:c75c7f2b5118c89ad05886b1e812bc18e34a0af1a0ad43667c8731d48245b3f7","sha256:5dfd481b0bf1227d4ca0997316c259ca611151e5b3b9f1b864e09931a2d81eb2","sha256:2200575a6de50ee0424f4474abc10dd11f937921e838ed16c4201ca3dc7e0116","sha256:85de2657b0dcbbb308b2c944fa4e58e1d482c9f7ebd3ddbc02c0fb3a14ffe370"]},"architecture":"amd64","os":"linux","history":[{"created":"2024-04-24T03:28:09.5232856Z","created_by":"/bin/sh -c #(nop) ADD file:4b1be1de1a1e5aa608c688cad2824587262081866180d7368feb79d33ca05953 in / "},{"created":"2024-04-24T03:28:09.8349947Z","created_by":"/bin/sh -c #(nop)  CMD [\u0022bash\u0022]","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:42.5216351Z","created_by":"ENV APP_UID=1654 ASPNETCORE_HTTP_PORTS=8080 DOTNET_RUNNING_IN_CONTAINER=true","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:42.5216351Z","created_by":"RUN /bin/sh -c apt-get update     \u0026\u0026 apt-get install -y --no-install-recommends         ca-certificates                 libc6         libgcc-s1         libicu72         libssl3         libstdc\u002B\u002B6         tzdata         zlib1g     \u0026\u0026 rm -rf /var/lib/apt/lists/* # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:44.2678233Z","created_by":"RUN /bin/sh -c groupadd         --gid=$APP_UID         app     \u0026\u0026 useradd -l         --uid=$APP_UID         --gid=$APP_UID         --create-home         app # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:53.8137730Z","created_by":"ENV DOTNET_VERSION=8.0.4","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:53.8137730Z","created_by":"COPY /dotnet /usr/share/dotnet # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:55.0724988Z","created_by":"RUN /bin/sh -c ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:25:12.7200641Z","created_by":"ENV ASPNET_VERSION=8.0.4","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:25:12.7200641Z","created_by":"COPY /shared/Microsoft.AspNetCore.App /usr/share/dotnet/shared/Microsoft.AspNetCore.App # buildkit"},{"author":".NET SDK","created":"2024-05-01T20:39:25.1801790Z","created_by":".NET SDK Container Tooling, version 8.0.200-rtm.24069.18\u002Baf4967de46a87229c49f6d567028791c4c4683d0"}]}
+      stderr: |
+        /usr/local/share/dotnet/sdk/8.0.200/Containers/build/Microsoft.NET.Build.Containers.targets(70,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj]
     - id: 1
       args:
         - publish
-        - /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj
+        - /private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj
         - -r
         - linux-x64
         - -c
-        - Debug
-        - -p:PublishProfile=DefaultContainer
-        - -p:ContainerImageName=azd-deploy-webfrontend-1708981443
-        - -p:ContainerRegistry=acrsoindfxt2muzw.azurecr.io
+        - Release
+        - /t:PublishContainer
+        - -p:ContainerImageName=azd-deploy-webfrontend-1714596017
+        - -p:ContainerRegistry=acrjifu2ub5ixlly.azurecr.io
+        - --getProperty:GeneratedContainerConfiguration
       exitCode: 0
       stdout: |
-        MSBuild version 17.8.3+195e7f5a3 for .NET
-          Determining projects to restore...
-          Restored /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj (in 449 ms).
-          1 of 2 projects are up-to-date for restore.
-          AspireAzdTests.ServiceDefaults -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.ServiceDefaults/bin/Debug/net8.0/AspireAzdTests.ServiceDefaults.dll
-          AspireAzdTests.Web -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/bin/Debug/net8.0/linux-x64/AspireAzdTests.Web.dll
-          AspireAzdTests.Web -> /tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/bin/Debug/net8.0/linux-x64/publish/
-        /home/weilim/.dotnet/sdk/8.0.100/Containers/build/Microsoft.NET.Build.Containers.targets(73,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/tmp/Test_CLI_VsServerLiveDeployRefresh3447454072/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
-          Building image 'azd-deploy-webfrontend-1708981443' with tags 'latest' on top of base image 'mcr.microsoft.com/dotnet/runtime-deps:8.0'.
-          Uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploading layer 'sha256:ed680b65daddfea2488824a68c580c9df690ac62c7d3a65170dd1211d395439f' to 'acrsoindfxt2muzw.azurecr.io'.
-          Finished uploading layer 'sha256:e65deb0614ae8da7b6f6c2c049d03a47bfeb6a717d593de703d1c3471087eaaf' to 'acrsoindfxt2muzw.azurecr.io'.
-          Finished uploading layer 'sha256:bee002b9602903883406290e40d3b516d52d4c84a115ce16261a643f98f781ad' to 'acrsoindfxt2muzw.azurecr.io'.
-          Finished uploading layer 'sha256:e1caac4eb9d2ec24aa3618e5992208321a92492aef5fef5eb9e470895f771c56' to 'acrsoindfxt2muzw.azurecr.io'.
-          Finished uploading layer 'sha256:ed680b65daddfea2488824a68c580c9df690ac62c7d3a65170dd1211d395439f' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploading config to registry at blob 'sha256:afcc2d154cae10ee61a5c0d02ff6b48add3d70435580abcadf3c6c45df3c092c',
-          Uploaded config to registry.
-          Uploading tag 'latest' to 'acrsoindfxt2muzw.azurecr.io'.
-          Uploaded tag 'latest' to 'acrsoindfxt2muzw.azurecr.io'.
-          Pushed image 'azd-deploy-webfrontend-1708981443:latest' to registry 'acrsoindfxt2muzw.azurecr.io'.
-
-        Workload updates are available. Run `dotnet workload list` for more information.
-      stderr: ""
+        {"config":{"ExposedPorts":{"8080/tcp":{}},"Labels":{"org.opencontainers.image.created":"2024-05-01T20:40:23.2987390Z","org.opencontainers.artifact.created":"2024-05-01T20:40:23.2987390Z","org.opencontainers.image.authors":"AspireAzdTests.Web","org.opencontainers.image.version":"1.0.0","org.opencontainers.image.base.name":"mcr.microsoft.com/dotnet/aspnet:8.0"},"Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","APP_UID=1654","ASPNETCORE_HTTP_PORTS=8080","DOTNET_RUNNING_IN_CONTAINER=true","DOTNET_VERSION=8.0.4","ASPNET_VERSION=8.0.4"],"WorkingDir":"/app","Entrypoint":["dotnet","AspireAzdTests.Web.dll"],"User":"1654"},"created":"2024-05-01T20:40:24.9866450Z","rootfs":{"type":"layers","diff_ids":["sha256:52ec5a4316fadc09a4a51f82b8d7b66ead0d71bea4f75e81e25b4094c4219061","sha256:ae3d04994a15c83d5452bd23d60e4ef91d7e86bfb1d93b7b2e574d1c87c00939","sha256:047e0007fcf5fb9e266e3c2f7ee72e0198eaac468325d72b060db7a1ee731091","sha256:c75c7f2b5118c89ad05886b1e812bc18e34a0af1a0ad43667c8731d48245b3f7","sha256:5dfd481b0bf1227d4ca0997316c259ca611151e5b3b9f1b864e09931a2d81eb2","sha256:2200575a6de50ee0424f4474abc10dd11f937921e838ed16c4201ca3dc7e0116","sha256:8d71fa352f32b32dd3438c04a51ba7596d04e80bcd621196bbbc528d4465d1c5"]},"architecture":"amd64","os":"linux","history":[{"created":"2024-04-24T03:28:09.5232856Z","created_by":"/bin/sh -c #(nop) ADD file:4b1be1de1a1e5aa608c688cad2824587262081866180d7368feb79d33ca05953 in / "},{"created":"2024-04-24T03:28:09.8349947Z","created_by":"/bin/sh -c #(nop)  CMD [\u0022bash\u0022]","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:42.5216351Z","created_by":"ENV APP_UID=1654 ASPNETCORE_HTTP_PORTS=8080 DOTNET_RUNNING_IN_CONTAINER=true","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:42.5216351Z","created_by":"RUN /bin/sh -c apt-get update     \u0026\u0026 apt-get install -y --no-install-recommends         ca-certificates                 libc6         libgcc-s1         libicu72         libssl3         libstdc\u002B\u002B6         tzdata         zlib1g     \u0026\u0026 rm -rf /var/lib/apt/lists/* # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:44.2678233Z","created_by":"RUN /bin/sh -c groupadd         --gid=$APP_UID         app     \u0026\u0026 useradd -l         --uid=$APP_UID         --gid=$APP_UID         --create-home         app # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:53.8137730Z","created_by":"ENV DOTNET_VERSION=8.0.4","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:53.8137730Z","created_by":"COPY /dotnet /usr/share/dotnet # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:24:55.0724988Z","created_by":"RUN /bin/sh -c ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:25:12.7200641Z","created_by":"ENV ASPNET_VERSION=8.0.4","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-04-24T04:25:12.7200641Z","created_by":"COPY /shared/Microsoft.AspNetCore.App /usr/share/dotnet/shared/Microsoft.AspNetCore.App # buildkit"},{"author":".NET SDK","created":"2024-05-01T20:40:24.9866350Z","created_by":".NET SDK Container Tooling, version 8.0.200-rtm.24069.18\u002Baf4967de46a87229c49f6d567028791c4c4683d0"}]}
+      stderr: |
+        /private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/Components/Pages/AzureTables.razor(57,23): warning CS8618: Non-nullable property 'PartitionKey' must contain a non-null value when exiting constructor. Consider declaring the property as nullable. [/private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/Components/Pages/AzureTables.razor(58,23): warning CS8618: Non-nullable property 'RowKey' must contain a non-null value when exiting constructor. Consider declaring the property as nullable. [/private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/Components/Pages/AzureTables.razor(61,23): warning CS8618: Non-nullable property 'Endpoint' must contain a non-null value when exiting constructor. Consider declaring the property as nullable. [/private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/Components/Pages/AzureBlobs.razor(45,12): warning CS8618: Non-nullable field '_html' must contain a non-null value when exiting constructor. Consider declaring the field as nullable. [/private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]
+        /usr/local/share/dotnet/sdk/8.0.200/Containers/build/Microsoft.NET.Build.Containers.targets(70,5): warning CONTAINER003: The property 'ContainerImageName' was set but is obsolete - please use 'ContainerRepository' instead. [/private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_VsServerLiveDeployRefresh2580826343/001/AspireAzdTests.Web/AspireAzdTests.Web.csproj]

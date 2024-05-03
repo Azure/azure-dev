@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -310,7 +311,7 @@ func (ch *ContainerHelper) Deploy(
 					log.Printf("pushing %s to registry", remoteImage)
 					task.SetProgress(NewServiceProgress("Pushing container image"))
 					if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteImage); err != nil {
-						errSuggestion := &azcli.ErrorWithSuggestion{
+						errSuggestion := &internal.ErrorWithSuggestion{
 							Err: err,
 							//nolint:lll
 							Suggestion: "When pushing to an external registry, ensure you have successfully authenticated by calling 'docker login' and run 'azd deploy' again",

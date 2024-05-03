@@ -14,13 +14,46 @@ import (
 	"go.lsp.dev/jsonrpc2"
 )
 
+func TestArity(t *testing.T) {
+	debugServer := httptest.NewServer(newDebugService(nil))
+	defer debugServer.Close()
+
+	// Connect to the server and start running a JSON-RPC 2.0 connection so we can send and recieve messages.
+	serverUrl, err := url.Parse(debugServer.URL)
+	require.NoError(t, err)
+	serverUrl.Scheme = "ws"
+
+	wsConn, _, err := websocket.DefaultDialer.Dial(serverUrl.String(), nil)
+	require.NoError(t, err)
+
+	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
+	rpcConn.Go(context.Background(), nil)
+
+	var rpcErr *jsonrpc2.Error
+
+	// TestIObserverAsync expects two argumments - this call should fail, there are too few arguments.
+	_, err = rpcConn.Call(context.Background(), "TestIObserverAsync", []any{10}, nil)
+	require.Error(t, err)
+	require.True(t, errors.As(err, &rpcErr))
+	require.Equal(t, jsonrpc2.InvalidParams, rpcErr.Code)
+
+	// TestIObserverAsync expects two argumments - this call should fail, there are too many arguments.
+	_, err = rpcConn.Call(context.Background(), "TestIObserverAsync", []any{10, map[string]any{
+		"__jsonrpc_marshaled": 1,
+		"handle":              1,
+	}, "extra-argument"}, nil)
+	require.Error(t, err)
+	require.True(t, errors.As(err, &rpcErr))
+	require.Equal(t, jsonrpc2.InvalidParams, rpcErr.Code)
+}
+
 func TestCancellation(t *testing.T) {
 	// wg controls when cancellation is sent by the client. We wait until the server RPC has started
 	// to run before requesting cancellation so we ensure we are testing our logic.
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	debugService := newDebugService()
+	debugService := newDebugService(nil)
 	debugService.wg = &wg
 	debugServer := httptest.NewServer(debugService)
 	defer debugServer.Close()
@@ -72,7 +105,7 @@ func TestCancellation(t *testing.T) {
 }
 
 func TestObserverable(t *testing.T) {
-	debugServer := httptest.NewServer(newDebugService())
+	debugServer := httptest.NewServer(newDebugService(nil))
 	defer debugServer.Close()
 
 	// Connect to the server and start running a JSON-RPC 2.0 connection so we can send and recieve messages.
@@ -131,4 +164,29 @@ func TestObserverable(t *testing.T) {
 
 	// The onCompleted message takes no parameters and the args value is empty.
 	require.Len(t, onCompletedParams[0], 0)
+}
+
+func TestPanic(t *testing.T) {
+	debugServer := httptest.NewServer(newDebugService(nil))
+	defer debugServer.Close()
+
+	// Connect to the server and start running a JSON-RPC 2.0 connection so we can send and recieve messages.
+	serverUrl, err := url.Parse(debugServer.URL)
+	require.NoError(t, err)
+	serverUrl.Scheme = "ws"
+
+	wsConn, _, err := websocket.DefaultDialer.Dial(serverUrl.String(), nil)
+	require.NoError(t, err)
+
+	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
+	rpcConn.Go(context.Background(), nil)
+
+	_, err = rpcConn.Call(context.Background(), "TestPanicAsync", []any{"this is the panic office."}, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "this is the panic office.")
+
+	// Ensure the server is still running and we can make another call.
+	_, err = rpcConn.Call(context.Background(), "TestPanicAsync", []any{"this is the panic office, again."}, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "this is the panic office, again.")
 }

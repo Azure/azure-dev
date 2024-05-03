@@ -21,6 +21,7 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 armcosmos
+armmachinelearning
 armresourcegraph
 armsql
 aspnet
@@ -42,8 +43,10 @@ azdtest
 azfile
 azruntime
 azsdk
+azureai
 AZURECLI
 azureedge
+azureml
 azurestaticapps
 azuretools
 azureutil
@@ -69,6 +72,7 @@ createdby
 csharpapp
 csharpapptest
 cupaloy
+custommaps
 deletedservices
 devcenter
 devcenters
@@ -185,6 +189,7 @@ Syncer
 teamcity
 testdata
 tmpl
+toplevel
 tracesdk
 tracetest
 trafficmanager
@@ -192,10 +197,11 @@ Truef
 typeflag
 unhide
 unmarshaled
-upgrader
+unmarshalled
 unmarshalling
 unsetenvs
 unsets
+upgrader
 utsname
 vsrpc
 vuejs

@@ -7,21 +7,27 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	tm "github.com/buger/goterm"
@@ -58,6 +64,27 @@ type ShowPreviewerOptions struct {
 	Title        string
 }
 
+type PromptDialog struct {
+	Title       string
+	Description string
+	Prompts     []PromptDialogItem
+}
+
+type PromptDialogItem struct {
+	ID           string
+	Kind         string
+	DisplayName  string
+	Description  *string
+	DefaultValue *string
+	Required     bool
+	Choices      []PromptDialogChoice
+}
+
+type PromptDialogChoice struct {
+	Value       string
+	Description string
+}
+
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
@@ -83,8 +110,12 @@ type Console interface {
 	// If false, the spinner is non-interactive, which means messages are rendered as a new console message on each
 	// call to ShowSpinner, even when the title is unchanged.
 	IsSpinnerInteractive() bool
+	SupportsPromptDialog() bool
+	PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error)
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
+	// Prompts the user for a directory path.
+	PromptDir(ctx context.Context, options ConsoleOptions) (string, error)
 	// Prompts the user to select a single value from a set of values
 	Select(ctx context.Context, options ConsoleOptions) (int, error)
 	// Prompts the user to select zero or more values from a set of values
@@ -114,6 +145,8 @@ type AskerConsole struct {
 	formatter  output.Formatter
 	isTerminal bool
 	noPrompt   bool
+	// when non nil, use this client instead of prompting ourselves on the console.
+	promptClient *externalPromptClient
 
 	showProgressMu sync.Mutex // ensures atomicity when swapping the current progress renderer (spinner or previewer)
 
@@ -134,15 +167,16 @@ type AskerConsole struct {
 }
 
 type ConsoleOptions struct {
-	Message      string
-	Help         string
-	Options      []string
-	DefaultValue any
+	Message string
+	Help    string
+	Options []string
+
+	// OptionDetails is an optional field that can be used to provide additional information about the options.
+	OptionDetails []string
+	DefaultValue  any
 
 	// Prompt-only options
-
 	IsPassword bool
-	Suggest    func(input string) (completions []string)
 }
 
 type ConsoleHandles struct {
@@ -180,7 +214,7 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
 		}
 		fmt.Fprintln(c.writer, string(jsonMessage))
-	} else if c.formatter == nil || c.formatter.Kind() == output.NoneFormat {
+	} else if c.formatter != nil {
 		c.println(ctx, message)
 	} else {
 		log.Println(message)
@@ -483,7 +517,6 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 		Message: options.Message,
 		Default: defaultValue,
 		Help:    options.Help,
-		Suggest: options.Suggest,
 	}
 }
 
@@ -492,9 +525,78 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 // 0 in the sentinel), followed by a new line.
 const cAfterIO = "0\n"
 
+func (c *AskerConsole) SupportsPromptDialog() bool {
+	return c.promptClient != nil
+}
+
+// PromptDialog prompts for multiple values using a single dialog. When successful, it returns a map of prompt IDs to their
+// values.
+func (c *AskerConsole) PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error) {
+
+	request := externalPromptDialogRequest{
+		Title:       dialog.Title,
+		Description: dialog.Description,
+		Prompts:     make([]externalPromptDialogPrompt, len(dialog.Prompts)),
+	}
+
+	for i, prompt := range dialog.Prompts {
+		request.Prompts[i] = externalPromptDialogPrompt{
+			ID:           prompt.ID,
+			Kind:         prompt.Kind,
+			DisplayName:  prompt.DisplayName,
+			Description:  prompt.Description,
+			DefaultValue: prompt.DefaultValue,
+			Required:     prompt.Required,
+		}
+	}
+
+	resp, err := c.promptClient.PromptDialog(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := make(map[string]any, len(*resp.Inputs))
+	for _, v := range *resp.Inputs {
+		ret[v.ID] = v.Value
+	}
+
+	return ret, nil
+}
+
 // Prompts the user for a single value
 func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
 	var response string
+
+	if c.promptClient != nil {
+		opts := promptOptions{
+			Type: "string",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+			},
+		}
+
+		if options.IsPassword {
+			opts.Type = "password"
+		}
+
+		if value, ok := options.DefaultValue.(string); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		result, err := c.promptClient.Prompt(ctx, opts)
+		if errors.Is(err, promptCancelledErr) {
+			return "", terminal.InterruptErr
+		} else if err != nil {
+			return "", err
+		}
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			return "", fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		return response, nil
+	}
 
 	err := c.doInteraction(func(c *AskerConsole) error {
 		return c.asker(promptFromOptions(options), &response)
@@ -506,12 +608,131 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	return response, nil
 }
 
+// Prompts the user for a single value
+func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (string, error) {
+	var response string
+
+	if c.promptClient != nil {
+		opts := promptOptions{
+			Type: "directory",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+			},
+		}
+
+		if value, ok := options.DefaultValue.(string); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		result, err := c.promptClient.Prompt(ctx, opts)
+		if errors.Is(err, promptCancelledErr) {
+			return "", terminal.InterruptErr
+		} else if err != nil {
+			return "", err
+		}
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			return "", fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		return response, nil
+	}
+
+	err := c.doInteraction(func(c *AskerConsole) error {
+		prompt := &survey.Input{
+			Message: options.Message,
+			Help:    options.Help,
+			Suggest: dirSuggestions,
+		}
+
+		return c.asker(prompt, &response)
+	})
+	if err != nil {
+		return response, err
+	}
+	c.updateLastBytes(cAfterIO)
+	return response, nil
+}
+
+func choicesFromOptions(options ConsoleOptions) []promptChoice {
+	choices := make([]promptChoice, len(options.Options))
+	for i, option := range options.Options {
+		choices[i] = promptChoice{
+			Value: option,
+		}
+
+		if i < len(options.OptionDetails) && options.OptionDetails[i] != "" {
+			choices[i].Detail = &options.OptionDetails[i]
+		}
+	}
+	return choices
+
+}
+
 // Prompts the user to select from a set of values
 func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int, error) {
+	if c.promptClient != nil {
+		opts := promptOptions{
+			Type: "select",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+				Choices: convert.RefOf(choicesFromOptions(options)),
+			},
+		}
+
+		if value, ok := options.DefaultValue.(string); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		result, err := c.promptClient.Prompt(ctx, opts)
+		if errors.Is(err, promptCancelledErr) {
+			return -1, terminal.InterruptErr
+		} else if err != nil {
+			return -1, err
+		}
+
+		var choice string
+
+		if err := json.Unmarshal(result, &choice); err != nil {
+			return -1, fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		res := slices.Index(options.Options, choice)
+		if res == -1 {
+			return -1, fmt.Errorf("invalid choice: %s", choice)
+		}
+
+		return res, nil
+	}
+
+	surveyOptions := make([]string, len(options.Options))
+	surveyDefault := options.DefaultValue
+	surveyDefaultAsString, surveyDefaultIsString := surveyDefault.(string)
+
+	// Modify the options and default value to include any details
+	for i, option := range options.Options {
+		surveyOptions[i] = option
+
+		if c.IsSpinnerInteractive() && i < len(options.OptionDetails) {
+			if options.OptionDetails[i] != "" {
+				detailString := output.WithGrayFormat("(%s)", options.OptionDetails[i])
+				surveyOptions[i] += fmt.Sprintf("\n  %s\n", detailString)
+			} else {
+				surveyOptions[i] += "\n"
+			}
+
+			if surveyDefaultIsString && surveyDefaultAsString == option {
+				surveyDefault = surveyOptions[i]
+			}
+		}
+	}
+
 	survey := &survey.Select{
 		Message: options.Message,
-		Options: options.Options,
-		Default: options.DefaultValue,
+		Options: surveyOptions,
+		Default: surveyDefault,
 		Help:    options.Help,
 	}
 
@@ -529,14 +750,63 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 }
 
 func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) ([]string, error) {
-	survey := &survey.MultiSelect{
-		Message: options.Message,
-		Options: options.Options,
-		Default: options.DefaultValue,
-		Help:    options.Help,
+	var response []string
+
+	if c.promptClient != nil {
+		opts := promptOptions{
+			Type: "multiSelect",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+				Choices: convert.RefOf(choicesFromOptions(options)),
+			},
+		}
+
+		if value, ok := options.DefaultValue.([]string); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		result, err := c.promptClient.Prompt(ctx, opts)
+		if errors.Is(err, promptCancelledErr) {
+			return nil, terminal.InterruptErr
+		} else if err != nil {
+			return nil, err
+		}
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			return nil, fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		return response, nil
 	}
 
-	var response []string
+	surveyOptions := make([]string, len(options.Options))
+	surveyDefault := options.DefaultValue
+	surveyDefaultAsArr, surveyDefaultIsArr := surveyDefault.([]string)
+	// Modify the options and default value to include any details
+	for i, option := range options.Options {
+		surveyOptions[i] = option
+
+		if c.IsSpinnerInteractive() && i < len(options.OptionDetails) {
+			detailString := output.WithGrayFormat("%s", options.OptionDetails[i])
+			surveyOptions[i] += fmt.Sprintf("\n  %s\n", detailString)
+		}
+
+		if surveyDefaultIsArr {
+			for idx, defaultOption := range surveyDefaultAsArr {
+				if defaultOption == option {
+					surveyDefaultAsArr[idx] = surveyOptions[i]
+				}
+			}
+		}
+	}
+
+	survey := &survey.MultiSelect{
+		Message: options.Message,
+		Options: surveyOptions,
+		Default: surveyDefault,
+		Help:    options.Help,
+	}
 
 	err := c.doInteraction(func(c *AskerConsole) error {
 		return c.asker(survey, &response)
@@ -550,6 +820,43 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 
 // Prompts the user to confirm an operation
 func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (bool, error) {
+	if c.promptClient != nil {
+		opts := promptOptions{
+			Type: "confirm",
+			Options: promptOptionsOptions{
+				Message: options.Message,
+				Help:    options.Help,
+			},
+		}
+
+		if value, ok := options.DefaultValue.(bool); ok {
+			opts.Options.DefaultValue = convert.RefOf[any](value)
+		}
+
+		result, err := c.promptClient.Prompt(ctx, opts)
+		if errors.Is(err, promptCancelledErr) {
+			return false, terminal.InterruptErr
+		} else if err != nil {
+			return false, err
+		}
+
+		var response string
+
+		if err := json.Unmarshal(result, &response); err != nil {
+			return false, fmt.Errorf("unmarshalling response: %w", err)
+		}
+
+		switch response {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		default:
+			return false, fmt.Errorf("invalid response: %s", response)
+
+		}
+	}
+
 	var defaultValue bool
 	if value, ok := options.DefaultValue.(bool); ok {
 		defaultValue = value
@@ -679,13 +986,22 @@ type Writers struct {
 	Spinner io.Writer
 }
 
-// Creates a new console with the specified writers, handles and formatter.
+// ExternalPromptConfiguration allows configuring the console to delegate prompts to an external service.
+type ExternalPromptConfiguration struct {
+	Endpoint string
+	Key      string
+	Client   httputil.HttpClient
+}
+
+// Creates a new console with the specified writers, handles and formatter. When externalPromptCfg is non nil, it is used
+// instead of prompting on the console.
 func NewConsole(
 	noPrompt bool,
 	isTerminal bool,
 	writers Writers,
 	handles ConsoleHandles,
-	formatter output.Formatter) Console {
+	formatter output.Formatter,
+	externalPromptCfg *ExternalPromptConfiguration) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	c := &AskerConsole{
@@ -701,6 +1017,10 @@ func NewConsole(
 
 	if writers.Spinner == nil {
 		writers.Spinner = writers.Output
+	}
+
+	if externalPromptCfg != nil {
+		c.promptClient = newExternalPromptClient(externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Client)
 	}
 
 	spinnerConfig := yacspin.Config{
@@ -759,6 +1079,18 @@ func GetStepResultFormat(result error) SpinnerUxType {
 		formatResult = StepFailed
 	}
 	return formatResult
+}
+
+// dirSuggestions provides suggestion completions for directories given the current input directory.
+func dirSuggestions(input string) []string {
+	completions := []string{}
+	matches, _ := filepath.Glob(input + "*")
+	for _, match := range matches {
+		if fs, err := os.Stat(match); err == nil && fs.IsDir() {
+			completions = append(completions, match)
+		}
+	}
+	return completions
 }
 
 // Handle doing interactive calls. It checks if there's a spinner running to pause it before doing interactive actions.

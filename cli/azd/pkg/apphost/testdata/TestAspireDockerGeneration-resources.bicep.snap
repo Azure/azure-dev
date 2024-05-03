@@ -3,9 +3,6 @@ param location string = resourceGroup().location
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
-@secure()
-param inputs object
-
 
 var resourceToken = uniqueString(resourceGroup().id)
 
@@ -52,6 +49,10 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   name: 'cae-${resourceToken}'
   location: location
   properties: {
+    workloadProfiles: [{
+      workloadProfileType: 'Consumption'
+      name: 'consumption'
+    }]
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
@@ -61,46 +62,6 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
     }
   }
   tags: tags
-}
-
-resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: 'mysqlabstract'
-  location: location
-  properties: {
-    environmentId: containerAppEnvironment.id
-    configuration: {
-      activeRevisionsMode: 'Single'
-      ingress: {
-        external: false
-        targetPort: 3306
-        transport: 'tcp'
-      }
-      secrets: [
-        {
-          name: 'mysql-root-password'
-          value: inputs.mysqlabstract.password
-        }    
-      ]
-    }
-    template: {
-      containers: [
-        {
-          image: 'mysql:latest'
-          name: 'mysqlabstract'
-          env: [
-            {
-              name: 'MYSQL_ROOT_PASSWORD'
-              secretRef: 'mysql-root-password'
-            }
-          ]
-        }
-      ]
-      scale: {
-        minReplicas: 1
-      }
-    }
-  }
-  tags: union(tags, {'aspire-resource-name': 'mysqlabstract'})
 }
 
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId

@@ -18,10 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
-const succeededProvisioningState string = "Succeeded"
-const runningProvisioningState string = "Running"
-const failedProvisioningState string = "Failed"
-
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
 type ProvisioningProgressDisplay struct {
 	// Whether the deployment has started
@@ -92,11 +88,11 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 					infra.AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
 
 				switch *operations[i].Properties.ProvisioningState {
-				case succeededProvisioningState:
+				case string(armresources.ProvisioningStateSucceeded):
 					newlyDeployedResources = append(newlyDeployedResources, operations[i])
-				case runningProvisioningState:
+				case string(armresources.ProvisioningStateRunning):
 					runningDeployments = append(runningDeployments, operations[i])
-				case failedProvisioningState:
+				case string(armresources.ProvisioningStateFailed):
 					newlyFailedResources = append(newlyFailedResources, operations[i])
 				}
 			}

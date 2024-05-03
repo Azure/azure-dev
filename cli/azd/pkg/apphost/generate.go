@@ -1309,6 +1309,24 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			bindingMappedToMainIngress = true
 		}
 
+		hostNameSuffix := func(external bool) string {
+			var suffix string
+			switch emitType {
+			case inputEmitTypeYaml:
+				suffix = "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+			case inputEmitTypeBicep:
+				suffix = "${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}"
+			default:
+				panic(fmt.Sprintf("unexpected inputEmitType %s", string(emitType)))
+			}
+
+			if !external {
+				suffix = "internal." + suffix
+			}
+
+			return suffix
+		}
+
 		switch bindingProperty {
 		case "scheme":
 			return binding.Scheme, nil
@@ -1323,12 +1341,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			// expects full domain name, like `resource.internal.FQDN` or `resource.FQDN`.
 			if bindingMappedToMainIngress &&
 				(binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
-				if binding.External {
-					return fmt.Sprintf("%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
-						resource), nil
-				}
-				return fmt.Sprintf("%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
-					resource), nil
+				return fmt.Sprintf("%s.%s", resource, hostNameSuffix(binding.External)), nil
 			}
 			return resource, nil
 		case "targetPort":
@@ -1342,11 +1355,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			var urlFormatString string
 
 			if bindingMappedToMainIngress {
-				if binding.External {
-					urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
-				} else {
-					urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
-				}
+				urlFormatString = "%s://%s." + hostNameSuffix(binding.External) + "%s"
 			} else {
 				urlFormatString = "%s://%s%s"
 			}

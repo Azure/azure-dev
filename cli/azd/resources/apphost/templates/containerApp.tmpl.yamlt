@@ -70,6 +70,14 @@ properties:
         identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
 {{- end}}
   template:
+{{- if .Volumes }}
+    volumes:
+{{- range $volume := .Volumes }}
+      - name: {{ toLower $.Name}}-{{ removeDot $volume.Name | toLower }}
+        storageType: AzureFile
+        storageName: {{ "{{ .Env.SERVICE_" }}{{ alphaSnakeUpper $.Name}}_VOLUME_{{ removeDot $volume.Name | alphaSnakeUpper }}{{ "_NAME }} "}}
+{{- end}}
+{{- end}}
     containers:
       - image: {{ "{{ .Image }}" }}
         name: {{ .Name }}
@@ -93,6 +101,13 @@ properties:
 {{- range $name, $value := .KeyVaultSecrets}}
           - name: {{$name}}
             secretRef: {{containerAppSecretName $name}}
+{{- end}}
+{{- if .Volumes }}
+        volumes:
+{{- range $volume := .Volumes }}
+          - volumeName: {{ toLower $.Name}}-{{ removeDot $volume.Name | toLower }}
+            mountPath: {{ $volume.Target }}
+{{- end}}
 {{- end}}
     scale:
       minReplicas: 1

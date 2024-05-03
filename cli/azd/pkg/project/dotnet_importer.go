@@ -246,6 +246,34 @@ func (ai *DotNetImporter) Services(
 
 		services[svc.Name] = svc
 	}
+
+	containers := apphost.Containers(manifest)
+	for name, container := range containers {
+		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
+		svc := &ServiceConfig{
+			RelativePath: svcConfig.RelativePath,
+			Language:     ServiceLanguageDotNet,
+			Host:         DotNetContainerAppTarget,
+		}
+
+		svc.Name = name
+		svc.Project = p
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
+
+		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.DotNetContainerApp = &DotNetContainerAppOptions{
+			ContainerImage: container.Image,
+			Manifest:       manifest,
+			ProjectName:    name,
+			AppHostPath:    svcConfig.Path(),
+		}
+
+		services[svc.Name] = svc
+	}
 	return services, nil
 }
 
@@ -339,6 +367,12 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	}
 
 	for name := range apphost.Dockerfiles(manifest) {
+		if err := writeManifestForResource(name); err != nil {
+			return nil, err
+		}
+	}
+
+	for name := range apphost.Containers(manifest) {
 		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}

@@ -37,7 +37,6 @@ module resources 'resources.bicep' = {
     location: location
     tags: tags
     principalId: principalId
-    mysqlabstract_password: mysqlabstract_password
   }
 }
 

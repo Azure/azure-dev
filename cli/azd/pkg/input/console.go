@@ -214,7 +214,7 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
 		}
 		fmt.Fprintln(c.writer, string(jsonMessage))
-	} else if c.formatter == nil || c.formatter.Kind() == output.NoneFormat {
+	} else if c.formatter != nil {
 		c.println(ctx, message)
 	} else {
 		log.Println(message)

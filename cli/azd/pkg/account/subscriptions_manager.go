@@ -33,6 +33,7 @@ type principalInfoProvider interface {
 	ClaimsForCurrentUser(ctx context.Context, options *auth.ClaimsForCurrentUserOptions) (auth.TokenClaims, error)
 }
 
+// Typically subscriptionsCache
 type subCache interface {
 	Load(ctx context.Context, key string) ([]Subscription, error)
 	Save(ctx context.Context, key string, save []Subscription) error

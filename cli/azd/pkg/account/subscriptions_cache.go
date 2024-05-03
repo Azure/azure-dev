@@ -17,33 +17,33 @@ import (
 // The file name of the cache used for storing subscriptions accessible by local accounts.
 const cSubscriptionsCacheFile = "subscriptions.cache"
 
-// SubscriptionsCache caches the list of subscriptions accessible by local accounts.
+// subscriptionsCache caches the list of subscriptions accessible by local accounts.
 //
 // The cache is backed by an in-memory copy, then by local file system storage.
 // The cache key should be chosen to be unique to the user, such as the user's object ID.
 //
 // To clear all entries in the cache, call Clear().
-type SubscriptionsCache struct {
+type subscriptionsCache struct {
 	cacheDir string
 
 	inMemoryCopy map[string][]Subscription
 	inMemoryLock sync.RWMutex
 }
 
-func newSubCache() (*SubscriptionsCache, error) {
+func newSubCache() (*subscriptionsCache, error) {
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("loading stored user subscriptions: %w", err)
 	}
 
-	return &SubscriptionsCache{
+	return &subscriptionsCache{
 		cacheDir:     configDir,
 		inMemoryCopy: map[string][]Subscription{},
 	}, nil
 }
 
 // Load loads the subscriptions from cache with the key. Returns any error reading the cache.
-func (s *SubscriptionsCache) Load(ctx context.Context, key string) ([]Subscription, error) {
+func (s *subscriptionsCache) Load(ctx context.Context, key string) ([]Subscription, error) {
 	// check in-memory cache
 	s.inMemoryLock.RLock()
 	if res, ok := s.inMemoryCopy[key]; ok {
@@ -77,7 +77,7 @@ func (s *SubscriptionsCache) Load(ctx context.Context, key string) ([]Subscripti
 }
 
 // Save saves the subscriptions to cache with the specified key.
-func (s *SubscriptionsCache) Save(ctx context.Context, key string, subscriptions []Subscription) error {
+func (s *subscriptionsCache) Save(ctx context.Context, key string, subscriptions []Subscription) error {
 	s.inMemoryLock.Lock()
 	defer s.inMemoryLock.Unlock()
 
@@ -115,7 +115,7 @@ func (s *SubscriptionsCache) Save(ctx context.Context, key string, subscriptions
 }
 
 // Clear removes all stored cache items. Returns an error if a filesystem error other than ErrNotExist occurred.
-func (s *SubscriptionsCache) Clear(ctx context.Context) error {
+func (s *subscriptionsCache) Clear(ctx context.Context) error {
 	s.inMemoryLock.Lock()
 	defer s.inMemoryLock.Unlock()
 

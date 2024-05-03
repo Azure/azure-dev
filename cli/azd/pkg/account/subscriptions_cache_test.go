@@ -10,7 +10,7 @@ import (
 
 func TestSubscriptionsCache(t *testing.T) {
 	dir := t.TempDir()
-	s := &SubscriptionsCache{
+	s := &subscriptionsCache{
 		cacheDir:     dir,
 		inMemoryCopy: map[string][]Subscription{},
 	}

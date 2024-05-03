@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -204,10 +206,17 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			locationDisplay = location.DisplayName
 		}
 
+		var subscriptionDisplay string
+		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+			subscriptionDisplay = subscription.Name
+		} else {
+			subscriptionDisplay = fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id)
+		}
+
 		p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
-			Subscription: fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id),
-			Location:     locationDisplay},
-		)
+			Subscription: subscriptionDisplay,
+			Location:     locationDisplay,
+		})
 
 	} else {
 		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)

@@ -40,10 +40,11 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			azCli,
 			cloud.AzurePublic().PortalUrlBase,
 		).(*DefaultPrompter)
-		subList, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
+		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 
 		require.Nil(t, err)
 		require.EqualValues(t, 1, len(subList))
+		require.EqualValues(t, 1, len(subs))
 		require.EqualValues(t, nil, result)
 	})
 
@@ -82,10 +83,11 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			azCli,
 			cloud.AzurePublic().PortalUrlBase,
 		).(*DefaultPrompter)
-		subList, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
+		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 
 		require.Nil(t, err)
 		require.EqualValues(t, 2, len(subList))
+		require.EqualValues(t, 2, len(subs))
 		require.NotNil(t, result)
 		defSub, ok := result.(string)
 		require.True(t, ok)

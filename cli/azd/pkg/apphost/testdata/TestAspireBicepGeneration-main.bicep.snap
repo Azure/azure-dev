@@ -86,7 +86,9 @@ module test 'test/test.bicep' = {
   scope: rg
   params: {
     location: location
+    host: 'frontend.internal.${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
     test: parameter
+    url: 'http://frontend.internal.${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
     values: ['one','two']
   }
 }

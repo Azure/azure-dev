@@ -73,9 +73,10 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"b",
 		"",
 		"The template branch to initialize from. Must be used with a template argument (--template or -t).")
-	local.StringSliceVar(
+	local.StringSliceVarP(
 		&i.templateTags,
-		"tags",
+		"filter",
+		"f",
 		[]string{},
 		"The tag(s) used to filter template results. Supports comma-separated values.",
 	)

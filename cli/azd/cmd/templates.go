@@ -62,8 +62,8 @@ func newTemplateListFlags(cmd *cobra.Command) *templateListFlags {
 
 	cmd.Flags().StringSliceVarP(
 		&flags.tags,
-		"tags",
-		"t",
+		"filter",
+		"f",
 		[]string{},
 		"The tag(s) used to filter template results. Supports comma-separated values.",
 	)

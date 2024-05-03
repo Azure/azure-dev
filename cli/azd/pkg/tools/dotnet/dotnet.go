@@ -13,10 +13,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/blang/semver/v4"
 )
 
@@ -226,7 +226,7 @@ func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 
 	// if empty string or there's no config output
 	if result == "" || obj["config"] == nil {
-		return 0, &azcli.ErrorWithSuggestion{
+		return 0, &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf("empty dotnet configuration output"),
 			Suggestion: fmt.Sprintf("Ensure project '%s' is enabled for container support and try again. To enable SDK "+
 				"container support, set the 'EnableSdkContainerSupport' property to true in your project file",

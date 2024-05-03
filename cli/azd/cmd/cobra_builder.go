@@ -1,24 +1,18 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 )
 
@@ -122,21 +116,6 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 			return err
 		}
 
-		actionName := createActionName(cmd)
-		var action actions.Action
-		if err := cmdContainer.ResolveNamed(actionName, &action); err != nil {
-			if errors.Is(err, ioc.ErrResolveInstance) {
-				return fmt.Errorf(
-					//nolint:lll
-					"failed resolving action '%s'. Ensure the ActionResolver is a valid go function that returns an `actions.Action` interface, %w",
-					actionName,
-					err,
-				)
-			}
-
-			return err
-		}
-
 		runOptions := &middleware.Options{
 			Name:        cmd.Name(),
 			CommandPath: cmd.CommandPath(),
@@ -147,64 +126,13 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// Set the container that should be used for resolving middleware components
 		runOptions.WithContainer(cmdContainer)
+
 		// Run the middleware chain with action
-		actionResult, err := middlewareRunner.RunAction(ctx, runOptions, action)
+		actionName := createActionName(cmd)
+		_, err = middlewareRunner.RunAction(ctx, runOptions, actionName)
 
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
-
-		// TODO: Consider refactoring to move the UX writing to a middleware
-		invokeErr := cmdContainer.Invoke(func(console input.Console) {
-			var displayResult *ux.ActionResult
-			if actionResult != nil && actionResult.Message != nil {
-				displayResult = &ux.ActionResult{
-					SuccessMessage: actionResult.Message.Header,
-					FollowUp:       actionResult.Message.FollowUp,
-				}
-			} else if err != nil {
-				displayResult = &ux.ActionResult{
-					Err: err,
-				}
-			}
-
-			if displayResult != nil {
-				console.MessageUxItem(ctx, displayResult)
-			}
-
-			if err != nil {
-				var respErr *azcore.ResponseError
-				var azureErr *azapi.AzureDeploymentError
-				var toolExitErr *exec.ExitError
-				var suggestionErr *azcli.ErrorWithSuggestion
-
-				// We only want to show trace ID for server-related errors,
-				// where we have full server logs to troubleshoot from.
-				//
-				// For client errors, we don't want to show the trace ID, as it is not useful to the user currently.
-				if errors.As(err, &respErr) ||
-					errors.As(err, &azureErr) ||
-					(errors.As(err, &toolExitErr) && toolExitErr.Cmd == "terraform") {
-					if actionResult != nil && actionResult.TraceID != "" {
-						console.Message(
-							ctx,
-							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
-					}
-				}
-
-				if errors.As(err, &suggestionErr) {
-					console.Message(
-						ctx,
-						suggestionErr.Suggestion)
-				}
-			}
-
-			// Stop the spinner always to un-hide cursor
-			console.StopSpinner(ctx, "", input.Step)
-		})
-
-		if invokeErr != nil {
-			return invokeErr
-		}
 
 		return err
 	}

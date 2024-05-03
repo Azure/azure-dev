@@ -514,9 +514,8 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	cli.WorkingDirectory = dir
 
 	tests := []struct {
-		command       string
-		args          []string
-		errorToStdOut bool
+		command string
+		args    []string
 	}{
 		{command: "provision"},
 		{command: "deploy"},
@@ -546,11 +545,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			if test.errorToStdOut {
-				assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
-			} else {
-				assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
-			}
+			assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
 		})
 	}
 }

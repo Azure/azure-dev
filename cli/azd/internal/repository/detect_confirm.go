@@ -173,7 +173,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		d.console.Message(ctx, "")
 
 		if len(recommendedServices) == 0 {
-			recommendedServices = append(recommendedServices, "Azure Container Apps")
+			recommendedServices = append(recommendedServices, "Azure Kubernetes Service")
 		}
 	}
 

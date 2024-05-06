@@ -56,7 +56,6 @@ module {{bicepParameterName $name}} '{{ fixBackSlash $module.Path }}' = {
   name: '{{$name}}'
   scope: rg
   params: {
-    location: location
 {{- range $param, $value := $module.Params}}
     {{$param}}: {{$value}}
 {{- end}}

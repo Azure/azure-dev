@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[3718]](https://github.com/Azure/azure-dev/pull/3718) Deploy AI/ML studio online endpoints with host `ml.endpoint`
+- [[3718]](https://github.com/Azure/azure-dev/pull/3718) Deploy AI/ML studio online endpoints with host `ml.endpoint`. Starter templates `azd-ai-starter` and `azd-aistudio-starter` are available to get started with ease.
 - [[3840]](https://github.com/Azure/azure-dev/pull/3840) Filter templates when running `azd init` or `azd template list` with `--filter`
 - .NET Aspire:
   - [[3267]](https://github.com/Azure/azure-dev/pull/3267) Support services with multiple exposed ports

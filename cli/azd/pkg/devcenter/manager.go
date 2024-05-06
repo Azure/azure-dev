@@ -3,6 +3,7 @@ package devcenter
 import (
 	"context"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"sync"
@@ -273,23 +274,55 @@ func (m *manager) LatestArmDeployment(
 		tagEnvTypeName, envTypeOk := d.Tags[DeploymentTagEnvironmentType]
 		tagEnvName, envOk := d.Tags[DeploymentTagEnvironmentName]
 
+		log.Printf("considering deployment %v", *d.Name)
+
+		if devCenterOk {
+			log.Printf("dev center name tag: %v", *tagDevCenterName)
+			log.Printf("config dev center name: %v", config.Name)
+		}
+
+		if projectOk {
+			log.Printf("project name tag: %v", *tagProjectName)
+			log.Printf("config project name: %v", config.Project)
+		}
+
+		if envTypeOk {
+			log.Printf("env type tag: %v", *tagEnvTypeName)
+			log.Printf("config env type: %v", config.EnvironmentType)
+		}
+
+		if envOk {
+			log.Printf("env name tag: %v", *tagEnvName)
+			log.Printf("config env name: %v", env.Name)
+		}
+
 		// ARM runner deployments contain the deployment tags for the specific environment
 		isArmDeployment := devCenterOk && strings.EqualFold(*tagDevCenterName, config.Name) &&
 			projectOk && strings.EqualFold(*tagProjectName, config.Project) &&
 			envTypeOk && strings.EqualFold(*tagEnvTypeName, config.EnvironmentType) &&
 			envOk && strings.EqualFold(*tagEnvName, env.Name)
 
+		log.Printf("is ARM deployment: %v", isArmDeployment)
+
 		// Support for untagged Bicep ADE deployments
 		// If the deployment is not tagged but starts with the current date and is running
 		// this is another indication that this is the latest running Bicep deployment
 		isBicepDeployment := !isArmDeployment && bicepDeploymentNameRegex.MatchString(*d.Name)
 
+		log.Printf("is Bicep deployment: %v", isBicepDeployment)
+
 		if isArmDeployment || isBicepDeployment {
 			if filter == nil {
-				return true
+				filter = func(d *armresources.DeploymentExtended) bool { return true }
 			}
 
-			return filter(d)
+			if filter(d) {
+				log.Printf("deployment %v matches filter", *d.Name)
+				return true
+			} else {
+				log.Printf("deployment %v does not match filter", *d.Name)
+				return false
+			}
 		}
 
 		return false

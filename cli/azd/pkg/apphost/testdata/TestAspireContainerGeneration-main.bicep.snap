@@ -68,12 +68,6 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-    my_sql_abstract_pas_sw_ord: my_sql_abstract_pas_sw_ord
-    my_sql_abstract_password: my_sql_abstract_password
-    mysqlabstract_pas_sw_ord: mysqlabstract_pas_sw_ord
-    mysqlabstract_password: mysqlabstract_password
-    noVolume_pas_sw_ord: noVolume_pas_sw_ord
-    noVolume_password: noVolume_password
   }
 }
 
@@ -82,4 +76,6 @@ output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+output SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME string = resources.outputs.SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME
+output SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME string = resources.outputs.SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME
 

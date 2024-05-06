@@ -191,6 +191,7 @@ func ContainerAppManifestTemplateForProject(
 
 	tmplCtx := generator.containerAppTemplateContexts[projectName]
 	tmplCtx.AutoConfigureDataProtection = options.AutoConfigureDataProtection
+	tmplCtx.ManifestHash = manifest.Hash
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {
@@ -237,6 +238,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
+		ManifestHash           string
 		WithMetadataParameters []autoGenInput
 		MainToResourcesParams  []genInput
 	}
@@ -267,6 +269,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		}
 	}
 	context := bicepContext{
+		ManifestHash:            manifest.Hash,
 		genBicepTemplateContext: generator.bicepContext,
 		WithMetadataParameters:  parameters,
 		MainToResourcesParams:   mapToResourceParams,

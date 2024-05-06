@@ -145,6 +145,7 @@ type genBicepTemplateContext struct {
 }
 
 type genContainerAppManifestTemplateContext struct {
+	ManifestHash                string
 	Name                        string
 	Ingress                     *genContainerAppIngress
 	Env                         map[string]string

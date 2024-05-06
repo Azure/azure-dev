@@ -96,6 +96,7 @@ type ServiceDeployResult struct {
 	TargetResourceId string            `json:"targetResourceId"`
 	Kind             ServiceTargetKind `json:"kind"`
 	Endpoints        []string          `json:"endpoints"`
+	Warnings         []string          `json:"warnings"`
 	Details          interface{}       `json:"details"`
 }
 
@@ -114,6 +115,10 @@ func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
 		for _, endpoint := range spr.Endpoints {
 			builder.WriteString(fmt.Sprintf("%s- Endpoint: %s\n", currentIndentation, output.WithLinkFormat(endpoint)))
 		}
+	}
+
+	for _, warning := range spr.Warnings {
+		builder.WriteString(fmt.Sprintf("%s- %s: %s\n", currentIndentation, output.WithWarningFormat("Warning"), warning))
 	}
 
 	return builder.String()

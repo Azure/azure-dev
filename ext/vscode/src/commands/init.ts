@@ -54,8 +54,10 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
         .withArg('init');
 
     if (useExistingSource) {
+        context.telemetry.properties.useExistingSource = 'true';
         command.withArg('--from-code');
     } else {
+        // Telemetry property is set inside selectApplicationTemplate
         command.withNamedArg('-t', {value: templateUrl!, quoting: vscode.ShellQuoting.Strong});
     }
 

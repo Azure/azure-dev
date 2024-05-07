@@ -10,28 +10,28 @@ properties:
     activeRevisionsMode: single
     ingress:
       external: false
-      targetPort: {{ .TargetPort }}
+      targetPort: {{ targetPortOrDefault 8080 }}
       transport: http
       allowInsecure: true
     registries:
-    - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
-      identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+      - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+        identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
     secrets:
       - name: connectionstrings--db
         value: '{{ connectionString "db" }}'
   template:
     containers:
-    - image: {{ .Image }}
-      name: api
-      env:
-      - name: AZURE_CLIENT_ID
-        value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
-      - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
-        value: "true"
-      - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
-        value: "true"
-      - name: ConnectionStrings__db
-        secretRef: connectionstrings--db
+      - image: {{ .Image }}
+        name: api
+        env:
+          - name: AZURE_CLIENT_ID
+            value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
+          - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
+            value: "true"
+          - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
+            value: "true"
+          - name: ConnectionStrings__db
+            secretRef: connectionstrings--db
     scale:
       minReplicas: 1
 tags:

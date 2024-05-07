@@ -170,7 +170,7 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 			return nil, err
 		}
 
-		if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
+		if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 			return nil, fmt.Errorf("saving default environment: %w", err)
 		}
 	}
@@ -256,7 +256,7 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 			if err != nil {
 				return nil, false, err
 			}
-			if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
+			if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 				return nil, false, fmt.Errorf("saving default environment: %w", err)
 			}
 
@@ -415,7 +415,7 @@ func (m *manager) Delete(ctx context.Context, name string) error {
 	}
 
 	if defaultEnvName == name {
-		err = m.azdContext.SetDefaultEnvironmentName("")
+		err = m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: ""})
 		if err != nil {
 			return fmt.Errorf("clearing default environment: %w", err)
 		}

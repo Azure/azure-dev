@@ -32,9 +32,9 @@ func newAspireService(server *Server) *aspireService {
 // GetAspireHostAsync is the server implementation of:
 // ValueTask<AspireHost> GetAspireHostAsync(Session session, string aspireEnv, CancellationToken cancellationToken).
 func (s *aspireService) GetAspireHostAsync(
-	ctx context.Context, sessionId Session, aspireEnv string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, aspireEnv string, observer IObserver[ProgressMessage],
 ) (*AspireHost, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -119,9 +119,9 @@ func (s *aspireService) GetAspireHostAsync(
 // RenameAspireHostAsync is the server implementation of:
 // ValueTask RenameAspireHostAsync(Session session, string newPath, CancellationToken cancellationToken).
 func (s *aspireService) RenameAspireHostAsync(
-	ctx context.Context, sessionId Session, newPath string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, newPath string, observer IObserver[ProgressMessage],
 ) error {
-	_, err := s.server.validateSession(ctx, sessionId)
+	_, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return err
 	}

@@ -112,7 +112,7 @@ func Test_CLI_Env_Management(t *testing.T) {
 
 	// Verify creating an environment when no default environment is set
 	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
-	err = azdCtx.SetDefaultEnvironmentName("")
+	err = azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: ""})
 	require.NoError(t, err)
 
 	// Here we choose 'monitor' as the command that requires an environment to target
@@ -128,7 +128,7 @@ func Test_CLI_Env_Management(t *testing.T) {
 	requireIsDefault(t, environmentList, envName3)
 
 	// Verify selecting an environment when no default environment is set
-	err = azdCtx.SetDefaultEnvironmentName("")
+	err = azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: ""})
 	require.NoError(t, err)
 
 	_, _ = cli.RunCommandWithStdIn(

@@ -71,13 +71,14 @@ var (
 	fmtChecksum string
 
 	// bridge provides access to the OneAuth API
-	bridge       *windows.DLL
-	authenticate *windows.Proc
-	freeAR       *windows.Proc
-	freeError    *windows.Proc
-	logout       *windows.Proc
-	shutdown     *windows.Proc
-	startup      *windows.Proc
+	bridge         *windows.DLL
+	authenticate   *windows.Proc
+	freeAR         *windows.Proc
+	freeError      *windows.Proc
+	logout         *windows.Proc
+	shutdown       *windows.Proc
+	signInSilently *windows.Proc
+	startup        *windows.Proc
 )
 
 func Shutdown() {
@@ -130,6 +131,25 @@ func Logout(clientID string) error {
 		logout.Call()
 	}
 	return err
+}
+
+// LogInSilently attempts to log in the active Windows user and return that user's account ID. It never displays UI.
+func LogInSilently(clientID string) (string, error) {
+	err := start(clientID)
+	if err != nil {
+		return "", err
+	}
+	p, _, _ := signInSilently.Call()
+	if p == 0 {
+		return "", fmt.Errorf("silent login failed")
+	}
+	defer freeAR.Call(p)
+	wrapped := (*C.WrappedAuthResult)(unsafe.Pointer(p))
+	if wrapped.errorDescription != nil {
+		return "", fmt.Errorf(C.GoString(wrapped.errorDescription))
+	}
+	accountID := C.GoString(wrapped.accountID)
+	return accountID, err
 }
 
 func start(clientID string) error {
@@ -244,6 +264,9 @@ func loadDLL() error {
 	}
 	if err == nil {
 		shutdown, err = bridge.FindProc("Shutdown")
+	}
+	if err == nil {
+		signInSilently, err = bridge.FindProc("SignInSilently")
 	}
 	if err == nil {
 		startup, err = bridge.FindProc("Startup")

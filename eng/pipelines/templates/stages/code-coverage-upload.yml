@@ -1,3 +1,10 @@
+parameters:
+  - name: DownloadArtifacts
+    type: object
+    default:
+      - cover-win
+      - cover-lin
+      - cover-mac
 stages: 
 - stage: CodeCoverage_Upload
   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
@@ -17,10 +24,8 @@ stages:
       - template: /eng/pipelines/templates/steps/setup-go.yml
       - template: /eng/pipelines/templates/steps/download-artifacts.yml
         parameters:
-          Artifacts:
-          - cover-win
-          - cover-lin
-          - cover-mac
+          Artifacts: ${{ parameters.DownloadArtifacts }}
+
       - pwsh: |
           New-Item -ItemType Directory -Force -Path cover
           New-Item -ItemType Directory -Force -Path cover-int

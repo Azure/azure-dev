@@ -708,6 +708,10 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 	}
 
 	surveyOptions := make([]string, len(options.Options))
+	surveyDefault := options.DefaultValue
+	surveyDefaultAsString, surveyDefaultIsString := surveyDefault.(string)
+
+	// Modify the options and default value to include any details
 	for i, option := range options.Options {
 		surveyOptions[i] = option
 
@@ -718,13 +722,17 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 			} else {
 				surveyOptions[i] += "\n"
 			}
+
+			if surveyDefaultIsString && surveyDefaultAsString == option {
+				surveyDefault = surveyOptions[i]
+			}
 		}
 	}
 
 	survey := &survey.Select{
 		Message: options.Message,
 		Options: surveyOptions,
-		Default: options.DefaultValue,
+		Default: surveyDefault,
 		Help:    options.Help,
 	}
 
@@ -773,6 +781,9 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 	}
 
 	surveyOptions := make([]string, len(options.Options))
+	surveyDefault := options.DefaultValue
+	surveyDefaultAsArr, surveyDefaultIsArr := surveyDefault.([]string)
+	// Modify the options and default value to include any details
 	for i, option := range options.Options {
 		surveyOptions[i] = option
 
@@ -780,12 +791,20 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 			detailString := output.WithGrayFormat("%s", options.OptionDetails[i])
 			surveyOptions[i] += fmt.Sprintf("\n  %s\n", detailString)
 		}
+
+		if surveyDefaultIsArr {
+			for idx, defaultOption := range surveyDefaultAsArr {
+				if defaultOption == option {
+					surveyDefaultAsArr[idx] = surveyOptions[i]
+				}
+			}
+		}
 	}
 
 	survey := &survey.MultiSelect{
 		Message: options.Message,
 		Options: surveyOptions,
-		Default: options.DefaultValue,
+		Default: surveyDefault,
 		Help:    options.Help,
 	}
 

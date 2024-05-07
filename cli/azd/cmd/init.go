@@ -371,7 +371,7 @@ func (i *initAction) initializeEnv(
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
+	if err := azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 

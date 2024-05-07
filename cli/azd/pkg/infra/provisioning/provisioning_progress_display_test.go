@@ -76,7 +76,7 @@ func (mock *mockResourceManager) AddInProgressOperation() {
 }
 
 func (mock *mockResourceManager) MarkComplete(i int) {
-	mock.operations[i].Properties.ProvisioningState = to.Ptr(succeededProvisioningState)
+	mock.operations[i].Properties.ProvisioningState = to.Ptr(string(armresources.ProvisioningStateSucceeded))
 	mock.operations[i].Properties.Timestamp = to.Ptr(time.Now().UTC())
 }
 

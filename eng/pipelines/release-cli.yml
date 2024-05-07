@@ -8,6 +8,8 @@ trigger:
       - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - /eng/pipelines/templates/jobs/build-cli.yml
+      - /eng/pipelines/templates/jobs/cross-build-cli.yml
 
 pr:
   paths:
@@ -22,11 +24,81 @@ extends:
   parameters:
     stages:
     - template: /eng/pipelines/templates/stages/build-and-test.yml
+      parameters:
+        BuildMatrix:
+          Windows:
+            Pool: $(WINDOWSPOOL)
+            OSVmImage: $(WINDOWSVMIMAGE)
+            OS: windows
+            ImageKey: image
+            UploadArtifact: true
+            Variables:
+              BuildTarget: azd-windows-amd64.exe
+              BuildOutputName: azd.exe
+              BuildTestMsi: true
+              AZURE_DEV_CI_OS: win
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: cli_windows
+          Linux:
+            Pool: $(LINUXPOOL)
+            OSVmImage: $(LINUXVMIMAGE)
+            OS: linux
+            ImageKey: image
+            UploadArtifact: true
+            Variables:
+                BuildTarget: azd-linux-amd64
+                BuildOutputName: azd
+                SetExecutableBit: true
+                SetShieldInfo: true
+                BuildLinuxPackages: true
+                AZURE_DEV_CI_OS: lin
+                Codeql.Enabled: true
+                Codeql.SkipTaskAutoInjection: false
+                Codeql.BuildIdentifier: cli_linux
+          Mac:
+            Pool: Azure Pipelines
+            OSVmImage: $(MACVMIMAGE)
+            OS: macOS
+            ImageKey: vmImage
+            UploadArtifact: true
+            Variables:
+              BuildTarget: azd-darwin-amd64
+              BuildOutputName: azd
+              MacLocalSign: false
+              SetExecutableBit: true
+              AZURE_DEV_CI_OS: mac
+              # CodeQL on macOS not supported by the Azure DevOps task as-of current.
+              # Codeql.BuildIdentifier: cli_darwin
+
+          ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+            # Only run this build during scheduled pipeline executions
+            MacAppleSilicon:
+              Pool: Azure Pipelines
+              OSVmImage: $(MACVMIMAGEM1)
+              OS: macOS
+              ImageKey: vmImage
+              UploadArtifact: false
+              Variables:
+                BuildTarget: azd-darwin-amd64
+                BuildOutputName: azd
+                MacLocalSign: false
+                SetExecutableBit: true
+                AZURE_DEV_CI_OS: mac-arm64
 
     - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
-
-    - template: /eng/pipelines/templates/stages/sign.yml
+      parameters:
+        DownloadArtifacts:
+          - cover-win
+          - cover-lin
+          - cover-mac
+          - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+            - cover-mac-arm64
 
     - template: /eng/pipelines/templates/stages/verify-installers.yml
 
-    - template: /eng/pipelines/templates/stages/publish.yml
+    - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
+
+      - template: /eng/pipelines/templates/stages/sign.yml
+
+      - template: /eng/pipelines/templates/stages/publish.yml

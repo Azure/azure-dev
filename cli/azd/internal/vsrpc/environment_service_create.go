@@ -16,11 +16,11 @@ import (
 )
 
 // CreateEnvironmentAsync is the server implementation of:
-// ValueTask<bool> CreateEnvironmentAsync(Session, Environment, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<bool> CreateEnvironmentAsync(RequestContext, Environment, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) CreateEnvironmentAsync(
-	ctx context.Context, sessionId Session, newEnv Environment, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, newEnv Environment, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return false, err
 	}
@@ -60,6 +60,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 	// If an azure.yaml doesn't already exist, we need to create one. Creating an environment implies initializing the
 	// azd project if it does not already exist.
 	if _, err := os.Stat(c.azdContext.ProjectPath()); errors.Is(err, fs.ErrNotExist) {
+		_ = observer.OnNext(ctx, newImportantProgressMessage("Analyzing Aspire Application (this might take a moment...)"))
 		// Write an azure.yaml file to the project.
 		hosts, err := appdetect.DetectAspireHosts(ctx, c.azdContext.ProjectDirectory(), c.dotnetCli)
 		if err != nil {
@@ -113,23 +114,11 @@ func (s *environmentService) CreateEnvironmentAsync(
 		azdEnv.DotenvSet(key, value)
 	}
 
-	var servicesToExpose = make([]string, 0)
-
-	for _, svc := range newEnv.Services {
-		if svc.IsExternal {
-			servicesToExpose = append(servicesToExpose, svc.Name)
-		}
-	}
-
-	if err := azdEnv.Config.Set("services.app.config.exposedServices", servicesToExpose); err != nil {
-		return false, fmt.Errorf("setting exposed services: %w", err)
-	}
-
 	if err := c.envManager.Save(ctx, azdEnv); err != nil {
 		return false, fmt.Errorf("saving new environment: %w", err)
 	}
 
-	if err := c.azdContext.SetDefaultEnvironmentName(newEnv.Name); err != nil {
+	if err := c.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: newEnv.Name}); err != nil {
 		return false, fmt.Errorf("saving default environment: %w", err)
 	}
 

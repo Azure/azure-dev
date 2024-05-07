@@ -93,7 +93,8 @@
                             "function",
                             "springapp",
                             "staticwebapp",
-                            "aks"
+                            "aks",
+                            "ai.endpoint"
                         ]
                     },
                     "language": {
@@ -124,6 +125,10 @@
                     },
                     "k8s": {
                         "$ref": "#/definitions/aksOptions"
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": true
                     },
                     "hooks": {
                         "type": "object",
@@ -224,7 +229,8 @@
                                     "host": {
                                         "enum": [
                                             "containerapp",
-                                            "aks"
+                                            "aks",
+                                            "ai.endpoint"
                                         ]
                                     }
                                 }
@@ -237,6 +243,27 @@
                             ],
                             "properties": {
                                 "docker": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "host": {
+                                    "const": "ai.endpoint"
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": [
+                                "config"
+                            ],
+                            "properties": {
+                                "config": {
+                                    "$ref": "#/definitions/aiEndpointConfig",
+                                    "title": "The Azure AI endpoint configuration.",
+                                    "description": "Required. Provides additional configuration for Azure AI online endpoint deployment."
+                                }
                             }
                         }
                     },
@@ -905,6 +932,84 @@
                         }
                     }
                 }
+            ]
+        },
+        "aiComponentConfig": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "title": "Name of the AI component.",
+                    "description": "Optional. When omitted AZD will generate a name based on the component type and the service name. Supports environment variable substitution."
+                },
+                "path": {
+                    "type": "string",
+                    "title": "Path to the AI component configuration file or path.",
+                    "description": "Required. The path to the AI component configuration file or path to the AI component source code."
+                },
+                "overrides": {
+                    "type": "object",
+                    "title": "A map of key value pairs used to override the AI component configuration.",
+                    "description": "Optional. Supports environment variable substitution.",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": [
+                "path"
+            ]
+        },
+        "aiDeploymentConfig": {
+            "allOf": [
+                { "$ref": "#/definitions/aiComponentConfig" },
+                {
+                    "type": "object",
+                    "properties": {
+                        "environment": {
+                            "type": "object",
+                            "title": "A map of key/value pairs to set as environment variables for the deployment.",
+                            "description": "Optional. Values support OS & AZD environment variable substitution.",
+                            "additionalProperties":{
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "aiEndpointConfig": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "workspace": {
+                    "type": "string",
+                    "title": "The name of the AI Studio project workspace.",
+                    "description": "Optional. When omitted AZD will use the value specified in the 'AZUREAI_PROJECT_NAME' environment variable. Supports environment variable substitution."
+                },
+                "flow": {
+                    "$ref": "#/definitions/aiComponentConfig",
+                    "title": "The Azure AI Studio Prompt Flow configuration.",
+                    "description": "Optional. When omitted a prompt flow will be not created."
+                },
+                "environment": {
+                    "$ref": "#/definitions/aiComponentConfig",
+                    "title": "The Azure AI Studio custom environment configuration.",
+                    "description": "Optional. When omitted a custom environment will not be created."
+                },
+                "model": {
+                    "$ref": "#/definitions/aiComponentConfig",
+                    "title": "The Azure AI Studio model configuration.",
+                    "description": "Optional. When omitted a model will not be created."
+                },
+                "deployment": {
+                    "$ref": "#/definitions/aiDeploymentConfig",
+                    "title": "The Azure AI Studio online endpoint deployment configuration.",
+                    "description": "Required. A new online endpoint deployment will be created and traffic will automatically to shifted to the new deployment upon successful completion."
+                }
+            },
+            "required": [
+                "deployment"
             ]
         }
     }

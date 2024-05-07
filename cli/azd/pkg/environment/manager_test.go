@@ -362,6 +362,10 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() httputil.UserAgent {
 		return httputil.UserAgent(internal.UserAgent())
 	})
+	mockContext.Container.MustRegisterSingleton(func() auth.MultiTenantCredentialProvider {
+		return mockContext.MultiTenantCredentialProvider
+	})
+
 	mockContext.Container.MustRegisterSingleton(NewManager)
 	mockContext.Container.MustRegisterSingleton(NewLocalFileDataStore)
 	mockContext.Container.MustRegisterNamedSingleton(string(RemoteKindAzureBlobStorage), NewStorageBlobDataStore)

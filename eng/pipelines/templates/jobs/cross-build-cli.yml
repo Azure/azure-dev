@@ -13,11 +13,6 @@ parameters:
   - name: Variables
     type: object
     default: {}
-  - name: PreBuildSteps
-    type: stepList
-    default: []
-  - name: HostArchitecture
-    type: string
 
 jobs:
   - job: CrossBuildCLI_${{ parameters.NameSuffix }}
@@ -30,7 +25,6 @@ jobs:
       name: ${{ parameters.Pool }}
       ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
       os: ${{ parameters.OS }}
-      hostArchitecture: ${{ parameters.HostArchitecture }}
 
     timeoutInMinutes: 20
 
@@ -49,8 +43,6 @@ jobs:
           targetType: filePath
           filePath: eng/scripts/Set-CliVersionVariable.ps1
         displayName: Set CLI_VERSION
-
-      - ${{ parameters.PreBuildSteps }}
 
       - task: PowerShell@2
         inputs:
@@ -92,7 +84,7 @@ jobs:
         - output: pipelineArtifact
           path: $(Build.ArtifactStagingDirectory)/build-output
           artifact: $(BuildTarget)
-          condition: always()
+          condition: succeeded()
           displayName: Upload azd binary to artifact store
 
         - output: pipelineArtifact

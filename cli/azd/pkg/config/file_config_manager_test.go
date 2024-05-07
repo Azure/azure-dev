@@ -97,6 +97,11 @@ func Test_FileConfigManager_GetSetSecrets(t *testing.T) {
 	missingPassword, ok := updatedConfig.GetString("secrets.misingVaultRef")
 	require.False(t, ok)
 	require.Empty(t, missingPassword)
+
+	require.NotEqual(t, updatedConfig.Raw(), updatedConfig.ResolvedRaw())
+	require.Equal(t, azdConfig.Raw(), updatedConfig.Raw())
+	require.Equal(t, azdConfig.ResolvedRaw(), updatedConfig.ResolvedRaw())
+
 }
 
 func Test_FileConfigManager_GetSetSecretsInSection(t *testing.T) {

@@ -37,8 +37,8 @@ module cosmos 'cosmos/cosmos.module.bicep' = {
   name: 'cosmos'
   scope: rg
   params: {
-    location: location
     keyVaultName: resources.outputs.SERVICE_BINDING_KVF2EDECB5_NAME
+    location: location
   }
 }
 module storage 'storage/storage.module.bicep' = {

@@ -719,6 +719,10 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 	if _, keyVaultInjected := autoInjectedParams[knownParameterKeyVault]; keyVaultInjected {
 		b.addKeyVault("kv"+uniqueFnvNumber(name), true, true)
 	}
+	if _, hasLocation := stringParams["location"]; !hasLocation {
+		// if location is not provided, add it as a link to location parameter
+		stringParams["location"] = "location"
+	}
 
 	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams}
 	return nil

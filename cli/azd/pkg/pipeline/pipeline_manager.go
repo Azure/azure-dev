@@ -366,8 +366,11 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	// the secrets would be resolved during save XD.
 	// This is a patch for pipeline config to do secrets-resolving outside of the environment.
 	for _, path := range configPaths {
+		// get will always return true (no need to check) because the path was gotten from the raw config
 		value, _ := pm.env.Config.Get(path)
-		resolvedConfig.Set(path, value)
+		if err := resolvedConfig.Set(path, value); err != nil {
+			return result, fmt.Errorf("failed setting initial azd config for CI: %w", err)
+		}
 	}
 	localEnvConfig, err := json.Marshal(resolvedConfig.Raw())
 	if err != nil {

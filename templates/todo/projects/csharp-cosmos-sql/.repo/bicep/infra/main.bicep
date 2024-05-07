@@ -252,7 +252,7 @@ module apim 'br/public:avm/res/api-management/service:0.1.6' = if (useAPIM) {
 }
 
 // Configures the API in the Azure API Management (APIM) service
-module apimsettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep.bicep' = if (useAPIM) {
+module apimsettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
   name: 'apim-api-settings'
   scope: rg
   params: {

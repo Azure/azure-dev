@@ -66,8 +66,8 @@ module web 'br/public:avm/res/web/site:0.3.4' = {
 
 // The application backend
 module api 'br/public:avm/res/web/site:0.3.4' = {
-  scope: rg
   name: 'api'
+  scope: rg
   params: {
     kind: 'app'
     name: !empty(apiServiceName) ? apiServiceName : '${abbrs.webSitesAppService}api-${resourceToken}'
@@ -253,8 +253,8 @@ module apim 'br/public:avm/res/api-management/service:0.1.6' = if (useAPIM) {
 
 // Configures the API in the Azure API Management (APIM) service
 module apimsettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep.bicep' = if (useAPIM) {
-  scope: rg
   name: 'apim-api-settings'
+  scope: rg
   params: {
     apiAppName: api.outputs.name
     apiName: 'todo-api'

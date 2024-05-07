@@ -18,6 +18,7 @@
 		<PackageReference Include="Aspire.Hosting.Azure" Version="$(AspireVersion)" />
 		<PackageReference Include="Aspire.Hosting.Azure.Redis" Version="$(AspireVersion)" />
 		<PackageReference Include="Aspire.Hosting.Azure.Storage" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.Azure.CosmosDB" Version="$(AspireVersion)" />
 	</ItemGroup>
 
 </Project>

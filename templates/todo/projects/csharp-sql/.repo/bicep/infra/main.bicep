@@ -191,7 +191,7 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.1.0' = {
     sku: {
       capacity: 1
       family: 'B'
-      name: 'B1'
+      name: 'B3'
       size: 'B1'
       tier: 'Basic'
     }

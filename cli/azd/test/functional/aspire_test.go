@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -43,7 +44,23 @@ func restoreDotnetWorkload(t *testing.T) {
 
 		wr := logWriter{initialTime: time.Now(), t: t, prefix: "restore: "}
 		commandRunner := exec.NewCommandRunner(nil)
-		runArgs := newRunArgs("dotnet", "workload", "restore", "--skip-sign-check").WithCwd(appHostProject).WithStdOut(&wr)
+		cmd := "dotnet"
+		args := []string{"workload", "restore", "--skip-sign-check"}
+
+		// On platforms where the system requires `sudo` to install workloads (e.g. macOS and Linux when using system wide
+		// installations), you can configure sudo to allow passwordless execution of the `dotnet` command by adding something
+		// like the following to /etc/sudoers:
+		//
+		// matell ALL=(ALL) NOPASSWD: /usr/local/share/dotnet/dotnet
+		//
+		// and then set AZD_TEST_DOTNET_WORKLOAD_USE_SUDO=1 when running the tests, and we'll run `dotnet workload restore`
+		// via sudo.
+		if v, err := strconv.ParseBool(os.Getenv("AZD_TEST_DOTNET_WORKLOAD_USE_SUDO")); err == nil && v {
+			args = append([]string{cmd}, args...)
+			cmd = "sudo"
+		}
+
+		runArgs := newRunArgs(cmd, args...).WithCwd(appHostProject).WithStdOut(&wr)
 		_, err = commandRunner.Run(ctx, runArgs)
 		require.NoError(t, err)
 	})
@@ -193,13 +210,10 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		bicepCli, err := bicep.NewBicepCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
 		require.NoError(t, err)
 
-		// Validate bicep builds without errors or lint errors
-		res, err := bicepCli.Build(ctx, filepath.Join(dir, "infra", "main.bicep"))
+		// Validate bicep builds without errors
+		// cdk lint errors are expected
+		_, err = bicepCli.Build(ctx, filepath.Join(dir, "infra", "main.bicep"))
 		require.NoError(t, err)
-		lintErr := lintErr(
-			res,
-			[]string{"Warning no-unused-params: Parameter \"inputs\" is declared but never used."})
-		require.Len(t, lintErr, 0, "lint errors occurred")
 
 		// Snapshot everything under infra and manifests
 		err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -387,16 +401,4 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 		}
 	}
 	return len(bytes), nil
-}
-
-func lintErr(buildRes bicep.BuildResult, exclude []string) []string {
-	var ret []string
-	for _, s := range strings.Split(buildRes.LintErr, "\n") {
-		for _, e := range exclude {
-			if len(s) > 0 && !strings.Contains(s, e) {
-				ret = append(ret, s)
-			}
-		}
-	}
-	return ret
 }

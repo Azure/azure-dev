@@ -25,6 +25,9 @@ properties:
         value: pubsub:6379
       - name: connectionstrings--requestlog
         value: '{{ .Env.STORAGE_TABLEENDPOINT }}'
+      - name: connectionstrings--cosmos
+        keyVaultUrl: '{{ .Env.SERVICE_BINDING_KVF2EDECB5_ENDPOINT }}secrets/connectionString'
+        identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
   template:
     containers:
       - image: {{ .Image }}
@@ -52,6 +55,8 @@ properties:
             secretRef: connectionstrings--pubsub
           - name: ConnectionStrings__requestlog
             secretRef: connectionstrings--requestlog
+          - name: ConnectionStrings__cosmos
+            secretRef: connectionstrings--cosmos
     scale:
       minReplicas: 1
 tags:

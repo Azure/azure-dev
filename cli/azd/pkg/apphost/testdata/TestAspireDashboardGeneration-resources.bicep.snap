@@ -1,12 +1,13 @@
 @description('The location used for all deployed resources')
 param location string = resourceGroup().location
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
 var resourceToken = uniqueString(resourceGroup().id)
-@secure()
-param mysqlabstract_password string
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'mi-${resourceToken}'
@@ -72,45 +73,13 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
     }
   }
 }
-
-resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: 'mysqlabstract'
-  location: location
+resource explicitContributorUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerAppEnvironment.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c'))
+  scope: containerAppEnvironment
   properties: {
-    environmentId: containerAppEnvironment.id
-    configuration: {
-      activeRevisionsMode: 'Single'
-      ingress: {
-        external: false
-        targetPort: 3306
-        transport: 'tcp'
-      }
-      secrets: [
-        {
-          name: 'mysql-root-password'
-          value: mysqlabstract_password
-        }
-      ]
-    }
-    template: {
-      containers: [
-        {
-          image: 'mysql:latest'
-          name: 'mysqlabstract'
-          env: [
-            {
-              name: 'MYSQL_ROOT_PASSWORD'
-              secretRef: 'mysql-root-password'
-            }
-          ]
-        }
-      ]
-      scale: {
-        minReplicas: 1
-      }
-    }
+    principalId: principalId
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
   }
-  tags: union(tags, {'aspire-resource-name': 'mysqlabstract'})
 }
 
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId

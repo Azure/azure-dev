@@ -47,25 +47,27 @@ type Manager interface {
 	// Deployment gets the Resource Group scoped deployment for the specified devcenter environment
 	Deployment(
 		ctx context.Context,
+		config *Config,
 		env *devcentersdk.Environment,
 		filter DeploymentFilterPredicate,
 	) (infra.Deployment, error)
 	// LatestArmDeployment gets the latest ARM deployment for the specified devcenter environment
 	LatestArmDeployment(
 		ctx context.Context,
+		config *Config,
 		env *devcentersdk.Environment,
 		filter DeploymentFilterPredicate,
 	) (*armresources.DeploymentExtended, error)
 	// Outputs gets the outputs for the specified devcenter environment
 	Outputs(
 		ctx context.Context,
+		config *Config,
 		env *devcentersdk.Environment,
 	) (map[string]provisioning.OutputParameter, error)
 }
 
 // Manager provides a common set of methods for interactive with a devcenter and its environments
 type manager struct {
-	config               *Config
 	client               devcentersdk.DevCenterClient
 	deploymentsService   azapi.Deployments
 	deploymentOperations azapi.DeploymentOperations
@@ -74,14 +76,12 @@ type manager struct {
 
 // NewManager creates a new devcenter manager
 func NewManager(
-	config *Config,
 	client devcentersdk.DevCenterClient,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
 	portalUrlBase string,
 ) Manager {
 	return &manager{
-		config:               config,
 		client:               client,
 		deploymentsService:   deploymentsService,
 		deploymentOperations: deploymentOperations,
@@ -213,6 +213,7 @@ func (m *manager) WritableProjects(ctx context.Context) ([]*devcentersdk.Project
 // Deployment gets the Resource Group scoped deployment for the specified devcenter environment
 func (m *manager) Deployment(
 	ctx context.Context,
+	config *Config,
 	env *devcentersdk.Environment,
 	filter DeploymentFilterPredicate,
 ) (infra.Deployment, error) {
@@ -221,7 +222,7 @@ func (m *manager) Deployment(
 		return nil, fmt.Errorf("failed parsing resource group id: %w", err)
 	}
 
-	latestDeployment, err := m.LatestArmDeployment(ctx, env, filter)
+	latestDeployment, err := m.LatestArmDeployment(ctx, config, env, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting latest deployment: %w", err)
 	}
@@ -240,6 +241,7 @@ func (m *manager) Deployment(
 // When a filter is applied the latest deployment that matches the filter will be returned
 func (m *manager) LatestArmDeployment(
 	ctx context.Context,
+	config *Config,
 	env *devcentersdk.Environment,
 	filter DeploymentFilterPredicate,
 ) (*armresources.DeploymentExtended, error) {
@@ -272,9 +274,9 @@ func (m *manager) LatestArmDeployment(
 		tagEnvName, envOk := d.Tags[DeploymentTagEnvironmentName]
 
 		// ARM runner deployments contain the deployment tags for the specific environment
-		isArmDeployment := devCenterOk && strings.EqualFold(*tagDevCenterName, m.config.Name) &&
-			projectOk && strings.EqualFold(*tagProjectName, m.config.Project) &&
-			envTypeOk && strings.EqualFold(*tagEnvTypeName, m.config.EnvironmentType) &&
+		isArmDeployment := devCenterOk && strings.EqualFold(*tagDevCenterName, config.Name) &&
+			projectOk && strings.EqualFold(*tagProjectName, config.Project) &&
+			envTypeOk && strings.EqualFold(*tagEnvTypeName, config.EnvironmentType) &&
 			envOk && strings.EqualFold(*tagEnvName, env.Name)
 
 		// Support for untagged Bicep ADE deployments
@@ -305,6 +307,7 @@ func (m *manager) LatestArmDeployment(
 // Long term this will call into ADE Outputs API
 func (m *manager) Outputs(
 	ctx context.Context,
+	config *Config,
 	env *devcentersdk.Environment,
 ) (map[string]provisioning.OutputParameter, error) {
 	resourceGroupId, err := devcentersdk.NewResourceGroupId(env.ResourceGroupId)
@@ -312,7 +315,7 @@ func (m *manager) Outputs(
 		return nil, fmt.Errorf("failed parsing resource group id: %w", err)
 	}
 
-	latestDeployment, err := m.LatestArmDeployment(ctx, env, func(d *armresources.DeploymentExtended) bool {
+	latestDeployment, err := m.LatestArmDeployment(ctx, config, env, func(d *armresources.DeploymentExtended) bool {
 		return *d.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded
 	})
 	if err != nil {

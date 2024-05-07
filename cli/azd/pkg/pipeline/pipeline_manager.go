@@ -357,7 +357,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	// Adding environment.AzdInitialEnvironmentConfigName as a secret to the pipeline as the base configuration for
 	// whenever a new environment is created. This means loading the local environment config into a pipeline secret which
 	// azd will use to restore the the config on CI
-	localEnvConfig, err := json.Marshal(pm.env.Config.Raw())
+	localEnvConfig, err := json.Marshal(pm.env.Config.ResolvedRaw())
 	if err != nil {
 		return result, fmt.Errorf("failed to marshal environment config: %w", err)
 	}
@@ -662,16 +662,21 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	projectPath := pm.azdCtx.ProjectPath()
 	pm.args.PipelineProvider = override
 	pipelineProvider := strings.ToLower(pm.args.PipelineProvider)
+	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
+	if err != nil {
+		repoRoot = projectDir
+		log.Printf("using project root as repo root, since git repo wasn't available: %s", err)
+	}
 
 	// detecting pipeline folder configuration
-	hasGitHubFolder := folderExists(filepath.Join(projectDir, githubFolder))
-	hasAzDevOpsFolder := folderExists(filepath.Join(projectDir, azdoFolder))
-	hasAzDevOpsYml := ymlExists(filepath.Join(projectDir, azdoYml))
+	hasGitHubFolder := folderExists(filepath.Join(repoRoot, githubFolder))
+	hasAzDevOpsFolder := folderExists(filepath.Join(repoRoot, azdoFolder))
+	hasAzDevOpsYml := ymlExists(filepath.Join(repoRoot, azdoYml))
 
 	// Error missing config for any provider
 	if !hasGitHubFolder && !hasAzDevOpsFolder {
 		return fmt.Errorf(
-			"no CI/CD provider configuration found. Expecting either %s and/or %s folder in the project root directory.",
+			"no CI/CD provider configuration found. Expecting either %s and/or %s folder in the repository root directory.",
 			gitHubLabel,
 			azdoLabel)
 	}

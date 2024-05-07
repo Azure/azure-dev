@@ -1,14 +1,9 @@
 # Release History
 
-## 0.9.0-alpha.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
-
-### Bugs Fixed
+## 0.8.3 (2024-05-07)
 
 ### Other Changes
+ - [[#3845]](https://github.com/Azure/azure-dev/pull/3845) A small change to the Initialize App command to improve user experience.
 
 ## 0.8.2 (2024-04-24)
 

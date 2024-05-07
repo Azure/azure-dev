@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import { IActionContext } from '@microsoft/vscode-azext-utils';
+import { IActionContext, IAzureQuickPickItem } from '@microsoft/vscode-azext-utils';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { executeAsTask } from '../utils/executeAsTask';
@@ -31,9 +31,22 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
     let templateUrl: string | undefined = options?.templateUrl;
     let useExistingSource: boolean = !!options?.useExistingSource;
     if (!templateUrl && !useExistingSource) {
-        const selection = await selectApplicationTemplate(context);
-        templateUrl = selection.templateUrl;
-        useExistingSource = selection.useExistingSource;
+        const useExistingSourceQuickPick: IAzureQuickPickItem<boolean> = {
+            label: vscode.l10n.t('Use code in the current directory'),
+            data: true
+        };
+        const useTemplateQuickPick: IAzureQuickPickItem<boolean> = {
+            label: vscode.l10n.t('Select a template'),
+            data: false
+        };
+
+        useExistingSource = (await context.ui.showQuickPick([useExistingSourceQuickPick, useTemplateQuickPick], {
+            placeHolder: vscode.l10n.t('How do you want to initialize your app?'),
+        })).data;
+
+        if (!useExistingSource) {
+            templateUrl = await selectApplicationTemplate(context);
+        }
     }
 
     const azureCli = await createAzureDevCli(context);
@@ -41,8 +54,10 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
         .withArg('init');
 
     if (useExistingSource) {
+        context.telemetry.properties.useExistingSource = 'true';
         command.withArg('--from-code');
     } else {
+        // Telemetry property is set inside selectApplicationTemplate
         command.withNamedArg('-t', {value: templateUrl!, quoting: vscode.ShellQuoting.Strong});
     }
 

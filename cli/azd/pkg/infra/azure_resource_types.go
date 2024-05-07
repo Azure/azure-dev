@@ -41,6 +41,10 @@ const (
 	AzurePrivateEndpoint                     AzureResourceType = "Microsoft.Network/privateEndpoints"
 	AzureDevCenter                           AzureResourceType = "Microsoft.DevCenter/devcenters"
 	AzureDevCenterProject                    AzureResourceType = "Microsoft.DevCenter/projects"
+	AzureMachineLearningWorkspace            AzureResourceType = "Microsoft.MachineLearningServices/workspaces"
+	//nolint:lll
+	AzureMachineLearningEndpoint   AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
+	AzureMachineLearningConnection AzureResourceType = "Microsoft.MachineLearningServices/workspaces/connections"
 )
 
 const resourceLevelSeparator = "/"
@@ -114,6 +118,12 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Dev Center"
 	case AzureDevCenterProject:
 		return "Dev Center Project"
+	case AzureMachineLearningWorkspace:
+		return "Machine Learning Workspace"
+	case AzureMachineLearningEndpoint:
+		return "Machine Learning Endpoint"
+	case AzureMachineLearningConnection:
+		return "Machine Learning Connection"
 	}
 
 	return ""

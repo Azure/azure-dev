@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
@@ -26,7 +27,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"go.opentelemetry.io/otel/trace"
@@ -438,7 +438,7 @@ func (p *dockerProject) packBuild(
 
 		var statusCodeErr *pack.StatusCodeError
 		if errors.As(err, &statusCodeErr) && statusCodeErr.Code == pack.StatusCodeUndetectedNoError {
-			return nil, &azcli.ErrorWithSuggestion{
+			return nil, &internal.ErrorWithSuggestion{
 				Err: err,
 				Suggestion: "No Dockerfile was found, and image could not be automatically built from source. " +
 					fmt.Sprintf(

@@ -10,7 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -114,8 +113,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
 	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
 		// If bicep is not available, we continue to prompt for subscription and location unfiltered
-		err = provisioning.EnsureSubscriptionAndLocation(ctx, u.envManager, u.env, u.prompters,
-			func(_ account.Location) bool { return true })
+		err = provisioning.EnsureSubscriptionAndLocation(ctx, u.envManager, u.env, u.prompters, nil)
 		if err != nil {
 			return nil, err
 		}

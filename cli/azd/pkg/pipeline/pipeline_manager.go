@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
@@ -358,21 +357,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	// Adding environment.AzdInitialEnvironmentConfigName as a secret to the pipeline as the base configuration for
 	// whenever a new environment is created. This means loading the local environment config into a pipeline secret which
 	// azd will use to restore the the config on CI
-	rawConfig := pm.env.Config.Raw()
-	configPaths := paths(rawConfig)
-	resolvedConfig := config.NewEmptyConfig()
-	// pm.env.Config.Raw does not resolve secrets refs to values like .Get() does
-	// The `Config.Raw()` api is used by the EnvManager-> Save(), so it can't resolve secrets b/c
-	// the secrets would be resolved during save XD.
-	// This is a patch for pipeline config to do secrets-resolving outside of the environment.
-	for _, path := range configPaths {
-		// get will always return true (no need to check) because the path was gotten from the raw config
-		value, _ := pm.env.Config.Get(path)
-		if err := resolvedConfig.Set(path, value); err != nil {
-			return result, fmt.Errorf("failed setting initial azd config for CI: %w", err)
-		}
-	}
-	localEnvConfig, err := json.Marshal(resolvedConfig.Raw())
+	localEnvConfig, err := json.Marshal(pm.env.Config.ResolvedRaw())
 	if err != nil {
 		return result, fmt.Errorf("failed to marshal environment config: %w", err)
 	}
@@ -453,23 +438,6 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		RepositoryLink: gitRepoInfo.url,
 		PipelineLink:   ciPipeline.url(),
 	}, nil
-}
-
-// paths recursively traverses a map and returns a list of all the paths to the leaf nodes.
-// The start parameter is the initial map to start traversing from.
-// It returns a slice of strings representing the paths to the leaf nodes.
-func paths(start map[string]any) []string {
-	var all []string
-	for path, value := range start {
-		if node, isNode := value.(map[string]any); isNode {
-			for _, child := range paths(node) {
-				all = append(all, fmt.Sprintf("%s.%s", path, child))
-			}
-		} else {
-			all = append(all, path)
-		}
-	}
-	return all
 }
 
 // requiredTools get all the provider's required tools.

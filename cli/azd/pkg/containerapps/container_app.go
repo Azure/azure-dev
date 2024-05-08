@@ -42,6 +42,7 @@ type ContainerAppService interface {
 		resourceGroupName string,
 		appName string,
 		containerAppYaml []byte,
+		progressLog func(string),
 	) error
 	// Adds and activates a new revision to the specified container app
 	AddRevision(
@@ -50,7 +51,7 @@ type ContainerAppService interface {
 		resourceGroupName string,
 		appName string,
 		imageName string,
-		progress func(string),
+		progressLog func(string),
 	) error
 	ListSecrets(ctx context.Context,
 		subscriptionId string,
@@ -127,6 +128,7 @@ func (cas *containerAppService) DeployYaml(
 	resourceGroupName string,
 	appName string,
 	containerAppYaml []byte,
+	progressLog func(string),
 ) error {
 	var obj map[string]any
 	if err := yaml.Unmarshal(containerAppYaml, &obj); err != nil {
@@ -202,9 +204,15 @@ func (cas *containerAppService) DeployYaml(
 		poller = p
 	}
 
-	_, err := poller.PollUntilDone(ctx, nil)
+	res, err := poller.PollUntilDone(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("polling for container app update completion: %w", err)
+	}
+
+	err = cas.waitForRevisionReady(
+		ctx, subscriptionId, resourceGroupName, appName, *res.Properties.LatestRevisionName, progressLog)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -288,7 +296,7 @@ func (cas *containerAppService) waitForRevisionReady(
 		return err
 	}
 
-	// Add a policy to capture the raw response so we can get details that are
+	// Add a policy to capture the raw response. This allows us to get fields that are
 	// not available in armappcontainers.ContainerAppsRevisionsClientGetRevisionResponse
 	responseCapture := azsdk.ResponseCapturePolicy{}
 
@@ -306,7 +314,10 @@ func (cas *containerAppService) waitForRevisionReady(
 		return fmt.Errorf("creating replicas client: %w", err)
 	}
 
-	prevStatus := ""
+	// Poll for the revision to be in a running state
+	// See https://learn.microsoft.com/en-us/azure/container-apps/revisions#lifecycle
+	// for the complete lifecycle of a revision
+	prevStatus := statusPrefix
 	for {
 		revision, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, revisionName, nil)
 		if err != nil {
@@ -318,6 +329,7 @@ func (cas *containerAppService) waitForRevisionReady(
 		}
 
 		switch *revision.Properties.RunningState {
+		// Failed states
 		case armappcontainers.RevisionRunningStateFailed,
 			armappcontainers.RevisionRunningStateStopped,
 			armappcontainers.RevisionRunningStateDegraded:
@@ -342,12 +354,15 @@ func (cas *containerAppService) waitForRevisionReady(
 						resourceGroupName,
 						appName) + "\nThen, view console and system logs to obtain detailed troubleshooting logs",
 			}
+		// Processing states
 		case armappcontainers.RevisionRunningStateProcessing, armappcontainers.RevisionRunningStateUnknown:
-			// The revision is still processing
+			// do nothing
 		case armappcontainers.RevisionRunningStateRunning:
+			// Success
 			return nil
 		}
 
+		// Get replica information to provide additional status
 		replicas, err := replicasClient.ListReplicas(ctx, resourceGroupName, appName, revisionName, nil)
 		if err != nil {
 			return fmt.Errorf("listing replicas: %w", err)
@@ -365,10 +380,13 @@ func (cas *containerAppService) waitForRevisionReady(
 			for _, c := range r.Properties.Containers {
 				if c.Ready == nil {
 					ready = false
-					break
 				}
 
 				ready = ready && *c.Ready
+			}
+
+			if ready {
+				readyReplicas++
 			}
 		}
 

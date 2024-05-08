@@ -492,6 +492,9 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvi
 {{range $volume := $value.Volumes -}}
 output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $volume.Name | alphaSnakeUpper}}_NAME string = {{mergeBicepName $name $volume.Name}}Store.name
 {{end -}}
+{{range $bMount := $value.BindMounts -}}
+output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME string = {{mergeBicepName $name $bMount.Name}}Store.name
+{{end -}}
 {{end -}}
 {{range $name, $value := .ServiceBuses -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.serviceBusEndpoint

@@ -157,6 +157,7 @@ type genContainerAppManifestTemplateContext struct {
 	AutoConfigureDataProtection bool
 	Args                        []string
 	Volumes                     []*Volume
+	BindMounts                  []*BindMount
 }
 
 type genProjectFileContext struct {

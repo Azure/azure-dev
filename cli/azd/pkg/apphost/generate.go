@@ -156,11 +156,12 @@ func Containers(manifest *Manifest) map[string]genContainer {
 		switch comp.Type {
 		case "container.v0":
 			res[name] = genContainer{
-				Image:    *comp.Image,
-				Env:      comp.Env,
-				Bindings: comp.Bindings,
-				Inputs:   comp.Inputs,
-				Volumes:  comp.Volumes,
+				Image:      *comp.Image,
+				Env:        comp.Env,
+				Bindings:   comp.Bindings,
+				Inputs:     comp.Inputs,
+				Volumes:    comp.Volumes,
+				BindMounts: comp.BindMounts,
 			}
 		}
 	}
@@ -1091,8 +1092,10 @@ func (b *infraGenerator) Compile() error {
 		for count, bm := range container.BindMounts {
 			bMounts = append(bMounts, &BindMount{
 				// adding a name using the index. This name is used for naming the resource in bicep.
-				Name:     fmt.Sprintf("bm%d", count),
-				Source:   bm.Source,
+				Name: fmt.Sprintf("bm%d", count),
+				// mount bind is not supported across devices, as it depends on a local path which might be missing in
+				// another device.
+				Source:   strings.Join(strings.Split(bm.Source, string(filepath.Separator)), "/"),
 				Target:   bm.Target,
 				ReadOnly: bm.ReadOnly,
 			})
@@ -1112,6 +1115,7 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 			Ingress:         b.allServicesIngress[resourceName].ingress,
 			Volumes:         container.Volumes,
+			BindMounts:      bMounts,
 		}
 
 		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {

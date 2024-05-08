@@ -158,6 +158,13 @@
         "MYSQL_ROOT_PASSWORD": "{noVolume-password.value}",
         "SpecialChar": "{noVolume-pas-sw-ord.value}"
       },
+      "bindMounts": [
+        {
+          "source": "../MySql.ApiService/data",
+          "target": "/docker-entrypoint-initdb.d",
+          "readOnly": false
+        }
+      ],
       "bindings": {
         "tcp": {
           "scheme": "tcp",

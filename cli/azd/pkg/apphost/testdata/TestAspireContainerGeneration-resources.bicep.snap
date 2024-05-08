@@ -1,5 +1,8 @@
 @description('The location used for all deployed resources')
 param location string = resourceGroup().location
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
@@ -39,6 +42,14 @@ resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileService
   parent: storageVolume
   name: 'default'
 }
+resource volumesAccountRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageVolume.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd'))
+  scope: storageVolume
+  properties: {
+    principalId: principalId
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd')
+  }
+}
 
 resource mySqlAbstractProjectAppHostVolumeTwoFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
@@ -51,6 +62,14 @@ resource mySqlAbstractProjectAppHostVolumeTwoFileShare 'Microsoft.Storage/storag
 resource mysqlabstractProjectAppHostVolumeOneFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
   name: take('${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}', 32)
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
+  }
+}
+resource noVolumeBm0FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: take('${toLower('noVolume')}-${toLower('bm0')}', 32)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -102,6 +121,19 @@ resource mysqlabstractProjectAppHostVolumeOneStore 'Microsoft.App/managedEnviron
   }
 }
 
+resource noVolumeBm0Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: take('${toLower('noVolume')}-${toLower('bm0')}', 32)
+  properties: {
+    azureFile: {
+      shareName: '${toLower('noVolume')}-${toLower('bm0')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+      accessMode: 'ReadWrite'
+    }
+  }
+}
+
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 output MANAGED_IDENTITY_NAME string = managedIdentity.name
 output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
@@ -111,8 +143,9 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
 output SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME string = mySqlAbstractProjectAppHostVolumeTwoStore.name
 output SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME string = mysqlabstractProjectAppHostVolumeOneStore.name
+output SERVICE_NOVOLUME_VOLUME_BM0_NAME string = noVolumeBm0Store.name
 output AZD_OPS_BIND_MOUNT_ACCOUNT string = storageVolume.name
 
 
-
+output AZD_OPS_BIND_MOUNT_noVolumeBm0FileShare string = '${ noVolumeBm0FileShare.name},/tmp/MySql.ApiService/data'
 

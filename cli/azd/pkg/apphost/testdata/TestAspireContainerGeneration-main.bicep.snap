@@ -9,6 +9,9 @@ param environmentName string
 @description('The location used for all deployed resources')
 param location string
 
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+
 @metadata({azd: {
   type: 'generate'
   config: {length:15,noSpecial:true,minLower:10,minNumeric:5}
@@ -68,6 +71,7 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
+    principalId: principalId
   }
 }
 
@@ -78,5 +82,7 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONT
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
 output SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME string = resources.outputs.SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME
 output SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME string = resources.outputs.SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME
+output SERVICE_NOVOLUME_VOLUME_BM0_NAME string = resources.outputs.SERVICE_NOVOLUME_VOLUME_BM0_NAME
 output AZD_OPS_BIND_MOUNT_ACCOUNT string = resources.outputs.AZD_OPS_BIND_MOUNT_ACCOUNT
+output AZD_OPS_BIND_MOUNT_noVolumeBm0FileShare string = resources.outputs.AZD_OPS_BIND_MOUNT_noVolumeBm0FileShare
 

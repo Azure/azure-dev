@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
 
@@ -93,6 +94,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 
 	stAccount, hasBindMountOperation := m.env.LookupEnv(operationsBindMount)
 	if hasBindMountOperation {
+		m.console.ShowSpinner(ctx, "uploading files for binding mount", input.StepFailed)
 		for key, value := range m.env.Dotenv() {
 			if key != operationsBindMount && strings.HasPrefix(key, operationsBindMountPrefix) {
 				valueParts := strings.Split(value, ",")
@@ -104,6 +106,11 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 					ctx, m.fileShareService, m.env.GetSubscriptionId(), stAccount, fileShareName, source); err != nil {
 					return nil, fmt.Errorf("error binding mount: %w", err)
 				}
+				m.console.MessageUxItem(ctx, &ux.DisplayedResource{
+					Type:  "BindMount",
+					Name:  source,
+					State: ux.SucceededState,
+				})
 			}
 		}
 	}

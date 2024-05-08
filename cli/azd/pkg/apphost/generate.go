@@ -22,7 +22,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
 	"golang.org/x/exp/maps"
@@ -43,11 +45,42 @@ func IsAspireDashboardEnabled(alphaFeatureManager *alpha.FeatureManager) bool {
 	return alphaFeatureManager.IsEnabled(aspireDashboardFeature)
 }
 
+type AspireDashboard struct {
+	Link string
+}
+
+func (aspireD *AspireDashboard) ToString(currentIndentation string) string {
+	return fmt.Sprintf("%sAspire Dashboard: %s", currentIndentation, output.WithLinkFormat(aspireD.Link))
+}
+
+func (aspireD *AspireDashboard) MarshalJSON() ([]byte, error) {
+	return json.Marshal(*aspireD)
+}
+
+func AspireDashboardUrl(
+	ctx context.Context,
+	env *environment.Environment,
+	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
+	if !IsAspireDashboardEnabled(alphaFeatureManager) {
+		return nil
+	}
+
+	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")
+	if !exists {
+		return nil
+	}
+
+	return &AspireDashboard{
+		Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+	}
+}
+
 func init() {
 	tmpl, err := template.New("templates").
 		Option("missingkey=error").
 		Funcs(
 			template.FuncMap{
+				"toLower":   strings.ToLower,
 				"bicepName": scaffold.BicepName,
 				"mergeBicepName": func(src ...string) string {
 					return scaffold.BicepName(strings.Join(src, "-"))
@@ -115,6 +148,26 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 	return res
 }
 
+// Containers returns information about all container.v0 resources from a manifest.
+func Containers(manifest *Manifest) map[string]genContainer {
+	res := make(map[string]genContainer)
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "container.v0":
+			res[name] = genContainer{
+				Image:    *comp.Image,
+				Env:      comp.Env,
+				Bindings: comp.Bindings,
+				Inputs:   comp.Inputs,
+				Volumes:  comp.Volumes,
+			}
+		}
+	}
+
+	return res
+}
+
 type AppHostOptions struct {
 	AutoConfigureDataProtection bool
 	AspireDashboard             bool
@@ -162,6 +215,7 @@ func BicepTemplate(manifest *Manifest, options AppHostOptions) (*memfs.FS, error
 
 	if options.AspireDashboard {
 		generator.bicepContext.AspireDashboard = true
+		generator.bicepContext.RequiresPrincipalId = true
 	}
 
 	// use the filesystem coming from the manifest
@@ -669,6 +723,10 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 	if _, keyVaultInjected := autoInjectedParams[knownParameterKeyVault]; keyVaultInjected {
 		b.addKeyVault("kv"+uniqueFnvNumber(name), true, true)
 	}
+	if _, hasLocation := stringParams["location"]; !hasLocation {
+		// if location is not provided, add it as a link to location parameter
+		stringParams["location"] = "location"
+	}
 
 	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams}
 	return nil
@@ -1024,7 +1082,7 @@ func (b *infraGenerator) Compile() error {
 		return err
 	}
 
-	for name, container := range b.containers {
+	for resourceName, container := range b.containers {
 		var bMounts []*BindMount
 		if len(container.BindMounts) > 0 {
 			// must grant write role to the Storage File Share to upload data
@@ -1039,51 +1097,28 @@ func (b *infraGenerator) Compile() error {
 				ReadOnly: bm.ReadOnly,
 			})
 		}
+
 		cs := genContainerApp{
-			Image:      container.Image,
-			Env:        make(map[string]string),
-			Secrets:    make(map[string]string),
 			Volumes:    container.Volumes,
 			BindMounts: bMounts,
-			Ingress:    b.allServicesIngress[name].ingress,
 		}
 
-		parameters := maps.Keys(b.bicepContext.InputParameters)
-		for i, parameter := range parameters {
-			parameters[i] = strings.ReplaceAll(parameter, "-", "_")
-		}
-		for k, value := range container.Env {
-			// first evaluation using inputEmitTypeYaml to know if there are secrets on the value
-			yamlString, err := EvalString(
-				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
-			if err != nil {
-				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
-			}
-			// second evaluation to build the appropriate string for bicep, which only replaces parameter names
-			// without caring about secret or not
-			bicepString, err := EvalString(
-				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
-			if err != nil {
-				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
-			}
-			if isComplexExp, val := isComplexExpression(fmt.Sprintf("'%s'", bicepString)); !isComplexExp {
-				bicepString = val
-			}
+		b.bicepContext.ContainerApps[resourceName] = cs
 
-			if slices.Contains(parameters, bicepString) {
-				if !slices.Contains(b.bicepContext.mappedParameters, bicepString) {
-					b.bicepContext.mappedParameters = append(b.bicepContext.mappedParameters, bicepString)
-				}
-			}
-
-			if strings.Contains(yamlString, "{{ securedParameter ") {
-				cs.Secrets[k] = bicepString
-			} else {
-				cs.Env[k] = bicepString
-			}
+		projectTemplateCtx := genContainerAppManifestTemplateContext{
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Volumes:         container.Volumes,
 		}
 
-		b.bicepContext.ContainerApps[name] = cs
+		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
+			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
 	}
 
 	for resourceName, docker := range b.dockerfiles {
@@ -1305,6 +1340,24 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			bindingMappedToMainIngress = true
 		}
 
+		hostNameSuffix := func(external bool) string {
+			var suffix string
+			switch emitType {
+			case inputEmitTypeYaml:
+				suffix = "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+			case inputEmitTypeBicep:
+				suffix = "${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}"
+			default:
+				panic(fmt.Sprintf("unexpected inputEmitType %s", string(emitType)))
+			}
+
+			if !external {
+				suffix = "internal." + suffix
+			}
+
+			return suffix
+		}
+
 		switch bindingProperty {
 		case "scheme":
 			return binding.Scheme, nil
@@ -1319,12 +1372,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			// expects full domain name, like `resource.internal.FQDN` or `resource.FQDN`.
 			if bindingMappedToMainIngress &&
 				(binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
-				if binding.External {
-					return fmt.Sprintf("%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
-						resource), nil
-				}
-				return fmt.Sprintf("%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
-					resource), nil
+				return fmt.Sprintf("%s.%s", resource, hostNameSuffix(binding.External)), nil
 			}
 			return resource, nil
 		case "targetPort":
@@ -1338,11 +1386,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			var urlFormatString string
 
 			if bindingMappedToMainIngress {
-				if binding.External {
-					urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
-				} else {
-					urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
-				}
+				urlFormatString = "%s://%s." + hostNameSuffix(binding.External) + "%s"
 			} else {
 				urlFormatString = "%s://%s%s"
 			}
@@ -1421,7 +1465,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			if emitType == inputEmitTypeYaml {
 				return fmt.Sprintf(
 					"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
-					strings.ToUpper(replaceDash+"kv"),
+					strings.ToUpper("kv"+uniqueFnvNumber(resource)),
 					outputName), nil
 			}
 			if emitType == inputEmitTypeBicep {

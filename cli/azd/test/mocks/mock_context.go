@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/benbjohnson/clock"
 )
 
 type MockContext struct {
@@ -33,6 +34,7 @@ type MockContext struct {
 	SubscriptionCredentialProvider *MockSubscriptionCredentialProvider
 	MultiTenantCredentialProvider  *MockMultiTenantCredentialProvider
 	Config                         config.Config
+	Clock                          *clock.Mock
 }
 
 func NewMockContext(ctx context.Context) *MockContext {
@@ -60,6 +62,7 @@ func NewMockContext(ctx context.Context) *MockContext {
 		Container:                      ioc.NewNestedContainer(nil),
 		Config:                         config,
 		AlphaFeaturesManager:           alpha.NewFeaturesManagerWithConfig(config),
+		Clock:                          clock.NewMock(),
 	}
 
 	registerCommonMocks(mockContext)

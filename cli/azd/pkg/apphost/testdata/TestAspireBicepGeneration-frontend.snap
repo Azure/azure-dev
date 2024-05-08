@@ -22,7 +22,7 @@ properties:
       - name: connectionstrings--db
         value: Server=tcp:{{ .Env.SQL_SQLSERVERFQDN }},1433;Encrypt=True;Authentication="Active Directory Default";Database=db
       - name: connectionstrings--db2
-        value: '{{ secretOutput "SERVICE_BINDING_POSTGRES_2KV_ENDPOINT" "connectionString" }};Database=db2;'
+        value: '{{ secretOutput "SERVICE_BINDING_KV854251F1_ENDPOINT" "connectionString" }};Database=db2;'
       - name: connectionstrings--s-b
         value: '{{ .Env.S_B_SERVICEBUSENDPOINT }}'
   template:

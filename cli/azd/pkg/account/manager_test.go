@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -669,11 +670,11 @@ type InMemorySubCache struct {
 	stored []Subscription
 }
 
-func (imc *InMemorySubCache) Load() ([]Subscription, error) {
+func (imc *InMemorySubCache) Load(key string) ([]Subscription, error) {
 	return imc.stored, nil
 }
 
-func (imc *InMemorySubCache) Save(save []Subscription) error {
+func (imc *InMemorySubCache) Save(key string, save []Subscription) error {
 	imc.stored = save
 	return nil
 }
@@ -712,18 +713,26 @@ func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID(ctx cont
 	return nil, nil
 }
 
+func (p *principalInfoProviderMock) ClaimsForCurrentUser(
+	ctx context.Context, options *auth.ClaimsForCurrentUserOptions) (auth.TokenClaims, error) {
+	return auth.TokenClaims{
+		UniqueName: "test_user",
+		Oid:        "test_oid",
+	}, nil
+}
+
 type BypassSubscriptionsCache struct {
 }
 
-func (b *BypassSubscriptionsCache) Load() ([]Subscription, error) {
+func (b *BypassSubscriptionsCache) Load(ctx context.Context, key string) ([]Subscription, error) {
 	return nil, errors.New("bypass cache")
 }
 
-func (b *BypassSubscriptionsCache) Save(save []Subscription) error {
+func (b *BypassSubscriptionsCache) Save(ctx context.Context, key string, save []Subscription) error {
 	return nil
 }
 
-func (b *BypassSubscriptionsCache) Clear() error {
+func (b *BypassSubscriptionsCache) Clear(ctx context.Context) error {
 	return nil
 }
 

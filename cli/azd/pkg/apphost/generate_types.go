@@ -31,11 +31,6 @@ type genKeyVault struct {
 }
 
 type genContainerApp struct {
-	Image      string
-	Dapr       *genContainerAppManifestTemplateContextDapr
-	Env        map[string]string
-	Secrets    map[string]string
-	Ingress    *genContainerAppIngress
 	Volumes    []*Volume
 	BindMounts []*BindMount
 }
@@ -161,6 +156,7 @@ type genContainerAppManifestTemplateContext struct {
 	Dapr                        *genContainerAppManifestTemplateContextDapr
 	AutoConfigureDataProtection bool
 	Args                        []string
+	Volumes                     []*Volume
 }
 
 type genProjectFileContext struct {

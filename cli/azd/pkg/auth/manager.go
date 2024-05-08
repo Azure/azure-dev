@@ -332,6 +332,36 @@ func (m *Manager) CredentialForCurrentUser(
 	return nil, ErrNoCurrentUser
 }
 
+type ClaimsForCurrentUserOptions = CredentialForCurrentUserOptions
+
+// ClaimsForCurrentUser returns claims for the currently logged in user.
+func (m *Manager) ClaimsForCurrentUser(ctx context.Context, options *ClaimsForCurrentUserOptions) (TokenClaims, error) {
+	if options == nil {
+		options = &ClaimsForCurrentUserOptions{}
+	}
+	// The user's credential is used to obtain an access token.
+	// This implementation works well even in cases where a remote credential protocol is used to provide the credential.
+	cred, err := m.CredentialForCurrentUser(ctx, options)
+	if err != nil {
+		return TokenClaims{}, err
+	}
+
+	accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes:   LoginScopes(m.cloud),
+		TenantID: options.TenantID,
+	})
+	if err != nil {
+		return TokenClaims{}, err
+	}
+
+	claims, err := GetClaimsFromAccessToken(accessToken.Token)
+	if err != nil {
+		return TokenClaims{}, err
+	}
+
+	return claims, nil
+}
+
 func shouldUseLegacyAuth(cfg config.Config) bool {
 	if useLegacyAuth, has := cfg.Get(cUseAzCliAuthKey); has {
 		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {

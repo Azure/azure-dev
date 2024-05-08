@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -410,7 +411,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 									return cloudConfig, nil
 								}
 
-								return nil, &azcli.ErrorWithSuggestion{
+								return nil, &internal.ErrorWithSuggestion{
 									Err: err,
 									Suggestion: fmt.Sprintf(
 										"Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment\n%s",
@@ -433,7 +434,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					if cloud, err := cloud.NewCloud(cloudConfig); err == nil {
 						return cloud, nil
 					} else {
-						return nil, &azcli.ErrorWithSuggestion{
+						return nil, &internal.ErrorWithSuggestion{
 							Err: err,
 							//nolint:lll
 							Suggestion: fmt.Sprintf("Set the cloud configuration by editing the 'cloud' node in the project YAML file\n%s", validClouds),
@@ -450,7 +451,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					if cloud, err := cloud.NewCloud(value); err == nil {
 						return cloud, nil
 					} else {
-						return nil, &azcli.ErrorWithSuggestion{
+						return nil, &internal.ErrorWithSuggestion{
 							Err:        err,
 							Suggestion: fmt.Sprintf("Set the cloud configuration using 'azd config set cloud.name <name>'.\n%s", validClouds),
 						}
@@ -609,6 +610,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(npm.NewNpmCli)
 	container.MustRegisterSingleton(python.NewPythonCli)
 	container.MustRegisterSingleton(swa.NewSwaCli)
+	container.MustRegisterScoped(ai.NewPythonBridge)
+	container.MustRegisterScoped(project.NewAiHelper)
 
 	// Provisioning
 	container.MustRegisterSingleton(infra.NewAzureResourceManager)
@@ -629,6 +632,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.AksTarget:                project.NewAksTarget,
 		project.SpringAppTarget:          project.NewSpringAppTarget,
 		project.DotNetContainerAppTarget: project.NewDotNetContainerAppTarget,
+		project.AiEndpointTarget:         project.NewAiEndpointTarget,
 	}
 
 	for target, constructor := range serviceTargetMap {
@@ -776,3 +780,10 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
 	childCtx := middleware.WithChildAction(ctx)
 	return w.cmd.ExecuteContext(childCtx)
 }
+
+// ArmClientInitializer is a function definition for all Azure SDK ARM Client
+type ArmClientInitializer[T comparable] func(
+	subscriptionId string,
+	credentials azcore.TokenCredential,
+	armClientOptions *arm.ClientOptions,
+) (T, error)

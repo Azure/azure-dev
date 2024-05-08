@@ -1,3 +1,4 @@
+@description('Resource name for the existing apim service')
 param name string
 
 @description('Resource name to uniquely identify this API within the API Management service instance')

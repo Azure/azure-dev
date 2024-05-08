@@ -27,6 +27,8 @@ var vaultPattern = regexp.MustCompile(
 // Configuration data is stored in user's home directory @ ~/.azd/config.json
 type Config interface {
 	Raw() map[string]any
+	// similar to Raw() but it will resolve any vault references
+	ResolvedRaw() map[string]any
 	Get(path string) (any, bool)
 	GetString(path string) (string, bool)
 	GetSection(path string, section any) (bool, error)
@@ -68,6 +70,39 @@ func (c *config) IsEmpty() bool {
 // Gets the raw values stored in the configuration as a Go map
 func (c *config) Raw() map[string]any {
 	return c.data
+}
+
+// Gets the raw values stored in the configuration and resolve any vault references
+func (c *config) ResolvedRaw() map[string]any {
+	resolvedRaw := &config{
+		data: map[string]any{},
+	}
+	paths := paths(c.data)
+	for _, path := range paths {
+		// get will always return true (no need to check) because the path was gotten from the raw config
+		value, _ := c.Get(path)
+		if err := resolvedRaw.Set(path, value); err != nil {
+			panic(fmt.Errorf("failed setting resolved raw value: %w", err))
+		}
+	}
+	return resolvedRaw.data
+}
+
+// paths recursively traverses a map and returns a list of all the paths to the leaf nodes.
+// The start parameter is the initial map to start traversing from.
+// It returns a slice of strings representing the paths to the leaf nodes.
+func paths(start map[string]any) []string {
+	var all []string
+	for path, value := range start {
+		if node, isNode := value.(map[string]any); isNode {
+			for _, child := range paths(node) {
+				all = append(all, fmt.Sprintf("%s.%s", path, child))
+			}
+		} else {
+			all = append(all, path)
+		}
+	}
+	return all
 }
 
 // SetSecret stores the secrets at the specified path within a local user vault

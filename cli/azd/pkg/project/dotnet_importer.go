@@ -104,7 +104,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate(manifest, apphost.AppHostOptions{
+	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
 		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
 	})
 	if err != nil {
@@ -289,11 +289,21 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 
 	generatedFS := memfs.New()
 
-	infraFS, err := apphost.BicepTemplate(manifest, apphost.AppHostOptions{
+	rootModuleName := DefaultModule
+	if p.Infra.Module != "" {
+		rootModuleName = p.Infra.Module
+	}
+
+	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{
 		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)
+	}
+
+	infraPathPrefix := DefaultPath
+	if p.Infra.Path != "" {
+		infraPathPrefix = p.Infra.Path
 	}
 
 	err = fs.WalkDir(infraFS, ".", func(path string, d fs.DirEntry, err error) error {
@@ -305,7 +315,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return nil
 		}
 
-		err = generatedFS.MkdirAll(filepath.Join("infra", filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
+		err = generatedFS.MkdirAll(filepath.Join(infraPathPrefix, filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
 		if err != nil {
 			return err
 		}
@@ -315,8 +325,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
-		return generatedFS.WriteFile(filepath.Join("infra", path), contents, d.Type().Perm())
-
+		return generatedFS.WriteFile(filepath.Join(infraPathPrefix, path), contents, d.Type().Perm())
 	})
 	if err != nil {
 		return nil, err

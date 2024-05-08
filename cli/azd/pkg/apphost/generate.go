@@ -1095,7 +1095,7 @@ func (b *infraGenerator) Compile() error {
 				Name: fmt.Sprintf("bm%d", count),
 				// mount bind is not supported across devices, as it depends on a local path which might be missing in
 				// another device.
-				Source:   strings.Join(strings.Split(bm.Source, string(filepath.Separator)), "/"),
+				Source:   bm.Source,
 				Target:   bm.Target,
 				ReadOnly: bm.ReadOnly,
 			})

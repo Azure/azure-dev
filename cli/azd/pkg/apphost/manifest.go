@@ -230,7 +230,7 @@ func ManifestFromAppHost(
 
 		if res.BindMounts != nil {
 			for _, bindMount := range res.BindMounts {
-				bindMount.Source = filepath.Clean(filepath.Join(manifestDir, bindMount.Source))
+				bindMount.Source = filepath.Join(manifestDir, bindMount.Source)
 			}
 		}
 	}

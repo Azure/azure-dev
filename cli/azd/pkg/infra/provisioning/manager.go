@@ -133,7 +133,6 @@ func bindMountOperation(
 			return err
 		}
 		if !info.IsDir() {
-			// should be ok to trim prefix + os separator because we found a file somewhere after the source
 			destination := strings.TrimPrefix(path, source+string(filepath.Separator))
 			if err := fileShareService.UploadFiles(ctx, subId, shareUrl, path, destination); err != nil {
 				return fmt.Errorf("error uploading files to file share: %w", err)

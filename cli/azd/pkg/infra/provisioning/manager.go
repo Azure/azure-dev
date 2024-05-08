@@ -107,7 +107,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 					return nil, fmt.Errorf("error binding mount: %w", err)
 				}
 				m.console.MessageUxItem(ctx, &ux.DisplayedResource{
-					Type:  "BindMount",
+					Type:  "Mount Volume:",
 					Name:  source,
 					State: ux.SucceededState,
 				})

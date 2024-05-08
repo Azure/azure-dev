@@ -115,6 +115,12 @@ repo:
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
 
+          - from: ../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep
+      to: ./infra/app/applicationinsights-dashboard.bicep
+
+    - from: ../../../../common/infra/bicep/app/apim-api-settings.bicep
+      to: ./infra/app/apim-api-settings.bicep
+
     - from: ./../../
       to: ./
       ignore:

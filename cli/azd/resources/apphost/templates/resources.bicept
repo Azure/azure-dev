@@ -250,7 +250,6 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
 }
 {{end -}}
-
 {{range $name, $value := .ServiceBuses}}
 resource {{bicepName $name}} 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
   name: '{{$name}}-${resourceToken}'

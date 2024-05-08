@@ -121,7 +121,6 @@ resource mysqlabstractProjectAppHostVolumeOneStore 'Microsoft.App/managedEnviron
   }
 }
 
-<<<<<<< HEAD
 resource noVolumeBm0Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   parent: containerAppEnvironment
   name: take('${toLower('noVolume')}-${toLower('bm0')}', 32)
@@ -135,8 +134,6 @@ resource noVolumeBm0Store 'Microsoft.App/managedEnvironments/storages@2023-05-01
   }
 }
 
-=======
->>>>>>> 2a317d38ce61a60b3312d328ccdbf8521890ccf0
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 output MANAGED_IDENTITY_NAME string = managedIdentity.name
 output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
@@ -146,12 +143,9 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
 output SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME string = mySqlAbstractProjectAppHostVolumeTwoStore.name
 output SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME string = mysqlabstractProjectAppHostVolumeOneStore.name
-<<<<<<< HEAD
 output SERVICE_NOVOLUME_VOLUME_BM0_NAME string = noVolumeBm0Store.name
 output AZD_OPS_BIND_MOUNT_ACCOUNT string = storageVolume.name
 
 
 output AZD_OPS_BIND_MOUNT_noVolumeBm0FileShare string = '${ noVolumeBm0FileShare.name},/tmp/MySql.ApiService/data'
-=======
->>>>>>> 2a317d38ce61a60b3312d328ccdbf8521890ccf0
 

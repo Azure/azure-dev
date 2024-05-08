@@ -71,10 +71,7 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-<<<<<<< HEAD
     principalId: principalId
-=======
->>>>>>> 2a317d38ce61a60b3312d328ccdbf8521890ccf0
   }
 }
 
@@ -85,10 +82,7 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONT
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
 output SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME string = resources.outputs.SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME
 output SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME string = resources.outputs.SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME
-<<<<<<< HEAD
 output SERVICE_NOVOLUME_VOLUME_BM0_NAME string = resources.outputs.SERVICE_NOVOLUME_VOLUME_BM0_NAME
 output AZD_OPS_BIND_MOUNT_ACCOUNT string = resources.outputs.AZD_OPS_BIND_MOUNT_ACCOUNT
 output AZD_OPS_BIND_MOUNT_noVolumeBm0FileShare string = resources.outputs.AZD_OPS_BIND_MOUNT_noVolumeBm0FileShare
-=======
->>>>>>> 2a317d38ce61a60b3312d328ccdbf8521890ccf0
 

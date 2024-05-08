@@ -97,12 +97,16 @@ func (at *containerAppTarget) Deploy(
 
 			imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
 			task.SetProgress(NewServiceProgress("Updating container app revision"))
+			progressLog := func(msg string) {
+				task.SetProgress(NewServiceProgress(msg))
+			}
 			err = at.containerAppService.AddRevision(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				imageName,
+				progressLog,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("updating container app service: %w", err))

@@ -81,6 +81,7 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 		if opt.Session.Playback {
 			env = append(env, "AZD_TEST_POLL_DELAY=0s")
 		} else {
+			// For recording, we should prefer longer delays to avoid the number of extra waiting interactions recorded.
 			env = append(env, "AZD_TEST_POLL_DELAY=10s")
 		}
 

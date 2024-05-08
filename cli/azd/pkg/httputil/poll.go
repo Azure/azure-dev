@@ -10,7 +10,7 @@ import (
 )
 
 // By default, PollDelay is a no-op function that returns the delay as-is.
-// This function is overridden in the record mode to return the delay as 0.
+// This function is overridden in the record mode to return a suitable delay for testing.
 func PollDelay(delay time.Duration) time.Duration {
 	return delay
 }

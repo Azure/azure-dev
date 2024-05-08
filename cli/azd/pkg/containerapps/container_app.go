@@ -235,7 +235,7 @@ func (cas *containerAppService) AddRevision(
 		return fmt.Errorf("getting container app: %w", err)
 	}
 
-	// Get the latest revision name (this could be not the latest ready one)
+	// Retrieve the latest revision name to perform a patch on
 	currentRevisionName := *containerApp.Properties.LatestRevisionName
 	revisionsClient, err := cas.createRevisionsClient(ctx, subscriptionId)
 	if err != nil {
@@ -250,6 +250,8 @@ func (cas *containerAppService) AddRevision(
 	// Update the revision with the new image name and suffix
 	revision := revisionResponse.Revision
 	newRevisionSuffix := fmt.Sprintf("azd-%d", cas.clock.Now().Unix())
+	// New revision name is always appName--revisionSuffix
+	// see https://learn.microsoft.com/en-us/azure/container-apps/revisions#name-suffix
 	newRevisionName := fmt.Sprintf("%s--%s", appName, newRevisionSuffix)
 	revision.Properties.Template.RevisionSuffix = &newRevisionSuffix
 	revision.Properties.Template.Containers[0].Image = convert.RefOf(imageName)
@@ -298,8 +300,8 @@ func (cas *containerAppService) waitForRevisionReady(
 		return err
 	}
 
-	// Add a policy to capture the raw response. This allows us to get fields that are
-	// not available in armappcontainers.ContainerAppsRevisionsClientGetRevisionResponse
+	// Add a policy to capture the raw response. This allows us to get fields (ex: 'properties.runningStateDetails') that are
+	// currently not available in armappcontainers.ContainerAppsRevisionsClientGetRevisionResponse
 	responseCapture := azsdk.ResponseCapturePolicy{}
 
 	revisionsClientOptions := *cas.armClientOptions
@@ -340,7 +342,7 @@ func (cas *containerAppService) waitForRevisionReady(
 			errSuffix := ""
 
 			responseExtended := containerAppGetRevisionResponseExtended{}
-			if runtime.UnmarshalAsJSON(responseCapture.Response, &responseExtended); err == nil {
+			if err := runtime.UnmarshalAsJSON(responseCapture.Response, &responseExtended); err == nil {
 				if responseExtended.Properties.RunningStateDetails != "" {
 					errSuffix = fmt.Sprintf(", %s", responseExtended.Properties.RunningStateDetails)
 				}

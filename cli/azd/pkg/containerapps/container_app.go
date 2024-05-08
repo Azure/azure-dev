@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -219,7 +221,7 @@ func (cas *containerAppService) DeployYaml(
 }
 
 // Adds and activates a new revision to the specified container app, by applying a new revision with only the image
-// updated to the specified image name. If the container app is in multiple revision mode, the traffic weights are
+// updated to the specified image name. The revision is waited on until it is in a running state.
 func (cas *containerAppService) AddRevision(
 	ctx context.Context,
 	subscriptionId string,
@@ -318,6 +320,8 @@ func (cas *containerAppService) waitForRevisionReady(
 	// See https://learn.microsoft.com/en-us/azure/container-apps/revisions#lifecycle
 	// for the complete lifecycle of a revision
 	prevStatus := statusPrefix
+	delay := 3 * time.Second
+	pollCount := 0
 	for {
 		revision, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, revisionName, nil)
 		if err != nil {
@@ -341,18 +345,29 @@ func (cas *containerAppService) waitForRevisionReady(
 					errSuffix = fmt.Sprintf(", %s", responseExtended.Properties.RunningStateDetails)
 				}
 			}
+
+			revisionManagementUrl := output.WithLinkFormat(
+				"%s/#@/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s/revisionManagement",
+				string(cas.portalUrlBase),
+				subscriptionId,
+				resourceGroupName,
+				appName)
+
+			if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+				revisionManagementUrl = fmt.Sprintf("Revision Management for %s in Azure Portal", appName)
+			}
+
 			return &internal.ErrorWithSuggestion{
 				Err: fmt.Errorf("revision '%s' is in a %s state%s",
 					revisionName,
 					*revision.Properties.RunningState,
 					errSuffix),
-				Suggestion: "To troubleshoot, click on the revision at " +
-					output.WithLinkFormat(
-						"%s/#@/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s/revisionManagement",
-						string(cas.portalUrlBase),
-						subscriptionId,
-						resourceGroupName,
-						appName) + "\nThen, view console and system logs to obtain detailed troubleshooting logs",
+				Suggestion: "To view logs:" +
+					"\n1. Visit " + revisionManagementUrl +
+					"\n2. Click on revision " + fmt.Sprintf("'%s'", revisionName) +
+					"\n3. View console and system logs" +
+					"\nFor more troubleshooting information, visit " +
+					output.WithLinkFormat("https://learn.microsoft.com/en-us/azure/container-apps/troubleshooting"),
 			}
 		// Processing states
 		case armappcontainers.RevisionRunningStateProcessing, armappcontainers.RevisionRunningStateUnknown:
@@ -403,10 +418,16 @@ func (cas *containerAppService) waitForRevisionReady(
 			prevStatus = status
 		}
 
+		// Wait longer after a few initial tries
+		if pollCount > 20 {
+			delay = 10 * time.Second
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(10 * time.Second):
+		case <-time.After(httputil.PollDelay(delay)):
+			pollCount++
 		}
 	}
 }

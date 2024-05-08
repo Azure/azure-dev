@@ -7,7 +7,7 @@ interactions:
         - --username
         - 00000000-0000-0000-0000-000000000000
         - --password-stdin
-        - crzsryxds53ljkk.azurecr.io
+        - crvqsfsqck33ooi.azurecr.io
       exitCode: 0
       stdout: |
         Login Succeeded
@@ -15,24 +15,28 @@ interactions:
     - id: 1
       args:
         - push
-        - crzsryxds53ljkk.azurecr.io/containerapp/web-azdtest-l93c276:azd-deploy-1698205558
+        - crvqsfsqck33ooi.azurecr.io/containerapp/web-azdtest-l19dd82:azd-deploy-1715204019
       exitCode: 0
       stdout: |
-        The push refers to repository [crzsryxds53ljkk.azurecr.io/containerapp/web-azdtest-l93c276]
-        ab22857c740d: Preparing
-        01206a546ccb: Preparing
-        0b06ef9e62c7: Preparing
-        de65fc897446: Preparing
-        cfa45b411d67: Preparing
-        4170e926e0d8: Preparing
-        6e3b92711bf1: Preparing
-        6e3b92711bf1: Waiting
-        ab22857c740d: Pushed
-        de65fc897446: Pushed
-        01206a546ccb: Pushed
-        0b06ef9e62c7: Pushed
-        4170e926e0d8: Pushed
-        cfa45b411d67: Pushed
-        6e3b92711bf1: Pushed
-        azd-deploy-1698205558: digest: sha256:d494a37502c47f3799238d062d8835814ed0fd22bacdbedee93e4c3e8a2c9d7a size: 1786
+        The push refers to repository [crvqsfsqck33ooi.azurecr.io/containerapp/web-azdtest-l19dd82]
+        153b586df192: Preparing
+        a717d476e213: Preparing
+        2200575a6de5: Preparing
+        5dfd481b0bf1: Preparing
+        c75c7f2b5118: Preparing
+        047e0007fcf5: Preparing
+        ae3d04994a15: Preparing
+        52ec5a4316fa: Preparing
+        047e0007fcf5: Waiting
+        ae3d04994a15: Waiting
+        52ec5a4316fa: Waiting
+        a717d476e213: Pushed
+        153b586df192: Pushed
+        5dfd481b0bf1: Pushed
+        047e0007fcf5: Pushed
+        c75c7f2b5118: Pushed
+        2200575a6de5: Pushed
+        52ec5a4316fa: Pushed
+        ae3d04994a15: Pushed
+        azd-deploy-1715204019: digest: sha256:d4fea2a71333f5ab37c61533b0a5e3da45c35c8773f0d75397f2492cc4d2e4e7 size: 1995
       stderr: ""

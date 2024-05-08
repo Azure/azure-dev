@@ -303,8 +303,10 @@ func (cas *containerAppService) syncSecrets(
 	secrets := []*armappcontainers.Secret{}
 	for _, secret := range secretsResponse.SecretsCollection.Value {
 		secrets = append(secrets, &armappcontainers.Secret{
-			Name:  secret.Name,
-			Value: secret.Value,
+			Name:        secret.Name,
+			Value:       secret.Value,
+			Identity:    secret.Identity,
+			KeyVaultURL: secret.KeyVaultURL,
 		})
 	}
 

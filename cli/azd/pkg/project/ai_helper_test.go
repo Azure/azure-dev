@@ -331,9 +331,17 @@ func Test_AiHelper_UpdateTraffic(t *testing.T) {
 	trafficMap := map[string]*int32{
 		deploymentName: convert.RefOf(int32(100)),
 	}
+	endpoint := &armmachinelearning.OnlineEndpoint{
+		Name: convert.RefOf(endpointName),
+		Properties: &armmachinelearning.OnlineEndpointProperties{
+			Traffic: map[string]*int32{
+				deploymentName: convert.RefOf(int32(100)),
+			},
+		},
+	}
 
 	mockPythonBridge := &mockPythonBridge{}
-	mockai.RegisterGetOnlineEndpoint(mockContext, scope.Workspace(), endpointName, http.StatusOK, nil)
+	mockai.RegisterGetOnlineEndpoint(mockContext, scope.Workspace(), endpointName, http.StatusOK, endpoint)
 	updateRequest := mockai.RegisterUpdateOnlineEndpoint(mockContext, scope.Workspace(), endpointName, trafficMap)
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
@@ -386,7 +394,7 @@ func Test_AiHelper_DeletePreviousDeployments(t *testing.T) {
 	}
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
-	err := aiHelper.DeletePreviousDeployments(*mockContext.Context, scope, endpointName)
+	err := aiHelper.DeleteDeployments(*mockContext.Context, scope, endpointName, []string{"MY-DEPLOYMENT"})
 	require.Len(t, deleteRequests, len(existingDeploymentNames))
 
 	require.NoError(t, err)

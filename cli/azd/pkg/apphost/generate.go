@@ -202,7 +202,7 @@ func ContainerAppManifestTemplateForProject(
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest, options AppHostOptions) (*memfs.FS, error) {
+func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*memfs.FS, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -271,7 +271,7 @@ func BicepTemplate(manifest *Manifest, options AppHostOptions) (*memfs.FS, error
 		WithMetadataParameters:  parameters,
 		MainToResourcesParams:   mapToResourceParams,
 	}
-	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", context); err != nil {
+	if err := executeToFS(fs, genTemplates, "main.bicep", name+".bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
 	}
 
@@ -280,7 +280,7 @@ func BicepTemplate(manifest *Manifest, options AppHostOptions) (*memfs.FS, error
 	}
 
 	if err := executeToFS(
-		fs, genTemplates, "main.parameters.json", "main.parameters.json", generator.bicepContext); err != nil {
+		fs, genTemplates, "main.parameters.json", name+".parameters.json", generator.bicepContext); err != nil {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 	}
 
@@ -718,6 +718,10 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 	}
 	if _, keyVaultInjected := autoInjectedParams[knownParameterKeyVault]; keyVaultInjected {
 		b.addKeyVault("kv"+uniqueFnvNumber(name), true, true)
+	}
+	if _, hasLocation := stringParams["location"]; !hasLocation {
+		// if location is not provided, add it as a link to location parameter
+		stringParams["location"] = "location"
 	}
 
 	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams}
@@ -1309,6 +1313,24 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			bindingMappedToMainIngress = true
 		}
 
+		hostNameSuffix := func(external bool) string {
+			var suffix string
+			switch emitType {
+			case inputEmitTypeYaml:
+				suffix = "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+			case inputEmitTypeBicep:
+				suffix = "${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}"
+			default:
+				panic(fmt.Sprintf("unexpected inputEmitType %s", string(emitType)))
+			}
+
+			if !external {
+				suffix = "internal." + suffix
+			}
+
+			return suffix
+		}
+
 		switch bindingProperty {
 		case "scheme":
 			return binding.Scheme, nil
@@ -1323,12 +1345,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			// expects full domain name, like `resource.internal.FQDN` or `resource.FQDN`.
 			if bindingMappedToMainIngress &&
 				(binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
-				if binding.External {
-					return fmt.Sprintf("%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
-						resource), nil
-				}
-				return fmt.Sprintf("%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}",
-					resource), nil
+				return fmt.Sprintf("%s.%s", resource, hostNameSuffix(binding.External)), nil
 			}
 			return resource, nil
 		case "targetPort":
@@ -1342,11 +1359,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			var urlFormatString string
 
 			if bindingMappedToMainIngress {
-				if binding.External {
-					urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
-				} else {
-					urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}%s"
-				}
+				urlFormatString = "%s://%s." + hostNameSuffix(binding.External) + "%s"
 			} else {
 				urlFormatString = "%s://%s%s"
 			}

@@ -30,7 +30,6 @@ import (
 )
 
 func Test_CLI_VsServerExternalAuth(t *testing.T) {
-	t.Skip("skiping to unblock daily build. Test needs maintenance")
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -140,7 +139,6 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 }
 
 func Test_CLI_VsServer(t *testing.T) {
-	t.Skip("skiping to unblock daily build. Test needs maintenance")
 	testDir := filepath.Join("testdata", "vs-server", "tests")
 	// List all tests
 	var stdout, stderr bytes.Buffer

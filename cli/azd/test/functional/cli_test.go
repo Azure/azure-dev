@@ -122,6 +122,7 @@ func TestMain(m *testing.M) {
 
 func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Skip("missing dev center configuration in test environment")
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -514,9 +515,8 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	cli.WorkingDirectory = dir
 
 	tests := []struct {
-		command       string
-		args          []string
-		errorToStdOut bool
+		command string
+		args    []string
 	}{
 		{command: "provision"},
 		{command: "deploy"},
@@ -546,11 +546,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			if test.errorToStdOut {
-				assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
-			} else {
-				assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
-			}
+			assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
 		})
 	}
 }

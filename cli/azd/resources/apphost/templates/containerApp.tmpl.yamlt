@@ -103,7 +103,7 @@ properties:
             secretRef: {{containerAppSecretName $name}}
 {{- end}}
 {{- if .Volumes }}
-        volumes:
+        volumeMounts:
 {{- range $volume := .Volumes }}
           - volumeName: {{ toLower $.Name}}-{{ removeDot $volume.Name | toLower }}
             mountPath: {{ $volume.Target }}

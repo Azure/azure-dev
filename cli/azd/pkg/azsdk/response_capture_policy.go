@@ -9,9 +9,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
-// ResponseCapturePolicy is a policy that captures the http.response.
+// ResponseCapturePolicy is a policy that captures the http.Response from a request.
 type ResponseCapturePolicy struct {
-	// Response is the captured http.response from the latest Do() call.
+	// Response is the captured http.Response from the latest Do() call.
 	Response *http.Response
 }
 

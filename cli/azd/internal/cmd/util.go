@@ -29,7 +29,12 @@ func getResourceGroupFollowUp(
 	}
 
 	subscriptionId := env.GetSubscriptionId()
-	if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
+	resourceGroupName, err := resourceManager.GetResourceGroupName(
+		ctx,
+		subscriptionId,
+		projectConfig.ResourceGroupName,
+	)
+	if err == nil {
 		suffix := ":\n" + azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName)
 
 		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {

@@ -10,9 +10,10 @@ import (
 
 func TestBuildAcaIngress(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
-		ingress, err := buildAcaIngress(custommaps.WithOrder[Binding]{}, 8080)
+		ingress, ingressBinding, err := buildAcaIngress(custommaps.WithOrder[Binding]{}, 8080)
 		assert.NoError(t, err)
 		assert.Nil(t, ingress)
+		assert.Nil(t, ingressBinding)
 	})
 
 	t.Run("common case", func(t *testing.T) {
@@ -41,9 +42,10 @@ func TestBuildAcaIngress(t *testing.T) {
 			AllowInsecure:          true,
 			AdditionalPortMappings: []genContainerAppIngressAdditionalPortMappings(nil),
 		}
-		ingress, err := buildAcaIngress(bindings, 8080)
+		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedIngress, ingress)
+		assert.Equal(t, []string{"http", "https"}, ingressBinding)
 	})
 
 	t.Run("multi external ports", func(t *testing.T) {
@@ -69,10 +71,11 @@ func TestBuildAcaIngress(t *testing.T) {
 		err := json.Unmarshal([]byte(bindingsManifest), &bindings)
 		assert.NoError(t, err)
 
-		ingress, err := buildAcaIngress(bindings, 8080)
+		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
 		assert.Error(t, err)
 		assert.EqualError(t, err, "Multiple external endpoints are not supported")
 		assert.Nil(t, ingress)
+		assert.Equal(t, []string(nil), ingressBinding)
 	})
 
 	t.Run("external non-HTTP(s) endpoints", func(t *testing.T) {
@@ -95,10 +98,11 @@ func TestBuildAcaIngress(t *testing.T) {
 		err := json.Unmarshal([]byte(bindingsManifest), &bindings)
 		assert.NoError(t, err)
 
-		ingress, err := buildAcaIngress(bindings, 8080)
+		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
 		assert.Error(t, err)
 		assert.EqualError(t, err, "External non-HTTP(s) endpoints are not supported")
 		assert.Nil(t, ingress)
+		assert.Equal(t, []string(nil), ingressBinding)
 	})
 
 	t.Run("no http", func(t *testing.T) {
@@ -120,9 +124,10 @@ func TestBuildAcaIngress(t *testing.T) {
 			Transport:              acaIngressSchemaTcp,
 			AdditionalPortMappings: []genContainerAppIngressAdditionalPortMappings(nil),
 		}
-		ingress, err := buildAcaIngress(bindings, 8080)
+		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedIngress, ingress)
+		assert.Equal(t, []string{"http"}, ingressBinding)
 	})
 
 	t.Run("invalid schema", func(t *testing.T) {
@@ -136,10 +141,11 @@ func TestBuildAcaIngress(t *testing.T) {
 		err := json.Unmarshal([]byte(bindingsManifest), &bindings)
 		assert.NoError(t, err)
 
-		ingress, err := buildAcaIngress(bindings, 8080)
+		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
 		assert.Error(t, err)
 		assert.EqualError(t, err, `binding "http" has invalid scheme "invalid"`)
 		assert.Nil(t, ingress)
+		assert.Equal(t, []string(nil), ingressBinding)
 	})
 
 	t.Run("additional ports", func(t *testing.T) {
@@ -171,9 +177,10 @@ func TestBuildAcaIngress(t *testing.T) {
 				},
 			},
 		}
-		ingress, err := buildAcaIngress(bindings, 8080)
+		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedIngress, ingress)
+		assert.Equal(t, []string{"https"}, ingressBinding)
 	})
 
 	t.Run("tcp with no port", func(t *testing.T) {
@@ -186,9 +193,10 @@ func TestBuildAcaIngress(t *testing.T) {
 		err := json.Unmarshal([]byte(bindingsManifest), &bindings)
 		assert.NoError(t, err)
 
-		ingress, err := buildAcaIngress(bindings, 8080)
+		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
 		assert.Error(t, err)
 		assert.EqualError(t, err, `binding "a" has scheme "tcp" but no container port`)
 		assert.Nil(t, ingress)
+		assert.Equal(t, []string(nil), ingressBinding)
 	})
 }

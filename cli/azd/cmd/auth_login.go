@@ -301,10 +301,6 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-		log.Printf("failed clearing subscriptions: %v", err)
-	}
-
 	if err := la.login(ctx); err != nil {
 		return nil, err
 	}
@@ -313,30 +309,14 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	// Rehydrate or clear the account's subscriptions cache.
-	// The caching is done here to increase responsiveness of listing subscriptions (during azd init).
-	// It also allows an implicit command for the user to refresh cached subscriptions.
 	if la.flags.clientID == "" {
-		// Deleting subscriptions on file is very unlikely to fail, unless there are serious filesystem issues.
-		// If this does fail, we want the user to be aware of this. Like other stored azd account data,
-		// stored subscriptions are currently tied to the OS user, and not the individual account being logged in,
-		// this means cross-contamination is possible.
-		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-			return nil, err
-		}
-
-		err := la.accountSubManager.RefreshSubscriptions(ctx)
-		if err != nil {
+		// Update the subscriptions cache for regular users (i.e. non-service-principals).
+		// The caching is done here to increase responsiveness of listing subscriptions in the application.
+		// It also allows an implicit command for the user to refresh cached subscriptions.
+		if err := la.accountSubManager.RefreshSubscriptions(ctx); err != nil {
 			// If this fails, the subscriptions will still be loaded on-demand.
 			// erroring out when the user interacts with subscriptions is much more user-friendly.
 			log.Printf("failed retrieving subscriptions: %v", err)
-		}
-	} else {
-		// Service principals do not typically require subscription caching (running in CI scenarios)
-		// We simply clear the cache, which is much faster than rehydrating.
-		err := la.accountSubManager.ClearSubscriptions(ctx)
-		if err != nil {
-			log.Printf("failed clearing subscriptions: %v", err)
 		}
 	}
 

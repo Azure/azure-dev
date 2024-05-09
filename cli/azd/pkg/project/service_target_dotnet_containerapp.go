@@ -124,6 +124,21 @@ func (at *dotnetContainerAppTarget) Deploy(
 			var remoteImageName string
 			var portNumber int
 
+			// This service target is shared across three different aspire resource types: "dockerfile.v0" (a reference to
+			// an project backed by a dockerfile), "container.v0" (a reference to a project backed by an existing container
+			// image), and "project.v0" (a reference to a project backed by a .NET project). Depending on the type, we have
+			// different steps for pushing the container image.
+			//
+			// For the dockerfile.v0 type, [DotNetImporter] arranges things such that we can leverage the existing support
+			// in `azd` for services backed by a Dockerfile. This causes the image to be built and pushed to ACR.
+			//
+			// For the container.v0 type, we assume the container image specified by the manifest is public and just use it
+			// directly.
+			//
+			// For the project.v0 type, we use the .NET CLI to publish the container image to ACR.
+			//
+			// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
+			// to the deployment template as a parameter named `Image`.
 			if serviceConfig.Language == ServiceLanguageDocker {
 				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
 				syncProgress(task, containerDeployTask.Progress())
@@ -135,6 +150,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 				}
 
 				remoteImageName = res.Details.(*dockerDeployResult).RemoteImageTag
+			} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
+				remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 			} else {
 				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
 
@@ -158,18 +175,17 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			var manifest string
 
-			projectRoot := serviceConfig.Path()
-			if f, err := os.Stat(projectRoot); err == nil && !f.IsDir() {
-				projectRoot = filepath.Dir(projectRoot)
+			appHostRoot := serviceConfig.DotNetContainerApp.AppHostPath
+			if f, err := os.Stat(appHostRoot); err == nil && !f.IsDir() {
+				appHostRoot = filepath.Dir(appHostRoot)
 			}
 
-			autoConfigureDataProtection := at.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature)
-
-			manifestPath := filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml")
+			manifestPath := filepath.Join(
+				appHostRoot, "infra", fmt.Sprintf("%s.tmpl.yaml", serviceConfig.DotNetContainerApp.ProjectName))
 			if _, err := os.Stat(manifestPath); err == nil {
 				log.Printf("using container app manifest from %s", manifestPath)
 
-				contents, err := os.ReadFile(filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml"))
+				contents, err := os.ReadFile(manifestPath)
 				if err != nil {
 					task.SetError(fmt.Errorf("reading container app manifest: %w", err))
 					return
@@ -178,13 +194,15 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else {
 				log.Printf(
 					"generating container app manifest from %s for project %s",
-					serviceConfig.DotNetContainerApp.ProjectPath,
+					serviceConfig.DotNetContainerApp.AppHostPath,
 					serviceConfig.DotNetContainerApp.ProjectName)
 
 				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
 					serviceConfig.DotNetContainerApp.Manifest,
 					serviceConfig.DotNetContainerApp.ProjectName,
-					autoConfigureDataProtection,
+					apphost.AppHostOptions{
+						AutoConfigureDataProtection: at.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
+					},
 				)
 				if err != nil {
 					task.SetError(fmt.Errorf("generating container app manifest: %w", err))

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -33,15 +35,19 @@ func getResourceGroupFollowUp(
 		projectConfig.ResourceGroupName,
 	)
 	if err == nil {
+		suffix := ":\n" + azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName)
+
+		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+			suffix = "."
+		}
+
 		defaultFollowUpText := fmt.Sprintf(
-			"You can view the resources created under the resource group %s in Azure Portal:", resourceGroupName)
+			"You can view the resources created under the resource group %s in Azure Portal", resourceGroupName)
 		if whatIf {
 			defaultFollowUpText = fmt.Sprintf(
-				"You can view the current resources under the resource group %s in Azure Portal:", resourceGroupName)
+				"You can view the current resources under the resource group %s in Azure Portal", resourceGroupName)
 		}
-		followUp = fmt.Sprintf("%s\n%s",
-			defaultFollowUpText,
-			azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName))
+		followUp = defaultFollowUpText + suffix
 	}
 
 	return followUp

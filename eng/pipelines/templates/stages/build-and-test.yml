@@ -6,14 +6,10 @@ parameters:
     default:
       # Compliant image name required
       LinuxARM64: 
-        Pool: $(LINUXARMPOOL)
-        OSVmImage: $(LINUXARMVMIMAGE)
+        Pool: $(LINUXPOOL)
+        OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         ImageKey: image
-        HostArchitecture: Arm64
-        PreBuildSteps:
-          - pwsh: sudo tdnf install -y build-essential
-            displayName: Install build-essential
         Variables: 
           BuildTarget: azd-linux-arm64
           BuildOutputName: azd
@@ -26,8 +22,6 @@ parameters:
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
         ImageKey: vmImage
-        HostArchitecture: x86_64
-        PreBuildSteps: []
         Variables: 
           BuildTarget: azd-darwin-arm64
           BuildOutputName: azd
@@ -64,8 +58,6 @@ stages:
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
-            PreBuildSteps: ${{ build.value.PreBuildSteps }}
-            HostArchitecture: ${{ build.value.HostArchitecture }}
             Variables: ${{ build.value.Variables }}
 
       - job: MergeLinuxPackages

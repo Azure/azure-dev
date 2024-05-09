@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,6 +46,9 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 	// We need to give it some time to paint.
 	const cSleep = 50 * time.Millisecond
 
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
 	lines := &lineCapturer{}
 	c := NewConsole(
 		false,
@@ -55,12 +59,14 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 			Stdin:  os.Stdin,
 			Stdout: lines,
 		},
+		formatter,
 		nil,
-		nil)
+	)
 
 	ctx := context.Background()
 	require.Len(t, lines.captured, 0)
 	c.ShowSpinner(ctx, "Some title.", Step)
+
 	time.Sleep(cSleep)
 	require.Len(t, lines.captured, 1)
 	require.Equal(t, lines.captured[0], "Some title.")

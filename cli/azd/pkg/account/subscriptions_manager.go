@@ -27,14 +27,17 @@ type SubscriptionTenantResolver interface {
 	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
 }
 
+// Typically auth.Manager
 type principalInfoProvider interface {
 	GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error)
+	ClaimsForCurrentUser(ctx context.Context, options *auth.ClaimsForCurrentUserOptions) (auth.TokenClaims, error)
 }
 
+// Typically subscriptionsCache
 type subCache interface {
-	Load() ([]Subscription, error)
-	Save(save []Subscription) error
-	Clear() error
+	Load(ctx context.Context, key string) ([]Subscription, error)
+	Save(ctx context.Context, key string, save []Subscription) error
+	Clear(ctx context.Context) error
 }
 
 // SubscriptionsManager manages listing, storing and retrieving subscriptions for the current account.
@@ -53,7 +56,7 @@ func NewSubscriptionsManager(
 	service *SubscriptionsService,
 	auth *auth.Manager,
 	console input.Console) (*SubscriptionsManager, error) {
-	cache, err := NewSubscriptionsCache()
+	cache, err := newSubCache()
 	if err != nil {
 		return nil, err
 	}
@@ -66,9 +69,9 @@ func NewSubscriptionsManager(
 	}, nil
 }
 
-// Clears stored cached subscriptions. This can only return an error is a filesystem error other than ErrNotExist occurred.
+// Clears stored cached subscriptions. This can only return an error if a filesystem error other than ErrNotExist occurred.
 func (m *SubscriptionsManager) ClearSubscriptions(ctx context.Context) error {
-	err := m.cache.Clear()
+	err := m.cache.Clear(ctx)
 	if err != nil {
 		return fmt.Errorf("clearing stored subscriptions: %w", err)
 	}
@@ -78,12 +81,17 @@ func (m *SubscriptionsManager) ClearSubscriptions(ctx context.Context) error {
 
 // Updates stored cached subscriptions.
 func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
+	claims, err := m.principalInfo.ClaimsForCurrentUser(ctx, nil)
+	if err != nil {
+		return err
+	}
+	uid := claims.LocalAccountId()
 	subs, err := m.ListSubscriptions(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching subscriptions: %w", err)
 	}
 
-	err = m.cache.Save(subs)
+	err = m.cache.Save(ctx, uid, subs)
 	if err != nil {
 		return fmt.Errorf("storing subscriptions: %w", err)
 	}
@@ -109,22 +117,23 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 		return *principalTenantId, nil
 	}
 
-	subscriptions, err := m.GetSubscriptions(ctx)
+	res, err := m.getSubscriptions(ctx)
 	if err != nil {
 		return "", fmt.Errorf("resolving user access to subscription '%s' : %w", subscriptionId, err)
 	}
 
-	for _, sub := range subscriptions {
+	for _, sub := range res.subscriptions {
 		if sub.Id == subscriptionId {
 			return sub.UserAccessTenantId, nil
 		}
 	}
 
 	return "", fmt.Errorf(
-		"failed to resolve user access to subscription with ID '%s'. "+
+		"failed to resolve user '%s' access to subscription with ID '%s'. "+
 			"If you recently gained access to this subscription, run `azd auth login` again to reload subscriptions.\n"+
 			"Otherwise, visit this subscription in Azure Portal using the browser, "+
 			"then run `azd auth login` ",
+		res.userClaims.DisplayUsername(),
 		subscriptionId)
 }
 
@@ -133,20 +142,43 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 // Unlike ListSubscriptions, GetSubscriptions first examines the subscriptions cache.
 // On cache miss, subscriptions are fetched, the cached is updated, before the result is returned.
 func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
-	subscriptions, err := m.cache.Load()
+	res, err := m.getSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.subscriptions, nil
+}
+
+type getSubscriptionsResult struct {
+	subscriptions []Subscription
+	userClaims    auth.TokenClaims
+}
+
+func (m *SubscriptionsManager) getSubscriptions(ctx context.Context) (getSubscriptionsResult, error) {
+	claims, err := m.principalInfo.ClaimsForCurrentUser(ctx, nil)
+	if err != nil {
+		return getSubscriptionsResult{}, err
+	}
+	uid := claims.LocalAccountId()
+
+	subscriptions, err := m.cache.Load(ctx, uid)
 	if err != nil {
 		subscriptions, err = m.ListSubscriptions(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("listing subscriptions: %w", err)
+			return getSubscriptionsResult{}, fmt.Errorf("listing subscriptions: %w", err)
 		}
 
-		err = m.cache.Save(subscriptions)
+		err = m.cache.Save(ctx, uid, subscriptions)
 		if err != nil {
-			return nil, fmt.Errorf("saving subscriptions to cache: %w", err)
+			return getSubscriptionsResult{}, fmt.Errorf("saving subscriptions to cache: %w", err)
 		}
 	}
 
-	return subscriptions, nil
+	return getSubscriptionsResult{
+		subscriptions: subscriptions,
+		userClaims:    claims,
+	}, nil
 }
 
 func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {

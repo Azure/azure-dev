@@ -122,6 +122,7 @@ func TestMain(m *testing.M) {
 
 func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Skip("missing dev center configuration in test environment")
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -132,20 +133,28 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	session := recording.Start(t)
 	envName := randomOrStoredEnvName(session)
 
+	// This test leverages a real dev center configuration with the following values:
+	devCenterName := "dc-azd-o2pst6gaydv5o"
+	catalogName := "wbreza"
+	projectName := "Project-1"
+	environmentDefinitionName := "HelloWorld"
+	environmentTypeName := "Dev"
+
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, fmt.Sprintf("%s=devcenter", environment.PlatformTypeEnvVarName))
-	cli.Env = append(cli.Env, fmt.Sprintf("%s=wbreza", devcenter.DevCenterCatalogEnvName))
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=%s", devcenter.DevCenterNameEnvName, devCenterName))
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=%s", devcenter.DevCenterCatalogEnvName, catalogName))
 
 	initStdIn := strings.Join(
 		[]string{
 			"Select a template",
-			"HelloWorld",
+			environmentDefinitionName,
 			envName,
-			"Project-1",
+			projectName,
 		},
 		"\n",
 	)
@@ -159,21 +168,21 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
 	require.NoError(t, err)
 
-	require.Equal(t, "dc-wabrez-od3kzvk4mwe72", projectConfig.Platform.Config["name"])
-	require.Equal(t, "wbreza", projectConfig.Platform.Config["catalog"])
-	require.Equal(t, "HelloWorld", projectConfig.Platform.Config["environmentDefinition"])
+	require.Equal(t, devCenterName, projectConfig.Platform.Config["name"])
+	require.Equal(t, catalogName, projectConfig.Platform.Config["catalog"])
+	require.Equal(t, environmentDefinitionName, projectConfig.Platform.Config["environmentDefinition"])
 
 	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
 	require.Equal(t, envName, env.Name())
-	projectName, _ := env.Config.Get(devcenter.DevCenterProjectPath)
+	actualProjectName, _ := env.Config.Get(devcenter.DevCenterProjectPath)
 	repoUrl, _ := env.Config.Get("provision.parameters.repoUrl")
-	require.Equal(t, "Project-1", projectName)
+	require.Equal(t, projectName, actualProjectName)
 	require.Equal(t, "https://github.com/wbreza/azd-hello-world", repoUrl)
 
 	// azd up
-	upStdIn := strings.Join([]string{"Dev"}, "\n")
+	upStdIn := strings.Join([]string{environmentTypeName}, "\n")
 	_, err = cli.RunCommandWithStdIn(ctx, upStdIn, "up")
 	require.NoError(t, err)
 
@@ -181,8 +190,8 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	env, err = envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
-	envTypeName, _ := env.Config.Get(devcenter.DevCenterEnvTypePath)
-	require.Equal(t, "Dev", envTypeName)
+	actualEnvTypeName, _ := env.Config.Get(devcenter.DevCenterEnvTypePath)
+	require.Equal(t, environmentTypeName, actualEnvTypeName)
 
 	// azd down
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
@@ -506,9 +515,8 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	cli.WorkingDirectory = dir
 
 	tests := []struct {
-		command       string
-		args          []string
-		errorToStdOut bool
+		command string
+		args    []string
 	}{
 		{command: "provision"},
 		{command: "deploy"},
@@ -538,11 +546,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			if test.errorToStdOut {
-				assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
-			} else {
-				assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
-			}
+			assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
 		})
 	}
 }

@@ -105,15 +105,6 @@ func (p *BicepProvider) promptForParameter(
 			return nil, err
 		}
 		value = location
-	} else if paramType == ParameterTypeString && azdMetadata.Type != nil &&
-		*azdMetadata.Type == azure.AzdMetadataTypeGenerate {
-
-		genValue, err := autoGenerate(key, azdMetadata)
-		if err != nil {
-			return nil, err
-		}
-		value = genValue
-
 	} else if paramType == ParameterTypeString &&
 		azdMetadata.Type != nil &&
 		*azdMetadata.Type == azure.AzdMetadataTypeGenerateOrManual {

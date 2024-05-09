@@ -26,6 +26,7 @@ type GitCli interface {
 	AddRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error
 	UpdateRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error
 	GetCurrentBranch(ctx context.Context, repositoryPath string) (string, error)
+	GetRepoRoot(ctx context.Context, repositoryPath string) (string, error)
 	AddFile(ctx context.Context, repositoryPath string, filespec string) error
 	Commit(ctx context.Context, repositoryPath string, message string) error
 	PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error
@@ -135,6 +136,18 @@ func (cli *gitCli) GetCurrentBranch(ctx context.Context, repositoryPath string) 
 		return "", ErrNotRepository
 	} else if err != nil {
 		return "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	return strings.TrimSpace(res.Stdout), nil
+}
+
+func (cli *gitCli) GetRepoRoot(ctx context.Context, repositoryPath string) (string, error) {
+	runArgs := newRunArgs("-C", repositoryPath, "rev-parse", "--show-toplevel")
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if notGitRepositoryRegex.MatchString(res.Stderr) {
+		return "", ErrNotRepository
+	} else if err != nil {
+		return "", fmt.Errorf("failed to get repository root: %w", err)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil

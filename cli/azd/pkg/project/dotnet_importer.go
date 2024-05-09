@@ -104,7 +104,9 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate(manifest)
+	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
+		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -202,7 +204,7 @@ func (ai *DotNetImporter) Services(
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			Manifest:    manifest,
 			ProjectName: name,
-			ProjectPath: svcConfig.Path(),
+			AppHostPath: svcConfig.Path(),
 		}
 
 		services[svc.Name] = svc
@@ -239,7 +241,35 @@ func (ai *DotNetImporter) Services(
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			Manifest:    manifest,
 			ProjectName: name,
-			ProjectPath: svcConfig.Path(),
+			AppHostPath: svcConfig.Path(),
+		}
+
+		services[svc.Name] = svc
+	}
+
+	containers := apphost.Containers(manifest)
+	for name, container := range containers {
+		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
+		svc := &ServiceConfig{
+			RelativePath: svcConfig.RelativePath,
+			Language:     ServiceLanguageDotNet,
+			Host:         DotNetContainerAppTarget,
+		}
+
+		svc.Name = name
+		svc.Project = p
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
+
+		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.DotNetContainerApp = &DotNetContainerAppOptions{
+			ContainerImage: container.Image,
+			Manifest:       manifest,
+			ProjectName:    name,
+			AppHostPath:    svcConfig.Path(),
 		}
 
 		services[svc.Name] = svc
@@ -259,9 +289,21 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 
 	generatedFS := memfs.New()
 
-	infraFS, err := apphost.BicepTemplate(manifest)
+	rootModuleName := DefaultModule
+	if p.Infra.Module != "" {
+		rootModuleName = p.Infra.Module
+	}
+
+	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{
+		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)
+	}
+
+	infraPathPrefix := DefaultPath
+	if p.Infra.Path != "" {
+		infraPathPrefix = p.Infra.Path
 	}
 
 	err = fs.WalkDir(infraFS, ".", func(path string, d fs.DirEntry, err error) error {
@@ -273,7 +315,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return nil
 		}
 
-		err = generatedFS.MkdirAll(filepath.Join("infra", filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
+		err = generatedFS.MkdirAll(filepath.Join(infraPathPrefix, filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
 		if err != nil {
 			return err
 		}
@@ -283,8 +325,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
-		return generatedFS.WriteFile(filepath.Join("infra", path), contents, d.Type().Perm())
-
+		return generatedFS.WriteFile(filepath.Join(infraPathPrefix, path), contents, d.Type().Perm())
 	})
 	if err != nil {
 		return nil, err
@@ -297,19 +338,19 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return nil, err
 	}
 
-	autoConfigureDataProtection := ai.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature)
-
 	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
-	writeManifestForResource := func(name string, path string) error {
+	writeManifestForResource := func(name string) error {
 		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			manifest, name, autoConfigureDataProtection)
+			manifest, name, apphost.AppHostOptions{
+				AutoConfigureDataProtection: ai.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
+			})
 		if err != nil {
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}
 
-		normalPath, err := filepath.EvalSymlinks(path)
+		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
 		if err != nil {
 			return err
 		}
@@ -319,7 +360,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
-		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "manifests", "containerApp.tmpl.yaml")
+		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.tmpl.yaml", name))
 
 		if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
 			return err
@@ -328,14 +369,20 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
 	}
 
-	for name, path := range apphost.ProjectPaths(manifest) {
-		if err := writeManifestForResource(name, path); err != nil {
+	for name := range apphost.ProjectPaths(manifest) {
+		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}
 	}
 
-	for name, docker := range apphost.Dockerfiles(manifest) {
-		if err := writeManifestForResource(name, docker.Path); err != nil {
+	for name := range apphost.Dockerfiles(manifest) {
+		if err := writeManifestForResource(name); err != nil {
+			return nil, err
+		}
+	}
+
+	for name := range apphost.Containers(manifest) {
+		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}
 	}

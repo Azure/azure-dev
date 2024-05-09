@@ -1,8 +1,10 @@
 package apphost
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -62,6 +64,15 @@ func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[
 		}
 		return exec.RunResult{}, nil
 	})
+}
+
+func TestGenerateHash(t *testing.T) {
+	buf := bytes.Buffer{}
+	e := json.NewEncoder(&buf)
+	e.SetIndent("", "")
+	e.SetEscapeHTML(false)
+	e.Encode(json.RawMessage(aspireContainerManifest))
+	t.Log(buf.String())
 }
 
 func TestAspireEscaping(t *testing.T) {

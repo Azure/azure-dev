@@ -54,7 +54,7 @@ type AzCli interface {
 		resourceGroup string,
 		appName string,
 		deployZipFile io.Reader,
-		printStatus func(string),
+		logProgress func(string),
 	) (*string, error)
 	DeployFunctionAppUsingZipFile(
 		ctx context.Context,

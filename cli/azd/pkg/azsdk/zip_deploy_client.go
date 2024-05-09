@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -124,9 +123,8 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 	subscriptionId,
 	resourceGroup,
 	appName string,
-	printStatus func(string),
+	logProgress func(string),
 ) (*runtime.Poller[armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse], error) {
-	printStatus("Creating deployment request")
 	request, err := c.createDeployRequest(ctx, zipFile)
 	if err != nil {
 		return nil, err
@@ -148,22 +146,14 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, fmt.Errorf("creating web app client: %w", err)
 	}
 
-	printStatus("Getting deployment status id")
 	deploymentStatusId := response.Header.Get("Scm-Deployment-Id")
-	matched, err := regexp.MatchString(
-		`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`,
-		deploymentStatusId)
-	if err != nil {
-		return nil, err
-	}
-
-	if !matched {
-		return nil, fmt.Errorf("invalid or empty deployment status id")
+	if deploymentStatusId != "" {
+		return nil, fmt.Errorf("empty deployment status id")
 	}
 
 	// nolint:lll
 	// Example definition: https://github.com/Azure/azure-rest-api-specs/tree/main/specification/web/resource-manager/Microsoft.Web/stable/2022-03-01/examples/GetSiteDeploymentStatus.json
-	printStatus("Getting deployment status response")
+	logProgress("Starting deployment process")
 	poller, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, deploymentStatusId, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment status: %w", err)
@@ -178,10 +168,10 @@ func (c *ZipDeployClient) DeployTrackStatus(
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
-	printStatus func(string)) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
+	logProgress func(string)) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
 	var response armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse
 
-	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, subscriptionId, resourceGroup, appName, printStatus)
+	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, subscriptionId, resourceGroup, appName, logProgress)
 	if err != nil {
 		return response, err
 	}

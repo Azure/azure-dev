@@ -161,15 +161,26 @@ func (m *aiEndpointTarget) Deploy(
 				return
 			}
 
+			if onlineDeployment == nil {
+				task.SetError(fmt.Errorf("unexpected response from deployToEndpoint: deployment is nil"))
+				return
+			}
+			if onlineDeployment.Name == nil {
+				task.SetError(fmt.Errorf("unexpected response from deployToEndpoint: deployment name is nil"))
+				return
+			}
+
+			deploymentName := *onlineDeployment.Name
 			task.SetProgress(NewServiceProgress("Updating traffic"))
-			_, err = m.aiHelper.UpdateTraffic(ctx, workspaceScope, endpointName, *onlineDeployment.Name)
+			_, err = m.aiHelper.UpdateTraffic(ctx, workspaceScope, endpointName, deploymentName)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed updating traffic: %w", err))
 				return
 			}
 
 			task.SetProgress(NewServiceProgress("Removing old deployments"))
-			if err := m.aiHelper.DeletePreviousDeployments(ctx, workspaceScope, endpointName); err != nil {
+			if err := m.aiHelper.DeleteDeployments(
+				ctx, workspaceScope, endpointName, []string{deploymentName}); err != nil {
 				task.SetError(fmt.Errorf("failed deleting previous deployments: %w", err))
 				return
 			}

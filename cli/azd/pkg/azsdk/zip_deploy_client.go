@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ const (
 type ZipDeployClient struct {
 	hostName string
 	pipeline runtime.Pipeline
+	cred     azcore.TokenCredential
 }
 
 type DeployResponse struct {
@@ -80,6 +82,7 @@ func NewZipDeployClient(
 	return &ZipDeployClient{
 		hostName: hostName,
 		pipeline: pipeline,
+		cred:     credential,
 	}, nil
 }
 
@@ -118,11 +121,12 @@ func (c *ZipDeployClient) BeginDeploy(
 func (c *ZipDeployClient) BeginDeployTrackStatus(
 	ctx context.Context,
 	zipFile io.Reader,
-	cred azcore.TokenCredential,
 	subscriptionId,
 	resourceGroup,
 	appName string,
+	printStatus func(string),
 ) (*runtime.Poller[armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse], error) {
+	printStatus("Creating deployment request")
 	request, err := c.createDeployRequest(ctx, zipFile)
 	if err != nil {
 		return nil, err
@@ -139,14 +143,26 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, runtime.NewResponseError(response)
 	}
 
-	client, err := armappservice.NewWebAppsClient(subscriptionId, cred, nil)
+	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating web app client: %w", err)
 	}
 
+	printStatus("Getting deployment status id")
+	deploymentStatusId := response.Header.Get("Scm-Deployment-Id")
+	matched, err := regexp.MatchString(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`, deploymentStatusId)
+	if err != nil {
+		return nil, err
+	}
+
+	if !matched {
+		return nil, fmt.Errorf("invalid or empty deployment status id")
+	}
+
 	// nolint:lll
 	// Example definition: https://github.com/Azure/azure-rest-api-specs/tree/main/specification/web/resource-manager/Microsoft.Web/stable/2022-03-01/examples/GetSiteDeploymentStatus.json
-	poller, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, response.Header.Get("Scm-Deployment-Id"), nil)
+	printStatus("Getting deployment status response")
+	poller, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, deploymentStatusId, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment status: %w", err)
 	}
@@ -157,13 +173,13 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 func (c *ZipDeployClient) DeployTrackStatus(
 	ctx context.Context,
 	zipFile io.Reader,
-	cred azcore.TokenCredential,
 	subscriptionId string,
 	resourceGroup string,
-	appName string) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
+	appName string,
+	printStatus func(string)) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
 	var response armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse
 
-	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, cred, subscriptionId, resourceGroup, appName)
+	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, subscriptionId, resourceGroup, appName, printStatus)
 	if err != nil {
 		return response, err
 	}

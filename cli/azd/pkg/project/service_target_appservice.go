@@ -100,6 +100,7 @@ func (st *appServiceTarget) Deploy(
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				zipFile,
+				func(message string) { task.SetProgress(NewServiceProgress(message)) },
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))

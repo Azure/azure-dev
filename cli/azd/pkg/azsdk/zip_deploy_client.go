@@ -147,7 +147,7 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 	}
 
 	deploymentStatusId := response.Header.Get("Scm-Deployment-Id")
-	if deploymentStatusId != "" {
+	if deploymentStatusId == "" {
 		return nil, fmt.Errorf("empty deployment status id")
 	}
 

@@ -80,7 +80,6 @@ func checkWebAppDeploymentStatus(
 	res armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse,
 ) (string, error) {
 	properties := res.CsmDeploymentStatus.Properties
-	deploymentResult := ""
 	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
 	successNumber := int(*properties.NumberOfInstancesSuccessful)
 	failNumber := int(*properties.NumberOfInstancesFailed)
@@ -129,6 +128,7 @@ func checkWebAppDeploymentStatus(
 		}
 
 		return "", fmt.Errorf(errorString)
+	// Default case for the rest statuses, they shouldn't appear as a final response
 	default:
 		errorString += fmt.Sprintf("Deployment failed with status: %s\n", *properties.Status)
 		errors := properties.Errors
@@ -145,8 +145,6 @@ func checkWebAppDeploymentStatus(
 
 		return "", fmt.Errorf(errorString)
 	}
-
-	return deploymentResult, nil
 }
 
 func (cli *azCli) DeployAppServiceZip(

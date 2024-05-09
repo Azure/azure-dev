@@ -150,7 +150,9 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 
 	printStatus("Getting deployment status id")
 	deploymentStatusId := response.Header.Get("Scm-Deployment-Id")
-	matched, err := regexp.MatchString(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`, deploymentStatusId)
+	matched, err := regexp.MatchString(
+		`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`,
+		deploymentStatusId)
 	if err != nil {
 		return nil, err
 	}

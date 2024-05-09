@@ -282,6 +282,32 @@ func (b *bodyPoller) Done(i *cassette.Interaction) (bool, error) {
 	return isTerminalState(state), nil
 }
 
+// annotatedPollDiscarder handles fast-forwarding behavior for requests
+// that are annotated specifically with the HTTP header Recording-Poll-Id.
+//
+// See [httpPollDiscarder] for how fast-forwarding works.
+type annotatedPollDiscarder struct {
+	// Recording-Poll-Id -> last interaction ID in cassette
+	lastPollId map[string]int
+}
+
+func (d *annotatedPollDiscarder) DiscardPollInteractions(cst *cassette.Cassette) {
+	// Discard everything except for the last interaction for each unique poll operation.
+	for _, i := range cst.Interactions {
+		if id := i.Request.Headers.Get("Recording-Poll-Id"); id != "" {
+			d.lastPollId[id] = i.ID
+		}
+	}
+
+	for _, i := range cst.Interactions {
+		if id := i.Request.Headers.Get("Recording-Poll-Id"); id != "" {
+			if d.lastPollId[id] != i.ID {
+				i.DiscardOnSave = true
+			}
+		}
+	}
+}
+
 var errNoBody = errors.New("response did not contain a body")
 
 func jsonBody(respBody string) (map[string]any, error) {

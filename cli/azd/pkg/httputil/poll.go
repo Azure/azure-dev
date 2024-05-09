@@ -6,11 +6,11 @@
 package httputil
 
 import (
-	"time"
+	"net/http"
 )
 
-// By default, PollDelay is a no-op function that returns the delay as-is.
-// This function is overridden in the record mode to return a suitable delay for testing.
-func PollDelay(delay time.Duration) time.Duration {
-	return delay
+// By default, PollHeader is a no-op function that returns nil.
+// This function is overridden in the record mode to return header for polling fast-forwarding.
+func PollHeader() http.Header {
+	return nil
 }

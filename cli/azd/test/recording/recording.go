@@ -307,6 +307,21 @@ func Start(t *testing.T, opts ...Options) *Session {
 			}
 
 			if shouldSave {
+				cst, err := cassette.Load(recorderOptions.CassetteName)
+				if err != nil {
+					t.Fatalf("failed to load cassette: %v", err)
+				}
+
+				// Discard polling interactions. This requires examining the
+				// interactions in the cassettes by looping it through twice,
+				// which isn't currently possible using go-vcr hooks.
+				discarder := annotatedPollDiscarder{}
+				discarder.DiscardPollInteractions(cst)
+
+				if err != nil {
+					t.Fatalf("failed to save recording: %v", err)
+				}
+
 				err = saveVariables(recorderOptions.CassetteName+".yaml", session.Variables)
 				if err != nil {
 					t.Fatalf("failed to save variables: %v", err)

@@ -20,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -300,14 +299,8 @@ func (cas *containerAppService) waitForRevisionReady(
 		return err
 	}
 
-	// Add a policy to capture the raw response. This allows us to get fields (ex: 'properties.runningStateDetails') that are
-	// currently not available in armappcontainers.ContainerAppsRevisionsClientGetRevisionResponse
-	responseCapture := azsdk.ResponseCapturePolicy{}
-
-	revisionsClientOptions := *cas.armClientOptions
-	revisionsClientOptions.PerCallPolicies = append(revisionsClientOptions.PerCallPolicies, &responseCapture)
 	revisionsClient, err := armappcontainers.NewContainerAppsRevisionsClient(
-		subscriptionId, credential, &revisionsClientOptions)
+		subscriptionId, credential, cas.armClientOptions)
 	if err != nil {
 		return fmt.Errorf("creating revisions client: %w", err)
 	}
@@ -318,6 +311,10 @@ func (cas *containerAppService) waitForRevisionReady(
 		return fmt.Errorf("creating replicas client: %w", err)
 	}
 
+	var rawResponse *http.Response
+	getRevisionCtx := policy.WithCaptureResponse(ctx, &rawResponse)
+	getRevisionCtx = policy.WithHTTPHeader(getRevisionCtx, httputil.PollHeader())
+
 	// Poll for the revision to be in a running state
 	// See https://learn.microsoft.com/en-us/azure/container-apps/revisions#lifecycle
 	// for the complete lifecycle of a revision
@@ -325,7 +322,7 @@ func (cas *containerAppService) waitForRevisionReady(
 	delay := 3 * time.Second
 	pollCount := 0
 	for {
-		revision, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, revisionName, nil)
+		revision, err := revisionsClient.GetRevision(getRevisionCtx, resourceGroupName, appName, revisionName, nil)
 		if err != nil {
 			return fmt.Errorf("getting revision '%s': %w", revisionName, err)
 		}
@@ -342,7 +339,7 @@ func (cas *containerAppService) waitForRevisionReady(
 			errSuffix := ""
 
 			responseExtended := containerAppGetRevisionResponseExtended{}
-			if err := runtime.UnmarshalAsJSON(responseCapture.Response, &responseExtended); err == nil {
+			if err := runtime.UnmarshalAsJSON(rawResponse, &responseExtended); err == nil {
 				if responseExtended.Properties.RunningStateDetails != "" {
 					errSuffix = fmt.Sprintf(", %s", responseExtended.Properties.RunningStateDetails)
 				}
@@ -369,7 +366,7 @@ func (cas *containerAppService) waitForRevisionReady(
 					"\n2. Click on revision " + fmt.Sprintf("'%s'", revisionName) +
 					"\n3. View console and system logs" +
 					"\nFor more troubleshooting information, visit " +
-					output.WithLinkFormat("https://learn.microsoft.com/en-us/azure/container-apps/troubleshooting"),
+					output.WithLinkFormat("https://learn.microsoft.com/azure/container-apps/troubleshooting"),
 			}
 		// Processing states
 		case armappcontainers.RevisionRunningStateProcessing, armappcontainers.RevisionRunningStateUnknown:
@@ -428,7 +425,7 @@ func (cas *containerAppService) waitForRevisionReady(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(httputil.PollDelay(delay)):
+		case <-time.After(delay):
 			pollCount++
 		}
 	}

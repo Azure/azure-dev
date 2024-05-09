@@ -6,20 +6,15 @@
 package httputil
 
 import (
-	"os"
-	"time"
+	"math/rand"
+	"net/http"
+	"strconv"
 )
 
-// By default, PollDelay is a no-op function that returns the delay as-is.
-// This function is overridden in the record mode to return a suitable delay for testing.
-func PollDelay(delay time.Duration) time.Duration {
-	d := os.Getenv("AZD_TEST_POLL_DELAY")
-	if d != "" {
-		testDelay, err := time.ParseDuration(d)
-		if err != nil {
-			panic(err)
-		}
-		delay = testDelay
+// Provider headers for polling fast-forwarding.
+func PollHeader() http.Header {
+	return map[string][]string{
+		//nolint:gosec
+		"Poll-Recording-Id": {strconv.Itoa(rand.Int())},
 	}
-	return delay
 }

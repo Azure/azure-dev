@@ -2110,7 +2110,7 @@ func mustSetParamAsConfig(key string, value any, config config.Config, isSecured
 	if !castOk {
 		log.Panic("tried to set a non-string as secret. This is not supported.")
 	}
-	if err := config.SetSecret(configKey, secretString); err != nil {
+	if _, err := config.SetSecret(configKey, secretString); err != nil {
 		log.Panicf("failed setting a secret in config: %v", err)
 	}
 }

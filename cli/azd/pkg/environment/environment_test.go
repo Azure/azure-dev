@@ -266,6 +266,49 @@ func Test_fixupUnquotedDotenv(t *testing.T) {
 	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=\"01\"", fixed)
 }
 
+func Test_Environment_SetGetUnsetSecret(t *testing.T) {
+	tempDir := t.TempDir()
+	mockContext := mocks.NewMockContext(context.Background())
+
+	azdConfigDir := filepath.Join(tempDir, ".azd")
+
+	err := os.Setenv("AZD_CONFIG_DIR", azdConfigDir)
+	require.NoError(t, err)
+
+	expectedApiKey := "api-key-1234"
+
+	envManager, _ := createEnvManager(t, mockContext, tempDir)
+
+	// Set env var secret
+	env := New("test")
+	err = env.DotenvSetSecret("API_KEY", expectedApiKey)
+	require.NoError(t, err)
+
+	// Get the env var secret
+	secretValue := env.Getenv("API_KEY")
+	require.Equal(t, expectedApiKey, secretValue)
+
+	// Save the environment
+	err = envManager.Save(*mockContext.Context, env)
+	require.NoError(t, err)
+
+	// Validate the secret was saved with a vault reference
+	require.True(t, config.VaultPattern.MatchString(env.dotenv["API_KEY"]))
+	secretValue, ok := env.Config.GetString("environment.API_KEY")
+	require.True(t, ok)
+	require.Equal(t, expectedApiKey, secretValue)
+
+	// Unset the env var secret
+	env.DotenvDelete("API_KEY")
+	err = envManager.Save(*mockContext.Context, env)
+	require.NoError(t, err)
+
+	// Validate the secret is no longer present
+	secretValue, ok = env.Config.GetString("environment.API_KEY")
+	require.False(t, ok)
+	require.Empty(t, secretValue)
+}
+
 func createEnvManager(t *testing.T, mockContext *mocks.MockContext, root string) (Manager, *azdcontext.AzdContext) {
 	azdCtx := azdcontext.NewAzdContextWithDirectory(root)
 	configManager := config.NewFileConfigManager(config.NewManager())

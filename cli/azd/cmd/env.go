@@ -84,6 +84,7 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 
 func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetFlags {
 	flags := &envSetFlags{}
+	cmd.Flags().BoolVarP(&flags.secret, "secret", "", false, "Marks the value as a secret when set.")
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -100,6 +101,7 @@ func newEnvSetCmd() *cobra.Command {
 type envSetFlags struct {
 	internal.EnvFlag
 	global *internal.GlobalCommandOptions
+	secret bool
 }
 
 func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -135,7 +137,13 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	e.env.DotenvSet(e.args[0], e.args[1])
+	if e.flags.secret {
+		if err := e.env.DotenvSetSecret(e.args[0], e.args[1]); err != nil {
+			return nil, fmt.Errorf("setting secret: %w", err)
+		}
+	} else {
+		e.env.DotenvSet(e.args[0], e.args[1])
+	}
 
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)

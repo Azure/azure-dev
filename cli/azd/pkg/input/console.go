@@ -1084,6 +1084,10 @@ func GetStepResultFormat(result error) SpinnerUxType {
 // dirSuggestions provides suggestion completions for directories given the current input directory.
 func dirSuggestions(input string) []string {
 	completions := []string{}
+	if input == "" {
+		completions = append(completions, ".")
+	}
+
 	matches, _ := filepath.Glob(input + "*")
 	for _, match := range matches {
 		if fs, err := os.Stat(match); err == nil && fs.IsDir() {

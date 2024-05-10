@@ -233,10 +233,6 @@ func (i *Initializer) InitFromApp(
 
 	detect := detectConfirm{console: i.console}
 	detect.Init(projects, wd)
-	if len(detect.Services) == 0 {
-		return ErrNoServicesDetected
-	}
-
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("modify"))
 
 	// Confirm selection of services and databases

@@ -106,6 +106,27 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 		}
 		d.modified = false
 
+		if len(d.Services) == 0 {
+			confirmAdd, err := d.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Add an undetected service?",
+				DefaultValue: true,
+			})
+			if err != nil {
+				return err
+			}
+
+			if !confirmAdd {
+				return fmt.Errorf("cancelled")
+			}
+
+			if err := d.add(ctx); err != nil {
+				return err
+			}
+
+			tracing.IncrementUsageAttribute(fields.AppInitModifyAddCount.Int(1))
+			continue
+		}
+
 		continueOption, err := d.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",
 			Options: []string{
@@ -155,6 +176,8 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		}
 		d.console.StopSpinner(ctx, "Revising detected services", input.StepDone)
 		d.console.Message(ctx, "\n"+output.WithBold("Detected services (Revised):")+"\n")
+	} else if len(d.Services) == 0 {
+		d.console.Message(ctx, "\n"+output.WithWarningFormat("No services were automatically detected.")+"\n")
 	} else {
 		d.console.Message(ctx, "\n"+output.WithBold("Detected services:")+"\n")
 	}

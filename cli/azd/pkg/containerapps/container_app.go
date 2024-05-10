@@ -7,17 +7,23 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"slices"
+	"strconv"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
 	"gopkg.in/yaml.v3"
 )
@@ -37,6 +43,7 @@ type ContainerAppService interface {
 		resourceGroupName string,
 		appName string,
 		containerAppYaml []byte,
+		progressLog func(string),
 	) error
 	// Adds and activates a new revision to the specified container app
 	AddRevision(
@@ -45,6 +52,7 @@ type ContainerAppService interface {
 		resourceGroupName string,
 		appName string,
 		imageName string,
+		progressLog func(string),
 	) error
 	ListSecrets(ctx context.Context,
 		subscriptionId string,
@@ -59,6 +67,7 @@ func NewContainerAppService(
 	httpClient httputil.HttpClient,
 	clock clock.Clock,
 	armClientOptions *arm.ClientOptions,
+	portalUrlBase cloud.PortalUrlBase,
 ) ContainerAppService {
 	return &containerAppService{
 		credentialProvider: credentialProvider,
@@ -66,6 +75,7 @@ func NewContainerAppService(
 		userAgent:          azdinternal.UserAgent(),
 		clock:              clock,
 		armClientOptions:   armClientOptions,
+		portalUrlBase:      portalUrlBase,
 	}
 }
 
@@ -75,6 +85,7 @@ type containerAppService struct {
 	userAgent          string
 	clock              clock.Clock
 	armClientOptions   *arm.ClientOptions
+	portalUrlBase      cloud.PortalUrlBase
 }
 
 type ContainerAppIngressConfiguration struct {
@@ -118,6 +129,7 @@ func (cas *containerAppService) DeployYaml(
 	resourceGroupName string,
 	appName string,
 	containerAppYaml []byte,
+	progressLog func(string),
 ) error {
 	var obj map[string]any
 	if err := yaml.Unmarshal(containerAppYaml, &obj); err != nil {
@@ -193,28 +205,36 @@ func (cas *containerAppService) DeployYaml(
 		poller = p
 	}
 
-	_, err := poller.PollUntilDone(ctx, nil)
+	res, err := poller.PollUntilDone(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("polling for container app update completion: %w", err)
+	}
+
+	err = cas.waitForRevisionReady(
+		ctx, subscriptionId, resourceGroupName, appName, *res.Properties.LatestRevisionName, progressLog)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// Adds and activates a new revision to the specified container app
+// Adds and activates a new revision to the specified container app, by applying a new revision with only the image
+// updated to the specified image name. The revision is waited on until it is in a running state.
 func (cas *containerAppService) AddRevision(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	appName string,
 	imageName string,
+	progress func(string),
 ) error {
 	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
 	if err != nil {
 		return fmt.Errorf("getting container app: %w", err)
 	}
 
-	// Get the latest revision name
+	// Retrieve the latest revision name to perform a patch on
 	currentRevisionName := *containerApp.Properties.LatestRevisionName
 	revisionsClient, err := cas.createRevisionsClient(ctx, subscriptionId)
 	if err != nil {
@@ -228,7 +248,11 @@ func (cas *containerAppService) AddRevision(
 
 	// Update the revision with the new image name and suffix
 	revision := revisionResponse.Revision
-	revision.Properties.Template.RevisionSuffix = convert.RefOf(fmt.Sprintf("azd-%d", cas.clock.Now().Unix()))
+	newRevisionSuffix := fmt.Sprintf("azd-%d", cas.clock.Now().Unix())
+	// New revision name is always appName--revisionSuffix
+	// see https://learn.microsoft.com/en-us/azure/container-apps/revisions#name-suffix
+	newRevisionName := fmt.Sprintf("%s--%s", appName, newRevisionSuffix)
+	revision.Properties.Template.RevisionSuffix = &newRevisionSuffix
 	revision.Properties.Template.Containers[0].Image = convert.RefOf(imageName)
 
 	// Update the container app with the new revision
@@ -244,9 +268,13 @@ func (cas *containerAppService) AddRevision(
 		return fmt.Errorf("updating container app revision: %w", err)
 	}
 
+	err = cas.waitForRevisionReady(ctx, subscriptionId, resourceGroupName, appName, newRevisionName, progress)
+	if err != nil {
+		return err
+	}
+
 	// If the container app is in multiple revision mode, update the traffic to point to the new revision
 	if *containerApp.Properties.Configuration.ActiveRevisionsMode == armappcontainers.ActiveRevisionsModeMultiple {
-		newRevisionName := fmt.Sprintf("%s--%s", appName, *revision.Properties.Template.RevisionSuffix)
 		err = cas.setTrafficWeights(ctx, subscriptionId, resourceGroupName, appName, containerApp, newRevisionName)
 		if err != nil {
 			return fmt.Errorf("setting traffic weights: %w", err)
@@ -254,6 +282,153 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	return nil
+}
+
+func (cas *containerAppService) waitForRevisionReady(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+	revisionName string,
+	logProgress func(string)) error {
+	statusPrefix := "Waiting for revision to be ready"
+	logProgress(statusPrefix)
+
+	credential, err := cas.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	revisionsClient, err := armappcontainers.NewContainerAppsRevisionsClient(
+		subscriptionId, credential, cas.armClientOptions)
+	if err != nil {
+		return fmt.Errorf("creating revisions client: %w", err)
+	}
+
+	replicasClient, err := armappcontainers.NewContainerAppsRevisionReplicasClient(
+		subscriptionId, credential, cas.armClientOptions)
+	if err != nil {
+		return fmt.Errorf("creating replicas client: %w", err)
+	}
+
+	var rawResponse *http.Response
+	getRevisionCtx := policy.WithCaptureResponse(ctx, &rawResponse)
+	getRevisionCtx = policy.WithHTTPHeader(getRevisionCtx, httputil.PollHeader())
+
+	// Poll for the revision to be in a running state
+	// See https://learn.microsoft.com/en-us/azure/container-apps/revisions#lifecycle
+	// for the complete lifecycle of a revision
+	prevStatus := statusPrefix
+	delay := 3 * time.Second
+	pollCount := 0
+	for {
+		revision, err := revisionsClient.GetRevision(getRevisionCtx, resourceGroupName, appName, revisionName, nil)
+		if err != nil {
+			return fmt.Errorf("getting revision '%s': %w", revisionName, err)
+		}
+
+		if !*revision.Properties.Active {
+			return fmt.Errorf("revision '%s' is not active", revisionName)
+		}
+
+		switch *revision.Properties.RunningState {
+		// Failed states
+		case armappcontainers.RevisionRunningStateFailed,
+			armappcontainers.RevisionRunningStateStopped,
+			armappcontainers.RevisionRunningStateDegraded:
+			errSuffix := ""
+
+			responseExtended := containerAppGetRevisionResponseExtended{}
+			if err := runtime.UnmarshalAsJSON(rawResponse, &responseExtended); err == nil {
+				if responseExtended.Properties.RunningStateDetails != "" {
+					errSuffix = fmt.Sprintf(", %s", responseExtended.Properties.RunningStateDetails)
+				}
+			}
+
+			revisionManagementUrl := output.WithLinkFormat(
+				"%s/#@/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s/revisionManagement",
+				string(cas.portalUrlBase),
+				subscriptionId,
+				resourceGroupName,
+				appName)
+
+			if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+				revisionManagementUrl = fmt.Sprintf("Revision Management for %s in Azure Portal", appName)
+			}
+
+			return &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf("revision '%s' is in a %s state%s",
+					revisionName,
+					*revision.Properties.RunningState,
+					errSuffix),
+				Suggestion: "To view logs:" +
+					"\n1. Visit " + revisionManagementUrl +
+					"\n2. Click on revision " + fmt.Sprintf("'%s'", revisionName) +
+					"\n3. View console and system logs" +
+					"\nFor more troubleshooting information, visit " +
+					output.WithLinkFormat("https://learn.microsoft.com/azure/container-apps/troubleshooting"),
+			}
+		// Processing states
+		case armappcontainers.RevisionRunningStateProcessing, armappcontainers.RevisionRunningStateUnknown:
+			// do nothing
+		case armappcontainers.RevisionRunningStateRunning:
+			// Success
+			return nil
+		}
+
+		// Get replica information to provide additional status
+		replicas, err := replicasClient.ListReplicas(ctx, resourceGroupName, appName, revisionName, nil)
+		if err != nil {
+			return fmt.Errorf("listing replicas: %w", err)
+		}
+
+		runningReplicas := 0
+		readyReplicas := 0
+		for _, r := range replicas.Value {
+			ready := true
+			if r.Properties.RunningState != nil &&
+				*r.Properties.RunningState == armappcontainers.ContainerAppReplicaRunningStateRunning {
+				runningReplicas++
+			}
+
+			for _, c := range r.Properties.Containers {
+				if c.Ready == nil {
+					ready = false
+				}
+
+				ready = ready && *c.Ready
+			}
+
+			if ready {
+				readyReplicas++
+			}
+		}
+
+		status := fmt.Sprintf(
+			"%s: %d/%d replicas running, %d/%d replicas ready",
+			statusPrefix,
+			runningReplicas,
+			len(replicas.Value),
+			readyReplicas,
+			len(replicas.Value))
+
+		if status != prevStatus {
+			logProgress(status)
+			prevStatus = status
+		}
+
+		// Wait longer after a few initial tries
+		if pollCount > 20 {
+			delay = 10 * time.Second
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+			pollCount++
+		}
+	}
 }
 
 func (cas *containerAppService) ListSecrets(
@@ -457,4 +632,12 @@ func (p *containerAppCustomApiVersionAndBodyPolicy) Do(req *policy.Request) (*ht
 	}
 
 	return req.Next()
+}
+
+type containerAppGetRevisionResponseExtended struct {
+	Properties containerAppGetRevisionResponsePropertiesExtended
+}
+
+type containerAppGetRevisionResponsePropertiesExtended struct {
+	RunningStateDetails string
 }

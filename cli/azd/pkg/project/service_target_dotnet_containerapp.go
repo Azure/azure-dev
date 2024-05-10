@@ -271,12 +271,16 @@ func (at *dotnetContainerAppTarget) Deploy(
 				return
 			}
 
+			progressLog := func(msg string) {
+				task.SetProgress(NewServiceProgress(msg))
+			}
 			err = at.containerAppService.DeployYaml(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				serviceConfig.Name,
 				[]byte(builder.String()),
+				progressLog,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("updating container app service: %w", err))

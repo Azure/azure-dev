@@ -52,7 +52,6 @@ type Dependency string
 const (
 	JsReact   Dependency = "react"
 	JsAngular Dependency = "angular"
-	JsVue     Dependency = "vuejs"
 	JsJQuery  Dependency = "jquery"
 	JsVite    Dependency = "vite"
 
@@ -70,7 +69,7 @@ var WebUIFrameworks = map[Dependency]struct{}{
 
 func (f Dependency) Language() Language {
 	switch f {
-	case JsReact, JsAngular, JsVue, JsJQuery:
+	case JsReact, JsAngular, JsJQuery, JsVite:
 		return JavaScript
 	}
 

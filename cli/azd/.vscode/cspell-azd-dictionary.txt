@@ -203,6 +203,7 @@ unsetenvs
 unsets
 upgrader
 utsname
+vite
 vsrpc
 vuejs
 webfrontend

@@ -43,7 +43,7 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 	}
 
 	// If the configuration contains a vault, then also load the vault configuration
-	vaultId, ok := azdConfig.GetString("vault")
+	vaultId, ok := azdConfig.GetString(vaultKeyName)
 	if ok {
 		configPath, err := GetUserConfigDir()
 		if err != nil {

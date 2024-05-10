@@ -123,7 +123,6 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 	subscriptionId,
 	resourceGroup,
 	appName string,
-	logProgress func(string),
 ) (*runtime.Poller[armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse], error) {
 	request, err := c.createDeployRequest(ctx, zipFile)
 	if err != nil {
@@ -153,7 +152,6 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 
 	// nolint:lll
 	// Example definition: https://github.com/Azure/azure-rest-api-specs/tree/main/specification/web/resource-manager/Microsoft.Web/stable/2022-03-01/examples/GetSiteDeploymentStatus.json
-	logProgress("Starting deployment process")
 	poller, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, deploymentStatusId, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment status: %w", err)

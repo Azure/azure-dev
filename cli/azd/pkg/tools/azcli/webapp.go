@@ -132,7 +132,6 @@ func (cli *azCli) DeployAppServiceZip(
 	resourceGroup string,
 	appName string,
 	deployZipFile io.Reader,
-	logProgress func(string),
 ) (*string, error) {
 	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 func PollHeader() http.Header {
 	return map[string][]string{
 		//nolint:gosec
-		"Poll-Recording-Id": {strconv.Itoa(rand.Int())},
+		//See usage in poll_discard.go
+		"Recording-Poll-Id": {strconv.Itoa(rand.Int())},
 	}
 }

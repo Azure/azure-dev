@@ -165,11 +165,10 @@ func (c *ZipDeployClient) DeployTrackStatus(
 	zipFile io.Reader,
 	subscriptionId string,
 	resourceGroup string,
-	appName string,
-	logProgress func(string)) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
+	appName string) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
 	var response armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse
 
-	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, subscriptionId, resourceGroup, appName, logProgress)
+	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return response, err
 	}

@@ -39,7 +39,7 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 		return nil, err
 	}
 
-	hostName, err := cli.appServiceRepositoryHost(app, appName)
+	hostName, err := appServiceRepositoryHost(app, appName)
 	if err != nil {
 		return nil, err
 	}

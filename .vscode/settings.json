@@ -1,10 +1,4 @@
 {
   "cSpell.import": ["cspell.yaml"],
-  "go.testFlags": [
-    "-timeout",
-    "30m"
-  ],
-  "cSpell.words": [
-    "armappservice"
-  ]
+  "go.testFlags": ["-timeout", "30m"]
 }

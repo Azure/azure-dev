@@ -108,8 +108,6 @@ func Start(t *testing.T, opts ...Options) *Session {
 		}
 	}
 
-	opt.mode = recorder.ModeRecordOnly
-
 	// Apply user-defined options
 	for _, o := range opts {
 		opt = o.Apply(opt)

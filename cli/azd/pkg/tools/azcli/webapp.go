@@ -57,7 +57,7 @@ func isLinuxWebApp(response *armappservice.WebAppsClientGetResponse) bool {
 	return false
 }
 
-func (cli *azCli) appServiceRepositoryHost(
+func appServiceRepositoryHost(
 	response *armappservice.WebAppsClientGetResponse,
 	appName string,
 ) (string, error) {
@@ -138,7 +138,7 @@ func (cli *azCli) DeployAppServiceZip(
 		return nil, err
 	}
 
-	hostName, err := cli.appServiceRepositoryHost(app, appName)
+	hostName, err := appServiceRepositoryHost(app, appName)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (cli *azCli) DeployAppServiceZip(
 
 	// Deployment Status API only support linux web app for now
 	if isLinuxWebApp(app) {
-		response, err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName, logProgress)
+		response, err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName)
 		if err != nil {
 			return nil, err
 		}

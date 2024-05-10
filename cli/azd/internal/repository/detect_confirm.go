@@ -105,9 +105,8 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 		if err := d.render(ctx); err != nil {
 			return err
 		}
-		d.modified = false
 
-		if len(d.Services) == 0 {
+		if len(d.Services) == 0 && !d.modified {
 			confirmAdd, err := d.console.Confirm(ctx, input.ConsoleOptions{
 				Message:      "Add an undetected service?",
 				DefaultValue: true,
@@ -127,6 +126,8 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 			tracing.IncrementUsageAttribute(fields.AppInitModifyAddCount.Int(1))
 			continue
 		}
+
+		d.modified = false
 
 		continueOption, err := d.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",

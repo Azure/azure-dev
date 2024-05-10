@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,8 +36,6 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 	appdetect.DbPostgres: {},
 	appdetect.DbRedis:    {},
 }
-
-var ErrNoServicesDetected = errors.New("no services detected in the current directory")
 
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(

@@ -8,7 +8,6 @@
   "dependencies": {
     "chalk": "^5.0.1",
     "react": ">=18.2.0",
-    "vue": ">=3.3.4",
     "jquery": ">=3.7.0",
     "@angular/core": ">=16.1.2",
 
@@ -17,5 +16,8 @@
     "pg-promise": "^11.5.3",
     "tedious": "^16.4.0",
     "redis": "^4.6.10"
+  },
+  "devDependencies": {
+    "vite": ">=5.2.0"
   }
 }

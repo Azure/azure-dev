@@ -387,10 +387,13 @@ func prjConfigFromDetect(
 		loop:
 			for _, dep := range prj.Dependencies {
 				switch dep {
-				case appdetect.JsReact:
-					// react uses 'build'
-					svc.OutputPath = "build"
+				case appdetect.JsVite:
+					svc.OutputPath = "dist"
 					break loop
+				case appdetect.JsReact:
+					// react from create-react-app uses 'build' when used, but this can be overridden
+					// by choice of build tool, such as when using Vite.
+					svc.OutputPath = "build"
 				case appdetect.JsAngular:
 					// angular uses dist/<project name>
 					svc.OutputPath = "dist/" + filepath.Base(rel)

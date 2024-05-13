@@ -387,6 +387,10 @@ func prjConfigFromDetect(
 		loop:
 			for _, dep := range prj.Dependencies {
 				switch dep {
+				case appdetect.JsNext:
+					// next.js works as SSR with default node configuration without static build output
+					svc.OutputPath = ""
+					break loop
 				case appdetect.JsVite:
 					svc.OutputPath = "dist"
 					break loop

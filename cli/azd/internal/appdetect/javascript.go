@@ -57,6 +57,8 @@ func (nd *javaScriptDetector) DetectProject(ctx context.Context, path string, en
 				case "vite":
 					project.Dependencies = append(project.Dependencies, JsVite)
 					viteAdded = true
+				case "next":
+					project.Dependencies = append(project.Dependencies, JsNext)
 				default:
 					if strings.HasPrefix(dep, "@angular") && !angularAdded {
 						project.Dependencies = append(project.Dependencies, JsAngular)

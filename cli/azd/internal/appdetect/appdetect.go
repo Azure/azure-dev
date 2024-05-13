@@ -54,6 +54,7 @@ const (
 	JsAngular Dependency = "angular"
 	JsJQuery  Dependency = "jquery"
 	JsVite    Dependency = "vite"
+	JsNext    Dependency = "next"
 
 	PyFlask   Dependency = "flask"
 	PyDjango  Dependency = "django"
@@ -86,6 +87,8 @@ func (f Dependency) Display() string {
 		return "JQuery"
 	case JsVite:
 		return "Vite"
+	case JsNext:
+		return "Next.js"
 	}
 
 	return ""

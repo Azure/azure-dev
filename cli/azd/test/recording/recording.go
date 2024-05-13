@@ -300,35 +300,18 @@ func Start(t *testing.T, opts ...Options) *Session {
 	t.Cleanup(func() {
 		server.Close()
 		if !t.Failed() {
-			//shouldSave := vcr.IsRecording()
+			shouldSave := vcr.IsRecording()
 			err = vcr.Stop()
 			if err != nil {
 				t.Fatalf("failed to save recording: %v", err)
 			}
 
-			//if shouldSave {
-			cst, err := cassette.Load(recorderOptions.CassetteName)
-			if err != nil {
-				t.Fatalf("failed to load cassette: %v", err)
+			if shouldSave {
+				err = saveVariables(recorderOptions.CassetteName+".yaml", session.Variables)
+				if err != nil {
+					t.Fatalf("failed to save variables: %v", err)
+				}
 			}
-
-			// Discard polling interactions. This requires examining the
-			// interactions in the cassettes by looping it through twice,
-			// which isn't currently possible using go-vcr hooks.
-			// To do this, we load and save the cassette back on disk.
-			DiscardAnnotatedPollInteractions(cst)
-
-			t.Log("saving cassette")
-			err = cst.Save()
-			if err != nil {
-				t.Fatalf("failed to save recording: %v", err)
-			}
-
-			err = saveVariables(recorderOptions.CassetteName+".yaml", session.Variables)
-			if err != nil {
-				t.Fatalf("failed to save variables: %v", err)
-			}
-			//}
 
 			for _, r := range recorders {
 				err = r.Stop()

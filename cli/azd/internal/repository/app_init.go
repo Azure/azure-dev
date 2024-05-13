@@ -381,7 +381,7 @@ func prjConfigFromDetect(
 		if prj.HasWebUIFramework() {
 			// By default, use 'dist'. This is common for frameworks such as:
 			// - TypeScript
-			// - Vue.js
+			// - Vite
 			svc.OutputPath = "dist"
 
 		loop:

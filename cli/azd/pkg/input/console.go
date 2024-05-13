@@ -557,7 +557,12 @@ func (c *AskerConsole) PromptDialog(ctx context.Context, dialog PromptDialog) (m
 
 	ret := make(map[string]any, len(*resp.Inputs))
 	for _, v := range *resp.Inputs {
-		ret[v.ID] = v.Value
+		var unmarshalledValue any
+		if err := json.Unmarshal(v.Value, &unmarshalledValue); err != nil {
+			return nil, fmt.Errorf("unmarshalling value %s: %w", v.ID, err)
+		}
+
+		ret[v.ID] = unmarshalledValue
 	}
 
 	return ret, nil

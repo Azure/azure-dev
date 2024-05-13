@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
@@ -44,7 +42,6 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
-		cloud.AzurePublic().PortalUrlBase,
 	)
 	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, subscriptionId, resourceGroup, appName)
 	require.NoError(t, err)
@@ -97,8 +94,6 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 
 	revision := &armappcontainers.Revision{
 		Properties: &armappcontainers.RevisionProperties{
-			Active:       to.Ptr(true),
-			RunningState: to.Ptr(armappcontainers.RevisionRunningStateRunning),
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
@@ -136,24 +131,14 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		appName,
 		containerApp,
 	)
-	_ = mockazsdk.MockContainerAppRevisionGet(
-		mockContext,
-		subscriptionId,
-		resourceGroup,
-		appName,
-		appName+"--azd-0",
-		revision,
-	)
 
 	cas := NewContainerAppService(
 		mockContext.SubscriptionCredentialProvider,
 		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
-		cloud.AzurePublic().PortalUrlBase,
 	)
-	progressLog := func(_ string) {}
-	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName, progressLog)
+	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName)
 	require.NoError(t, err)
 
 	// Verify lastest revision is read

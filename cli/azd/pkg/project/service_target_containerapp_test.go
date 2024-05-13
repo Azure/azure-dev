@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
@@ -140,7 +139,6 @@ func createContainerAppServiceTarget(
 		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
-		cloud.AzurePublic().PortalUrlBase,
 	)
 	containerRegistryService := azcli.NewContainerRegistryService(
 		credentialProvider,
@@ -214,8 +212,6 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 
 	revision := &armappcontainers.Revision{
 		Properties: &armappcontainers.RevisionProperties{
-			Active:       to.Ptr(true),
-			RunningState: to.Ptr(armappcontainers.RevisionRunningStateRunning),
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
@@ -237,14 +233,6 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 		resourceGroup,
 		appName,
 		originalRevisionName,
-		revision,
-	)
-	mockazsdk.MockContainerAppRevisionGet(
-		mockContext,
-		subscriptionId,
-		resourceGroup,
-		appName,
-		appName+"--azd-0",
 		revision,
 	)
 	mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)

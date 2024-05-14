@@ -48,7 +48,7 @@ jobs:
       - name: Install Kustomize
         uses: syntaqx/setup-kustomize@v1
 
-      # Required if using Azure RBAC with Azd
+      # Required if using Azure RBAC enabled AKS cluster with Azd
       - name: Install Kubelogin
         uses: Azure/use-kubelogin@v1
         with:

@@ -1,14 +1,15 @@
 # Release History
 
-## 1.10.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.9.1 (2024-05-14)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[3876]](https://github.com/Azure/azure-dev/pull/3876) Take infra section of azure.yaml into account.
+- [[3881]](https://github.com/Azure/azure-dev/pull/3881) Make azd to wait until the expected state can be seen from the online endpoint.
+- [[3763]](https://github.com/Azure/azure-dev/pull/3763) Add deployment status tracking for linux web apps.
+- [[3897]](https://github.com/Azure/azure-dev/pull/3897) Update ResolvedRaw() to remove reference to the vault.
+- [[3898]](https://github.com/Azure/azure-dev/pull/3898) Easy Init: Improve handling for empty state.
+- [[3903]](https://github.com/Azure/azure-dev/pull/3903) Fix type issues in PromptDialog with external prompting.
 
 ## 1.9.0 (2024-05-07)
 

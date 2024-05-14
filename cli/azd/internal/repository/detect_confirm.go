@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -104,6 +105,28 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 		if err := d.render(ctx); err != nil {
 			return err
 		}
+
+		if len(d.Services) == 0 && !d.modified {
+			confirmAdd, err := d.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Add an undetected service?",
+				DefaultValue: true,
+			})
+			if err != nil {
+				return err
+			}
+
+			if !confirmAdd {
+				return fmt.Errorf("cancelled")
+			}
+
+			if err := d.add(ctx); err != nil {
+				return err
+			}
+
+			tracing.IncrementUsageAttribute(fields.AppInitModifyAddCount.Int(1))
+			continue
+		}
+
 		d.modified = false
 
 		continueOption, err := d.console.Select(ctx, input.ConsoleOptions{
@@ -155,6 +178,8 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		}
 		d.console.StopSpinner(ctx, "Revising detected services", input.StepDone)
 		d.console.Message(ctx, "\n"+output.WithBold("Detected services (Revised):")+"\n")
+	} else if len(d.Services) == 0 {
+		d.console.Message(ctx, "\n"+output.WithWarningFormat("No services were automatically detected.")+"\n")
 	} else {
 		d.console.Message(ctx, "\n"+output.WithBold("Detected services:")+"\n")
 	}
@@ -405,6 +430,27 @@ func (d *detectConfirm) add(ctx context.Context) error {
 			}
 
 			return nil
+		}
+	}
+
+	// Provide additional validation for project selection
+	if s.Language == appdetect.Python {
+		if _, err := os.Stat(filepath.Join(path, "requirements.txt")); errors.Is(err, os.ErrNotExist) {
+			d.console.Message(
+				ctx,
+				fmt.Sprintf("No '%s' file found in %s.",
+					output.WithBold("requirements.txt"),
+					output.WithHighLightFormat(path)))
+			confirm, err := d.console.Confirm(ctx, input.ConsoleOptions{
+				Message: "This file may be required when deploying to Azure. Continue?",
+			})
+			if err != nil {
+				return err
+			}
+
+			if !confirm {
+				return fmt.Errorf("cancelled")
+			}
 		}
 	}
 

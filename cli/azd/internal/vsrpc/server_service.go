@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -64,7 +63,6 @@ func (s *serverService) InitializeAsync(
 			return nil, err
 		}
 		client := &http.Client{
-			Timeout:   5 * time.Second,
 			Transport: transport,
 		}
 

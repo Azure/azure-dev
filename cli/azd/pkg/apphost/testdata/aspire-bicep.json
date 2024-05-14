@@ -13,6 +13,8 @@
         "path": "test.bicep",
         "params": {
           "test": "{parameter.value}",
+          "url": "{frontend.bindings.http.url}",
+          "host": "{frontend.bindings.http.host}",
           "values": [
             "one",
             "two"

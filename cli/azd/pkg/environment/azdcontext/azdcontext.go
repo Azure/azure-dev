@@ -68,14 +68,26 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 	return config.DefaultEnvironment, nil
 }
 
-func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
+// ProjectState represents the state of the project.
+type ProjectState struct {
+	DefaultEnvironment string
+}
+
+// SetProjectState persists the state of the project to the file system, like the default environment.
+func (c *AzdContext) SetProjectState(state ProjectState) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
 	config := configFile{
 		Version:            ConfigFileVersion,
-		DefaultEnvironment: name,
+		DefaultEnvironment: state.DefaultEnvironment,
 	}
 
-	return writeConfig(path, config)
+	if err := writeConfig(path, config); err != nil {
+		return err
+	}
+
+	// make sure to ignore the environment directory
+	path = filepath.Join(c.EnvironmentDirectory(), ".gitignore")
+	return os.WriteFile(path, []byte("# .azure is not intended to be committed\n*"), osutil.PermissionFile)
 }
 
 // Creates context with project directory set to the desired directory.
@@ -89,17 +101,23 @@ var (
 	ErrNoProject = errors.New("no project exists; to create a new project, run `azd init`")
 )
 
-// Creates context with project directory set to the nearest project file found.
-//
-// The project file is first searched for in the current directory, if not found, the parent directory is searched
-// recursively up to root. If no project file is found, errNoProject is returned.
+// Creates context with project directory set to the nearest project file found by calling NewAzdContextFromWd
+// on the current working directory.
 func NewAzdContext() (*AzdContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get the current directory: %w", err)
 	}
 
-	// Walk up from the CWD to the root, looking for a project file. If we find one, that's
+	return NewAzdContextFromWd(wd)
+}
+
+// Creates context with project directory set to the nearest project file found.
+//
+// The project file is first searched for in the working directory, if not found, the parent directory is searched
+// recursively up to root. If no project file is found, errNoProject is returned.
+func NewAzdContextFromWd(wd string) (*AzdContext, error) {
+	// Walk up from the wd to the root, looking for a project file. If we find one, that's
 	// the root project directory.
 	searchDir, err := filepath.Abs(wd)
 	if err != nil {

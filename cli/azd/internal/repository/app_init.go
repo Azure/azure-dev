@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,8 +36,6 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 	appdetect.DbPostgres: {},
 	appdetect.DbRedis:    {},
 }
-
-var ErrNoServicesDetected = errors.New("no services detected in the current directory")
 
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
@@ -233,10 +230,6 @@ func (i *Initializer) InitFromApp(
 
 	detect := detectConfirm{console: i.console}
 	detect.Init(projects, wd)
-	if len(detect.Services) == 0 {
-		return ErrNoServicesDetected
-	}
-
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("modify"))
 
 	// Confirm selection of services and databases
@@ -388,16 +381,23 @@ func prjConfigFromDetect(
 		if prj.HasWebUIFramework() {
 			// By default, use 'dist'. This is common for frameworks such as:
 			// - TypeScript
-			// - Vue.js
+			// - Vite
 			svc.OutputPath = "dist"
 
 		loop:
 			for _, dep := range prj.Dependencies {
 				switch dep {
-				case appdetect.JsReact:
-					// react uses 'build'
-					svc.OutputPath = "build"
+				case appdetect.JsNext:
+					// next.js works as SSR with default node configuration without static build output
+					svc.OutputPath = ""
 					break loop
+				case appdetect.JsVite:
+					svc.OutputPath = "dist"
+					break loop
+				case appdetect.JsReact:
+					// react from create-react-app uses 'build' when used, but this can be overridden
+					// by choice of build tool, such as when using Vite.
+					svc.OutputPath = "build"
 				case appdetect.JsAngular:
 					// angular uses dist/<project name>
 					svc.OutputPath = "dist/" + filepath.Base(rel)

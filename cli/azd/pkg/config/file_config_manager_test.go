@@ -102,6 +102,14 @@ func Test_FileConfigManager_GetSetSecrets(t *testing.T) {
 	require.Equal(t, azdConfig.Raw(), updatedConfig.Raw())
 	require.Equal(t, azdConfig.ResolvedRaw(), updatedConfig.ResolvedRaw())
 
+	// verify vault reference
+	vault, exists := azdConfig.GetString(vaultKeyName)
+	require.True(t, exists)
+	require.NotEmpty(t, vault)
+	configFromRaw := NewConfig(azdConfig.ResolvedRaw())
+	vault, exists = configFromRaw.GetString(vaultKeyName)
+	require.False(t, exists)
+	require.Empty(t, vault)
 }
 
 func Test_FileConfigManager_GetSetSecretsInSection(t *testing.T) {

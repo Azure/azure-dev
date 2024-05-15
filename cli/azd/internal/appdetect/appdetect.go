@@ -52,8 +52,9 @@ type Dependency string
 const (
 	JsReact   Dependency = "react"
 	JsAngular Dependency = "angular"
-	JsVue     Dependency = "vuejs"
 	JsJQuery  Dependency = "jquery"
+	JsVite    Dependency = "vite"
+	JsNext    Dependency = "next"
 
 	PyFlask   Dependency = "flask"
 	PyDjango  Dependency = "django"
@@ -63,13 +64,13 @@ const (
 var WebUIFrameworks = map[Dependency]struct{}{
 	JsReact:   {},
 	JsAngular: {},
-	JsVue:     {},
 	JsJQuery:  {},
+	JsVite:    {},
 }
 
 func (f Dependency) Language() Language {
 	switch f {
-	case JsReact, JsAngular, JsVue, JsJQuery:
+	case JsReact, JsAngular, JsJQuery, JsVite:
 		return JavaScript
 	}
 
@@ -82,10 +83,12 @@ func (f Dependency) Display() string {
 		return "React"
 	case JsAngular:
 		return "Angular"
-	case JsVue:
-		return "Vue.js"
 	case JsJQuery:
 		return "JQuery"
+	case JsVite:
+		return "Vite"
+	case JsNext:
+		return "Next.js"
 	}
 
 	return ""

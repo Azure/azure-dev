@@ -115,7 +115,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		On("UpdateTraffic", *mockContext.Context, scopeType, endpointName, expectedDeploymentName).
 		Return(onlineEndpoint, nil)
 	aiHelper.
-		On("DeletePreviousDeployments", *mockContext.Context, scopeType, endpointName).
+		On("DeleteDeployments", *mockContext.Context, scopeType, endpointName).
 		Return(nil)
 	aiHelper.
 		On("GetEndpoint", *mockContext.Context, scopeType, endpointName).
@@ -221,7 +221,7 @@ func (m *mockAiHelper) CreateFlow(
 	return args.Get(0).(*ai.Flow), args.Error(1)
 }
 
-func (m *mockAiHelper) DeletePreviousDeployments(ctx context.Context, scope *ai.Scope, endpointName string) error {
+func (m *mockAiHelper) DeleteDeployments(ctx context.Context, scope *ai.Scope, endpointName string, filter []string) error {
 	args := m.Called(ctx, scope, endpointName)
 	return args.Error(0)
 }

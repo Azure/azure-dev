@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/benbjohnson/clock"
+	"github.com/sethvargo/go-retry"
 )
 
 const (
@@ -72,8 +73,8 @@ type AiHelper interface {
 		endpointName string,
 		config *ai.EndpointDeploymentConfig,
 	) (*armmachinelearning.OnlineDeployment, error)
-	// DeletePreviousDeployments deletes all previous deployments of an online endpoint except the one with 100% traffic
-	DeletePreviousDeployments(ctx context.Context, scope *ai.Scope, endpointName string) error
+	// DeleteDeployments deletes all deployments of an online endpoint except the ones in filter
+	DeleteDeployments(ctx context.Context, scope *ai.Scope, endpointName string, filter []string) error
 	// UpdateTraffic updates the traffic distribution of an online endpoint for the specified deployment
 	UpdateTraffic(
 		ctx context.Context,
@@ -470,33 +471,13 @@ func (a *aiHelper) DeployToEndpoint(
 	return onlineDeployment, nil
 }
 
-// DeletePreviousDeployments deletes all previous deployments of an online endpoint except the one with 100% traffic
-func (a *aiHelper) DeletePreviousDeployments(
+// DeleteDeployments deletes all deployments of an online endpoint except the ones in filter
+func (a *aiHelper) DeleteDeployments(
 	ctx context.Context,
 	scope *ai.Scope,
 	endpointName string,
+	filter []string,
 ) error {
-	// Get the endpoint
-	getEndpointResponse, err := a.endpointsClient.Get(ctx, scope.ResourceGroup(), scope.Workspace(), endpointName, nil)
-	if err != nil {
-		return err
-	}
-
-	onlineEndpoint := getEndpointResponse.OnlineEndpoint
-	var deploymentName string
-
-	// Detect the deployment with 100% traffic
-	for key, trafficWeight := range onlineEndpoint.Properties.Traffic {
-		if *trafficWeight == 100 {
-			deploymentName = key
-			break
-		}
-	}
-
-	if deploymentName == "" {
-		return errors.New("no deployment found with 100% traffic")
-	}
-
 	// Get existing deployments
 	existingDeployments := []*armmachinelearning.OnlineDeployment{}
 
@@ -512,8 +493,8 @@ func (a *aiHelper) DeletePreviousDeployments(
 
 	// Delete previous deployments
 	for _, existingDeployment := range existingDeployments {
-		// Ignore the new deployment
-		if *existingDeployment.Name == deploymentName {
+		// Ignore the ones from the filter list
+		if slices.Contains(filter, *existingDeployment.Name) {
 			continue
 		}
 
@@ -567,6 +548,31 @@ func (a *aiHelper) UpdateTraffic(
 	}
 
 	updateResponse, err := poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// before moving on, we need to validate the state of the online endpoint to be updated with the
+	// expected traffic (100%)
+	err = retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(10*time.Second)),
+		func(ctx context.Context) error {
+			getEndpointResponse, err = a.endpointsClient.Get(
+				ctx, scope.ResourceGroup(), scope.Workspace(), endpointName, nil)
+
+			if err != nil {
+				return retry.RetryableError(err)
+			}
+			if getEndpointResponse.OnlineEndpoint.Properties == nil {
+				return retry.RetryableError(errors.New("online endpoint properties are nil"))
+			}
+			// check 100% traffic
+			for key, trafficWeight := range getEndpointResponse.OnlineEndpoint.Properties.Traffic {
+				if key == deploymentName && *trafficWeight == 100 {
+					return nil
+				}
+			}
+			return retry.RetryableError(errors.New("online endpoint traffic is not 100% yet"))
+		})
 	if err != nil {
 		return nil, err
 	}

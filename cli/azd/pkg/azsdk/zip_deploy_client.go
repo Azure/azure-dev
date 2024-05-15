@@ -13,7 +13,6 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -28,7 +27,6 @@ const (
 type ZipDeployClient struct {
 	hostName string
 	pipeline runtime.Pipeline
-	cred     azcore.TokenCredential
 }
 
 type DeployResponse struct {
@@ -81,7 +79,6 @@ func NewZipDeployClient(
 	return &ZipDeployClient{
 		hostName: hostName,
 		pipeline: pipeline,
-		cred:     credential,
 	}, nil
 }
 
@@ -116,77 +113,8 @@ func (c *ZipDeployClient) BeginDeploy(
 	return runtime.NewPoller(response, c.pipeline, pollerOptions)
 }
 
-// Deploys the specified application zip to the azure app service using deployment status api and waits for completion
-func (c *ZipDeployClient) BeginDeployTrackStatus(
-	ctx context.Context,
-	zipFile io.Reader,
-	subscriptionId,
-	resourceGroup,
-	appName string,
-) (*runtime.Poller[armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse], error) {
-	request, err := c.createDeployRequest(ctx, zipFile)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := c.pipeline.Do(request)
-	if err != nil {
-		return nil, err
-	}
-
-	defer response.Body.Close()
-
-	if !runtime.HasStatusCode(response, http.StatusAccepted) {
-		return nil, runtime.NewResponseError(response)
-	}
-
-	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating web app client: %w", err)
-	}
-
-	deploymentStatusId := response.Header.Get("Scm-Deployment-Id")
-	if deploymentStatusId == "" {
-		return nil, fmt.Errorf("empty deployment status id")
-	}
-
-	// nolint:lll
-	// Example definition: https://github.com/Azure/azure-rest-api-specs/tree/main/specification/web/resource-manager/Microsoft.Web/stable/2022-03-01/examples/GetSiteDeploymentStatus.json
-	poller, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, deploymentStatusId, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting deployment status: %w", err)
-	}
-
-	return poller, nil
-}
-
-func (c *ZipDeployClient) DeployTrackStatus(
-	ctx context.Context,
-	zipFile io.Reader,
-	subscriptionId string,
-	resourceGroup string,
-	appName string) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
-	var response armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse
-
-	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, subscriptionId, resourceGroup, appName)
-	if err != nil {
-		return response, err
-	}
-
-	response, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
-		Frequency: deployStatusInterval,
-	})
-	if err != nil {
-		return response, err
-	}
-
-	return response, nil
-}
-
 // Deploys the specified application zip to the azure app service and waits for completion
-func (c *ZipDeployClient) Deploy(
-	ctx context.Context,
-	zipFile io.Reader) (*DeployResponse, error) {
+func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.Reader) (*DeployResponse, error) {
 	poller, err := c.BeginDeploy(ctx, zipFile)
 	if err != nil {
 		return nil, err

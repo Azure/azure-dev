@@ -110,8 +110,8 @@ repo:
       ignore:
         - .github/**/*
         - .devcontainer/**/*
-        - "infra/**/*"
-        - .azdo/pipelines/*/azure-dev.yml
+        - infra/**/*
+        - .azdo/**/*
 
     # AzDo workflows for bicep
     - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml

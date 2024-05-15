@@ -27,6 +27,7 @@ func NewAppServiceTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
 ) ServiceTarget {
+
 	return &appServiceTarget{
 		env: env,
 		cli: azCli,
@@ -79,7 +80,7 @@ func (st *appServiceTarget) Deploy(
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := st.validateTargetResource(targetResource); err != nil {
+			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
@@ -155,6 +156,8 @@ func (st *appServiceTarget) Endpoints(
 }
 
 func (st *appServiceTarget) validateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {

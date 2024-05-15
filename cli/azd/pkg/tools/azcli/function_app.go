@@ -34,12 +34,7 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 	appName string,
 	deployZipFile io.Reader,
 ) (*string, error) {
-	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
-	if err != nil {
-		return nil, err
-	}
-
-	hostName, err := appServiceRepositoryHost(app, appName)
+	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, err
 	}

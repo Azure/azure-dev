@@ -170,9 +170,10 @@ module sqlService 'br/public:avm/res/sql/server:0.2.0' = {
   }
 }
 
+//Add appuser to database owner
 module sqldeploymentscript '../../../../../common/infra/bicep/app/sql-deployment-script.bicep' = {
-  scope: rg
   name: 'sqldeploymentscript'
+  scope: rg
   params: {
     location: location
     appUserPassword: appUserPassword
@@ -189,10 +190,7 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.1.0' = {
   params: {
     name: !empty(appServicePlanName) ? appServicePlanName : '${abbrs.webServerFarms}${resourceToken}'
     sku: {
-      capacity: 1
-      family: 'B'
       name: 'B3'
-      size: 'B1'
       tier: 'Basic'
     }
     location: location
@@ -278,8 +276,8 @@ module apim 'br/public:avm/res/api-management/service:0.1.3' = if (useAPIM) {
 
 // Configures the API in the Azure API Management (APIM) service
 module apimsettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
-  scope: rg
   name: 'apim-api-settings'
+  scope: rg
   params: {
     apiAppName: api.outputs.name
     apiName: 'todo-api'

@@ -1,14 +1,10 @@
 # Release History
 
-## 1.10.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.9.2 (2024-05-15)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[3915]](https://github.com/Azure/azure-dev/pull/3915) Revert - Add deployment status tracking for linux web apps.
 
 ## 1.9.1 (2024-05-14)
 

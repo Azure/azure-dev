@@ -29,14 +29,17 @@ steps:
       azd config set auth.useAzCliAuth "true"
     displayName: Configure AZD to Use AZ CLI Authentication.
 
-  - task: AzureCLI@2
+  # Required if not installed in base image
+  - task: KubectlInstaller@0
+    displayName: Install Kubectl
+
+  # Required if deploying Helm charts with Azd and not already installed in base image
+  - task: HelmInstaller@1
+    displayName: Install Helm
+
+  # Required if using Azure RBAC with Azd
+  - task: KubeloginInstaller@0
     displayName: Install Kubelogin
-    inputs:
-      azureSubscription: azconnection
-      scriptType: bash
-      scriptLocation: inlineScript
-      inlineScript: |
-        az aks install-cli
 
   - task: AzureCLI@2
     displayName: Configure Azd Alpha Features

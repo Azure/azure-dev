@@ -54,24 +54,6 @@ jobs:
         with:
           kubelogin-version: "v0.1.3"
 
-      - name: Show Tool Versions
-        run: |
-          echo "=================== azd version ==================="
-          azd version
-
-          echo "=================== kubctl version ==================="
-          kubectl version --client --output yaml
-
-          echo "=================== helm version ==================="
-          helm version --short
-
-          echo "=================== kustomize version ==================="
-          kustomize version
-
-          echo "=================== kubelogin version ==================="
-          kubelogin --version
-        shell: pwsh
-
       # Required if using alpha AKS features for Helm or Kustomize
       - name: Configure Azd
         run: |

@@ -79,6 +79,16 @@ repo:
         to: ../../src/api/openapi.yaml
         patterns:
           - "apim-api.bicep"
+      
+      - from: ../../../api/common/openapi.yaml
+        to: ../src/api/openapi.yaml
+        patterns:
+          - "**/main.bicep"
+
+      - from: ../../../common/infra/shared/gateway/apim/apim-api-policy.xml
+        to: ./app/apim-api-policy.xml
+        patterns:
+          - "**/main.bicep"
 
   assets:
     # # Common assets
@@ -104,6 +114,15 @@ repo:
     
     - from: ../../../../common/infra/bicep/app/sqlserver.bicep
       to: ./infra/app/db.bicep
+
+    - from: ../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep
+      to: ./infra/app/applicationinsights-dashboard.bicep
+
+    - from: ../../../../common/infra/bicep/app/apim-api-settings.bicep
+      to: ./infra/app/apim-api-settings.bicep
+
+    - from: ../../../../common/infra/bicep/app/sql-deployment-script.bicep
+      to: ./infra/app/sql-deployment-script.bicep
 
     - from: ./../../
       to: ./

@@ -602,9 +602,10 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 			)
 		}
 	}
-
-	compositeFramework.SetSource(frameworkService)
-	frameworkService = compositeFramework
+	if compositeFramework != nil {
+		compositeFramework.SetSource(frameworkService)
+		frameworkService = compositeFramework
+	}
 
 	return frameworkService, nil
 }

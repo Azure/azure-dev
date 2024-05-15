@@ -11,9 +11,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/serviceendpoint"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/serviceendpoint"
 )
 
 // authorize a service connection to be used in all pipelines
@@ -107,7 +107,6 @@ func CreateServiceConnection(
 		// After updating the endpoint with credentials, we no longer need it
 		_, err := client.UpdateServiceEndpoint(ctx, serviceendpoint.UpdateServiceEndpointArgs{
 			Endpoint:   createServiceEndpointArgs.Endpoint,
-			Project:    createServiceEndpointArgs.Project,
 			EndpointId: foundServiceConnection.Id,
 		})
 		if err != nil {
@@ -181,7 +180,6 @@ func createAzureRMServiceEndPointArgs(
 	}
 
 	createServiceEndpointArgs := serviceendpoint.CreateServiceEndpointArgs{
-		Project:  projectId,
 		Endpoint: serviceEndpoint,
 	}
 	return createServiceEndpointArgs, nil

@@ -8,9 +8,9 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/policy"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/policy"
 )
 
 // returns a build policy type named "Build." Used to created the PR build policy on the default branch

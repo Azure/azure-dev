@@ -89,7 +89,6 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	a.console.WarnForFeature(ctx, infraSynthFeature)
-
 	spinnerMessage := "Synthesizing infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)

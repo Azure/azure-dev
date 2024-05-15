@@ -171,6 +171,7 @@ func Containers(manifest *Manifest) map[string]genContainer {
 type AppHostOptions struct {
 	AutoConfigureDataProtection bool
 	AspireDashboard             bool
+	UseResourceGroupScope       bool
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
@@ -237,8 +238,9 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	}
 	type bicepContext struct {
 		genBicepTemplateContext
-		WithMetadataParameters []autoGenInput
-		MainToResourcesParams  []genInput
+		WithMetadataParameters       []autoGenInput
+		MainToResourcesParams        []genInput
+		SubscriptionScopedDeployment bool
 	}
 	var parameters []autoGenInput
 	var mapToResourceParams []genInput
@@ -267,9 +269,10 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		}
 	}
 	context := bicepContext{
-		genBicepTemplateContext: generator.bicepContext,
-		WithMetadataParameters:  parameters,
-		MainToResourcesParams:   mapToResourceParams,
+		genBicepTemplateContext:      generator.bicepContext,
+		WithMetadataParameters:       parameters,
+		MainToResourcesParams:        mapToResourceParams,
+		SubscriptionScopedDeployment: !options.UseResourceGroupScope,
 	}
 	if err := executeToFS(fs, genTemplates, "main.bicep", name+".bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)

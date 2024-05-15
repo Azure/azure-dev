@@ -105,8 +105,10 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 	}
 
 	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
-		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
+		AspireDashboard:       apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
+		UseResourceGroupScope: svcConfig.Infra.DeploymentScope == provisioning.DeploymentScopeResourceGroup,
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -295,7 +297,8 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	}
 
 	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{
-		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
+		AspireDashboard:       apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
+		UseResourceGroupScope: svcConfig.Infra.DeploymentScope == provisioning.DeploymentScopeResourceGroup,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)

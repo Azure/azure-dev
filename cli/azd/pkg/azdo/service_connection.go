@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/google/uuid"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/serviceendpoint"
@@ -50,6 +52,19 @@ func authorizeServiceConnectionToAllPipelines(
 	return nil
 }
 
+func ServiceConnection(
+	ctx context.Context,
+	connection *azuredevops.Connection,
+	projectId string, serviceConnectionName *string) (*serviceendpoint.ServiceEndpoint, error) {
+
+	client, err := serviceendpoint.NewClient(ctx, connection)
+	if err != nil {
+		return nil, fmt.Errorf("creating new azdo client: %w", err)
+	}
+
+	return serviceConnectionExists(ctx, &client, &projectId, serviceConnectionName)
+}
+
 // find service connection by name.
 func serviceConnectionExists(ctx context.Context,
 	client *serviceendpoint.Client,
@@ -82,6 +97,7 @@ func CreateServiceConnection(
 	ctx context.Context,
 	connection *azuredevops.Connection,
 	projectId string,
+	projectName string,
 	azdEnvironment environment.Environment,
 	credentials *azcli.AzureCredentials,
 	console input.Console) error {
@@ -97,7 +113,7 @@ func CreateServiceConnection(
 	}
 
 	// endpoint contains the Azure credentials
-	createServiceEndpointArgs, err := createAzureRMServiceEndPointArgs(ctx, &projectId, credentials)
+	createServiceEndpointArgs, err := createAzureRMServiceEndPointArgs(&projectId, &projectName, credentials)
 	if err != nil {
 		return fmt.Errorf("creating Azure DevOps endpoint: %w", err)
 	}
@@ -137,46 +153,62 @@ func CreateServiceConnection(
 	return nil
 }
 
+func ListTypes(
+	ctx context.Context,
+	connection *azuredevops.Connection,
+	projectId string) (*[]serviceendpoint.ServiceEndpointType, error) {
+
+	client, err := serviceendpoint.NewClient(ctx, connection)
+	if err != nil {
+		return nil, fmt.Errorf("creating new azdo client: %w", err)
+	}
+
+	return client.GetServiceEndpointTypes(ctx, serviceendpoint.GetServiceEndpointTypesArgs{})
+}
+
 // creates input parameter needed to create the azure rm service connection
 func createAzureRMServiceEndPointArgs(
-	ctx context.Context,
 	projectId *string,
+	projectName *string,
 	credentials *azcli.AzureCredentials,
 ) (serviceendpoint.CreateServiceEndpointArgs, error) {
-	endpointType := "azurerm"
-	endpointOwner := "library"
-	endpointUrl := "https://management.azure.com/"
-	endpointName := ServiceConnectionName
-	endpointIsShared := false
-	endpointScheme := "ServicePrincipal"
-
 	endpointAuthorizationParameters := map[string]string{
-		"serviceprincipalid":  credentials.ClientId,
-		"serviceprincipalkey": credentials.ClientSecret,
-		"authenticationType":  "spnKey",
-		"tenantid":            credentials.TenantId,
+		"serviceprincipalid": credentials.ClientId,
+		"tenantid":           credentials.TenantId,
 	}
 
 	endpointData := map[string]string{
 		"environment":      CloudEnvironment,
 		"subscriptionId":   credentials.SubscriptionId,
-		"subscriptionName": "azure subscription",
+		"subscriptionName": "azure subscription", // fix? to sub name?
 		"scopeLevel":       "Subscription",
 		"creationMode":     "Manual",
 	}
 
 	endpointAuthorization := serviceendpoint.EndpointAuthorization{
-		Scheme:     &endpointScheme,
+		Scheme:     to.Ptr("WorkloadIdentityFederation"),
 		Parameters: &endpointAuthorizationParameters,
 	}
+	description := "Azure Service Connection created by azd"
+
+	pRef := []serviceendpoint.ServiceEndpointProjectReference{{
+		Name:        &ServiceConnectionName,
+		Description: &description,
+		ProjectReference: &serviceendpoint.ProjectReference{
+			Id:   to.Ptr(uuid.MustParse(*projectId)),
+			Name: projectName,
+		}}}
+
 	serviceEndpoint := &serviceendpoint.ServiceEndpoint{
-		Type:          &endpointType,
-		Owner:         &endpointOwner,
-		Url:           &endpointUrl,
-		Name:          &endpointName,
-		IsShared:      &endpointIsShared,
-		Authorization: &endpointAuthorization,
-		Data:          &endpointData,
+		Type:                             to.Ptr("azurerm"),
+		Owner:                            to.Ptr("library"),
+		Url:                              to.Ptr("https://management.azure.com/"),
+		Name:                             &ServiceConnectionName,
+		IsShared:                         to.Ptr(false),
+		Authorization:                    &endpointAuthorization,
+		Data:                             &endpointData,
+		ServiceEndpointProjectReferences: &pRef,
+		Description:                      &description,
 	}
 
 	createServiceEndpointArgs := serviceendpoint.CreateServiceEndpointArgs{

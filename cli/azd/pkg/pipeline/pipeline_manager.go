@@ -266,13 +266,11 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		spConfig.appIdOrName,
 		pm.args.PipelineRoleNames)
 
-	if err != nil {
-		return result, fmt.Errorf("failed to create or update service principal: %w", err)
-	}
-
 	// Update new service principal to include client id
-	if !strings.Contains(displayMsg, servicePrincipal.AppId) {
-		displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
+	if servicePrincipal != nil {
+		if !strings.Contains(displayMsg, servicePrincipal.AppId) {
+			displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
+		}
 	}
 	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
@@ -289,19 +287,23 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	displayMsg = fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, spConfig.applicationName)
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 
-	// Get the requested credential options from the CI provider
-	credentialOptions := pm.ciProvider.credentialOptions(
-		ctx,
-		gitRepoInfo,
-		infra.Options,
-		PipelineAuthType(pm.args.PipelineAuthTypeName),
-	)
-
 	subscriptionId := pm.env.GetSubscriptionId()
 	credentials := &azcli.AzureCredentials{
 		ClientId:       servicePrincipal.AppId,
 		TenantId:       *servicePrincipal.AppOwnerOrganizationId,
 		SubscriptionId: subscriptionId,
+	}
+
+	// Get the requested credential options from the CI provider
+	credentialOptions, error := pm.ciProvider.credentialOptions(
+		ctx,
+		gitRepoInfo,
+		infra.Options,
+		PipelineAuthType(pm.args.PipelineAuthTypeName),
+		credentials,
+	)
+	if error != nil {
+		return result, fmt.Errorf("failed to get credential options: %w", error)
 	}
 
 	// Enable client credentials if requested

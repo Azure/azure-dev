@@ -100,45 +100,43 @@ func CreateServiceConnection(
 	projectName string,
 	azdEnvironment environment.Environment,
 	credentials *azcli.AzureCredentials,
-	console input.Console) error {
+	console input.Console) (*serviceendpoint.ServiceEndpoint, error) {
 
 	client, err := serviceendpoint.NewClient(ctx, connection.Connection)
 	if err != nil {
-		return fmt.Errorf("creating new azdo client: %w", err)
+		return nil, fmt.Errorf("creating new azdo client: %w", err)
 	}
 
 	foundServiceConnection, err := serviceConnectionExists(ctx, &client, &projectId, &ServiceConnectionName)
 	if err != nil {
-		return fmt.Errorf("creating service connection: looking for existing connection: %w", err)
+		return nil, fmt.Errorf("creating service connection: looking for existing connection: %w", err)
 	}
 
-	// endpoint contains the Azure credentials
 	createServiceEndpointArgs, err := createAzureRMServiceEndPointArgs(&projectId, &projectName, credentials)
 	if err != nil {
-		return fmt.Errorf("creating Azure DevOps endpoint: %w", err)
+		return nil, fmt.Errorf("creating Azure DevOps endpoint: %w", err)
 	}
 
 	// if a service connection exists, skip creating a new Service connection. But update the current connection only
 	if foundServiceConnection != nil {
-		// After updating the endpoint with credentials, we no longer need it
-		_, err := client.UpdateServiceEndpoint(ctx, serviceendpoint.UpdateServiceEndpointArgs{
+		updated, err := client.UpdateServiceEndpoint(ctx, serviceendpoint.UpdateServiceEndpointArgs{
 			Endpoint:   createServiceEndpointArgs.Endpoint,
 			EndpointId: foundServiceConnection.Id,
 		})
 		if err != nil {
-			return fmt.Errorf("updating service connection: %w", err)
+			return nil, fmt.Errorf("updating service connection: %w", err)
 		}
 		console.MessageUxItem(ctx, &ux.DisplayedResource{
 			Type: "Azure DevOps",
 			Name: "Updated service connection",
 		})
-		return nil
+		return updated, nil
 	}
 
 	// Service connection not found. Creating a new one and authorizing.
 	endpoint, err := client.CreateServiceEndpoint(ctx, createServiceEndpointArgs)
 	if err != nil {
-		return fmt.Errorf("Creating new service connection: %w", err)
+		return nil, fmt.Errorf("Creating new service connection: %w", err)
 	}
 	console.MessageUxItem(ctx, &ux.DisplayedResource{
 		Type: "Azure DevOps",
@@ -147,10 +145,10 @@ func CreateServiceConnection(
 
 	err = authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection.Connection)
 	if err != nil {
-		return fmt.Errorf("authorizing service connection: %w", err)
+		return nil, fmt.Errorf("authorizing service connection: %w", err)
 	}
 
-	return nil
+	return endpoint, nil
 }
 
 func ListTypes(
@@ -172,11 +170,17 @@ func createAzureRMServiceEndPointArgs(
 	projectName *string,
 	credentials *azcli.AzureCredentials,
 ) (serviceendpoint.CreateServiceEndpointArgs, error) {
+	endpointScheme := "WorkloadIdentityFederation"
 	endpointAuthorizationParameters := map[string]string{
-		"serviceprincipalid":                credentials.ClientId,
-		"tenantid":                          credentials.TenantId,
-		"workloadIdentityFederationSubject": "sc://Hasdar/oi/sample",
-		"workloadIdentityFederationIssuer":  "https://vstoken.dev.azure.com/5c2f2536-d46c-4620-979a-eed123b55086",
+		"serviceprincipalid": credentials.ClientId,
+		"tenantid":           credentials.TenantId,
+		// "workloadIdentityFederationSubject": "sc://Hasdar/oi/sample",
+		// "workloadIdentityFederationIssuer":  "https://vstoken.dev.azure.com/5c2f2536-d46c-4620-979a-eed123b55086",
+	}
+	if credentials.ClientSecret != "" {
+		endpointAuthorizationParameters["serviceprincipalkey"] = credentials.ClientSecret
+		endpointAuthorizationParameters["authenticationType"] = "spnKey"
+		endpointScheme = "ServicePrincipal"
 	}
 
 	endpointData := map[string]string{
@@ -188,7 +192,7 @@ func createAzureRMServiceEndPointArgs(
 	}
 
 	endpointAuthorization := serviceendpoint.EndpointAuthorization{
-		Scheme:     to.Ptr("WorkloadIdentityFederation"),
+		Scheme:     &endpointScheme,
 		Parameters: &endpointAuthorizationParameters,
 	}
 	description := "Azure Service Connection created by azd"

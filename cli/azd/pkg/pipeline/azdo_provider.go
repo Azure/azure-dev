@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -701,17 +702,59 @@ func (p *AzdoCiProvider) credentialOptions(
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	authType PipelineAuthType,
-) *CredentialOptions {
-	if authType == "" || authType == AuthTypeClientCredentials {
+	credentials *azcli.AzureCredentials,
+) (*CredentialOptions, error) {
+	// Default auth type to client-credentials for terraform
+	if infraOptions.Provider == provisioning.Terraform && authType == "" {
+		authType = AuthTypeClientCredentials
+	}
+
+	if authType == AuthTypeClientCredentials {
 		return &CredentialOptions{
 			EnableClientCredentials: true,
+		}, nil
+	}
+
+	// If not specified default to federated credentials
+	if authType == "" || authType == AuthTypeFederated {
+		p.credentials = credentials
+		details := repoDetails.details.(*AzdoRepositoryDetails)
+		org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)
+		if err != nil {
+			return nil, err
 		}
+		pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
+		if err != nil {
+			return nil, err
+		}
+		connection, err := azdo.GetConnection(ctx, org, pat)
+		if err != nil {
+			return nil, err
+		}
+		sConnection, err := azdo.CreateServiceConnection(
+			ctx, connection, details.projectId, details.projectName, *p.Env, p.credentials, p.console)
+		if err != nil {
+			return nil, err
+		}
+		federatedCredentials := []*graphsdk.FederatedIdentityCredential{
+			{
+				Name:        "AzureDevOpsOIDC", //Must not contain a space character and 3 to 64 characters in length
+				Issuer:      (*sConnection.Authorization.Parameters)["workloadIdentityFederationIssuer"],
+				Subject:     (*sConnection.Authorization.Parameters)["workloadIdentityFederationSubject"],
+				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Audiences:   []string{federatedIdentityAudience},
+			},
+		}
+		return &CredentialOptions{
+			EnableFederatedCredentials: true,
+			FederatedCredentialOptions: federatedCredentials,
+		}, nil
 	}
 
 	return &CredentialOptions{
 		EnableClientCredentials:    false,
 		EnableFederatedCredentials: false,
-	}
+	}, nil
 }
 
 // configureConnection set up Azure DevOps with the Azure credential
@@ -723,26 +766,6 @@ func (p *AzdoCiProvider) configureConnection(
 	authType PipelineAuthType,
 	credentials *azcli.AzureCredentials,
 ) error {
-	p.credentials = credentials
-	details := repoDetails.details.(*AzdoRepositoryDetails)
-	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)
-	if err != nil {
-		return err
-	}
-	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
-	if err != nil {
-		return err
-	}
-	connection, err := azdo.GetConnection(ctx, org, pat)
-	if err != nil {
-		return err
-	}
-	err = azdo.CreateServiceConnection(
-		ctx, connection, details.projectId, details.projectName, *p.Env, p.credentials, p.console)
-	if err != nil {
-		return err
-	}
-
 	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
 		Lines: []string{
 			"",

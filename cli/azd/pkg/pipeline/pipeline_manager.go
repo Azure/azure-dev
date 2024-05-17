@@ -244,12 +244,14 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		)
 	}
 
+	// see if SP already exists - This step will not create the SP if it doesn't exist.
 	spConfig, err := servicePrincipal(
 		ctx, pm.env.Getenv(AzurePipelineClientIdEnvVarName), pm.env.GetSubscriptionId(), pm.args, pm.adService)
 	if err != nil {
 		return result, err
 	}
 
+	// Update the message depending on the SP already exists or not
 	var displayMsg string
 	if spConfig.servicePrincipal == nil {
 		displayMsg = fmt.Sprintf("Creating service principal %s", spConfig.applicationName)
@@ -266,16 +268,15 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		spConfig.appIdOrName,
 		pm.args.PipelineRoleNames)
 
-	// Update new service principal to include client id
-	if servicePrincipal != nil {
-		if !strings.Contains(displayMsg, servicePrincipal.AppId) {
-			displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
-		}
-	}
-	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
+		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 		return result, fmt.Errorf("failed to create or update service principal: %w", err)
 	}
+
+	if !strings.Contains(displayMsg, servicePrincipal.AppId) {
+		displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
+	}
+	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 
 	// Set in .env to be retrieved for any additional runs
 	pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)

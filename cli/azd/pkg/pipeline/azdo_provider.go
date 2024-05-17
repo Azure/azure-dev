@@ -20,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -766,13 +765,28 @@ func (p *AzdoCiProvider) configureConnection(
 	authType PipelineAuthType,
 	credentials *azcli.AzureCredentials,
 ) error {
-	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-		Lines: []string{
-			"",
-			"Azure DevOps project and connection is now configured.",
-			""},
-	})
-	return nil
+	if authType == "" || authType == AuthTypeFederated {
+		// default and federated credentials are set up in credentialOptions
+		return nil
+	}
+
+	// create service connection for client credentials
+	details := repoDetails.details.(*AzdoRepositoryDetails)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)
+	if err != nil {
+		return err
+	}
+	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
+	if err != nil {
+		return err
+	}
+	connection, err := azdo.GetConnection(ctx, org, pat)
+	if err != nil {
+		return err
+	}
+	_, err = azdo.CreateServiceConnection(
+		ctx, connection, details.projectId, details.projectName, *p.Env, p.credentials, p.console)
+	return err
 }
 
 // configurePipeline create Azdo pipeline

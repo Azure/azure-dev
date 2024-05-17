@@ -65,6 +65,7 @@ module "appserviceplan" {
   rg_name        = azurerm_resource_group.rg.name
   tags           = azurerm_resource_group.rg.tags
   resource_token = local.resource_token
+  sku_name       = "B3"
 }
 
 # ------------------------------------------------------------------------------------------------------

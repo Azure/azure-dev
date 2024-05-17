@@ -95,14 +95,14 @@ func serviceConnectionExists(ctx context.Context,
 // create a new service connection that will be used in the deployment pipeline
 func CreateServiceConnection(
 	ctx context.Context,
-	connection *azuredevops.Connection,
+	connection Connection,
 	projectId string,
 	projectName string,
 	azdEnvironment environment.Environment,
 	credentials *azcli.AzureCredentials,
 	console input.Console) error {
 
-	client, err := serviceendpoint.NewClient(ctx, connection)
+	client, err := serviceendpoint.NewClient(ctx, connection.Connection)
 	if err != nil {
 		return fmt.Errorf("creating new azdo client: %w", err)
 	}
@@ -145,7 +145,7 @@ func CreateServiceConnection(
 		Name: "Service connection",
 	})
 
-	err = authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection)
+	err = authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection.Connection)
 	if err != nil {
 		return fmt.Errorf("authorizing service connection: %w", err)
 	}
@@ -173,8 +173,10 @@ func createAzureRMServiceEndPointArgs(
 	credentials *azcli.AzureCredentials,
 ) (serviceendpoint.CreateServiceEndpointArgs, error) {
 	endpointAuthorizationParameters := map[string]string{
-		"serviceprincipalid": credentials.ClientId,
-		"tenantid":           credentials.TenantId,
+		"serviceprincipalid":                credentials.ClientId,
+		"tenantid":                          credentials.TenantId,
+		"workloadIdentityFederationSubject": "sc://Hasdar/oi/sample",
+		"workloadIdentityFederationIssuer":  "https://vstoken.dev.azure.com/5c2f2536-d46c-4620-979a-eed123b55086",
 	}
 
 	endpointData := map[string]string{

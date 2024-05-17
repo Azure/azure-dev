@@ -6,6 +6,9 @@ package azdo
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 )
@@ -44,19 +47,65 @@ var (
 	ServiceConnectionName = "azconnection"
 )
 
+type Connection struct {
+	*azuredevops.Connection
+	OrganizationName string
+	OrganizationId   string
+}
+
+func (con *Connection) getOrganizationId(ctx context.Context) (string, error) {
+	rawClient := con.GetClientByUrl(con.BaseUrl)
+
+	query := make(url.Values)
+	query.Add("accountName", con.OrganizationName)
+	// resourceAreas id is the same for all accounts:
+	// nolint:lll
+	//https://learn.microsoft.com/en-us/azure/devops/extend/develop/work-with-urls?view=azure-devops&tabs=http#with-the-organizations-name
+	url := fmt.Sprintf(
+		"https://dev.azure.com/_apis/resourceAreas/79134C72-4A58-4B42-976C-04E7115F32BF?accountName=%s",
+		con.OrganizationName)
+
+	orgRequest, error := rawClient.CreateRequestMessage(ctx, http.MethodGet, url, "7.2-preview.1", nil, "", "", nil)
+	if error != nil {
+		return "", error
+	}
+
+	httpResponse, error := rawClient.SendRequest(orgRequest)
+	if error != nil {
+		return "", error
+	}
+
+	bodyStringResponse, error := io.ReadAll(httpResponse.Body)
+	if error != nil {
+		return "", error
+	}
+	return string(bodyStringResponse), nil
+}
+
 // helper method to return an Azure DevOps connection used the AzDo go sdk
 func GetConnection(
-	ctx context.Context, organization string, personalAccessToken string) (*azuredevops.Connection, error) {
+	ctx context.Context, organization string, personalAccessToken string) (Connection, error) {
 	if organization == "" {
-		return nil, fmt.Errorf("organization name is required")
+		return Connection{}, fmt.Errorf("organization name is required")
 	}
 
 	if personalAccessToken == "" {
-		return nil, fmt.Errorf("personal access token is required")
+		return Connection{}, fmt.Errorf("personal access token is required")
 	}
 
 	organizationUrl := fmt.Sprintf("https://%s/%s", AzDoHostName, organization)
 	connection := azuredevops.NewPatConnection(organizationUrl, personalAccessToken)
 
-	return connection, nil
+	adoConnection := Connection{
+		Connection:       connection,
+		OrganizationName: organization,
+	}
+
+	orgId, err := adoConnection.getOrganizationId(ctx)
+	if err != nil {
+		return Connection{}, fmt.Errorf("getting organization id: %w", err)
+	}
+	adoConnection.OrganizationId = orgId
+
+	return adoConnection, nil
 }

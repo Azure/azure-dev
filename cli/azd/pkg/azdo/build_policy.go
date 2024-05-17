@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/policy"
 )
@@ -34,12 +33,12 @@ func getBuildType(ctx context.Context, projectId *string, policyClient policy.Cl
 // this also disables direct pushes to the default branch and requires changes to go through a PR.
 func CreateBuildPolicy(
 	ctx context.Context,
-	connection *azuredevops.Connection,
+	connection Connection,
 	projectId string,
 	repoId string,
 	buildDefinition *build.BuildDefinition,
 	env *environment.Environment) error {
-	client, err := policy.NewClient(ctx, connection)
+	client, err := policy.NewClient(ctx, connection.Connection)
 	if err != nil {
 		return err
 	}

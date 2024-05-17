@@ -17,9 +17,9 @@ func CreateRepository(
 	ctx context.Context,
 	projectId string,
 	repoName string,
-	connection *azuredevops.Connection,
+	connection Connection,
 ) (*git.GitRepository, error) {
-	gitClient, err := git.NewClient(ctx, connection)
+	gitClient, err := git.NewClient(ctx, connection.Connection)
 	if err != nil {
 		return nil, err
 	}
@@ -79,10 +79,10 @@ func GetGitRepositoriesInProject(
 	ctx context.Context,
 	projectName string,
 	orgName string,
-	connection *azuredevops.Connection,
+	connection Connection,
 	console input.Console,
 ) (*git.GitRepository, error) {
-	gitClient, err := git.NewClient(ctx, connection)
+	gitClient, err := git.NewClient(ctx, connection.Connection)
 	if err != nil {
 		return nil, err
 	}
@@ -133,9 +133,9 @@ func GetGitRepository(
 	ctx context.Context,
 	projectName string,
 	repoName string,
-	connection *azuredevops.Connection,
+	connection Connection,
 ) (*git.GitRepository, error) {
-	gitClient, err := git.NewClient(ctx, connection)
+	gitClient, err := git.NewClient(ctx, connection.Connection)
 	if err != nil {
 		return nil, err
 	}

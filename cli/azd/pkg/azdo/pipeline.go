@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/taskagent"
 )
@@ -31,9 +30,9 @@ func createBuildDefinitionVariable(value string, isSecret bool, allowOverride bo
 func getAgentQueue(
 	ctx context.Context,
 	projectId string,
-	connection *azuredevops.Connection,
+	connection Connection,
 ) (*taskagent.TaskAgentQueue, error) {
-	client, err := taskagent.NewClient(ctx, connection)
+	client, err := taskagent.NewClient(ctx, connection.Connection)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +87,7 @@ func CreatePipeline(
 	projectId string,
 	name string,
 	repoName string,
-	connection *azuredevops.Connection,
+	connection Connection,
 	credentials *azcli.AzureCredentials,
 	env *environment.Environment,
 	console input.Console,
@@ -96,7 +95,7 @@ func CreatePipeline(
 	additionalSecrets map[string]string,
 	additionalVariables map[string]string) (*build.BuildDefinition, error) {
 
-	client, err := build.NewClient(ctx, connection)
+	client, err := build.NewClient(ctx, connection.Connection)
 	if err != nil {
 		return nil, err
 	}
@@ -270,10 +269,10 @@ func createAzureDevPipelineArgs(
 // run a pipeline. This is used to invoke the deploy pipeline after a successful push of the code
 func QueueBuild(
 	ctx context.Context,
-	connection *azuredevops.Connection,
+	connection Connection,
 	projectId string,
 	buildDefinition *build.BuildDefinition) error {
-	client, err := build.NewClient(ctx, connection)
+	client, err := build.NewClient(ctx, connection.Connection)
 	if err != nil {
 		return err
 	}

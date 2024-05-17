@@ -160,7 +160,6 @@ func Containers(manifest *Manifest) map[string]genContainer {
 }
 
 type AppHostOptions struct {
-	AutoConfigureDataProtection bool
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
@@ -180,7 +179,6 @@ func ContainerAppManifestTemplateForProject(
 	var buf bytes.Buffer
 
 	tmplCtx := generator.containerAppTemplateContexts[projectName]
-	tmplCtx.AutoConfigureDataProtection = options.AutoConfigureDataProtection
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {

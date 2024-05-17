@@ -203,6 +203,11 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		return nil, err
 	}
 
+	// Aspire Dashboard workaround
+	// By setting this, we will give Contributor role to the user running azd for the Container Apps Environment
+	// See: https://github.com/Azure/azure-dev/issues/3928
+	generator.bicepContext.RequiresPrincipalId = true
+
 	// use the filesystem coming from the manifest
 	// the in-memory filesystem from the manifest is guaranteed to be initialized and contains all the bicep files
 	// referenced by the Aspire manifest.

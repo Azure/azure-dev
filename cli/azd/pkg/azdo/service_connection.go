@@ -174,8 +174,6 @@ func createAzureRMServiceEndPointArgs(
 	endpointAuthorizationParameters := map[string]string{
 		"serviceprincipalid": credentials.ClientId,
 		"tenantid":           credentials.TenantId,
-		// "workloadIdentityFederationSubject": "sc://Hasdar/oi/sample",
-		// "workloadIdentityFederationIssuer":  "https://vstoken.dev.azure.com/5c2f2536-d46c-4620-979a-eed123b55086",
 	}
 	if credentials.ClientSecret != "" {
 		endpointAuthorizationParameters["serviceprincipalkey"] = credentials.ClientSecret

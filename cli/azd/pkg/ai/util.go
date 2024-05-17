@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-// AzureAiStudioLink returns a link to the Azure AI Studio for the given tenant, subscription, resource group, and workspace
+// AiStudioWorkspaceLink returns a link to the Azure AI Studio workspace page
 func AiStudioWorkspaceLink(tenantId string, subscriptionId string, resourceGroup string, workspaceName string) string {
 	return fmt.Sprintf(
 		//nolint:lll
@@ -16,6 +16,7 @@ func AiStudioWorkspaceLink(tenantId string, subscriptionId string, resourceGroup
 	)
 }
 
+// AzureAiStudioDeploymentLink returns a link to the Azure AI Studio deployment page
 func AiStudioDeploymentLink(
 	tenantId string,
 	subscriptionId string,

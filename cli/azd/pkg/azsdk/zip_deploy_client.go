@@ -253,6 +253,7 @@ func (c *ZipDeployClient) Publish(
 	if options.RemoteBuild {
 		query.Set("RemoteBuild", "true")
 	}
+	rawRequest.URL.RawQuery = query.Encode()
 
 	err = request.SetBody(zipFile, "application/zip")
 	if err != nil {

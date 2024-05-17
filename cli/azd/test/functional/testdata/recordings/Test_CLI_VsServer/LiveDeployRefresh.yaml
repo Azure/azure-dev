@@ -669,7 +669,7 @@ interactions:
                 - application/json
             User-Agent:
                 - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.21.0; darwin),azdev/0.0.0-dev.0 (Go go1.21.0; darwin/arm64)
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2023-11-02-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2024-02-02-preview
         method: PUT
       response:
         proto: HTTP/2.0
@@ -811,7 +811,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.21.0; darwin),azdev/0.0.0-dev.0 (Go go1.21.0; darwin/arm64)
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2023-11-02-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2024-02-02-preview
         method: GET
       response:
         proto: HTTP/2.0
@@ -882,7 +882,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.21.0; darwin),azdev/0.0.0-dev.0 (Go go1.21.0; darwin/arm64)
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2023-11-02-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2024-02-02-preview
         method: GET
       response:
         proto: HTTP/2.0
@@ -2293,7 +2293,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.21.0; darwin),azdev/0.0.0-dev.0 (Go go1.21.0; darwin/arm64)
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2023-11-02-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2024-02-02-preview
         method: GET
       response:
         proto: HTTP/2.0
@@ -3211,7 +3211,7 @@ interactions:
                 - SANITIZED
             User-Agent:
                 - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.21.0; darwin),azdev/0.0.0-dev.0 (Go go1.21.0; darwin/arm64)
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2023-11-02-preview
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-d35418a/providers/Microsoft.App/containerApps/apiservice?api-version=2024-02-02-preview
         method: GET
       response:
         proto: HTTP/2.0

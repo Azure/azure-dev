@@ -3,7 +3,10 @@ package azcli
 import (
 	"context"
 	"io"
+	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
@@ -32,9 +35,33 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
-	deployZipFile io.Reader,
+	deployZipFile io.ReadSeekCloser,
+	remoteBuild bool,
 ) (*string, error) {
-	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
+	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
+	if err != nil {
+		return nil, err
+	}
+
+	cred, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	plansClient, err := armappservice.NewPlansClient(subscriptionId, cred, cli.armClientOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	planId := *app.Properties.ServerFarmID
+	sep := strings.LastIndexByte(planId, '/')
+	planName := planId[sep+1:]
+	plan, err := plansClient.Get(ctx, resourceGroup, planName, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	hostName, err := appServiceRepositoryHost(app, appName)
 	if err != nil {
 		return nil, err
 	}
@@ -42,6 +69,14 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
 	if err != nil {
 		return nil, err
+	}
+
+	if strings.ToLower(*plan.SKU.Tier) == "flexconsumption" {
+		response, err := client.Publish(ctx, deployZipFile, &azsdk.PublishOptions{RemoteBuild: remoteBuild})
+		if err != nil {
+			return nil, err
+		}
+		return convert.RefOf(response.StatusText), nil
 	}
 
 	response, err := client.Deploy(ctx, deployZipFile)

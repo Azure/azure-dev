@@ -49,19 +49,12 @@ func (cli *azCli) appService(
 	return &webApp, nil
 }
 
-func (cli *azCli) appServiceRepositoryHost(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroup string,
+func appServiceRepositoryHost(
+	response *armappservice.WebAppsClientGetResponse,
 	appName string,
 ) (string, error) {
-	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
-	if err != nil {
-		return "", err
-	}
-
 	hostName := ""
-	for _, item := range app.Properties.HostNameSSLStates {
+	for _, item := range response.Properties.HostNameSSLStates {
 		if *item.HostType == armappservice.HostTypeRepository {
 			hostName = *item.Name
 			break
@@ -82,7 +75,12 @@ func (cli *azCli) DeployAppServiceZip(
 	appName string,
 	deployZipFile io.Reader,
 ) (*string, error) {
-	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
+	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
+	if err != nil {
+		return nil, err
+	}
+
+	hostName, err := appServiceRepositoryHost(app, appName)
 	if err != nil {
 		return nil, err
 	}

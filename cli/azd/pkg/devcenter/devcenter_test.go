@@ -123,27 +123,30 @@ func (m *mockDevCenterManager) WritableProjectsWithFilter(
 
 func (m *mockDevCenterManager) Deployment(
 	ctx context.Context,
+	config *Config,
 	env *devcentersdk.Environment,
 	filter DeploymentFilterPredicate,
 ) (infra.Deployment, error) {
-	args := m.Called(ctx, env, filter)
+	args := m.Called(ctx, config, env, filter)
 	return args.Get(0).(infra.Deployment), args.Error(1)
 }
 
 func (m *mockDevCenterManager) LatestArmDeployment(
 	ctx context.Context,
+	config *Config,
 	env *devcentersdk.Environment,
 	filter DeploymentFilterPredicate,
 ) (*armresources.DeploymentExtended, error) {
-	args := m.Called(ctx, env, filter)
+	args := m.Called(ctx, config, env, filter)
 	return args.Get(0).(*armresources.DeploymentExtended), args.Error(1)
 }
 
 func (m *mockDevCenterManager) Outputs(
 	ctx context.Context,
+	config *Config,
 	env *devcentersdk.Environment,
 ) (map[string]provisioning.OutputParameter, error) {
-	args := m.Called(ctx, env)
+	args := m.Called(ctx, config, env)
 
 	outputs, ok := args.Get(0).(map[string]provisioning.OutputParameter)
 	if ok {

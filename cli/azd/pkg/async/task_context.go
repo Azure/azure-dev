@@ -1,5 +1,7 @@
 package async
 
+import "fmt"
+
 // Task function definition
 type TaskRunFunc[R comparable] func(taskContext *TaskContext[R])
 
@@ -20,11 +22,14 @@ func NewTaskContext[R comparable](task *Task[R]) *TaskContext[R] {
 // Sets the specified error for the task
 func (c *TaskContext[R]) SetError(err error) {
 	if c.result != *new(R) {
-		panic("Task result has already been set! Task cannot have both a result and an error.")
+		panic(fmt.Sprintf("Task result has already been set! Task cannot have both a result and an error.\n"+
+			"Result: %v, New Error: %v", c.result, err))
 	}
 
 	if c.error != nil {
-		panic("Task error has already been set! Ensure your task error is only ever set one time.")
+		panic(fmt.Sprintf(
+			"Task error has already been set! Ensure your task error is only ever set one time.\n"+
+				"Old Error: %v\nNew Error: %v", c.error, err))
 	}
 
 	c.error = err
@@ -33,11 +38,13 @@ func (c *TaskContext[R]) SetError(err error) {
 // Sets the result of the Task
 func (c *TaskContext[R]) SetResult(result R) {
 	if c.error != nil {
-		panic("Task error has already been set! Task cannot have both a result and an error.")
+		panic(fmt.Sprintf("Task error has already been set! Task cannot have both a result and an error.\n"+
+			"Error: %v, New Result: %v", c.error, result))
 	}
 
 	if c.result != *new(R) {
-		panic("Task result has already been set! Ensure your task result is only ever set one time.")
+		panic(fmt.Sprintf("Task result has already been set! Ensure your task result is only ever set one time.\n"+
+			"Old Result: %v\nNew Result: %v", c.result, result))
 	}
 
 	c.result = result

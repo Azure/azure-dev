@@ -1,0 +1,34 @@
+parameters: 
+  DockerVersion: 25.0.4
+  ReleaseType: stable
+steps: 
+  - pwsh: |
+      if ($IsMacOS -and (arch) -eq 'arm64') {
+        Write-Host "Circumventing DockerInstaller@0 because it does not support Apple Silicon"
+        $tempDir = [System.IO.Path]::GetTempPath()
+        # https://download.docker.com/mac/static/stable/aarch64/docker-17.09.0-ce.tgz
+        $filename = "docker-${{ parameters.DockerVersion }}.tgz"
+        $url = "https://download.docker.com/mac/static/${{ parameters.ReleaseType }}/aarch64/$filename"
+
+        Write-Host "Downloading $url"
+        curl -L "$url" -o "$tempDir/$filename"
+
+        Write-Host "Extracting and installing docker to /usr/local/bin"
+        sudo rm -rf /usr/local/bin/docker
+        sudo tar -C "$tempDir" -xvzf "$tempDir/$filename" docker/docker
+        sudo mv "$tempDir/docker/docker" /usr/local/bin
+
+        docker --version
+        exit $LASTEXITCODE
+      } else {
+        Write-Host "Use tools"
+        Write-Host "##vso[task.setvariable variable=DEFAULT_DOCKER_SETUP]true"
+      }
+    displayName: Docker Installer (Apple Silicon installer)
+
+  - task: DockerInstaller@0
+    displayName: Docker Installer
+    condition: eq(variables['DEFAULT_DOCKER_SETUP'], 'true')
+    inputs:
+      dockerVersion: ${{ parameters.DockerVersion }}
+      releaseType: ${{ parameters.ReleaseType }}

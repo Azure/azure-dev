@@ -10,6 +10,9 @@
     },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "principalType": {
+      "value": "${AZURE_PRINCIPAL_TYPE=User}"
     }
   }
 }

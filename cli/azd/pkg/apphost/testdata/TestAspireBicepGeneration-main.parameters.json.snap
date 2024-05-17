@@ -5,7 +5,7 @@
       "principalId": {
         "value": "${AZURE_PRINCIPAL_ID}"
       },
-      "administratorLogin": {
+      "administrator_login": {
         "value": "${AZURE_ADMINISTRATOR_LOGIN}"
       },
       "administratorLoginPassword": {

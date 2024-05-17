@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
@@ -18,7 +19,11 @@ import (
 // This would typically be used during deployment when azd need to deploy applications
 // to the Azure resource hosting the application
 type ResourceManager interface {
-	GetResourceGroupName(ctx context.Context, subscriptionId string, projectConfig *ProjectConfig) (string, error)
+	GetResourceGroupName(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupTemplate osutil.ExpandableString,
+	) (string, error)
 	GetServiceResources(
 		ctx context.Context,
 		subscriptionId string,
@@ -69,9 +74,9 @@ func NewResourceManager(
 func (rm *resourceManager) GetResourceGroupName(
 	ctx context.Context,
 	subscriptionId string,
-	projectConfig *ProjectConfig,
+	resourceGroupTemplate osutil.ExpandableString,
 ) (string, error) {
-	name, err := projectConfig.ResourceGroupName.Envsubst(rm.env.Getenv)
+	name, err := resourceGroupTemplate.Envsubst(rm.env.Getenv)
 	if err != nil {
 		return "", err
 	}
@@ -197,7 +202,12 @@ func (rm *resourceManager) GetTargetResource(
 	subscriptionId string,
 	serviceConfig *ServiceConfig,
 ) (*environment.TargetResource, error) {
-	resourceGroupName, err := rm.GetResourceGroupName(ctx, subscriptionId, serviceConfig.Project)
+	resourceGroupTemplate := serviceConfig.ResourceGroupName
+	if resourceGroupTemplate.Empty() {
+		resourceGroupTemplate = serviceConfig.Project.ResourceGroupName
+	}
+
+	resourceGroupName, err := rm.GetResourceGroupName(ctx, subscriptionId, resourceGroupTemplate)
 	if err != nil {
 		return nil, err
 	}

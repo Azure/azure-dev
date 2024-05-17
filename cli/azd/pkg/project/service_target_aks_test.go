@@ -925,9 +925,9 @@ type MockResourceManager struct {
 func (m *MockResourceManager) GetResourceGroupName(
 	ctx context.Context,
 	subscriptionId string,
-	projectConfig *ProjectConfig,
+	resourceGroupTemplate osutil.ExpandableString,
 ) (string, error) {
-	args := m.Called(ctx, subscriptionId, projectConfig)
+	args := m.Called(ctx, subscriptionId, resourceGroupTemplate)
 	return args.String(0), args.Error(1)
 }
 

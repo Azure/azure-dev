@@ -26,6 +26,7 @@ func Test_DevCenter_Client(t *testing.T) {
 		cloud.AzurePublic(),
 		http.DefaultClient,
 		mockContext.Console,
+		auth.ExternalAuthConfiguration{},
 	)
 	require.NoError(t, err)
 

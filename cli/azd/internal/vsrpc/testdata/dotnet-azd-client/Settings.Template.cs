@@ -2,6 +2,8 @@
 // Checked in.
 /*
 public static class Settings {
+    // The Base 64 encoded certificate of the remote server.
+    public const string ServerCertBase64 = "";
     // The name of the environment to create and use as part of the RunLifecycle function.
     public const string EnvironmentName = "";
     // The Root Path to the Aspire solution to use as part of the RunLifecycle function. The test expects this to be

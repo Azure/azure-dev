@@ -2,6 +2,24 @@
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
+      "my_sql_abstract_pas_sw_ord": {
+        "value": "${AZURE_MY_SQL_ABSTRACT_PAS_SW_ORD}"
+      },
+      "my_sql_abstract_password": {
+        "value": "${AZURE_MY_SQL_ABSTRACT_PASSWORD}"
+      },
+      "mysqlabstract_pas_sw_ord": {
+        "value": "${AZURE_MYSQLABSTRACT_PAS_SW_ORD}"
+      },
+      "mysqlabstract_password": {
+        "value": "${AZURE_MYSQLABSTRACT_PASSWORD}"
+      },
+      "noVolume_pas_sw_ord": {
+        "value": "${AZURE_NO_VOLUME_PAS_SW_ORD}"
+      },
+      "noVolume_password": {
+        "value": "${AZURE_NO_VOLUME_PASSWORD}"
+      },
       "environmentName": {
         "value": "${AZURE_ENV_NAME}"
       },

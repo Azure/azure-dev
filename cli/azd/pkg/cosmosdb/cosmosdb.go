@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cosmos/armcosmos/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
 // CosmosDbService is the interface for the CosmosDbService
@@ -15,24 +15,29 @@ type CosmosDbService interface {
 }
 
 type cosmosDbClient struct {
-	credential azcore.TokenCredential
-	options    *arm.ClientOptions
+	accountCreds account.SubscriptionCredentialProvider
+	options      *arm.ClientOptions
 }
 
 // NewCosmosDbService creates a new instance of the CosmosDbService
 func NewCosmosDbService(
-	credential azcore.TokenCredential,
+	accountCreds account.SubscriptionCredentialProvider,
 	options *arm.ClientOptions,
 ) (CosmosDbService, error) {
 	return &cosmosDbClient{
-		credential: credential,
-		options:    options,
+		accountCreds: accountCreds,
+		options:      options,
 	}, nil
 }
 
 // ConnectionString returns the connection string for the CosmosDB account
 func (c *cosmosDbClient) ConnectionString(ctx context.Context, subId, rgName, accountName string) (string, error) {
-	client, err := armcosmos.NewDatabaseAccountsClient(subId, c.credential, c.options)
+	credential, err := c.accountCreds.CredentialForSubscription(ctx, subId)
+	if err != nil {
+		return "", err
+	}
+
+	client, err := armcosmos.NewDatabaseAccountsClient(subId, credential, c.options)
 	if err != nil {
 		return "", err
 	}

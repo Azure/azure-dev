@@ -108,17 +108,17 @@ repo:
     - from: ../../../../../common
       to: ./
       ignore:
-        - .github/**/*
-        - .devcontainer/**/*
+        - ".github/**/*"
+        - ".devcontainer/**/*"
         - "infra/**/*"
-        - .azdo/pipelines/*/azure-dev.yml
+        - ".azdo/**/*"
 
     # AzDo workflows for bicep
-    - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml
+    - from: ../../../../../common/.azdo/pipelines/nodejs/aks/azure-dev.yml
       to: ./.azdo/pipelines/azure-dev.yml
 
-    # Github workflows for bicep
-    - from: ../../../../../common/.github/workflows/nodejs/bicep
+    # Github workflows for nodejs/aks
+    - from: ../../../../../common/.github/workflows/nodejs/aks
       to: ./.github/workflows
 
     # azd core modules

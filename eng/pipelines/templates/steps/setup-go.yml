@@ -3,7 +3,32 @@ parameters:
   Condition: succeeded()
 
 steps:
+  - pwsh: |
+      if (!$IsWindows -and (arch) -in @('arm64', 'aarch64')) {
+        Write-Host "Circumventing GoTool@0 because it does not support ARM64"
+        $tempDir = [System.IO.Path]::GetTempPath()
+        $os = 'darwin' 
+        if ($IsLinux) { 
+          $os = 'linux'
+        }
+        $goFile = "go${{ parameters.GoVersion }}.$os-arm64.tar.gz"
+        curl -L https://golang.google.cn/dl/$goFile -o "$tempDir/$goFile"
+        sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf "$tempDir/$goFile"
+
+        Write-Host "go version"
+        /usr/local/go/bin/go version
+
+        echo "##vso[task.prependpath]/usr/local/go/bin"
+        Write-Host "##vso[task.setvariable variable=DEFAULT_GO_SETUP]false"
+
+      } else {
+        Write-Host "Use tools"
+        Write-Host "##vso[task.setvariable variable=DEFAULT_GO_SETUP]true"
+      }
+    displayName: Setup Go (ARM64)
+
   - task: GoTool@0
+    condition: eq(variables['DEFAULT_GO_SETUP'], 'true')
     inputs:
       version: ${{ parameters.GoVersion }}
 

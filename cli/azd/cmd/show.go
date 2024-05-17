@@ -275,6 +275,8 @@ func (s *showAction) serviceEndpoint(
 
 func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowType {
 	switch language {
+	case project.ServiceLanguageNone:
+		return contracts.ShowTypeNone
 	case project.ServiceLanguageDotNet, project.ServiceLanguageCsharp, project.ServiceLanguageFsharp:
 		return contracts.ShowTypeDotNet
 	case project.ServiceLanguagePython:

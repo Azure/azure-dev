@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"slices"
 
@@ -65,7 +67,7 @@ func NewMiddlewareRunner(container *ioc.NestedContainer) *MiddlewareRunner {
 func (r *MiddlewareRunner) RunAction(
 	ctx context.Context,
 	runOptions *Options,
-	action actions.Action,
+	actionName string,
 ) (*actions.ActionResult, error) {
 	chainLength := len(r.chain)
 	index := 0
@@ -106,6 +108,21 @@ func (r *MiddlewareRunner) RunAction(
 			log.Printf("running middleware '%s'\n", middlewareName)
 			return middleware.Run(ctx, nextFn)
 		} else {
+			var action actions.Action
+
+			if err := actionContainer.ResolveNamed(actionName, &action); err != nil {
+				if errors.Is(err, ioc.ErrResolveInstance) {
+					return nil, fmt.Errorf(
+						//nolint:lll
+						"failed resolving action '%s'. Ensure the ActionResolver is a valid go function that returns an `actions.Action` interface, %w",
+						actionName,
+						err,
+					)
+				}
+
+				return nil, err
+			}
+
 			return action.Run(ctx)
 		}
 	}

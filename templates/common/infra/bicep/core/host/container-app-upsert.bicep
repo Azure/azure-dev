@@ -26,6 +26,9 @@ param containerName string = 'main'
 @description('The name of the container registry')
 param containerRegistryName string = ''
 
+@description('Hostname suffix for container registry. Set when deploying to sovereign clouds')
+param containerRegistryHostSuffix string = 'azurecr.io'
+
 @allowed([ 'http', 'grpc' ])
 @description('The protocol used by Dapr to connect to the app, e.g., HTTP or gRPC')
 param daprAppProtocol string = 'http'
@@ -53,7 +56,8 @@ param identityName string = ''
 param imageName string = ''
 
 @description('The secrets required for the container')
-param secrets array = []
+@secure()
+param secrets object = {}
 
 @description('The environment variables for the container')
 param env array = []
@@ -83,6 +87,7 @@ module app 'container-app.bicep' = {
     containerName: containerName
     containerAppsEnvironmentName: containerAppsEnvironmentName
     containerRegistryName: containerRegistryName
+    containerRegistryHostSuffix: containerRegistryHostSuffix
     containerCpuCoreCount: containerCpuCoreCount
     containerMemory: containerMemory
     containerMinReplicas: containerMinReplicas

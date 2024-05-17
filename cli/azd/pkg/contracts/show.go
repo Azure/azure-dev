@@ -6,6 +6,7 @@ package contracts
 type ShowType string
 
 const (
+	ShowTypeNone   ShowType = ""
 	ShowTypeDotNet ShowType = "dotnet"
 	ShowTypePython ShowType = "python"
 	ShowTypeNode   ShowType = "node"

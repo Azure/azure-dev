@@ -53,11 +53,20 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 
 type templateListFlags struct {
 	source string
+	tags   []string
 }
 
 func newTemplateListFlags(cmd *cobra.Command) *templateListFlags {
 	flags := &templateListFlags{}
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "Filters templates by source.")
+
+	cmd.Flags().StringSliceVarP(
+		&flags.tags,
+		"filter",
+		"f",
+		[]string{},
+		"The tag(s) used to filter template results. Supports comma-separated values.",
+	)
 
 	return flags
 }
@@ -92,7 +101,10 @@ func newTemplateListAction(
 }
 
 func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	options := &templates.ListOptions{Source: tl.flags.source}
+	options := &templates.ListOptions{
+		Source: tl.flags.source,
+		Tags:   tl.flags.tags,
+	}
 	listedTemplates, err := tl.templateManager.ListTemplates(ctx, options)
 	if err != nil {
 		return nil, err

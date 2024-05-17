@@ -18,61 +18,98 @@ var jwtClaimsRegex = regexp.MustCompile(`^[a-zA-Z0-9-_]*\.([a-zA-Z0-9-_]*)\.[a-z
 
 // cspell: enable
 
+// TokenClaims contains claims about a user from an access token.
+// https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference.
+type TokenClaims struct {
+	PreferredUsername string `json:"preferred_username,omitempty"`
+	UniqueName        string `json:"unique_name,omitempty"`
+	GivenName         string `json:"given_name,omitempty"`
+	FamilyName        string `json:"family_name,omitempty"`
+	MiddleName        string `json:"middle_name,omitempty"`
+	Name              string `json:"name,omitempty"`
+	Oid               string `json:"oid,omitempty"`
+	TenantId          string `json:"tid,omitempty"`
+	Subject           string `json:"sub,omitempty"`
+	Upn               string `json:"upn,omitempty"`
+	Email             string `json:"email,omitempty"`
+	AlternativeId     string `json:"alternative_id,omitempty"`
+	Issuer            string `json:"iss,omitempty"`
+	Audience          string `json:"aud,omitempty"`
+	ExpirationTime    int64  `json:"exp,omitempty"`
+	IssuedAt          int64  `json:"iat,omitempty"`
+	NotBefore         int64  `json:"nbf,omitempty"`
+}
+
+// Returns an ID associated with the account.
+// This ID is suitable for local use, and not for any server authorization use.
+func (tc *TokenClaims) LocalAccountId() string {
+	if tc.Oid != "" {
+		return tc.Oid
+	}
+
+	// Fall back to sub if oid is not present.
+	// This happens, for example, for personal accounts in their home tenant.
+	return tc.Subject
+}
+
+// Returns a display name for the account.
+func (tc *TokenClaims) DisplayUsername() string {
+	// For v2.0 token, use preferred_username
+	if tc.PreferredUsername != "" {
+		return tc.PreferredUsername
+	}
+
+	// Fallback to unique_name for v1.0 token
+	return tc.UniqueName
+}
+
 func GetTenantIdFromToken(token string) (string, error) {
-	return getTidClaimFromAccessToken(token)
+	claims, err := GetClaimsFromAccessToken(token)
+	if err != nil {
+		return "", err
+	}
+
+	if claims.TenantId == "" {
+		return "", errors.New("no tid claim")
+	}
+
+	return claims.TenantId, nil
 }
 
 // GetOidFromAccessToken extracts a string claim with the name "oid" from an access token.
 // Access Tokens are JWT and the middle component is a base64 encoded string of a JSON object
 // with claims.
 func GetOidFromAccessToken(token string) (string, error) {
-	matches := jwtClaimsRegex.FindStringSubmatch(token)
-	if len(matches) != 2 {
-		return "", errors.New("malformed access token")
-	}
-
-	bytes, err := base64.RawURLEncoding.DecodeString(matches[1])
+	claims, err := GetClaimsFromAccessToken(token)
 	if err != nil {
 		return "", err
 	}
 
-	var claims struct {
-		Oid *string
-	}
-
-	if err := json.Unmarshal(bytes, &claims); err != nil {
-		return "", err
-	}
-
-	if claims.Oid == nil {
+	if claims.Oid == "" {
 		return "", errors.New("no oid claim")
 	}
 
-	return *claims.Oid, nil
+	return claims.Oid, nil
 }
 
-func getTidClaimFromAccessToken(token string) (string, error) {
+// GetClaimsFromAccessToken extracts claims from an access token.
+// Access Tokens are JWT and the middle component is a base64 encoded string of a JSON object
+// with claims.
+func GetClaimsFromAccessToken(token string) (TokenClaims, error) {
 	matches := jwtClaimsRegex.FindStringSubmatch(token)
 	if len(matches) != 2 {
-		return "", errors.New("malformed access token")
+		return TokenClaims{}, errors.New("malformed access token")
 	}
 
 	bytes, err := base64.RawURLEncoding.DecodeString(matches[1])
 	if err != nil {
-		return "", err
+		return TokenClaims{}, err
 	}
 
-	var claims struct {
-		Tid *string
-	}
-
+	var claims TokenClaims
 	if err := json.Unmarshal(bytes, &claims); err != nil {
-		return "", err
+		return TokenClaims{}, err
 	}
 
-	if claims.Tid == nil {
-		return "", errors.New("no tid claim")
-	}
-
-	return *claims.Tid, nil
+	return claims, nil
 }

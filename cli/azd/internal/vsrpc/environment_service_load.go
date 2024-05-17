@@ -6,7 +6,6 @@ package vsrpc
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -16,20 +15,20 @@ import (
 )
 
 // OpenEnvironmentAsync is the server implementation of:
-// ValueTask<Environment> OpenEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<Environment> OpenEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken);
 //
 // OpenEnvironmentAsync loads the specified environment, without connecting to Azure or fetching a manifest (unless it is
 // already cached) and is faster than `LoadEnvironmentAsync` in cases where we have not cached the manifest. This means
 // the Services array of the returned environment may be empty.
 func (s *environmentService) OpenEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}
@@ -38,20 +37,20 @@ func (s *environmentService) OpenEnvironmentAsync(
 }
 
 // LoadEnvironmentAsync is the server implementation of:
-// ValueTask<Environment> LoadEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<Environment> LoadEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken);
 //
 // LoadEnvironmentAsync loads the specified environment, without connecting to Azure. Because of this, certain properties of
 // the environment (like service endpoints) may not be available. Use `RefreshEnvironmentAsync` to load the environment and
 // fetch information from Azure.
 func (s *environmentService) LoadEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}
@@ -129,27 +128,6 @@ func (s *environmentService) loadEnvironmentAsync(
 	}
 
 	ret.Services = servicesFromManifest(manifest)
-
-	var exposedServices []string
-
-	// TODO(azure/azure-dev#3284): We need to use the service name of the apphost from azure.yaml instead of assuming
-	// it will always be "app". "app" is just the default we use when creating an azure.yaml for the user.
-	val, has := e.Config.Get("services.app.config.exposedServices")
-	if has {
-		if v, ok := val.([]any); ok {
-			for _, svc := range v {
-				if s, ok := svc.(string); ok {
-					exposedServices = append(exposedServices, s)
-				}
-			}
-		}
-	}
-
-	for _, svc := range ret.Services {
-		if slices.Contains(exposedServices, svc.Name) {
-			svc.IsExternal = true
-		}
-	}
 
 	return ret, nil
 }

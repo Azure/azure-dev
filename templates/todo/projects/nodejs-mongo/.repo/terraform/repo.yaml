@@ -96,10 +96,10 @@ repo:
     - from: ../../../../../common
       to: ./
       ignore:
-        - .devcontainer/**/*
+        - ".github/**/*"
+        - ".devcontainer/**/*"
         - "infra/**/*"
-        - .github/**/*
-        - .azdo/pipelines/*/azure-dev.yml
+        - ".azdo/**/*"
 
     # AzDo workflows for bicep
     - from: ../../../../../common/.azdo/pipelines/terraform/azure-dev.yml

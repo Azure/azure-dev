@@ -6,11 +6,11 @@ This is a [Create React App](https://github.com/facebook/create-react-app) based
 
 Create a `.env` file within the base of the `reactd-fluent` folder with the following configuration:
 
-- `REACT_APP_API_BASE_URL` - Base URL for all api requests, (ex: `http://localhost:3100`)
+- `VITE_API_BASE_URL` - Base URL for all api requests, (ex: `http://localhost:3100`)
 
 > Note: The URL must include the schema, either `http://` or `https://`.
 
-- `REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING` - Azure Application Insights connection string
+- `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` - Azure Application Insights connection string
 
 ## Available Scripts
 

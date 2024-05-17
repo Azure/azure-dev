@@ -8,10 +8,17 @@ steps:
     condition: ${{ parameters.Condition }}
     displayName: Copy binary to fpm working directory
 
-  - pwsh: docker build . -f fpm.Dockerfile -t fpm --build-arg prefix="$(docker-mirror-tag-prefix)/"
+
+  - task: 1ES.BuildContainerImage@1
     condition: ${{ parameters.Condition }}
-    workingDirectory: cli/installer/fpm
-    displayName: Build fpm container
+    displayName: Build fpm container (1ES)
+    inputs:
+      # Use "latest" tag because build_docker_image.py fails if there is no tag
+      image: fpm:latest
+      path: $(Build.SourcesDirectory)/cli/installer/fpm
+      dockerfile: $(Build.SourcesDirectory)/cli/installer/fpm/fpm.Dockerfile
+      enableNetwork: true
+      useBuildKit: true
 
   - task: PowerShell@2
     condition: ${{ parameters.Condition }}

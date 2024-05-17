@@ -1,5 +1,5 @@
 import { Text, DatePicker, Stack, TextField, PrimaryButton, DefaultButton, Dropdown, IDropdownOption, FontIcon } from '@fluentui/react';
-import React, { useEffect, useState, FC, ReactElement, MouseEvent, FormEvent } from 'react';
+import { useEffect, useState, FC, ReactElement, MouseEvent, FormEvent } from 'react';
 import { TodoItem, TodoItemState } from '../models';
 import { stackGaps, stackItemMargin, stackItemPadding, titleStackStyles } from '../ux/styles';
 
@@ -41,11 +41,11 @@ export const TodoItemDetailPane: FC<TodoItemDetailPaneProps> = (props: TodoItemD
         props.onEdit(todoItem);
     };
 
-    const cancelEdit = (evt: MouseEvent<HTMLButtonElement>) => {
+    const cancelEdit = () => {
         props.onCancel();
     }
 
-    const onStateChange = (evt: FormEvent<HTMLDivElement>, value?: IDropdownOption) => {
+    const onStateChange = (_evt: FormEvent<HTMLDivElement>, value?: IDropdownOption) => {
         if (value) {
             setState(value.key as TodoItemState);
         }
@@ -70,8 +70,8 @@ export const TodoItemDetailPane: FC<TodoItemDetailPaneProps> = (props: TodoItemD
                         <Text variant="small">{description}</Text>
                     </Stack.Item>
                     <Stack.Item tokens={stackItemMargin}>
-                        <TextField label="Name" placeholder="Item name" required value={name} onChange={(e, value) => setName(value || '')} />
-                        <TextField label="Description" placeholder="Item description" multiline size={20} value={description || ''} onChange={(e, value) => setDescription(value)} />
+                        <TextField label="Name" placeholder="Item name" required value={name} onChange={(_e, value) => setName(value || '')} />
+                        <TextField label="Description" placeholder="Item description" multiline size={20} value={description || ''} onChange={(_e, value) => setDescription(value)} />
                         <Dropdown label="State" options={todoStateOptions} required selectedKey={state} onChange={onStateChange} />
                         <DatePicker label="Due Date" placeholder="Due date" value={dueDate} onSelectDate={onDueDateChange} />
                     </Stack.Item>

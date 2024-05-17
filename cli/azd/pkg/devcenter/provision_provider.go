@@ -101,7 +101,7 @@ func (p *ProvisionProvider) State(
 		return nil, fmt.Errorf("failed getting environment: %w", err)
 	}
 
-	outputs, err := p.manager.Outputs(ctx, environment)
+	outputs, err := p.manager.Outputs(ctx, p.config, environment)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting environment outputs: %w", err)
 	}
@@ -227,7 +227,7 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 
 	p.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
-	outputs, err := p.manager.Outputs(ctx, environment)
+	outputs, err := p.manager.Outputs(ctx, p.config, environment)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting environment outputs: %w", err)
 	}
@@ -306,7 +306,7 @@ func (p *ProvisionProvider) Destroy(
 	}
 
 	// Get environment outputs to invalidate them after destroy
-	outputs, err := p.manager.Outputs(ctx, devCenterEnv)
+	outputs, err := p.manager.Outputs(ctx, p.config, devCenterEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting environment outputs: %w", err)
 	}
@@ -343,58 +343,59 @@ func (p *ProvisionProvider) Destroy(
 // EnsureEnv ensures that the environment is configured for the Dev Center provider.
 // Require selection for devcenter, project, catalog, environment type, and environment definition
 func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
-	// Cache config values prior to prompting user
+	// Cache config values prior to prompting user so we can compare what is missing later
 	currentConfig := *p.config
-	updatedConfig, err := p.prompter.PromptForConfig(ctx)
+	err := p.prompter.PromptForConfig(ctx, p.config)
 	if err != nil {
 		return err
 	}
 
-	if updatedConfig.EnvironmentType == "" {
-		envType, err := p.prompter.PromptEnvironmentType(ctx, updatedConfig.Name, updatedConfig.Project)
+	if p.config.EnvironmentType == "" {
+		envType, err := p.prompter.PromptEnvironmentType(ctx, p.config.Name, p.config.Project)
 		if err != nil {
 			return err
 		}
-		updatedConfig.EnvironmentType = envType.Name
+		p.config.EnvironmentType = envType.Name
 	}
 
-	if updatedConfig.User == "" {
-		updatedConfig.User = "me"
+	if p.config.User == "" {
+		p.config.User = "me"
 	}
 
 	// Set any missing config values in environment configuration for future use
+	// Some values are set at the global / project level so we only want to set missing values in the environment config
 	if currentConfig.Name == "" {
-		if err := p.env.Config.Set(DevCenterNamePath, updatedConfig.Name); err != nil {
+		if err := p.env.Config.Set(DevCenterNamePath, p.config.Name); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.Project == "" {
-		if err := p.env.Config.Set(DevCenterProjectPath, updatedConfig.Project); err != nil {
+		if err := p.env.Config.Set(DevCenterProjectPath, p.config.Project); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.Catalog == "" {
-		if err := p.env.Config.Set(DevCenterCatalogPath, updatedConfig.Catalog); err != nil {
+		if err := p.env.Config.Set(DevCenterCatalogPath, p.config.Catalog); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.EnvironmentType == "" {
-		if err := p.env.Config.Set(DevCenterEnvTypePath, updatedConfig.EnvironmentType); err != nil {
+		if err := p.env.Config.Set(DevCenterEnvTypePath, p.config.EnvironmentType); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.EnvironmentDefinition == "" {
-		if err := p.env.Config.Set(DevCenterEnvDefinitionPath, updatedConfig.EnvironmentDefinition); err != nil {
+		if err := p.env.Config.Set(DevCenterEnvDefinitionPath, p.config.EnvironmentDefinition); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.User == "" {
-		if err := p.env.Config.Set(DevCenterUserPath, updatedConfig.User); err != nil {
+		if err := p.env.Config.Set(DevCenterUserPath, p.config.User); err != nil {
 			return err
 		}
 	}
@@ -402,8 +403,6 @@ func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
 	if err := p.envManager.Save(ctx, p.env); err != nil {
 		return fmt.Errorf("failed saving environment: %w", err)
 	}
-
-	p.config = updatedConfig
 
 	return nil
 }
@@ -445,9 +444,15 @@ func (p *ProvisionProvider) pollForEnvironment(ctx context.Context, envName stri
 
 			// After the resource group has been created
 			// We can start polling for a new deployment that started after we started polling
-			deployment, err := p.manager.Deployment(ctx, environment, func(d *armresources.DeploymentExtended) bool {
-				return d.Properties.Timestamp.After(pollStartTime)
-			})
+			deployment, err := p.manager.Deployment(
+				ctx,
+				p.config,
+				environment,
+				func(d *armresources.DeploymentExtended) bool {
+					return *d.Properties.ProvisioningState == armresources.ProvisioningStateRunning &&
+						d.Properties.Timestamp.After(pollStartTime)
+				},
+			)
 
 			if err != nil || deployment == nil {
 				timer.Reset(regularDelay)

@@ -20,6 +20,11 @@ type ExpandableString struct {
 	template string
 }
 
+// Empty returns true if the template is empty.
+func (e ExpandableString) Empty() bool {
+	return e.template == ""
+}
+
 // Envsubst evaluates the template, substituting values as [envsubst.Eval] would.
 func (e ExpandableString) Envsubst(mapping func(string) string) (string, error) {
 	return envsubst.Eval(e.template, mapping)

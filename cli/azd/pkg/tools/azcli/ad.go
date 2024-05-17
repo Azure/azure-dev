@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -30,19 +31,6 @@ type AzureCredentials struct {
 	ClientSecret   string `json:"clientSecret"`
 	SubscriptionId string `json:"subscriptionId"`
 	TenantId       string `json:"tenantId"`
-}
-
-type ErrorWithSuggestion struct {
-	Suggestion string
-	Err        error
-}
-
-func (es *ErrorWithSuggestion) Error() string {
-	return es.Err.Error()
-}
-
-func (es *ErrorWithSuggestion) Unwrap() error {
-	return es.Err
 }
 
 // AdService provides actions on top of Azure Active Directory (AD)
@@ -514,7 +502,7 @@ func (ad *adService) applyRoleAssignmentWithRetry(
 
 			// If the response is a 403 then the required role is missing.
 			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
-				return &ErrorWithSuggestion{
+				return &internal.ErrorWithSuggestion{
 					Suggestion: fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, " +
 						"Owner` or custom azure roles assigned to your subscription to perform action " +
 						"'Microsoft.Authorization/roleAssignments/write', in order to manage role assignments\n"),

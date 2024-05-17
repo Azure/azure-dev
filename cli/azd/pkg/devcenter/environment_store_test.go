@@ -128,13 +128,12 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 	t.Run("Exists", func(t *testing.T) {
 		mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", mockEnvironments[0].Name, mockEnvironments[0])
 
+		// Config EnvironmentType & User intentionally omitted and should be set in environment after sync
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Project:               "Project1",
 			EnvironmentDefinition: "WebApp",
 			Catalog:               "SampleCatalog",
-			EnvironmentType:       "Dev",
-			User:                  "me",
 		}
 
 		outputs := map[string]provisioning.OutputParameter{
@@ -150,7 +149,10 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 
 		manager := &mockDevCenterManager{}
 		manager.
-			On("Outputs", *mockContext.Context, mock.AnythingOfType("*devcentersdk.Environment")).
+			On("Outputs",
+				*mockContext.Context,
+				mock.AnythingOfType("*devcenter.Config"),
+				mock.AnythingOfType("*devcentersdk.Environment")).
 			Return(outputs, nil)
 
 		store := newEnvironmentStoreForTest(t, mockContext, config, manager)
@@ -173,7 +175,9 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 
 		envConfig, err := ParseConfig(devCenterNode)
 		require.NoError(t, err)
-		require.Equal(t, *envConfig, *config)
+		require.Equal(t, envConfig.EnvironmentType, mockEnvironments[0].EnvironmentType)
+		require.Equal(t, envConfig.User, mockEnvironments[0].User)
+
 	})
 
 	t.Run("DoesNotExist", func(t *testing.T) {
@@ -249,7 +253,7 @@ func newEnvironmentStoreForTest(
 	if manager == nil {
 		manager = &mockDevCenterManager{}
 	}
-	prompter := NewPrompter(devCenterConfig, mockContext.Console, manager, devCenterClient)
+	prompter := NewPrompter(mockContext.Console, manager, devCenterClient)
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())

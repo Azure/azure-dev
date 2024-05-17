@@ -10,6 +10,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
 )
@@ -39,7 +40,8 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(
 	}
 
 	generatePassword := func() (bool, string, error) {
-		substitute, err := password.Generate(password.PasswordComposition{NumLowercase: 5, NumUppercase: 5, NumDigits: 5})
+		substitute, err := password.Generate(
+			password.GenerateConfig{MinLower: to.Ptr[uint](5), MinUpper: to.Ptr[uint](5), MinNumeric: to.Ptr[uint](5)})
 		return err == nil, substitute, err
 	}
 

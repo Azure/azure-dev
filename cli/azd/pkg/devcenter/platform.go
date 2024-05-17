@@ -5,14 +5,14 @@ import (
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -161,22 +161,28 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// Template Sources
 	container.MustRegisterNamedTransient(string(SourceKindDevCenter), NewTemplateSource)
 
-	container.MustRegisterTransient(NewManager)
-	container.MustRegisterTransient(NewPrompter)
+	container.MustRegisterSingleton(NewManager)
+	container.MustRegisterSingleton(NewPrompter)
 
 	// Other devcenter components
 	container.MustRegisterSingleton(func(
-		credential azcore.TokenCredential,
-		httpClient httputil.HttpClient,
-		resourceGraphClient *armresourcegraph.Client,
+		credentialProvider auth.MultiTenantCredentialProvider,
+		policyClientOptions *azcore.ClientOptions,
+		armClientOptions *arm.ClientOptions,
 		cloud *cloud.Cloud,
 	) (devcentersdk.DevCenterClient, error) {
-		options := azsdk.NewClientOptionsBuilderFactory(httpClient, "azd", cloud).
-			NewClientOptionsBuilder().
-			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
-			BuildCoreClientOptions()
+		// Use home tenant ID
+		cred, err := credentialProvider.GetTokenCredential(context.Background(), "")
+		if err != nil {
+			return nil, err
+		}
 
-		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient, cloud)
+		resourceGraphClient, err := armresourcegraph.NewClient(cred, armClientOptions)
+		if err != nil {
+			return nil, err
+		}
+
+		return devcentersdk.NewDevCenterClient(cred, policyClientOptions, resourceGraphClient, cloud)
 	})
 
 	return nil

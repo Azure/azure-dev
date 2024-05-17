@@ -1,0 +1,80 @@
+stages: 
+  - stage: PublishManual
+    dependsOn: Sign
+    condition: >-
+      and(
+        succeeded(),
+        ne(variables['Skip.Release'], 'true'),
+        or(
+          eq('Manual', variables['BuildReasonOverride']),
+          and(
+            eq('', variables['BuildReasonOverride']),
+            eq(variables['Build.Reason'], 'Manual')
+          )
+        )
+      )
+
+    variables: 
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
+    jobs:
+      - deployment: Publish_Release
+        environment: azure-dev
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          image: azsdk-pool-mms-ubuntu-2004-1espt
+          os: linux
+
+        templateContext:
+          inputs:
+            - input: checkout
+              repository: self
+        
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: /eng/pipelines/templates/steps/set-vscode-version.yml
+
+                - template: /eng/pipelines/templates/steps/publish-vscode.yml
+                  parameters:
+                    PublishLocations: vscode/release/$(VSIX_VERSION);vscode/release/latest
+                    TagRepository: true
+                    UpdateShield: true
+
+      - deployment: Increment_Version
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.IncrementVersion'])
+          )
+        dependsOn: Publish_Release
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          image: azsdk-pool-mms-ubuntu-2004-1espt
+          os: linux
+
+        templateContext:
+          inputs:
+            - input: checkout
+              repository: self
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
+                  displayName: Increment VSCode Extension version
+
+                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                  parameters:
+                    PRBranchName: vscode-version-increment-$(Build.BuildId)
+                    CommitMsg: Increment VSCode Extension version after release
+                    PRTitle: Increment VSCode Extension version after release

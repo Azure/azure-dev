@@ -38,9 +38,14 @@ const (
 	AzureResourceTypeAgentPool               AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
 	AzureResourceTypeCognitiveServiceAccount AzureResourceType = "Microsoft.CognitiveServices/accounts"
 	AzureResourceTypeSearchService           AzureResourceType = "Microsoft.Search/searchServices"
+	AzureResourceTypeVideoIndexer            AzureResourceType = "Microsoft.VideoIndexer/accounts"
 	AzurePrivateEndpoint                     AzureResourceType = "Microsoft.Network/privateEndpoints"
 	AzureDevCenter                           AzureResourceType = "Microsoft.DevCenter/devcenters"
 	AzureDevCenterProject                    AzureResourceType = "Microsoft.DevCenter/projects"
+	AzureMachineLearningWorkspace            AzureResourceType = "Microsoft.MachineLearningServices/workspaces"
+	//nolint:lll
+	AzureMachineLearningEndpoint   AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
+	AzureMachineLearningConnection AzureResourceType = "Microsoft.MachineLearningServices/workspaces/connections"
 )
 
 const resourceLevelSeparator = "/"
@@ -106,6 +111,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Cognitive Service"
 	case AzureResourceTypeSearchService:
 		return "Search service"
+	case AzureResourceTypeVideoIndexer:
+		return "Video Indexer"
 	case AzureResourceTypeSpringApp:
 		return "Azure Spring Apps"
 	case AzurePrivateEndpoint:
@@ -114,6 +121,12 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Dev Center"
 	case AzureDevCenterProject:
 		return "Dev Center Project"
+	case AzureMachineLearningWorkspace:
+		return "Machine Learning Workspace"
+	case AzureMachineLearningEndpoint:
+		return "Machine Learning Endpoint"
+	case AzureMachineLearningConnection:
+		return "Machine Learning Connection"
 	}
 
 	return ""

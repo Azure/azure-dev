@@ -86,7 +86,7 @@ func TestFromRoot(t *testing.T) {
 
 		envManager, _ := createEnvManager(t, mockContext, t.TempDir())
 		env, err := envManager.Get(*mockContext.Context, "test")
-		require.ErrorIs(t, err, os.ErrNotExist)
+		require.ErrorIs(t, err, ErrNotFound)
 		require.Nil(t, env)
 	})
 
@@ -201,15 +201,6 @@ const configSample = `{
 	"infra": {
 	  "parameters": {
 		"bro": "xms"
-	  }
-	},
-	"services": {
-	  "app": {
-		"config": {
-		  "exposedServices": [
-			"webapp"
-		  ]
-		}
 	  }
 	}
   }`

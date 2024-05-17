@@ -3,6 +3,8 @@ package devcenter
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -14,6 +16,9 @@ import (
 	"go.uber.org/multierr"
 	"golang.org/x/exp/slices"
 )
+
+// ADE Bicep deployments have a name of a date like string followed by a number
+var bicepDeploymentNameRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-\d+$`)
 
 // DeploymentFilterPredicate is a predicate function for filtering deployments
 type DeploymentFilterPredicate func(d *armresources.DeploymentExtended) bool
@@ -42,25 +47,27 @@ type Manager interface {
 	// Deployment gets the Resource Group scoped deployment for the specified devcenter environment
 	Deployment(
 		ctx context.Context,
+		config *Config,
 		env *devcentersdk.Environment,
 		filter DeploymentFilterPredicate,
 	) (infra.Deployment, error)
 	// LatestArmDeployment gets the latest ARM deployment for the specified devcenter environment
 	LatestArmDeployment(
 		ctx context.Context,
+		config *Config,
 		env *devcentersdk.Environment,
 		filter DeploymentFilterPredicate,
 	) (*armresources.DeploymentExtended, error)
 	// Outputs gets the outputs for the specified devcenter environment
 	Outputs(
 		ctx context.Context,
+		config *Config,
 		env *devcentersdk.Environment,
 	) (map[string]provisioning.OutputParameter, error)
 }
 
 // Manager provides a common set of methods for interactive with a devcenter and its environments
 type manager struct {
-	config               *Config
 	client               devcentersdk.DevCenterClient
 	deploymentsService   azapi.Deployments
 	deploymentOperations azapi.DeploymentOperations
@@ -69,14 +76,12 @@ type manager struct {
 
 // NewManager creates a new devcenter manager
 func NewManager(
-	config *Config,
 	client devcentersdk.DevCenterClient,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
 	portalUrlBase string,
 ) Manager {
 	return &manager{
-		config:               config,
 		client:               client,
 		deploymentsService:   deploymentsService,
 		deploymentOperations: deploymentOperations,
@@ -208,6 +213,7 @@ func (m *manager) WritableProjects(ctx context.Context) ([]*devcentersdk.Project
 // Deployment gets the Resource Group scoped deployment for the specified devcenter environment
 func (m *manager) Deployment(
 	ctx context.Context,
+	config *Config,
 	env *devcentersdk.Environment,
 	filter DeploymentFilterPredicate,
 ) (infra.Deployment, error) {
@@ -216,7 +222,7 @@ func (m *manager) Deployment(
 		return nil, fmt.Errorf("failed parsing resource group id: %w", err)
 	}
 
-	latestDeployment, err := m.LatestArmDeployment(ctx, env, filter)
+	latestDeployment, err := m.LatestArmDeployment(ctx, config, env, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting latest deployment: %w", err)
 	}
@@ -235,6 +241,7 @@ func (m *manager) Deployment(
 // When a filter is applied the latest deployment that matches the filter will be returned
 func (m *manager) LatestArmDeployment(
 	ctx context.Context,
+	config *Config,
 	env *devcentersdk.Environment,
 	filter DeploymentFilterPredicate,
 ) (*armresources.DeploymentExtended, error) {
@@ -255,6 +262,7 @@ func (m *manager) LatestArmDeployment(
 		return nil, fmt.Errorf("failed listing deployments: %w", err)
 	}
 
+	// Sorts the deployments by timestamp in descending order
 	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) bool {
 		return x.Properties.Timestamp.After(*y.Properties.Timestamp)
 	})
@@ -265,15 +273,18 @@ func (m *manager) LatestArmDeployment(
 		tagEnvTypeName, envTypeOk := d.Tags[DeploymentTagEnvironmentType]
 		tagEnvName, envOk := d.Tags[DeploymentTagEnvironmentName]
 
-		if !devCenterOk || !projectOk || !envTypeOk || !envOk {
-			return false
-		}
+		// ARM runner deployments contain the deployment tags for the specific environment
+		isArmDeployment := devCenterOk && strings.EqualFold(*tagDevCenterName, config.Name) &&
+			projectOk && strings.EqualFold(*tagProjectName, config.Project) &&
+			envTypeOk && strings.EqualFold(*tagEnvTypeName, config.EnvironmentType) &&
+			envOk && strings.EqualFold(*tagEnvName, env.Name)
 
-		if *tagDevCenterName == m.config.Name ||
-			*tagProjectName == m.config.Project ||
-			*tagEnvTypeName == m.config.EnvironmentType ||
-			*tagEnvName == env.Name {
+		// Support for untagged Bicep ADE deployments
+		// If the deployment is not tagged but starts with the current date and is running
+		// this is another indication that this is the latest running Bicep deployment
+		isBicepDeployment := !isArmDeployment && bicepDeploymentNameRegex.MatchString(*d.Name)
 
+		if isArmDeployment || isBicepDeployment {
 			if filter == nil {
 				return true
 			}
@@ -296,6 +307,7 @@ func (m *manager) LatestArmDeployment(
 // Long term this will call into ADE Outputs API
 func (m *manager) Outputs(
 	ctx context.Context,
+	config *Config,
 	env *devcentersdk.Environment,
 ) (map[string]provisioning.OutputParameter, error) {
 	resourceGroupId, err := devcentersdk.NewResourceGroupId(env.ResourceGroupId)
@@ -303,7 +315,9 @@ func (m *manager) Outputs(
 		return nil, fmt.Errorf("failed parsing resource group id: %w", err)
 	}
 
-	latestDeployment, err := m.LatestArmDeployment(ctx, env, nil)
+	latestDeployment, err := m.LatestArmDeployment(ctx, config, env, func(d *armresources.DeploymentExtended) bool {
+		return *d.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed getting latest deployment: %w", err)
 	}

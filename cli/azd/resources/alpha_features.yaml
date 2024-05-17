@@ -2,7 +2,11 @@
   description: "Support infrastructure deployments at resource group scope."
 - id: infraSynth
   description: "Enable the `infra synth` command to write generated infrastructure to disk."
+- id: aspire.autoConfigureDataProtection
+  description: "Automatically configure data protection for Aspire deployments. May not be supported in all regions."
 - id: aks.helm
   description: "Enable Helm support for AKS deployments."
 - id: aks.kustomize
   description: "Enable Kustomize support for AKS deployments."
+- id: aspire.dashboard
+  description: "Automatically publish Aspire Dashboard. May not be supported in all regions."

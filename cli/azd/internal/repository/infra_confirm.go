@@ -103,6 +103,10 @@ func (i *Initializer) infraSpecFromDetect(
 		if svc.Docker == nil || svc.Docker.Path == "" {
 			// default builder always specifies port 80
 			serviceSpec.Port = 80
+
+			if svc.Language == appdetect.Java {
+				serviceSpec.Port = 8080
+			}
 		}
 
 		for _, framework := range svc.Dependencies {

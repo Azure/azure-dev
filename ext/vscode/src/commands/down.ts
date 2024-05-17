@@ -12,7 +12,14 @@ import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { MessageItem } from 'vscode';
 import { DialogResponses } from '@microsoft/vscode-azext-utils';
 
-export async function down(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+/**
+ * A tuple representing the arguments that must be passed to the `down` command when executed via {@link vscode.commands.executeCommand}
+ */
+export type DownCommandArguments = [ vscode.Uri | TreeViewModel | undefined, boolean? ];
+
+export async function down(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel, fromAgent: boolean = false): Promise<void> {
+    context.telemetry.properties.fromAgent = fromAgent.toString();
+
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
     const workingFolder = await getWorkingFolder(context, selectedFile);
 

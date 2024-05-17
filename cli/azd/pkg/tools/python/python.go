@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -68,43 +69,12 @@ func (cli *PythonCli) Name() string {
 }
 
 func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, environment, requirementFile string) error {
-	var err error
-
-	pyString, err := checkPath()
-	if err != nil {
-		return err
-	}
-
-	if runtime.GOOS == "windows" {
-		// Unfortunately neither cmd.exe, nor PowerShell provide a straightforward way to use a script
-		// to modify environment for command(s) in a command list.
-		// So we are going to cheat and replicate the core functionality of Python venv scripts here,
-		// which boils down to setting VIRTUAL_ENV environment variable.
-		absWorkingDir, pathErr := filepath.Abs(workingDir)
-		if pathErr != nil {
-			return pathErr
-		}
-
-		vEnvSetting := fmt.Sprintf("VIRTUAL_ENV=%s", path.Join(absWorkingDir, environment))
-
-		runArgs := exec.
-			NewRunArgs(pyString, "-m", "pip", "install", "-r", requirementFile).
-			WithCwd(workingDir).
-			WithEnv([]string{vEnvSetting})
-
-		_, err = cli.commandRunner.Run(ctx, runArgs)
-	} else {
-		envActivation := ". " + path.Join(environment, "bin", "activate")
-		installCmd := fmt.Sprintf("%s -m pip install -r %s", pyString, requirementFile)
-		commands := []string{envActivation, installCmd}
-
-		runArgs := exec.NewRunArgs(pyString).WithCwd(workingDir)
-		_, err = cli.commandRunner.RunList(ctx, commands, runArgs)
-	}
-
+	args := []string{"-m", "pip", "install", "-r", requirementFile}
+	_, err := cli.Run(ctx, workingDir, environment, args...)
 	if err != nil {
 		return fmt.Errorf("failed to install requirements for project '%s': %w", workingDir, err)
 	}
+
 	return nil
 }
 
@@ -127,6 +97,56 @@ func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name str
 			err)
 	}
 	return nil
+}
+
+func (cli *PythonCli) Run(
+	ctx context.Context,
+	workingDir string,
+	environment string,
+	args ...string,
+) (*exec.RunResult, error) {
+	pyString, err := checkPath()
+	if err != nil {
+		return nil, err
+	}
+
+	var runResult exec.RunResult
+	var runErr error
+
+	if runtime.GOOS == "windows" {
+		// Unfortunately neither cmd.exe, nor PowerShell provide a straightforward way to use a script
+		// to modify environment for command(s) in a command list.
+		// So we are going to cheat and replicate the core functionality of Python venv scripts here,
+		// which boils down to setting VIRTUAL_ENV environment variable.
+		absWorkingDir, pathErr := filepath.Abs(workingDir)
+		if pathErr != nil {
+			return nil, pathErr
+		}
+
+		vEnvSetting := fmt.Sprintf("VIRTUAL_ENV=%s", path.Join(absWorkingDir, environment))
+
+		runArgs := exec.
+			NewRunArgs(pyString, args...).
+			WithCwd(workingDir).
+			WithEnv([]string{vEnvSetting})
+
+		runResult, runErr = cli.commandRunner.Run(ctx, runArgs)
+	} else {
+		// We need to ensure the virtual environment is activated before running the script
+		envActivation := ". " + path.Join(environment, "bin", "activate")
+		allArgs := append([]string{pyString}, args...)
+		runCmd := strings.Join(allArgs, " ")
+		commands := []string{envActivation, runCmd}
+
+		runArgs := exec.NewRunArgs(pyString).WithCwd(workingDir)
+		runResult, runErr = cli.commandRunner.RunList(ctx, commands, runArgs)
+	}
+
+	if runErr != nil {
+		return nil, fmt.Errorf("failed to run Python script: %w", runErr)
+	}
+
+	return &runResult, nil
 }
 
 func checkPath() (pyString string, err error) {

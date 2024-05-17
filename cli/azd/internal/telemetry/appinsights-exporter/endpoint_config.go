@@ -26,7 +26,7 @@ type EndpointConfig struct {
 // NewEndpointConfig parses a connection string, returning the endpoint configuration from the connection string.
 //
 // The connection string schema for AppInsights can be found at
-// https://learn.microsoft.com/en-us/azure/azure-monitor/app/sdk-connection-string?tabs=net#schema
+// https://learn.microsoft.com/azure/azure-monitor/app/sdk-connection-string?tabs=net#schema
 func NewEndpointConfig(connectionString string) (EndpointConfig, error) {
 	tc := EndpointConfig{}
 	settings, err := parseSettings(connectionString)

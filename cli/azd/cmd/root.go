@@ -331,6 +331,7 @@ func NewRootCmd(
 	// Global middleware registration
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
+		UseMiddleware("ux", middleware.NewUxMiddleware).
 		UseMiddleware("experimentation", middleware.NewExperimentationMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry

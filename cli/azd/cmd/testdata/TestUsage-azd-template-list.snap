@@ -5,9 +5,10 @@ Usage
   azd template list [flags]
 
 Flags
-        --docs          	: Opens the documentation for azd template list in your web browser.
-    -h, --help          	: Gets help for list.
-    -s, --source string 	: Filters templates by source.
+        --docs           	: Opens the documentation for azd template list in your web browser.
+    -f, --filter strings 	: The tag(s) used to filter template results. Supports comma-separated values.
+    -h, --help           	: Gets help for list.
+    -s, --source string  	: Filters templates by source.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

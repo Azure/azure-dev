@@ -14,6 +14,8 @@ type ServiceConfig struct {
 	Project *ProjectConfig `yaml:"-"`
 	// The friendly name/key of the project from the azure.yaml file
 	Name string `yaml:"-"`
+	// The azure resource group to deploy the service to
+	ResourceGroupName osutil.ExpandableString `yaml:"resourceGroup,omitempty"`
 	// The name used to override the default azure resource name
 	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
 	// The relative path to the project folder from the project root
@@ -39,16 +41,18 @@ type ServiceConfig struct {
 	// Options specific to the DotNetContainerApp target. These are set by the importer and
 	// can not be controlled via the project file today.
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
+	// Custom configuration for the service target
+	Config map[string]any `yaml:"config,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
-
-	initialized bool
 }
 
 type DotNetContainerAppOptions struct {
 	Manifest    *apphost.Manifest
+	AppHostPath string
 	ProjectName string
-	ProjectPath string
+	// ContainerImage is non-empty when a prebuilt container image is being used.
+	ContainerImage string
 }
 
 // Path returns the fully qualified path to the project

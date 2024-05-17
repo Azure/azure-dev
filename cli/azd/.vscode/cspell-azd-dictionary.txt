@@ -92,6 +92,7 @@ errcheck
 errorinfo
 errorlint
 executil
+flexconsumption
 Frontends
 funcapp
 functestapp

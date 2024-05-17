@@ -254,7 +254,10 @@ func (c *ZipDeployClient) Publish(
 		query.Set("RemoteBuild", "true")
 	}
 
-	request.SetBody(zipFile, "application/zip")
+	err = request.SetBody(zipFile, "application/zip")
+	if err != nil {
+		return nil, fmt.Errorf("setting request body: %w", err)
+	}
 	// server currently does not honor Accept header
 	//rawRequest.Header.Set("Accept", "application/json")
 

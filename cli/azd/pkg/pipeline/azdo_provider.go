@@ -561,7 +561,6 @@ func azdoPat(ctx context.Context, env *environment.Environment, console input.Co
 }
 
 func gitInsteadOfConfig(
-	ctx context.Context,
 	pat string,
 	gitRepo *gitRepositoryDetails) (string, string) {
 
@@ -582,7 +581,7 @@ func (p *AzdoScmProvider) GitPush(
 	// This is the same as gitCli.PushUpstream(), but it adds `-c url.PAT+HostName.insteadOf=HostName` to execute
 	// git push with the PAT to authenticate
 	pat := azdoPat(ctx, p.env, p.console)
-	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(ctx, pat, gitRepo)
+	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(pat, gitRepo)
 	runArgs := exec.NewRunArgsWithSensitiveData("git",
 		[]string{
 			"-C",
@@ -621,7 +620,8 @@ func (p *AzdoScmProvider) GitPush(
 		return err
 	}
 
-	err = azdo.QueueBuild(ctx, connection, p.repoDetails.projectId, p.repoDetails.buildDefinition)
+	err = azdo.QueueBuild(
+		ctx, connection, p.repoDetails.projectId, p.repoDetails.buildDefinition, branchName)
 	if err != nil {
 		return err
 	}
@@ -769,7 +769,7 @@ func (p *AzdoCiProvider) configureConnection(
 		// default and federated credentials are set up in credentialOptions
 		return nil
 	}
-
+	p.credentials = credentials
 	// create service connection for client credentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)

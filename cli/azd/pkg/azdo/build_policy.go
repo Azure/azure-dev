@@ -6,8 +6,12 @@ package azdo
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/google/uuid"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/policy"
 )
@@ -46,6 +50,49 @@ func CreateBuildPolicy(
 	buildPolicyType, err := getBuildType(ctx, &projectId, client)
 	if err != nil {
 		return err
+	}
+
+	localClient, err := newLocalClient(ctx, connection.Connection)
+	if err != nil {
+		return err
+	}
+
+	// check if the policy already exists
+	existingPoliciesResponse, error := localClient.getPolicyConfigurations(ctx, getPolicyConfigurationsArgs{
+		Project:    &projectId,
+		PolicyType: buildPolicyType.Id,
+	})
+	if error != nil {
+		return error
+	}
+	existingPolicies := []policy.PolicyConfiguration{}
+	for existingPoliciesResponse != nil {
+		existingPolicies = append(existingPolicies, existingPoliciesResponse.Value...)
+		if existingPoliciesResponse.ContinuationToken == "" {
+			break
+		}
+		existingPoliciesResponse, error = localClient.getPolicyConfigurations(ctx, getPolicyConfigurationsArgs{
+			Project:           &projectId,
+			PolicyType:        buildPolicyType.Id,
+			ContinuationToken: existingPoliciesResponse.ContinuationToken,
+		})
+		if error != nil {
+			return error
+		}
+	}
+
+	for _, policy := range existingPolicies {
+		pSettings := policy.Settings.(map[string]interface{})
+		if def, exists := pSettings["buildDefinitionId"]; exists {
+			defId, castOk := def.(float64)
+			if !castOk {
+				return fmt.Errorf("could not cast buildDefinitionId to int")
+			}
+			if defId == float64(*buildDefinition.Id) {
+				// policy already exists
+				return nil
+			}
+		}
 	}
 
 	policyTypeRef := &policy.PolicyTypeRef{
@@ -95,4 +142,69 @@ func CreateBuildPolicy(
 	}
 
 	return nil
+}
+
+func newLocalClient(ctx context.Context, connection *azuredevops.Connection) (*clientImpl, error) {
+	client, err := connection.GetClientByResourceAreaId(ctx, uuid.MustParse("fb13a388-40dd-4a04-b530-013a739c72ef"))
+	if err != nil {
+		return nil, err
+	}
+	return &clientImpl{
+		Client: *client,
+	}, nil
+}
+
+type clientImpl struct {
+	Client azuredevops.Client
+}
+
+// local implementation for GetPolicyConfigurations
+// The implementation from the policy client is broken because it does not support taking a continuation token
+// see: https://github.com/microsoft/azure-devops-go-api/issues/156
+func (client *clientImpl) getPolicyConfigurations(
+	ctx context.Context, args getPolicyConfigurationsArgs) (*getPolicyConfigurationsResponseValue, error) {
+	routeValues := make(map[string]string)
+	if args.Project == nil || *args.Project == "" {
+		return nil, &azuredevops.ArgumentNilOrEmptyError{ArgumentName: "args.Project"}
+	}
+	routeValues["project"] = *args.Project
+
+	queryParams := url.Values{}
+	if args.Scope != nil {
+		queryParams.Add("scope", *args.Scope)
+	}
+	if args.PolicyType != nil {
+		queryParams.Add("policyType", (*args.PolicyType).String())
+	}
+	if args.ContinuationToken != "" {
+		queryParams.Add("continuationToken", args.ContinuationToken)
+	}
+	locationId, _ := uuid.Parse("dad91cbe-d183-45f8-9c6e-9c1164472121")
+	resp, err := client.Client.Send(
+		ctx, http.MethodGet, locationId, "7.1-preview.1", routeValues, queryParams, nil, "", "application/json", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var responseValue getPolicyConfigurationsResponseValue
+	responseValue.ContinuationToken = resp.Header.Get(azuredevops.HeaderKeyContinuationToken)
+	err = client.Client.UnmarshalCollectionBody(resp, &responseValue.Value)
+	return &responseValue, err
+}
+
+// Arguments for the GetPolicyConfigurations function
+type getPolicyConfigurationsArgs struct {
+	// (required) Project ID or project name
+	Project *string
+	// (optional) [Provided for legacy reasons] The scope on which a subset of policies is defined.
+	Scope *string
+	// (optional) Filter returned policies to only this type
+	PolicyType        *uuid.UUID
+	ContinuationToken string
+}
+
+// Return type for the GetPolicyConfigurations function
+type getPolicyConfigurationsResponseValue struct {
+	Value             []policy.PolicyConfiguration
+	ContinuationToken string
 }

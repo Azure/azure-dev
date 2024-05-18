@@ -271,7 +271,8 @@ func QueueBuild(
 	ctx context.Context,
 	connection Connection,
 	projectId string,
-	buildDefinition *build.BuildDefinition) error {
+	buildDefinition *build.BuildDefinition,
+	branchName string) error {
 	client, err := build.NewClient(ctx, connection.Connection)
 	if err != nil {
 		return err
@@ -281,7 +282,8 @@ func QueueBuild(
 	}
 
 	newBuild := &build.Build{
-		Definition: definitionReference,
+		Definition:   definitionReference,
+		SourceBranch: &branchName,
 	}
 	queueBuildArgs := build.QueueBuildArgs{
 		Project: &projectId,

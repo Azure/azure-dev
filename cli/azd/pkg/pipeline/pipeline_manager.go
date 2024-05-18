@@ -627,8 +627,7 @@ func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepo
 	})
 }
 
-func (pm *PipelineManager) resolveProvider(
-	ctx context.Context, prj *project.ProjectConfig) (string, error) {
+func (pm *PipelineManager) resolveProvider(prj *project.ProjectConfig) (string, error) {
 	// 1) if provider is set on azure.yaml, it should override the `lastUsedProvider`, as it can be changed by customer
 	// at any moment.
 	if prj.Pipeline.Provider != "" {
@@ -694,7 +693,7 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	// we can re-assign it based on a previous run (persisted data)
 	// or based on the azure.yaml
 	if pipelineProvider == "" {
-		resolved, err := pm.resolveProvider(ctx, prjConfig)
+		resolved, err := pm.resolveProvider(prjConfig)
 		if err != nil {
 			return fmt.Errorf("resolving provider when no provider arg was used: %w", err)
 		}

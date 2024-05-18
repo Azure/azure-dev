@@ -6,11 +6,8 @@ package azdo
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
-	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -53,42 +50,7 @@ type Connection struct {
 }
 
 type Organization struct {
-	Id          string
-	Name        string
-	LocationUrl string
-}
-
-func (con *Connection) getOrganizationId(ctx context.Context) (Organization, error) {
-	rawClient := con.GetClientByUrl(con.BaseUrl)
-
-	// resourceAreas id is the same for all accounts:
-	// nolint:lll
-	//https://learn.microsoft.com/en-us/azure/devops/extend/develop/work-with-urls?view=azure-devops&tabs=http#with-the-organizations-name
-	url := fmt.Sprintf(
-		"https://dev.azure.com/_apis/resourceAreas/79134C72-4A58-4B42-976C-04E7115F32BF?accountName=%s",
-		con.Organization.Name)
-
-	orgRequest, error := rawClient.CreateRequestMessage(ctx, http.MethodGet, url, "7.2-preview.1", nil, "", "", nil)
-	if error != nil {
-		return Organization{}, error
-	}
-
-	httpResponse, error := rawClient.SendRequest(orgRequest)
-	if error != nil {
-		return Organization{}, error
-	}
-
-	bodyStringResponse, error := io.ReadAll(httpResponse.Body)
-	if error != nil {
-		return Organization{}, error
-	}
-
-	var response Organization
-	if error := yaml.Unmarshal(bodyStringResponse, &response); error != nil {
-		return Organization{}, error
-	}
-
-	return response, nil
+	Name string
 }
 
 // helper method to return an Azure DevOps connection used the AzDo go sdk
@@ -111,12 +73,6 @@ func GetConnection(
 			Name: organization,
 		},
 	}
-
-	org, err := adoConnection.getOrganizationId(ctx)
-	if err != nil {
-		return Connection{}, fmt.Errorf("getting organization id: %w", err)
-	}
-	adoConnection.Organization = org
 
 	return adoConnection, nil
 }

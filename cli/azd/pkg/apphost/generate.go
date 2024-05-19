@@ -729,16 +729,18 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 }
 
 const (
-	knownParameterKeyVault      string = "keyVaultName"
-	knownParameterPrincipalId   string = "principalId"
-	knownParameterPrincipalType string = "principalType"
-	knownParameterPrincipalName string = "principalName"
-	knownParameterLogAnalytics  string = "logAnalyticsWorkspaceId"
+	knownParameterKeyVault         string = "keyVaultName"
+	knownParameterPrincipalId      string = "principalId"
+	knownParameterPrincipalType    string = "principalType"
+	knownParameterPrincipalName    string = "principalName"
+	knownParameterLogAnalytics     string = "logAnalyticsWorkspaceId"
+	knownParameterContainerEnvName string = "containerAppEnvironmentName"
 
-	knownInjectedValuePrincipalId   string = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
-	knownInjectedValuePrincipalType string = "'ServicePrincipal'"
-	knownInjectedValuePrincipalName string = "resources.outputs.MANAGED_IDENTITY_NAME"
-	knownInjectedValueLogAnalytics  string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
+	knownInjectedValuePrincipalId      string = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
+	knownInjectedValuePrincipalType    string = "'ServicePrincipal'"
+	knownInjectedValuePrincipalName    string = "resources.outputs.MANAGED_IDENTITY_NAME"
+	knownInjectedValueLogAnalytics     string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
+	knownInjectedValueContainerEnvName string = "resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME"
 )
 
 // injectValueForBicepParameter checks for aspire-manifest and azd conventions rules for auto injecting values for
@@ -777,6 +779,9 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	}
 	if p == knownParameterLogAnalytics {
 		return knownInjectedValueLogAnalytics, true, nil
+	}
+	if p == knownParameterContainerEnvName {
+		return knownInjectedValueContainerEnvName, true, nil
 	}
 	return finalParamValue, false, nil
 }

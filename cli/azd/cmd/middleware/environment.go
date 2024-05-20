@@ -68,7 +68,10 @@ func (m *EnvironmentMiddleware) Run(ctx context.Context, next NextFn) (*actions.
 	env, err = envManager.LoadOrInitInteractive(ctx, environmentName)
 	if err != nil {
 		//nolint:lll
-		return nil, fmt.Errorf("failed loading environment. Ensure environment has been set using flag (--environment, -e) or by setting environment variable 'AZURE_ENV_NAME'. %w", err)
+		return nil, fmt.Errorf(
+			"failed loading environment. Ensure environment has been set using flag (--environment, -e) or by setting environment variable 'AZURE_ENV_NAME'. %w",
+			err,
+		)
 	}
 
 	// Reset lazy env value after loading or creating environment

@@ -483,6 +483,14 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
 
+	param = knownParameterContainerEnvId
+	expectedParameter = knownInjectedValueContainerEnvId
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
 	param = knownParameterLogAnalytics
 	expectedParameter = `"exampleParameter"`
 

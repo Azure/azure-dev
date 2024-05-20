@@ -46,6 +46,7 @@
           "serverName": "postgres-2",
           "keyVaultName": "",
           "containerAppEnvironmentName": "",
+          "containerAppEnvironmentId": "",
           "administratorLogin": "{administrator-login.value}",
           "administratorLoginPassword": "{administratorLoginPassword.value}",
           "databases": [

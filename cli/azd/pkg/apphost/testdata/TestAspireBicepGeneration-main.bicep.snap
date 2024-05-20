@@ -52,6 +52,7 @@ module postgres_2 'postgres-2/aspire.hosting.azure.bicep.postgres.bicep' = {
   params: {
     administratorLogin: administrator_login
     administratorLoginPassword: administratorLoginPassword
+    containerAppEnvironmentId: resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
     containerAppEnvironmentName: resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
     databases: ['db2']
     keyVaultName: resources.outputs.SERVICE_BINDING_KV854251F1_NAME

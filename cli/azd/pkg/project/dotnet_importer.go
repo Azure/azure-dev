@@ -275,8 +275,6 @@ func (ai *DotNetImporter) Services(
 	return services, nil
 }
 
-var autoConfigureDataProtectionFeature = alpha.MustFeatureKey("aspire.autoConfigureDataProtection")
-
 func (ai *DotNetImporter) SynthAllInfrastructure(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
@@ -339,9 +337,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	// container we will deploy.
 	writeManifestForResource := func(name string) error {
 		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			manifest, name, apphost.AppHostOptions{
-				AutoConfigureDataProtection: ai.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
-			})
+			manifest, name, apphost.AppHostOptions{})
 		if err != nil {
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}

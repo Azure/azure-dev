@@ -144,15 +144,14 @@ type genBicepTemplateContext struct {
 }
 
 type genContainerAppManifestTemplateContext struct {
-	Name                        string
-	Ingress                     *genContainerAppIngress
-	Env                         map[string]string
-	Secrets                     map[string]string
-	KeyVaultSecrets             map[string]string
-	Dapr                        *genContainerAppManifestTemplateContextDapr
-	AutoConfigureDataProtection bool
-	Args                        []string
-	Volumes                     []*Volume
+	Name            string
+	Ingress         *genContainerAppIngress
+	Env             map[string]string
+	Secrets         map[string]string
+	KeyVaultSecrets map[string]string
+	Dapr            *genContainerAppManifestTemplateContextDapr
+	Args            []string
+	Volumes         []*Volume
 }
 
 type genProjectFileContext struct {

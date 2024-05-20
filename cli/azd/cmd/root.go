@@ -206,6 +206,7 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupConfig,
 			},
 		}).
+		UseMiddleware("environment", middleware.NewEnvironmentMiddleware).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.
@@ -216,6 +217,7 @@ func NewRootCmd(
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
+		UseMiddleware("environment", middleware.NewEnvironmentMiddleware).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.
@@ -233,6 +235,7 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
+		UseMiddleware("environment", middleware.NewEnvironmentMiddleware).
 		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
 				log.Println("Skipping provision hooks due to preview flag.")
@@ -256,6 +259,7 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
+		UseMiddleware("environment", middleware.NewEnvironmentMiddleware).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.
@@ -273,6 +277,7 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
+		UseMiddleware("environment", middleware.NewEnvironmentMiddleware).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.
@@ -289,6 +294,7 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
+		UseMiddleware("environment", middleware.NewEnvironmentMiddleware).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.Add("monitor", &actions.ActionDescriptorOptions{
@@ -319,6 +325,7 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
+		UseMiddleware("environment", middleware.NewEnvironmentMiddleware).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	// Register any global middleware defined by the caller

@@ -195,50 +195,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Register an initialized environment based on the specified environment flag, or the default environment.
 	// Note that referencing an *environment.Environment in a command automatically triggers a UI prompt if the
 	// environment is uninitialized or a default environment doesn't yet exist.
-	container.MustRegisterScoped(
-		func(ctx context.Context,
-			azdContext *azdcontext.AzdContext,
-			envManager environment.Manager,
-			lazyEnv *lazy.Lazy[*environment.Environment],
-			envFlags internal.EnvFlag,
-		) (*environment.Environment, error) {
-			if azdContext == nil {
-				return nil, azdcontext.ErrNoProject
-			}
+	container.MustRegisterScoped(func(lazyEnv *lazy.Lazy[*environment.Environment]) (*environment.Environment, error) {
+		return lazyEnv.GetValue()
+	})
 
-			environmentName := envFlags.EnvironmentName
-			var err error
-
-			env, err := envManager.LoadOrInitInteractive(ctx, environmentName)
-			if err != nil {
-				return nil, fmt.Errorf("loading environment: %w", err)
-			}
-
-			// Reset lazy env value after loading or creating environment
-			// This allows any previous lazy instances (such as hooks) to now point to the same instance
-			lazyEnv.SetValue(env)
-
-			return env, nil
-		},
-	)
-	container.MustRegisterScoped(func(lazyEnvManager *lazy.Lazy[environment.Manager]) environment.EnvironmentResolver {
+	container.MustRegisterScoped(func(lazyEnv *lazy.Lazy[*environment.Environment]) environment.EnvironmentResolver {
 		return func(ctx context.Context) (*environment.Environment, error) {
-			azdCtx, err := azdcontext.NewAzdContext()
-			if err != nil {
-				return nil, err
-			}
-			defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
-			if err != nil {
-				return nil, err
-			}
-
-			// We need to lazy load the environment manager since it depends on azd context
-			envManager, err := lazyEnvManager.GetValue()
-			if err != nil {
-				return nil, err
-			}
-
-			return envManager.Get(ctx, defaultEnv)
+			return lazyEnv.GetValue()
 		}
 	})
 

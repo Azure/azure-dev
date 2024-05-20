@@ -27,7 +27,6 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
-		UseMiddleware("environment", middleware.NewEnvironmentMiddleware).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	group.
@@ -38,7 +37,6 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
-		UseMiddleware("environment", middleware.NewEnvironmentMiddleware).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	group.

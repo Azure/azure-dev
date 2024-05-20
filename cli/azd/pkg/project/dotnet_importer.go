@@ -104,9 +104,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
-		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
-	})
+	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -294,9 +292,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		rootModuleName = p.Infra.Module
 	}
 
-	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{
-		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
-	})
+	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)
 	}

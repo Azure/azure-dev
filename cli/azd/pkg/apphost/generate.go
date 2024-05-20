@@ -39,12 +39,6 @@ const DaprPubSubComponentType = "pubsub"
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
 
-var aspireDashboardFeature = alpha.MustFeatureKey("aspire.dashboard")
-
-func IsAspireDashboardEnabled(alphaFeatureManager *alpha.FeatureManager) bool {
-	return alphaFeatureManager.IsEnabled(aspireDashboardFeature)
-}
-
 type AspireDashboard struct {
 	Link string
 }
@@ -61,9 +55,6 @@ func AspireDashboardUrl(
 	ctx context.Context,
 	env *environment.Environment,
 	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
-	if !IsAspireDashboardEnabled(alphaFeatureManager) {
-		return nil
-	}
 
 	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")
 	if !exists {
@@ -170,7 +161,6 @@ func Containers(manifest *Manifest) map[string]genContainer {
 
 type AppHostOptions struct {
 	AutoConfigureDataProtection bool
-	AspireDashboard             bool
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
@@ -213,10 +203,10 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		return nil, err
 	}
 
-	if options.AspireDashboard {
-		generator.bicepContext.AspireDashboard = true
-		generator.bicepContext.RequiresPrincipalId = true
-	}
+	// Aspire Dashboard workaround
+	// By setting this, we will give Contributor role to the user running azd for the Container Apps Environment
+	// See: https://github.com/Azure/azure-dev/issues/3928
+	generator.bicepContext.RequiresPrincipalId = true
 
 	// use the filesystem coming from the manifest
 	// the in-memory filesystem from the manifest is guaranteed to be initialized and contains all the bicep files

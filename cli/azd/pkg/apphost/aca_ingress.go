@@ -278,9 +278,7 @@ func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress
 		port := selectedIngress.port
 		finalIngress.Transport = acaIngressSchemaTcp
 		finalIngress.TargetPort = port
-		if selectedIngress.exposedPort != 0 {
-			finalIngress.ExposedPort = selectedIngress.exposedPort
-		}
+		finalIngress.ExposedPort = selectedIngress.exposedPort
 	}
 
 	for groupKey, props := range endpointByTargetPortProperties {
@@ -290,7 +288,8 @@ func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress
 		finalIngress.AdditionalPortMappings = append(finalIngress.AdditionalPortMappings,
 			genContainerAppIngressAdditionalPortMappings{
 				genContainerAppIngressPort: genContainerAppIngressPort{
-					TargetPort: props.port,
+					TargetPort:  props.port,
+					ExposedPort: props.exposedPort,
 				},
 			})
 	}

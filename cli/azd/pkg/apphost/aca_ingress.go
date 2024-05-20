@@ -38,10 +38,11 @@ func buildAcaIngress(
 }
 
 type endpointGroupProperties struct {
-	port     int
-	external bool
-	httpOnly bool
-	hasHttp2 bool
+	port        int
+	external    bool
+	httpOnly    bool
+	hasHttp2    bool
+	exposedPort int
 }
 
 const (
@@ -126,6 +127,9 @@ func groupProperties(endpointByTargetPort map[string][]*bindingWithOrder) map[st
 			}
 			if binding.Transport == acaIngressTransportHttp2 {
 				props.hasHttp2 = true
+			}
+			if binding.Port != nil {
+				props.exposedPort = *binding.Port
 			}
 		}
 		endpointByTargetPortProperties[containerPort] = props
@@ -274,6 +278,9 @@ func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress
 		port := selectedIngress.port
 		finalIngress.Transport = acaIngressSchemaTcp
 		finalIngress.TargetPort = port
+		if selectedIngress.exposedPort != 0 {
+			finalIngress.ExposedPort = selectedIngress.exposedPort
+		}
 	}
 
 	for groupKey, props := range endpointByTargetPortProperties {

@@ -34,14 +34,15 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path      string                  `yaml:"path,omitempty"      json:"path,omitempty"`
-	Context   string                  `yaml:"context,omitempty"   json:"context,omitempty"`
-	Platform  string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
-	Target    string                  `yaml:"target,omitempty"    json:"target,omitempty"`
-	Registry  osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
-	Image     osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
-	Tag       osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
-	BuildArgs []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	Path        string                  `yaml:"path,omitempty"      json:"path,omitempty"`
+	Context     string                  `yaml:"context,omitempty"   json:"context,omitempty"`
+	Platform    string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
+	Target      string                  `yaml:"target,omitempty"    json:"target,omitempty"`
+	Registry    osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
+	Image       osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
+	Tag         osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
+	RemoteBuild bool                    `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
+	BuildArgs   []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
 	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
 	BuildSecrets []string `yaml:"-" json:"-"`
@@ -111,6 +112,7 @@ type dockerProject struct {
 	docker              docker.Docker
 	framework           FrameworkService
 	containerHelper     *ContainerHelper
+	imageHelper         *ImageHelper
 	console             input.Console
 	alphaFeatureManager *alpha.FeatureManager
 	commandRunner       exec.CommandRunner
@@ -122,6 +124,7 @@ func NewDockerProject(
 	env *environment.Environment,
 	docker docker.Docker,
 	containerHelper *ContainerHelper,
+	imageHelper *ImageHelper,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
 	commandRunner exec.CommandRunner,
@@ -130,6 +133,7 @@ func NewDockerProject(
 		env:                 env,
 		docker:              docker,
 		containerHelper:     containerHelper,
+		imageHelper:         imageHelper,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
 		commandRunner:       commandRunner,
@@ -144,11 +148,12 @@ func NewDockerProjectAsFrameworkService(
 	env *environment.Environment,
 	docker docker.Docker,
 	containerHelper *ContainerHelper,
+	imageHelper *ImageHelper,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
 	commandRunner exec.CommandRunner,
 ) FrameworkService {
-	return NewDockerProject(env, docker, containerHelper, console, alphaFeatureManager, commandRunner)
+	return NewDockerProject(env, docker, containerHelper, imageHelper, console, alphaFeatureManager, commandRunner)
 }
 
 func (p *dockerProject) Requirements() FrameworkRequirements {
@@ -162,7 +167,11 @@ func (p *dockerProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (p *dockerProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
+func (p *dockerProject) RequiredExternalTools(_ context.Context, sc *ServiceConfig) []tools.ExternalTool {
+	if sc.Docker.RemoteBuild {
+		return []tools.ExternalTool{}
+	}
+
 	return []tools.ExternalTool{p.docker}
 }
 
@@ -194,6 +203,10 @@ func (p *dockerProject) Build(
 	restoreOutput *ServiceRestoreResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
+	if serviceConfig.Docker.RemoteBuild {
+		return &ServiceBuildResult{Restore: restoreOutput}, nil
+	}
+
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
 	resolveParameters := func(source []string) ([]string, error) {
@@ -320,6 +333,10 @@ func (p *dockerProject) Package(
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	if serviceConfig.Docker.RemoteBuild {
+		return &ServicePackageResult{Build: buildOutput}, nil
+	}
+
 	var imageId string
 
 	if buildOutput != nil {
@@ -349,7 +366,7 @@ func (p *dockerProject) Package(
 	}
 
 	// Generate a local tag from the 'docker' configuration section of the service
-	imageWithTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
+	imageWithTag, err := p.imageHelper.LocalImageTag(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("generating local image tag: %w", err)
 	}

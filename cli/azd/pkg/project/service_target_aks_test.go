@@ -840,7 +840,7 @@ func createAksServiceTarget(
 	containerHelper := NewContainerHelper(
 		env,
 		envManager,
-		clock.NewMock(),
+		NewImageHelper(env, clock.NewMock()),
 		containerRegistryService,
 		dockerCli,
 		cloud.AzurePublic(),

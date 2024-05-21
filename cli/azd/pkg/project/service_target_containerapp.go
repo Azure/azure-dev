@@ -20,6 +20,7 @@ type containerAppTarget struct {
 	env                 *environment.Environment
 	envManager          environment.Manager
 	containerHelper     *ContainerHelper
+	remoteBuildHelper   *RemoteBuildHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
 }
@@ -32,6 +33,7 @@ func NewContainerAppTarget(
 	env *environment.Environment,
 	envManager environment.Manager,
 	containerHelper *ContainerHelper,
+	remoteBuildHelper *RemoteBuildHelper,
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
 ) ServiceTarget {
@@ -39,6 +41,7 @@ func NewContainerAppTarget(
 		env:                 env,
 		envManager:          envManager,
 		containerHelper:     containerHelper,
+		remoteBuildHelper:   remoteBuildHelper,
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
 	}
@@ -80,8 +83,14 @@ func (at *containerAppTarget) Deploy(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	// Login, tag & push container image to ACR
-	_, err := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true, progress)
+	var err error
+
+	if serviceConfig.Docker.RemoteBuild {
+		err = at.remoteBuildHelper.RunRemoteBuild(ctx, serviceConfig, targetResource, progress)
+	} else {
+		// Login, tag & push container image to ACR
+		_, err = at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true, progress)
+	}
 	if err != nil {
 		return nil, err
 	}

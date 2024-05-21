@@ -29,6 +29,7 @@ import (
 
 type dotnetContainerAppTarget struct {
 	env                 *environment.Environment
+	imageHelper         *ImageHelper
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
@@ -50,6 +51,7 @@ type dotnetContainerAppTarget struct {
 func NewDotNetContainerAppTarget(
 	env *environment.Environment,
 	containerHelper *ContainerHelper,
+	imageHelper *ImageHelper,
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
 	dotNetCli dotnet.DotNetCli,
@@ -61,6 +63,7 @@ func NewDotNetContainerAppTarget(
 	return &dotnetContainerAppTarget{
 		env:                 env,
 		containerHelper:     containerHelper,
+		imageHelper:         imageHelper,
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
 		dotNetCli:           dotNetCli,
@@ -144,8 +147,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 	} else {
 		imageName := fmt.Sprintf("%s:%s",
-			at.containerHelper.DefaultImageName(serviceConfig),
-			at.containerHelper.DefaultImageTag())
+			at.imageHelper.DefaultImageName(serviceConfig),
+			at.imageHelper.DefaultImageTag())
 
 		portNumber, err = at.dotNetCli.PublishContainer(
 			ctx,

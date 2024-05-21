@@ -104,10 +104,13 @@ services:
 	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
 
+	imageHelper := NewImageHelper(env, clock.NewMock())
+
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker, cloud.AzurePublic()),
+		NewContainerHelper(env, envManager, imageHelper, nil, docker, cloud.AzurePublic()),
+		imageHelper,
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -208,10 +211,13 @@ services:
 	internalFramework := NewNpmProject(npmCli, env)
 	status := ""
 
+	imageHelper := NewImageHelper(env, clock.NewMock())
+
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker, cloud.AzurePublic()),
+		NewContainerHelper(env, envManager, imageHelper, nil, docker, cloud.AzurePublic()),
+		imageHelper,
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -407,10 +413,13 @@ func Test_DockerProject_Build(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			imageHelper := NewImageHelper(env, clock.NewMock())
+
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(env, envManager, imageHelper, nil, dockerCli, cloud.AzurePublic()),
+				imageHelper,
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
@@ -523,10 +532,13 @@ func Test_DockerProject_Package(t *testing.T) {
 			dockerCli := docker.NewDocker(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
+			imageHelper := NewImageHelper(env, clock.NewMock())
+
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(env, envManager, imageHelper, nil, dockerCli, cloud.AzurePublic()),
+				imageHelper,
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)

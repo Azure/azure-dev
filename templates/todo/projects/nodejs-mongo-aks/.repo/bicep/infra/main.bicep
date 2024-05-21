@@ -65,6 +65,10 @@ param collections array = [
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
+@description('The type of principal to assign application roles')
+@allowed(['Device', 'ForeignGroup', 'Group', 'ServicePrincipal', 'User'])
+param principalType string = 'User'
+
 @allowed([
   'CostOptimised'
   'Standard'
@@ -155,7 +159,7 @@ module managedCluster 'br/public:avm/res/container-service/managed-cluster:0.1.7
       {
         principalId: principalId
         roleDefinitionIdOrName: aksClusterAdminRole
-        principalType: 'User'
+        principalType: principalType
       }
     ]
     monitoringWorkspaceId: loganalytics.outputs.resourceId

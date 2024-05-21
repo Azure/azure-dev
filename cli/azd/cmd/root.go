@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -158,6 +157,9 @@ func NewRootCmd(
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupMonitor,
 		},
+		Environment: actions.EnvironmentOptions{
+			Optional: true,
+		},
 	})
 
 	//deprecate:cmd hide login
@@ -189,6 +191,9 @@ func NewRootCmd(
 		},
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupConfig,
+		},
+		Environment: actions.EnvironmentOptions{
+			Optional: true,
 		},
 	})
 
@@ -338,14 +343,8 @@ func NewRootCmd(
 			return !descriptor.Options.DisableTelemetry
 		}).
 		UseMiddlewareWhen("environment", middleware.NewEnvironmentMiddleware, func(descriptor *actions.ActionDescriptor) bool {
-			// Bypass environment middleware for `azd init` actions that don't accept an environment name
-			isInitAction := reflect.ValueOf(newInitAction) == reflect.ValueOf(descriptor.Options.ActionResolver)
-			if isInitAction {
-				return false
-			}
-
 			_, err := descriptor.Options.Command.Flags().GetString(internal.EnvironmentNameFlagName)
-			return !isInitAction && err == nil
+			return err == nil && !descriptor.Options.Environment.Optional
 		})
 
 	// Register common dependencies for the IoC rootContainer

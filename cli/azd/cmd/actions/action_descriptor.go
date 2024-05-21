@@ -148,6 +148,11 @@ type CommandGroupOptions struct {
 	RootLevelHelp RootLevelHelpOption
 }
 
+// EnvironmentOptions contains options for the environment flag and initialization
+type EnvironmentOptions struct {
+	Optional bool
+}
+
 // Defines the type used for annotating a command as part of a group.
 type commandGroupAnnotationKey string
 
@@ -186,6 +191,8 @@ type ActionDescriptorOptions struct {
 	HelpOptions ActionHelpOptions
 	// Defines grouping options for the command
 	GroupingOptions CommandGroupOptions
+	// Defines options for the construction of the azd environment
+	Environment EnvironmentOptions
 }
 
 // Completion function used for cobra command flag completion

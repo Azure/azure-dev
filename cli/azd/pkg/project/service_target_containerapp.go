@@ -20,6 +20,7 @@ type containerAppTarget struct {
 	env                 *environment.Environment
 	envManager          environment.Manager
 	containerHelper     *ContainerHelper
+	remoteBuildHelper   *RemoteBuildHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
 }
@@ -32,6 +33,7 @@ func NewContainerAppTarget(
 	env *environment.Environment,
 	envManager environment.Manager,
 	containerHelper *ContainerHelper,
+	remoteBuildHelper *RemoteBuildHelper,
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
 ) ServiceTarget {
@@ -41,6 +43,7 @@ func NewContainerAppTarget(
 		containerHelper:     containerHelper,
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
+		remoteBuildHelper:   remoteBuildHelper,
 	}
 }
 
@@ -85,19 +88,29 @@ func (at *containerAppTarget) Deploy(
 				return
 			}
 
-			// Login, tag & push container image to ACR
-			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-			syncProgress(task, containerDeployTask.Progress())
+			if serviceConfig.Docker.RemoteBuild {
+				err := at.remoteBuildHelper.RunRemoteBuild(ctx, serviceConfig, targetResource, func(s string) {
+					task.SetProgress(NewServiceProgress(s))
+				})
+				if err != nil {
+					task.SetError(fmt.Errorf("running remote build: %w", err))
+					return
+				}
+			} else {
+				// Login, tag & push container image to ACR
+				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
+				syncProgress(task, containerDeployTask.Progress())
 
-			_, err := containerDeployTask.Await()
-			if err != nil {
-				task.SetError(err)
-				return
+				_, err := containerDeployTask.Await()
+				if err != nil {
+					task.SetError(err)
+					return
+				}
 			}
 
 			imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
 			task.SetProgress(NewServiceProgress("Updating container app revision"))
-			err = at.containerAppService.AddRevision(
+			err := at.containerAppService.AddRevision(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),

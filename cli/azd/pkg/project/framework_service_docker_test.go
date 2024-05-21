@@ -418,7 +418,8 @@ func Test_DockerProject_Build(t *testing.T) {
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(
+					env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
@@ -532,7 +533,8 @@ func Test_DockerProject_Package(t *testing.T) {
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(
+					env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)

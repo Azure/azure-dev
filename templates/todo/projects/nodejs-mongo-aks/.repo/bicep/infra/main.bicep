@@ -159,7 +159,6 @@ module managedCluster 'br/public:avm/res/container-service/managed-cluster:0.1.7
       {
         principalId: principalId
         roleDefinitionIdOrName: aksClusterAdminRole
-        principalType: principalType
       }
     ]
     monitoringWorkspaceId: loganalytics.outputs.resourceId

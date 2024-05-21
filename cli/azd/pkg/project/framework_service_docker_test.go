@@ -107,7 +107,7 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker, cloud.AzurePublic()),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -211,7 +211,7 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker, cloud.AzurePublic()),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -410,7 +410,8 @@ func Test_DockerProject_Build(t *testing.T) {
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
@@ -526,7 +527,8 @@ func Test_DockerProject_Package(t *testing.T) {
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)

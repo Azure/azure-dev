@@ -24,14 +24,11 @@ import (
 
 type infraSynthFlags struct {
 	global *internal.GlobalCommandOptions
-	*internal.EnvFlag
-	force bool
+	force  bool
 }
 
 func newInfraSynthFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraSynthFlags {
-	flags := &infraSynthFlags{
-		EnvFlag: &internal.EnvFlag{},
-	}
+	flags := &infraSynthFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -39,7 +36,6 @@ func newInfraSynthFlags(cmd *cobra.Command, global *internal.GlobalCommandOption
 
 func (f *infraSynthFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.global = global
-	f.EnvFlag.Bind(local, global)
 	local.BoolVar(&f.force, "force", false, "Overwrite any existing files without prompting")
 }
 

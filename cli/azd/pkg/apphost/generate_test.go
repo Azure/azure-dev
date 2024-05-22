@@ -281,7 +281,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	for _, name := range []string{"mysqlabstract", "my-sql-abstract", "noVolume"} {
+	for _, name := range []string{"mysqlabstract", "my-sql-abstract", "noVolume", "kafka"} {
 		t.Run(name, func(t *testing.T) {
 			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
 			require.NoError(t, err)

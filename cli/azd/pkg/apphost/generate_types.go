@@ -35,8 +35,9 @@ type genContainerApp struct {
 }
 
 type genContainerAppIngressPort struct {
-	External   bool
-	TargetPort int
+	External    bool
+	TargetPort  int
+	ExposedPort int
 }
 
 type genContainerAppIngressAdditionalPortMappings struct {

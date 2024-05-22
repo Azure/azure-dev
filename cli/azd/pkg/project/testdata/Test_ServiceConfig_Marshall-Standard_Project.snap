@@ -1,0 +1,7 @@
+name: test-proj
+services:
+    api:
+        host: aks
+        project: ./src/api
+        language: js
+

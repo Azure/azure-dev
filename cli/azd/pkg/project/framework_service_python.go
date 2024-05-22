@@ -46,47 +46,47 @@ func (pp *pythonProject) RequiredExternalTools(context.Context) []tools.External
 }
 
 // Initializes the Python project
-func (pp *pythonProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+func (pp *pythonProject) Initialize(ctx context.Context, component *ComponentConfig) error {
 	return nil
 }
 
 // Restores the project dependencies using PIP requirements.txt
 func (pp *pythonProject) Restore(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Checking for Python virtual environment"))
-			vEnvName := pp.getVenvName(serviceConfig)
-			vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
+			vEnvName := pp.getVenvName(component)
+			vEnvPath := path.Join(component.Path(), vEnvName)
 
 			_, err := os.Stat(vEnvPath)
 			if err != nil {
 				if os.IsNotExist(err) {
 					task.SetProgress(NewServiceProgress("Creating Python virtual environment"))
-					err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
+					err = pp.cli.CreateVirtualEnv(ctx, component.Path(), vEnvName)
 					if err != nil {
 						task.SetError(fmt.Errorf(
 							"python virtual environment for project '%s' could not be created: %w",
-							serviceConfig.Path(),
+							component.Path(),
 							err,
 						))
 						return
 					}
 				} else {
 					task.SetError(
-						fmt.Errorf("python virtual environment for project '%s' is not accessible: %w", serviceConfig.Path(), err),
+						fmt.Errorf("python virtual environment for project '%s' is not accessible: %w", component.Path(), err),
 					)
 					return
 				}
 			}
 
 			task.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
-			err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
+			err = pp.cli.InstallRequirements(ctx, component.Path(), vEnvName, "requirements.txt")
 			if err != nil {
 				task.SetError(
-					fmt.Errorf("requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err),
+					fmt.Errorf("requirements for project '%s' could not be installed: %w", component.Path(), err),
 				)
 				return
 			}
@@ -99,15 +99,15 @@ func (pp *pythonProject) Restore(
 // Build for Python apps performs a no-op and returns the service path with an optional output path when specified.
 func (pp *pythonProject) Build(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			buildSource := serviceConfig.Path()
+			buildSource := component.Path()
 
-			if serviceConfig.OutputPath != "" {
-				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
+			if component.OutputPath != "" {
+				buildSource = filepath.Join(buildSource, component.OutputPath)
 			}
 
 			task.SetResult(&ServiceBuildResult{
@@ -120,20 +120,20 @@ func (pp *pythonProject) Build(
 
 func (pp *pythonProject) Package(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
+				task.SetError(fmt.Errorf("creating package directory for %s: %w", component.Name, err))
 				return
 			}
 
 			packageSource := buildOutput.BuildOutputPath
 			if packageSource == "" {
-				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+				packageSource = filepath.Join(component.Path(), component.OutputPath)
 			}
 
 			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
@@ -151,7 +151,7 @@ func (pp *pythonProject) Package(
 						excludePyCache,
 					},
 				}); err != nil {
-				task.SetError(fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err))
+				task.SetError(fmt.Errorf("packaging for %s: %w", component.Name, err))
 				return
 			}
 
@@ -186,8 +186,8 @@ func excludePyCache(path string, file os.FileInfo) bool {
 	return file.IsDir() && strings.ToLower(file.Name()) == "__pycache__"
 }
 
-func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {
-	trimmedPath := strings.TrimSpace(serviceConfig.Path())
+func (pp *pythonProject) getVenvName(component *ComponentConfig) string {
+	trimmedPath := strings.TrimSpace(component.Path())
 	if len(trimmedPath) > 0 && trimmedPath[len(trimmedPath)-1] == os.PathSeparator {
 		trimmedPath = trimmedPath[:len(trimmedPath)-1]
 	}

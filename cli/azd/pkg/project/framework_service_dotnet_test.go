@@ -41,16 +41,18 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 	})
 
 	serviceConfig := &ServiceConfig{
-		Project: &ProjectConfig{
-			Path: "/sample/path/for/test",
+		ComponentConfig: &ComponentConfig{
+			Project: &ProjectConfig{
+				Path: "/sample/path/for/test",
+			},
+			RelativePath: "",
 		},
-		RelativePath: "",
 	}
 
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
 	dp := NewDotNetProject(dotNetCli, environment.New("test")).(*dotnetProject)
 
-	err := dp.setUserSecretsFromOutputs(*mockContext.Context, serviceConfig, ServiceLifecycleEventArgs{
+	err := dp.setUserSecretsFromOutputs(*mockContext.Context, serviceConfig.ComponentConfig, ServiceLifecycleEventArgs{
 		Args: map[string]any{
 			"bicepOutput": map[string]provisioning.OutputParameter{
 				"EXAMPLE_OUTPUT":          {Type: "string", Value: "foo"},
@@ -98,7 +100,7 @@ func Test_DotNetProject_Init(t *testing.T) {
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 
-	err = dotnetProject.Initialize(*mockContext.Context, serviceConfig)
+	err = dotnetProject.Initialize(*mockContext.Context, serviceConfig.ComponentConfig)
 	require.NoError(t, err)
 
 	eventArgs := ServiceLifecycleEventArgs{
@@ -149,7 +151,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	restoreTask := dotnetProject.Restore(*mockContext.Context, serviceConfig)
+	restoreTask := dotnetProject.Restore(*mockContext.Context, serviceConfig.ComponentConfig)
 	logProgress(restoreTask)
 
 	result, err := restoreTask.Await()
@@ -193,7 +195,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 	require.NoError(t, err)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	buildTask := dotnetProject.Build(*mockContext.Context, serviceConfig, nil)
+	buildTask := dotnetProject.Build(*mockContext.Context, serviceConfig.ComponentConfig, nil)
 	logProgress(buildTask)
 
 	result, err := buildTask.Await()
@@ -249,7 +251,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	packageTask := dotnetProject.Package(
 		*mockContext.Context,
-		serviceConfig,
+		serviceConfig.ComponentConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},

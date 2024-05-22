@@ -7,17 +7,20 @@ import (
 	"log"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 type Cli struct {
 	commandRunner exec.CommandRunner
+	env           *environment.Environment
 }
 
-func NewCli(commandRunner exec.CommandRunner) *Cli {
+func NewCli(commandRunner exec.CommandRunner, env *environment.Environment) *Cli {
 	return &Cli{
 		commandRunner: commandRunner,
+		env:           env,
 	}
 }
 
@@ -78,6 +81,15 @@ func (c *Cli) Install(ctx context.Context, release *Release) error {
 		runArgs = runArgs.AppendParams("--values", release.Values)
 	}
 
+	for key, value := range release.Overrides {
+		replacedValue, err := value.Envsubst(c.env.Getenv)
+		if err != nil {
+			return fmt.Errorf("failed setting helm value override, %w", err)
+		}
+
+		runArgs = runArgs.AppendParams("--set", fmt.Sprintf("%s=%s", key, replacedValue))
+	}
+
 	_, err := c.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to install helm chart %s: %w", release.Chart, err)
@@ -96,6 +108,15 @@ func (c *Cli) Upgrade(ctx context.Context, release *Release) error {
 
 	if release.Values != "" {
 		runArgs = runArgs.AppendParams("--values", release.Values)
+	}
+
+	for key, value := range release.Overrides {
+		replacedValue, err := value.Envsubst(c.env.Getenv)
+		if err != nil {
+			return fmt.Errorf("failed setting helm value override, %w", err)
+		}
+
+		runArgs = runArgs.AppendParams("--set", fmt.Sprintf("%s=%s", key, replacedValue))
 	}
 
 	if release.Namespace != "" {

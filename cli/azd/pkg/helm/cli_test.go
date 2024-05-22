@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -32,7 +33,8 @@ func Test_Cli_AddRepo(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.AddRepo(*mockContext.Context, repo)
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -59,7 +61,8 @@ func Test_Cli_AddRepo(t *testing.T) {
 				return exec.NewRunResult(1, "", ""), errors.New("failed to add repo")
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.AddRepo(*mockContext.Context, repo)
 
 		require.True(t, ran)
@@ -84,7 +87,8 @@ func Test_Cli_UpdateRepo(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.UpdateRepo(*mockContext.Context, "test")
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -110,7 +114,8 @@ func Test_Cli_UpdateRepo(t *testing.T) {
 				return exec.NewRunResult(1, "", ""), errors.New("failed to update repo")
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.UpdateRepo(*mockContext.Context, "test")
 
 		require.True(t, ran)
@@ -141,7 +146,8 @@ func Test_Cli_Install(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.Install(*mockContext.Context, release)
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -172,7 +178,8 @@ func Test_Cli_Install(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.Install(*mockContext.Context, &releaseWithValues)
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -200,7 +207,8 @@ func Test_Cli_Install(t *testing.T) {
 				return exec.NewRunResult(1, "", ""), errors.New("failed to install release")
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.Install(*mockContext.Context, release)
 
 		require.True(t, ran)
@@ -230,7 +238,8 @@ func Test_Cli_Upgrade(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.Upgrade(*mockContext.Context, release)
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -263,7 +272,8 @@ func Test_Cli_Upgrade(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.Upgrade(*mockContext.Context, &releaseWithValues)
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -298,7 +308,8 @@ func Test_Cli_Upgrade(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.Upgrade(*mockContext.Context, &releaseWithVersion)
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -333,7 +344,8 @@ func Test_Cli_Upgrade(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.Upgrade(*mockContext.Context, &releaseWithNamespace)
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -364,7 +376,8 @@ func Test_Cli_Upgrade(t *testing.T) {
 				return exec.NewRunResult(1, "", ""), errors.New("failed to upgrade release")
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		err := cli.Upgrade(*mockContext.Context, release)
 
 		require.True(t, ran)
@@ -397,7 +410,8 @@ func Test_Cli_Status(t *testing.T) {
 				}`, ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		status, err := cli.Status(*mockContext.Context, release)
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -434,7 +448,8 @@ func Test_Cli_Status(t *testing.T) {
 				}`, ""), nil
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		status, err := cli.Status(*mockContext.Context, &releaseWithNamespace)
 		require.True(t, ran)
 		require.NoError(t, err)
@@ -464,7 +479,8 @@ func Test_Cli_Status(t *testing.T) {
 				return exec.NewRunResult(1, "", ""), errors.New("failed to get status")
 			})
 
-		cli := NewCli(mockContext.CommandRunner)
+		env := environment.NewWithValues("test", nil)
+		cli := NewCli(mockContext.CommandRunner, env)
 		_, err := cli.Status(*mockContext.Context, release)
 
 		require.True(t, ran)

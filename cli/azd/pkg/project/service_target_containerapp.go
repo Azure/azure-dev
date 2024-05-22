@@ -5,9 +5,11 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
@@ -79,44 +81,107 @@ func (at *containerAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+		func(rootTask *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
+				rootTask.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
 
-			// Login, tag & push container image to ACR
-			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-			syncProgress(task, containerDeployTask.Progress())
+			if packageOutput == nil {
+				rootTask.SetError(errors.New("missing package output"))
+				return
+			}
 
-			_, err := containerDeployTask.Await()
+			componentPackageResults, ok := packageOutput.Details.(map[string]*ServicePackageResult)
+			if !ok {
+				rootTask.SetError(errors.New("missing component package results"))
+				return
+			}
+
+			// Get the current container app configuration
+			containerApp, err := at.containerAppService.Get(
+				ctx, targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+			)
 			if err != nil {
-				task.SetError(err)
+				rootTask.SetError(fmt.Errorf("fetching container app service: %w", err))
 				return
 			}
 
-			imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
-			task.SetProgress(NewServiceProgress("Updating container app revision"))
-			err = at.containerAppService.AddRevision(
+			// Get the latest revision that we will use as a template for updates
+			latestRevision, err := at.containerAppService.GetRevision(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
-				imageName,
+				*containerApp.Properties.LatestRevisionName,
 			)
 			if err != nil {
-				task.SetError(fmt.Errorf("updating container app service: %w", err))
+				rootTask.SetError(fmt.Errorf("fetching latest container app revision: %w", err))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+			for key, component := range serviceConfig.Components {
+				componentOutput := componentPackageResults[key]
+
+				// Login, tag & push container image to the configured registry
+				containerDeployTask := at.containerHelper.Deploy(ctx, component, componentOutput, targetResource, true)
+				syncProgress(rootTask, containerDeployTask.Progress())
+
+				_, err := containerDeployTask.Await()
+				if err != nil {
+					rootTask.SetError(err)
+					return
+				}
+
+				imageName := at.env.GetServiceProperty(component.Name, "IMAGE_NAME")
+				rootTask.SetProgress(NewServiceProgress("Updating container app revision"))
+
+				var matchingContainer *armappcontainers.Container
+
+				// Find the container with the matching name
+				for _, container := range latestRevision.Properties.Template.Containers {
+					if *container.Name == component.Name {
+						matchingContainer = container
+					}
+				}
+
+				// If we did not find a matching container create a new one
+				if matchingContainer == nil {
+					matchingContainer = &armappcontainers.Container{
+						Name: &component.Name,
+					}
+					latestRevision.Properties.Template.Containers = append(
+						latestRevision.Properties.Template.Containers,
+						matchingContainer,
+					)
+				}
+
+				// Update the container image reference
+				matchingContainer.Image = &imageName
+			}
+
+			err = at.containerAppService.AddRevision(
+				ctx, targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				containerApp,
+				latestRevision,
+			)
+			if err != nil {
+				rootTask.SetError(fmt.Errorf("failed adding container app revision: %w", err))
+				return
+			}
+
+			rootTask.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
 			endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
 			if err != nil {
-				task.SetError(err)
+				rootTask.SetError(err)
 				return
 			}
 
-			task.SetResult(&ServiceDeployResult{
+			rootTask.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
 				TargetResourceId: azure.ContainerAppRID(
 					targetResource.SubscriptionId(),

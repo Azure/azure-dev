@@ -113,7 +113,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			task.SetProgress(NewServiceProgress("Logging in to registry"))
 
 			// Login, tag & push container image to ACR
-			dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
+			dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig.ComponentConfig, targetResource)
 			if err != nil {
 				task.SetError(fmt.Errorf("logging in to registry: %w", err))
 				return
@@ -140,7 +140,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
 			// to the deployment template as a parameter named `Image`.
 			if serviceConfig.Language == ServiceLanguageDocker {
-				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
+				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig.ComponentConfig, packageOutput, targetResource, false)
 				syncProgress(task, containerDeployTask.Progress())
 
 				res, err := containerDeployTask.Await()

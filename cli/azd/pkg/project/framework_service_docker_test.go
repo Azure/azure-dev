@@ -114,7 +114,7 @@ services:
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
+	buildTask := framework.Build(*mockContext.Context, service.ComponentConfig, nil)
 	go func() {
 		for value := range buildTask.Progress() {
 			progressMessages = append(progressMessages, value.Message)
@@ -222,7 +222,7 @@ services:
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
+	buildTask := framework.Build(*mockContext.Context, service.ComponentConfig, nil)
 	go func() {
 		for value := range buildTask.Progress() {
 			status = value.Message
@@ -428,7 +428,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				dockerProject.SetSource(npmProject)
 			}
 
-			buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
+			buildTask := dockerProject.Build(*mockContext.Context, serviceConfig.ComponentConfig, nil)
 			logProgress(buildTask)
 			result, err := buildTask.Await()
 
@@ -554,7 +554,7 @@ func Test_DockerProject_Package(t *testing.T) {
 
 			packageTask := dockerProject.Package(
 				*mockContext.Context,
-				serviceConfig,
+				serviceConfig.ComponentConfig,
 				&ServiceBuildResult{
 					BuildOutputPath: buildOutputPath,
 				},

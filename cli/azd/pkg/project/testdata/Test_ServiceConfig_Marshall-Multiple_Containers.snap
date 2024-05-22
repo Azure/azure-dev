@@ -1,0 +1,12 @@
+name: test-proj
+services:
+    todo:
+        host: aks
+        containers:
+            api:
+                project: ./src/api
+                language: js
+            web:
+                project: ./src/web
+                language: js
+

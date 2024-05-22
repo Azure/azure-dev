@@ -89,9 +89,13 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 		serviceConfig,
 		&ServicePackageResult{
 			PackagePath: "test-app/api-test:azd-deploy-0",
-			Details: &dockerPackageResult{
-				ImageHash:   "IMAGE_HASH",
-				TargetImage: "test-app/api-test:azd-deploy-0",
+			Details: map[string]*ServicePackageResult{
+				"main": {
+					Details: &dockerPackageResult{
+						ImageHash:   "IMAGE_HASH",
+						TargetImage: "test-app/api-test:azd-deploy-0",
+					},
+				},
 			},
 		},
 	)
@@ -100,7 +104,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+	require.IsType(t, map[string]*ServicePackageResult{}, packageResult.Details)
 
 	scope := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
@@ -204,6 +208,7 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
+						Name:  convert.RefOf(defaultComponentName),
 						Image: &originalImageName,
 					},
 				},
@@ -216,6 +221,7 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
+						Name:  convert.RefOf(defaultComponentName),
 						Image: &updatedRevisionName,
 					},
 				},

@@ -87,6 +87,8 @@ module test 'test/test.bicep' = {
   params: {
     host: 'frontend.internal.${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
     location: location
+    environmentName: environmentName
+    tags: tags
     test: parameter
     url: 'http://frontend.internal.${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
     values: ['one','two']

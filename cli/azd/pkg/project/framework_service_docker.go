@@ -370,7 +370,7 @@ func (p *dockerProject) packBuild(
 		// Always default to port 80 for consistency across languages
 		environ = append(environ, "ORYX_RUNTIME_PORT=80")
 
-		if component.Language  == ServiceLanguageJava {
+		if component.Language == ServiceLanguageJava {
 			environ = append(environ, "ORYX_RUNTIME_PORT=8080")
 		}
 

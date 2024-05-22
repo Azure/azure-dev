@@ -67,9 +67,11 @@ func createProject(prjDir string, appHostPath string) error {
 		Name: "app",
 		Services: map[string]*project.ServiceConfig{
 			"app": {
-				Host:         project.ContainerAppTarget,
-				Language:     project.ServiceLanguageDotNet,
-				RelativePath: appHostPath,
+				ComponentConfig: &project.ComponentConfig{
+					Host:         project.ContainerAppTarget,
+					Language:     project.ServiceLanguageDotNet,
+					RelativePath: appHostPath,
+				},
 			},
 		},
 	}

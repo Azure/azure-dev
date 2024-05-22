@@ -140,7 +140,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 			// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
 			// to the deployment template as a parameter named `Image`.
 			if serviceConfig.Language == ServiceLanguageDocker {
-				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig.ComponentConfig, packageOutput, targetResource, false)
+				containerDeployTask := at.containerHelper.Deploy(
+					ctx,
+					serviceConfig.ComponentConfig,
+					packageOutput,
+					targetResource,
+					false,
+				)
 				syncProgress(task, containerDeployTask.Progress())
 
 				res, err := containerDeployTask.Await()

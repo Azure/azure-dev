@@ -44,35 +44,17 @@ var (
 	ServiceConnectionName = "azconnection"
 )
 
-type Connection struct {
-	*azuredevops.Connection
-	Organization Organization
-}
-
-type Organization struct {
-	Name string
-}
-
 // helper method to return an Azure DevOps connection used the AzDo go sdk
 func GetConnection(
-	ctx context.Context, organization string, personalAccessToken string) (Connection, error) {
+	ctx context.Context, organization string, personalAccessToken string) (*azuredevops.Connection, error) {
 	if organization == "" {
-		return Connection{}, fmt.Errorf("organization name is required")
+		return nil, fmt.Errorf("organization name is required")
 	}
 
 	if personalAccessToken == "" {
-		return Connection{}, fmt.Errorf("personal access token is required")
+		return nil, fmt.Errorf("personal access token is required")
 	}
 
 	organizationUrl := fmt.Sprintf("https://%s/%s", AzDoHostName, organization)
-	connection := azuredevops.NewPatConnection(organizationUrl, personalAccessToken)
-
-	adoConnection := Connection{
-		Connection: connection,
-		Organization: Organization{
-			Name: organization,
-		},
-	}
-
-	return adoConnection, nil
+	return azuredevops.NewPatConnection(organizationUrl, personalAccessToken), nil
 }

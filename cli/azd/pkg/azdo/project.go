@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/operations"
 )
@@ -30,12 +31,12 @@ func getProcessTemplateId(ctx context.Context, client core.Client) (string, erro
 // creates a new Azure DevOps project
 func createProject(
 	ctx context.Context,
-	connection Connection,
+	connection *azuredevops.Connection,
 	name string,
 	description string,
 	console input.Console,
 ) (*core.TeamProjectReference, error) {
-	coreClient, err := core.NewClient(ctx, connection.Connection)
+	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +67,7 @@ func createProject(
 		return nil, err
 	}
 
-	operationsClient := operations.NewClient(ctx, connection.Connection)
+	operationsClient := operations.NewClient(ctx, connection)
 
 	getOperationsArgs := operations.GetOperationArgs{
 		OperationId: res.Id,
@@ -106,7 +107,7 @@ func createProject(
 func GetProjectFromNew(
 	ctx context.Context,
 	repoPath string,
-	connection Connection,
+	connection *azuredevops.Connection,
 	env *environment.Environment,
 	console input.Console,
 ) (string, string, error) {
@@ -152,10 +153,10 @@ func GetProjectFromNew(
 // return an azdo project by name
 func GetProjectByName(
 	ctx context.Context,
-	connection Connection,
+	connection *azuredevops.Connection,
 	name string,
 ) (*core.TeamProjectReference, error) {
-	coreClient, err := core.NewClient(ctx, connection.Connection)
+	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
@@ -179,10 +180,10 @@ func GetProjectByName(
 // prompt the user to select form a list of existing Azure DevOps projects
 func GetProjectFromExisting(
 	ctx context.Context,
-	connection Connection,
+	connection *azuredevops.Connection,
 	console input.Console,
 ) (string, string, error) {
-	coreClient, err := core.NewClient(ctx, connection.Connection)
+	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
 		return "", "", err
 	}

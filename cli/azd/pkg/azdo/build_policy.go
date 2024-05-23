@@ -37,12 +37,12 @@ func getBuildType(ctx context.Context, projectId *string, policyClient policy.Cl
 // this also disables direct pushes to the default branch and requires changes to go through a PR.
 func CreateBuildPolicy(
 	ctx context.Context,
-	connection Connection,
+	connection *azuredevops.Connection,
 	projectId string,
 	repoId string,
 	buildDefinition *build.BuildDefinition,
 	env *environment.Environment) error {
-	client, err := policy.NewClient(ctx, connection.Connection)
+	client, err := policy.NewClient(ctx, connection)
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func CreateBuildPolicy(
 		return err
 	}
 
-	localClient, err := newLocalClient(ctx, connection.Connection)
+	localClient, err := newLocalClient(ctx, connection)
 	if err != nil {
 		return err
 	}

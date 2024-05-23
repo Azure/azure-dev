@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	azdoGit "github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 )
@@ -34,7 +35,7 @@ type AzdoScmProvider struct {
 	repoDetails    *AzdoRepositoryDetails
 	env            *environment.Environment
 	azdContext     *azdcontext.AzdContext
-	azdoConnection azdo.Connection
+	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
 	console        input.Console
 	gitCli         git.GitCli
@@ -222,14 +223,14 @@ func (p *AzdoScmProvider) getRepoDetails() *AzdoRepositoryDetails {
 }
 
 // helper function to return an azuredevops.Connection for use with AzDo Go SDK
-func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (azdo.Connection, error) {
-	if p.azdoConnection.Connection != nil {
+func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.Connection, error) {
+	if p.azdoConnection != nil {
 		return p.azdoConnection, nil
 	}
 
 	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.env, p.console)
 	if err != nil {
-		return azdo.Connection{}, err
+		return nil, err
 	}
 
 	repoDetails := p.getRepoDetails()
@@ -237,12 +238,12 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (azdo.Connectio
 
 	pat, _, err := azdo.EnsurePatExists(ctx, p.env, p.console)
 	if err != nil {
-		return azdo.Connection{}, err
+		return nil, err
 	}
 
 	connection, err := azdo.GetConnection(ctx, org, pat)
 	if err != nil {
-		return azdo.Connection{}, err
+		return nil, err
 	}
 
 	return connection, nil
@@ -365,7 +366,7 @@ func (p *AzdoScmProvider) getDefaultRepoRemote(
 	if err != nil {
 		return "", err
 	}
-	repo, err := azdo.GetDefaultGitRepositoriesInProject(ctx, projectName, connection.Connection)
+	repo, err := azdo.GetDefaultGitRepositoriesInProject(ctx, projectName, connection)
 	if err != nil {
 		return "", err
 	}

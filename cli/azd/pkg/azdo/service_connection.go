@@ -95,14 +95,14 @@ func serviceConnectionExists(ctx context.Context,
 // create a new service connection that will be used in the deployment pipeline
 func CreateServiceConnection(
 	ctx context.Context,
-	connection Connection,
+	connection *azuredevops.Connection,
 	projectId string,
 	projectName string,
 	azdEnvironment environment.Environment,
 	credentials *azcli.AzureCredentials,
 	console input.Console) (*serviceendpoint.ServiceEndpoint, error) {
 
-	client, err := serviceendpoint.NewClient(ctx, connection.Connection)
+	client, err := serviceendpoint.NewClient(ctx, connection)
 	if err != nil {
 		return nil, fmt.Errorf("creating new azdo client: %w", err)
 	}
@@ -143,7 +143,7 @@ func CreateServiceConnection(
 		Name: "Service connection",
 	})
 
-	err = authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection.Connection)
+	err = authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection)
 	if err != nil {
 		return nil, fmt.Errorf("authorizing service connection: %w", err)
 	}

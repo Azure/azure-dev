@@ -89,12 +89,7 @@ resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/stora
 {{- end }}
 {{end -}}
 {{if .HasContainerEnvironment}}
-{{- if eq false .AspireDashboard}}
-resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
-{{- end }}
-{{- if .AspireDashboard}}
 resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-preview' = {
-{{- end }}
   name: 'cae-${resourceToken}'
   location: location
   properties: {
@@ -111,7 +106,6 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
     }
   }
   tags: tags
-{{- if .AspireDashboard }}
 
   resource aspireDashboard 'dotNetComponents' = {
     name: 'aspire-dashboard'
@@ -120,9 +114,8 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
     }
   }
 
-{{- end }}
 }
-{{- if .AspireDashboard }}
+
 resource explicitContributorUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(containerAppEnvironment.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c'))
   scope: containerAppEnvironment
@@ -131,7 +124,6 @@ resource explicitContributorUserRoleAssignment 'Microsoft.Authorization/roleAssi
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
   }
 }
-{{- end }}
 {{range $name, $value := .ContainerApps}}
 {{- range $volume := $value.Volumes}}
 resource {{mergeBicepName $name $volume.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {

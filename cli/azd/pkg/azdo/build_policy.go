@@ -58,12 +58,12 @@ func CreateBuildPolicy(
 	}
 
 	// check if the policy already exists
-	existingPoliciesResponse, error := localClient.getPolicyConfigurations(ctx, getPolicyConfigurationsArgs{
+	existingPoliciesResponse, err := localClient.getPolicyConfigurations(ctx, getPolicyConfigurationsArgs{
 		Project:    &projectId,
 		PolicyType: buildPolicyType.Id,
 	})
-	if error != nil {
-		return error
+	if err != nil {
+		return err
 	}
 	existingPolicies := []policy.PolicyConfiguration{}
 	for existingPoliciesResponse != nil {

@@ -296,14 +296,14 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	// Get the requested credential options from the CI provider
-	credentialOptions, error := pm.ciProvider.credentialOptions(
+	credentialOptions, err := pm.ciProvider.credentialOptions(
 		ctx,
 		gitRepoInfo,
 		infra.Options,
 		PipelineAuthType(pm.args.PipelineAuthTypeName),
 		credentials,
 	)
-	if error != nil {
+	if err != nil {
 		return result, fmt.Errorf("failed to get credential options: %w", error)
 	}
 

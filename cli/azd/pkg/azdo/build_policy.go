@@ -71,13 +71,13 @@ func CreateBuildPolicy(
 		if existingPoliciesResponse.ContinuationToken == "" {
 			break
 		}
-		existingPoliciesResponse, error = localClient.getPolicyConfigurations(ctx, getPolicyConfigurationsArgs{
+		existingPoliciesResponse, err = localClient.getPolicyConfigurations(ctx, getPolicyConfigurationsArgs{
 			Project:           &projectId,
 			PolicyType:        buildPolicyType.Id,
 			ContinuationToken: existingPoliciesResponse.ContinuationToken,
 		})
-		if error != nil {
-			return error
+		if err != nil {
+			return err
 		}
 	}
 

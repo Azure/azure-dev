@@ -304,7 +304,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		credentials,
 	)
 	if err != nil {
-		return result, fmt.Errorf("failed to get credential options: %w", error)
+		return result, fmt.Errorf("failed to get credential options: %w", err)
 	}
 
 	// Enable client credentials if requested

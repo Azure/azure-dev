@@ -165,11 +165,11 @@ func Test_MavenProject_Package(t *testing.T) {
 			"Default",
 			args{
 				&ServiceConfig{
+					Host: AppServiceTarget,
 					ComponentConfig: &ComponentConfig{
 						Project:      &ProjectConfig{},
 						Name:         "api",
 						RelativePath: "src/api",
-						Host:         AppServiceTarget,
 						Language:     ServiceLanguageJava,
 					},
 					EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
@@ -181,12 +181,12 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"SpecifyOutputDir",
 			args{&ServiceConfig{
+				Host: AppServiceTarget,
 				ComponentConfig: &ComponentConfig{
 					Project:      &ProjectConfig{},
 					Name:         "api",
 					RelativePath: "src/api",
 					OutputPath:   "mydir",
-					Host:         AppServiceTarget,
 					Language:     ServiceLanguageJava,
 				},
 				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
@@ -198,12 +198,12 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"SpecifyOutputFile",
 			args{&ServiceConfig{
+				Host: AppServiceTarget,
 				ComponentConfig: &ComponentConfig{
 					Project:      &ProjectConfig{},
 					Name:         "api",
 					RelativePath: "src/api",
 					OutputPath:   "mydir/ear.ear",
-					Host:         AppServiceTarget,
 					Language:     ServiceLanguageJava,
 				},
 				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
@@ -215,11 +215,11 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"ErrNoArchive",
 			args{&ServiceConfig{
+				Host: AppServiceTarget,
 				ComponentConfig: &ComponentConfig{
 					Project:      &ProjectConfig{},
 					Name:         "api",
 					RelativePath: "src/api",
-					Host:         AppServiceTarget,
 					Language:     ServiceLanguageJava,
 				},
 				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
@@ -231,12 +231,12 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"ErrMultipleArchives",
 			args{&ServiceConfig{
+				Host: AppServiceTarget,
 				ComponentConfig: &ComponentConfig{
 					Project:      &ProjectConfig{},
 					Name:         "api",
 					RelativePath: "src/api",
 					OutputPath:   "mydir",
-					Host:         AppServiceTarget,
 					Language:     ServiceLanguageJava,
 				},
 				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),

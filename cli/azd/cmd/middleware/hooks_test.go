@@ -226,11 +226,12 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 	}
 
 	serviceConfig := &project.ServiceConfig{
-		ComponentConfig: &project.ComponentConfig{
-
-			Language:     "ts",
-			RelativePath: "./src/api",
-			Host:         "appservice",
+		Host: "appservice",
+		Components: map[string]*project.ComponentConfig{
+			project.DefaultComponentName: {
+				Language:     "ts",
+				RelativePath: "./src/api",
+			},
 		},
 		EventDispatcher: ext.NewEventDispatcher[project.ServiceLifecycleEventArgs](project.ServiceEvents...),
 		Hooks: map[string]*ext.HookConfig{

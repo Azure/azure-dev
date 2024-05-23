@@ -636,7 +636,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, component *Co
 	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
 	// project that handles the containerization.
 	requiresLanguage := component.Language != ServiceLanguageDocker && component.Language != ServiceLanguageNone
-	if component.Host.RequiresContainer() && requiresLanguage {
+	if component.Service.Host.RequiresContainer() && requiresLanguage {
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			return nil, fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",

@@ -88,41 +88,30 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
 
 		var err error
-		svc.Language, err = parseServiceLanguage(svc.Language)
-		if err != nil {
-			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
-		}
 
 		svc.Host, err = parseServiceHost(svc.Host)
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
-		if len(svc.Components) == 0 {
-			svc.Components = map[string]*ComponentConfig{}
-			svc.Components[defaultComponentName] = &ComponentConfig{
-				Name:         defaultComponentName,
-				Host:         svc.Host,
-				RelativePath: svc.RelativePath,
-				Language:     svc.Language,
-				OutputPath:   svc.OutputPath,
-				Image:        svc.Image,
-				Docker:       svc.Docker,
+		for _, component := range svc.Components {
+			component.Language, err = parseServiceLanguage(component.Language)
+			if err != nil {
+				return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 			}
-		}
 
-		for _, comp := range svc.Components {
-			comp.Service = svc
-			comp.Project = &projectConfig
+			component.Service = svc
 		}
 
 		// TODO: Move parsing/validation requirements for service targets into their respective components.
 		// When working within container based applications users may be using external/pre-built images instead of source
 		// In this case it is valid to have not specified a language but would be required to specify a source image
-		if svc.Host == ContainerAppTarget &&
-			svc.Language == ServiceLanguageNone &&
-			svc.Image == "" && len(svc.Components) == 1 {
-			return nil, fmt.Errorf("parsing service %s: must specify language or image", svc.Name)
+		if len(svc.Components) == 1 {
+			main, _ := svc.Main()
+
+			if svc.Host == ContainerAppTarget && main.Language == ServiceLanguageNone && main.Image == "" {
+				return nil, fmt.Errorf("parsing service %s: must specify language or image", svc.Name)
+			}
 		}
 	}
 
@@ -164,11 +153,11 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 	if projectConfig.Services != nil {
 		hosts := make([]string, len(projectConfig.Services))
 		languages := make([]string, len(projectConfig.Services))
-		i := 0
 		for _, svcConfig := range projectConfig.Services {
-			hosts[i] = string(svcConfig.Host)
-			languages[i] = string(svcConfig.Language)
-			i++
+			hosts = append(hosts, string(svcConfig.Host))
+			for _, component := range svcConfig.Components {
+				languages = append(languages, string(component.Language))
+			}
 		}
 
 		slices.Sort(hosts)

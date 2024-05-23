@@ -365,7 +365,15 @@ func prjConfigFromDetect(
 		if !supported {
 			continue
 		}
-		svc.Language = language
+
+		mainComponent := &project.ComponentConfig{
+			Service: &svc,
+		}
+		svc.Components = map[string]*project.ComponentConfig{
+			project.DefaultComponentName: mainComponent,
+		}
+
+		mainComponent.Language = language
 
 		if prj.Docker != nil {
 			relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
@@ -373,7 +381,7 @@ func prjConfigFromDetect(
 				return project.ProjectConfig{}, err
 			}
 
-			svc.Docker = project.DockerProjectOptions{
+			mainComponent.Docker = project.DockerProjectOptions{
 				Path: relDocker,
 			}
 		}
@@ -382,25 +390,25 @@ func prjConfigFromDetect(
 			// By default, use 'dist'. This is common for frameworks such as:
 			// - TypeScript
 			// - Vite
-			svc.OutputPath = "dist"
+			mainComponent.OutputPath = "dist"
 
 		loop:
 			for _, dep := range prj.Dependencies {
 				switch dep {
 				case appdetect.JsNext:
 					// next.js works as SSR with default node configuration without static build output
-					svc.OutputPath = ""
+					mainComponent.OutputPath = ""
 					break loop
 				case appdetect.JsVite:
-					svc.OutputPath = "dist"
+					mainComponent.OutputPath = "dist"
 					break loop
 				case appdetect.JsReact:
 					// react from create-react-app uses 'build' when used, but this can be overridden
 					// by choice of build tool, such as when using Vite.
-					svc.OutputPath = "build"
+					mainComponent.OutputPath = "build"
 				case appdetect.JsAngular:
 					// angular uses dist/<project name>
-					svc.OutputPath = "dist/" + filepath.Base(rel)
+					mainComponent.OutputPath = "dist/" + filepath.Base(rel)
 					break loop
 				}
 			}

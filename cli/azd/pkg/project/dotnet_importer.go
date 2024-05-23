@@ -185,48 +185,11 @@ func (ai *DotNetImporter) Services(
 
 		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
 		svc := &ServiceConfig{
-			ComponentConfig: &ComponentConfig{
-				RelativePath: relPath,
-				Language:     ServiceLanguageDotNet,
-				Host:         DotNetContainerAppTarget,
-			},
-		}
-
-		svc.Name = name
-		svc.Project = p
-		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
-
-		svc.Project.Infra.Provider, err = provisioning.ParseProvider(svc.Project.Infra.Provider)
-		if err != nil {
-			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
-		}
-
-		svc.DotNetContainerApp = &DotNetContainerAppOptions{
-			Manifest:    manifest,
-			ProjectName: name,
-			AppHostPath: svcConfig.Path(),
-		}
-
-		services[svc.Name] = svc
-	}
-
-	dockerfiles := apphost.Dockerfiles(manifest)
-	for name, dockerfile := range dockerfiles {
-		relPath, err := filepath.Rel(p.Path, filepath.Dir(dockerfile.Path))
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
-		svc := &ServiceConfig{
-			ComponentConfig: &ComponentConfig{
-				RelativePath: relPath,
-				Language:     ServiceLanguageDocker,
-				Host:         DotNetContainerAppTarget,
-				Docker: DockerProjectOptions{
-					Path:      dockerfile.Path,
-					Context:   dockerfile.Context,
-					BuildArgs: mapToStringSlice(dockerfile.BuildArgs, "="),
+			Host: DotNetContainerAppTarget,
+			Components: map[string]*ComponentConfig{
+				DefaultComponentName: {
+					RelativePath: relPath,
+					Language:     ServiceLanguageDotNet,
 				},
 			},
 		}
@@ -243,7 +206,48 @@ func (ai *DotNetImporter) Services(
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			Manifest:    manifest,
 			ProjectName: name,
-			AppHostPath: svcConfig.Path(),
+			AppHostPath: svcConfig.Components[DefaultComponentName].Path(),
+		}
+
+		services[svc.Name] = svc
+	}
+
+	dockerfiles := apphost.Dockerfiles(manifest)
+	for name, dockerfile := range dockerfiles {
+		relPath, err := filepath.Rel(p.Path, filepath.Dir(dockerfile.Path))
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
+		svc := &ServiceConfig{
+			Host: DotNetContainerAppTarget,
+			Components: map[string]*ComponentConfig{
+				DefaultComponentName: {
+					RelativePath: relPath,
+					Language:     ServiceLanguageDocker,
+					Docker: DockerProjectOptions{
+						Path:      dockerfile.Path,
+						Context:   dockerfile.Context,
+						BuildArgs: mapToStringSlice(dockerfile.BuildArgs, "="),
+					},
+				},
+			},
+		}
+
+		svc.Name = name
+		svc.Project = p
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
+
+		svc.Project.Infra.Provider, err = provisioning.ParseProvider(svc.Project.Infra.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.DotNetContainerApp = &DotNetContainerAppOptions{
+			Manifest:    manifest,
+			ProjectName: name,
+			AppHostPath: svcConfig.Components[DefaultComponentName].Path(),
 		}
 
 		services[svc.Name] = svc
@@ -253,10 +257,12 @@ func (ai *DotNetImporter) Services(
 	for name, container := range containers {
 		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
 		svc := &ServiceConfig{
-			ComponentConfig: &ComponentConfig{
-				RelativePath: svcConfig.RelativePath,
-				Language:     ServiceLanguageDotNet,
-				Host:         DotNetContainerAppTarget,
+			Host: DotNetContainerAppTarget,
+			Components: map[string]*ComponentConfig{
+				DefaultComponentName: {
+					RelativePath: svcConfig.Components[DefaultComponentName].RelativePath,
+					Language:     ServiceLanguageDotNet,
+				},
 			},
 		}
 
@@ -273,7 +279,7 @@ func (ai *DotNetImporter) Services(
 			ContainerImage: container.Image,
 			Manifest:       manifest,
 			ProjectName:    name,
-			AppHostPath:    svcConfig.Path(),
+			AppHostPath:    svcConfig.Components[DefaultComponentName].Path(),
 		}
 
 		services[svc.Name] = svc
@@ -348,7 +354,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}
 
-		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
+		normalPath, err := filepath.EvalSymlinks(svcConfig.Components[DefaultComponentName].Path())
 		if err != nil {
 			return err
 		}
@@ -400,7 +406,7 @@ func (ai *DotNetImporter) ReadManifest(ctx context.Context, svcConfig *ServiceCo
 	}
 
 	cacheKey := manifestCacheKey{
-		projectPath:       svcConfig.Path(),
+		projectPath:       svcConfig.Components[DefaultComponentName].Path(),
 		dotnetEnvironment: dotnetEnv,
 	}
 
@@ -409,7 +415,7 @@ func (ai *DotNetImporter) ReadManifest(ctx context.Context, svcConfig *ServiceCo
 	}
 
 	ai.console.ShowSpinner(ctx, "Analyzing Aspire Application (this might take a moment...)", input.Step)
-	manifest, err := apphost.ManifestFromAppHost(ctx, svcConfig.Path(), ai.dotnetCli, dotnetEnv)
+	manifest, err := apphost.ManifestFromAppHost(ctx, svcConfig.Components[DefaultComponentName].Path(), ai.dotnetCli, dotnetEnv)
 	ai.console.StopSpinner(ctx, "", input.Step)
 	if err != nil {
 		return nil, err

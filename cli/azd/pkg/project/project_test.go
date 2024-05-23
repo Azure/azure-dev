@@ -279,10 +279,10 @@ func TestMinimalYaml(t *testing.T) {
 		{
 			"minimal-service",
 			ServiceConfig{
+				Host: AppServiceTarget,
 				ComponentConfig: &ComponentConfig{
 					Name:         "ignored",
 					Language:     ServiceLanguagePython,
-					Host:         AppServiceTarget,
 					RelativePath: "./src",
 				},
 			},
@@ -290,10 +290,10 @@ func TestMinimalYaml(t *testing.T) {
 		{
 			"minimal-docker",
 			ServiceConfig{
+				Host: ContainerAppTarget,
 				ComponentConfig: &ComponentConfig{
 					Name:     "ignored",
 					Language: ServiceLanguageDotNet,
-					Host:     ContainerAppTarget,
 					Docker: DockerProjectOptions{
 						Path: "./Dockerfile",
 					},

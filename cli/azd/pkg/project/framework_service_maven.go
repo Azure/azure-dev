@@ -53,7 +53,7 @@ func (m *mavenProject) RequiredExternalTools(context.Context) []tools.ExternalTo
 
 // Initializes the maven project
 func (m *mavenProject) Initialize(ctx context.Context, component *ComponentConfig) error {
-	m.mavenCli.SetPath(component.Path(), component.Project.Path)
+	m.mavenCli.SetPath(component.Path(), component.Service.Project.Path)
 	return nil
 }
 

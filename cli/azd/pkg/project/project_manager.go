@@ -138,7 +138,12 @@ func (pm *projectManager) DefaultServiceFromWd(
 	}
 
 	for _, svcConfig := range servicesStable {
-		if wd == svcConfig.Path() {
+		main, err := svcConfig.Main()
+		if err != nil {
+			return nil, err
+		}
+
+		if wd == main.Path() {
 			return svcConfig, nil
 		}
 	}

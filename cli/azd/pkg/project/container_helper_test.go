@@ -32,9 +32,9 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	projectName := "my-app"
 	serviceName := "web"
 	serviceConfig := &ServiceConfig{
+		Host: "containerapp",
 		ComponentConfig: &ComponentConfig{
 			Name: serviceName,
-			Host: "containerapp",
 			Project: &ProjectConfig{
 				Name: projectName,
 			},

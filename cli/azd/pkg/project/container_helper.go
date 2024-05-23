@@ -97,8 +97,9 @@ func (ch *ContainerHelper) GeneratedImage(
 
 	// Set default image name if not configured
 	if configuredImage == "" {
-		configuredImage = fmt.Sprintf("%s/%s-%s",
-			strings.ToLower(component.Project.Name),
+		configuredImage = fmt.Sprintf("%s/%s/%s-%s",
+			strings.ToLower(component.Service.Project.Name),
+			strings.ToLower(component.Service.Name),
 			strings.ToLower(component.Name),
 			strings.ToLower(ch.env.Name()),
 		)

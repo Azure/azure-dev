@@ -161,10 +161,10 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 		Path: "path",
 		Services: map[string]*ServiceConfig{
 			"test": {
+				Host: StaticWebAppTarget,
 				ComponentConfig: &ComponentConfig{
 					Name:         "test",
 					Language:     ServiceLanguageDotNet,
-					Host:         StaticWebAppTarget,
 					RelativePath: "path",
 					Project: &ProjectConfig{
 						Path: "path",
@@ -340,10 +340,10 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
+				Host: ContainerAppTarget,
 				ComponentConfig: &ComponentConfig{
 					Name:         "test",
 					Language:     ServiceLanguageDotNet,
-					Host:         ContainerAppTarget,
 					RelativePath: "path",
 					Project: &ProjectConfig{
 						Path: "path",
@@ -369,10 +369,10 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	_, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
+				Host: ContainerAppTarget,
 				ComponentConfig: &ComponentConfig{
 					Name:         "test",
 					Language:     ServiceLanguageDotNet,
-					Host:         ContainerAppTarget,
 					RelativePath: "path",
 					Project: &ProjectConfig{
 						Path: "path",

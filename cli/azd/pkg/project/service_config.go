@@ -1,6 +1,7 @@
 package project
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -8,11 +9,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-const defaultComponentName = "main"
+const DefaultComponentName = "main"
 
 type ServiceConfig struct {
-	*ComponentConfig `yaml:",inline"`
-
+	// The friendly name/key of the service from the azure.yaml file
+	Name string `yaml:"-"`
+	// Reference to the parent project configuration
+	Project *ProjectConfig `yaml:"-"`
+	// The relative path to the source folder from the project root
+	RelativePath string `yaml:"project,omitempty"`
+	// The azure hosting model to use, ex) appservice, function, containerapp
+	Host ServiceTargetKind `yaml:"host,omitempty"`
 	// The azure resource group to deploy the service to
 	ResourceGroupName osutil.ExpandableString `yaml:"resourceGroup,omitempty"`
 	// The name used to override the default azure resource name
@@ -34,17 +41,20 @@ type ServiceConfig struct {
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }
 
+func (sc *ServiceConfig) Path() string {
+	if filepath.IsAbs(sc.RelativePath) {
+		return sc.RelativePath
+	}
+	return filepath.Join(sc.Project.Path, sc.RelativePath)
+}
+
 // ComponentConfig is the configuration for a container based projects
 type ComponentConfig struct {
 	// Reference to the parent project configuration
-	Project *ProjectConfig `yaml:"-"`
-	// Reference to the parent project configuration
 	Service *ServiceConfig `yaml:"-"`
-	// The azure hosting model to use, ex) appservice, function, containerapp
-	Host ServiceTargetKind `yaml:"host,omitempty"`
 	// The friendly name/key of the project from the azure.yaml file
 	Name string `yaml:"-"`
-	// The relative path to the project folder from the project root
+	// The relative path to the source folder from the service root
 	RelativePath string `yaml:"project,omitempty"`
 	// The programming language of the project
 	Language ServiceLanguageKind `yaml:"language,omitempty"`
@@ -60,7 +70,7 @@ func (cc *ComponentConfig) Path() string {
 	if filepath.IsAbs(cc.RelativePath) {
 		return cc.RelativePath
 	}
-	return filepath.Join(cc.Project.Path, cc.RelativePath)
+	return filepath.Join(cc.Service.Path(), cc.RelativePath)
 }
 
 type DotNetContainerAppOptions struct {
@@ -71,12 +81,17 @@ type DotNetContainerAppOptions struct {
 	ContainerImage string
 }
 
-// Path returns the fully qualified path to the project
-func (sc *ServiceConfig) Path() string {
-	if filepath.IsAbs(sc.RelativePath) {
-		return sc.RelativePath
+// Main returns the main or default component configuration for the service
+func (sc *ServiceConfig) Main() (*ComponentConfig, error) {
+	if len(sc.Components) > 1 {
+		return nil, fmt.Errorf("Service '%s' has multiple components", sc.Name)
 	}
-	return filepath.Join(sc.Project.Path, sc.RelativePath)
+
+	for _, value := range sc.Components {
+		return value, nil
+	}
+
+	return nil, fmt.Errorf("Service '%s' has no components", sc.Name)
 }
 
 func (sc *ServiceConfig) MarshalYAML() (interface{}, error) {
@@ -84,17 +99,17 @@ func (sc *ServiceConfig) MarshalYAML() (interface{}, error) {
 
 	svc := serviceConfig(*sc)
 
-	// If there is only a single container and it maps to our "default" convention,
-	// then we can promote the container to the service level
-	if _, has := svc.Components[defaultComponentName]; has && len(svc.Components) == 1 {
-		svc.ComponentConfig = svc.Components[defaultComponentName]
-		svc.Components = nil
-	} else {
-		// Host can be ignored
-		for _, value := range svc.Components {
-			value.Host = ""
-		}
-	}
+	// // If there is only a single container and it maps to our "default" convention,
+	// // then we can promote the container to the service level
+	// if _, has := svc.Components[DefaultComponentName]; has && len(svc.Components) == 1 {
+	// 	svc.ComponentConfig = svc.Components[DefaultComponentName]
+	// 	svc.Components = nil
+	// } else {
+	// 	// Host can be ignored
+	// 	for _, value := range svc.Components {
+	// 		value.Service.Host = ""
+	// 	}
+	// }
 
 	return svc, nil
 }
@@ -108,14 +123,18 @@ func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	}
 
 	if len(svc.Components) == 0 {
+		var component ComponentConfig
+		if err := unmarshal(&component); err != nil {
+			return err
+		}
+
 		svc.Components = map[string]*ComponentConfig{
-			defaultComponentName: svc.ComponentConfig,
+			DefaultComponentName: &component,
 		}
 	}
 
-	for key, value := range svc.Components {
-		value.Name = key
-		value.Host = svc.Host
+	for key, component := range svc.Components {
+		component.Name = key
 	}
 
 	*sc = ServiceConfig(svc)

@@ -84,6 +84,12 @@ func (m *aiEndpointTarget) Deploy(
 
 		deployResult := &AiEndpointDeploymentResult{}
 
+		mainComponent, err := serviceConfig.Main()
+		if err != nil {
+			task.SetError(err)
+			return
+		}
+
 		// Initialize the AI project that will be used for the python bridge
 		task.SetProgress(NewServiceProgress("Initializing AI project"))
 		if err := m.aiHelper.Initialize(ctx); err != nil {
@@ -107,7 +113,7 @@ func (m *aiEndpointTarget) Deploy(
 		// Deploy flow
 		if endpointConfig.Flow != nil {
 			task.SetProgress(NewServiceProgress("Deploying AI Prompt Flow"))
-			flow, err := m.aiHelper.CreateFlow(ctx, workspaceScope, serviceConfig, endpointConfig.Flow)
+			flow, err := m.aiHelper.CreateFlow(ctx, workspaceScope, mainComponent, endpointConfig.Flow)
 			if err != nil {
 				task.SetError(err)
 				return
@@ -122,7 +128,7 @@ func (m *aiEndpointTarget) Deploy(
 			envVersion, err := m.aiHelper.CreateEnvironmentVersion(
 				ctx,
 				workspaceScope,
-				serviceConfig,
+				mainComponent,
 				endpointConfig.Environment,
 			)
 			if err != nil {
@@ -136,7 +142,7 @@ func (m *aiEndpointTarget) Deploy(
 		// Deploy model
 		if endpointConfig.Model != nil {
 			task.SetProgress(NewServiceProgress("Configuring AI model"))
-			modelVersion, err := m.aiHelper.CreateModelVersion(ctx, workspaceScope, serviceConfig, endpointConfig.Model)
+			modelVersion, err := m.aiHelper.CreateModelVersion(ctx, workspaceScope, mainComponent, endpointConfig.Model)
 			if err != nil {
 				task.SetError(err)
 				return
@@ -152,7 +158,7 @@ func (m *aiEndpointTarget) Deploy(
 			onlineDeployment, err := m.aiHelper.DeployToEndpoint(
 				ctx,
 				workspaceScope,
-				serviceConfig,
+				mainComponent,
 				endpointName,
 				endpointConfig,
 			)

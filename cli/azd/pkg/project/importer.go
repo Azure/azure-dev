@@ -54,8 +54,13 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 	allServices := make(map[string]*ServiceConfig)
 
 	for name, svcConfig := range projectConfig.Services {
-		if svcConfig.Language == ServiceLanguageDotNet {
-			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
+		main, err := svcConfig.Main()
+		if err != nil {
+			return nil, err
+		}
+
+		if main.Language == ServiceLanguageDotNet {
+			if canImport, err := im.dotNetImporter.CanImport(ctx, main.Path()); canImport {
 				if len(projectConfig.Services) != 1 {
 					return nil, errNoMultipleServicesWithAppHost
 				}
@@ -79,7 +84,7 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 
 				continue
 			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
+				log.Printf("error checking if %s is an app host project: %v", main.Path(), err)
 			}
 		}
 
@@ -131,8 +136,13 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 	}
 
 	for _, svcConfig := range projectConfig.Services {
-		if svcConfig.Language == ServiceLanguageDotNet {
-			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
+		main, err := svcConfig.Main()
+		if err != nil {
+			return nil, err
+		}
+
+		if main.Language == ServiceLanguageDotNet {
+			if canImport, err := im.dotNetImporter.CanImport(ctx, main.Path()); canImport {
 				if len(projectConfig.Services) != 1 {
 					return nil, errNoMultipleServicesWithAppHost
 				}
@@ -143,7 +153,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 				return im.dotNetImporter.ProjectInfrastructure(ctx, svcConfig)
 			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
+				log.Printf("error checking if %s is an app host project: %v", main.Path(), err)
 			}
 		}
 	}
@@ -168,7 +178,12 @@ func pathHasModule(path, module string) (bool, error) {
 
 func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
-		if svcConfig.Language == ServiceLanguageDotNet {
+		main, err := svcConfig.Main()
+		if err != nil {
+			return nil, err
+		}
+
+		if main.Language == ServiceLanguageDotNet {
 			if len(projectConfig.Services) != 1 {
 				return nil, errNoMultipleServicesWithAppHost
 			}

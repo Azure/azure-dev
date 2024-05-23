@@ -67,6 +67,13 @@ func (at *staticWebAppTarget) Package(
 				return
 			}
 
+			mainComponent, err := serviceConfig.Main()
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			packagePath := mainComponent.OutputPath
 			// packageOutput.PackagePath != "" -> This means swa framework service is not used to build/deploy and there
 			// is no a swa-cli.config.json file to govern the output.
 			// In this case, the serviceConfig.OutputPath (azure.yaml -> service -> dist) defines where is the output from
@@ -74,7 +81,6 @@ func (at *staticWebAppTarget) Package(
 			// If serviceConfig.OutputPath is not defined, azd should use the package path defined by the language framework
 			// service.
 
-			packagePath := serviceConfig.OutputPath
 			if strings.TrimSpace(packagePath) == "" {
 				packagePath = packageOutput.PackagePath
 			}
@@ -107,6 +113,12 @@ func (at *staticWebAppTarget) Deploy(
 				return
 			}
 
+			mainComponent, err := serviceConfig.Main()
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
 			// Get the static webapp deployment token
 			task.SetProgress(NewServiceProgress("Retrieving deployment token"))
 			deploymentToken, err := at.cli.GetStaticWebAppApiKey(
@@ -135,6 +147,7 @@ func (at *staticWebAppTarget) Deploy(
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
+				mainComponent.RelativePath,
 				DefaultStaticWebAppEnvironmentName,
 				*deploymentToken,
 				dOptions)

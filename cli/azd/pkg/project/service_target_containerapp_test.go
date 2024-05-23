@@ -208,7 +208,7 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  convert.RefOf(defaultComponentName),
+						Name:  convert.RefOf(DefaultComponentName),
 						Image: &originalImageName,
 					},
 				},
@@ -221,7 +221,7 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  convert.RefOf(defaultComponentName),
+						Name:  convert.RefOf(DefaultComponentName),
 						Image: &updatedRevisionName,
 					},
 				},

@@ -19,8 +19,13 @@ func appHostForProject(
 	ctx context.Context, pc *project.ProjectConfig, dotnetCli dotnet.DotNetCli,
 ) (*project.ServiceConfig, error) {
 	for _, service := range pc.Services {
-		if service.Language == project.ServiceLanguageDotNet {
-			isAppHost, err := dotnetCli.GetMsBuildProperty(ctx, service.Path(), "IsAspireHost")
+		mainComponent, err := service.Main()
+		if err != nil {
+			return nil, err
+		}
+
+		if mainComponent.Language == project.ServiceLanguageDotNet {
+			isAppHost, err := dotnetCli.GetMsBuildProperty(ctx, mainComponent.Path(), "IsAspireHost")
 			if err != nil {
 				log.Printf("error checking if %s is an app host project: %v", service.Path(), err)
 			}
@@ -76,8 +81,13 @@ func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 	}
 
 	for _, svc := range prjConfig.Services {
-		if svc.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget {
-			if svc.Path() != hostProjectPath {
+		mainComponent, err := svc.Main()
+		if err != nil {
+			return nil, err
+		}
+
+		if mainComponent.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget {
+			if mainComponent.Path() != hostProjectPath {
 				log.Printf("ignoring %s due to mismatch, using app host directory", azdCtx.ProjectPath())
 				return azdcontext.NewAzdContextWithDirectory(hostProjectDir), nil
 			}

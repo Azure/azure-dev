@@ -81,7 +81,7 @@ func Test_AiHelper_CreateEnvironmentVersion(t *testing.T) {
 		Path: "./deployment/environment.yaml",
 	}
 
-	createTestFile(t, testDir, filepath.Join(serviceConfig.RelativePath, environmentConfig.Path))
+	createTestFile(t, testDir, filepath.Join(serviceConfig.Components[DefaultComponentName].RelativePath, environmentConfig.Path))
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
 	envVersion, err := aiHelper.CreateEnvironmentVersion(*mockContext.Context, scope, serviceConfig, environmentConfig)
@@ -129,7 +129,7 @@ func Test_AiHelper_CreateModelVersion(t *testing.T) {
 		Path: "./deployment/model.yaml",
 	}
 
-	createTestFile(t, testDir, filepath.Join(serviceConfig.RelativePath, modelConfig.Path))
+	createTestFile(t, testDir, filepath.Join(serviceConfig.Components[DefaultComponentName].RelativePath, modelConfig.Path))
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
 	modelVersion, err := aiHelper.CreateModelVersion(*mockContext.Context, scope, serviceConfig, modelConfig)
@@ -208,7 +208,7 @@ func Test_AiHelper_CreateFlow(t *testing.T) {
 		Path: "./my-flow",
 	}
 
-	createTestFile(t, testDir, filepath.Join(serviceConfig.RelativePath, filepath.Join(flowConfig.Path, "flow.dag.yaml")))
+	createTestFile(t, testDir, filepath.Join(serviceConfig.Components[DefaultComponentName].RelativePath, filepath.Join(flowConfig.Path, "flow.dag.yaml")))
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
 	flow, err := aiHelper.CreateFlow(*mockContext.Context, scope, serviceConfig, flowConfig)
@@ -291,7 +291,7 @@ func Test_AiHelper_DeployToEndpoint(t *testing.T) {
 		},
 	}
 
-	createTestFile(t, testDir, filepath.Join(serviceConfig.RelativePath, endpointConfig.Deployment.Path))
+	createTestFile(t, testDir, filepath.Join(serviceConfig.Components[DefaultComponentName].RelativePath, endpointConfig.Deployment.Path))
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
 	deployment, err := aiHelper.DeployToEndpoint(*mockContext.Context, scope, serviceConfig, endpointName, endpointConfig)

@@ -53,14 +53,14 @@ type AiHelper interface {
 	CreateEnvironmentVersion(
 		ctx context.Context,
 		scope *ai.Scope,
-		serviceConfig *ServiceConfig,
+		component *ComponentConfig,
 		config *ai.ComponentConfig,
 	) (*armmachinelearning.EnvironmentVersion, error)
 	// CreateModelVersion creates a new model version
 	CreateModelVersion(
 		ctx context.Context,
 		scope *ai.Scope,
-		serviceConfig *ServiceConfig,
+		component *ComponentConfig,
 		config *ai.ComponentConfig,
 	) (*armmachinelearning.ModelVersion, error)
 	// GetEndpoint retrieves an online endpoint
@@ -69,7 +69,7 @@ type AiHelper interface {
 	DeployToEndpoint(
 		ctx context.Context,
 		scope *ai.Scope,
-		serviceConfig *ServiceConfig,
+		component *ComponentConfig,
 		endpointName string,
 		config *ai.EndpointDeploymentConfig,
 	) (*armmachinelearning.OnlineDeployment, error)
@@ -86,7 +86,7 @@ type AiHelper interface {
 	CreateFlow(
 		ctx context.Context,
 		scope *ai.Scope,
-		serviceConfig *ServiceConfig,
+		component *ComponentConfig,
 		config *ai.ComponentConfig,
 	) (*ai.Flow, error)
 }
@@ -191,10 +191,10 @@ func (a *aiHelper) ValidateWorkspace(
 func (a *aiHelper) CreateEnvironmentVersion(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.ComponentConfig,
 ) (*armmachinelearning.EnvironmentVersion, error) {
-	yamlFilePath := filepath.Join(serviceConfig.Path(), config.Path)
+	yamlFilePath := filepath.Join(component.Path(), config.Path)
 	_, err := os.Stat(yamlFilePath)
 	if err != nil {
 		return nil, err
@@ -206,7 +206,7 @@ func (a *aiHelper) CreateEnvironmentVersion(
 	}
 
 	if environmentName == "" {
-		environmentName = fmt.Sprintf("%s-environment", serviceConfig.Name)
+		environmentName = fmt.Sprintf("%s-environment", component.Service.Name)
 	}
 
 	nextVersion := "1"
@@ -269,10 +269,10 @@ func (a *aiHelper) CreateEnvironmentVersion(
 func (a *aiHelper) CreateModelVersion(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.ComponentConfig,
 ) (*armmachinelearning.ModelVersion, error) {
-	yamlFilePath := filepath.Join(serviceConfig.Path(), config.Path)
+	yamlFilePath := filepath.Join(component.Path(), config.Path)
 	_, err := os.Stat(yamlFilePath)
 	if err != nil {
 		return nil, err
@@ -284,7 +284,7 @@ func (a *aiHelper) CreateModelVersion(
 	}
 
 	if modelName == "" {
-		modelName = fmt.Sprintf("%s-model", serviceConfig.Name)
+		modelName = fmt.Sprintf("%s-model", component.Service.Name)
 	}
 
 	nextVersion := "1"
@@ -367,18 +367,18 @@ func (a *aiHelper) GetEndpoint(
 func (a *aiHelper) DeployToEndpoint(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	endpointName string,
 	config *ai.EndpointDeploymentConfig,
 ) (*armmachinelearning.OnlineDeployment, error) {
 	// Get the custom environment name if configured
-	environmentVersionName, err := a.getEnvironmentVersionName(ctx, scope, serviceConfig, config)
+	environmentVersionName, err := a.getEnvironmentVersionName(ctx, scope, component, config)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get the custom model name if configured
-	modelVersionName, err := a.getModelVersionName(ctx, scope, serviceConfig, config)
+	modelVersionName, err := a.getModelVersionName(ctx, scope, component, config)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +395,7 @@ func (a *aiHelper) DeployToEndpoint(
 	const maxDeploymentNameLength = 32
 
 	if deploymentName == "" {
-		deploymentName = fmt.Sprintf("%s-deployment", serviceConfig.Name)
+		deploymentName = fmt.Sprintf("%s-deployment", component.Service.Name)
 	}
 
 	timestampSuffix := fmt.Sprintf("-%d", a.clock.Now().Unix())
@@ -415,7 +415,7 @@ func (a *aiHelper) DeployToEndpoint(
 		)
 	}
 
-	yamlFilePath := filepath.Join(serviceConfig.Path(), config.Deployment.Path)
+	yamlFilePath := filepath.Join(component.Path(), config.Deployment.Path)
 	_, err = os.Stat(yamlFilePath)
 	if err != nil {
 		return nil, err
@@ -584,7 +584,7 @@ func (a *aiHelper) UpdateTraffic(
 func (a *aiHelper) CreateFlow(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.ComponentConfig,
 ) (*ai.Flow, error) {
 	flowName, err := config.Name.Envsubst(a.env.Getenv)
@@ -593,12 +593,12 @@ func (a *aiHelper) CreateFlow(
 	}
 
 	if flowName == "" {
-		flowName = fmt.Sprintf("%s-flow", serviceConfig.Name)
+		flowName = fmt.Sprintf("%s-flow", component.Service.Name)
 	}
 
 	flowName = fmt.Sprintf("%s-%d", flowName, a.clock.Now().Unix())
 
-	flowPath := filepath.Join(serviceConfig.Path(), config.Path)
+	flowPath := filepath.Join(component.Path(), config.Path)
 	_, err = os.Stat(flowPath)
 	if err != nil {
 		return nil, err
@@ -691,7 +691,7 @@ func (a *aiHelper) pollForDeployment(
 func (a *aiHelper) getEnvironmentVersionName(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.EndpointDeploymentConfig,
 ) (string, error) {
 	if config.Environment == nil {
@@ -704,7 +704,7 @@ func (a *aiHelper) getEnvironmentVersionName(
 	}
 
 	if environmentName == "" {
-		environmentName = fmt.Sprintf("%s-environment", serviceConfig.Name)
+		environmentName = fmt.Sprintf("%s-environment", component.Service.Name)
 	}
 
 	envGetResponse, err := a.envContainersClient.Get(
@@ -730,7 +730,7 @@ func (a *aiHelper) getEnvironmentVersionName(
 func (a *aiHelper) getModelVersionName(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.EndpointDeploymentConfig,
 ) (string, error) {
 	if config.Model == nil {
@@ -743,7 +743,7 @@ func (a *aiHelper) getModelVersionName(
 	}
 
 	if modelName == "" {
-		modelName = fmt.Sprintf("%s-model", serviceConfig.Name)
+		modelName = fmt.Sprintf("%s-model", component.Service.Name)
 	}
 
 	modelGetResponse, err := a.modelContainersClient.Get(

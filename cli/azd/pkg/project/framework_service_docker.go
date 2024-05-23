@@ -214,8 +214,9 @@ func (p *dockerProject) Build(
 			)
 
 			imageName := fmt.Sprintf(
-				"%s-%s",
-				strings.ToLower(component.Project.Name),
+				"%s-%s-%s",
+				strings.ToLower(component.Service.Project.Name),
+				strings.ToLower(component.Service.Name),
 				strings.ToLower(component.Name),
 			)
 

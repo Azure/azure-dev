@@ -61,7 +61,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context, component *ComponentCon
 	//
 	// We'd like to stop doing this at some point for all .NET projects, but we can make sure that we don't inherit the
 	// bad behavior for containerized projects, without being concerned about it being considered a breaking change.
-	if component.Host != DotNetContainerAppTarget {
+	if component.Service.Host != DotNetContainerAppTarget {
 		projFile, err := findProjectFile(component.Name, component.Path())
 		if err != nil {
 			return err
@@ -156,7 +156,7 @@ func (dp *dotnetProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			if component.Host == DotNetContainerAppTarget {
+			if component.Service.Host == DotNetContainerAppTarget {
 				// TODO(weilim): For containerized projects, we publish the produced container image in a single call
 				// via `dotnet publish /p:PublishProfile=DefaultContainer`, thus the default `dotnet publish` command
 				// executed here is not useful.

@@ -238,9 +238,9 @@ func Test_ServiceConfig_Unmarshall(t *testing.T) {
 				require.Equal(t, "./src/api", proj.Services["api"].RelativePath)
 
 				// Expect the same values to be available in the container configuration
-				require.Equal(t, AksTarget, proj.Services["api"].Components[defaultComponentName].Host)
-				require.Equal(t, ServiceLanguageJavaScript, proj.Services["api"].Components[defaultComponentName].Language)
-				require.Equal(t, "./src/api", proj.Services["api"].Components[defaultComponentName].RelativePath)
+				require.Equal(t, AksTarget, proj.Services["api"].Components[DefaultComponentName].Service.Host)
+				require.Equal(t, ServiceLanguageJavaScript, proj.Services["api"].Components[DefaultComponentName].Language)
+				require.Equal(t, "./src/api", proj.Services["api"].Components[DefaultComponentName].RelativePath)
 			},
 		},
 		{
@@ -294,9 +294,9 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 				Name: "test-proj",
 				Services: map[string]*ServiceConfig{
 					"api": {
+						Host: AksTarget,
 						Components: map[string]*ComponentConfig{
-							defaultComponentName: {
-								Host:         AksTarget,
+							DefaultComponentName: {
 								Language:     ServiceLanguageJavaScript,
 								RelativePath: "./src/api",
 							},
@@ -311,9 +311,8 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 				Name: "test-proj",
 				Services: map[string]*ServiceConfig{
 					"todo": {
-						ComponentConfig: &ComponentConfig{
-							Host: AksTarget,
-						},
+						Host:            AksTarget,
+						ComponentConfig: &ComponentConfig{},
 						Components: map[string]*ComponentConfig{
 							"api": {
 								Language:     ServiceLanguageJavaScript,
@@ -334,9 +333,8 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 				Name: "test-proj",
 				Services: map[string]*ServiceConfig{
 					"todo": {
-						ComponentConfig: &ComponentConfig{
-							Host: AksTarget,
-						},
+						Host:            AksTarget,
+						ComponentConfig: &ComponentConfig{},
 						Components: map[string]*ComponentConfig{
 							"api": {
 								Language:     ServiceLanguageJavaScript,
@@ -353,9 +351,8 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 				Name: "test-proj",
 				Services: map[string]*ServiceConfig{
 					"todo": {
-						ComponentConfig: &ComponentConfig{
-							Host: ContainerAppTarget,
-						},
+						Host:            ContainerAppTarget,
+						ComponentConfig: &ComponentConfig{},
 						Components: map[string]*ComponentConfig{
 							"main": {
 								Language:     ServiceLanguageJavaScript,
@@ -396,19 +393,18 @@ func createTestServiceConfig(path string, host ServiceTargetKind, language Servi
 
 	componentConfig := &ComponentConfig{
 		Name:         "api",
-		Host:         host,
 		Language:     language,
 		RelativePath: filepath.Join(path),
-		Project:      projectConfig,
 	}
 
 	serviceConfig := &ServiceConfig{
-		ComponentConfig: componentConfig,
+		Project:         projectConfig,
+		Host:            host,
 		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
-		Components:      map[string]*ComponentConfig{defaultComponentName: componentConfig},
+		Components:      map[string]*ComponentConfig{DefaultComponentName: componentConfig},
 	}
 
-	serviceConfig.ComponentConfig.Service = serviceConfig
+	componentConfig.Service = serviceConfig
 
 	return serviceConfig
 }

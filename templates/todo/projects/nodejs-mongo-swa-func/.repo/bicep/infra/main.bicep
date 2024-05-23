@@ -25,7 +25,7 @@ param resourceGroupName string = ''
 param storageAccountName string = ''
 param webServiceName string = ''
 param apimServiceName string = ''
-param connectionStringKey string = 'AZURE-SQL-CONNECTION-STRING'
+param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 param collections array = [
   {
     name: 'TodoList'

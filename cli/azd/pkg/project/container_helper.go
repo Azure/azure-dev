@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -14,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/benbjohnson/clock"
 )
 
@@ -24,6 +26,7 @@ type ContainerHelper struct {
 	docker                   docker.Docker
 	clock                    clock.Clock
 	cloud                    *cloud.Cloud
+	dotNetCli                dotnet.DotNetCli
 }
 
 func NewContainerHelper(
@@ -33,6 +36,7 @@ func NewContainerHelper(
 	containerRegistryService azcli.ContainerRegistryService,
 	docker docker.Docker,
 	cloud *cloud.Cloud,
+	dotnetCli dotnet.DotNetCli,
 ) *ContainerHelper {
 	return &ContainerHelper{
 		env:                      env,
@@ -41,6 +45,7 @@ func NewContainerHelper(
 		docker:                   docker,
 		clock:                    clock,
 		cloud:                    cloud,
+		dotNetCli:                dotnetCli,
 	}
 }
 
@@ -216,6 +221,52 @@ func (ch *ContainerHelper) Deploy(
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+			if dotnetDetails, ok := packageOutput.Details.(*dotNetSdkPublishConfiguration); ok {
+				task.SetProgress(NewServiceProgress("Logging into container registry"))
+				dockerCreds, err := ch.Credentials(ctx, serviceConfig, targetResource)
+				if err != nil {
+					task.SetError(fmt.Errorf("getting docker credentials: %w", err))
+					return
+				}
+
+				task.SetProgress(NewServiceProgress("Building and pushing container image"))
+				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
+
+				_, err = ch.dotNetCli.PublishContainer(
+					ctx,
+					dotnetDetails.ProjectPath,
+					"Release",
+					imageName,
+					dockerCreds.LoginServer,
+					dockerCreds.Username,
+					dockerCreds.Password)
+				if err != nil {
+					task.SetError(fmt.Errorf("publishing container: %w", err))
+					return
+				}
+
+				remoteImage := fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
+
+				if writeImageToEnv {
+					// Save the name of the image we pushed into the environment with a well known key.
+					log.Printf("writing image name to environment")
+					ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
+
+					if err := ch.envManager.Save(ctx, ch.env); err != nil {
+						task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+						return
+					}
+				}
+
+				task.SetResult(&ServiceDeployResult{
+					Package: packageOutput,
+					Details: &dockerDeployResult{
+						RemoteImageTag: remoteImage,
+					},
+				})
+				return
+			}
+
 			// Get ACR Login Server
 			registryName, err := ch.RegistryName(ctx, serviceConfig)
 			if err != nil {

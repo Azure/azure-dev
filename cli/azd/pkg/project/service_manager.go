@@ -583,8 +583,14 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	// project that handles the containerization.
 	requiresLanguage := serviceConfig.Language != ServiceLanguageDocker && serviceConfig.Language != ServiceLanguageNone
 	if serviceConfig.Host.RequiresContainer() && requiresLanguage {
+		var serviceTargetType = string(ServiceLanguageDocker)
+
+		if serviceConfig.Language == ServiceLanguageDotNet {
+			serviceTargetType = string(ServiceLanguageDotNetContainerPublish)
+		}
+
 		var compositeFramework CompositeFrameworkService
-		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
+		if err := sm.serviceLocator.ResolveNamed(serviceTargetType, &compositeFramework); err != nil {
 			return nil, fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",
 				serviceConfig.Name,

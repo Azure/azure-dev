@@ -11,7 +11,7 @@ type dotNetContainerPublishProject struct {
 	inner FrameworkService
 }
 
-func NewDotNetContianerPublishProject() CompositeFrameworkService {
+func NewDotNetContainerPublishProject() CompositeFrameworkService {
 	return &dotNetContainerPublishProject{}
 }
 
@@ -69,8 +69,6 @@ func (dp *dotNetContainerPublishProject) Package(
 				ProjectPath: serviceConfig.Path(),
 			},
 		})
-
-		return
 	})
 }
 

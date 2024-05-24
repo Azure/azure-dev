@@ -101,7 +101,7 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 	})
 
 	if matchingIndex < 0 {
-		return nil, fmt.Errorf("%s %w", name, ErrNotFound)
+		return nil, fmt.Errorf("'%s': %w", name, ErrNotFound)
 	}
 
 	matchingEnv := envs[matchingIndex]
@@ -185,6 +185,38 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 		tracing.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
 	} else {
 		tracing.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
+	}
+
+	return nil
+}
+
+func (sbd *StorageBlobDataStore) Delete(ctx context.Context, name string) error {
+	envs, err := sbd.List(ctx)
+	if err != nil {
+		return describeError(err)
+	}
+
+	matchingIndex := slices.IndexFunc(envs, func(env *contracts.EnvListEnvironment) bool {
+		return env.Name == name
+	})
+
+	if matchingIndex < 0 {
+		return fmt.Errorf("'%s': %w", name, ErrNotFound)
+	}
+
+	env := envs[matchingIndex]
+	if env.ConfigPath != "" {
+		err := sbd.blobClient.Delete(ctx, env.ConfigPath)
+		if err != nil {
+			return fmt.Errorf("deleting remote config: %w", describeError(err))
+		}
+	}
+
+	if env.DotEnvPath != "" {
+		err := sbd.blobClient.Delete(ctx, env.DotEnvPath)
+		if err != nil {
+			return fmt.Errorf("deleting remote .env: %w", describeError(err))
+		}
 	}
 
 	return nil

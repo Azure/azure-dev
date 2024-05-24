@@ -1,3 +1,4 @@
+api-version: 2024-02-02-preview
 location: {{ .Env.AZURE_LOCATION }}
 identity:
   type: UserAssigned
@@ -8,27 +9,35 @@ properties:
   environmentId: {{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}
   configuration:
     activeRevisionsMode: single
+    runtime:
+      dotnet:
+        autoConfigureDataProtection: true
     ingress:
       external: true
-      targetPort: 3000
+      targetPort: {{ targetPortOrDefault 3000 }}
       transport: http
       allowInsecure: false
     registries:
-    - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
-      identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+      - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+        identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+    secrets:
+      - name: my-sql-connection-string
+        value: Server=mysqlabstract;Port=3306;User ID=root;Password={{ securedParameter "mysqlabstract_password" }}
   template:
     containers:
-    - image: {{ .Image }}
-      name: nodeapp
-      env:
-      - name: AZURE_CLIENT_ID
-        value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
-      - name: MY_SQL_CONNECTION_STRING
-        value: Server=mysqlabstract;Port=3306;User ID=root;Password={{ index .Inputs `mysqlabstract` `password` }}
-      - name: NODE_ENV
-        value: development
-      - name: PORT
-        value: "3000"
+      - image: {{ .Image }}
+        name: nodeapp
+        env:
+          - name: AZURE_CLIENT_ID
+            value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
+          - name: NODE_ENV
+            value: development
+          - name: PORT
+            value: "80"
+          - name: connectionStringUrl
+            value: http://nodeapp.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
+          - name: MY_SQL_CONNECTION_STRING
+            secretRef: my-sql-connection-string
     scale:
       minReplicas: 1
 tags:

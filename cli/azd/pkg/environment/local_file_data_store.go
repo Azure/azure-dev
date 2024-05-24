@@ -81,8 +81,11 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 // Get returns the environment instance for the specified environment name
 func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environment, error) {
 	root := fs.azdContext.EnvironmentRoot(name)
-	if _, err := os.Stat(root); err != nil {
-		return nil, fmt.Errorf("'%s' %w, %w", name, ErrNotFound, err)
+	_, err := os.Stat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("'%s': %w", name, ErrNotFound)
+	} else if err != nil {
+		return nil, fmt.Errorf("listing env root: %w", err)
 	}
 
 	env := New(name)
@@ -173,5 +176,21 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment) error 
 	}
 
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
+	return nil
+}
+
+func (fs *LocalFileDataStore) Delete(ctx context.Context, name string) error {
+	envRoot := fs.azdContext.EnvironmentRoot(name)
+	_, err := os.Stat(envRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("'%s': %w", name, ErrNotFound)
+	} else if err != nil {
+		return fmt.Errorf("listing env root: %w", err)
+	}
+
+	if err := os.RemoveAll(envRoot); err != nil {
+		return fmt.Errorf("removing env root: %w", err)
+	}
+
 	return nil
 }

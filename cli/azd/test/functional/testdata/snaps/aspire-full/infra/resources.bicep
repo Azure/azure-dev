@@ -1,5 +1,8 @@
 @description('The location used for all deployed resources')
 param location string = resourceGroup().location
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
@@ -45,10 +48,14 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
   tags: tags
 }
 
-resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
+resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-preview' = {
   name: 'cae-${resourceToken}'
   location: location
   properties: {
+    workloadProfiles: [{
+      workloadProfileType: 'Consumption'
+      name: 'consumption'
+    }]
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
@@ -58,99 +65,54 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
     }
   }
   tags: tags
+
+  resource aspireDashboard 'dotNetComponents' = {
+    name: 'aspire-dashboard'
+    properties: {
+      componentType: 'AspireDashboard'
+    }
+  }
+
 }
 
-resource cache 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: 'cache'
+resource explicitContributorUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerAppEnvironment.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c'))
+  scope: containerAppEnvironment
+  properties: {
+    principalId: principalId
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  }
+}
+
+resource kvf2edecb5 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: replace('kvf2edecb5-${resourceToken}', '-', '')
   location: location
   properties: {
-    environmentId: containerAppEnvironment.id
-    configuration: {
-      service: {
-        type: 'redis'
-      }
+    sku: {
+      name: 'standard'
+      family: 'A'
     }
-    template: {
-      containers: [
-        {
-          image: 'redis'
-          name: 'redis'
-        }
-      ]
-      scale: {
-        minReplicas: 1
-      }
-    }
-  }
-  tags: union(tags, {'aspire-resource-name': 'cache'})
-}
-
-resource pubsub 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: 'pubsub'
-  location: location
-  properties: {
-    environmentId: containerAppEnvironment.id
-    configuration: {
-      service: {
-        type: 'redis'
-      }
-    }
-    template: {
-      containers: [
-        {
-          image: 'redis'
-          name: 'redis'
-        }
-      ]
-      scale: {
-        minReplicas: 1
-      }
-    }
-  }
-  tags: union(tags, {'aspire-resource-name': 'pubsub'})
-}
-
-resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
-  name: replace('storage-${resourceToken}', '-', '')
-  location: location
-  kind: 'Storage'
-  sku: {
-    name: 'Standard_GRS'
-  }
-  tags: union(tags, {'aspire-resource-name': 'storage'})
-
-  resource blobs 'blobServices@2022-05-01' = {
-    name: 'default'
+    tenantId: subscription().tenantId
+    enableRbacAuthorization: true
   }
 }
 
-resource storageBlobsRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'))
-  scope: storage
+resource kvf2edecb5RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(kvf2edecb5.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483'))
+  scope: kvf2edecb5
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483')
   }
 }
 
-resource storageQueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88'))
-  scope: storage
+resource kvf2edecb5UserReadRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(kvf2edecb5.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6'))
+  scope: kvf2edecb5
   properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
-  }
-}
-
-resource storageTablesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'))
-  scope: storage
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
+    principalId: principalId
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
   }
 }
 
@@ -161,9 +123,9 @@ output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
 output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspace.id
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id
+output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = containerAppEnvironment.name
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
-output SERVICE_BINDING_MARKDOWN_ENDPOINT string = storage.properties.primaryEndpoints.blob
-output SERVICE_BINDING_REQUESTLOG_ENDPOINT string = storage.properties.primaryEndpoints.table
-output SERVICE_BINDING_MESSAGES_ENDPOINT string = storage.properties.primaryEndpoints.queue
+output SERVICE_BINDING_KVF2EDECB5_ENDPOINT string = kvf2edecb5.properties.vaultUri
+output SERVICE_BINDING_KVF2EDECB5_NAME string = kvf2edecb5.name
 

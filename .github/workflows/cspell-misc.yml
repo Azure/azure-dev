@@ -16,10 +16,10 @@ jobs:
   cspell-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
       - run: npm install -g cspell
       - name: Spell check for general files
         run: cspell lint '**/*' --config ./.vscode/cspell.misc.yaml --relative --no-progress

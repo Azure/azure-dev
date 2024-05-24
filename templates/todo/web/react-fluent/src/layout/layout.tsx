@@ -1,4 +1,4 @@
-import React, { FC, ReactElement, useContext, useEffect, useMemo } from 'react';
+import { FC, ReactElement, useContext, useEffect, useMemo } from 'react';
 import Header from './header';
 import Sidebar from './sidebar';
 import { Routes, Route, useNavigate } from 'react-router-dom';

@@ -11,13 +11,16 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -175,7 +178,7 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
 
-	if err := e.azdCtx.SetDefaultEnvironmentName(e.args[0]); err != nil {
+	if err := e.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: e.args[0]}); err != nil {
 		return nil, fmt.Errorf("setting default environment: %w", err)
 	}
 
@@ -327,7 +330,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	if err := en.azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
+	if err := en.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
@@ -396,6 +399,7 @@ type envRefreshAction struct {
 	projectManager   project.ProjectManager
 	env              *environment.Environment
 	envManager       environment.Manager
+	prompters        prompt.Prompter
 	flags            *envRefreshFlags
 	console          input.Console
 	formatter        output.Formatter
@@ -409,6 +413,7 @@ func newEnvRefreshAction(
 	projectManager project.ProjectManager,
 	env *environment.Environment,
 	envManager environment.Manager,
+	prompters prompt.Prompter,
 	flags *envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
@@ -420,6 +425,7 @@ func newEnvRefreshAction(
 		projectManager:   projectManager,
 		env:              env,
 		envManager:       envManager,
+		prompters:        prompters,
 		console:          console,
 		flags:            flags,
 		formatter:        formatter,
@@ -445,10 +451,18 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	if err := ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, infra.Options); err != nil {
+	// env refresh supports "BYOI" infrastructure where bicep isn't available
+	err = ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, infra.Options)
+	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
+		// If bicep is not available, we continue to prompt for subscription and location unfiltered
+		err = provisioning.EnsureSubscriptionAndLocation(ctx, ef.envManager, ef.env, ef.prompters,
+			func(_ account.Location) bool { return true })
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
-
 	// If resource group is defined within the project but not in the environment then
 	// add it to the environment to support BYOI lookup scenarios like ADE
 	// Infra providers do not currently have access to project configuration

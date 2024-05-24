@@ -47,7 +47,7 @@ variable "resource_token" {
 variable "node_version" {
   description = "the application stack node version to set for the app service."
   type        = string
-  default     = "18-lts"
+  default     = "20-lts"
 }
 
 variable "always_on" {

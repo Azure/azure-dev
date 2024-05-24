@@ -7,7 +7,7 @@ terraform {
   }
   required_providers {
     azurerm = {
-      version = "~>3.47.0"
+      version = "~>3.97.1"
       source  = "hashicorp/azurerm"
     }
     azurecaf = {
@@ -18,5 +18,6 @@ terraform {
 }
 
 provider "azurerm" {
+  skip_provider_registration = "true"
   features {}
 }

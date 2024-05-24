@@ -149,7 +149,7 @@ func (crs *containerRegistryService) getTokenCredentials(
 
 	// Set it to 00000000-0000-0000-0000-000000000000 as per documented in
 	//nolint:lll
-	// https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication?tabs=azure-cli#individual-login-with-microsoft-entra-id
+	// https://learn.microsoft.com/azure/container-registry/container-registry-authentication?tabs=azure-cli#individual-login-with-microsoft-entra-id
 	return &DockerCredentials{
 		Username:    "00000000-0000-0000-0000-000000000000",
 		Password:    acrToken.RefreshToken,

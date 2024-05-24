@@ -24,7 +24,7 @@ module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
     runtimeName: 'node'
-    runtimeVersion: '18'
+    runtimeVersion: '20'
     storageAccountName: storageAccountName
   }
 }

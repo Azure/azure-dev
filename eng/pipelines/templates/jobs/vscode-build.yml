@@ -1,0 +1,107 @@
+parameters:
+  - name: NameSuffix
+    type: string
+  - name: Pool
+    type: string
+  - name: ImageKey
+    type: string  
+    default: image
+  - name: OSVmImage
+    type: string
+  - name: OS
+    type: string
+  - name: Variables
+    type: object
+    default: {}
+
+jobs: 
+  - job: BuildVscode_${{ parameters.NameSuffix }}
+    displayName: BuildVscode ${{ parameters.NameSuffix }}
+
+    pool:
+      name: ${{ parameters.Pool }}
+      ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
+      os: ${{ parameters.OS }}
+
+    variables:
+      NodeVersion: 18.x
+      ${{ insert }}: ${{ parameters.Variables }}
+
+    steps:
+      - checkout: self
+      - task: NodeTool@0
+        inputs:
+          versionSpec: $(NodeVersion)
+
+      - pwsh: |
+          npm i -g npm vsce
+          npm ci --no-optional
+        workingDirectory: ext/vscode
+        displayName: Install dependencies
+
+      - pwsh: ./ci-test.ps1
+        workingDirectory: ext/vscode
+        displayName: Test
+
+      # Sets the version in package.json if this is a Continuous Deployment
+      # build.
+      - template: /eng/pipelines/templates/steps/set-vscode-version.yml
+
+      # Set PACKAGE_ARGS to an empty string so the version number is
+      # included in the filename (default behavior)
+      - pwsh: |
+          $buildReason = '$(Build.Reason)'
+          if ($env:BUILDREASONOVERRIDE) {
+            Write-Host "Build reason override: $($env:BUILDREASONOVERRIDE)"
+            $buildReason = $env:BUILDREASONOVERRIDE
+          }
+
+          $packageArgs = ''
+          if ($buildReason -in @('IndividualCI', 'BatchedCI')) {
+            Write-Host "CD build detected, using latest configuration for PACKAGE_ARGS"
+            $packageArgs = '--out azure-dev-latest.vsix'
+          }
+          Write-Host "##vso[task.setvariable variable=PACKAGE_ARGS;]$packageArgs"
+        displayName: Set PACKAGE_ARGS
+        condition: and(succeeded(), eq('true', variables['UploadArtifact']))
+
+      - pwsh: ./ci-package.ps1 -PackageArguments '$(PACKAGE_ARGS)'
+        condition: and(succeeded(), eq('true', variables['UploadArtifact']))
+        workingDirectory: ext/vscode
+        displayName: Package
+
+      - pwsh: New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/shield -Force
+        condition: and(succeeded(), eq('true', variables['UploadArtifact']))
+        displayName: Create shield artifact directory
+
+      - task: PowerShell@2
+        condition: and(succeeded(), eq('true', variables['UploadArtifact']))
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Set-ShieldInfo.ps1
+          arguments: >-
+            -TemplatePath eng/shields/vscode.json
+            -OutputPath $(Build.ArtifactStagingDirectory)/shield/vscode.json
+            -Version "$(VSIX_VERSION)"
+        displayName: Set shield info
+
+      - pwsh: |
+          New-Item -ItemType Directory -Force -Path build
+          Copy-Item *.vsix build/
+        workingDirectory: ext/vscode
+        condition: and(succeeded(), eq('true', variables['UploadArtifact']))
+        displayName: Copy *.vsix to build for upload
+
+    templateContext: 
+      outputs: 
+        - output: pipelineArtifact
+          path: $(Build.ArtifactStagingDirectory)/shield
+          condition: and(succeeded(), eq('true', variables['UploadArtifact']))
+          artifact: shield-vscode
+          displayName: Upload vscode shield json
+
+        - output: pipelineArtifact
+          path: ext/vscode/build
+          condition: and(succeeded(), eq('true', variables['UploadArtifact']))
+          artifact: vsix

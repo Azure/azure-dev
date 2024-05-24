@@ -16,16 +16,7 @@ import (
 )
 
 // PromptLocation asks the user to select a location from a list of supported azure locations for a given subscription.
-func PromptLocation(
-	ctx context.Context, subscriptionId string, message string, help string, console input.Console,
-	accountManager account.Manager,
-) (string, error) {
-	return PromptLocationWithFilter(ctx, subscriptionId, message, help, console, accountManager,
-		func(_ account.Location) bool {
-			return true
-		})
-}
-
+// shouldDisplay, when non-nil, filters the location being displayed.
 func PromptLocationWithFilter(
 	ctx context.Context,
 	subscriptionId string,
@@ -43,7 +34,7 @@ func PromptLocationWithFilter(
 	locations := make([]account.Location, 0, len(allLocations))
 
 	for _, location := range allLocations {
-		if shouldDisplay(location) {
+		if shouldDisplay == nil || shouldDisplay(location) {
 			locations = append(locations, location)
 		}
 	}

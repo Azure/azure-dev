@@ -1,6 +1,6 @@
 # Using azd environment from hooks
 
-As an azd templates author, you might need to extend what your template can do by adding azd hooks. While hooks are very simple way to provide your own scripts and operations, there are a few details to keep in mind when your scripts will be interacting with azd's state, like the values from the environment (either just reading or setting values). In this article, you will learn some of the options you have for writing hooks, as well as interacting with the azd environment.
+As an azd templates author, you might need to extend what your template can do by adding [azd hooks](https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-extensibility). While hooks a are very simple way to provide your own scripts and operations, there are a few details to keep in mind when your scripts will be interacting with azd's state, like the values from the environment (either just reading or setting values). In this article, you will learn some of the options you have for writing hooks, as well as interacting with the azd environment.
 
 ## Azd environment
 
@@ -8,9 +8,9 @@ In a few words, azd combines the `state` and the `configuration` for your applic
 
 **The configuration** is a set of inputs to define how to create your application's resources or how services behave. For example, you can have a setting to define the `SKU` to be use for hosting one of your services, setting a `basic` SKU by default and expecting customers to set the right SKU by using that configuration.
 
-**The state** are a set of values to describe properties for your application at a given point in time. For example, after calling `azd provision` all the infrastructure deployment's outputs are persisted in the environment. These values will not define or change the behavior of the application.
+**The state** is a set of values to describe properties for your application at a given point in time. For example, after calling `azd provision` all the infrastructure deployment's outputs are persisted in the environment. These values will not define or change the behavior of the application.
 
-Azd allows you to create and switch between multiple environments. Each environment is created in a folder called `.azure`, next to the `azure.yaml` in your project. You can use `azd env --help` to discover how to create, list or switch between environments.
+Azd allows you to create and switch between multiple environments. Each environment is created in a folder inside `.azure` directory, next to the `azure.yaml` in your project. You can use `azd env --help` to discover how to create, list or switch between environments.
 
 > !Note: Azd environment is different from CI/CD environments. **Do not** think about azd environment as GitHub environments.
 
@@ -33,7 +33,7 @@ hooks:
     run: ./script.sh
 ```
 
-Now let's create `script.sh` like:
+Now let's create a `script.sh` like:
 
 ```bash
 #!/bin/bash
@@ -53,9 +53,9 @@ azd env get-values
 # you should see the `ENV_VAR_FROM_AZD="hello azd"` listed
 ```
 
-Now you can run `azd provision` to trigger the hook. Or you can use `azd hooks run preprovision` so you will only execute the hook alone. You will see `hello azd` in the screen, as the `$ENV_VAR_FROM_AZD` is injected to the hooks execution. You can verify that if you manually run the script `./script.sh`, it won't display the message, as `ENV_VAR_FROM_AZD` won't have any value.
+Now you can run `azd provision` to trigger the hook. Or you can use `azd hooks run preprovision` so you will only execute the hook alone. You will see `hello azd` in the screen, as the `$ENV_VAR_FROM_AZD` is injected to the hooks execution. You can verify that, if you *manually run the script* `./script.sh`, it **won't display** the message, as `ENV_VAR_FROM_AZD` won't be injected by azd and will not be found in system variables.
 
-So, as you are creating a new hook and testing it, make sure to use `azd hooks run <hook name>` if you are reading azd environment. Otherwise, if you try manually running the script, you won't see the azd environment values.
+So, as you are creating a new hook and testing it, make sure to use `azd hooks run <hook name>` if your script depends on azd environment.
 
 In case you want to reproduce the same example in Windows powershell:
 
@@ -67,7 +67,7 @@ hooks:
     run: ./script.ps1
 ```
 
-Now let's create `script.ps1` like:
+Now let's a create `script.ps1` like:
 
 ```pwsh
 Write-Output $env:ENV_VAR_FROM_AZD
@@ -78,11 +78,11 @@ sleep 5
 
 ### Self environment injection
 
-In case you want to be able to *manually run* the `script` from a hook and without using azd, but you still want to read azd environment.
+In case you want to *manually run* the `script` from a hook without using azd, your script will need to read and load azd environment.
 
-You might want to allow customers to manually run the scripts in case the hook failed when it was invoked by azd. For example, as a troubleshooting guide, you might be telling folks which script to run to correct missing settings or repair application components. For such cases, consider asking customers to use `azd hooks run <hook name>` as a way to make it simpler for customers and still delegating the environment injection to azd.
+You might want to allow customers to manually run the scripts in case the hook failed when it was invoked by azd. For example, as a troubleshooting guide, you might tell which script to run to correct missing settings or repair application components. For such cases, consider asking customers to use `azd hooks run <hook name>` as a way to make it simpler for customers and still delegating the environment injection to azd.
 
-But, if you still want to allow the manual invocation, you will need to teach your script how to pull pull the environment values from azd by calling and parsing the output of `azd env get-values`. Below are 2 strategies you can implement on your script.
+But, if you still want to allow the manual invocation without `azd hooks` command, you will need to teach your script how to pull the environment values from azd by calling and parsing the output of `azd env get-values`. Below are 2 strategies you can implement on your script.
 
 #### Use script scoped variables
 
@@ -131,7 +131,7 @@ This strategy is fine and easy to implement when you have only one script, but i
 
 #### Use terminal scoped variables
 
-When you have multiple scripts and you need all, or some of them to access azd environment, you can set the azd environment in your terminal variables. You have to be careful with this strategy and ideally make sure to restore your terminal variables once all your scripts have run. This is because some terminals like powershell does not create one environment for executing the script, instead, it updates the environment of the terminal you are running in.
+When you have multiple scripts and you need all, or some of them to access azd environment, you can set the azd environment in your terminal variables. You have to **be careful** with this strategy and ideally make sure to restore your terminal variables once all your scripts have run. This is because some terminals like powershell does not create one environment for executing the script, instead, it updates the environment of the terminal you are running in.
 
 The main benefit of using your terminal variables is that you just need to set the variables one time, at your starting point, and then all scripts you run after will read the azd environment as direct variables from the terminal. See the next example:
 
@@ -227,7 +227,7 @@ After env restored. ENV_VAR_FROM_AZD:
 initial-value
 ```
 
-Note how the script loads azd environment and overrides the system variable. But, at the end the system variables are restored. The risk of changing your terminal's variables after running the hook will still exists in case the script fails before restoring the environment. You might want to consider using this strategy as your last alternative, preferring [script scoped variables](#use-script-scoped-variables).
+Note how the script loads azd environment and overrides the system variable. But, at the end, the system variables are restored. The risk of changing your terminal's variables after running the hook will still exists in case the script fails before restoring the environment. You might want to consider using this strategy as your last alternative, preferring [script scoped variables](#use-script-scoped-variables).
 
 ### Downstream calls from in hooks
 
@@ -265,7 +265,7 @@ hello-azd
 The value of the environment variable is: hello-azd
 ```
 
-Note how azd automatically injects the environment and both, the bash script and the python program can read the variable. For powershell, you have to use `Start-Process` if you need to run and wait for the python program to finish before moving on to the next instruction. And if you want to support running a python virtual environment from both, linux and Windows, you need to make your script to detect and find where is the python virtual environment. See the next example:
+Note how azd automatically injects the environment for both, the bash script and the python program can read the variable. For powershell, you have to use `Start-Process` if you need to run and wait for the python program to finish before moving on to the next instruction. And if you want to support running a python virtual environment from both, linux and Windows, you need to make your script to detect and find where is the python virtual environment. See the next example:
 
 ```pwsh
 Write-Output $env:ENV_VAR_FROM_AZD

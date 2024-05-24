@@ -131,14 +131,13 @@ This strategy is fine and easy to implement when you have only one script, but i
 
 #### Use terminal scoped variables
 
-When you have multiple scripts and you need all of some of them to access azd environment, you can make your script to set the azd environment in your terminal variables. You have to be careful with this strategy and ideally make sure to restore your terminal variables once all your scripts have run. This is because some terminals like powershell does not create one environment for executing the script, but update the environment of the terminal you are running in.
+When you have multiple scripts and you need all, or some of them to access azd environment, you can set the azd environment in your terminal variables. You have to be careful with this strategy and ideally make sure to restore your terminal variables once all your scripts have run. This is because some terminals like powershell does not create one environment for executing the script, instead, it updates the environment of the terminal you are running in.
 
 The main benefit of using your terminal variables is that you just need to set the variables one time, at your starting point, and then all scripts you run after will read the azd environment as direct variables from the terminal. See the next example:
 
 ```bash
 #!/bin/bash
 
-declare -A azdEnv
 while IFS='=' read -r key value; do
     value=$(echo "$value" | sed 's/^"//' | sed 's/"$//')
     export "$key=$value"
@@ -170,3 +169,130 @@ Start-Sleep -Seconds 5
 ```
 
 After running your script, make sure that azd environment is not leaked and persisted to your terminal variables, as it might affect future execution of azd commands because azd won't be switching to any other environment (unless you force it with the -e flag). This is because the `AZURE_ENV_NAME` would be persisted as terminal variable. So, depending on the terminal you are using (for sure on powershell), you would need to have a `restore variables` script at the end.
+
+Take a look to the next hook. It loads azd environment to system variables but makes sure to restore the initial state at the end.
+
+```bash
+#!/bin/bash
+
+# 1 - Save the state of the environment
+initial_env=$(env)
+
+# 2 - load azd env
+while IFS='=' read -r key value; do
+    value=$(echo "$value" | sed 's/^"//' | sed 's/"$//')
+    export "$key=$value"
+done <<EOF
+$(azd env get-values)
+EOF
+
+echo "with azd environment loaded. ENV_VAR_FROM_AZD:"
+echo $ENV_VAR_FROM_AZD
+
+# 3 - Restore the environment to the initial state
+while IFS='=' read -r key value; do
+    value=$(echo "$value" | sed 's/^"//' | sed 's/"$//')
+    unset "$key"
+done <<EOF
+$(azd env get-values)
+EOF
+while IFS='=' read -r key value; do
+    value=$(echo "$value" | sed 's/^"//' | sed 's/"$//')
+    export "$key=$value"
+done <<EOF
+$initial_env
+EOF
+
+echo "After env restored. ENV_VAR_FROM_AZD:"
+echo $ENV_VAR_FROM_AZD
+```
+
+To see this on action, run the follow commands:
+
+```bash
+# start by creating an initial value into your terminal 
+export ENV_VAR_FROM_AZD=initial-value
+# Now create a value in azd environment
+azd env set ENV_VAR_FROM_AZD value-from-azd-env
+# Now run the hook to see the output
+./script.sh
+```
+
+You should see the output:
+
+```
+with azd environment loaded. ENV_VAR_FROM_AZD:
+value-from-azd-env
+After env restored. ENV_VAR_FROM_AZD:
+initial-value
+```
+
+Note how the script loads azd environment and overrides the system variable. But, at the end the system variables are restored. The risk of changing your terminal's variables after running the hook will still exists in case the script fails before restoring the environment. You might want to consider using this strategy as your last alternative, preferring [script scoped variables](#use-script-scoped-variables).
+
+### Downstream calls from in hooks
+
+As you continue authoring hooks, you might face a case where pure bash or powershell is not enough and you need to call another applications, like a python program. In the next example, the same `azure.yaml` file will be calling the `preprovision` hook, but the hook now looks like:
+
+```bash
+#!/bin/bash
+
+echo $ENV_VAR_FROM_AZD
+
+python -m venv .venv
+.venv/bin/python program.py
+
+# just to let you see the output
+sleep 5
+```
+
+Create a `program.py` like:
+
+```python
+import os
+
+env_variable = os.getenv("ENV_VAR_FROM_AZD")
+
+if env_variable:
+    print(f"The value of the environment variable is: {env_variable}")
+else:
+    print("The environment variable is not set.")
+```
+
+Run `azd env set ENV_VAR_FROM_AZD hello-azd` and then `azd hooks run preprovision`. From a Linux bash terminal, you should see the output:
+
+```
+hello-azd
+The value of the environment variable is: hello-azd
+```
+
+Note how azd automatically injects the environment and both, the bash script and the python program can read the variable. For powershell, you have to use `Start-Process` if you need to run and wait for the python program to finish before moving on to the next instruction. And if you want to support running a python virtual environment from both, linux and Windows, you need to make your script to detect and find where is the python virtual environment. See the next example:
+
+```pwsh
+Write-Output $env:ENV_VAR_FROM_AZD
+
+$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+if (-not $pythonCmd) {
+  # fallback to python3 if python not found
+  $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue
+}
+
+Write-Host 'Creating python virtual environment ".venv"'
+Start-Process -FilePath ($pythonCmd).Source -ArgumentList "-m venv ./.venv" -Wait -NoNewWindow
+$venvPythonPath = "./.venv/scripts/python.exe"
+if (Test-Path -Path "/usr") {
+  # fallback to Linux venv path
+  $venvPythonPath = "./.venv/bin/python"
+}
+
+Start-Process -FilePath $venvPythonPath -ArgumentList "program.py" -Wait -NoNewWindow
+
+# just to let you see the output
+Start-Sleep -Seconds 5
+
+```
+
+If you want to test, make sure to use `azd hooks run <hook name>`. This is the easiest and simplest way to let azd to take care of variables injection and the most comprehensive alternative for your customers to invoke your template's hooks.
+
+## Conclusion
+
+By using `azd hooks run`, you can save your hooks from loading azd's environment. You can also prevent your customers from unwanted changes to their terminal's variables, which can affect the next time they run azd commands.

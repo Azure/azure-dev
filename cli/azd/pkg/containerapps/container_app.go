@@ -135,9 +135,14 @@ func (cas *containerAppService) DeployYaml(
 		aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
 		if err == nil {
 			acaAsConfig := config.NewConfig(obj)
-			acaAsConfig.Set(
+			err := acaAsConfig.Set(
 				"properties.configuration.ingress.customDomains", aca.Properties.Configuration.Ingress.CustomDomains)
-			obj = acaAsConfig.Raw()
+
+			if err == nil {
+				obj = acaAsConfig.Raw()
+			} else {
+				log.Printf("failed to set custom domains: %v. Domains will be ignored.", err)
+			}
 		}
 	}
 

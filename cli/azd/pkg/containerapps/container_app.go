@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
@@ -59,22 +60,25 @@ func NewContainerAppService(
 	httpClient httputil.HttpClient,
 	clock clock.Clock,
 	armClientOptions *arm.ClientOptions,
+	alphaFeatureManager *alpha.FeatureManager,
 ) ContainerAppService {
 	return &containerAppService{
-		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
-		clock:              clock,
-		armClientOptions:   armClientOptions,
+		credentialProvider:  credentialProvider,
+		httpClient:          httpClient,
+		userAgent:           azdinternal.UserAgent(),
+		clock:               clock,
+		armClientOptions:    armClientOptions,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
 type containerAppService struct {
-	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
-	clock              clock.Clock
-	armClientOptions   *arm.ClientOptions
+	credentialProvider  account.SubscriptionCredentialProvider
+	httpClient          httputil.HttpClient
+	userAgent           string
+	clock               clock.Clock
+	armClientOptions    *arm.ClientOptions
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 type ContainerAppIngressConfiguration struct {
@@ -112,6 +116,8 @@ func (cas *containerAppService) GetIngressConfiguration(
 // or updating the container app. When unset, we use the default API version of the armappcontainers.ContainerAppsClient.
 const apiVersionKey = "api-version"
 
+var persistCustomDomainsFeature = alpha.MustFeatureKey("aca.persistDomains")
+
 func (cas *containerAppService) DeployYaml(
 	ctx context.Context,
 	subscriptionId string,
@@ -122,6 +128,28 @@ func (cas *containerAppService) DeployYaml(
 	var obj map[string]any
 	if err := yaml.Unmarshal(containerAppYaml, &obj); err != nil {
 		return fmt.Errorf("decoding yaml: %w", err)
+	}
+
+	if shouldPersist := cas.alphaFeatureManager.IsEnabled(persistCustomDomainsFeature); shouldPersist {
+		aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
+		if err == nil {
+			containerAppJson, err := json.Marshal(obj)
+			if err != nil {
+				panic("marshalling container app json failed")
+			}
+			var containerApp armappcontainers.ContainerApp
+			if err := json.Unmarshal(containerAppJson, &containerApp); err != nil {
+				return fmt.Errorf("converting to container app type: %w", err)
+			}
+			containerApp.Properties.Configuration.Ingress.CustomDomains = aca.Properties.Configuration.Ingress.CustomDomains
+			backToByte, err := json.Marshal(containerApp)
+			if err != nil {
+				panic("marshalling container app json failed")
+			}
+			if err := yaml.Unmarshal(backToByte, &obj); err != nil {
+				return fmt.Errorf("decoding yaml: %w", err)
+			}
+		}
 	}
 
 	var poller *runtime.Poller[armappcontainers.ContainerAppsClientCreateOrUpdateResponse]

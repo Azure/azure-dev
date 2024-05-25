@@ -17,6 +17,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
@@ -133,22 +134,10 @@ func (cas *containerAppService) DeployYaml(
 	if shouldPersist := cas.alphaFeatureManager.IsEnabled(persistCustomDomainsFeature); shouldPersist {
 		aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
 		if err == nil {
-			containerAppJson, err := json.Marshal(obj)
-			if err != nil {
-				panic("marshalling container app json failed")
-			}
-			var containerApp armappcontainers.ContainerApp
-			if err := json.Unmarshal(containerAppJson, &containerApp); err != nil {
-				return fmt.Errorf("converting to container app type: %w", err)
-			}
-			containerApp.Properties.Configuration.Ingress.CustomDomains = aca.Properties.Configuration.Ingress.CustomDomains
-			backToByte, err := json.Marshal(containerApp)
-			if err != nil {
-				panic("marshalling container app json failed")
-			}
-			if err := yaml.Unmarshal(backToByte, &obj); err != nil {
-				return fmt.Errorf("decoding yaml: %w", err)
-			}
+			acaAsConfig := config.NewConfig(obj)
+			acaAsConfig.Set(
+				"properties.configuration.ingress.customDomains", aca.Properties.Configuration.Ingress.CustomDomains)
+			obj = acaAsConfig.Raw()
 		}
 	}
 

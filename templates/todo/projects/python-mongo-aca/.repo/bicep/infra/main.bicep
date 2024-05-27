@@ -25,18 +25,47 @@ param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webContainerAppName string = ''
 param apimServiceName string = ''
-param apiAppExists bool = false
-param webAppExists bool = false
+param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param collections array = [
+  {
+    name: 'TodoList'
+    id: 'TodoList'
+    shardKey: {keys: [
+      'Hash'
+    ]}
+    indexes: [
+      {
+        key: {
+          keys: [
+            '_id'
+          ]
+        }
+      }
+    ]
+  }
+  {
+    name: 'TodoItem'
+    id: 'TodoItem'
+    shardKey: {keys: [
+      'Hash'
+    ]}
+    indexes: [
+      {
+        key: {
+          keys: [
+            '_id'
+          ]
+        }
+      }
+    ]
+  }
+]
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
-@description('API Management SKU to use if APIM is enabled')
-param apimSku string = 'Consumption'
-
 @description('Hostname suffix for container registry. Set when deploying to sovereign clouds')
 param containerRegistryHostSuffix string = 'azurecr.io'
-
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -48,7 +77,8 @@ var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 var apiContainerAppNameOrDefault = '${abbrs.appContainerApps}web-${resourceToken}'
-var corsAcaUrl = 'https://${apiContainerAppNameOrDefault}.${containerApps.outputs.defaultDomain}'
+var corsAcaUrl = 'https://${apiContainerAppNameOrDefault}.${containerAppsEnvironment.outputs.defaultDomain}'
+var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -57,147 +87,299 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-// Container apps host (including container registry)
-module containerApps '../../../../../../common/infra/bicep/core/host/container-apps.bicep' = {
-  name: 'container-apps'
+// Container registry
+module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' = {
+  name: 'registry'
   scope: rg
   params: {
-    name: 'app'
+    name: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
     location: location
+    acrAdminUserEnabled: true
     tags: tags
-    containerAppsEnvironmentName: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
-    containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
-    // Work around Azure/azure-dev#3157 (the root cause of which is Azure/acr#723) by explicitly enabling the admin user to allow users which
-    // don't have the `Owner` role granted (and instead are classic administrators) to access the registry to push even if AAD authentication fails.
-    //
-    // This addresses the following error during deploy:
-    //
-    // failed getting ACR token: POST https://<some-random-name>.azurecr.io/oauth2/exchange 401 Unauthorized
-    containerRegistryAdminUserEnabled: true
-    logAnalyticsWorkspaceName: monitoring.outputs.logAnalyticsWorkspaceName
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    publicNetworkAccess: 'Enabled'
+    roleAssignments:[
+      {
+        principalId: webIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: acrPullRole
+      }
+      {
+        principalId: apiIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: acrPullRole
+      }
+    ]
+  }
+}
+
+//Container apps environment
+module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5' = {
+  name: 'containerAppsEnvironment'
+  scope: rg
+  params: {
+    logAnalyticsWorkspaceResourceId: loganalytics.outputs.resourceId
+    name: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
+    location: location
+    zoneRedundant: false
+    tags: tags
+  }
+}
+
+//the managed identity for web frontend
+module webIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
+  name: 'webIdentity'
+  scope: rg
+  params: {
+    name: '${abbrs.managedIdentityUserAssignedIdentities}web-${resourceToken}'
+    location: location
   }
 }
 
 // Web frontend
-module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
+module web 'br/public:avm/res/app/container-app:0.2.0' = {
   name: 'web'
   scope: rg
   params: {
     name: !empty(webContainerAppName) ? webContainerAppName : '${abbrs.appContainerApps}web-${resourceToken}'
+    containers: [
+      {
+        image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+        name: 'simple-hello-world-container'
+        resources: {
+          cpu: json('0.5')
+          memory: '1.0Gi'
+        }
+      }
+    ]
+    managedIdentities:{
+      systemAssigned: false
+      userAssignedResourceIds: [webIdentity.outputs.resourceId]
+    }
+    registries:[
+      {
+        server: '${containerRegistry.outputs.name}.${containerRegistryHostSuffix}'
+        identity: webIdentity.outputs.resourceId
+      }
+    ]
+    dapr: {
+        enabled: true
+        appId: 'main'
+        appProtocol: 'http'
+        appPort: 80
+    }
+    environmentId: containerAppsEnvironment.outputs.resourceId
     location: location
-    tags: tags
-    identityName: '${abbrs.managedIdentityUserAssignedIdentities}web-${resourceToken}'
-    containerAppsEnvironmentName: containerApps.outputs.environmentName
-    containerRegistryName: containerApps.outputs.registryName
-    containerRegistryHostSuffix: containerRegistryHostSuffix
-    exists: webAppExists
+    tags: union(tags, { 'azd-service-name': 'web' })
+  }
+}
+
+//the managed identity for api backend
+module apiIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
+  name: 'apiIdentity'
+  scope: rg
+  params: {
+    name: '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
+    location: location
   }
 }
 
 // Api backend
-module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
+module api 'br/public:avm/res/app/container-app:0.2.0' = {
   name: 'api'
   scope: rg
   params: {
     name: !empty(apiContainerAppName) ? apiContainerAppName : '${abbrs.appContainerApps}api-${resourceToken}'
+    containers: [
+      {
+        image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+        name: 'simple-hello-world-container'
+        resources: {
+          cpu: json('1.0')
+          memory: '2.0Gi'
+        }
+        env: [
+          {
+            name: 'AZURE_CLIENT_ID'
+            value: apiIdentity.outputs.clientId
+          }
+          {
+            name: 'AZURE_KEY_VAULT_ENDPOINT'
+            value: keyVault.outputs.uri
+          }
+          {
+            name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+            value: applicationInsights.outputs.connectionString
+          }
+          {
+            name: 'API_ALLOW_ORIGINS'
+            value: corsAcaUrl
+          }
+        ]
+      }
+    ]
+    managedIdentities:{
+      systemAssigned: false
+      userAssignedResourceIds: [apiIdentity.outputs.resourceId]
+    }
+    registries:[
+      {
+        server: '${containerRegistry.outputs.name}.${containerRegistryHostSuffix}'
+        identity: apiIdentity.outputs.resourceId
+      }
+    ]
+    environmentId: containerAppsEnvironment.outputs.resourceId
+    ingressTargetPort: 3100
     location: location
-    tags: tags
-    identityName: '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
-    containerAppsEnvironmentName: containerApps.outputs.environmentName
-    containerRegistryName: containerApps.outputs.registryName
-    containerRegistryHostSuffix: containerRegistryHostSuffix
-    keyVaultName: keyVault.outputs.name
-    corsAcaUrl: corsAcaUrl
-    exists: apiAppExists
+    tags: union(tags, { 'azd-service-name': 'api' })
   }
 }
 
 // The application database
-module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
+module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
   name: 'cosmos'
   scope: rg
   params: {
-    accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-    databaseName: cosmosDatabaseName
+    locations: [
+      {
+        failoverPriority: 0
+        isZoneRedundant: false
+        locationName: location
+      }
+    ]
+    name: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
     location: location
-    tags: tags
-    keyVaultName: keyVault.outputs.name
+    mongodbDatabases: [
+      {
+        name: 'Todo'
+        tags: tags
+        collections: collections
+      }
+    ]
+    secretsKeyVault: {
+      keyVaultName: keyVault.outputs.name
+      primaryWriteConnectionStringSecretName: connectionStringKey
+    }
   }
 }
 
 // Store secrets in a keyvault
-module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bicep' = {
+module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   name: 'keyvault'
   scope: rg
   params: {
     name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
     location: location
     tags: tags
-    principalId: principalId
+    enableRbacAuthorization: false
+    accessPolicies: [
+      {
+        objectId: principalId
+        permissions: {
+          secrets: [ 'get', 'list' ]
+        }
+      }
+      {
+        objectId: apiIdentity.outputs.principalId
+        permissions: {
+          secrets: [ 'get', 'list' ]
+        }
+      }
+    ]
   }
 }
 
-// Monitor application with Azure Monitor
-module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.bicep' = {
-  name: 'monitoring'
+// Monitor application with Azure loganalytics
+module loganalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
+  name: 'loganalytics'
   scope: rg
   params: {
+    name: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
     location: location
-    tags: tags
-    logAnalyticsName: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
-    applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
+  }
+}
+
+// Monitor application with Azure applicationInsights
+module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
+  name: 'applicationInsights'
+  scope: rg
+  params: {
+    name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
+    workspaceResourceId: loganalytics.outputs.resourceId
+    location: location
+  }
+}
+
+//Monitor application with Azure applicationInsightsDashboard
+module applicationInsightsDashboard '../../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep' = {
+  name: 'application-insights-dashboard'
+  scope: rg
+  params: {
+    name: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
+    location: location
+    applicationInsightsName: applicationInsights.outputs.name
   }
 }
 
 // Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
-module apim '../../../../../../common/infra/bicep/core/gateway/apim.bicep' = if (useAPIM) {
+module apim 'br/public:avm/res/api-management/service:0.1.3' = if (useAPIM) {
   name: 'apim-deployment'
   scope: rg
   params: {
     name: !empty(apimServiceName) ? apimServiceName : '${abbrs.apiManagementService}${resourceToken}'
-    sku: apimSku
+    publisherEmail: 'noreply@microsoft.com'
+    publisherName: 'n/a'
     location: location
     tags: tags
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    apis: [
+      {
+        name: 'todo-api'
+        path: 'todo'
+        displayName: 'Simple Todo API'
+        apiDescription: 'This is a simple Todo API'
+        serviceUrl: 'https://${api.outputs.fqdn}'
+        subscriptionRequired: false
+        value: loadTextContent('../../../../../api/common/openapi.yaml')
+        policies: [
+          {
+            value: replace(loadTextContent('../../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml'), '{origin}', 'https://${web.outputs.fqdn}')
+            format: 'rawxml'
+          }
+        ]
+      }
+    ]
   }
 }
 
 // Configures the API in the Azure API Management (APIM) service
-module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useAPIM) {
-  name: 'apim-api-deployment'
+module apimsettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
+  name: 'apim-api-settings'
   scope: rg
   params: {
-    name: useAPIM ? apim.outputs.apimServiceName : ''
     apiName: 'todo-api'
-    apiDisplayName: 'Simple Todo API'
-    apiDescription: 'This is a simple Todo API'
+    name: useAPIM ? apim.outputs.name : ''
     apiPath: 'todo'
-    webFrontendUrl: web.outputs.SERVICE_WEB_URI
-    apiBackendUrl: api.outputs.SERVICE_API_URI
+    applicationInsightsName: applicationInsights.outputs.name
   }
 }
 
 // Data outputs
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
+output AZURE_COSMOS_DATABASE_NAME string = !empty(cosmosDatabaseName) ? cosmosDatabaseName: 'Todo'
 
 // App outputs
 output API_CORS_ACA_URL string = corsAcaUrl
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
-output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.applicationInsightsName
-output AZURE_CONTAINER_ENVIRONMENT_NAME string = containerApps.outputs.environmentName
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerApps.outputs.registryLoginServer
-output AZURE_CONTAINER_REGISTRY_NAME string = containerApps.outputs.registryName
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
+output APPLICATIONINSIGHTS_NAME string = applicationInsights.outputs.name
+output AZURE_CONTAINER_ENVIRONMENT_NAME string = containerAppsEnvironment.outputs.name
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
+output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output API_BASE_URL string = useAPIM ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
-output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
-output SERVICE_API_NAME string = api.outputs.SERVICE_API_NAME
-output SERVICE_WEB_NAME string = web.outputs.SERVICE_WEB_NAME
+output API_BASE_URL string = useAPIM ? 'https://${apim.outputs.name}.azure-api.net/todo' : 'https://${api.outputs.fqdn}'
+output REACT_APP_WEB_BASE_URL string = 'https://${web.outputs.fqdn}'
+output SERVICE_API_NAME string = api.outputs.name
+output SERVICE_WEB_NAME string = web.outputs.name
 output USE_APIM bool = useAPIM
-output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.SERVICE_API_URI, api.outputs.SERVICE_API_URI ] : []
+output SERVICE_API_ENDPOINTS array = useAPIM ? [ 'https://${apim.outputs.name}.azure-api.net/todo', 'https://${api.outputs.fqdn}' ] : []

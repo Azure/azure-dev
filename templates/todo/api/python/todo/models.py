@@ -20,11 +20,12 @@ class Settings(BaseSettings):
             credential = DefaultAzureCredential()
             keyvault_client = SecretClient(self.AZURE_KEY_VAULT_ENDPOINT, credential)
             for secret in keyvault_client.list_properties_of_secrets():
-                setattr(
-                    self,
-                    keyvault_name_as_attr(secret.name),
-                    keyvault_client.get_secret(secret.name).value,
-                )
+                if secret.name == "AZURE-COSMOS-CONNECTION-STRING":
+                    setattr(
+                        self,
+                        keyvault_name_as_attr(secret.name),
+                        keyvault_client.get_secret(secret.name).value,
+                    )
 
     AZURE_COSMOS_CONNECTION_STRING: str = ""
     AZURE_COSMOS_DATABASE_NAME: str = "Todo"

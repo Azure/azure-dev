@@ -9,6 +9,9 @@ param environmentName string
 @description('The location used for all deployed resources')
 param location string
 
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+
 @metadata({azd: {
   type: 'generate'
   config: {length:15,noSpecial:true,minLower:10,minNumeric:5}
@@ -68,12 +71,14 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
+    principalId: principalId
   }
 }
 
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
+output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
 output SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME string = resources.outputs.SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME

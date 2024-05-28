@@ -1,5 +1,18 @@
 # Release History
 
+## 1.9.3 (2024-05-20)
+
+### Other Changes
+
+- [[3925]](https://github.com/Azure/azure-dev/pull/3925) Graduates alpha feature: `Aspire Dashboard`
+- [[3929]](https://github.com/Azure/azure-dev/pull/3929) Graduates alpha feature: `Aspire Auto Configure Data Protection`
+
+## 1.9.2 (2024-05-15)
+
+### Bugs Fixed
+
+- [[3915]](https://github.com/Azure/azure-dev/pull/3915) Revert - Add deployment status tracking for linux web apps.
+
 ## 1.9.1 (2024-05-14)
 
 ### Bugs Fixed

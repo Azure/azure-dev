@@ -8,6 +8,9 @@ workflows:
     steps:
       - azd: provision
       - azd: deploy --all
+pipeline:
+  variables:
+    - AZURE_PRINCIPAL_TYPE
 services:
   web:
     project: ../../web/react-fluent

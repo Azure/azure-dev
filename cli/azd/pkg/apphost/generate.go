@@ -39,12 +39,6 @@ const DaprPubSubComponentType = "pubsub"
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
 
-var aspireDashboardFeature = alpha.MustFeatureKey("aspire.dashboard")
-
-func IsAspireDashboardEnabled(alphaFeatureManager *alpha.FeatureManager) bool {
-	return alphaFeatureManager.IsEnabled(aspireDashboardFeature)
-}
-
 type AspireDashboard struct {
 	Link string
 }
@@ -61,9 +55,6 @@ func AspireDashboardUrl(
 	ctx context.Context,
 	env *environment.Environment,
 	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
-	if !IsAspireDashboardEnabled(alphaFeatureManager) {
-		return nil
-	}
 
 	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")
 	if !exists {
@@ -170,8 +161,6 @@ func Containers(manifest *Manifest) map[string]genContainer {
 }
 
 type AppHostOptions struct {
-	AutoConfigureDataProtection bool
-	AspireDashboard             bool
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
@@ -191,7 +180,6 @@ func ContainerAppManifestTemplateForProject(
 	var buf bytes.Buffer
 
 	tmplCtx := generator.containerAppTemplateContexts[projectName]
-	tmplCtx.AutoConfigureDataProtection = options.AutoConfigureDataProtection
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {
@@ -214,10 +202,10 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		return nil, err
 	}
 
-	if options.AspireDashboard {
-		generator.bicepContext.AspireDashboard = true
-		generator.bicepContext.RequiresPrincipalId = true
-	}
+	// Aspire Dashboard workaround
+	// By setting this, we will give Contributor role to the user running azd for the Container Apps Environment
+	// See: https://github.com/Azure/azure-dev/issues/3928
+	generator.bicepContext.RequiresPrincipalId = true
 
 	// use the filesystem coming from the manifest
 	// the in-memory filesystem from the manifest is guaranteed to be initialized and contains all the bicep files
@@ -734,16 +722,20 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 }
 
 const (
-	knownParameterKeyVault      string = "keyVaultName"
-	knownParameterPrincipalId   string = "principalId"
-	knownParameterPrincipalType string = "principalType"
-	knownParameterPrincipalName string = "principalName"
-	knownParameterLogAnalytics  string = "logAnalyticsWorkspaceId"
+	knownParameterKeyVault         string = "keyVaultName"
+	knownParameterPrincipalId      string = "principalId"
+	knownParameterPrincipalType    string = "principalType"
+	knownParameterPrincipalName    string = "principalName"
+	knownParameterLogAnalytics     string = "logAnalyticsWorkspaceId"
+	knownParameterContainerEnvName string = "containerAppEnvironmentName"
+	knownParameterContainerEnvId   string = "containerAppEnvironmentId"
 
-	knownInjectedValuePrincipalId   string = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
-	knownInjectedValuePrincipalType string = "'ServicePrincipal'"
-	knownInjectedValuePrincipalName string = "resources.outputs.MANAGED_IDENTITY_NAME"
-	knownInjectedValueLogAnalytics  string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
+	knownInjectedValuePrincipalId      string = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
+	knownInjectedValuePrincipalType    string = "'ServicePrincipal'"
+	knownInjectedValuePrincipalName    string = "resources.outputs.MANAGED_IDENTITY_NAME"
+	knownInjectedValueLogAnalytics     string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
+	knownInjectedValueContainerEnvName string = "resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME"
+	knownInjectedValueContainerEnvId   string = "resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID"
 )
 
 // injectValueForBicepParameter checks for aspire-manifest and azd conventions rules for auto injecting values for
@@ -782,6 +774,12 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	}
 	if p == knownParameterLogAnalytics {
 		return knownInjectedValueLogAnalytics, true, nil
+	}
+	if p == knownParameterContainerEnvName {
+		return knownInjectedValueContainerEnvName, true, nil
+	}
+	if p == knownParameterContainerEnvId {
+		return knownInjectedValueContainerEnvId, true, nil
 	}
 	return finalParamValue, false, nil
 }

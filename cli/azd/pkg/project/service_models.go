@@ -3,12 +3,16 @@ package project
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
+
+// Some endpoints include a discriminator suffix that should be displayed instead of the default 'Endpoint' label.
+var endpointPattern = regexp.MustCompile(`(.+):\s(.+)`)
 
 // ServiceLifecycleEventArgs are the event arguments available when
 // any service lifecycle event has been triggered
@@ -112,7 +116,17 @@ func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
 		builder.WriteString(fmt.Sprintf("%s- No endpoints were found\n", currentIndentation))
 	} else {
 		for _, endpoint := range spr.Endpoints {
-			builder.WriteString(fmt.Sprintf("%s- Endpoint: %s\n", currentIndentation, output.WithLinkFormat(endpoint)))
+			label := "Endpoint"
+			url := endpoint
+
+			// When the endpoint pattern is matched used the first sub match as the endpoint label.
+			matches := endpointPattern.FindStringSubmatch(endpoint)
+			if len(matches) == 3 {
+				label = matches[1]
+				url = matches[2]
+			}
+
+			builder.WriteString(fmt.Sprintf("%s- %s: %s\n", currentIndentation, label, output.WithLinkFormat(url)))
 		}
 	}
 

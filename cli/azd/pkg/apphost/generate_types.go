@@ -36,8 +36,9 @@ type genContainerApp struct {
 }
 
 type genContainerAppIngressPort struct {
-	External   bool
-	TargetPort int
+	External    bool
+	TargetPort  int
+	ExposedPort int
 }
 
 type genContainerAppIngressAdditionalPortMappings struct {
@@ -128,7 +129,6 @@ type genBicepTemplateContext struct {
 	RequiresPrincipalId             bool
 	RequiresStorageVolume           bool
 	HasBindMounts                   bool
-	AspireDashboard                 bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount
@@ -148,16 +148,15 @@ type genBicepTemplateContext struct {
 }
 
 type genContainerAppManifestTemplateContext struct {
-	Name                        string
-	Ingress                     *genContainerAppIngress
-	Env                         map[string]string
-	Secrets                     map[string]string
-	KeyVaultSecrets             map[string]string
-	Dapr                        *genContainerAppManifestTemplateContextDapr
-	AutoConfigureDataProtection bool
-	Args                        []string
-	Volumes                     []*Volume
-	BindMounts                  []*BindMount
+	Name            string
+	Ingress         *genContainerAppIngress
+	Env             map[string]string
+	Secrets         map[string]string
+	KeyVaultSecrets map[string]string
+	Dapr            *genContainerAppManifestTemplateContextDapr
+	Args            []string
+	Volumes         []*Volume
+	BindMounts      []*BindMount
 }
 
 type genProjectFileContext struct {

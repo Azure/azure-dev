@@ -1,0 +1,54 @@
+api-version: 2024-02-02-preview
+location: {{ .Env.AZURE_LOCATION }}
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    ? "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}"
+    : {}
+properties:
+  environmentId: {{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}
+  configuration:
+    activeRevisionsMode: single
+    runtime:
+      dotnet:
+        autoConfigureDataProtection: true
+    ingress:
+      additionalPortMappings:
+        - targetPort: 3306
+          external: false
+      external: false
+      targetPort: {{ targetPortOrDefault 80 }}
+      transport: http
+      allowInsecure: true
+    registries:
+      - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+        identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+    secrets:
+      - name: mysql-root-password
+        value: '{{ securedParameter "mysqlabstract_password" }}'
+      - name: specialchar
+        value: '{{ securedParameter "mysqlabstract_pas_sw_ord" }}'
+  template:
+    volumes:
+      - name: mysqlabstract-projectapphost-volumeone
+        storageType: AzureFile
+        storageName: {{ .Env.SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME }} 
+    containers:
+      - image: {{ .Image }}
+        name: mysqlabstract
+        env:
+          - name: AZURE_CLIENT_ID
+            value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
+          - name: MYSQL_ROOT_PASSWORD
+            secretRef: mysql-root-password
+          - name: SpecialChar
+            secretRef: specialchar
+        volumeMounts:
+          - volumeName: mysqlabstract-projectapphost-volumeone
+            mountPath: /data/db
+    scale:
+      minReplicas: 1
+tags:
+  azd-service-name: mysqlabstract
+  aspire-resource-name: mysqlabstract
+

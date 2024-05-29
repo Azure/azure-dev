@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -140,6 +141,11 @@ func createContainerAppServiceTarget(
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 	)
+	remoteBuildManager := containerregistry.NewRemoteBuildManager(
+		credentialProvider,
+		mockContext.HttpClient,
+		mockContext.ArmClientOptions,
+	)
 	containerRegistryService := azcli.NewContainerRegistryService(
 		credentialProvider,
 		dockerCli,
@@ -154,6 +160,8 @@ func createContainerAppServiceTarget(
 		dockerCli,
 		cloud.AzurePublic(),
 	)
+	remoteBuildHelper := NewRemoteBuildHelper(env, remoteBuildManager, mockContext.Console, clock.NewMock())
+
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	resourceManager := NewResourceManager(env, azCli, depOpService)
@@ -162,6 +170,7 @@ func createContainerAppServiceTarget(
 		env,
 		envManager,
 		containerHelper,
+		remoteBuildHelper,
 		containerAppService,
 		resourceManager,
 	)

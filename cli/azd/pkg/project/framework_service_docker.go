@@ -33,14 +33,15 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path      string                  `yaml:"path,omitempty"      json:"path,omitempty"`
-	Context   string                  `yaml:"context,omitempty"   json:"context,omitempty"`
-	Platform  string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
-	Target    string                  `yaml:"target,omitempty"    json:"target,omitempty"`
-	Registry  osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
-	Image     osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
-	Tag       osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
-	BuildArgs []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	RemoteBuild bool                    `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
+	Path        string                  `yaml:"path,omitempty"      json:"path,omitempty"`
+	Context     string                  `yaml:"context,omitempty"   json:"context,omitempty"`
+	Platform    string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
+	Target      string                  `yaml:"target,omitempty"    json:"target,omitempty"`
+	Registry    osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
+	Image       osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
+	Tag         osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
+	BuildArgs   []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 
 type dockerBuildResult struct {
@@ -158,6 +159,8 @@ func (p *dockerProject) Requirements() FrameworkRequirements {
 
 // Gets the required external tools for the project
 func (p *dockerProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+	// TODO(ellismg): When using remoteBuild, we shouldn't need docker. We need the service config here.
+
 	return []tools.ExternalTool{p.docker}
 }
 
@@ -189,6 +192,13 @@ func (p *dockerProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+			if serviceConfig.Docker.RemoteBuild {
+				task.SetResult(&ServiceBuildResult{
+					Restore: restoreOutput,
+				})
+				return
+			}
+
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
 			// For services that do not specify a project path and have not specified a language then
@@ -290,6 +300,13 @@ func (p *dockerProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			if serviceConfig.Docker.RemoteBuild {
+				task.SetResult(&ServicePackageResult{
+					Build: buildOutput,
+				})
+				return
+			}
+
 			var imageId string
 
 			if buildOutput != nil {

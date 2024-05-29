@@ -88,7 +88,7 @@ func (p *swaProject) Restore(
 	return p.framework.Restore(ctx, serviceConfig)
 }
 
-// Builds the docker project based on the docker options specified within the Service configuration
+// Builds the swa project based on the swa.config.json options specified within the Service path
 func (p *swaProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

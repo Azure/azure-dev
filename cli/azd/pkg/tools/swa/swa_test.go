@@ -126,6 +126,59 @@ func Test_SwaDeploy(t *testing.T) {
 			"appName",
 			"default",
 			"deploymentToken",
+			DeployOptions{},
+		)
+		require.NoError(t, err)
+		require.True(t, ran)
+	})
+
+	t.Run("NoErrorsNoConfig", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		swacli := NewSwaCli(mockContext.CommandRunner)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "npx")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			ran = true
+
+			require.Equal(t, testPath, args.Cwd)
+			require.Equal(t, []string{
+				"-y", cSwaCliPackage,
+				"deploy",
+				"--tenant-id", "tenantID",
+				"--subscription-id", "subscriptionID",
+				"--resource-group", "resourceGroupID",
+				"--app-name", "appName",
+				"--env", "default",
+				"--no-use-keychain",
+				"--deployment-token", "deploymentToken",
+				"--app-location", "appFolderPath",
+				"--output-location", "outputRelativeFolderPath",
+			}, args.Args)
+
+			return exec.RunResult{
+				Stdout: "",
+				Stderr: "",
+				// if the returned `error` is nil we don't return an error. The underlying 'exec'
+				// returns an error if the command returns a non-zero exit code so we don't actually
+				// need to check it.
+				ExitCode: 1,
+			}, nil
+		})
+
+		_, err := swacli.Deploy(
+			context.Background(),
+			testPath,
+			"tenantID",
+			"subscriptionID",
+			"resourceGroupID",
+			"appName",
+			"default",
+			"deploymentToken",
+			DeployOptions{
+				AppFolderPath:            "appFolderPath",
+				OutputRelativeFolderPath: "outputRelativeFolderPath",
+			},
 		)
 		require.NoError(t, err)
 		require.True(t, ran)
@@ -169,6 +222,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"appName",
 			"default",
 			"deploymentToken",
+			DeployOptions{},
 		)
 		require.True(t, ran)
 		require.EqualError(

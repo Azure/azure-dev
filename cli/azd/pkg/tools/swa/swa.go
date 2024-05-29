@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -37,7 +38,13 @@ type SwaCli interface {
 		appName string,
 		environment string,
 		deploymentToken string,
+		options DeployOptions,
 	) (string, error)
+}
+
+type DeployOptions struct {
+	AppFolderPath            string
+	OutputRelativeFolderPath string
 }
 
 type swaCli struct {
@@ -75,6 +82,7 @@ func (cli *swaCli) Deploy(
 	appName string,
 	environment string,
 	deploymentToken string,
+	options DeployOptions,
 ) (string, error) {
 	log.Printf(
 		"SWA Deploy: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s, Environment: %s",
@@ -85,16 +93,23 @@ func (cli *swaCli) Deploy(
 		environment,
 	)
 
-	res, err := cli.executeCommand(ctx,
-		cwd, "deploy",
+	args := []string{"deploy",
 		"--tenant-id", tenantId,
 		"--subscription-id", subscriptionId,
 		"--resource-group", resourceGroup,
 		"--app-name", appName,
 		"--env", environment,
 		"--no-use-keychain",
-		"--deployment-token", deploymentToken)
+		"--deployment-token", deploymentToken}
 
+	if options.AppFolderPath != "" {
+		args = append(args, "--app-location", options.AppFolderPath)
+	}
+	if options.OutputRelativeFolderPath != "" {
+		args = append(args, "--output-location", options.OutputRelativeFolderPath)
+	}
+
+	res, err := cli.executeCommand(ctx, cwd, args...)
 	if err != nil {
 		return "", fmt.Errorf("swa deploy: %w", err)
 	}
@@ -130,4 +145,18 @@ func (cli *swaCli) run(ctx context.Context, cwd string, buildProgress io.Writer,
 	}
 
 	return cli.commandRunner.Run(ctx, runArgs)
+}
+
+const swaConfigFileName = "swa-cli.config.json"
+
+// check if the swa.config.json file exists in the given directory
+func ContainsSwaConfig(path string) (bool, error) {
+	_, err := os.Stat(filepath.Join(path, swaConfigFileName))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

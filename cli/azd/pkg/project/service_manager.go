@@ -596,7 +596,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	} else if serviceConfig.Host == StaticWebAppTarget {
 		withSwaConfig, err := swa.ContainsSwaConfig(serviceConfig.Path())
 		if err != nil {
-			return nil, fmt.Errorf("checking for swa.config.json: %w", err)
+			return nil, fmt.Errorf("checking for swa-cli.config.json: %w", err)
 		}
 		if withSwaConfig {
 			if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageSwa), &compositeFramework); err != nil {
@@ -607,7 +607,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 					err,
 				)
 			}
-			log.Println("Using swa-cli for build and deploy because swa.config.json was found in the service path")
+			log.Println("Using swa-cli for build and deploy because swa-cli.config.json was found in the service path")
 		}
 	}
 	if compositeFramework != nil {

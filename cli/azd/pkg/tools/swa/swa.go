@@ -61,7 +61,7 @@ func (cli *swaCli) Build(ctx context.Context, cwd string, buildProgress io.Write
 	}
 
 	output := result.Stdout
-	// when swa cli does not find swa.config.json, it shows the message:
+	// when swa cli does not find swa-cli.config.json, it shows the message:
 	//    No build options were defined.
 	//    If your app needs a build step, run "swa init" to set your project configuration
 	//    or use option flags to set your build commands and paths.
@@ -149,7 +149,7 @@ func (cli *swaCli) run(ctx context.Context, cwd string, buildProgress io.Writer,
 
 const swaConfigFileName = "swa-cli.config.json"
 
-// check if the swa.config.json file exists in the given directory
+// check if the swa-cli.config.json file exists in the given directory
 func ContainsSwaConfig(path string) (bool, error) {
 	_, err := os.Stat(filepath.Join(path, swaConfigFileName))
 	if os.IsNotExist(err) {

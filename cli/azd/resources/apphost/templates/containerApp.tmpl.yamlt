@@ -1,7 +1,5 @@
 {{define "containerApp.tmpl.yaml" -}}
-{{- if .AutoConfigureDataProtection -}}
 api-version: 2024-02-02-preview
-{{end -}}
 location: {{ "{{ .Env.AZURE_LOCATION }}" }}
 identity:
   type: UserAssigned
@@ -12,11 +10,9 @@ properties:
   environmentId: {{ "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}" }}
   configuration:
     activeRevisionsMode: single
-{{- if .AutoConfigureDataProtection}}
     runtime:
       dotnet:
         autoConfigureDataProtection: true
-{{- end}}
 {{- if .Dapr}}
     dapr:
       appId: {{ .Dapr.AppId }}
@@ -51,6 +47,9 @@ properties:
 {{- end}}
       external: {{ .Ingress.External }}
       targetPort: {{ "{{ targetPortOrDefault " }}{{ .Ingress.TargetPort }}{{ " }}" }}
+{{- if gt .Ingress.ExposedPort 0 }}
+      exposedPort: {{ .Ingress.ExposedPort }}
+{{- end}}
       transport: {{ .Ingress.Transport }}
       allowInsecure: {{ .Ingress.AllowInsecure }}
 {{- end }}
@@ -103,7 +102,7 @@ properties:
             secretRef: {{containerAppSecretName $name}}
 {{- end}}
 {{- if .Volumes }}
-        volumes:
+        volumeMounts:
 {{- range $volume := .Volumes }}
           - volumeName: {{ toLower $.Name}}-{{ removeDot $volume.Name | toLower }}
             mountPath: {{ $volume.Target }}

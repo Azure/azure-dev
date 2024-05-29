@@ -1,18 +1,52 @@
 # Release History
 
-## 1.9.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
-
-### Bugs Fixed
+## 1.9.3 (2024-05-20)
 
 ### Other Changes
 
+- [[3925]](https://github.com/Azure/azure-dev/pull/3925) Graduates alpha feature: `Aspire Dashboard`
+- [[3929]](https://github.com/Azure/azure-dev/pull/3929) Graduates alpha feature: `Aspire Auto Configure Data Protection`
+
+## 1.9.2 (2024-05-15)
+
+### Bugs Fixed
+
+- [[3915]](https://github.com/Azure/azure-dev/pull/3915) Revert - Add deployment status tracking for linux web apps.
+
+## 1.9.1 (2024-05-14)
+
+### Bugs Fixed
+
+- [[3876]](https://github.com/Azure/azure-dev/pull/3876) Take infra section of azure.yaml into account.
+- [[3881]](https://github.com/Azure/azure-dev/pull/3881) Make azd to wait until the expected state can be seen from the online endpoint.
+- [[3763]](https://github.com/Azure/azure-dev/pull/3763) Add deployment status tracking for linux web apps.
+- [[3897]](https://github.com/Azure/azure-dev/pull/3897) Update ResolvedRaw() to remove reference to the vault.
+- [[3898]](https://github.com/Azure/azure-dev/pull/3898) Easy Init: Improve handling for empty state.
+- [[3903]](https://github.com/Azure/azure-dev/pull/3903) Fix type issues in PromptDialog with external prompting.
+
+## 1.9.0 (2024-05-07)
+
+### Features Added
+
+- [[3718]](https://github.com/Azure/azure-dev/pull/3718) Deploy AI/ML studio online endpoints with host `ml.endpoint`. Starter templates `azd-ai-starter` and `azd-aistudio-starter` are available to get started with ease.
+- [[3840]](https://github.com/Azure/azure-dev/pull/3840) Filter templates when running `azd init` or `azd template list` with `--filter`
+- .NET Aspire:
+  - [[3267]](https://github.com/Azure/azure-dev/pull/3267) Support services with multiple exposed ports
+  - [[3820]](https://github.com/Azure/azure-dev/pull/3820) Container resources now supports reference expressions, and are now modeled the same as project resources
+
+### Bugs Fixed
+
+- [[3822]](https://github.com/Azure/azure-dev/pull/3822) Fix Aspire KeyVault references in manifest files
+- [[3858]](https://github.com/Azure/azure-dev/pull/3858) Allow overriding location for Aspire bicep modules
+
+### Other Changes
+
+- [[3821]](https://github.com/Azure/azure-dev/pull/3821) Support running `azd init` in Aspire app host directory
+- [[3848]](https://github.com/Azure/azure-dev/pull/3848) Add "Demo Mode" which hides subscription IDs
+- [[3828]](https://github.com/Azure/azure-dev/pull/3828) Update Bicep CLI to version 0.26.170.
 - [[3800]](https://github.com/Azure/azure-dev/pull/3800) Write ACA Container Manifests in the `infra` directory under the AppHost during `infra synth`.
 
-**Note:** If you had previously used `infra synth`, you will need to move the container app manifests from their old location to the new one for `azd` to use them. If you do not do so, `azd` will generate the default IaC based on your current app host. To do this, move the `containerApp.tmpl.yaml` file in the `manifests` folder under each individual project into an `infra` folder next to the `.csproj` file for your project's Aspire App Hos and rename it from `containerApp.tmpl.yaml` to `<name-passed-to-AddProject>.tmpl.yaml` (e.g. `apiserver.tmpl.yaml`, if you write `builder.AddProject<...>("apiserver")`).
+**Note:** If you had previously used `infra synth`, you will need to move the container app manifests from their old location to the new one for `azd` to use them. If you do not do so, `azd` will generate the default IaC based on your current app host. To do this, move the `containerApp.tmpl.yaml` file in the `manifests` folder under each individual project into an `infra` folder next to the `.csproj` file for your project's Aspire App Host and rename it from `containerApp.tmpl.yaml` to `<name-passed-to-AddProject>.tmpl.yaml` (e.g. `apiserver.tmpl.yaml`, if you write `builder.AddProject<...>("apiserver")`).
 
 ## 1.8.2 (2024-04-30)
 

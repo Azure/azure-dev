@@ -11,7 +11,9 @@
         },
         "ghcr.io/azure/azure-dev/azd:latest": {},
         "ghcr.io/rio/features/kustomize:1": {},
-        "ghcr.io/devcontainers/features/azure-cli:1": {}
+        "ghcr.io/meaningful-ooo/devcontainer-features/homebrew:2": {
+            "shallowClone": true
+        }
     },
     "customizations": {
         "vscode": {
@@ -31,7 +33,7 @@
         }
     },
     "forwardPorts": [3000, 3100],
-    "postCreateCommand": "sudo az aks install-cli",
+    "postCreateCommand": "brew install Azure/kubelogin/kubelogin",
     "remoteUser": "node",
     "hostRequirements": {
         "memory": "8gb"

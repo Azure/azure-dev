@@ -104,9 +104,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate(manifest, apphost.AppHostOptions{
-		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
-	})
+	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -277,8 +275,6 @@ func (ai *DotNetImporter) Services(
 	return services, nil
 }
 
-var autoConfigureDataProtectionFeature = alpha.MustFeatureKey("aspire.autoConfigureDataProtection")
-
 func (ai *DotNetImporter) SynthAllInfrastructure(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
@@ -289,11 +285,19 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 
 	generatedFS := memfs.New()
 
-	infraFS, err := apphost.BicepTemplate(manifest, apphost.AppHostOptions{
-		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
-	})
+	rootModuleName := DefaultModule
+	if p.Infra.Module != "" {
+		rootModuleName = p.Infra.Module
+	}
+
+	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)
+	}
+
+	infraPathPrefix := DefaultPath
+	if p.Infra.Path != "" {
+		infraPathPrefix = p.Infra.Path
 	}
 
 	err = fs.WalkDir(infraFS, ".", func(path string, d fs.DirEntry, err error) error {
@@ -305,7 +309,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return nil
 		}
 
-		err = generatedFS.MkdirAll(filepath.Join("infra", filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
+		err = generatedFS.MkdirAll(filepath.Join(infraPathPrefix, filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
 		if err != nil {
 			return err
 		}
@@ -315,8 +319,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
-		return generatedFS.WriteFile(filepath.Join("infra", path), contents, d.Type().Perm())
-
+		return generatedFS.WriteFile(filepath.Join(infraPathPrefix, path), contents, d.Type().Perm())
 	})
 	if err != nil {
 		return nil, err
@@ -334,9 +337,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	// container we will deploy.
 	writeManifestForResource := func(name string) error {
 		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			manifest, name, apphost.AppHostOptions{
-				AutoConfigureDataProtection: ai.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
-			})
+			manifest, name, apphost.AppHostOptions{})
 		if err != nil {
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}

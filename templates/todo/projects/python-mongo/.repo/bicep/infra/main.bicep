@@ -111,7 +111,7 @@ module appServicePlan '../../../../../../common/infra/bicep/core/host/appservice
     location: location
     tags: tags
     sku: {
-      name: 'B1'
+      name: 'B3'
     }
   }
 }

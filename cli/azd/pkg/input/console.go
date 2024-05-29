@@ -557,7 +557,12 @@ func (c *AskerConsole) PromptDialog(ctx context.Context, dialog PromptDialog) (m
 
 	ret := make(map[string]any, len(*resp.Inputs))
 	for _, v := range *resp.Inputs {
-		ret[v.ID] = v.Value
+		var unmarshalledValue any
+		if err := json.Unmarshal(v.Value, &unmarshalledValue); err != nil {
+			return nil, fmt.Errorf("unmarshalling value %s: %w", v.ID, err)
+		}
+
+		ret[v.ID] = unmarshalledValue
 	}
 
 	return ret, nil
@@ -1084,6 +1089,10 @@ func GetStepResultFormat(result error) SpinnerUxType {
 // dirSuggestions provides suggestion completions for directories given the current input directory.
 func dirSuggestions(input string) []string {
 	completions := []string{}
+	if input == "" {
+		completions = append(completions, ".")
+	}
+
 	matches, _ := filepath.Glob(input + "*")
 	for _, match := range matches {
 		if fs, err := os.Stat(match); err == nil && fs.IsDir() {

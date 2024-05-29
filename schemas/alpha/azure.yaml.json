@@ -69,6 +69,11 @@
                     "host"
                 ],
                 "properties": {
+                    "resourceGroup": {
+                        "type": "string",
+                        "title": "Name of the Azure resource group that contains the resource",
+                        "description": "By default, the CLI will discover the Azure resource within the default resource group. When specified, the CLI will instead find the Azure resource within the specified resource group. Supports environment variable substitution."
+                    },
                     "resourceName": {
                         "type": "string",
                         "title": "Name of the Azure resource that implements the service",
@@ -767,6 +772,11 @@
                                         "type": "string",
                                         "title": "The version of the helm chart",
                                         "description": "The version of the helm chart to install."
+                                    },
+                                    "namespace": {
+                                        "type": "string",
+                                        "title": "Optional. The k8s namespace to install the helm chart",
+                                        "description": "When set will install the helm chart to the specified namespace. Defaults to the service namespace."
                                     },
                                     "values": {
                                         "type": "string",

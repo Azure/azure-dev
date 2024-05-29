@@ -99,7 +99,7 @@ func TestAspireStorageGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m, AppHostOptions{})
+	files, err := BicepTemplate("main", m, AppHostOptions{})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -141,7 +141,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m, AppHostOptions{})
+	files, err := BicepTemplate("main", m, AppHostOptions{})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -192,7 +192,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 		})
 	}
 
-	files, err := BicepTemplate(m, AppHostOptions{})
+	files, err := BicepTemplate("main", m, AppHostOptions{})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -227,7 +227,7 @@ func TestAspireDashboardGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m, AppHostOptions{AspireDashboard: true})
+	files, err := BicepTemplate("main", m, AppHostOptions{})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -281,7 +281,15 @@ func TestAspireContainerGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	files, err := BicepTemplate(m, AppHostOptions{})
+	for _, name := range []string{"mysqlabstract", "my-sql-abstract", "noVolume", "kafka"} {
+		t.Run(name, func(t *testing.T) {
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
+			require.NoError(t, err)
+			snapshot.SnapshotT(t, tmpl)
+		})
+	}
+
+	files, err := BicepTemplate("main", m, AppHostOptions{})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -461,6 +469,22 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 
 	param = knownParameterPrincipalName
 	expectedParameter = knownInjectedValuePrincipalName
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
+	param = knownParameterContainerEnvName
+	expectedParameter = knownInjectedValueContainerEnvName
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
+	param = knownParameterContainerEnvId
+	expectedParameter = knownInjectedValueContainerEnvId
 
 	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)

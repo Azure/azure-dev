@@ -24,6 +24,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	mockContext.Clock.Set(time.Now())
 	env := environment.NewWithValues("test", map[string]string{
 		AiProjectNameEnvVarName:              "AI_WORKSPACE",
+		environment.TenantIdEnvVarName:       "TENANT_ID",
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 		environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP",
 	})
@@ -85,6 +86,9 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		Properties: &armmachinelearning.OnlineEndpointProperties{
 			ScoringURI: convert.RefOf("https://SCRORING_URI"),
 			SwaggerURI: convert.RefOf("https://SWAGGER_URI"),
+			Traffic: map[string]*int32{
+				deploymentName: convert.RefOf(int32(100)),
+			},
 		},
 	}
 
@@ -115,7 +119,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		On("UpdateTraffic", *mockContext.Context, scopeType, endpointName, expectedDeploymentName).
 		Return(onlineEndpoint, nil)
 	aiHelper.
-		On("DeletePreviousDeployments", *mockContext.Context, scopeType, endpointName).
+		On("DeleteDeployments", *mockContext.Context, scopeType, endpointName).
 		Return(nil)
 	aiHelper.
 		On("GetEndpoint", *mockContext.Context, scopeType, endpointName).
@@ -131,7 +135,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
 	require.IsType(t, &AiEndpointDeploymentResult{}, deployResult.Details)
-	require.Len(t, deployResult.Endpoints, 2)
+	require.Len(t, deployResult.Endpoints, 4)
 
 	deploymentDetails := deployResult.Details.(*AiEndpointDeploymentResult)
 
@@ -221,7 +225,7 @@ func (m *mockAiHelper) CreateFlow(
 	return args.Get(0).(*ai.Flow), args.Error(1)
 }
 
-func (m *mockAiHelper) DeletePreviousDeployments(ctx context.Context, scope *ai.Scope, endpointName string) error {
+func (m *mockAiHelper) DeleteDeployments(ctx context.Context, scope *ai.Scope, endpointName string, filter []string) error {
 	args := m.Called(ctx, scope, endpointName)
 	return args.Error(0)
 }

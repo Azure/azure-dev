@@ -37,8 +37,8 @@ module cosmos 'cosmos/cosmos.module.bicep' = {
   name: 'cosmos'
   scope: rg
   params: {
-    location: location
     keyVaultName: resources.outputs.SERVICE_BINDING_KVF2EDECB5_NAME
+    location: location
   }
 }
 module storage 'storage/storage.module.bicep' = {
@@ -55,6 +55,7 @@ output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
+output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
 output SERVICE_BINDING_KVF2EDECB5_ENDPOINT string = resources.outputs.SERVICE_BINDING_KVF2EDECB5_ENDPOINT

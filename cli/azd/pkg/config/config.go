@@ -27,6 +27,8 @@ var vaultPattern = regexp.MustCompile(
 // Configuration data is stored in user's home directory @ ~/.azd/config.json
 type Config interface {
 	Raw() map[string]any
+	// similar to Raw() but it will resolve any vault references
+	ResolvedRaw() map[string]any
 	Get(path string) (any, bool)
 	GetString(path string) (string, bool)
 	GetSection(path string, section any) (bool, error)
@@ -70,12 +72,53 @@ func (c *config) Raw() map[string]any {
 	return c.data
 }
 
+const vaultKeyName = "vault"
+
+// Gets the raw values stored in the configuration and resolve any vault references
+func (c *config) ResolvedRaw() map[string]any {
+	resolvedRaw := &config{
+		data: map[string]any{},
+	}
+	paths := paths(c.data)
+	for _, path := range paths {
+		if path == vaultKeyName {
+			// a resolved raw should not include a reference a vault, as all secrets should be resolved
+			// when a config file contains a vault reference and the vault is not found, azd returns os.ErrNotExist
+			// and to the eyes of components using a Config, that means the config does not exists.
+			continue
+		}
+		// get will always return true (no need to check) because the path was gotten from the raw config
+		value, _ := c.Get(path)
+		if err := resolvedRaw.Set(path, value); err != nil {
+			panic(fmt.Errorf("failed setting resolved raw value: %w", err))
+		}
+	}
+	return resolvedRaw.data
+}
+
+// paths recursively traverses a map and returns a list of all the paths to the leaf nodes.
+// The start parameter is the initial map to start traversing from.
+// It returns a slice of strings representing the paths to the leaf nodes.
+func paths(start map[string]any) []string {
+	var all []string
+	for path, value := range start {
+		if node, isNode := value.(map[string]any); isNode {
+			for _, child := range paths(node) {
+				all = append(all, fmt.Sprintf("%s.%s", path, child))
+			}
+		} else {
+			all = append(all, path)
+		}
+	}
+	return all
+}
+
 // SetSecret stores the secrets at the specified path within a local user vault
 func (c *config) SetSecret(path string, value string) error {
 	if c.vaultId == "" {
 		c.vault = NewConfig(nil)
 		c.vaultId = uuid.New().String()
-		if err := c.Set("vault", c.vaultId); err != nil {
+		if err := c.Set(vaultKeyName, c.vaultId); err != nil {
 			return fmt.Errorf("failed setting vault id: %w", err)
 		}
 	}

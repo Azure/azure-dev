@@ -17,7 +17,7 @@ import (
 )
 
 // cSwaCliPackage is the npm package (including the version version) we execute with npx to run the SWA CLI.
-const cSwaCliPackage = "@azure/static-web-apps-cli@1.1.7"
+const cSwaCliPackage = "@azure/static-web-apps-cli@1.1.8"
 
 func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
 	return &swaCli{

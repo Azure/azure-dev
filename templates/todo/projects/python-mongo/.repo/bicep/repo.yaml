@@ -114,12 +114,13 @@ repo:
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
-    - from: ../../../../common/infra/bicep/app/apim-api-settings.bicep
-      to: ./infra/app/apim-api-settings.bicep
 
-
-
-l"
+    - from: ./../../
+      to: ./
+      ignore:
+        - ".repo/**/*"
+        - "repo.y[a]ml"
+        - "azure.y[a]ml"
 
     # openapi.yaml to root
     - from: ../../../../api/common
@@ -136,9 +137,11 @@ l"
     # Templates common
     - from: ../../../../../common
       to: ./
-      ignore        - .github/**/*
-        - .devcontainer/**/*/*
-        - "infra/**/*        - .azdo/pipelines/*/azure-dev.ymlml
+      ignore:
+        - ".github/**/*"
+        - ".devcontainer/**/*"
+        - "infra/**/*"
+        - ".azdo/**/*"
 
     # AzDo workflows for bicep
     - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml

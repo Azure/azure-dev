@@ -9,7 +9,7 @@
       },
 {{- end }}
 {{- range $param, $value := .InputParameters}}
-      "{{dashToUnderscore $param}}": {
+      "{{bicepParameterName $param}}": {
         "value": "{{ envFormat $param}}"
       },
 {{- end}}

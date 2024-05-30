@@ -7,8 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -16,11 +16,11 @@ import (
 )
 
 // CreateEnvironmentAsync is the server implementation of:
-// ValueTask<bool> CreateEnvironmentAsync(Session, Environment, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<bool> CreateEnvironmentAsync(RequestContext, Environment, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) CreateEnvironmentAsync(
-	ctx context.Context, sessionId Session, newEnv Environment, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, newEnv Environment, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return false, err
 	}
@@ -37,7 +37,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 		envManager environment.Manager    `container:"type"`
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return false, err
 	}
@@ -60,31 +60,22 @@ func (s *environmentService) CreateEnvironmentAsync(
 	// If an azure.yaml doesn't already exist, we need to create one. Creating an environment implies initializing the
 	// azd project if it does not already exist.
 	if _, err := os.Stat(c.azdContext.ProjectPath()); errors.Is(err, fs.ErrNotExist) {
-		// Write an azure.yaml file to the project.
-		hosts, err := appdetect.DetectAspireHosts(ctx, c.azdContext.ProjectDirectory(), c.dotnetCli)
-		if err != nil {
-			return false, fmt.Errorf("failed to discover app host project under %s: %w", c.azdContext.ProjectPath(), err)
-		}
+		_ = observer.OnNext(ctx, newImportantProgressMessage("Analyzing Aspire Application (this might take a moment...)"))
 
-		if len(hosts) == 0 {
-			return false, fmt.Errorf("no app host projects found under %s", c.azdContext.ProjectPath())
-		}
-
-		if len(hosts) > 1 {
-			return false, fmt.Errorf("multiple app host projects found under %s", c.azdContext.ProjectPath())
-		}
-
-		manifest, err := apphost.ManifestFromAppHost(ctx, hosts[0].Path, c.dotnetCli, dotnetEnv)
+		manifest, err := apphost.ManifestFromAppHost(ctx, rc.HostProjectPath, c.dotnetCli, dotnetEnv)
 		if err != nil {
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
 
+		projectName := strings.TrimSuffix(filepath.Base(c.azdContext.ProjectDirectory()), ".AppHost")
+
+		// Write an azure.yaml file to the project.
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
 			c.azdContext.ProjectDirectory(),
-			filepath.Base(c.azdContext.ProjectDirectory()),
+			projectName,
 			manifest,
-			hosts[0].Path,
+			rc.HostProjectPath,
 		)
 		if err != nil {
 			return false, fmt.Errorf("generating project artifacts: %w", err)
@@ -113,23 +104,11 @@ func (s *environmentService) CreateEnvironmentAsync(
 		azdEnv.DotenvSet(key, value)
 	}
 
-	var servicesToExpose = make([]string, 0)
-
-	for _, svc := range newEnv.Services {
-		if svc.IsExternal {
-			servicesToExpose = append(servicesToExpose, svc.Name)
-		}
-	}
-
-	if err := azdEnv.Config.Set("services.app.config.exposedServices", servicesToExpose); err != nil {
-		return false, fmt.Errorf("setting exposed services: %w", err)
-	}
-
 	if err := c.envManager.Save(ctx, azdEnv); err != nil {
 		return false, fmt.Errorf("saving new environment: %w", err)
 	}
 
-	if err := c.azdContext.SetDefaultEnvironmentName(newEnv.Name); err != nil {
+	if err := c.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: newEnv.Name}); err != nil {
 		return false, fmt.Errorf("saving default environment: %w", err)
 	}
 

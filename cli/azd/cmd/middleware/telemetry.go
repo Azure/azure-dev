@@ -2,13 +2,18 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/spf13/pflag"
@@ -74,10 +79,25 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	if result == nil {
 		result = &actions.ActionResult{}
 	}
-	result.TraceID = span.SpanContext().TraceID().String()
 
 	if err != nil {
 		cmd.MapError(err, span)
+
+		// We only want to show trace ID for server-related errors,
+		// where we have full server logs to troubleshoot from.
+		//
+		// For client errors, we don't want to show the trace ID, as it is not useful to the user currently.
+		var respErr *azcore.ResponseError
+		var azureErr *azapi.AzureDeploymentError
+		var toolExitErr *exec.ExitError
+
+		if errors.As(err, &respErr) || errors.As(err, &azureErr) ||
+			(errors.As(err, &toolExitErr) && toolExitErr.Cmd == "terraform") {
+			err = &internal.ErrorWithTraceId{
+				Err:     err,
+				TraceId: span.SpanContext().TraceID().String(),
+			}
+		}
 	}
 
 	return result, err

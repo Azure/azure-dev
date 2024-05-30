@@ -210,6 +210,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Stdin:  strings.NewReader(strings.Join(tt.interactions, "\n") + "\n"),
 						Stdout: os.Stdout,
 					},
+					nil,
 					nil),
 			}
 

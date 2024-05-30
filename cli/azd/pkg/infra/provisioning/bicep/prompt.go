@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -15,6 +16,40 @@ import (
 
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
+
+// promptDialogItemForParameter builds the input.PromptDialogItem for the given required parameter.
+func (p *BicepProvider) promptDialogItemForParameter(
+	key string,
+	param azure.ArmTemplateParameterDefinition,
+) input.PromptDialogItem {
+	help, _ := param.Description()
+	paramType := p.mapBicepTypeToInterfaceType(param.Type)
+
+	var dialogItem input.PromptDialogItem
+	dialogItem.ID = key
+	dialogItem.DisplayName = key
+	dialogItem.Required = true
+
+	if help != "" {
+		dialogItem.Description = to.Ptr(help)
+	}
+
+	if paramType == ParameterTypeBoolean {
+		dialogItem.Kind = "select"
+		dialogItem.Choices = []input.PromptDialogChoice{{Value: "true"}, {Value: "false"}}
+	} else if param.AllowedValues != nil {
+		dialogItem.Kind = "select"
+		for _, v := range *param.AllowedValues {
+			dialogItem.Choices = append(dialogItem.Choices, input.PromptDialogChoice{Value: fmt.Sprintf("%v", v)})
+		}
+	} else if param.Secure() {
+		dialogItem.Kind = "password"
+	} else {
+		dialogItem.Kind = "string"
+	}
+
+	return dialogItem
+}
 
 func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, error) {
 	if azdMetadata.AutoGenerateConfig == nil {
@@ -70,15 +105,6 @@ func (p *BicepProvider) promptForParameter(
 			return nil, err
 		}
 		value = location
-	} else if paramType == ParameterTypeString && azdMetadata.Type != nil &&
-		*azdMetadata.Type == azure.AzdMetadataTypeGenerate {
-
-		genValue, err := autoGenerate(key, azdMetadata)
-		if err != nil {
-			return nil, err
-		}
-		value = genValue
-
 	} else if paramType == ParameterTypeString &&
 		azdMetadata.Type != nil &&
 		*azdMetadata.Type == azure.AzdMetadataTypeGenerateOrManual {

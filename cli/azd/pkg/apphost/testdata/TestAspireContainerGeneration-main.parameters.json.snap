@@ -2,6 +2,9 @@
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
+      "principalId": {
+        "value": "${AZURE_PRINCIPAL_ID}"
+      },
       "my_sql_abstract_pas_sw_ord": {
         "value": "${AZURE_MY_SQL_ABSTRACT_PAS_SW_ORD}"
       },

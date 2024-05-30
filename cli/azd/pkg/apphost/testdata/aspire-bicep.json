@@ -13,6 +13,8 @@
         "path": "test.bicep",
         "params": {
           "test": "{parameter.value}",
+          "url": "{frontend.bindings.http.url}",
+          "host": "{frontend.bindings.http.host}",
           "values": [
             "one",
             "two"
@@ -43,6 +45,8 @@
         "params": {
           "serverName": "postgres-2",
           "keyVaultName": "",
+          "containerAppEnvironmentName": "",
+          "containerAppEnvironmentId": "",
           "administratorLogin": "{administrator-login.value}",
           "administratorLoginPassword": "{administratorLoginPassword.value}",
           "databases": [

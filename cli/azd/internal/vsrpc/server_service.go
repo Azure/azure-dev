@@ -5,11 +5,14 @@ package vsrpc
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // serverService is the RPC server for the '/ServerService/v1.0' endpoint.
@@ -47,11 +50,36 @@ func (s *serverService) InitializeAsync(
 	session.rootContainer = s.server.rootContainer
 
 	if options.AuthenticationEndpoint != nil {
-		session.authEndpoint = *options.AuthenticationEndpoint
+		session.externalServicesEndpoint = *options.AuthenticationEndpoint
 	}
 
 	if options.AuthenticationKey != nil {
-		session.authKey = *options.AuthenticationKey
+		session.externalServicesKey = *options.AuthenticationKey
+	}
+
+	if options.AuthenticationCertificate != nil {
+		transport, err := httputil.TlsEnabledTransport(*options.AuthenticationCertificate)
+		if err != nil {
+			return nil, err
+		}
+		client := &http.Client{
+			Transport: transport,
+		}
+
+		endpointUrl, err := url.Parse(session.externalServicesEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid endpoint '%s': %w", session.externalServicesEndpoint, err)
+		}
+
+		if endpointUrl.Scheme != "https" {
+			return nil,
+				fmt.Errorf("invalid endpoint '%s': scheme must be 'https' when certificate is provided",
+					session.externalServicesEndpoint)
+		}
+
+		session.externalServicesClient = client
+	} else {
+		session.externalServicesClient = http.DefaultClient
 	}
 
 	return &Session{

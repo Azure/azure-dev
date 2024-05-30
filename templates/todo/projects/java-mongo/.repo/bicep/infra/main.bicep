@@ -198,7 +198,7 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.1.0' = {
     sku: {
       capacity: 1
       family: 'B'
-      name: 'B1'
+      name: 'B3'
       size: 'B1'
       tier: 'Basic'
     }
@@ -285,8 +285,8 @@ module apim 'br/public:avm/res/api-management/service:0.1.3' = if (useAPIM) {
 
 // Configures the API in the Azure API Management (APIM) service
 module apimsettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
-  scope: rg
   name: 'apim-api-settings'
+  scope: rg
   params: {
     apiAppName: api.outputs.name
     apiName: 'todo-api'

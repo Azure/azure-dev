@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -296,6 +297,11 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 		// report deploy outputs
 		da.console.MessageUxItem(ctx, deployResult)
+	}
+
+	aspireDashboardUrl := apphost.AspireDashboardUrl(ctx, da.env, da.alphaFeatureManager)
+	if aspireDashboardUrl != nil {
+		da.console.MessageUxItem(ctx, aspireDashboardUrl)
 	}
 
 	if da.formatter.Kind() == output.JsonFormat {

@@ -213,7 +213,7 @@ func Test_CLI_VsServer(t *testing.T) {
 
 			cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 			/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
-			cmd := exec.CommandContext(ctx, cli.AzdPath, "vs-server")
+			cmd := exec.CommandContext(ctx, cli.AzdPath, "vs-server", "--use-tls")
 			cmd.Env = append(cli.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, "AZD_DEBUG_SERVER_DEBUG_ENDPOINTS=true")
 			pathString := ostest.CombinedPaths(cmd.Env)
@@ -250,7 +250,10 @@ func Test_CLI_VsServer(t *testing.T) {
 			cmd.Env = append(cmd.Env, "AZURE_SUBSCRIPTION_ID="+subscriptionId)
 			cmd.Env = append(cmd.Env, "AZURE_LOCATION="+cfg.Location)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", svr.Port))
+			cmd.Env = append(cmd.Env, "CERTIFICATE_BYTES="+*svr.CertificateBytes)
 			cmd.Env = append(cmd.Env, "ROOT_DIR="+dir)
+			cmd.Env = append(cmd.Env, "APP_HOST_PATHS="+
+				filepath.Join(dir, "AspireAzdTests.AppHost", "AspireAzdTests.AppHost.csproj"))
 			if tt.IsLive {
 				cmd.Env = append(cmd.Env, "AZURE_ENV_NAME="+envName)
 			}

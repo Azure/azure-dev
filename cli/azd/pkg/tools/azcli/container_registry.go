@@ -2,6 +2,7 @@ package azcli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -122,8 +123,15 @@ func (crs *containerRegistryService) Credentials(
 	// First attempt to get ACR credentials from the logged in user
 	dockerCreds, tokenErr := crs.getTokenCredentials(ctx, subscriptionId, loginServer)
 	if tokenErr != nil {
-		log.Printf("failed getting ACR token credentials: %s\n", tokenErr.Error())
+		var httpErr *azcore.ResponseError
+		if errors.As(tokenErr, &httpErr) {
+			if httpErr.StatusCode == 404 {
+				// No need to try admin user credentials if getToken returns 404. It means the registry was not found.
+				return nil, tokenErr
+			}
+		}
 
+		log.Printf("failed getting ACR token credentials: %s\n", tokenErr.Error())
 		// If that fails, attempt to get ACR credentials from the admin user
 		adminCreds, adminErr := crs.getAdminUserCredentials(ctx, subscriptionId, loginServer)
 		if adminErr != nil {
@@ -149,7 +157,7 @@ func (crs *containerRegistryService) getTokenCredentials(
 
 	// Set it to 00000000-0000-0000-0000-000000000000 as per documented in
 	//nolint:lll
-	// https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication?tabs=azure-cli#individual-login-with-microsoft-entra-id
+	// https://learn.microsoft.com/azure/container-registry/container-registry-authentication?tabs=azure-cli#individual-login-with-microsoft-entra-id
 	return &DockerCredentials{
 		Username:    "00000000-0000-0000-0000-000000000000",
 		Password:    acrToken.RefreshToken,

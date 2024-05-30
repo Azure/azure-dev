@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 	"log"
 	"os"
@@ -17,9 +18,13 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
 	"golang.org/x/exp/maps"
@@ -34,20 +39,54 @@ const DaprPubSubComponentType = "pubsub"
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
 
+type AspireDashboard struct {
+	Link string
+}
+
+func (aspireD *AspireDashboard) ToString(currentIndentation string) string {
+	return fmt.Sprintf("%sAspire Dashboard: %s", currentIndentation, output.WithLinkFormat(aspireD.Link))
+}
+
+func (aspireD *AspireDashboard) MarshalJSON() ([]byte, error) {
+	return json.Marshal(*aspireD)
+}
+
+func AspireDashboardUrl(
+	ctx context.Context,
+	env *environment.Environment,
+	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
+
+	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")
+	if !exists {
+		return nil
+	}
+
+	return &AspireDashboard{
+		Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+	}
+}
+
 func init() {
 	tmpl, err := template.New("templates").
 		Option("missingkey=error").
 		Funcs(
 			template.FuncMap{
-				"bicepName":              scaffold.BicepName,
+				"toLower":   strings.ToLower,
+				"bicepName": scaffold.BicepName,
+				"mergeBicepName": func(src ...string) string {
+					return scaffold.BicepName(strings.Join(src, "-"))
+				},
 				"alphaSnakeUpper":        scaffold.AlphaSnakeUpper,
 				"containerAppName":       scaffold.ContainerAppName,
 				"containerAppSecretName": scaffold.ContainerAppSecretName,
 				"fixBackSlash": func(src string) string {
 					return strings.ReplaceAll(src, "\\", "/")
 				},
-				"dashToUnderscore": func(src string) string {
+				"bicepParameterName": func(src string) string {
 					return strings.ReplaceAll(src, "-", "_")
+				},
+				"removeDot": func(src string) string {
+					return strings.ReplaceAll(src, ".", "")
 				},
 				"envFormat": scaffold.EnvFormat,
 			},
@@ -92,6 +131,7 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 				Env:       comp.Env,
 				Bindings:  comp.Bindings,
 				BuildArgs: comp.BuildArgs,
+				Args:      comp.Args,
 			}
 		}
 	}
@@ -99,10 +139,33 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 	return res
 }
 
+// Containers returns information about all container.v0 resources from a manifest.
+func Containers(manifest *Manifest) map[string]genContainer {
+	res := make(map[string]genContainer)
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "container.v0":
+			res[name] = genContainer{
+				Image:    *comp.Image,
+				Env:      comp.Env,
+				Bindings: comp.Bindings,
+				Inputs:   comp.Inputs,
+				Volumes:  comp.Volumes,
+			}
+		}
+	}
+
+	return res
+}
+
+type AppHostOptions struct {
+}
+
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
 func ContainerAppManifestTemplateForProject(
-	manifest *Manifest, projectName string) (string, error) {
+	manifest *Manifest, projectName string, options AppHostOptions) (string, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -115,7 +178,9 @@ func ContainerAppManifestTemplateForProject(
 
 	var buf bytes.Buffer
 
-	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", generator.containerAppTemplateContexts[projectName])
+	tmplCtx := generator.containerAppTemplateContexts[projectName]
+
+	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {
 		return "", fmt.Errorf("executing template: %w", err)
 	}
@@ -125,7 +190,7 @@ func ContainerAppManifestTemplateForProject(
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
+func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*memfs.FS, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -135,6 +200,11 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	if err := generator.Compile(); err != nil {
 		return nil, err
 	}
+
+	// Aspire Dashboard workaround
+	// By setting this, we will give Contributor role to the user running azd for the Container Apps Environment
+	// See: https://github.com/Azure/azure-dev/issues/3928
+	generator.bicepContext.RequiresPrincipalId = true
 
 	// use the filesystem coming from the manifest
 	// the in-memory filesystem from the manifest is guaranteed to be initialized and contains all the bicep files
@@ -189,7 +259,7 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		WithMetadataParameters:  parameters,
 		MainToResourcesParams:   mapToResourceParams,
 	}
-	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", context); err != nil {
+	if err := executeToFS(fs, genTemplates, "main.bicep", name+".bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
 	}
 
@@ -198,7 +268,7 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	}
 
 	if err := executeToFS(
-		fs, genTemplates, "main.parameters.json", "main.parameters.json", generator.bicepContext); err != nil {
+		fs, genTemplates, "main.parameters.json", name+".parameters.json", generator.bicepContext); err != nil {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 	}
 
@@ -255,16 +325,6 @@ func GenerateProjectArtifacts(
 ) (map[string]ContentsAndMode, error) {
 	appHostRel, err := filepath.Rel(projectDir, appHostProject)
 	if err != nil {
-		return nil, err
-	}
-
-	generator := newInfraGenerator()
-
-	if err := generator.LoadManifest(manifest); err != nil {
-		return nil, err
-	}
-
-	if err := generator.Compile(); err != nil {
 		return nil, err
 	}
 
@@ -331,6 +391,7 @@ type infraGenerator struct {
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
+	allServicesIngress           map[string]ingressDetails
 }
 
 func newInfraGenerator() *infraGenerator {
@@ -439,7 +500,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "azure.appinsights.v0":
 			b.addAppInsights(name)
 		case "project.v0":
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings)
+			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
 		case "dapr.v0":
@@ -453,7 +514,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return err
 			}
 		case "dockerfile.v0":
-			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs)
+			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs, comp.Args)
 		case "redis.v0":
 			b.addContainerAppService(name, RedisContainerAppService)
 		case "azure.keyvault.v0":
@@ -644,7 +705,11 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 		}
 	}
 	if _, keyVaultInjected := autoInjectedParams[knownParameterKeyVault]; keyVaultInjected {
-		b.addKeyVault(name+"kv", true, true)
+		b.addKeyVault("kv"+uniqueFnvNumber(name), true, true)
+	}
+	if _, hasLocation := stringParams["location"]; !hasLocation {
+		// if location is not provided, add it as a link to location parameter
+		stringParams["location"] = "location"
 	}
 
 	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams}
@@ -652,16 +717,20 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 }
 
 const (
-	knownParameterKeyVault      string = "keyVaultName"
-	knownParameterPrincipalId   string = "principalId"
-	knownParameterPrincipalType string = "principalType"
-	knownParameterPrincipalName string = "principalName"
-	knownParameterLogAnalytics  string = "logAnalyticsWorkspaceId"
+	knownParameterKeyVault         string = "keyVaultName"
+	knownParameterPrincipalId      string = "principalId"
+	knownParameterPrincipalType    string = "principalType"
+	knownParameterPrincipalName    string = "principalName"
+	knownParameterLogAnalytics     string = "logAnalyticsWorkspaceId"
+	knownParameterContainerEnvName string = "containerAppEnvironmentName"
+	knownParameterContainerEnvId   string = "containerAppEnvironmentId"
 
-	knownInjectedValuePrincipalId   string = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
-	knownInjectedValuePrincipalType string = "'ServicePrincipal'"
-	knownInjectedValuePrincipalName string = "resources.outputs.MANAGED_IDENTITY_NAME"
-	knownInjectedValueLogAnalytics  string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
+	knownInjectedValuePrincipalId      string = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
+	knownInjectedValuePrincipalType    string = "'ServicePrincipal'"
+	knownInjectedValuePrincipalName    string = "resources.outputs.MANAGED_IDENTITY_NAME"
+	knownInjectedValueLogAnalytics     string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
+	knownInjectedValueContainerEnvName string = "resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME"
+	knownInjectedValueContainerEnvId   string = "resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID"
 )
 
 // injectValueForBicepParameter checks for aspire-manifest and azd conventions rules for auto injecting values for
@@ -686,8 +755,8 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	}
 
 	if p == knownParameterKeyVault {
-		dashToUnderscore := strings.ReplaceAll(resourceName, "-", "_")
-		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(dashToUnderscore+"kv")), true, nil
+		uniqueName := "kv" + uniqueFnvNumber(resourceName)
+		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(uniqueName)), true, nil
 	}
 	if p == knownParameterPrincipalId {
 		return knownInjectedValuePrincipalId, true, nil
@@ -701,7 +770,22 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	if p == knownParameterLogAnalytics {
 		return knownInjectedValueLogAnalytics, true, nil
 	}
+	if p == knownParameterContainerEnvName {
+		return knownInjectedValueContainerEnvName, true, nil
+	}
+	if p == knownParameterContainerEnvId {
+		return knownInjectedValueContainerEnvId, true, nil
+	}
 	return finalParamValue, false, nil
+}
+
+// uniqueFnvNumber generates a unique FNV hash number for the given string value.
+// It uses the FNV-1a hash algorithm to calculate a 32-bit hash value.
+// The generated 32-bit hash number is returned as an 8-length hexadecimal string.
+func uniqueFnvNumber(val string) string {
+	hash := fnv.New32a()
+	hash.Write([]byte(val))
+	return fmt.Sprintf("%x", hash.Sum32())
 }
 
 func (b *infraGenerator) addAppInsights(name string) {
@@ -734,7 +818,7 @@ func (b *infraGenerator) addSqlDatabase(sqlAccount, dbName string) {
 }
 
 func (b *infraGenerator) addProject(
-	name string, path string, env map[string]string, bindings map[string]*Binding,
+	name string, path string, env map[string]string, bindings custommaps.WithOrder[Binding], args []string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -743,6 +827,7 @@ func (b *infraGenerator) addProject(
 		Path:     path,
 		Env:      env,
 		Bindings: bindings,
+		Args:     args,
 	}
 }
 
@@ -796,7 +881,7 @@ func (b *infraGenerator) addContainer(
 	name string,
 	image string,
 	env map[string]string,
-	bindings map[string]*Binding,
+	bindings custommaps.WithOrder[Binding],
 	inputs map[string]Input,
 	volumes []*Volume) {
 	b.requireCluster()
@@ -910,7 +995,8 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 
 func (b *infraGenerator) addDockerfile(
 	name string, path string, context string, env map[string]string,
-	bindings map[string]*Binding, buildArgs map[string]string,
+	bindings custommaps.WithOrder[Binding], buildArgs map[string]string,
+	args []string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -921,56 +1007,8 @@ func (b *infraGenerator) addDockerfile(
 		Env:       env,
 		Bindings:  bindings,
 		BuildArgs: buildArgs,
+		Args:      args,
 	}
-}
-
-func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {
-	if len(bindings) == 0 {
-		return nil, nil
-	}
-
-	if len(bindings) == 1 {
-		for _, binding := range bindings {
-			return binding, nil
-		}
-	}
-
-	var validatedBinding *Binding
-
-	for _, binding := range bindings {
-		if validatedBinding == nil {
-			validatedBinding = binding
-			continue
-		}
-
-		if validatedBinding.External != binding.External {
-			return nil, fmt.Errorf("the external property of all bindings should match")
-		}
-
-		if validatedBinding.Transport != binding.Transport {
-			return nil, fmt.Errorf("the transport property of all bindings should match")
-		}
-
-		if validatedBinding.Protocol != binding.Protocol {
-			return nil, fmt.Errorf("the protocol property of all bindings should match")
-		}
-
-		if validatedBinding.Protocol != binding.Protocol {
-			return nil, fmt.Errorf("the protocol property of all bindings should match")
-		}
-
-		if (validatedBinding.ContainerPort == nil && binding.ContainerPort != nil) ||
-			(validatedBinding.ContainerPort != nil && binding.ContainerPort == nil) {
-			return nil, fmt.Errorf("the container port property of all bindings should match")
-		}
-
-		if validatedBinding.ContainerPort != nil && binding.ContainerPort != nil &&
-			*validatedBinding.ContainerPort != *binding.ContainerPort {
-			return nil, fmt.Errorf("the container port property of all bindings should match")
-		}
-	}
-
-	return validatedBinding, nil
 }
 
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
@@ -978,60 +1016,80 @@ var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
 var jsonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
 
+type ingressDetails struct {
+	// aca ingress definition
+	ingress *genContainerAppIngress
+	// list of bindings from the service which are bind to the the ingress
+	ingressBindings []string
+}
+
+func (b *infraGenerator) compileIngress() error {
+	result := make(map[string]ingressDetails)
+	for name, container := range b.containers {
+		ingress, bindingsFromIngress, err := buildAcaIngress(container.Bindings, 80)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
+	for name, docker := range b.dockerfiles {
+		ingress, bindingsFromIngress, err := buildAcaIngress(docker.Bindings, 80)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
+	for name, project := range b.projects {
+		ingress, bindingsFromIngress, err := buildAcaIngress(project.Bindings, 8080)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
+	b.allServicesIngress = result
+	return nil
+}
+
 // Compile compiles the loaded manifest into the internal representation used to generate the infrastructure files. Once
 // called the context objects on the infraGenerator can be passed to the text templates to generate the required
 // infrastructure.
 func (b *infraGenerator) Compile() error {
-	for name, container := range b.containers {
+	// compile the ingress for all services
+	// All services's ingress must be compiled before resolving the environment variables below.
+	if err := b.compileIngress(); err != nil {
+		return err
+	}
+
+	for resourceName, container := range b.containers {
 		cs := genContainerApp{
-			Image:   container.Image,
-			Env:     make(map[string]string),
-			Secrets: make(map[string]string),
 			Volumes: container.Volumes,
 		}
 
-		ingress, err := buildIngress(container.Bindings)
-		if err != nil {
-			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		b.bicepContext.ContainerApps[resourceName] = cs
+
+		projectTemplateCtx := genContainerAppManifestTemplateContext{
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Volumes:         container.Volumes,
 		}
 
-		cs.Ingress = ingress
-		parameters := maps.Keys(b.bicepContext.InputParameters)
-		for i, parameter := range parameters {
-			parameters[i] = strings.ReplaceAll(parameter, "-", "_")
-		}
-		for k, value := range container.Env {
-			// first evaluation using inputEmitTypeYaml to know if there are secrets on the value
-			yamlString, err := EvalString(
-				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
-			if err != nil {
-				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
-			}
-			// second evaluation to build the appropriate string for bicep, which only replaces parameter names
-			// without caring about secret or not
-			bicepString, err := EvalString(
-				value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
-			if err != nil {
-				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
-			}
-			if isComplexExp, val := isComplexExpression(fmt.Sprintf("'%s'", bicepString)); !isComplexExp {
-				bicepString = val
-			}
-
-			if slices.Contains(parameters, bicepString) {
-				if !slices.Contains(b.bicepContext.mappedParameters, bicepString) {
-					b.bicepContext.mappedParameters = append(b.bicepContext.mappedParameters, bicepString)
-				}
-			}
-
-			if strings.Contains(yamlString, "{{ securedParameter ") {
-				cs.Secrets[k] = bicepString
-			} else {
-				cs.Env[k] = bicepString
-			}
+		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
+			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
 		}
 
-		b.bicepContext.ContainerApps[name] = cs
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
 	}
 
 	for resourceName, docker := range b.dockerfiles {
@@ -1040,17 +1098,15 @@ func (b *infraGenerator) Compile() error {
 			Env:             make(map[string]string),
 			Secrets:         make(map[string]string),
 			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
 		}
-
-		ingress, err := buildIngress(docker.Bindings)
-		if err != nil {
-			return fmt.Errorf("configuring ingress for resource %s: %w", resourceName, err)
-		}
-
-		projectTemplateCtx.Ingress = ingress
 
 		if err := b.buildEnvBlock(docker.Env, &projectTemplateCtx); err != nil {
 			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		if err := b.buildArgsBlock(docker.Args, &projectTemplateCtx); err != nil {
+			return err
 		}
 
 		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
@@ -1062,21 +1118,7 @@ func (b *infraGenerator) Compile() error {
 			Env:             make(map[string]string),
 			Secrets:         make(map[string]string),
 			KeyVaultSecrets: make(map[string]string),
-		}
-
-		binding, err := validateAndMergeBindings(project.Bindings)
-		if err != nil {
-			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
-		}
-
-		if binding != nil {
-			projectTemplateCtx.Ingress = &genContainerAppIngress{
-				External:  binding.External,
-				Transport: binding.Transport,
-				// This port number is for dapr
-				TargetPort:    8080,
-				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
-			}
+			Ingress:         b.allServicesIngress[resourceName].ingress,
 		}
 
 		for _, dapr := range b.dapr {
@@ -1102,6 +1144,10 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		if err := b.buildEnvBlock(project.Env, &projectTemplateCtx); err != nil {
+			return err
+		}
+
+		if err := b.buildArgsBlock(project.Args, &projectTemplateCtx); err != nil {
 			return err
 		}
 
@@ -1163,32 +1209,6 @@ func isComplexExpression(evaluatedString string) (bool, string) {
 		return false, removeSpecialChars
 	}
 	return true, ""
-}
-
-// buildIngress builds the ingress configuration for a given set of bindings. It returns nil, nil if no ingress should
-// be configured (i.e. the bindings are empty).
-func buildIngress(bindings map[string]*Binding) (*genContainerAppIngress, error) {
-	binding, err := validateAndMergeBindings(bindings)
-	if err != nil {
-		return nil, err
-	}
-
-	if binding != nil {
-		if binding.ContainerPort == nil {
-			return nil, fmt.Errorf(
-				"binding for does not specify a container port, " +
-					"ensure WithServiceBinding for this resource specifies a hostPort value")
-		}
-
-		return &genContainerAppIngress{
-			External:      binding.External,
-			Transport:     binding.Transport,
-			TargetPort:    *binding.ContainerPort,
-			AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
-		}, nil
-	}
-
-	return nil, nil
 }
 
 // inputEmitType controls how references to inputs are emitted in the generated file.
@@ -1265,38 +1285,96 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 
 		var binding *Binding
 		var has bool
+		bindingName := parts[0]
+		bindingProperty := parts[1]
 
 		if targetType == "project.v0" {
-			binding, has = b.projects[resource].Bindings[parts[0]]
+			bindings := b.projects[resource].Bindings
+			binding, has = bindings.Get(bindingName)
 		} else if targetType == "container.v0" {
-			binding, has = b.containers[resource].Bindings[parts[0]]
+			bindings := b.containers[resource].Bindings
+			binding, has = bindings.Get(bindingName)
 		} else if targetType == "dockerfile.v0" {
-			binding, has = b.dockerfiles[resource].Bindings[parts[0]]
+			bindings := b.dockerfiles[resource].Bindings
+			binding, has = bindings.Get(bindingName)
 		}
 
 		if !has {
 			return "", fmt.Errorf("unknown binding referenced in binding expression: %s for resource %s", parts[0], resource)
 		}
+		bindingDetails, exists := b.allServicesIngress[resource]
+		if !exists {
+			return "", fmt.Errorf("binding reference to resource %s without ingress", resource)
+		}
+		var bindingMappedToMainIngress bool
+		if slices.Contains(bindingDetails.ingressBindings, bindingName) {
+			bindingMappedToMainIngress = true
+		}
 
-		switch parts[1] {
+		hostNameSuffix := func(external bool) string {
+			var suffix string
+			switch emitType {
+			case inputEmitTypeYaml:
+				suffix = "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+			case inputEmitTypeBicep:
+				suffix = "${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}"
+			default:
+				panic(fmt.Sprintf("unexpected inputEmitType %s", string(emitType)))
+			}
+
+			if !external {
+				suffix = "internal." + suffix
+			}
+
+			return suffix
+		}
+
+		switch bindingProperty {
+		case "scheme":
+			return binding.Scheme, nil
+		case "protocol":
+			return binding.Protocol, nil
+		case "transport":
+			return binding.Scheme, nil
+		case "external":
+			return fmt.Sprintf("%t", binding.External), nil
 		case "host":
-			// The host name matches the containerapp name, so we can just return the resource name.
+			// If the binding is mapped to the main ingress (internal or external) and it is http/https, resolution
+			// expects full domain name, like `resource.internal.FQDN` or `resource.FQDN`.
+			if bindingMappedToMainIngress &&
+				(binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
+				return fmt.Sprintf("%s.%s", resource, hostNameSuffix(binding.External)), nil
+			}
 			return resource, nil
+		case "targetPort":
+			if binding.TargetPort != nil {
+				return fmt.Sprintf("%d", *binding.TargetPort), nil
+			}
+			return acaTemplatedTargetPort, nil
 		case "port":
-			return fmt.Sprintf(`%d`, *binding.ContainerPort), nil
+			return bindingPort(binding, bindingMappedToMainIngress)
 		case "url":
 			var urlFormatString string
 
-			if binding.External {
-				urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+			if bindingMappedToMainIngress {
+				urlFormatString = "%s://%s." + hostNameSuffix(binding.External) + "%s"
 			} else {
-				urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+				urlFormatString = "%s://%s%s"
+			}
+			var port string
+			resolvedPort, err := urlPort(binding, bindingMappedToMainIngress)
+			if err != nil {
+				return "", err
+			}
+			if resolvedPort != "" {
+				port = fmt.Sprintf(":%s", resolvedPort)
 			}
 
-			return fmt.Sprintf(urlFormatString, binding.Scheme, resource), nil
+			return fmt.Sprintf(urlFormatString, binding.Scheme, resource, port), nil
 		default:
 			return "",
-				fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[host|port|url] but was: %s", v)
+				fmt.Errorf("malformed binding expression, expected "+
+					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
 	case targetType == "postgres.database.v0" ||
 		targetType == "redis.v0" ||
@@ -1358,7 +1436,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			if emitType == inputEmitTypeYaml {
 				return fmt.Sprintf(
 					"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
-					strings.ToUpper(replaceDash+"kv"),
+					strings.ToUpper("kv"+uniqueFnvNumber(resource)),
 					outputName), nil
 			}
 			if emitType == inputEmitTypeBicep {
@@ -1394,6 +1472,122 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	}
 }
 
+// urlPort returns the port to be used when resolving a binding.
+// The port for the url is not always the same as the port for the binding It depends on the Ingress configuration.
+// If the binding is mapped to the ingress and it is http, the port is not used in the URL, as it would be the default
+// (80 or 443).
+// When not mapped to main ingress, but as an additional port, if the binding has a port defined, it is used. Otherwise
+// the port is calculated from the target port.
+func urlPort(binding *Binding, bindingMappedToMainIngress bool) (string, error) {
+	if bindingMappedToMainIngress && (binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
+		// main ingress with Http doesn't use a port in url
+		return "", nil
+	}
+	if binding.Port != nil {
+		return fmt.Sprintf("%d", *binding.Port), nil
+	}
+	// additionalPorts not defining a `port` means they use the target port as the port and target port
+	return urlPortFromTargetPort(binding, bindingMappedToMainIngress)
+}
+
+func bindingPort(binding *Binding, bindingMappedToMainIngress bool) (string, error) {
+	if bindingMappedToMainIngress && (binding.Scheme == acaIngressSchemaHttp || binding.Scheme == acaIngressSchemaHttps) {
+		if binding.Scheme == acaIngressSchemaHttp {
+			return acaDefaultHttpPort, nil
+		}
+		if binding.Scheme == acaIngressSchemaHttps {
+			return acaDefaultHttpsPort, nil
+		}
+	}
+	if binding.Port != nil {
+		return fmt.Sprintf("%d", *binding.Port), nil
+	}
+	if binding.TargetPort != nil {
+		// Case: non-http binding w/o a port defined, but with a target port defined. (dockerfile.v0, container.v0)
+		// with non-external ingress is an example here.
+		return fmt.Sprintf("%d", *binding.TargetPort), nil
+	}
+	// no port or target port. This is the case for project.v0 where azd would get the port.
+	return acaTemplatedTargetPort, nil
+}
+
+// urlPortFromTargetPort returns the port to be used when resolving a binding from the target port.
+func urlPortFromTargetPort(binding *Binding, bindingMappedToMainIngress bool) (string, error) {
+	if bindingMappedToMainIngress {
+		if binding.Scheme == acaIngressSchemaHttp {
+			return acaDefaultHttpPort, nil
+		}
+		if binding.Scheme == acaIngressSchemaHttps {
+			return acaDefaultHttpsPort, nil
+		}
+	}
+	if binding.TargetPort != nil {
+		return fmt.Sprintf("%d", *binding.TargetPort), nil
+	}
+	// if the binding is not mapped to the main ingress and doesn't have a port defined, it uses the templated target port,
+	// which is resolved on deployment time, after building the container (dotnet publish for project.v0)
+	// dockerfile.v0 and container.v0 always have the target port defined in the binding.
+	return acaTemplatedTargetPort, nil
+}
+
+// asYamlString converts a string to the YAML representation of the string, ensuring that it is quoted and escaped as needed.
+func asYamlString(s string) (string, error) {
+	// We want to ensure that we render these values in the YAML as strings.  If `res` was the string "true"
+	// (without the quotes), we would naturally create a value directive in yaml that looks like this:
+	//
+	// - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
+	//   value: true
+	//
+	// And YAML rules would treat the above as the value being a boolean instead of a string, which the container
+	// app service expects.
+	//
+	// YAML marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
+	// that needs to be done), which is what we want here.
+	// Do not use JSON marshall as it would escape the quotes within the string, breaking the meaning of the value.
+	// yaml marshall will use 'some text "quoted" more text' as a valid yaml string.
+	yamlString, err := yaml.Marshal(s)
+	if err != nil {
+		return "", fmt.Errorf("marshalling env value: %w", err)
+	}
+
+	// remove the trailing newline. yaml marshall will add a newline at the end of the string, as the new line is
+	// expected at the end of the yaml document. But we are getting a single value with valid yaml here, so we don't
+	// need the newline
+	return string(yamlString[0 : len(yamlString)-1]), nil
+}
+
+func (b *infraGenerator) buildArgsBlock(args []string, manifestCtx *genContainerAppManifestTemplateContext) error {
+	for argN, arg := range args {
+		resolvedArg, err := EvalString(arg, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
+		if err != nil {
+			return fmt.Errorf("evaluating value for argument %d: %w", argN, err)
+		}
+
+		// Unlike environment variables, ACA doesn't provide a way to pass secret values without baking them into the args
+		// array directly. We don't want folks to accidentally bake the plaintext value of these secrets into the container
+		// definition, so for now, we block this.
+		//
+		// This logic is similar to what we do in buildEnvBlock to detect when we need to take values and treat them as ACA
+		// secrets.
+		if strings.Contains(arg, ".connectionString}") ||
+			strings.Contains(resolvedArg, "{{ connectionString") ||
+			strings.Contains(resolvedArg, "{{ securedParameter ") ||
+			strings.Contains(resolvedArg, "{{ secretOutput ") {
+
+			return fmt.Errorf("argument %d cannot contain connection strings, secured parameters, or secret outputs. Use "+
+				"environment variables instead", argN)
+		}
+
+		yamlString, err := asYamlString(resolvedArg)
+		if err != nil {
+			return fmt.Errorf("marshalling arg value: %w", err)
+		}
+		manifestCtx.Args = append(manifestCtx.Args, yamlString)
+	}
+
+	return nil
+}
+
 // buildEnvBlock creates the environment map in the template context. It does this by copying the values from the given map,
 // evaluating any binding expressions that are present. It writes the result of the evaluation after calling json.Marshal
 // so the values may be emitted into YAML as is without worrying about escaping.
@@ -1404,28 +1598,10 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 			return fmt.Errorf("evaluating value for %s: %w", k, err)
 		}
 
-		// We want to ensure that we render these values in the YAML as strings.  If `res` was the string "true"
-		// (without the quotes), we would naturally create a value directive in yaml that looks like this:
-		//
-		// - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
-		//   value: true
-		//
-		// And YAML rules would treat the above as the value being a boolean instead of a string, which the container
-		// app service expects.
-		//
-		// YAML marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
-		// that needs to be done), which is what we want here.
-		// Do not use JSON marshall as it would escape the quotes within the string, breaking the meaning of the value.
-		// yaml marshall will use 'some text "quoted" more text' as a valid yaml string.
-		yamlString, err := yaml.Marshal(res)
+		resolvedValue, err := asYamlString(res)
 		if err != nil {
 			return fmt.Errorf("marshalling env value: %w", err)
 		}
-
-		// remove the trailing newline. yaml marshall will add a newline at the end of the string, as the new line is
-		// expected at the end of the yaml document. But we are getting a single value with valid yaml here, so we don't
-		// need the newline
-		resolvedValue := string(yamlString[0 : len(yamlString)-1])
 
 		// connectionString detection, either of:
 		//  a) explicit connection string key for env, like "ConnectionStrings__resource": "XXXXX"

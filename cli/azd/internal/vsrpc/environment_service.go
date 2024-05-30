@@ -28,11 +28,12 @@ func newEnvironmentService(server *Server) *environmentService {
 }
 
 // GetEnvironmentsAsync is the server implementation of:
-// ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(Session, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(
+// RequestContext, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) GetEnvironmentsAsync(
-	ctx context.Context, sessionId Session, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, observer IObserver[ProgressMessage],
 ) ([]*EnvironmentInfo, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +42,7 @@ func (s *environmentService) GetEnvironmentsAsync(
 		envManager environment.Manager `container:"type"`
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}
@@ -67,11 +68,11 @@ func (s *environmentService) GetEnvironmentsAsync(
 }
 
 // SetCurrentEnvironmentAsync is the server implementation of:
-// ValueTask<bool> SetCurrentEnvironmentAsync(Session, string, IObserver<ProgressMessage>, CancellationToken);
+// ValueTask<bool> SetCurrentEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) SetCurrentEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return false, err
 	}
@@ -80,7 +81,7 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 		azdCtx *azdcontext.AzdContext `container:"type"`
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return false, err
 	}
@@ -88,7 +89,7 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 		return false, err
 	}
 
-	if err := c.azdCtx.SetDefaultEnvironmentName(name); err != nil {
+	if err := c.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: name}); err != nil {
 		return false, fmt.Errorf("saving default environment: %w", err)
 	}
 
@@ -103,11 +104,11 @@ const (
 )
 
 // DeleteEnvironmentAsync is the server implementation of:
-// ValueTask<bool> DeleteEnvironmentAsync(Session, string, IObserver<ProgressMessage>, int, CancellationToken);
+// ValueTask<bool> DeleteEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, int, CancellationToken);
 func (s *environmentService) DeleteEnvironmentAsync(
-	ctx context.Context, sessionId Session, name string, mode int, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, mode int, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return false, err
 	}
@@ -134,7 +135,7 @@ func (s *environmentService) DeleteEnvironmentAsync(
 		},
 	}
 
-	container, err := session.newContainer()
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return false, err
 	}

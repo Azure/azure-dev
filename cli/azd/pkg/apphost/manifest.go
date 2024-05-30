@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/psanford/memfs"
@@ -35,6 +36,9 @@ type Resource struct {
 	// BuildArgs is present on a dockerfile.v0 resource and is the --build-arg for building the docker image.
 	BuildArgs map[string]string `json:"buildArgs,omitempty"`
 
+	// Args is optionally present on project.v0 and dockerfile.v0 resources and are the arguments to pass to the container.
+	Args []string `json:"args,omitempty"`
+
 	// Parent is present on a resource which is a child of another. It is the name of the parent resource. For example, a
 	// postgres.database.v0 is a child of a postgres.server.v0, and so it would have a parent of which is the name of
 	// the server resource.
@@ -45,7 +49,7 @@ type Resource struct {
 
 	// Bindings is present on container.v0, project.v0 and dockerfile.v0 resources, and is a map of binding names to
 	// binding details.
-	Bindings map[string]*Binding `json:"bindings,omitempty"`
+	Bindings custommaps.WithOrder[Binding] `json:"bindings,omitempty"`
 
 	// Env is present on project.v0, container.v0 and dockerfile.v0 resources, and is a map of environment variable
 	// names to value  expressions. The value expressions are simple expressions like "{redis.connectionString}" or
@@ -103,11 +107,12 @@ type Reference struct {
 }
 
 type Binding struct {
-	ContainerPort *int   `json:"containerPort,omitempty"`
-	Scheme        string `json:"scheme"`
-	Protocol      string `json:"protocol"`
-	Transport     string `json:"transport"`
-	External      bool   `json:"external"`
+	TargetPort *int   `json:"targetPort,omitempty"`
+	Port       *int   `json:"port,omitempty"`
+	Scheme     string `json:"scheme"`
+	Protocol   string `json:"protocol"`
+	Transport  string `json:"transport"`
+	External   bool   `json:"external"`
 }
 
 type Volume struct {

@@ -1,20 +1,29 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using System.Net.Security;
 using System.Net.WebSockets;
+using System.Security.Cryptography.X509Certificates;
 using StreamJsonRpc;
 
+byte[] certBytes = Convert.FromBase64String(Settings.ServerCertBase64);
+X509Certificate2 cert = new X509Certificate2(certBytes);
+
 ClientWebSocket wsClientES = new ClientWebSocket();
-await wsClientES.ConnectAsync(new Uri("ws://127.0.0.1:8080/EnvironmentService/v1.0"), CancellationToken.None);
+wsClientES.Options.RemoteCertificateValidationCallback = ValidateCertificateCallback;
+await wsClientES.ConnectAsync(new Uri("wss://127.0.0.1:8080/EnvironmentService/v1.0"), CancellationToken.None);
 
 ClientWebSocket wsClientAS = new ClientWebSocket();
-await wsClientAS.ConnectAsync(new Uri("ws://127.0.0.1:8080/AspireService/v1.0"), CancellationToken.None);
+wsClientAS.Options.RemoteCertificateValidationCallback = ValidateCertificateCallback;
+await wsClientAS.ConnectAsync(new Uri("wss://127.0.0.1:8080/AspireService/v1.0"), CancellationToken.None);
 
 ClientWebSocket wsClientSS = new ClientWebSocket();
-await wsClientSS.ConnectAsync(new Uri("ws://127.0.0.1:8080/ServerService/v1.0"), CancellationToken.None);
+wsClientSS.Options.RemoteCertificateValidationCallback = ValidateCertificateCallback;
+await wsClientSS.ConnectAsync(new Uri("wss://127.0.0.1:8080/ServerService/v1.0"), CancellationToken.None);
 
 ClientWebSocket wsClientDS = new ClientWebSocket();
-await wsClientDS.ConnectAsync(new Uri("ws://127.0.0.1:8080/TestDebugService/v1.0"), CancellationToken.None);
+wsClientDS.Options.RemoteCertificateValidationCallback = ValidateCertificateCallback;
+await wsClientDS.ConnectAsync(new Uri("wss://127.0.0.1:8080/TestDebugService/v1.0"), CancellationToken.None);
 
 IEnvironmentService esSvc = JsonRpc.Attach<IEnvironmentService>(new WebSocketMessageHandler(wsClientES));
 IAspireService asSvc = JsonRpc.Attach<IAspireService>(new WebSocketMessageHandler(wsClientAS));
@@ -46,6 +55,10 @@ IDebugService dsSvc = JsonRpc.Attach<IDebugService>(new WebSocketMessageHandler(
     await Task.Delay(2000);
     await t;
     Console.WriteLine("== Done Testing IObservable ==");
+}
+
+bool ValidateCertificateCallback(object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors sslPolicyErrors) {
+    return certificate != null && certificate.Equals(cert);
 }
 
 await RunLifecycle();

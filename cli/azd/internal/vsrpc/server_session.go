@@ -6,10 +6,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -28,7 +30,10 @@ type serverSession struct {
 	// rootPath is the path to the root of the solution.
 	rootPath string
 	// root container points to server.rootContainer
-	rootContainer *ioc.NestedContainer
+	rootContainer            *ioc.NestedContainer
+	externalServicesEndpoint string
+	externalServicesKey      string
+	externalServicesClient   *http.Client
 }
 
 // newSession creates a new session and returns the session ID and session. newSession is safe to call by multiple
@@ -77,23 +82,27 @@ func (s *Server) validateSession(ctx context.Context, session Session) (*serverS
 
 type container struct {
 	*ioc.NestedContainer
-	outWriter *writerMultiplexer
-	errWriter *writerMultiplexer
+	outWriter     *writerMultiplexer
+	errWriter     *writerMultiplexer
+	spinnerWriter *writerMultiplexer
 }
 
 // newContainer creates a new container for the session.
-func (s *serverSession) newContainer() (*container, error) {
+func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 	c, err := s.rootContainer.NewScopeRegistrationsOnly()
 	if err != nil {
 		return nil, err
 	}
 
 	id := s.id
-	azdCtx := azdcontext.NewAzdContextWithDirectory(s.rootPath)
+	azdCtx, err := azdContext(rc.HostProjectPath)
+	if err != nil {
+		return nil, err
+	}
 
 	outWriter := newWriter(fmt.Sprintf("[%s stdout] ", id))
 	errWriter := newWriter(fmt.Sprintf("[%s stderr] ", id))
-
+	spinnerWriter := newWriter(fmt.Sprintf("[%s spinner] ", id))
 	// Useful for debugging, direct all the output to the console, so you can see it in VS Code.
 	outWriter.AddWriter(&lineWriter{
 		next: writerFunc(func(p []byte) (n int, err error) {
@@ -109,17 +118,33 @@ func (s *serverSession) newContainer() (*container, error) {
 		}),
 	})
 
+	spinnerWriter.AddWriter(&lineWriter{
+		next: writerFunc(func(p []byte) (n int, err error) {
+			os.Stdout.Write([]byte(fmt.Sprintf("[%s spinner] %s", id, string(p))))
+			return n, nil
+		}),
+	})
+
 	c.MustRegisterScoped(func() input.Console {
 		stdout := outWriter
 		stderr := errWriter
 		stdin := strings.NewReader("")
 		writer := colorable.NewNonColorable(stdout)
 
-		return input.NewConsole(true, false, writer, input.ConsoleHandles{
-			Stdin:  stdin,
-			Stdout: stdout,
-			Stderr: stderr,
-		}, &output.NoneFormatter{})
+		return input.NewConsole(true, false, input.Writers{
+			Output:  writer,
+			Spinner: colorable.NewNonColorable(spinnerWriter)},
+			input.ConsoleHandles{
+				Stdin:  stdin,
+				Stdout: stdout,
+				Stderr: stderr,
+			},
+			&output.NoneFormatter{},
+			&input.ExternalPromptConfiguration{
+				Endpoint: s.externalServicesEndpoint,
+				Key:      s.externalServicesKey,
+				Client:   s.externalServicesClient,
+			})
 	})
 
 	c.MustRegisterScoped(func(console input.Console) io.Writer {
@@ -140,9 +165,18 @@ func (s *serverSession) newContainer() (*container, error) {
 		return lazy.From(azdCtx)
 	})
 
+	c.MustRegisterScoped(func() auth.ExternalAuthConfiguration {
+		return auth.ExternalAuthConfiguration{
+			Endpoint: s.externalServicesEndpoint,
+			Key:      s.externalServicesKey,
+			Client:   s.externalServicesClient,
+		}
+	})
+
 	return &container{
 		NestedContainer: c,
 		outWriter:       outWriter,
 		errWriter:       errWriter,
+		spinnerWriter:   spinnerWriter,
 	}, nil
 }

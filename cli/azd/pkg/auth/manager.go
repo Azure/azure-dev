@@ -10,21 +10,25 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	azcloud "github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -48,22 +52,7 @@ const cUseAzCliAuthKey = "auth.useAzCliAuth"
 // auth related configuration information (e.g. the home account id of the current user). This information is not secret.
 const cAuthConfigFileName = "auth.json"
 
-// cDefaultAuthority is the default authority to use when a specific tenant is not presented. We use "organizations" to
-// allow both work/school accounts and personal accounts (this matches the default authority the `az` CLI uses when logging
-// in).
-const cDefaultAuthority = "https://login.microsoftonline.com/organizations"
-
 const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
-
-const cExternalAuthEndpointEnvVarName = "AZD_AUTH_ENDPOINT"
-const cExternalAuthKeyEnvVarName = "AZD_AUTH_KEY"
-
-// The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
-// is logged in.
-var LoginScopes = []string{azure.ManagementScope}
-var loginScopesMap = map[string]struct{}{
-	azure.ManagementScope: {},
-}
 
 // HttpClient interface as required by MSAL library.
 type HttpClient interface {
@@ -91,19 +80,29 @@ type HttpClient interface {
 type Manager struct {
 	publicClient        publicClient
 	publicClientOptions []public.Option
+	cloud               *cloud.Cloud
 	configManager       config.FileConfigManager
 	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
 	httpClient          HttpClient
 	console             input.Console
+	externalAuthCfg     ExternalAuthConfiguration
+}
+
+type ExternalAuthConfiguration struct {
+	Endpoint string
+	Key      string
+	Client   httputil.HttpClient
 }
 
 func NewManager(
 	configManager config.FileConfigManager,
 	userConfigManager config.UserConfigManager,
+	cloud *cloud.Cloud,
 	httpClient HttpClient,
 	console input.Console,
+	externalAuthCfg ExternalAuthConfiguration,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -120,9 +119,14 @@ func NewManager(
 		return nil, fmt.Errorf("creating msal cache root: %w", err)
 	}
 
+	authorityUrl, err := url.JoinPath(cloud.Configuration.ActiveDirectoryAuthorityHost, "organizations")
+	if err != nil {
+		return nil, fmt.Errorf("joining authority url: %w", err)
+	}
+
 	options := []public.Option{
 		public.WithCache(newCache(cacheRoot)),
-		public.WithAuthority(cDefaultAuthority),
+		public.WithAuthority(authorityUrl),
 		public.WithHTTPClient(httpClient),
 	}
 
@@ -136,20 +140,44 @@ func NewManager(
 	return &Manager{
 		publicClient:        &msalPublicClientAdapter{client: &publicClientApp},
 		publicClientOptions: options,
+		cloud:               cloud,
 		configManager:       configManager,
 		userConfigManager:   userConfigManager,
 		credentialCache:     newCredentialCache(authRoot),
 		ghClient:            ghClient,
 		httpClient:          httpClient,
 		console:             console,
+		externalAuthCfg:     externalAuthCfg,
 	}, nil
+}
+
+// LoginScopes returns the scopes that we request an access token for when checking if a user is signed in.
+func LoginScopes(cloud *cloud.Cloud) []string {
+	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
+	return []string{
+		fmt.Sprintf("%s//.default", resourceManagerUrl),
+	}
+}
+
+func (m *Manager) LoginScopes() []string {
+	return LoginScopes(m.cloud)
+}
+
+func loginScopesMap(cloud *cloud.Cloud) map[string]struct{} {
+	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
+
+	return map[string]struct{}{resourceManagerUrl: {}}
 }
 
 // EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched.
 // On success, the token we fetched is returned.
-func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCredential) (*azcore.AccessToken, error) {
+func EnsureLoggedInCredential(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	cloud *cloud.Cloud,
+) (*azcore.AccessToken, error) {
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: LoginScopes,
+		Scopes: LoginScopes(cloud),
 	})
 	if err != nil {
 		return &azcore.AccessToken{}, err
@@ -170,12 +198,13 @@ func (m *Manager) CredentialForCurrentUser(
 		options = &CredentialForCurrentUserOptions{}
 	}
 
-	if endpoint, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName); hasEndpoint {
-		if key, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName); hasKey {
-			log.Printf("delegating auth to external process since %s and %s are set",
-				cExternalAuthEndpointEnvVarName, cExternalAuthKeyEnvVarName)
-			return newRemoteCredential(endpoint, key, options.TenantID, m.httpClient), nil
-		}
+	if m.UseExternalAuth() {
+		log.Printf("delegating auth to external process")
+		return newRemoteCredential(
+			m.externalAuthCfg.Endpoint,
+			m.externalAuthCfg.Key,
+			options.TenantID,
+			m.externalAuthCfg.Client), nil
 	}
 
 	userConfig, err := m.userConfigManager.Load()
@@ -209,10 +238,45 @@ func (m *Manager) CredentialForCurrentUser(
 			}
 			return cloudShellCredential, nil
 		}
+		if oneauth.Supported && strings.EqualFold(os.Getenv("IsDevBox"), "True") {
+			// Try logging in the active OS account. If that fails for any reason, tell the user to run `azd auth login`.
+			if err := m.LoginWithBrokerAccount(); err == nil {
+				if config, err := m.readAuthConfig(); err == nil {
+					user, err := readUserProperties(config)
+					if err == nil && user != nil && user.HomeAccountID != nil && *user.HomeAccountID != "" {
+						tenant := options.TenantID
+						if tenant == "" {
+							tenant = "organizations"
+						}
+						authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenant
+						return oneauth.NewCredential(authority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
+							HomeAccountID: *user.HomeAccountID,
+						})
+					}
+				}
+			}
+		}
 		return nil, ErrNoCurrentUser
 	}
 
 	if currentUser.HomeAccountID != nil {
+		if currentUser.FromOneAuth {
+			tenant := options.TenantID
+			if tenant == "" {
+				tenant = "organizations"
+			}
+
+			authority, err := url.JoinPath(m.cloud.Configuration.ActiveDirectoryAuthorityHost, tenant)
+			if err != nil {
+				return nil, fmt.Errorf("joining authority url: %w", err)
+			}
+
+			return oneauth.NewCredential(authority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
+				HomeAccountID: *currentUser.HomeAccountID,
+				NoPrompt:      options.NoPrompt,
+			})
+		}
+
 		accounts, err := m.publicClient.Accounts(ctx)
 		if err != nil {
 			return nil, err
@@ -220,9 +284,9 @@ func (m *Manager) CredentialForCurrentUser(
 		for i, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				if options.TenantID == "" {
-					return newAzdCredential(m.publicClient, &accounts[i]), nil
+					return newAzdCredential(m.publicClient, &accounts[i], m.cloud), nil
 				} else {
-					newAuthority := "https://login.microsoftonline.com/" + options.TenantID
+					newAuthority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + options.TenantID
 
 					newOptions := make([]public.Option, 0, len(m.publicClientOptions)+1)
 					newOptions = append(newOptions, m.publicClientOptions...)
@@ -236,7 +300,7 @@ func (m *Manager) CredentialForCurrentUser(
 						return nil, err
 					}
 
-					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i]), nil
+					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i], m.cloud), nil
 				}
 			}
 		}
@@ -268,6 +332,36 @@ func (m *Manager) CredentialForCurrentUser(
 	return nil, ErrNoCurrentUser
 }
 
+type ClaimsForCurrentUserOptions = CredentialForCurrentUserOptions
+
+// ClaimsForCurrentUser returns claims for the currently logged in user.
+func (m *Manager) ClaimsForCurrentUser(ctx context.Context, options *ClaimsForCurrentUserOptions) (TokenClaims, error) {
+	if options == nil {
+		options = &ClaimsForCurrentUserOptions{}
+	}
+	// The user's credential is used to obtain an access token.
+	// This implementation works well even in cases where a remote credential protocol is used to provide the credential.
+	cred, err := m.CredentialForCurrentUser(ctx, options)
+	if err != nil {
+		return TokenClaims{}, err
+	}
+
+	accessToken, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes:   LoginScopes(m.cloud),
+		TenantID: options.TenantID,
+	})
+	if err != nil {
+		return TokenClaims{}, err
+	}
+
+	claims, err := GetClaimsFromAccessToken(accessToken.Token)
+	if err != nil {
+		return TokenClaims{}, err
+	}
+
+	return claims, nil
+}
+
 func shouldUseLegacyAuth(cfg config.Config) bool {
 	if useLegacyAuth, has := cfg.Get(cUseAzCliAuthKey); has {
 		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {
@@ -297,11 +391,9 @@ func ShouldUseCloudShellAuth() bool {
 // for service principals.
 func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error) {
 
-	if _, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName); hasEndpoint {
-		if _, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName); hasKey {
-			// When delegating to an external system, we have no way to determine what principal was used
-			return nil, nil
-		}
+	if m.UseExternalAuth() {
+		// When delegating to an external system, we have no way to determine what principal was used
+		return nil, nil
 	}
 
 	cfg, err := m.userConfigManager.Load()
@@ -330,7 +422,7 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 				return nil, err
 			}
 
-			token, err := EnsureLoggedInCredential(ctx, credential)
+			token, err := EnsureLoggedInCredential(ctx, credential, m.cloud)
 			if err != nil {
 				return nil, err
 			}
@@ -361,10 +453,14 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 func (m *Manager) newCredentialFromClientSecret(
 	tenantID string,
 	clientID string,
-	clientSecret string) (azcore.TokenCredential, error) {
+	clientSecret string,
+) (azcore.TokenCredential, error) {
 	options := &azidentity.ClientSecretCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
+			// TODO: Inject client options instead? this can be done if we're OK
+			// using the default user agent string.
+			Cloud: m.cloud.Configuration,
 		},
 	}
 	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, options)
@@ -393,6 +489,9 @@ func (m *Manager) newCredentialFromClientCertificate(
 	options := &azidentity.ClientCertificateCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
+			// TODO: Inject client options instead? this can be done if we're OK
+			// using the default user agent string.
+			Cloud: m.cloud.Configuration,
 		},
 	}
 	cred, err := azidentity.NewClientCertificateCredential(
@@ -416,6 +515,9 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 	options := &azidentity.ClientAssertionCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
+			// TODO: Inject client options instead? this can be done if we're OK
+			// using the default user agent string.
+			Cloud: m.cloud.Configuration,
 		},
 	}
 	cred, err := azidentity.NewClientAssertionCredential(
@@ -457,7 +559,7 @@ func (m *Manager) LoginInteractive(
 	scopes []string,
 	options *LoginInteractiveOptions) (azcore.TokenCredential, error) {
 	if scopes == nil {
-		scopes = LoginScopes
+		scopes = m.LoginScopes()
 	}
 	acquireTokenOptions := []public.AcquireInteractiveOption{}
 	if options == nil {
@@ -486,13 +588,43 @@ func (m *Manager) LoginInteractive(
 		return nil, err
 	}
 
-	return newAzdCredential(m.publicClient, &res.Account), nil
+	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
+}
+
+// LoginWithBrokerAccount logs in an account provided by the system authentication broker via OneAuth.
+// For example, it will log in the user currently signed in to Windows. This method never prompts for
+// user interaction and returns an error when the broker doesn't provide an account.
+func (m *Manager) LoginWithBrokerAccount() error {
+	accountID, err := oneauth.LogInSilently(cAZD_CLIENT_ID)
+	if err == nil {
+		err = m.saveUserProperties(&userProperties{
+			FromOneAuth:   true,
+			HomeAccountID: &accountID,
+		})
+	}
+	return err
+}
+
+// LoginWithOneAuth starts OneAuth's interactive login flow.
+func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes []string) error {
+	if len(scopes) == 0 {
+		scopes = m.LoginScopes()
+	}
+	authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenantID
+	accountID, err := oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
+	if err == nil {
+		err = m.saveUserProperties(&userProperties{
+			FromOneAuth:   true,
+			HomeAccountID: &accountID,
+		})
+	}
+	return err
 }
 
 func (m *Manager) LoginWithDeviceCode(
 	ctx context.Context, tenantID string, scopes []string, withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
 	if scopes == nil {
-		scopes = LoginScopes
+		scopes = m.LoginScopes()
 	}
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
@@ -542,7 +674,7 @@ func (m *Manager) LoginWithDeviceCode(
 		return nil, err
 	}
 
-	return newAzdCredential(m.publicClient, &res.Account), nil
+	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
 
 }
 
@@ -638,13 +770,18 @@ func (m *Manager) Logout(ctx context.Context) error {
 
 	// we are fine to ignore the error here, it just means there's nothing to clean up.
 	currentUser, _ := readUserProperties(cfg)
-
-	// When logged in as a service principal, remove the stored credential
-	if currentUser != nil && currentUser.TenantID != nil && currentUser.ClientID != nil {
-		if err := m.saveLoginForServicePrincipal(
-			*currentUser.TenantID, *currentUser.ClientID, &persistedSecret{},
-		); err != nil {
-			return fmt.Errorf("removing authentication secrets: %w", err)
+	if currentUser != nil {
+		if currentUser.FromOneAuth {
+			if err := oneauth.Logout(cAZD_CLIENT_ID); err != nil {
+				return fmt.Errorf("logging out of OneAuth: %w", err)
+			}
+		} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
+			// When logged in as a service principal, remove the stored credential
+			if err := m.saveLoginForServicePrincipal(
+				*currentUser.TenantID, *currentUser.ClientID, &persistedSecret{},
+			); err != nil {
+				return fmt.Errorf("removing authentication secrets: %w", err)
+			}
 		}
 	}
 
@@ -660,10 +797,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 }
 
 func (m *Manager) UseExternalAuth() bool {
-	_, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName)
-	_, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName)
-
-	return hasEndpoint && hasKey
+	return m.externalAuthCfg.Endpoint != "" && m.externalAuthCfg.Key != ""
 }
 
 func (m *Manager) saveLoginForPublicClient(res public.AuthResult) error {
@@ -821,6 +955,8 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 }
 
 type CredentialForCurrentUserOptions struct {
+	// NoPrompt controls whether the credential may prompt for user interaction.
+	NoPrompt bool
 	// The tenant ID to use when constructing the credential, instead of the default tenant.
 	TenantID string
 }
@@ -858,6 +994,7 @@ type federatedAuth struct {
 // client).
 type userProperties struct {
 	HomeAccountID *string `json:"homeAccountId,omitempty"`
+	FromOneAuth   bool    `json:"fromOneAuth,omitempty"`
 	ClientID      *string `json:"clientId,omitempty"`
 	TenantID      *string `json:"tenantId,omitempty"`
 }

@@ -12,7 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -301,19 +303,16 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
-			env := environment.NewWithValues("env", map[string]string{
+			return environment.NewWithValues("env", map[string]string{
 				"DOTNET_ENVIRONMENT": "Development",
-			})
-			// set the config to skip prompting
-			e := env.Config.Set("services.test.config.exposedServices", []interface{}{"test"})
-			require.NoError(t, e)
-			return env, nil
+			}), nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-		hostCheck: make(map[string]hostCheckResult),
-		cache:     make(map[manifestCacheKey]*apphost.Manifest),
+		hostCheck:           make(map[string]hostCheckResult),
+		cache:               make(map[manifestCacheKey]*apphost.Manifest),
+		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 	})
 
 	// adding infra folder to test defaults
@@ -350,7 +349,6 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	require.Contains(t, r.Options.Path, "azd-infra")
 	require.Equal(t, DefaultModule, r.Options.Module)
 	require.Equal(t, r.cleanupDir, r.Options.Path)
-	require.NotNil(t, r.Inputs)
 
 	// If we fetch the infrastructure again, we expect that the manifest is already cached and `dotnet run` on the apphost
 	// will not be invoked again.

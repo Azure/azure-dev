@@ -33,7 +33,7 @@ func (c *PermissionListRequestBuilder) Get(ctx context.Context) ([]*armauthoriza
 		return nil, err
 	}
 
-	options := azsdk.NewClientOptionsBuilderFactory(c.client.options.Transport, "azd").
+	options := azsdk.NewClientOptionsBuilderFactory(c.client.options.Transport, "azd", c.client.cloud).
 		NewClientOptionsBuilder().
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
 		BuildArmClientOptions()

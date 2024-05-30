@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -245,6 +246,13 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 
 	mockContext.Container.MustRegisterSingleton(func() clock.Clock {
 		return clock.NewMock()
+	})
+
+	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
+		return cloud.AzurePublic()
+	})
+	mockContext.Container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {
+		return cloud.PortalUrlBase
 	})
 }
 

@@ -31,12 +31,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -117,6 +120,84 @@ func TestMain(m *testing.M) {
 	os.Exit(exitVal)
 }
 
+func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Skip("missing dev center configuration in test environment")
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+	envName := randomOrStoredEnvName(session)
+
+	// This test leverages a real dev center configuration with the following values:
+	devCenterName := "dc-azd-o2pst6gaydv5o"
+	catalogName := "wbreza"
+	projectName := "Project-1"
+	environmentDefinitionName := "HelloWorld"
+	environmentTypeName := "Dev"
+
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=devcenter", environment.PlatformTypeEnvVarName))
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=%s", devcenter.DevCenterNameEnvName, devCenterName))
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=%s", devcenter.DevCenterCatalogEnvName, catalogName))
+
+	initStdIn := strings.Join(
+		[]string{
+			"Select a template",
+			environmentDefinitionName,
+			envName,
+			projectName,
+		},
+		"\n",
+	)
+
+	// azd init
+	_, err := cli.RunCommandWithStdIn(ctx, initStdIn, "init")
+	require.NoError(t, err)
+
+	// evaluate the project and environment configuration
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+	require.NoError(t, err)
+
+	require.Equal(t, devCenterName, projectConfig.Platform.Config["name"])
+	require.Equal(t, catalogName, projectConfig.Platform.Config["catalog"])
+	require.Equal(t, environmentDefinitionName, projectConfig.Platform.Config["environmentDefinition"])
+
+	env, err := envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	require.Equal(t, envName, env.Name())
+	actualProjectName, _ := env.Config.Get(devcenter.DevCenterProjectPath)
+	repoUrl, _ := env.Config.Get("provision.parameters.repoUrl")
+	require.Equal(t, projectName, actualProjectName)
+	require.Equal(t, "https://github.com/wbreza/azd-hello-world", repoUrl)
+
+	// azd up
+	upStdIn := strings.Join([]string{environmentTypeName}, "\n")
+	_, err = cli.RunCommandWithStdIn(ctx, upStdIn, "up")
+	require.NoError(t, err)
+
+	// re-evaluate the environment configuration
+	env, err = envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	actualEnvTypeName, _ := env.Config.Get(devcenter.DevCenterEnvTypePath)
+	require.Equal(t, environmentTypeName, actualEnvTypeName)
+
+	// azd down
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
@@ -176,6 +257,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	armClientOptions := &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: client,
+			Cloud:     cloud.AzurePublic().Configuration,
 		},
 	}
 	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
@@ -391,6 +473,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	armClientOptions := &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: client,
+			Cloud:     cloud.AzurePublic().Configuration,
 		},
 	}
 
@@ -432,9 +515,8 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	cli.WorkingDirectory = dir
 
 	tests := []struct {
-		command       string
-		args          []string
-		errorToStdOut bool
+		command string
+		args    []string
 	}{
 		{command: "provision"},
 		{command: "deploy"},
@@ -464,11 +546,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			if test.errorToStdOut {
-				assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
-			} else {
-				assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
-			}
+			assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
 		})
 	}
 }

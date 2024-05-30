@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
 // SqlDbService is the interface for the SqlDbService
@@ -15,24 +15,29 @@ type SqlDbService interface {
 }
 
 type sqlDbClient struct {
-	credential azcore.TokenCredential
-	options    *arm.ClientOptions
+	accountCreds account.SubscriptionCredentialProvider
+	options      *arm.ClientOptions
 }
 
 // NewSqlDbService creates a new instance of the SqlDbService
 func NewSqlDbService(
-	credential azcore.TokenCredential,
+	accountCreds account.SubscriptionCredentialProvider,
 	options *arm.ClientOptions,
 ) (SqlDbService, error) {
 	return &sqlDbClient{
-		credential: credential,
-		options:    options,
+		accountCreds: accountCreds,
+		options:      options,
 	}, nil
 }
 
 // ConnectionString returns the connection string for the CosmosDB account
 func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serverName, dbName string) (string, error) {
-	clientFactory, err := armsql.NewClientFactory(subId, c.credential, c.options)
+	credential, err := c.accountCreds.CredentialForSubscription(ctx, subId)
+	if err != nil {
+		return "", err
+	}
+
+	clientFactory, err := armsql.NewClientFactory(subId, credential, c.options)
 	if err != nil {
 		return "", err
 	}

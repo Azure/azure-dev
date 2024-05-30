@@ -170,23 +170,23 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
             {{- end}}
             {{- if .DbPostgres}}
             {
-              name: 'DB_HOST'
+              name: 'POSTGRES_HOST'
               value: databaseHost
             }
             {
-              name: 'DB_USER'
+              name: 'POSTGRES_USERNAME'
               value: databaseUser
             }
             {
-              name: 'DB_NAME'
+              name: 'POSTGRES_DATABASE'
               value: databaseName
             }
             {
-              name: 'DB_PASS'
+              name: 'POSTGRES_PASSWORD'
               secretRef: 'db-pass'
             }
             {
-              name: 'DB_PORT'
+              name: 'POSTGRES_PORT'
               value: '5432'
             }
             {{- end}}

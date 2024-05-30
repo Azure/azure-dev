@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -207,6 +208,7 @@ func newTemplateSourceForTest(
 		mockContext.Credentials,
 		mockContext.CoreClientOptions,
 		resourceGraphClient,
+		cloud.AzurePublic(),
 	)
 
 	require.NoError(t, err)

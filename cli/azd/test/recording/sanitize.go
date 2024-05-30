@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
@@ -37,6 +37,7 @@ func sanitizeContainerAppTokenExchange(i *cassette.Interaction) error {
 
 func sanitizeContainerAppListSecrets(i *cassette.Interaction) error {
 	if i.Request.Method == "POST" &&
+		// TODO: Pull from config
 		i.Request.Host == "management.azure.com" &&
 		strings.Contains(i.Request.URL, "/Microsoft.App/containerApps") &&
 		strings.Contains(i.Request.URL, "/listSecrets") {
@@ -74,6 +75,7 @@ func sanitizeContainerAppListSecrets(i *cassette.Interaction) error {
 
 func sanitizeContainerAppUpdate(i *cassette.Interaction) error {
 	if i.Request.Method == "PATCH" || i.Request.Method == "POST" &&
+		// TODO: Pull this from config
 		i.Request.Host == "management.azure.com" &&
 		strings.Contains(i.Request.URL, "/Microsoft.App/containerApps/") {
 		split := strings.Split(i.Request.URL, "/Microsoft.App/containerApps/")

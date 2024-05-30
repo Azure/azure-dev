@@ -43,10 +43,17 @@ func (s *TemplateSource) Name() string {
 func (s *TemplateSource) ListTemplates(ctx context.Context) ([]*templates.Template, error) {
 	var devCenterFilter DevCenterFilterPredicate
 	var projectFilter ProjectFilterPredicate
+	var catalogFilter EnvironmentDefinitionFilterPredicate
 
 	if s.config.Name != "" {
 		devCenterFilter = func(dc *devcentersdk.DevCenter) bool {
 			return strings.EqualFold(dc.Name, s.config.Name)
+		}
+	}
+
+	if s.config.Catalog != "" {
+		catalogFilter = func(ed *devcentersdk.EnvironmentDefinition) bool {
+			return strings.EqualFold(ed.CatalogName, s.config.Catalog)
 		}
 	}
 
@@ -90,6 +97,11 @@ func (s *TemplateSource) ListTemplates(ctx context.Context) ([]*templates.Templa
 			}
 
 			for _, envDefinition := range envDefinitions.Value {
+				// Filter out environment definitions that do not match the specified catalog
+				if catalogFilter != nil && !catalogFilter(envDefinition) {
+					continue
+				}
+
 				// We only want to consider environment definitions that have
 				// a repo url parameter as valid templates for azd
 				var repoUrls []string

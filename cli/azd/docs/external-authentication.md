@@ -48,7 +48,7 @@ The server should take this request and fetch a token using the given configuati
 
 ```jsonc
 {
-  "result": "success",
+  "status": "success",
   "token": "<string>", // the access token.
   "expiresOn": "<string>" // the expiration time of the token, expressed in RFC3339 format.
 }
@@ -58,7 +58,7 @@ The server should take this request and fetch a token using the given configuati
 
 ```jsonc
 {
-  "result": "error",
+  "status": "error",
   "code": "string", // one of "GetTokenError" or "NotSignedInError"
   "message": "string" // a human readable error message.
 }

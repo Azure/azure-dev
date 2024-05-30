@@ -13,13 +13,13 @@ import (
 )
 
 // DeployAsync is the server implementation of:
-// ValueTask<Environment> DeployAsync(Session, string, IObserver<ProgressMessage>, CancellationToken)
+// ValueTask<Environment> DeployAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken)
 //
 // While it is named simply `DeployAsync`, it behaves as if the user had run `azd provision` and `azd deploy`.
 func (s *environmentService) DeployAsync(
-	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(ctx, rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -28,15 +28,31 @@ func (s *environmentService) DeployAsync(
 		next: &messageWriter{
 			ctx:      ctx,
 			observer: observer,
+			messageTemplate: ProgressMessage{
+				Kind:     MessageKind(Info),
+				Severity: Info,
+			},
 		},
 	}
 
-	container, err := session.newContainer()
+	spinnerWriter := &lineWriter{
+		trimLineEndings: true,
+		next: &messageWriter{
+			ctx:      ctx,
+			observer: observer,
+			messageTemplate: ProgressMessage{
+				Kind:     MessageKind(Important),
+				Severity: Info,
+			},
+		},
+	}
+
+	container, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}
 	container.outWriter.AddWriter(outputWriter)
-	defer container.outWriter.RemoveWriter(outputWriter)
+	container.spinnerWriter.AddWriter(spinnerWriter)
 
 	provisionFlags := cmd.NewProvisionFlagsFromEnvAndOptions(
 		&internal.EnvFlag{
@@ -90,6 +106,10 @@ func (s *environmentService) DeployAsync(
 	}
 
 	if err := outputWriter.Flush(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := spinnerWriter.Flush(ctx); err != nil {
 		return nil, err
 	}
 

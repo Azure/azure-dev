@@ -1,0 +1,322 @@
+parameters:
+- name: VerifyMatrix
+  type: object
+  default:
+    LinuxDockerSh:
+      Pool: $(LINUXPOOL)
+      OSVmImage: $(LINUXVMIMAGE)
+      ImageKey: image
+      OS: linux
+      Variables:
+        TestShell: pwsh
+        TestInstallCommand: >-
+          ./test-installer-containers.ps1
+          -BaseUrl "http://host.docker.internal:8080"
+          -Version ''
+          -ContainerPrefix '$(docker-mirror-tag-prefix)/'
+          -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
+    LinuxSh:
+      Pool: $(LINUXPOOL)
+      OSVmImage: $(LINUXVMIMAGE)
+      ImageKey: image
+      OS: linux
+      Variables:
+        TestShell: bash
+        TestInstallCommand: >-
+          ./test-sh-install.sh "bash" "$BASEURL" "" &&
+          ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv" &&
+          ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+
+    LinuxPwsh:
+      Pool: $(LINUXPOOL)
+      OSVmImage: $(LINUXVMIMAGE)
+      ImageKey: image
+      OS: linux
+      Variables:
+        TestShell: pwsh
+        TestInstallCommand: >-
+          ./test-pwsh-xplat-install.ps1 
+          -BaseUrl $env:BASEURL 
+          -Version '' 
+          -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+          -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
+          ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
+
+    Mac11Sh:
+      Pool: Azure Pipelines
+      OSVmImage: $(MACVMIMAGE)
+      ImageKey: vmImage
+      OS: macOS
+      Variables:
+        TestShell: bash
+        TestInstallCommand: >-
+          ./test-sh-install.sh "bash" "$BASEURL" "" &&
+          ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv" &&
+          ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+
+    Mac12Sh:
+      Pool: Azure Pipelines
+      OSVmImage: $(MACVMIMAGE12)
+      ImageKey: vmImage
+      OS: macOS
+      Variables:
+        TestShell: bash
+        TestInstallCommand: >-
+          ./test-sh-install.sh "bash" "$BASEURL" "" &&
+          ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv" &&
+          ./test-sh-install-errors.sh "bash" "$BASEURL" ""
+
+    Mac12Pwsh:
+      Pool: Azure Pipelines
+      OSVmImage: $(MACVMIMAGE12)
+      ImageKey: vmImage
+      OS: macOS
+      Variables:
+        TestShell: pwsh
+        # Should also test telemetry functions but cannot because of macOS
+        # host limitations in DevOps which do not reproduce on non-DevOps
+        # macs. Disabled for now.
+        #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
+        TestInstallCommand: >-
+          ./test-pwsh-xplat-install.ps1 
+          -BaseUrl $env:BASEURL 
+          -Version '' 
+          -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+          -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
+
+    Mac11Pwsh:
+      Pool: Azure Pipelines
+      OSVmImage: $(MACVMIMAGE)
+      ImageKey: vmImage
+      OS: macOS
+      Variables:
+        TestShell: pwsh
+        # Should also test telemetry functions but cannot because of macOS
+        # host limitations in DevOps which do not reproduce on non-DevOps
+        # macs. Disabled for now.
+        #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
+        TestInstallCommand: >-
+          ./test-pwsh-xplat-install.ps1 
+          -BaseUrl $env:BASEURL 
+          -Version '' 
+          -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+          -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
+
+    WindowsCmd:
+      Pool: $(WINDOWSPOOL)
+      OSVmImage: $(WINDOWSVMIMAGE)
+      ImageKey: image
+      OS: windows
+      Variables:
+        TestShell: cmd
+        TestInstallCommand: cmd /c test-windows-install.cmd %BASEURL%
+
+    WindowsPwsh:
+      Pool: $(WINDOWSPOOL)
+      OSVmImage: $(WINDOWSVMIMAGE)
+      ImageKey: image
+      OS: 
+      Variables:
+        TestShell: pwsh
+        TestInstallCommand: >-
+          $ErrorActionPreference = 'Stop';
+          ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
+          ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
+
+    WindowsPowerShell:
+      Pool: $(WINDOWSPOOL)
+      OSVmImage: $(WINDOWSVMIMAGE)
+      ImageKey: image
+      OS: windows
+      Variables:
+        TestShell: powershell
+        TestInstallCommand: >-
+          $ErrorActionPreference = 'Stop';
+          ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
+          ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
+
+
+- name: LinuxPackageMatrix
+  type: object
+  default: 
+    LinuxAMD64:
+      Pool: $(LINUXPOOL)
+      OSVmImage: $(LINUXVMIMAGE)
+      HostArchitecture: amd64
+      OS: linux
+      Variables:
+        Architecture: amd64
+    # TODO: When Docker can be installed and run properly on the ARM
+    # host this can be used to validate the ARM64 Linux packages.
+    # https://github.com/Azure/azure-dev/issues/2617
+    # LinuxARM64:
+    #   Pool: $(LINUXARMPOOL)
+    #   OSVmImage: $(LINUXARMVMIMAGE)
+    #   HostArchitecture: arm64
+    #   OS: linux
+    #   Variables:
+    #     Architecture: arm64
+
+stages:
+  - stage: Verify_Installers
+    condition: and(succeeded(), ne(variables['Skip.VerifyInstallers'], 'true'))
+    dependsOn: BuildAndTest
+
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
+    jobs:
+      - job: Compress_For_Hosting
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-windows-amd64.exe
+              path: azd-windows-amd64.exe
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-linux-amd64
+              path: azd-linux-amd64
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: azd-darwin-amd64
+              path: azd-darwin-amd64
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: test-msi
+              path: msi
+
+          - pwsh: |
+              Write-Host "Moving downloaded files to hosting folder"
+              New-Item -ItemType Directory -Path hosting
+
+              Write-Host "Compressing artifacts as if publishing"
+              zip hosting/azd-windows-amd64.zip -j azd-windows-amd64.exe/azd-windows-amd64.exe
+
+              chmod +x azd-darwin-amd64/azd-darwin-amd64
+              zip hosting/azd-darwin-amd64.zip -j azd-darwin-amd64/azd-darwin-amd64
+
+              chmod +x azd-linux-amd64/azd-linux-amd64
+              tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
+
+              Copy-Item msi/azd-windows-amd64.msi hosting/
+
+              Copy-Item cli/installer/*stall-azd.* hosting/
+
+              Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
+            displayName: Move folders to hosting location
+
+          - task: 1ES.PublishPipelineArtifact@1
+            inputs:
+              targetPath: hosting
+              artifact: test-hosting
+
+      - job: Verify_MSI
+        dependsOn: Compress_For_Hosting
+
+        pool:
+          name: $(WINDOWSPOOL)
+          image: $(WINDOWSVMIMAGE)
+          os: windows
+
+        variables:
+          AZURE_DEV_COLLECT_TELEMETRY: no
+        strategy:
+          matrix:
+            PerUser:
+              PerMachine: $false
+            AllUsers:
+              PerMachine: $true
+        steps:
+          - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: test-msi
+              path: msi
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: cli/installer/windows/test-win-msi.ps1
+              arguments: >-
+                -PerMachine:$(PerMachine)
+                -MsiPath msi/azd-windows-amd64.msi
+              # Do not exit on first Write-Error, write all messages and let the
+              # script handle exiting with an error status.
+              errorActionPreference: continue
+            displayName: Test MSI
+
+      - ${{ each build in parameters.VerifyMatrix }}:
+        - template: /eng/pipelines/templates/jobs/verify-installers.yml
+          parameters:
+            NameSuffix: ${{ build.key}}
+            Pool: ${{ build.value.Pool }}
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }} 
+            OS: ${{ build.value.OS }}
+            Variables: ${{ build.value.Variables }}
+
+      - job: Verify_Mac_InstallOver
+        dependsOn: Compress_For_Hosting
+        pool:
+          name: Azure Pipelines
+          vmImage: $(MACVMIMAGE12)
+          os: macOS
+
+        steps:
+          - checkout: self
+
+          - bash: ./install-azd.sh --version daily --verbose
+            displayName: Install "daily" version
+            workingDirectory: cli/installer/
+
+          - pwsh: azd version
+            displayName: Run azd version
+
+          - bash: ./install-azd.sh --version latest --verbose
+            displayName: Install "latest" version
+            workingDirectory: cli/installer/
+
+          - pwsh: azd version
+            displayName: Run azd version (expect no failure)
+
+      - ${{ each build in parameters.LinuxPackageMatrix }}: 
+        - job: Verify_LinuxPackages_${{ build.key }}
+          displayName: Verify_LinuxPackages ${{ build.key }}
+
+          pool:
+            name: ${{ build.value.Pool}}
+            image: ${{ build.value.OSVmImage }}
+            os: ${{ build.value.OS }}
+            hostArchitecture: ${{ build.value.HostArchitecture }}
+
+          variables: 
+            ${{ insert }}: ${{ build.value.Variables }}
+
+          steps:
+            - checkout: self
+
+            - task: DownloadPipelineArtifact@2
+              inputs:
+                artifact: linux-packages-$(Architecture)
+                path: cli/installer/fpm
+
+            - task: PowerShell@2
+              displayName: Verify Linux Packages
+              inputs:
+                pwsh: true
+                workingDirectory: cli/installer/fpm
+                filePath: eng/scripts/Test-LinuxPackages.ps1
+                arguments: -DockerImagePrefix "$(docker-mirror-tag-prefix)/"

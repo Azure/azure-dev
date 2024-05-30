@@ -82,7 +82,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
 	}
 
-	if err := m.UpdateEnvironment(ctx, m.env, deployResult.Deployment.Outputs); err != nil {
+	if err := m.UpdateEnvironment(ctx, deployResult.Deployment.Outputs); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
@@ -149,7 +149,6 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 
 func (m *Manager) UpdateEnvironment(
 	ctx context.Context,
-	env *environment.Environment,
 	outputs map[string]OutputParameter,
 ) error {
 	if len(outputs) > 0 {
@@ -160,13 +159,13 @@ func (m *Manager) UpdateEnvironment(
 				if err != nil {
 					return fmt.Errorf("invalid value for output parameter '%s' (%s): %w", key, string(param.Type), err)
 				}
-				env.DotenvSet(key, string(bytes))
+				m.env.DotenvSet(key, string(bytes))
 			} else {
-				env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
+				m.env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
 			}
 		}
 
-		if err := m.envManager.Save(ctx, env); err != nil {
+		if err := m.envManager.Save(ctx, m.env); err != nil {
 			return fmt.Errorf("writing environment: %w", err)
 		}
 	}
@@ -176,6 +175,7 @@ func (m *Manager) UpdateEnvironment(
 
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
 // variables are set in the environment, prompting the user for the values if they do not exist.
+// locationFilter, when non-nil, filters the locations being displayed.
 func EnsureSubscriptionAndLocation(
 	ctx context.Context,
 	envManager environment.Manager,

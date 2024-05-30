@@ -65,47 +65,6 @@ func Test_AlphaUpperSnake(t *testing.T) {
 	}
 }
 
-func Test_ToDotNotation(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "valid input",
-			input:    "${inputs['my-input']['myinput']}",
-			expected: "inputs['my-input'].myinput",
-		},
-		{
-			name:     "non inputs",
-			input:    "my-input",
-			expected: "'my-input'",
-		},
-		{
-			name:     "input with hyphen",
-			input:    "${inputs['my-input-with-hyphen']['other-foo']}",
-			expected: "inputs['my-input-with-hyphen']['other-foo']",
-		},
-		{
-			name:     "input with hyphen 2",
-			input:    "${inputs['my']['other-foo']}",
-			expected: "inputs.my['other-foo']",
-		},
-		{
-			name:     "input with multiple levels",
-			input:    "${inputs['level1']['level2']}",
-			expected: "inputs.level1.level2",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			actual := ToDotNotation(tt.input)
-			assert.Equal(t, tt.expected, actual)
-		})
-	}
-}
-
 func Test_EnvFormat(t *testing.T) {
 	tests := []struct {
 		name     string

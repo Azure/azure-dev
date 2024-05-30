@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
@@ -185,7 +184,6 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 // which will cause any temporarily generated files to be removed.
 type Infra struct {
 	Options    provisioning.Options
-	Inputs     map[string]apphost.Input
 	cleanupDir string
 }
 

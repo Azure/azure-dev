@@ -54,7 +54,7 @@ func TestDetect(t *testing.T) {
 						JsAngular,
 						JsJQuery,
 						JsReact,
-						JsVue,
+						JsVite,
 					},
 					DatabaseDeps: []DatabaseDep{
 						DbMongo,

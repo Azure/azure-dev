@@ -9,11 +9,14 @@ param principalId string = ''
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
-@secure()
-@metadata({azd: {type: 'inputs' }})
-param inputs object
-
 var resourceToken = uniqueString(resourceGroup().id)
+
+{{- range $parameter := .MainToResourcesParams }}
+{{- if $parameter.Secret }}
+@secure()
+{{- end}}
+param {{bicepParameterName $parameter.Name}} {{$parameter.Type}}
+{{- end}}
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'mi-${resourceToken}'
@@ -55,11 +58,45 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
   tags: tags
 }
 {{end -}}
+{{if .RequiresStorageVolume}}
+resource storageVolume 'Microsoft.Storage/storageAccounts@2022-05-01' = {
+  name: 'vol${resourceToken}'
+  location: location
+  kind: 'StorageV2'
+  sku: {
+    name: 'Standard_LRS'
+  }
+  properties: {
+    largeFileSharesState: 'Enabled'
+  }
+}
+
+resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileServices@2022-05-01' = {
+  parent: storageVolume
+  name: 'default'
+}
+{{range $name, $value := .ContainerApps}}
+{{- range $volume := $value.Volumes}}
+resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}', 32)
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
+  }
+}
+{{- end }}
+{{- end }}
+{{end -}}
 {{if .HasContainerEnvironment}}
-resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
+resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-preview' = {
   name: 'cae-${resourceToken}'
   location: location
   properties: {
+    workloadProfiles: [{
+      workloadProfileType: 'Consumption'
+      name: 'consumption'
+    }]
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
@@ -69,7 +106,45 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
     }
   }
   tags: tags
+
+  resource aspireDashboard 'dotNetComponents' = {
+    name: 'aspire-dashboard'
+    properties: {
+      componentType: 'AspireDashboard'
+    }
+  }
+
 }
+
+resource explicitContributorUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerAppEnvironment.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c'))
+  scope: containerAppEnvironment
+  properties: {
+    principalId: principalId
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  }
+}
+{{range $name, $value := .ContainerApps}}
+{{- range $volume := $value.Volumes}}
+resource {{mergeBicepName $name $volume.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}', 32)
+  properties: {
+    azureFile: {
+      shareName: '${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+{{- if $volume.ReadOnly }}
+      accessMode: 'ReadOnly'
+{{- end}}
+{{- if eq false $volume.ReadOnly }}
+      accessMode: 'ReadWrite'
+{{- end}}
+    }
+  }
+}
+{{end -}}
+{{end -}}
 {{range $componentName, $componentValue := .DaprComponents}}
 resource {{$componentName}} 'Microsoft.App/managedEnvironments/daprComponents@2023-05-01' = {
   name: '{{$componentName}}'
@@ -128,96 +203,12 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
 }
 {{end -}}
-{{range $name, $value := .ContainerApps}}
-resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: '{{containerAppName $name}}'
-  location: location
-  properties: {
-    environmentId: containerAppEnvironment.id
-    configuration: {
-      activeRevisionsMode: 'Single'
-{{- if $value.Dapr}}
-      dapr: {
-        appId: {{$value.Dapr.AppId}}
-{{- if $value.Dapr.AppPort}}
-        appPort: {{$value.Dapr.AppPort}}
-{{- end}}
-{{- if $value.Dapr.AppProtocol}}
-        appProtocol: {{$value.Dapr.AppProtocol}}
-{{- end}}
-{{- if $value.Dapr.EnableApiLogging}}
-        enableApiLogging: {{$value.Dapr.EnableApiLogging}}
-{{- end}}
-        enabled: true
-{{- if $value.Dapr.HttpMaxRequestSize}}
-        httpMaxRequestSize: {{$value.Dapr.HttpMaxRequestSize}}
-{{- end}}
-{{- if $value.Dapr.HttpReadBufferSize}}
-        httpReadBufferSize: {{$value.Dapr.HttpReadBufferSize}}
-{{- end}}
-{{- if $value.Dapr.LogLevel}}
-        logLevel: {{$value.Dapr.LogLevel}}
-{{- end}}
-      }
-{{- end}}
-{{- if $value.Ingress}}
-      ingress: {
-        external: {{$value.Ingress.External}}
-        targetPort: {{$value.Ingress.TargetPort}}
-        transport: '{{$value.Ingress.Transport}}'
-{{- if ne $value.Ingress.Transport "tcp" }}
-        allowInsecure: {{$value.Ingress.AllowInsecure}}
-{{- end}}
-      }
-{{- end}}
-{{- if gt (len $value.Secrets) 0 }}
-      secrets: [
-{{- range $sName, $sValue := $value.Secrets}}
-        {
-          name: '{{containerAppSecretName $sName}}'
-          value: {{toDotNotation $sValue}}
-        }
-{{- end}}    
-      ]
-{{- end}}
-    }
-    template: {
-      containers: [
-        {
-          image: '{{$value.Image}}'
-          name: '{{$name}}'
-{{- if or (gt (len $value.Env) 0) (gt (len $value.Secrets) 0)}}
-          env: [
-{{- range $name, $value := $value.Env}}
-            {
-              name: '{{$name}}'
-              value: '{{$value}}'
-            }
-{{- end}}
-{{- range $sName, $sValue := $value.Secrets}}
-            {
-              name: '{{$sName}}'
-              secretRef: '{{containerAppSecretName $sName}}'
-            }
-{{- end}}
-          ]
-{{- end}}
-        }
-      ]
-      scale: {
-        minReplicas: 1
-      }
-    }
-  }
-  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
-}
-{{end -}}
 {{range $name, $value := .ServiceBuses}}
 resource {{bicepName $name}} 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
   name: '{{$name}}-${resourceToken}'
   location: location
   sku: {
-    name: 'Standard'   
+    name: 'Standard'
   }
   properties: {
     minimumTlsVersion: '1.2'
@@ -228,13 +219,13 @@ resource {{bicepName $name}} 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   resource {{bicepName $name}} 'queues@2022-10-01-preview' = {
     name: '{{$name}}'
   }
-{{end -}}  
+{{end -}}
 {{range $name := $value.Topics}}
 
   resource {{bicepName $name}} 'topics@2022-10-01-preview' = {
     name: '{{$name}}'
   }
-{{end -}}  
+{{end -}}
 }
 
 resource {{bicepName $name}}MiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -341,7 +332,6 @@ resource {{bicepName $name}}UserReadRoleAssignment 'Microsoft.Authorization/role
   scope: {{bicepName $name}}
   properties: {
     principalId: principalId
-    principalType: 'User'
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
   }
 }
@@ -447,8 +437,14 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.l
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id
 {{end -}}
 {{if .HasContainerEnvironment -}}
+output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = containerAppEnvironment.name
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
+{{end -}}
+{{range $name, $value := .ContainerApps -}}
+{{range $volume := $value.Volumes -}}
+output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $volume.Name | alphaSnakeUpper}}_NAME string = {{mergeBicepName $name $volume.Name}}Store.name
+{{end -}}
 {{end -}}
 {{range $name, $value := .ServiceBuses -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.serviceBusEndpoint

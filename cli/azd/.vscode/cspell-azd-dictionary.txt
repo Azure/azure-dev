@@ -21,6 +21,7 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 armcosmos
+armmachinelearning
 armresourcegraph
 armsql
 aspnet
@@ -42,8 +43,10 @@ azdtest
 azfile
 azruntime
 azsdk
+azureai
 AZURECLI
 azureedge
+azureml
 azurestaticapps
 azuretools
 azureutil
@@ -69,6 +72,7 @@ createdby
 csharpapp
 csharpapptest
 cupaloy
+custommaps
 deletedservices
 devcenter
 devcenters
@@ -128,6 +132,7 @@ nodeapp
 nolint
 notrail
 omitempty
+oneauth
 oneline
 opentelemetry
 ostest
@@ -173,6 +178,8 @@ sqlserver
 sstore
 staticcheck
 staticwebapp
+stdbool
+stdlib
 stdouttrace
 STRINGSLICE
 structs
@@ -182,6 +189,7 @@ Syncer
 teamcity
 testdata
 tmpl
+toplevel
 tracesdk
 tracetest
 trafficmanager
@@ -189,11 +197,13 @@ Truef
 typeflag
 unhide
 unmarshaled
-upgrader
+unmarshalled
 unmarshalling
 unsetenvs
 unsets
+upgrader
 utsname
+vite
 vsrpc
 vuejs
 webfrontend

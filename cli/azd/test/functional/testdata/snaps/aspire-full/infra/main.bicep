@@ -9,9 +9,9 @@ param environmentName string
 @description('The location used for all deployed resources')
 param location string
 
-@secure()
-@metadata({azd: {type: 'inputs' }})
-param inputs object
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+
 
 var tags = {
   'azd-env-name': environmentName
@@ -29,18 +29,37 @@ module resources 'resources.bicep' = {
   params: {
     location: location
     tags: tags
-    inputs: inputs
+    principalId: principalId
   }
 }
 
+module cosmos 'cosmos/cosmos.module.bicep' = {
+  name: 'cosmos'
+  scope: rg
+  params: {
+    keyVaultName: resources.outputs.SERVICE_BINDING_KVF2EDECB5_NAME
+    location: location
+  }
+}
+module storage 'storage/storage.module.bicep' = {
+  name: 'storage'
+  scope: rg
+  params: {
+    location: location
+    principalId: resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID
+    principalType: 'ServicePrincipal'
+  }
+}
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
+output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
-output SERVICE_BINDING_MARKDOWN_ENDPOINT string = resources.outputs.SERVICE_BINDING_MARKDOWN_ENDPOINT
-output SERVICE_BINDING_REQUESTLOG_ENDPOINT string = resources.outputs.SERVICE_BINDING_REQUESTLOG_ENDPOINT
-output SERVICE_BINDING_MESSAGES_ENDPOINT string = resources.outputs.SERVICE_BINDING_MESSAGES_ENDPOINT
+output SERVICE_BINDING_KVF2EDECB5_ENDPOINT string = resources.outputs.SERVICE_BINDING_KVF2EDECB5_ENDPOINT
 
+output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
+output STORAGE_QUEUEENDPOINT string = storage.outputs.queueEndpoint
+output STORAGE_TABLEENDPOINT string = storage.outputs.tableEndpoint

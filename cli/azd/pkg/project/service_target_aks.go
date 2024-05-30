@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -36,6 +37,10 @@ const (
 var (
 	featureHelm      alpha.FeatureId = alpha.MustFeatureKey("aks.helm")
 	featureKustomize alpha.FeatureId = alpha.MustFeatureKey("aks.kustomize")
+
+	// Finds URLS in the endpoints that contain additional metadata
+	// Example: http://10.0.101.18:80 (Service: todo-api, Type: ClusterIP)
+	endpointRegex = regexp.MustCompile(`^(.*?)\s*(?:\(.*?\))?$`)
 )
 
 // The AKS configuration options
@@ -246,13 +251,13 @@ func (t *aksTarget) Deploy(
 			deployed = deployed || kustomizeDeployed
 
 			// Vanilla k8s manifests with minimal templating support
-			deployment, err := t.deployManifests(ctx, serviceConfig, task)
+			manifestsDeployed, deployment, err := t.deployManifests(ctx, serviceConfig, task)
 			if err != nil && !os.IsNotExist(err) {
 				task.SetError(err)
 				return
 			}
 
-			deployed = deployed || deployment != nil
+			deployed = deployed || manifestsDeployed
 
 			if !deployed {
 				task.SetError(errors.New("no deployment manifests found"))
@@ -268,13 +273,15 @@ func (t *aksTarget) Deploy(
 
 			if len(endpoints) > 0 {
 				// The AKS endpoints contain some additional identifying information
-				// Split on common to pull out the URL as the first segment
+				// Regex is used to pull the URL ignoring the additional metadata
 				// The last endpoint in the array will be the most publicly exposed
-				endpointParts := strings.Split(endpoints[len(endpoints)-1], ",")
-				t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", endpointParts[0])
-				if err := t.envManager.Save(ctx, t.env); err != nil {
-					task.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
-					return
+				matches := endpointRegex.FindStringSubmatch(endpoints[len(endpoints)-1])
+				if len(matches) > 1 {
+					t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", matches[1])
+					if err := t.envManager.Save(ctx, t.env); err != nil {
+						task.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
+						return
+					}
 				}
 			}
 
@@ -297,7 +304,7 @@ func (t *aksTarget) deployManifests(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
-) (*kubectl.Deployment, error) {
+) (bool, *kubectl.Deployment, error) {
 	deploymentPath := serviceConfig.K8s.DeploymentPath
 	if deploymentPath == "" {
 		deploymentPath = defaultDeploymentPath
@@ -307,7 +314,7 @@ func (t *aksTarget) deployManifests(
 
 	// Manifests are optional so we will continue if the directory does not exist
 	if _, err := os.Stat(deploymentPath); os.IsNotExist(err) {
-		return nil, err
+		return false, nil, err
 	}
 
 	task.SetProgress(NewServiceProgress("Applying k8s manifests"))
@@ -317,7 +324,7 @@ func (t *aksTarget) deployManifests(
 		nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed applying kube manifests: %w", err)
+		return false, nil, fmt.Errorf("failed applying kube manifests: %w", err)
 	}
 
 	deploymentName := serviceConfig.K8s.Deployment.Name
@@ -330,10 +337,12 @@ func (t *aksTarget) deployManifests(
 	task.SetProgress(NewServiceProgress("Verifying deployment"))
 	deployment, err := t.waitForDeployment(ctx, deploymentName)
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
-		return nil, err
+		// We continue to return a true value here since at this point we have successfully applied the manifests
+		// even through the deployment may not have been found
+		return true, nil, err
 	}
 
-	return deployment, nil
+	return true, deployment, nil
 }
 
 // deployKustomize deploys kustomize manifests to the k8s cluster
@@ -614,6 +623,11 @@ func (t *aksTarget) ensureClusterContext(
 			Login:      "azd",
 			KubeConfig: kubeConfigPath,
 		}
+
+		if err := tools.EnsureInstalled(ctx, t.kubeLoginCli); err != nil {
+			return "", err
+		}
+
 		if err := t.kubeLoginCli.ConvertKubeConfig(ctx, convertOptions); err != nil {
 			return "", err
 		}
@@ -762,14 +776,14 @@ func (t *aksTarget) getServiceEndpoints(
 		for _, resource := range service.Status.LoadBalancer.Ingress {
 			endpoints = append(
 				endpoints,
-				fmt.Sprintf("http://%s, (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
+				fmt.Sprintf("http://%s (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
 			)
 		}
 	} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
 		for index, ip := range service.Spec.ClusterIps {
 			endpoints = append(
 				endpoints,
-				fmt.Sprintf("http://%s:%d, (Service: %s, Type: ClusterIP)",
+				fmt.Sprintf("http://%s:%d (Service: %s, Type: ClusterIP)",
 					ip,
 					service.Spec.Ports[index].Port,
 					service.Metadata.Name,
@@ -814,7 +828,7 @@ func (t *aksTarget) getIngressEndpoints(
 			return nil, fmt.Errorf("failed constructing service endpoints, %w", err)
 		}
 
-		endpoints = append(endpoints, fmt.Sprintf("%s, (Ingress, Type: LoadBalancer)", endpointUrl))
+		endpoints = append(endpoints, fmt.Sprintf("%s (Ingress, Type: LoadBalancer)", endpointUrl))
 	}
 
 	return endpoints, nil

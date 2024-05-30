@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
@@ -33,12 +34,14 @@ type devCenterClient struct {
 	pipeline            runtime.Pipeline
 	cache               sync.Map
 	cacheMutex          sync.RWMutex
+	cloud               *cloud.Cloud
 }
 
 func NewDevCenterClient(
 	credential azcore.TokenCredential,
 	options *azcore.ClientOptions,
 	resourceGraphClient *armresourcegraph.Client,
+	cloud *cloud.Cloud,
 ) (DevCenterClient, error) {
 	options.PerCallPolicies = append(options.PerCallPolicies, NewApiVersionPolicy(nil))
 	pipeline := NewPipeline(credential, ServiceConfig, options)
@@ -49,6 +52,7 @@ func NewDevCenterClient(
 		options:             options,
 		resourceGraphClient: resourceGraphClient,
 		cache:               sync.Map{},
+		cloud:               cloud,
 	}, nil
 }
 

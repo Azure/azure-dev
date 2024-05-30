@@ -1,0 +1,43 @@
+api-version: 2024-02-02-preview
+location: {{ .Env.AZURE_LOCATION }}
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    ? "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}"
+    : {}
+properties:
+  environmentId: {{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}
+  configuration:
+    activeRevisionsMode: single
+    runtime:
+      dotnet:
+        autoConfigureDataProtection: true
+    ingress:
+      external: false
+      targetPort: {{ targetPortOrDefault 8080 }}
+      transport: http
+      allowInsecure: true
+    registries:
+      - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+        identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+  template:
+    containers:
+      - image: {{ .Image }}
+        name: apiservice
+        env:
+          - name: AZURE_CLIENT_ID
+            value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
+          - name: ASPNETCORE_FORWARDEDHEADERS_ENABLED
+            value: "true"
+          - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
+            value: "true"
+          - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
+            value: "true"
+          - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY
+            value: in_memory
+    scale:
+      minReplicas: 1
+tags:
+  azd-service-name: apiservice
+  aspire-resource-name: apiservice
+

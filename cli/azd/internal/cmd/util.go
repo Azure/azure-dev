@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -16,6 +18,7 @@ import (
 func getResourceGroupFollowUp(
 	ctx context.Context,
 	formatter output.Formatter,
+	portalUrlBase string,
 	projectConfig *project.ProjectConfig,
 	resourceManager project.ResourceManager,
 	env *environment.Environment,
@@ -26,27 +29,37 @@ func getResourceGroupFollowUp(
 	}
 
 	subscriptionId := env.GetSubscriptionId()
-	if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
+	resourceGroupName, err := resourceManager.GetResourceGroupName(
+		ctx,
+		subscriptionId,
+		projectConfig.ResourceGroupName,
+	)
+	if err == nil {
+		suffix := ":\n" + azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName)
+
+		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+			suffix = "."
+		}
+
 		defaultFollowUpText := fmt.Sprintf(
-			"You can view the resources created under the resource group %s in Azure Portal:", resourceGroupName)
+			"You can view the resources created under the resource group %s in Azure Portal", resourceGroupName)
 		if whatIf {
 			defaultFollowUpText = fmt.Sprintf(
-				"You can view the current resources under the resource group %s in Azure Portal:", resourceGroupName)
+				"You can view the current resources under the resource group %s in Azure Portal", resourceGroupName)
 		}
-		followUp = fmt.Sprintf("%s\n%s",
-			defaultFollowUpText,
-			azurePortalLink(subscriptionId, resourceGroupName))
+		followUp = defaultFollowUpText + suffix
 	}
 
 	return followUp
 }
 
-func azurePortalLink(subscriptionId, resourceGroupName string) string {
+func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) string {
 	if subscriptionId == "" || resourceGroupName == "" {
 		return ""
 	}
 	return output.WithLinkFormat(fmt.Sprintf(
-		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		"%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		portalUrlBase,
 		subscriptionId,
 		resourceGroupName))
 }

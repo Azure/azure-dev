@@ -29,14 +29,12 @@ func createHttpClient() *http.Client {
 		}
 
 		transport.Proxy = http.ProxyURL(proxyUrl)
+		http.DefaultTransport = transport
 	}
 
-	client := &http.Client{
-		Transport: transport,
-	}
+	http.DefaultClient.Transport = transport
 
-	http.DefaultClient = client
-	return client
+	return http.DefaultClient
 }
 
 func createClock() clock.Clock {

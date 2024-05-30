@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//go:generate goversioninfo
+//go:generate goversioninfo -64
 
 package main
 
@@ -29,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
@@ -62,6 +63,8 @@ func main() {
 	rootContainer := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(rootContainer, ctx)
 	cmdErr := cmd.NewRootCmd(false, nil, rootContainer).ExecuteContext(ctx)
+
+	oneauth.Shutdown()
 
 	if !isJsonOutput() {
 		if firstNotice := telemetry.FirstNotice(); firstNotice != "" {

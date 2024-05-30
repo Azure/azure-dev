@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -13,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -31,6 +33,7 @@ type DefaultPrompter struct {
 	env            *environment.Environment
 	accountManager account.Manager
 	azCli          azcli.AzCli
+	portalUrlBase  string
 }
 
 func NewDefaultPrompter(
@@ -38,26 +41,30 @@ func NewDefaultPrompter(
 	console input.Console,
 	accountManager account.Manager,
 	azCli azcli.AzCli,
+	portalUrlBase cloud.PortalUrlBase,
 ) Prompter {
 	return &DefaultPrompter{
 		console:        console,
 		env:            env,
 		accountManager: accountManager,
 		azCli:          azCli,
+		portalUrlBase:  portalUrlBase,
 	}
 }
 
 func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
-	subscriptionOptions, defaultSubscription, err := p.getSubscriptionOptions(ctx)
+	subscriptionOptions, subscriptions, defaultSubscription, err := p.getSubscriptionOptions(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	if len(subscriptionOptions) == 0 {
-		return "", fmt.Errorf(heredoc.Doc(
+		return "", fmt.Errorf(heredoc.Docf(
 			`no subscriptions found.
-			Ensure you have a subscription by visiting https://portal.azure.com and search for Subscriptions in the search bar.
-			Once you have a subscription, run 'azd auth login' again to reload subscriptions.`))
+			Ensure you have a subscription by visiting %s and search for Subscriptions in the search bar.
+			Once you have a subscription, run 'azd auth login' again to reload subscriptions.`,
+			p.portalUrlBase,
+		))
 	}
 
 	for subscriptionId == "" {
@@ -71,9 +78,7 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 			return "", fmt.Errorf("reading subscription id: %w", err)
 		}
 
-		subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
-		subscriptionId = subscriptionSelection[len(subscriptionSelection)-
-			len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
+		subscriptionId = subscriptions[subscriptionSelectionIndex]
 	}
 
 	if !p.accountManager.HasDefaultSubscription() {
@@ -154,10 +159,10 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 	return name, nil
 }
 
-func (p *DefaultPrompter) getSubscriptionOptions(ctx context.Context) ([]string, any, error) {
+func (p *DefaultPrompter) getSubscriptionOptions(ctx context.Context) ([]string, []string, any, error) {
 	subscriptionInfos, err := p.accountManager.GetSubscriptions(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("listing accounts: %w", err)
+		return nil, nil, nil, fmt.Errorf("listing accounts: %w", err)
 	}
 
 	// The default value is based on AZURE_SUBSCRIPTION_ID, falling back to whatever default subscription in
@@ -168,15 +173,22 @@ func (p *DefaultPrompter) getSubscriptionOptions(ctx context.Context) ([]string,
 	}
 
 	var subscriptionOptions = make([]string, len(subscriptionInfos))
+	var subscriptions = make([]string, len(subscriptionInfos))
 	var defaultSubscription any
 
 	for index, info := range subscriptionInfos {
-		subscriptionOptions[index] = fmt.Sprintf("%2d. %s (%s)", index+1, info.Name, info.Id)
+		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+			subscriptionOptions[index] = fmt.Sprintf("%2d. %s", index+1, info.Name)
+		} else {
+			subscriptionOptions[index] = fmt.Sprintf("%2d. %s (%s)", index+1, info.Name, info.Id)
+		}
+
+		subscriptions[index] = info.Id
 
 		if info.Id == defaultSubscriptionId {
 			defaultSubscription = subscriptionOptions[index]
 		}
 	}
 
-	return subscriptionOptions, defaultSubscription, nil
+	return subscriptionOptions, subscriptions, defaultSubscription, nil
 }

@@ -91,7 +91,7 @@ repo:
           - "apim-api.bicep"
         
       - from: ../../../api/common/openapi.yaml
-        to: ../src/api/wwwroot/openapi.yaml
+        to: ../src/api/openapi.yaml
         patterns:
           - "**/main.bicep"
 

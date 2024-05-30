@@ -90,16 +90,6 @@ repo:
         patterns:
           - "apim-api.bicep"
 
-      - from: ../../../api/common/openapi.yaml
-        to: ../src/api/wwwroot/openapi.yaml
-        patterns:
-          - "**/main.bicep"
-
-      - from: ../../../common/infra/shared/gateway/apim/apim-api-policy.xml
-        to: ./app/apim-api-policy.xml
-        patterns:
-          - "**/main.bicep"
-
   assets:
     # Common assets
 
@@ -124,13 +114,12 @@ repo:
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
+    - from: ../../../../common/infra/bicep/app/apim-api-settings.bicep
+      to: ./infra/app/apim-api-settings.bicep
 
-    - from: ./../../
-      to: ./
-      ignore:
-        - ".repo/**/*"
-        - "repo.y[a]ml"
-        - "azure.y[a]ml"
+
+
+l"
 
     # openapi.yaml to root
     - from: ../../../../api/common
@@ -147,11 +136,9 @@ repo:
     # Templates common
     - from: ../../../../../common
       to: ./
-      ignore:
-        - .github/**/*
-        - .devcontainer/**/*
-        - "infra/**/*"
-        - .azdo/pipelines/*/azure-dev.yml
+      ignore        - .github/**/*
+        - .devcontainer/**/*/*
+        - "infra/**/*        - .azdo/pipelines/*/azure-dev.ymlml
 
     # AzDo workflows for bicep
     - from: ../../../../../common/.azdo/pipelines/bicep/azure-dev.yml

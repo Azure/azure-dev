@@ -80,6 +80,16 @@ repo:
         patterns:
           - "apim-api.bicep"
 
+      - from: ../../../api/common/openapi.yaml
+        to: ../src/api/wwwroot/openapi.yaml
+        patterns:
+          - "**/main.bicep"
+
+      - from: ../../../common/infra/shared/gateway/apim/apim-api-policy.xml
+        to: ./app/apim-api-policy.xml
+        patterns:
+          - "**/main.bicep"
+
   assets:
     # Common assets
 

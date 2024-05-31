@@ -216,20 +216,70 @@ func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
 }
 
 func Test_EnvironmentStore_Save(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	tests := []struct {
+		name     string
+		env      *environment.Environment
+		config   *Config
+		validate func(t *testing.T, env *environment.Environment)
+	}{
+		{
+			name: "BeforeProvision",
+			env:  environment.NewWithValues(mockEnvironments[0].Name, nil),
+			config: &Config{
+				Name:                  "DEV_CENTER_01",
+				Project:               "Project1",
+				EnvironmentDefinition: "WebApp",
+				Catalog:               "SampleCatalog",
+				EnvironmentType:       "Dev",
+				User:                  "me",
+			},
+			validate: func(t *testing.T, env *environment.Environment) {
+				// Before provisioning we do know know the subscription id or resource group name
+				// At this point we should not persist any addidtional project information in the azd config.
+				_, hasProject := env.Config.Get(DevCenterProjectPath)
+				_, hasEnvType := env.Config.Get(DevCenterEnvTypePath)
 
-	config := &Config{
-		Name:                  "DEV_CENTER_01",
-		Project:               "Project1",
-		EnvironmentDefinition: "WebApp",
-		Catalog:               "SampleCatalog",
-		EnvironmentType:       "Dev",
-		User:                  "me",
+				require.False(t, hasProject)
+				require.False(t, hasEnvType)
+			},
+		},
+		{
+			name: "AfterProvision",
+			env: environment.NewWithValues(mockEnvironments[0].Name, map[string]string{
+				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+				environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP_NAME",
+			}),
+			config: &Config{
+				Name:                  "DEV_CENTER_01",
+				Project:               "Project1",
+				EnvironmentDefinition: "WebApp",
+				Catalog:               "SampleCatalog",
+				EnvironmentType:       "Dev",
+				User:                  "me",
+			},
+			validate: func(t *testing.T, env *environment.Environment) {
+				// After provisioning completes the subscription id and resource group name are stored in the azd environment
+				// At this point azd should also persist the devcenter project and environment type in the config
+				project, projectOk := env.Config.Get(DevCenterProjectPath)
+				envType, envTypeOk := env.Config.Get(DevCenterEnvTypePath)
+
+				require.True(t, projectOk)
+				require.Equal(t, "Project1", project)
+				require.True(t, envTypeOk)
+				require.Equal(t, "Dev", envType)
+			},
+		},
 	}
 
-	store := newEnvironmentStoreForTest(t, mockContext, config, nil)
-	err := store.Save(*mockContext.Context, environment.New(mockEnvironments[0].Name))
-	require.NoError(t, err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			store := newEnvironmentStoreForTest(t, mockContext, test.config, nil)
+			err := store.Save(*mockContext.Context, test.env)
+			require.NoError(t, err)
+			test.validate(t, test.env)
+		})
+	}
 }
 
 func newEnvironmentStoreForTest(

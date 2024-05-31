@@ -220,11 +220,16 @@ func Test_EnvironmentStore_Save(t *testing.T) {
 		name     string
 		env      *environment.Environment
 		config   *Config
+		isNew    bool
 		validate func(t *testing.T, env *environment.Environment)
 	}{
 		{
-			name: "BeforeProvision",
-			env:  environment.NewWithValues(mockEnvironments[0].Name, nil),
+			name: "NewEnvironment",
+			env: environment.NewWithValues(mockEnvironments[0].Name, map[string]string{
+				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+				environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP_NAME",
+			}),
+			isNew: true,
 			config: &Config{
 				Name:                  "DEV_CENTER_01",
 				Project:               "Project1",
@@ -244,11 +249,12 @@ func Test_EnvironmentStore_Save(t *testing.T) {
 			},
 		},
 		{
-			name: "AfterProvision",
+			name: "ExistingEnvironment",
 			env: environment.NewWithValues(mockEnvironments[0].Name, map[string]string{
 				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 				environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP_NAME",
 			}),
+			isNew: false,
 			config: &Config{
 				Name:                  "DEV_CENTER_01",
 				Project:               "Project1",
@@ -275,7 +281,7 @@ func Test_EnvironmentStore_Save(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
 			store := newEnvironmentStoreForTest(t, mockContext, test.config, nil)
-			err := store.Save(*mockContext.Context, test.env)
+			err := store.Save(*mockContext.Context, test.env, &environment.SaveOptions{IsNew: test.isNew})
 			require.NoError(t, err)
 			test.validate(t, test.env)
 		})

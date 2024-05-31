@@ -116,7 +116,7 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 	return env, nil
 }
 
-func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) error {
+func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
 	// Update configuration
 	cfgWriter := new(bytes.Buffer)
 

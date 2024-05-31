@@ -153,14 +153,10 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 // Save saves the environment to the remote data store
 // DevCenter doesn't implement any APIs for saving environment configuration / metadata
 // outside of the environment definition itself or the ARM deployment outputs
-func (s *EnvironmentStore) Save(ctx context.Context, env *environment.Environment) error {
-	_, hasSubscriptionId := env.LookupEnv(environment.SubscriptionIdEnvVarName)
-	_, hasResourceGroupName := env.LookupEnv(environment.ResourceGroupEnvVarName)
-
-	// We only want to persist the project & environment type after the environment has been provisioned.
-	// This allows creating new environments for different projects and/or environment types for the same env definition
-	// instead of using values from the current environment. (Will prompt user to supply these values on provision)
-	if hasSubscriptionId && hasResourceGroupName {
+func (s *EnvironmentStore) Save(ctx context.Context, env *environment.Environment, options *environment.SaveOptions) error {
+	// Only save the project and environment type configuration for existing environment
+	if !options.IsNew {
+		// Only persis project & environment type for existing local environments
 		if s.config.Project != "" {
 			if err := env.Config.Set(DevCenterProjectPath, s.config.Project); err != nil {
 				return err
@@ -174,7 +170,7 @@ func (s *EnvironmentStore) Save(ctx context.Context, env *environment.Environmen
 		}
 	}
 
-	return s.local.Save(ctx, env)
+	return s.local.Save(ctx, env, options)
 }
 
 // Delete implements environment.RemoteDataStore.

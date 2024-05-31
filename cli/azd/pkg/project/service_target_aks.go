@@ -623,6 +623,11 @@ func (t *aksTarget) ensureClusterContext(
 			Login:      "azd",
 			KubeConfig: kubeConfigPath,
 		}
+
+		if err := tools.EnsureInstalled(ctx, t.kubeLoginCli); err != nil {
+			return "", err
+		}
+
 		if err := t.kubeLoginCli.ConvertKubeConfig(ctx, convertOptions); err != nil {
 			return "", err
 		}

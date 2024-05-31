@@ -10,6 +10,30 @@
 
 ### Other Changes
 
+## 1.9.3 (2024-05-20)
+
+### Other Changes
+
+- [[3925]](https://github.com/Azure/azure-dev/pull/3925) Graduates alpha feature: `Aspire Dashboard`
+- [[3929]](https://github.com/Azure/azure-dev/pull/3929) Graduates alpha feature: `Aspire Auto Configure Data Protection`
+
+## 1.9.2 (2024-05-15)
+
+### Bugs Fixed
+
+- [[3915]](https://github.com/Azure/azure-dev/pull/3915) Revert - Add deployment status tracking for linux web apps.
+
+## 1.9.1 (2024-05-14)
+
+### Bugs Fixed
+
+- [[3876]](https://github.com/Azure/azure-dev/pull/3876) Take infra section of azure.yaml into account.
+- [[3881]](https://github.com/Azure/azure-dev/pull/3881) Make azd to wait until the expected state can be seen from the online endpoint.
+- [[3763]](https://github.com/Azure/azure-dev/pull/3763) Add deployment status tracking for linux web apps.
+- [[3897]](https://github.com/Azure/azure-dev/pull/3897) Update ResolvedRaw() to remove reference to the vault.
+- [[3898]](https://github.com/Azure/azure-dev/pull/3898) Easy Init: Improve handling for empty state.
+- [[3903]](https://github.com/Azure/azure-dev/pull/3903) Fix type issues in PromptDialog with external prompting.
+
 ## 1.9.0 (2024-05-07)
 
 ### Features Added

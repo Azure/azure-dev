@@ -72,6 +72,8 @@ func (c *config) Raw() map[string]any {
 	return c.data
 }
 
+const vaultKeyName = "vault"
+
 // Gets the raw values stored in the configuration and resolve any vault references
 func (c *config) ResolvedRaw() map[string]any {
 	resolvedRaw := &config{
@@ -79,6 +81,12 @@ func (c *config) ResolvedRaw() map[string]any {
 	}
 	paths := paths(c.data)
 	for _, path := range paths {
+		if path == vaultKeyName {
+			// a resolved raw should not include a reference a vault, as all secrets should be resolved
+			// when a config file contains a vault reference and the vault is not found, azd returns os.ErrNotExist
+			// and to the eyes of components using a Config, that means the config does not exists.
+			continue
+		}
 		// get will always return true (no need to check) because the path was gotten from the raw config
 		value, _ := c.Get(path)
 		if err := resolvedRaw.Set(path, value); err != nil {
@@ -110,7 +118,7 @@ func (c *config) SetSecret(path string, value string) error {
 	if c.vaultId == "" {
 		c.vault = NewConfig(nil)
 		c.vaultId = uuid.New().String()
-		if err := c.Set("vault", c.vaultId); err != nil {
+		if err := c.Set(vaultKeyName, c.vaultId); err != nil {
 			return fmt.Errorf("failed setting vault id: %w", err)
 		}
 	}

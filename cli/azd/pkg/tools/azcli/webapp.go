@@ -106,6 +106,7 @@ func (cli *azCli) DeployAppServiceZip(
 			return nil, err
 		}
 
+		// Deployment is successful
 		statusText := "OK"
 		return convert.RefOf(statusText), nil
 	}

@@ -226,13 +226,14 @@ func logWebAppDeploymentStatus(
 
 	switch status {
 	case armappservice.DeploymentBuildStatusBuildRequestReceived:
-		progressLog("Received build request")
+		progressLog("Received build request, starting build process")
 		return nil
 	case armappservice.DeploymentBuildStatusBuildInProgress:
 		progressLog("Running build process")
 		return nil
 	case armappservice.DeploymentBuildStatusRuntimeStarting:
-		progressLog(fmt.Sprintf("Starting runtime process, %d in progress instances, %d successful instances", inProgressNumber, successNumber))
+		progressLog(fmt.Sprintf("Starting runtime process, %d in progress instances, %d successful instances",
+			inProgressNumber, successNumber))
 		return nil
 	case armappservice.DeploymentBuildStatusRuntimeSuccessful, armappservice.DeploymentBuildStatusBuildSuccessful:
 		return nil
@@ -286,7 +287,9 @@ func (c *ZipDeployClient) DeployTrackStatus(
 			break
 		}
 
-		runtime.UnmarshalAsJSON(resp, &response)
+		if err := runtime.UnmarshalAsJSON(resp, &response); err != nil {
+			return err
+		}
 
 		if poller.Done() {
 			status := *response.Properties.Status
@@ -298,11 +301,15 @@ func (c *ZipDeployClient) DeployTrackStatus(
 			}
 			spanCtx := trace.SpanContextFromContext(ctx)
 			traceId := spanCtx.TraceID().String()
-			logWebAppDeploymentStatus(response, traceId, progressLog)
+			if err = logWebAppDeploymentStatus(response, traceId, progressLog); err != nil {
+				return err
+			}
 			break
 		}
 
-		logWebAppDeploymentStatus(response, "", progressLog)
+		if err = logWebAppDeploymentStatus(response, "", progressLog); err != nil {
+			return err
+		}
 
 		// Wait longer after a few initial tries
 		if pollCount > 20 {

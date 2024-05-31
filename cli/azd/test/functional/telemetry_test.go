@@ -203,7 +203,9 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 			languages := []string{}
 			for _, svc := range projConfig.Services {
 				hosts = append(hosts, string(svc.Host))
-				languages = append(languages, string(svc.Language))
+				for _, component := range svc.Components {
+					languages = append(languages, string(component.Language))
+				}
 			}
 			require.Contains(t, m, fields.ProjectServiceHostsKey)
 			require.ElementsMatch(t, m[fields.ProjectServiceHostsKey], hosts)

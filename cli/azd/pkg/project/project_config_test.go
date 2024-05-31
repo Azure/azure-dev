@@ -120,10 +120,11 @@ services:
 	require.Nil(t, err)
 
 	service := projectConfig.Services["web"]
+	main := mustMainComponent(service)
 
-	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
-	require.Equal(t, "../", service.Docker.Context)
-	require.Equal(t, []string{"foo", "bar"}, service.Docker.BuildArgs)
+	require.Equal(t, "./Dockerfile.dev", main.Docker.Path)
+	require.Equal(t, "../", main.Docker.Context)
+	require.Equal(t, []string{"foo", "bar"}, main.Docker.BuildArgs)
 }
 
 func TestProjectConfigAddHandler(t *testing.T) {

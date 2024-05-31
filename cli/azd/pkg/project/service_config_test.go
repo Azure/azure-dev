@@ -409,6 +409,40 @@ func createTestServiceConfig(path string, host ServiceTargetKind, language Servi
 	return serviceConfig
 }
 
+func mustMainComponent(serviceConfig *ServiceConfig) *ComponentConfig {
+	mainComponent, err := serviceConfig.Main()
+	if err != nil {
+		panic(err)
+	}
+
+	return mainComponent
+}
+
+func createTestComponentConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ComponentConfig {
+	projectgConfig := &ProjectConfig{
+		Name:            "Test-App",
+		Path:            ".",
+		EventDispatcher: ext.NewEventDispatcher[ProjectLifecycleEventArgs](),
+	}
+
+	serviceConfig := &ServiceConfig{
+		Host:       host,
+		Components: map[string]*ComponentConfig{},
+		Project:    projectgConfig,
+	}
+
+	componentConfig := &ComponentConfig{
+		Name:         "api",
+		Language:     language,
+		RelativePath: filepath.Join(path),
+		Service:      serviceConfig,
+	}
+
+	serviceConfig.Components[DefaultComponentName] = componentConfig
+
+	return componentConfig
+}
+
 func Test_Parent_Child(t *testing.T) {
 	parent := &Parent{
 		Name: "John",

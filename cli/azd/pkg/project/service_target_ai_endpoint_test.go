@@ -178,20 +178,20 @@ func (m *mockAiHelper) ValidateWorkspace(ctx context.Context, scope *ai.Scope) e
 func (m *mockAiHelper) CreateEnvironmentVersion(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.ComponentConfig,
 ) (*armmachinelearning.EnvironmentVersion, error) {
-	args := m.Called(ctx, scope, serviceConfig, config)
+	args := m.Called(ctx, scope, component, config)
 	return args.Get(0).(*armmachinelearning.EnvironmentVersion), args.Error(1)
 }
 
 func (m *mockAiHelper) CreateModelVersion(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.ComponentConfig,
 ) (*armmachinelearning.ModelVersion, error) {
-	args := m.Called(ctx, scope, serviceConfig, config)
+	args := m.Called(ctx, scope, component, config)
 	return args.Get(0).(*armmachinelearning.ModelVersion), args.Error(1)
 }
 
@@ -207,21 +207,21 @@ func (m *mockAiHelper) GetEndpoint(
 func (m *mockAiHelper) DeployToEndpoint(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	endpointName string,
 	config *ai.EndpointDeploymentConfig,
 ) (*armmachinelearning.OnlineDeployment, error) {
-	args := m.Called(ctx, scope, serviceConfig, endpointName, config)
+	args := m.Called(ctx, scope, component, endpointName, config)
 	return args.Get(0).(*armmachinelearning.OnlineDeployment), args.Error(1)
 }
 
 func (m *mockAiHelper) CreateFlow(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.ComponentConfig,
 ) (*ai.Flow, error) {
-	args := m.Called(ctx, scope, serviceConfig, config)
+	args := m.Called(ctx, scope, component, config)
 	return args.Get(0).(*ai.Flow), args.Error(1)
 }
 

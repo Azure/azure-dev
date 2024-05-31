@@ -199,7 +199,8 @@ func Test_MavenProject_Package(t *testing.T) {
 			"SpecifyOutputFile",
 			args{&ServiceConfig{
 				Host: AppServiceTarget,
-				ComponentConfig: &ComponentConfig{
+				Components: map[string]*ComponentConfig{
+					DefaultComponentName: {
 					Project:      &ProjectConfig{},
 					Name:         "api",
 					RelativePath: "src/api",
@@ -216,11 +217,12 @@ func Test_MavenProject_Package(t *testing.T) {
 			"ErrNoArchive",
 			args{&ServiceConfig{
 				Host: AppServiceTarget,
-				ComponentConfig: &ComponentConfig{
-					Project:      &ProjectConfig{},
-					Name:         "api",
-					RelativePath: "src/api",
-					Language:     ServiceLanguageJava,
+				Components: map[string]*ComponentConfig{
+					DefaultComponentName: {
+						Name:         "api",
+						RelativePath: "src/api",
+						Language:     ServiceLanguageJava,
+					},
 				},
 				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
 			},

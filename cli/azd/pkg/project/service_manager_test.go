@@ -78,23 +78,23 @@ func Test_ServiceManager_Initialize(t *testing.T) {
 
 	env := environment.New("test")
 	serviceManager := createServiceManager(mockContext, env, ServiceOperationCache{})
-	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	component := createTestComponentConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	fakeServiceTarget := &fakeServiceTarget{}
-	fakeServiceTarget.On("Initialize", *mockContext.Context, serviceConfig).Return(nil)
+	fakeServiceTarget.On("Initialize", *mockContext.Context, component).Return(nil)
 
 	fakeFramework := &fakeFramework{}
 	fakeFramework.
-		On("Initialize", *mockContext.Context, serviceConfig.ComponentConfig).
+		On("Initialize", *mockContext.Context, component).
 		Return(nil)
 
 	setupMocksForServiceManager(mockContext, fakeServiceTarget, fakeFramework)
 
-	err := serviceManager.Initialize(*mockContext.Context, serviceConfig)
+	err := serviceManager.Initialize(*mockContext.Context, component.Service)
 	require.NoError(t, err)
 
-	fakeServiceTarget.AssertCalled(t, "Initialize", *mockContext.Context, serviceConfig)
-	fakeFramework.AssertCalled(t, "Initialize", *mockContext.Context, serviceConfig.ComponentConfig)
+	fakeServiceTarget.AssertCalled(t, "Initialize", *mockContext.Context, component.Service)
+	fakeFramework.AssertCalled(t, "Initialize", *mockContext.Context, component.Service)
 }
 
 func Test_ServiceManager_Restore(t *testing.T) {
@@ -104,14 +104,14 @@ func Test_ServiceManager_Restore(t *testing.T) {
 
 	raisedPreRestoreEvent := false
 	raisedPostRestoreEvent := false
-	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	component := createTestComponentConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
-	_ = serviceConfig.AddHandler("prerestore", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	_ = component.Service.AddHandler("prerestore", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		raisedPreRestoreEvent = true
 		return nil
 	})
 
-	_ = serviceConfig.AddHandler("postrestore", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	_ = component.Service.AddHandler("postrestore", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		raisedPostRestoreEvent = true
 		return nil
 	})
@@ -127,13 +127,13 @@ func Test_ServiceManager_Restore(t *testing.T) {
 	)
 
 	fakeFramework.
-		On("Restore", *mockContext.Context, serviceConfig.ComponentConfig).
+		On("Restore", *mockContext.Context, component).
 		Return(frameworkRestoreTask)
 
 	setupMocksForServiceManager(mockContext, fakeServiceTarget, fakeFramework)
 
 	serviceManager := createServiceManager(mockContext, env, ServiceOperationCache{})
-	restoreTask := serviceManager.Restore(*mockContext.Context, serviceConfig)
+	restoreTask := serviceManager.Restore(*mockContext.Context, component.Service)
 	logProgress(restoreTask)
 
 	result, err := restoreTask.Await()
@@ -142,7 +142,7 @@ func Test_ServiceManager_Restore(t *testing.T) {
 	require.True(t, raisedPreRestoreEvent)
 	require.True(t, raisedPostRestoreEvent)
 
-	fakeFramework.AssertCalled(t, "Restore", *mockContext.Context, serviceConfig.ComponentConfig)
+	fakeFramework.AssertCalled(t, "Restore", *mockContext.Context, component)
 }
 
 func Test_ServiceManager_Build(t *testing.T) {
@@ -151,14 +151,14 @@ func Test_ServiceManager_Build(t *testing.T) {
 
 	raisedPreBuildEvent := false
 	raisedPostBuildEvent := false
-	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	component := createTestComponentConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
-	_ = serviceConfig.AddHandler("prebuild", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	_ = component.Service.AddHandler("prebuild", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		raisedPreBuildEvent = true
 		return nil
 	})
 
-	_ = serviceConfig.AddHandler("postbuild", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	_ = component.Service.AddHandler("postbuild", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		raisedPostBuildEvent = true
 		return nil
 	})
@@ -175,13 +175,13 @@ func Test_ServiceManager_Build(t *testing.T) {
 	var restoreResult *ServiceRestoreResult
 	fakeFramework := &fakeFramework{}
 	fakeFramework.
-		On("Build", *mockContext.Context, serviceConfig.ComponentConfig, restoreResult).
+		On("Build", *mockContext.Context, component, restoreResult).
 		Return(frameworkBuildTask)
 
 	setupMocksForServiceManager(mockContext, fakeServiceTarget, fakeFramework)
 
 	serviceManager := createServiceManager(mockContext, env, ServiceOperationCache{})
-	buildTask := serviceManager.Build(*mockContext.Context, serviceConfig, restoreResult)
+	buildTask := serviceManager.Build(*mockContext.Context, component.Service, restoreResult)
 	logProgress(buildTask)
 
 	result, err := buildTask.Await()
@@ -190,24 +190,24 @@ func Test_ServiceManager_Build(t *testing.T) {
 	require.True(t, raisedPreBuildEvent)
 	require.True(t, raisedPostBuildEvent)
 
-	fakeFramework.AssertCalled(t, "Build", *mockContext.Context, serviceConfig.ComponentConfig, restoreResult)
+	fakeFramework.AssertCalled(t, "Build", *mockContext.Context, component, restoreResult)
 }
 
 func Test_ServiceManager_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	env := environment.New("test")
 
-	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	component := createTestComponentConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	raisedPrePackageEvent := false
 	raisedPostPackageEvent := false
 
-	_ = serviceConfig.AddHandler("prepackage", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	_ = component.Service.AddHandler("prepackage", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		raisedPrePackageEvent = true
 		return nil
 	})
 
-	_ = serviceConfig.AddHandler("postpackage", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	_ = component.Service.AddHandler("postpackage", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		raisedPostPackageEvent = true
 		return nil
 	})
@@ -221,7 +221,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 
 	fakeServiceTarget := &fakeServiceTarget{}
 	fakeServiceTarget.
-		On("Package", *mockContext.Context, serviceConfig, mock.Anything).
+		On("Package", *mockContext.Context, component, mock.Anything).
 		Return(serviceTargetPackageTask)
 
 	frameworkPackageTask := async.RunTaskWithProgress(
@@ -240,12 +240,12 @@ func Test_ServiceManager_Package(t *testing.T) {
 	})
 
 	fakeFramework.
-		On("Package", *mockContext.Context, serviceConfig.ComponentConfig, mock.Anything).
+		On("Package", *mockContext.Context, component, mock.Anything).
 		Return(frameworkPackageTask)
 
 	setupMocksForServiceManager(mockContext, fakeServiceTarget, fakeFramework)
 	serviceManager := createServiceManager(mockContext, env, ServiceOperationCache{})
-	packageTask := serviceManager.Package(*mockContext.Context, serviceConfig, nil, nil)
+	packageTask := serviceManager.Package(*mockContext.Context, component.Service, nil, nil)
 	logProgress(packageTask)
 
 	result, err := packageTask.Await()
@@ -254,8 +254,8 @@ func Test_ServiceManager_Package(t *testing.T) {
 	require.True(t, raisedPrePackageEvent)
 	require.True(t, raisedPostPackageEvent)
 
-	fakeServiceTarget.AssertCalled(t, "Package", *mockContext.Context, serviceConfig, mock.Anything)
-	fakeFramework.AssertCalled(t, "Package", *mockContext.Context, serviceConfig.ComponentConfig, mock.Anything)
+	fakeServiceTarget.AssertCalled(t, "Package", *mockContext.Context, component, mock.Anything)
+	fakeFramework.AssertCalled(t, "Package", *mockContext.Context, component, mock.Anything)
 }
 
 func Test_ServiceManager_Deploy(t *testing.T) {
@@ -313,9 +313,9 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		setupMocksForServiceManager(mockContext, newFakeServiceTarget(), newFakeFramework())
 		env := environment.New("test")
 		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
-		serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+		component := createTestComponentConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
-		framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig.ComponentConfig)
+		framework, err := sm.GetFrameworkService(*mockContext.Context, component)
 		require.NoError(t, err)
 		require.NotNil(t, framework)
 		require.IsType(t, new(fakeFramework), framework)
@@ -328,10 +328,10 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		setupMocksForServiceManager(mockContext, newFakeServiceTarget(), newFakeFramework())
 		env := environment.New("test")
 		serviceManager := createServiceManager(mockContext, env, ServiceOperationCache{})
-		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
-		serviceConfig.Image = "nginx"
+		component := createTestComponentConfig("", ServiceTargetFake, ServiceLanguageNone)
+		component.Image = "nginx"
 
-		framework, err := serviceManager.GetFrameworkService(*mockContext.Context, serviceConfig.ComponentConfig)
+		framework, err := serviceManager.GetFrameworkService(*mockContext.Context, component)
 		require.NoError(t, err)
 		require.NotNil(t, framework)
 		require.IsType(t, new(fakeFramework), framework)
@@ -344,9 +344,9 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		setupMocksForServiceManager(mockContext, newFakeServiceTarget(), newFakeFramework())
 		env := environment.New("test")
 		serviceManager := createServiceManager(mockContext, env, ServiceOperationCache{})
-		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
+		component := createTestComponentConfig("", ServiceTargetFake, ServiceLanguageNone)
 
-		_, err := serviceManager.GetFrameworkService(*mockContext.Context, serviceConfig.ComponentConfig)
+		_, err := serviceManager.GetFrameworkService(*mockContext.Context, component)
 		require.Error(t, err)
 	})
 }
@@ -368,7 +368,7 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	env := environment.New("test")
-	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	component := createTestComponentConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	fakeServiceTarget := &fakeServiceTarget{}
 
@@ -381,18 +381,18 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 
 	fakeFramework := &fakeFramework{}
 	fakeFramework.
-		On("Build", *mockContext.Context, serviceConfig.ComponentConfig, mock.Anything).
+		On("Build", *mockContext.Context, component, mock.Anything).
 		Return(frameworkBuildTask)
 
 	setupMocksForServiceManager(mockContext, fakeServiceTarget, fakeFramework)
 
 	serviceManager := createServiceManager(mockContext, env, ServiceOperationCache{})
-	buildTask1 := serviceManager.Build(*mockContext.Context, serviceConfig, nil)
+	buildTask1 := serviceManager.Build(*mockContext.Context, component.Service, nil)
 	logProgress(buildTask1)
 
 	buildResult1, _ := buildTask1.Await()
 
-	buildTask2 := serviceManager.Build(*mockContext.Context, serviceConfig, nil)
+	buildTask2 := serviceManager.Build(*mockContext.Context, component.Service, nil)
 	logProgress(buildTask1)
 
 	buildResult2, _ := buildTask2.Await()
@@ -404,7 +404,7 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	env := environment.New("test")
-	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	component := createTestComponentConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	serviceTargetPackageTask := async.RunTaskWithProgress(
 		func(ctx *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
@@ -415,7 +415,7 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 
 	fakeServiceTarget := &fakeServiceTarget{}
 	fakeServiceTarget.
-		On("Package", *mockContext.Context, serviceConfig, mock.Anything).
+		On("Package", *mockContext.Context, component, mock.Anything).
 		Return(serviceTargetPackageTask)
 
 	frameworkPackageTask := async.RunTaskWithProgress(
@@ -434,7 +434,7 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 	})
 
 	fakeFramework.
-		On("Package", *mockContext.Context, serviceConfig.ComponentConfig, mock.Anything).
+		On("Package", *mockContext.Context, component, mock.Anything).
 		Return(frameworkPackageTask)
 
 	setupMocksForServiceManager(mockContext, fakeServiceTarget, fakeFramework)
@@ -443,13 +443,13 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 
 	sm1 := createServiceManager(mockContext, env, operationCache)
 
-	packageTask1 := sm1.Package(*mockContext.Context, serviceConfig, nil, nil)
+	packageTask1 := sm1.Package(*mockContext.Context, component.Service, nil, nil)
 	logProgress(packageTask1)
 
 	packageResult1, _ := packageTask1.Await()
 
 	sm2 := createServiceManager(mockContext, env, operationCache)
-	packageTask2 := sm2.Package(*mockContext.Context, serviceConfig, nil, nil)
+	packageTask2 := sm2.Package(*mockContext.Context, component.Service, nil, nil)
 	logProgress(packageTask2)
 
 	packageResult2, _ := packageTask2.Await()

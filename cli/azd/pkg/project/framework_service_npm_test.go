@@ -31,17 +31,17 @@ func Test_NpmProject_Restore(t *testing.T) {
 
 	env := environment.New("test")
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
+	component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
-	restoreTask := npmProject.Restore(*mockContext.Context, serviceConfig.ComponentConfig)
+	restoreTask := npmProject.Restore(*mockContext.Context, component)
 	logProgress(restoreTask)
 
 	result, err := restoreTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "npm", runArgs.Cmd)
-	require.Equal(t, serviceConfig.Path(), runArgs.Cwd)
+	require.Equal(t, component.Path(), runArgs.Cwd)
 	require.Equal(t,
 		[]string{"install"},
 		runArgs.Args,
@@ -63,10 +63,10 @@ func Test_NpmProject_Build(t *testing.T) {
 
 	env := environment.New("test")
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
+	component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
-	buildTask := npmProject.Build(*mockContext.Context, serviceConfig.ComponentConfig, nil)
+	buildTask := npmProject.Build(*mockContext.Context, component, nil)
 	logProgress(buildTask)
 
 	result, err := buildTask.Await()
@@ -97,18 +97,18 @@ func Test_NpmProject_Package(t *testing.T) {
 
 	env := environment.New("test")
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
-	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
+	component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
+	err := os.MkdirAll(component.Path(), osutil.PermissionDirectory)
 	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "package.json"), nil, osutil.PermissionFile)
+	err = os.WriteFile(filepath.Join(component.Path(), "package.json"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
 	npmProject := NewNpmProject(npmCli, env)
 	packageTask := npmProject.Package(
 		*mockContext.Context,
-		serviceConfig.ComponentConfig,
+		component,
 		&ServiceBuildResult{
-			BuildOutputPath: serviceConfig.Path(),
+			BuildOutputPath: component.Path(),
 		},
 	)
 	logProgress(packageTask)

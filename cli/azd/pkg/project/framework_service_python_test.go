@@ -45,10 +45,10 @@ func Test_PythonProject_Restore(t *testing.T) {
 
 	env := environment.New("test")
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
+	component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	restoreTask := pythonProject.Restore(*mockContext.Context, serviceConfig.ComponentConfig)
+	restoreTask := pythonProject.Restore(*mockContext.Context, component)
 	logProgress(restoreTask)
 
 	result, err := restoreTask.Await()
@@ -77,10 +77,10 @@ func Test_PythonProject_Build(t *testing.T) {
 
 	env := environment.New("test")
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
+	component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	buildTask := pythonProject.Build(*mockContext.Context, serviceConfig.ComponentConfig, nil)
+	buildTask := pythonProject.Build(*mockContext.Context, component, nil)
 	logProgress(buildTask)
 
 	result, err := buildTask.Await()
@@ -95,18 +95,18 @@ func Test_PythonProject_Package(t *testing.T) {
 
 	env := environment.New("test")
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
-	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
+	component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
+	err := os.MkdirAll(component.Path(), osutil.PermissionDirectory)
 	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "requirements.txt"), nil, osutil.PermissionFile)
+	err = os.WriteFile(filepath.Join(component.Path(), "requirements.txt"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
 	pythonProject := NewPythonProject(pythonCli, env)
 	packageTask := pythonProject.Package(
 		*mockContext.Context,
-		serviceConfig.ComponentConfig,
+		component,
 		&ServiceBuildResult{
-			BuildOutputPath: serviceConfig.Path(),
+			BuildOutputPath: component.Path(),
 		},
 	)
 	logProgress(packageTask)

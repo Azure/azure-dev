@@ -54,37 +54,39 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 	allServices := make(map[string]*ServiceConfig)
 
 	for name, svcConfig := range projectConfig.Services {
-		main, err := svcConfig.Main()
-		if err != nil {
-			return nil, err
-		}
+		if len(svcConfig.Components) == 0 {
+			mainComponent, err := svcConfig.Main()
+			if err != nil {
+				return nil, err
+			}
 
-		if main.Language == ServiceLanguageDotNet {
-			if canImport, err := im.dotNetImporter.CanImport(ctx, main.Path()); canImport {
-				if len(projectConfig.Services) != 1 {
-					return nil, errNoMultipleServicesWithAppHost
+			if mainComponent.Language == ServiceLanguageDotNet {
+				if canImport, err := im.dotNetImporter.CanImport(ctx, mainComponent.Path()); canImport {
+					if len(projectConfig.Services) != 1 {
+						return nil, errNoMultipleServicesWithAppHost
+					}
+
+					if svcConfig.Host != ContainerAppTarget {
+						return nil, errAppHostMustTargetContainerApp
+					}
+
+					services, err := im.dotNetImporter.Services(ctx, projectConfig, svcConfig)
+					if err != nil {
+						return nil, fmt.Errorf("importing services: %w", err)
+					}
+
+					for name, svcConfig := range services {
+						// TODO(ellismg): We should consider if we should prefix these services so the are of the form
+						// "app:frontend" instead of just "frontend". Perhaps both as the key here and and as the .Name
+						// property on the ServiceConfig.  This does have implications for things like service specific
+						// property names that translate to environment variables.
+						allServices[name] = svcConfig
+					}
+
+					continue
+				} else if err != nil {
+					log.Printf("error checking if %s is an app host project: %v", mainComponent.Path(), err)
 				}
-
-				if svcConfig.Host != ContainerAppTarget {
-					return nil, errAppHostMustTargetContainerApp
-				}
-
-				services, err := im.dotNetImporter.Services(ctx, projectConfig, svcConfig)
-				if err != nil {
-					return nil, fmt.Errorf("importing services: %w", err)
-				}
-
-				for name, svcConfig := range services {
-					// TODO(ellismg): We should consider if we should prefix these services so the are of the form
-					// "app:frontend" instead of just "frontend". Perhaps both as the key here and and as the .Name
-					// property on the ServiceConfig.  This does have implications for things like service specific
-					// property names that translate to environment variables.
-					allServices[name] = svcConfig
-				}
-
-				continue
-			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", main.Path(), err)
 			}
 		}
 

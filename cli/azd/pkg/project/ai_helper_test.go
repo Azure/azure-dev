@@ -74,17 +74,17 @@ func Test_AiHelper_CreateEnvironmentVersion(t *testing.T) {
 	mockai.RegisterGetEnvironment(mockContext, scope.Workspace(), environmentName, http.StatusNotFound)
 	mockai.RegisterGetEnvironmentVersion(mockContext, scope.Workspace(), environmentName, "1")
 
-	serviceConfig := createTestServiceConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
-	serviceConfig.Project.Path = testDir
+	component := createTestComponentConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
+	component.Service.Project.Path = testDir
 	environmentConfig := &ai.ComponentConfig{
 		Name: osutil.NewExpandableString(environmentName),
 		Path: "./deployment/environment.yaml",
 	}
 
-	createTestFile(t, testDir, filepath.Join(serviceConfig.Components[DefaultComponentName].RelativePath, environmentConfig.Path))
+	createTestFile(t, testDir, filepath.Join(component.RelativePath, environmentConfig.Path))
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
-	envVersion, err := aiHelper.CreateEnvironmentVersion(*mockContext.Context, scope, serviceConfig, environmentConfig)
+	envVersion, err := aiHelper.CreateEnvironmentVersion(*mockContext.Context, scope, component, environmentConfig)
 
 	require.NoError(t, err)
 	require.NotNil(t, envVersion)
@@ -96,7 +96,7 @@ func Test_AiHelper_CreateEnvironmentVersion(t *testing.T) {
 		"-s", scope.SubscriptionId(),
 		"-g", scope.ResourceGroup(),
 		"-w", scope.Workspace(),
-		"-f", filepath.Join(serviceConfig.Path(), environmentConfig.Path),
+		"-f", filepath.Join(component.Path(), environmentConfig.Path),
 		"--set", fmt.Sprintf("name=%s", environmentName),
 		"--set", fmt.Sprintf("version=%d", 1),
 	})
@@ -122,17 +122,17 @@ func Test_AiHelper_CreateModelVersion(t *testing.T) {
 	mockai.RegisterGetModel(mockContext, scope.Workspace(), modelName, http.StatusNotFound)
 	mockai.RegisterGetModelVersion(mockContext, scope.Workspace(), modelName, "1")
 
-	serviceConfig := createTestServiceConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
-	serviceConfig.Project.Path = testDir
+	component := createTestComponentConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
+	component.Service.Project.Path = testDir
 	modelConfig := &ai.ComponentConfig{
 		Name: osutil.NewExpandableString(modelName),
 		Path: "./deployment/model.yaml",
 	}
 
-	createTestFile(t, testDir, filepath.Join(serviceConfig.Components[DefaultComponentName].RelativePath, modelConfig.Path))
+	createTestFile(t, testDir, filepath.Join(component.RelativePath, modelConfig.Path))
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
-	modelVersion, err := aiHelper.CreateModelVersion(*mockContext.Context, scope, serviceConfig, modelConfig)
+	modelVersion, err := aiHelper.CreateModelVersion(*mockContext.Context, scope, component, modelConfig)
 
 	require.NoError(t, err)
 	require.NotNil(t, modelVersion)
@@ -144,7 +144,7 @@ func Test_AiHelper_CreateModelVersion(t *testing.T) {
 		"-s", scope.SubscriptionId(),
 		"-g", scope.ResourceGroup(),
 		"-w", scope.Workspace(),
-		"-f", filepath.Join(serviceConfig.Path(), modelConfig.Path),
+		"-f", filepath.Join(component.Path(), modelConfig.Path),
 		"--set", fmt.Sprintf("name=%s", modelName),
 		"--set", fmt.Sprintf("version=%d", 1),
 	})
@@ -201,17 +201,17 @@ func Test_AiHelper_CreateFlow(t *testing.T) {
 			Stderr:   "",
 		}, nil)
 
-	serviceConfig := createTestServiceConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
-	serviceConfig.Project.Path = testDir
+	component := createTestComponentConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
+	component.Service.Project.Path = testDir
 	flowConfig := &ai.ComponentConfig{
 		Name: osutil.NewExpandableString(flowName),
 		Path: "./my-flow",
 	}
 
-	createTestFile(t, testDir, filepath.Join(serviceConfig.Components[DefaultComponentName].RelativePath, filepath.Join(flowConfig.Path, "flow.dag.yaml")))
+	createTestFile(t, testDir, filepath.Join(component.RelativePath, filepath.Join(flowConfig.Path, "flow.dag.yaml")))
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
-	flow, err := aiHelper.CreateFlow(*mockContext.Context, scope, serviceConfig, flowConfig)
+	flow, err := aiHelper.CreateFlow(*mockContext.Context, scope, component, flowConfig)
 
 	require.NoError(t, err)
 	require.NotNil(t, flow)
@@ -221,7 +221,7 @@ func Test_AiHelper_CreateFlow(t *testing.T) {
 	mockPythonBridge.AssertCalled(t, "Run", *mockContext.Context, ai.PromptFlowClient, []string{
 		"create",
 		"-n", expectedFlowName,
-		"-f", filepath.Join(serviceConfig.Path(), flowConfig.Path),
+		"-f", filepath.Join(component.Path(), flowConfig.Path),
 		"-s", scope.SubscriptionId(),
 		"-g", scope.ResourceGroup(),
 		"-w", scope.Workspace(),
@@ -264,8 +264,8 @@ func Test_AiHelper_DeployToEndpoint(t *testing.T) {
 		armmachinelearning.DeploymentProvisioningStateSucceeded,
 	)
 
-	serviceConfig := createTestServiceConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
-	serviceConfig.Project.Path = testDir
+	component := createTestComponentConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
+	component.Service.Project.Path = testDir
 
 	endpointConfig := &ai.EndpointDeploymentConfig{
 		Workspace: osutil.NewExpandableString(scope.Workspace()),
@@ -291,10 +291,10 @@ func Test_AiHelper_DeployToEndpoint(t *testing.T) {
 		},
 	}
 
-	createTestFile(t, testDir, filepath.Join(serviceConfig.Components[DefaultComponentName].RelativePath, endpointConfig.Deployment.Path))
+	createTestFile(t, testDir, filepath.Join(component.RelativePath, endpointConfig.Deployment.Path))
 
 	aiHelper := newAiHelper(t, mockContext, env, mockPythonBridge)
-	deployment, err := aiHelper.DeployToEndpoint(*mockContext.Context, scope, serviceConfig, endpointName, endpointConfig)
+	deployment, err := aiHelper.DeployToEndpoint(*mockContext.Context, scope, component, endpointName, endpointConfig)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployment)
@@ -307,7 +307,7 @@ func Test_AiHelper_DeployToEndpoint(t *testing.T) {
 		"-s", scope.SubscriptionId(),
 		"-g", scope.ResourceGroup(),
 		"-w", scope.Workspace(),
-		"-f", filepath.Join(serviceConfig.Path(), endpointConfig.Deployment.Path),
+		"-f", filepath.Join(component.Path(), endpointConfig.Deployment.Path),
 		"--set", fmt.Sprintf("name=%s", expectedDeploymentName),
 		"--set", fmt.Sprintf("endpoint_name=%s", endpointName),
 		"--set", fmt.Sprintf("environment=azureml:%s:%s", environmentName, environmentVersion),

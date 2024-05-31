@@ -76,62 +76,13 @@ func appServiceRepositoryHost(
 	return hostName, nil
 }
 
-func checkWebAppDeploymentStatus(
-	res armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse,
-) (string, error) {
-	properties := res.CsmDeploymentStatus.Properties
-	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
-	successNumber := int(*properties.NumberOfInstancesSuccessful)
-	failNumber := int(*properties.NumberOfInstancesFailed)
-	failLogs := properties.FailedInstancesLogs
-	errorString := ""
-	logErrorFunction := func(properties *armappservice.CsmDeploymentStatusProperties, message string) {
-		for _, err := range properties.Errors {
-			if err.Message != nil {
-				errorString += fmt.Sprintf("Error: %s\n", *err.Message)
-			}
-		}
-
-		for _, log := range failLogs {
-			errorString += fmt.Sprintf("Please check the %slogs for more info: %s\n", message, *log)
-		}
-	}
-
-	switch *properties.Status {
-	case armappservice.DeploymentBuildStatusRuntimeSuccessful:
-		return "", nil
-	case armappservice.DeploymentBuildStatusRuntimeFailed:
-		totalNumber := inProgressNumber + successNumber + failNumber
-
-		if successNumber > 0 {
-			errorString += fmt.Sprintf("Site started with errors: %d/%d instances failed to start successfully\n",
-				failNumber, totalNumber)
-		} else if totalNumber > 0 {
-			errorString += fmt.Sprintf("Deployment failed because the runtime process failed. In progress instances: %d, "+
-				"Successful instances: %d, Failed Instances: %d\n",
-				inProgressNumber, successNumber, failNumber)
-		}
-
-		logErrorFunction(properties, "runtime ")
-		return "", fmt.Errorf(errorString)
-	case armappservice.DeploymentBuildStatusBuildFailed:
-		errorString += "Deployment failed because the build process failed\n"
-		logErrorFunction(properties, "build ")
-		return "", fmt.Errorf(errorString)
-	// Default case for the rest statuses, they shouldn't appear as a final response
-	default:
-		errorString += fmt.Sprintf("Deployment failed with status: %s\n", *properties.Status)
-		logErrorFunction(properties, "")
-		return "", fmt.Errorf(errorString)
-	}
-}
-
 func (cli *azCli) DeployAppServiceZip(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
 	deployZipFile io.Reader,
+	progressLog func(string),
 ) (*string, error) {
 	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
@@ -150,17 +101,13 @@ func (cli *azCli) DeployAppServiceZip(
 
 	// Deployment Status API only support linux web app for now
 	if isLinuxWebApp(app) {
-		response, err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName)
+		err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog)
 		if err != nil {
 			return nil, err
 		}
 
-		res, err := checkWebAppDeploymentStatus(response)
-		if err != nil {
-			return nil, err
-		}
-
-		return &res, nil
+		statusText := "OK"
+		return convert.RefOf(statusText), nil
 	}
 
 	response, err := client.Deploy(ctx, deployZipFile)

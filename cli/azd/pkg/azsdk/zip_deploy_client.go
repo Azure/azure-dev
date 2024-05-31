@@ -2,6 +2,7 @@ package azsdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/sethvargo/go-retry"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -140,7 +143,13 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, runtime.NewResponseError(response)
 	}
 
-	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, nil)
+	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Retry: policy.RetryOptions{
+				MaxRetries: -1},
+		},
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("creating web app client: %w", err)
 	}
@@ -152,7 +161,35 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 
 	// nolint:lll
 	// Example definition: https://github.com/Azure/azure-rest-api-specs/tree/main/specification/web/resource-manager/Microsoft.Web/stable/2022-03-01/examples/GetSiteDeploymentStatus.json
-	poller, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, deploymentStatusId, nil)
+	var poller *runtime.Poller[armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse]
+	err = retry.Do(
+		ctx,
+		retry.WithMaxRetries(3, retry.NewConstant(5*time.Second)),
+		func(ctx context.Context) error {
+			pollerRetry, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, deploymentStatusId, nil)
+			if err != nil {
+				var httpErr *azcore.ResponseError
+				if errors.As(err, &httpErr) {
+					// 404 - Retry if the resource is not found as deployment id doesn't match with temp deployment id
+					// Rest is the status code that runs default three retires in go sdk
+					if httpErr.StatusCode == 404 ||
+						httpErr.StatusCode == 408 ||
+						httpErr.StatusCode == 429 ||
+						httpErr.StatusCode == 500 ||
+						httpErr.StatusCode == 502 ||
+						httpErr.StatusCode == 503 ||
+						httpErr.StatusCode == 504 {
+						return retry.RetryableError(err)
+					}
+				}
+				return err
+			}
+
+			poller = pollerRetry
+
+			return nil
+		})
+
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment status: %w", err)
 	}
@@ -160,27 +197,127 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 	return poller, nil
 }
 
+func logWebAppDeploymentStatus(
+	res armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse,
+	traceId string,
+	progressLog func(string),
+) error {
+	properties := res.CsmDeploymentStatus.Properties
+	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
+	successNumber := int(*properties.NumberOfInstancesSuccessful)
+	failNumber := int(*properties.NumberOfInstancesFailed)
+	errorString := ""
+	logErrorFunction := func(properties *armappservice.CsmDeploymentStatusProperties, message string) {
+		for _, err := range properties.Errors {
+			if err.Message != nil {
+				errorString += fmt.Sprintf("Error: %s\n", *err.Message)
+			}
+		}
+
+		for _, log := range properties.FailedInstancesLogs {
+			errorString += fmt.Sprintf("Please check the %slogs for more info: %s\n", message, *log)
+		}
+
+		if traceId != "" {
+			errorString += fmt.Sprintf("Trace ID: %s\n", traceId)
+		}
+	}
+	status := *properties.Status
+
+	switch status {
+	case armappservice.DeploymentBuildStatusBuildRequestReceived:
+		progressLog("Received build request")
+		return nil
+	case armappservice.DeploymentBuildStatusBuildInProgress:
+		progressLog("Running build process")
+		return nil
+	case armappservice.DeploymentBuildStatusRuntimeStarting:
+		progressLog(fmt.Sprintf("Starting runtime process, %d in progress instances, %d successful instances", inProgressNumber, successNumber))
+		return nil
+	case armappservice.DeploymentBuildStatusRuntimeSuccessful, armappservice.DeploymentBuildStatusBuildSuccessful:
+		return nil
+	case armappservice.DeploymentBuildStatusRuntimeFailed:
+		totalNumber := inProgressNumber + successNumber + failNumber
+
+		if successNumber > 0 {
+			errorString += fmt.Sprintf("%d/%d instances failed to start successfully\n", failNumber, totalNumber)
+		} else if totalNumber > 0 {
+			errorString += fmt.Sprintf("Deployment failed because the runtime process failed. In progress instances: %d, "+
+				"Successful instances: %d, Failed Instances: %d\n",
+				inProgressNumber, successNumber, failNumber)
+		}
+
+		logErrorFunction(properties, "runtime ")
+		return fmt.Errorf(errorString)
+	case armappservice.DeploymentBuildStatusBuildFailed:
+		errorString += "Deployment failed because the build process failed\n"
+		logErrorFunction(properties, "build ")
+		return fmt.Errorf(errorString)
+	// Progress Log for other states
+	default:
+		if len(status) > 0 {
+			progressLog(fmt.Sprintf("Running deployment status api in stage %s", status))
+		}
+		return nil
+	}
+}
+
 func (c *ZipDeployClient) DeployTrackStatus(
 	ctx context.Context,
 	zipFile io.Reader,
 	subscriptionId string,
 	resourceGroup string,
-	appName string) (armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse, error) {
+	appName string,
+	progressLog func(string)) error {
 	var response armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse
 
 	poller, err := c.BeginDeployTrackStatus(ctx, zipFile, subscriptionId, resourceGroup, appName)
 	if err != nil {
-		return response, err
+		return err
 	}
 
-	response, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
-		Frequency: deployStatusInterval,
-	})
-	if err != nil {
-		return response, err
+	delay := 3 * time.Second
+	pollCount := 0
+	for {
+		var resp *http.Response
+
+		resp, err = poller.Poll(ctx)
+		if err != nil {
+			break
+		}
+
+		runtime.UnmarshalAsJSON(resp, &response)
+
+		if poller.Done() {
+			status := *response.Properties.Status
+			if status != armappservice.DeploymentBuildStatusRuntimeSuccessful &&
+				status != armappservice.DeploymentBuildStatusBuildFailed &&
+				status != armappservice.DeploymentBuildStatusRuntimeFailed {
+				return fmt.Errorf("deployment status API unexpectedly terminated at stage %s",
+					status)
+			}
+			spanCtx := trace.SpanContextFromContext(ctx)
+			traceId := spanCtx.TraceID().String()
+			logWebAppDeploymentStatus(response, traceId, progressLog)
+			break
+		}
+
+		logWebAppDeploymentStatus(response, "", progressLog)
+
+		// Wait longer after a few initial tries
+		if pollCount > 20 {
+			delay = 20 * time.Second
+		}
+
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(delay):
+			pollCount++
+		}
 	}
 
-	return response, nil
+	return nil
 }
 
 // Deploys the specified application zip to the azure app service and waits for completion

@@ -104,9 +104,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
-		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
-	})
+	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
@@ -277,8 +275,6 @@ func (ai *DotNetImporter) Services(
 	return services, nil
 }
 
-var autoConfigureDataProtectionFeature = alpha.MustFeatureKey("aspire.autoConfigureDataProtection")
-
 func (ai *DotNetImporter) SynthAllInfrastructure(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
@@ -294,9 +290,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		rootModuleName = p.Infra.Module
 	}
 
-	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{
-		AspireDashboard: apphost.IsAspireDashboardEnabled(ai.alphaFeatureManager),
-	})
+	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("generating infra/ folder: %w", err)
 	}
@@ -343,9 +337,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	// container we will deploy.
 	writeManifestForResource := func(name string) error {
 		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			manifest, name, apphost.AppHostOptions{
-				AutoConfigureDataProtection: ai.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
-			})
+			manifest, name, apphost.AppHostOptions{})
 		if err != nil {
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}

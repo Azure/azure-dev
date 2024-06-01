@@ -773,6 +773,11 @@
                                         "title": "The version of the helm chart",
                                         "description": "The version of the helm chart to install."
                                     },
+                                    "namespace": {
+                                        "type": "string",
+                                        "title": "Optional. The k8s namespace to install the helm chart",
+                                        "description": "When set will install the helm chart to the specified namespace. Defaults to the service namespace."
+                                    },
                                     "values": {
                                         "type": "string",
                                         "title": "Optional. Relative path from service to a values.yaml to pass to the helm chart",

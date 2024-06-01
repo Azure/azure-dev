@@ -63,7 +63,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	env := environment.New(envName)
 	env.SetSubscriptionId(cfg.SubscriptionID)
 	env.SetLocation(cfg.Location)
-	err = localDataStore.Save(ctx, env)
+	err = localDataStore.Save(ctx, env, nil)
 	require.NoError(t, err)
 
 	// Also requires that the user is logged in. This is automatically done in CI. Locally, `azd auth login` is required.

@@ -19,11 +19,11 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 
 	t.Run("List", func(t *testing.T) {
 		env1 := New("env1")
-		err := dataStore.Save(*mockContext.Context, env1)
+		err := dataStore.Save(*mockContext.Context, env1, nil)
 		require.NoError(t, err)
 
 		env2 := New("env2")
-		err = dataStore.Save(*mockContext.Context, env2)
+		err = dataStore.Save(*mockContext.Context, env2, nil)
 		require.NoError(t, err)
 
 		envList, err := dataStore.List(*mockContext.Context)
@@ -48,7 +48,7 @@ func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		env1 := New("env1")
 		env1.DotenvSet("key1", "value1")
-		err := dataStore.Save(*mockContext.Context, env1)
+		err := dataStore.Save(*mockContext.Context, env1, nil)
 		require.NoError(t, err)
 
 		env, err := dataStore.Get(*mockContext.Context, "env1")

@@ -18,6 +18,12 @@ var ValidRemoteKinds = []string{
 	string(RemoteKindAzureBlobStorage),
 }
 
+// SaveOptions provide additional metadata for the save operation
+type SaveOptions struct {
+	// Whether or not the environment is new
+	IsNew bool
+}
+
 type DataStore interface {
 	// Gets the path to the environment .env file
 	EnvPath(env *Environment) string
@@ -35,7 +41,7 @@ type DataStore interface {
 	Reload(ctx context.Context, env *Environment) error
 
 	// Saves the environment to the persistent data store
-	Save(ctx context.Context, env *Environment) error
+	Save(ctx context.Context, env *Environment, options *SaveOptions) error
 
 	// Deletes the environment from the persistent data store
 	Delete(ctx context.Context, name string) error

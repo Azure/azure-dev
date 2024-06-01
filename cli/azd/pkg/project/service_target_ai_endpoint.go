@@ -217,9 +217,28 @@ func (m *aiEndpointTarget) Endpoints(
 		return nil, fmt.Errorf("failed initializing AI project: %w", err)
 	}
 
+	tenantId, has := m.env.LookupEnv(environment.TenantIdEnvVarName)
+	if !has {
+		return nil, fmt.Errorf(
+			"tenant ID not found. Ensure %s has been set in the environment.",
+			environment.TenantIdEnvVarName,
+		)
+	}
+
 	workspaceScope, err := m.getWorkspaceScope(serviceConfig, targetResource)
 	if err != nil {
 		return nil, err
+	}
+
+	workspaceLink := ai.AiStudioWorkspaceLink(
+		tenantId,
+		workspaceScope.SubscriptionId(),
+		workspaceScope.ResourceGroup(),
+		workspaceScope.Workspace(),
+	)
+
+	endpoints := []string{
+		fmt.Sprintf("Workspace: %s", workspaceLink),
 	}
 
 	endpointName := filepath.Base(targetResource.ResourceName())
@@ -228,10 +247,34 @@ func (m *aiEndpointTarget) Endpoints(
 		return nil, err
 	}
 
-	return []string{
+	var deploymentName string
+	for key, value := range onlineEndpoint.Properties.Traffic {
+		if *value == 100 {
+			deploymentName = key
+			break
+		}
+	}
+
+	if deploymentName != "" {
+		deploymentLink := ai.AiStudioDeploymentLink(
+			tenantId,
+			workspaceScope.SubscriptionId(),
+			workspaceScope.ResourceGroup(),
+			workspaceScope.Workspace(),
+			endpointName,
+			deploymentName,
+		)
+
+		endpoints = append(endpoints, fmt.Sprintf("Deployment: %s", deploymentLink))
+	}
+
+	endpoints = append(
+		endpoints,
 		fmt.Sprintf("Scoring: %s", *onlineEndpoint.Properties.ScoringURI),
 		fmt.Sprintf("Swagger: %s", *onlineEndpoint.Properties.SwaggerURI),
-	}, nil
+	)
+
+	return endpoints, nil
 }
 
 // getWorkspaceScope returns the scope for the workspace

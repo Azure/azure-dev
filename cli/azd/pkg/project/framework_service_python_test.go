@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,7 +27,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, fmt.Sprintf("%s -m venv", pythonExe()))
+			return strings.Contains(command, "-m venv")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			venvArgs = args
@@ -37,17 +36,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, fmt.Sprintf("%s -m pip install", pythonExe()))
-		}).
-		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			pipArgs = args
-			return exec.NewRunResult(0, "", ""), nil
-		})
-
-		// Linux & mac run a command list
-	mockContext.CommandRunner.
-		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "activate && python3 -m pip install")
+			return strings.Contains(command, "-m pip install")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			pipArgs = args
@@ -72,14 +61,12 @@ func Test_PythonProject_Restore(t *testing.T) {
 		venvArgs.Args,
 	)
 
+	require.Len(t, pipArgs.Args, 2)
+
 	if runtime.GOOS == "windows" {
-		require.Equal(t, pythonExe(), pipArgs.Cmd)
-		require.Equal(t,
-			[]string{"-m", "pip", "install", "-r", "requirements.txt"},
-			pipArgs.Args,
-		)
+		require.Equal(t, "api_env\\Scripts\\activate", pipArgs.Args[0])
+		require.Equal(t, "py -m pip install -r requirements.txt", pipArgs.Args[1])
 	} else {
-		require.Len(t, pipArgs.Args, 2)
 		require.Equal(t, ". api_env/bin/activate", pipArgs.Args[0])
 		require.Equal(t, "python3 -m pip install -r requirements.txt", pipArgs.Args[1])
 	}

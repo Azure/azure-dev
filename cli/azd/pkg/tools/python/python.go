@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -110,40 +109,23 @@ func (cli *PythonCli) Run(
 		return nil, err
 	}
 
-	var runResult exec.RunResult
-	var runErr error
+	var envActivationCmd string
 
+	// Windows & Posix have different activation scripts
 	if runtime.GOOS == "windows" {
-		// Unfortunately neither cmd.exe, nor PowerShell provide a straightforward way to use a script
-		// to modify environment for command(s) in a command list.
-		// So we are going to cheat and replicate the core functionality of Python venv scripts here,
-		// which boils down to setting VIRTUAL_ENV environment variable.
-		absWorkingDir, pathErr := filepath.Abs(workingDir)
-		if pathErr != nil {
-			return nil, pathErr
-		}
-
-		vEnvSetting := fmt.Sprintf("VIRTUAL_ENV=%s", path.Join(absWorkingDir, environment))
-
-		runArgs := exec.
-			NewRunArgs(pyString, args...).
-			WithCwd(workingDir).
-			WithEnv([]string{vEnvSetting})
-
-		runResult, runErr = cli.commandRunner.Run(ctx, runArgs)
+		envActivationCmd = filepath.Join(environment, "Scripts", "activate")
 	} else {
-		// We need to ensure the virtual environment is activated before running the script
-		envActivation := ". " + path.Join(environment, "bin", "activate")
-		allArgs := append([]string{pyString}, args...)
-		runCmd := strings.Join(allArgs, " ")
-		commands := []string{envActivation, runCmd}
-
-		runArgs := exec.NewRunArgs(pyString).WithCwd(workingDir)
-		runResult, runErr = cli.commandRunner.RunList(ctx, commands, runArgs)
+		envActivationCmd = ". " + filepath.Join(environment, "bin", "activate")
 	}
 
-	if runErr != nil {
-		return nil, fmt.Errorf("failed to run Python script: %w", runErr)
+	runCmd := strings.Join(append([]string{pyString}, args...), " ")
+	// We need to ensure the virtual environment is activated before running the script
+	commands := []string{envActivationCmd, runCmd}
+	runArgs := exec.NewRunArgs("").WithCwd(workingDir)
+	runResult, err := cli.commandRunner.RunList(ctx, commands, runArgs)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to run Python script: %w", err)
 	}
 
 	return &runResult, nil

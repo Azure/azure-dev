@@ -200,9 +200,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
 					serviceConfig.DotNetContainerApp.Manifest,
 					serviceConfig.DotNetContainerApp.ProjectName,
-					apphost.AppHostOptions{
-						AutoConfigureDataProtection: at.alphaFeatureManager.IsEnabled(autoConfigureDataProtectionFeature),
-					},
+					apphost.AppHostOptions{},
 				)
 				if err != nil {
 					task.SetError(fmt.Errorf("generating container app manifest: %w", err))

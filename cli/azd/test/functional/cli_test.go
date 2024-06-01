@@ -122,7 +122,6 @@ func TestMain(m *testing.M) {
 
 func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Skip("missing dev center configuration in test environment")
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()

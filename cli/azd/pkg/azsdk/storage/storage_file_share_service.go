@@ -49,9 +49,11 @@ func (f *fileShareClient) UploadFiles(ctx context.Context, subId, fileShareUrl, 
 	}
 
 	dirClient := client.NewRootDirectoryClient()
-	dirPath := filepath.Dir(dest)
-	if dirPath != "." {
-		dirClient = client.NewDirectoryClient(dirPath)
+	dirPaths := strings.Split(dest, string(os.PathSeparator))
+	incrementPath := ""
+	for _, dirPath := range dirPaths[:len(dirPaths)-1] {
+		incrementPath = filepath.Join(incrementPath, dirPath)
+		dirClient = client.NewDirectoryClient(incrementPath)
 		if _, err := dirClient.Create(ctx, nil); err != nil {
 			if !strings.Contains(err.Error(), "ResourceAlreadyExists") {
 				return err

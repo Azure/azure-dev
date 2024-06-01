@@ -273,6 +273,14 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 	}
 
+	// azd operations
+	if generator.bicepContext.HasBindMounts {
+		if err := executeToFS(
+			fs, genTemplates, "azd.operations.yaml", "azd.operations.yaml", generator.bicepContext); err != nil {
+			return nil, fmt.Errorf("generating infra/azd.operations.yaml: %w", err)
+		}
+	}
+
 	return fs, nil
 }
 

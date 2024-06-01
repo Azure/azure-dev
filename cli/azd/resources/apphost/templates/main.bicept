@@ -82,6 +82,7 @@ output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $volume.Name | alpha
 {{end -}}
 {{range $bMount := $value.BindMounts -}}
 output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME string = resources.outputs.SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME
+output SERVICE_{{alphaSnakeUpper $name}}_FILE_SHARE_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME string = resources.outputs.SERVICE_{{alphaSnakeUpper $name}}_FILE_SHARE_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME
 {{end -}}
 {{end -}}
 {{range $name, $value := .ServiceBuses -}}
@@ -117,11 +118,6 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs
 output {{bicepParameterName $param}} {{$value.Type}} = {{bicepParameterName $value.Value}}
 {{- end -}}
 {{if .RequiresStorageVolume -}}
-output AZD_OPS_BIND_MOUNT_ACCOUNT string = resources.outputs.AZD_OPS_BIND_MOUNT_ACCOUNT
-{{end -}}
-{{range $name, $value := .ContainerApps -}}
-{{- range $bMount := $value.BindMounts -}}
-output AZD_OPS_BIND_MOUNT_{{mergeBicepName $name $bMount.Name}}FileShare string = resources.outputs.AZD_OPS_BIND_MOUNT_{{mergeBicepName $name $bMount.Name}}FileShare
-{{end -}}
+output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
 {{end -}}
 {{ end}}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -17,8 +18,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"gopkg.in/yaml.v3"
 )
 
 type DefaultProviderResolver func() (ProviderKind, error)
@@ -92,33 +95,117 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
-	stAccount, hasBindMountOperation := m.env.LookupEnv(operationsBindMount)
-	if hasBindMountOperation {
-		m.console.ShowSpinner(ctx, "uploading files for binding mount", input.StepFailed)
-		for key, value := range m.env.Dotenv() {
-			if key != operationsBindMount && strings.HasPrefix(key, operationsBindMountPrefix) {
-				valueParts := strings.Split(value, ",")
-				if len(valueParts) != 2 {
-					return nil, fmt.Errorf("invalid bind mount operation value: %s", value)
-				}
-				fileShareName, source := valueParts[0], valueParts[1]
-				if err := bindMountOperation(
-					ctx, m.fileShareService, m.env.GetSubscriptionId(), stAccount, fileShareName, source); err != nil {
-					return nil, fmt.Errorf("error binding mount: %w", err)
-				}
-				m.console.MessageUxItem(ctx, &ux.DisplayedResource{
-					Type:  "Mount Volume:",
-					Name:  source,
-					State: ux.SucceededState,
-				})
-			}
+	infraRoot := m.options.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(m.projectPath, m.options.Path)
+	}
+	fileShareUploadOperations, err := azdFileShareUploadOperations(infraRoot, *m.env)
+	if err != nil {
+		return nil, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
+	}
+
+	if len(fileShareUploadOperations) > 0 {
+		m.console.ShowSpinner(ctx, "uploading files to fileShare", input.StepFailed)
+	}
+	for _, op := range fileShareUploadOperations {
+		if err := bindMountOperation(
+			ctx, m.fileShareService, m.env.GetSubscriptionId(), op.StorageAccount, op.FileShareName, op.Path); err != nil {
+			return nil, fmt.Errorf("error binding mount: %w", err)
 		}
+		m.console.MessageUxItem(ctx, &ux.DisplayedResource{
+			Type:  fileShareUploadOperation,
+			Name:  op.Description,
+			State: ux.SucceededState,
+		})
 	}
 
 	// make sure any spinner is stopped
 	m.console.StopSpinner(ctx, "", input.StepDone)
 
 	return deployResult, nil
+}
+
+const (
+	fileShareUploadOperation string = "FileShareUpload"
+	azdOperationsFileName    string = "azd.operations.yaml"
+)
+
+type azdOperation struct {
+	Type        string
+	Description string
+	Config      any
+}
+
+type azdOperationFileShareUpload struct {
+	Description    string
+	StorageAccount string
+	FileShareName  string
+	Path           string
+}
+
+type azdOperationsModel struct {
+	Operations []azdOperation
+}
+
+func azdOperations(infraPath string, env environment.Environment) (azdOperationsModel, error) {
+	// Check if the file exists
+	path := filepath.Join(infraPath, azdOperationsFileName)
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			// File does not exist
+			return azdOperationsModel{}, nil
+		}
+		// Error occurred while checking file status
+		return azdOperationsModel{}, err
+	}
+
+	// Read the file
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return azdOperationsModel{}, err
+	}
+
+	// resolve environment variables
+	expString := osutil.NewExpandableString(string(data))
+	evaluated, err := expString.Envsubst(env.Getenv)
+	if err != nil {
+		return azdOperationsModel{}, err
+	}
+	data = []byte(evaluated)
+
+	// Unmarshal the file into azdOperationsModel
+	var operations azdOperationsModel
+	err = yaml.Unmarshal(data, &operations)
+	if err != nil {
+		return azdOperationsModel{}, err
+	}
+
+	return operations, nil
+}
+
+func azdFileShareUploadOperations(infraPath string, env environment.Environment) ([]azdOperationFileShareUpload, error) {
+	model, err := azdOperations(infraPath, env)
+	if err != nil {
+		return nil, err
+	}
+
+	var fileShareUploadOperations []azdOperationFileShareUpload
+	for _, operation := range model.Operations {
+		if operation.Type == fileShareUploadOperation {
+			var fileShareUpload azdOperationFileShareUpload
+			bytes, err := json.Marshal(operation.Config)
+			if err != nil {
+				return nil, err
+			}
+			err = json.Unmarshal(bytes, &fileShareUpload)
+			if err != nil {
+				return nil, err
+			}
+			fileShareUpload.Description = operation.Description
+			fileShareUploadOperations = append(fileShareUploadOperations, fileShareUpload)
+		}
+	}
+	return fileShareUploadOperations, nil
 }
 
 func bindMountOperation(
@@ -141,9 +228,6 @@ func bindMountOperation(
 		return nil
 	})
 }
-
-const operationsBindMountPrefix = "AZD_OPS_BIND_MOUNT_"
-const operationsBindMount = operationsBindMountPrefix + "ACCOUNT"
 
 // Preview generates the list of changes to be applied as part of the provisioning.
 func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {

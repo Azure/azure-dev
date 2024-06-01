@@ -129,4 +129,3 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvi
 output SERVICE_BINDING_KVF2EDECB5_ENDPOINT string = kvf2edecb5.properties.vaultUri
 output SERVICE_BINDING_KVF2EDECB5_NAME string = kvf2edecb5.name
 
-

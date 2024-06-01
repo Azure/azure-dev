@@ -244,12 +244,14 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		)
 	}
 
+	// see if SP already exists - This step will not create the SP if it doesn't exist.
 	spConfig, err := servicePrincipal(
 		ctx, pm.env.Getenv(AzurePipelineClientIdEnvVarName), pm.env.GetSubscriptionId(), pm.args, pm.adService)
 	if err != nil {
 		return result, err
 	}
 
+	// Update the message depending on the SP already exists or not
 	var displayMsg string
 	if spConfig.servicePrincipal == nil {
 		displayMsg = fmt.Sprintf("Creating service principal %s", spConfig.applicationName)
@@ -267,17 +269,14 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		pm.args.PipelineRoleNames)
 
 	if err != nil {
+		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 		return result, fmt.Errorf("failed to create or update service principal: %w", err)
 	}
 
-	// Update new service principal to include client id
 	if !strings.Contains(displayMsg, servicePrincipal.AppId) {
 		displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
 	}
 	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
-	if err != nil {
-		return result, fmt.Errorf("failed to create or update service principal: %w", err)
-	}
 
 	// Set in .env to be retrieved for any additional runs
 	pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
@@ -289,19 +288,23 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	displayMsg = fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, spConfig.applicationName)
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 
-	// Get the requested credential options from the CI provider
-	credentialOptions := pm.ciProvider.credentialOptions(
-		ctx,
-		gitRepoInfo,
-		infra.Options,
-		PipelineAuthType(pm.args.PipelineAuthTypeName),
-	)
-
 	subscriptionId := pm.env.GetSubscriptionId()
 	credentials := &azcli.AzureCredentials{
 		ClientId:       servicePrincipal.AppId,
 		TenantId:       *servicePrincipal.AppOwnerOrganizationId,
 		SubscriptionId: subscriptionId,
+	}
+
+	// Get the requested credential options from the CI provider
+	credentialOptions, err := pm.ciProvider.credentialOptions(
+		ctx,
+		gitRepoInfo,
+		infra.Options,
+		PipelineAuthType(pm.args.PipelineAuthTypeName),
+		credentials,
+	)
+	if err != nil {
+		return result, fmt.Errorf("failed to get credential options: %w", err)
 	}
 
 	// Enable client credentials if requested
@@ -624,8 +627,7 @@ func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepo
 	})
 }
 
-func (pm *PipelineManager) resolveProvider(
-	ctx context.Context, prj *project.ProjectConfig) (string, error) {
+func (pm *PipelineManager) resolveProvider(prj *project.ProjectConfig) (string, error) {
 	// 1) if provider is set on azure.yaml, it should override the `lastUsedProvider`, as it can be changed by customer
 	// at any moment.
 	if prj.Pipeline.Provider != "" {
@@ -691,7 +693,7 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	// we can re-assign it based on a previous run (persisted data)
 	// or based on the azure.yaml
 	if pipelineProvider == "" {
-		resolved, err := pm.resolveProvider(ctx, prjConfig)
+		resolved, err := pm.resolveProvider(prjConfig)
 		if err != nil {
 			return fmt.Errorf("resolving provider when no provider arg was used: %w", err)
 		}

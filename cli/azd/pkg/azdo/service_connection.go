@@ -52,19 +52,6 @@ func authorizeServiceConnectionToAllPipelines(
 	return nil
 }
 
-func ServiceConnection(
-	ctx context.Context,
-	connection *azuredevops.Connection,
-	projectId string, serviceConnectionName *string) (*serviceendpoint.ServiceEndpoint, error) {
-
-	client, err := serviceendpoint.NewClient(ctx, connection)
-	if err != nil {
-		return nil, fmt.Errorf("creating new azdo client: %w", err)
-	}
-
-	return serviceConnectionExists(ctx, &client, &projectId, serviceConnectionName)
-}
-
 // find service connection by name.
 func serviceConnectionExists(ctx context.Context,
 	client *serviceendpoint.Client,
@@ -184,7 +171,7 @@ func createAzureRMServiceEndPointArgs(
 	endpointData := map[string]string{
 		"environment":      CloudEnvironment,
 		"subscriptionId":   credentials.SubscriptionId,
-		"subscriptionName": "azure subscription", // fix? to sub name?
+		"subscriptionName": "azure subscription",
 		"scopeLevel":       "Subscription",
 		"creationMode":     "Manual",
 	}

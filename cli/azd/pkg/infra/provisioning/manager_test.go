@@ -53,6 +53,7 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -79,6 +80,7 @@ func TestManagerPreview(t *testing.T) {
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -107,6 +109,7 @@ func TestManagerGetState(t *testing.T) {
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -135,6 +138,7 @@ func TestManagerDeploy(t *testing.T) {
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -169,6 +173,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -204,6 +209,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)

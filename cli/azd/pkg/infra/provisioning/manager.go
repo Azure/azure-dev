@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -38,6 +39,7 @@ type Manager struct {
 	projectPath         string
 	options             *Options
 	fileShareService    storage.FileShareService
+	cloud               *cloud.Cloud
 }
 
 // defaultOptions for this package.
@@ -109,7 +111,13 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	}
 	for _, op := range fileShareUploadOperations {
 		if err := bindMountOperation(
-			ctx, m.fileShareService, m.env.GetSubscriptionId(), op.StorageAccount, op.FileShareName, op.Path); err != nil {
+			ctx,
+			m.fileShareService,
+			m.env.GetSubscriptionId(),
+			m.cloud.StorageEndpointSuffix,
+			op.StorageAccount,
+			op.FileShareName,
+			op.Path); err != nil {
 			return nil, fmt.Errorf("error binding mount: %w", err)
 		}
 		m.console.MessageUxItem(ctx, &ux.DisplayedResource{
@@ -211,9 +219,9 @@ func azdFileShareUploadOperations(infraPath string, env environment.Environment)
 func bindMountOperation(
 	ctx context.Context,
 	fileShareService storage.FileShareService,
-	subId, storageAccount, fileShareName, source string) error {
+	cloud, subId, storageAccount, fileShareName, source string) error {
 
-	shareUrl := fmt.Sprintf("https://%s.file.core.windows.net/%s", storageAccount, fileShareName)
+	shareUrl := fmt.Sprintf("https://%s.%s/%s", storageAccount, cloud, fileShareName)
 
 	return filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
@@ -366,6 +374,7 @@ func NewManager(
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
 	fileShareService storage.FileShareService,
+	cloud *cloud.Cloud,
 ) *Manager {
 	return &Manager{
 		serviceLocator:      serviceLocator,
@@ -375,6 +384,7 @@ func NewManager(
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
 		fileShareService:    fileShareService,
+		cloud:               cloud,
 	}
 }
 

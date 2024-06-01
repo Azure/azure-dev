@@ -113,8 +113,8 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		if err := bindMountOperation(
 			ctx,
 			m.fileShareService,
-			m.env.GetSubscriptionId(),
 			m.cloud.StorageEndpointSuffix,
+			m.env.GetSubscriptionId(),
 			op.StorageAccount,
 			op.FileShareName,
 			op.Path); err != nil {
@@ -221,7 +221,7 @@ func bindMountOperation(
 	fileShareService storage.FileShareService,
 	cloud, subId, storageAccount, fileShareName, source string) error {
 
-	shareUrl := fmt.Sprintf("https://%s.%s/%s", storageAccount, cloud, fileShareName)
+	shareUrl := fmt.Sprintf("https://%s.file.%s/%s", storageAccount, cloud, fileShareName)
 
 	return filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {

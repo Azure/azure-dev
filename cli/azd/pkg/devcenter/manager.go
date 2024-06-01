@@ -276,7 +276,7 @@ func (m *manager) LatestArmDeployment(
 		// ARM runner deployments contain the deployment tags for the specific environment
 		isArmDeployment := devCenterOk && strings.EqualFold(*tagDevCenterName, config.Name) &&
 			projectOk && strings.EqualFold(*tagProjectName, config.Project) &&
-			envTypeOk && strings.EqualFold(*tagEnvTypeName, config.EnvironmentType) &&
+			envTypeOk && strings.EqualFold(*tagEnvTypeName, env.EnvironmentType) &&
 			envOk && strings.EqualFold(*tagEnvName, env.Name)
 
 		// Support for untagged Bicep ADE deployments

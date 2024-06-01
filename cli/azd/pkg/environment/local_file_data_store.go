@@ -132,7 +132,7 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 }
 
 // Save saves the environment to the persistent data store
-func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment) error {
+func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
 	// Update configuration
 	if err := fs.configManager.Save(env.Config, fs.ConfigPath(env)); err != nil {
 		return fmt.Errorf("saving config: %w", err)

@@ -8,6 +8,6 @@ operations:
     storageAccount: ${AZURE_VOLUMES_STORAGE_ACCOUNT}
     fileShareName: ${SERVICE_{{alphaSnakeUpper $name}}_FILE_SHARE_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME}
     path: {{$bMount.Source}}
-{{- end }}
+{{end -}}
 {{end -}}
 {{end}}

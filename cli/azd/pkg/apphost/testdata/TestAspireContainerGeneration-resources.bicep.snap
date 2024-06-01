@@ -75,6 +75,14 @@ resource noVolumeBm0FileShare 'Microsoft.Storage/storageAccounts/fileServices/sh
     enabledProtocols: 'SMB'
   }
 }
+resource noVolumeBm1FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: take('${toLower('noVolume')}-${toLower('bm1')}', 32)
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
+  }
+}
 
 resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-preview' = {
   name: 'cae-${resourceToken}'
@@ -151,6 +159,19 @@ resource noVolumeBm0Store 'Microsoft.App/managedEnvironments/storages@2023-05-01
   }
 }
 
+resource noVolumeBm1Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: take('${toLower('noVolume')}-${toLower('bm1')}', 32)
+  properties: {
+    azureFile: {
+      shareName: '${toLower('noVolume')}-${toLower('bm1')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+      accessMode: 'ReadOnly'
+    }
+  }
+}
+
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 output MANAGED_IDENTITY_NAME string = managedIdentity.name
 output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
@@ -162,8 +183,8 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvi
 output SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME string = mySqlAbstractProjectAppHostVolumeTwoStore.name
 output SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME string = mysqlabstractProjectAppHostVolumeOneStore.name
 output SERVICE_NOVOLUME_VOLUME_BM0_NAME string = noVolumeBm0Store.name
-output AZD_OPS_BIND_MOUNT_ACCOUNT string = storageVolume.name
-
-
-output AZD_OPS_BIND_MOUNT_noVolumeBm0FileShare string = '${ noVolumeBm0FileShare.name},/tmp/MySql.ApiService/data'
+output SERVICE_NOVOLUME_FILE_SHARE_BM0_NAME string = noVolumeBm0FileShare.name
+output SERVICE_NOVOLUME_VOLUME_BM1_NAME string = noVolumeBm1Store.name
+output SERVICE_NOVOLUME_FILE_SHARE_BM1_NAME string = noVolumeBm1FileShare.name
+output AZURE_VOLUMES_STORAGE_ACCOUNT string = storageVolume.name
 

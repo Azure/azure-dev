@@ -163,6 +163,11 @@
           "source": "../MySql.ApiService/data",
           "target": "/docker-entrypoint-initdb.d",
           "readOnly": false
+        },
+        {
+          "source": "../MySql.ApiService/data2",
+          "target": "/docker-entrypoint-initdb.d/two",
+          "readOnly": true
         }
       ],
       "bindings": {

@@ -1,0 +1,14 @@
+operations:
+- type: FileShareUpload
+  description: Upload files for noVolume
+  config:
+    storageAccount: ${AZURE_VOLUMES_STORAGE_ACCOUNT}
+    fileShareName: ${SERVICE_NOVOLUME_FILE_SHARE_BM0_NAME}
+    path: /tmp/MySql.ApiService/data
+- type: FileShareUpload
+  description: Upload files for noVolume
+  config:
+    storageAccount: ${AZURE_VOLUMES_STORAGE_ACCOUNT}
+    fileShareName: ${SERVICE_NOVOLUME_FILE_SHARE_BM1_NAME}
+    path: /tmp/MySql.ApiService/data2
+

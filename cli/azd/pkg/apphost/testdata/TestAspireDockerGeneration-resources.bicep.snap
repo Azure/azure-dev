@@ -95,4 +95,3 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = containerAppEnvironment.na
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
 
-

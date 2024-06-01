@@ -15,7 +15,7 @@ import (
 
 type FileShareService interface {
 	// Upload files from source path to a file share
-	UploadFiles(ctx context.Context, subId, fileShareUrl, source, dest string) error
+	UploadPath(ctx context.Context, subId, fileShareUrl, source, dest string) error
 }
 
 func NewFileShareService(
@@ -33,8 +33,8 @@ type fileShareClient struct {
 	options      *arm.ClientOptions
 }
 
-// UploadFiles implements FileShareService.
-func (f *fileShareClient) UploadFiles(ctx context.Context, subId, fileShareUrl, source, dest string) error {
+// UploadPath implements FileShareService.
+func (f *fileShareClient) UploadPath(ctx context.Context, subId, fileShareUrl, source, dest string) error {
 	credential, err := f.accountCreds.CredentialForSubscription(ctx, subId)
 	if err != nil {
 		return err

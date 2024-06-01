@@ -221,7 +221,7 @@ func bindMountOperation(
 		}
 		if !info.IsDir() {
 			destination := strings.TrimPrefix(path, source+string(filepath.Separator))
-			if err := fileShareService.UploadFiles(ctx, subId, shareUrl, path, destination); err != nil {
+			if err := fileShareService.UploadPath(ctx, subId, shareUrl, path, destination); err != nil {
 				return fmt.Errorf("error uploading files to file share: %w", err)
 			}
 		}

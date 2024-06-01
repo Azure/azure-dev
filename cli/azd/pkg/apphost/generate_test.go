@@ -299,6 +299,10 @@ func TestAspireContainerGeneration(t *testing.T) {
 		if d.IsDir() {
 			return nil
 		}
+		if d.Name() == "azd.operations.yaml" {
+			// can't snapshot this file as it contains a path that on CI is different depending on OS
+			return nil
+		}
 		contents, err := fs.ReadFile(files, path)
 		if err != nil {
 			return err

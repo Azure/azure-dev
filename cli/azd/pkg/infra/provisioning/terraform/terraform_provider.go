@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -17,6 +19,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/drone/envsubst"
+	"github.com/hashicorp/hcl/v2/gohcl"
+	"github.com/hashicorp/hcl/v2/hclparse"
 	"golang.org/x/exp/maps"
 )
 
@@ -97,6 +101,12 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
+	t.env.DotenvSet("TF_DATA_DIR", t.dataDirPath())
+	t.env.DotenvSet("TF_APPEND_USER_AGENT", internal.UserAgent())
+	if err := t.envManager.Save(ctx, t.env); err != nil {
+		return fmt.Errorf("saving terraform data directory: %w", err)
+	}
+
 	return EnsureSubscriptionAndLocation(
 		ctx,
 		t.envManager,
@@ -115,13 +125,9 @@ func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDe
 
 	modulePath := t.modulePath()
 
-	initRes, err := t.init(ctx, isRemoteBackendConfig)
+	initRes, err := t.init(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
-	}
-
-	if err != nil {
-		return nil, nil, err
 	}
 
 	err = t.createInputParametersFile(ctx, t.parametersTemplateFilePath(), t.parametersFilePath())
@@ -329,20 +335,10 @@ func (t *TerraformProvider) ensureParametersFile(ctx context.Context) error {
 }
 
 // initialize template terraform provider through terraform init
-func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool) (string, error) {
+func (t *TerraformProvider) init(ctx context.Context) (string, error) {
 
 	modulePath := t.modulePath()
 	cmd := []string{}
-
-	if isRemoteBackendConfig {
-		t.console.Message(ctx, "Generating terraform backend config file...")
-
-		err := t.createInputParametersFile(ctx, t.backendConfigTemplateFilePath(), t.backendConfigFilePath())
-		if err != nil {
-			return fmt.Sprintf("creating terraform backend config file: %s", err), err
-		}
-		cmd = append(cmd, fmt.Sprintf("--backend-config=%s", t.backendConfigFilePath()))
-	}
 
 	runResult, err := t.cli.Init(ctx, modulePath, cmd...)
 	if err != nil {
@@ -566,16 +562,6 @@ func (t *TerraformProvider) parametersTemplateFilePath() string {
 	return filepath.Join(t.projectPath, infraPath, parametersFilename)
 }
 
-// Gets the path to the project backend config file path
-func (t *TerraformProvider) backendConfigTemplateFilePath() string {
-	infraPath := t.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
-	return filepath.Join(t.projectPath, infraPath, "provider.conf.json")
-}
-
 // Gets the folder path to the specified module
 func (t *TerraformProvider) modulePath() string {
 	infraPath := t.options.Path
@@ -589,50 +575,62 @@ func (t *TerraformProvider) modulePath() string {
 // Gets the path to the staging .azure terraform plan file path
 func (t *TerraformProvider) planFilePath() string {
 	planFilename := fmt.Sprintf("%s.tfplan", t.options.Module)
-	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, planFilename)
+	return filepath.Join(t.projectPath, azdcontext.EnvironmentDirectoryName, t.env.Name(), t.options.Path, planFilename)
 }
 
 // Gets the path to the staging .azure terraform local state file path
 func (t *TerraformProvider) localStateFilePath() string {
-	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, "terraform.tfstate")
-}
-
-// Gets the path to the staging .azure parameters file path
-func (t *TerraformProvider) backendConfigFilePath() string {
-	backendConfigFilename := fmt.Sprintf("%s.conf.json", t.env.Name())
-	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, backendConfigFilename)
+	return filepath.Join(
+		t.projectPath, azdcontext.EnvironmentDirectoryName, t.env.Name(), t.options.Path, "terraform.tfstate")
 }
 
 // Gets the path to the staging .azure backend config file path
 func (t *TerraformProvider) parametersFilePath() string {
 	parametersFilename := fmt.Sprintf("%s.tfvars.json", t.options.Module)
-	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, parametersFilename)
+	return filepath.Join(
+		t.projectPath, azdcontext.EnvironmentDirectoryName, t.env.Name(), t.options.Path, parametersFilename)
+}
+
+// Gets the path to the current env.
+func (t *TerraformProvider) dataDirPath() string {
+	return filepath.Join(t.projectPath, azdcontext.EnvironmentDirectoryName, t.env.Name(), t.options.Path, ".terraform")
+}
+
+type providerTf struct {
+	TerraformConfig terraformConfig `hcl:"terraform,block"`
+	Provider        providerConfig  `hcl:"provider,block"`
+	Data            dataConfig      `hcl:"data,block"`
+}
+
+type providerConfig struct{}
+type dataConfig struct{}
+
+type terraformConfig struct {
+	RequiredVersion string       `hcl:"required_version"`
+	Backend         backedConfig `hcl:"backend,block"`
+}
+
+type backedConfig struct {
+	AzureRm *azureRmBackEnd `hcl:"azurerm,block"`
+}
+
+type azureRmBackEnd struct {
 }
 
 // Check terraform file for remote backend provider
 func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
-	modulePath := t.modulePath()
-	infraDir, _ := os.Open(modulePath)
-	files, err := infraDir.ReadDir(0)
-
-	if err != nil {
-		return false, fmt.Errorf("reading .tf files contents: %w", err)
+	providerTfPath := filepath.Join(t.modulePath(), "provider.tf")
+	providerTfFile, diags := hclparse.NewParser().ParseHCLFile(providerTfPath)
+	if diags.HasErrors() {
+		return false, fmt.Errorf("error parsing provider.tf file: %w", diags)
 	}
 
-	for index := range files {
-		if !files[index].IsDir() && filepath.Ext(files[index].Name()) == ".tf" {
-			fileContent, err := os.ReadFile(filepath.Join(modulePath, files[index].Name()))
-
-			if err != nil {
-				return false, fmt.Errorf("error reading .tf files: %w", err)
-			}
-
-			if found := strings.Contains(string(fileContent), `backend "azurerm"`); found {
-				return true, nil
-			}
-		}
+	var provider providerTf
+	_ = gohcl.DecodeBody(providerTfFile.Body, nil, &provider)
+	if provider.TerraformConfig.Backend.AzureRm == nil {
+		return false, nil
 	}
-	return false, nil
+	return true, nil
 }
 
 // Copies the an input parameters file templateFilePath to inputFilePath after replacing environment variable references in

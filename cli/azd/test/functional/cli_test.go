@@ -780,6 +780,8 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 }
 
 func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
+	t.Skip("Skipping test as there is maybe time to migrate terraform remote state to HCP cloud")
+
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -821,6 +823,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
+	t.Skip("Skipping test as there is maybe time to migrate terraform remote state to HCP cloud")
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 

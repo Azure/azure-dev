@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -18,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/drone/envsubst"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/exp/maps"
 )
 
@@ -90,29 +88,7 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 		return err
 	}
 
-	if err := t.EnsureEnv(ctx); err != nil {
-		return err
-	}
-
-	envVars := []string{
-		// Sets the terraform data directory env var that will get set on all terraform CLI commands
-		fmt.Sprintf("TF_DATA_DIR=%s", t.dataDirPath()),
-		// Required when using service principal login
-		fmt.Sprintf("ARM_TENANT_ID=%s", os.Getenv("ARM_TENANT_ID")),
-		fmt.Sprintf("ARM_SUBSCRIPTION_ID=%s", t.env.GetSubscriptionId()),
-		fmt.Sprintf("ARM_CLIENT_ID=%s", os.Getenv("ARM_CLIENT_ID")),
-		fmt.Sprintf("ARM_CLIENT_SECRET=%s", os.Getenv("ARM_CLIENT_SECRET")),
-		// Include azd in user agent
-		fmt.Sprintf("TF_APPEND_USER_AGENT=%s", internal.UserAgent()),
-	}
-
-	spanCtx := trace.SpanContextFromContext(ctx)
-	if spanCtx.HasTraceID() {
-		envVars = append(envVars, fmt.Sprintf("ARM_CORRELATION_REQUEST_ID=%s", spanCtx.TraceID().String()))
-	}
-
-	t.cli.SetEnv(envVars)
-	return nil
+	return t.EnsureEnv(ctx)
 }
 
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
@@ -631,11 +607,6 @@ func (t *TerraformProvider) backendConfigFilePath() string {
 func (t *TerraformProvider) parametersFilePath() string {
 	parametersFilename := fmt.Sprintf("%s.tfvars.json", t.options.Module)
 	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, parametersFilename)
-}
-
-// Gets the path to the current env.
-func (t *TerraformProvider) dataDirPath() string {
-	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, ".terraform")
 }
 
 // Check terraform file for remote backend provider

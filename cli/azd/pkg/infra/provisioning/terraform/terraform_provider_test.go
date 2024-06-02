@@ -129,7 +129,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	provider := NewTerraformProvider(
-		terraformTools.NewTerraformCli(mockContext.CommandRunner),
+		terraformTools.NewTerraformCli(mockContext.CommandRunner, &environment.Environment{}),
 		envManager,
 		env,
 		mockContext.Console,

@@ -8,7 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
@@ -16,8 +19,6 @@ import (
 
 type TerraformCli interface {
 	tools.ExternalTool
-	// Set environment variables to be used in all terraform commands
-	SetEnv(envVars []string)
 	// Validates the terraform module
 	Validate(ctx context.Context, modulePath string) (string, error)
 	// Initializes the terraform module
@@ -36,12 +37,13 @@ type TerraformCli interface {
 
 type terraformCli struct {
 	commandRunner exec.CommandRunner
-	env           []string
+	env           *environment.Environment
 }
 
-func NewTerraformCli(commandRunner exec.CommandRunner) TerraformCli {
+func NewTerraformCli(commandRunner exec.CommandRunner, env *environment.Environment) TerraformCli {
 	return &terraformCli{
 		commandRunner: commandRunner,
+		env:           env,
 	}
 }
 
@@ -87,23 +89,37 @@ func (cli *terraformCli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-// Set environment variables to be used in all terraform commands
-func (cli *terraformCli) SetEnv(env []string) {
-	cli.env = env
-}
-
 func (cli *terraformCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("terraform", args...).
-		WithEnv(cli.env)
+		WithEnv(mergeInjectEnv(cli.env.Dotenv()))
 
 	return cli.commandRunner.Run(ctx, runArgs)
+}
+
+func mergeInjectEnv(sourceEnv map[string]string) []string {
+	systemEnv := os.Environ()
+	mergedEnv := environment.NewWithValues("envForMerging", sourceEnv)
+	for _, envVar := range systemEnv {
+		keyAndValue := strings.SplitN(envVar, "=", 2)
+		_, isInAzdEnv := sourceEnv[keyAndValue[0]]
+
+		if !isInAzdEnv {
+			value := ""
+			if len(keyAndValue) > 1 {
+				value = keyAndValue[1]
+			}
+			mergedEnv.DotenvSet(keyAndValue[0], value)
+			continue
+		}
+	}
+	return mergedEnv.Environ()
 }
 
 func (cli *terraformCli) runInteractive(ctx context.Context, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("terraform", args...).
-		WithEnv(cli.env).
+		WithEnv(mergeInjectEnv(cli.env.Dotenv())).
 		WithInteractive(true)
 
 	return cli.commandRunner.Run(ctx, runArgs)

@@ -19,8 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/drone/envsubst"
-	"github.com/hashicorp/hcl/v2/gohcl"
-	"github.com/hashicorp/hcl/v2/hclparse"
 	"golang.org/x/exp/maps"
 )
 
@@ -118,11 +116,6 @@ func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
 
 // Previews the infrastructure through terraform plan
 func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDeploymentDetails, error) {
-	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-	if err != nil {
-		return nil, nil, fmt.Errorf("reading backend config: %w", err)
-	}
-
 	modulePath := t.modulePath()
 
 	initRes, err := t.init(ctx)
@@ -140,7 +133,7 @@ func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDe
 		return nil, nil, fmt.Errorf("terraform validate failed: %s, err %w", validated, err)
 	}
 
-	planArgs := t.createPlanArgs(isRemoteBackendConfig)
+	planArgs := t.createPlanArgs()
 	runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("terraform plan failed:%s err %w", runResult, err)
@@ -156,9 +149,6 @@ func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDe
 		ParameterFilePath: t.parametersFilePath(),
 		PlanFilePath:      t.planFilePath(),
 	}
-	if !isRemoteBackendConfig {
-		deploymentDetails.localStateFilePath = t.localStateFilePath()
-	}
 
 	return deployment, &deploymentDetails, nil
 }
@@ -173,12 +163,11 @@ func (t *TerraformProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, err
 	}
 
-	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 	if err != nil {
 		return nil, fmt.Errorf("reading backend config: %w", err)
 	}
 
-	applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, *terraformDeploymentData)
+	applyArgs, err := t.createApplyArgs(*terraformDeploymentData)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +178,7 @@ func (t *TerraformProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 	}
 
 	// Set the deployment result
-	outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
+	outputs, err := t.createOutputParameters(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("create terraform template failed: %w", err)
 	}
@@ -218,13 +207,8 @@ func (t *TerraformProvider) Preview(ctx context.Context) (*DeployPreviewResult, 
 
 // Destroys the specified deployment through terraform destroy
 func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
-	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-	if err != nil {
-		return nil, fmt.Errorf("reading backend config: %w", err)
-	}
-
 	t.console.Message(ctx, "Locating parameters file...")
-	err = t.ensureParametersFile(ctx)
+	err := t.ensureParametersFile(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +216,7 @@ func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions)
 	modulePath := t.modulePath()
 
 	//load the deployment result
-	outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
+	outputs, err := t.createOutputParameters(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("load terraform template output failed: %w", err)
 	}
@@ -241,7 +225,7 @@ func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions)
 	// terraform doesn't use the `t.console`, we must ensure no spinner is running before calling Destroy
 	// as it could be an interactive operation if it needs confirmation
 	t.console.StopSpinner(ctx, "", input.Step)
-	destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
+	destroyArgs := t.createDestroyArgs(options.Force())
 	runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("template Deploy failed: %s, err: %w", runResult, err)
@@ -253,15 +237,10 @@ func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions)
 }
 
 func (t *TerraformProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
-	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-	if err != nil {
-		return nil, fmt.Errorf("reading backend config: %w", err)
-	}
-
 	t.console.Message(ctx, "Retrieving terraform state...")
 	modulePath := t.modulePath()
 
-	terraformState, err := t.showCurrentState(ctx, modulePath, isRemoteBackendConfig)
+	terraformState, err := t.showCurrentState(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("fetching terraform state failed: %w", err)
 	}
@@ -277,23 +256,15 @@ func (t *TerraformProvider) State(ctx context.Context, options *StateOptions) (*
 }
 
 // Creates the terraform plan CLI arguments
-func (t *TerraformProvider) createPlanArgs(isRemoteBackendConfig bool) []string {
+func (t *TerraformProvider) createPlanArgs() []string {
 	args := []string{fmt.Sprintf("-var-file=%s", t.parametersFilePath())}
-
-	if !isRemoteBackendConfig {
-		args = append(args, fmt.Sprintf("-state=%s", t.localStateFilePath()))
-	}
 
 	return args
 }
 
 // Creates the terraform apply CLI arguments
-func (t *TerraformProvider) createApplyArgs(
-	isRemoteBackendConfig bool, data terraformDeploymentDetails) ([]string, error) {
+func (t *TerraformProvider) createApplyArgs(data terraformDeploymentDetails) ([]string, error) {
 	args := []string{}
-	if !isRemoteBackendConfig {
-		args = append(args, fmt.Sprintf("-state=%s", data.localStateFilePath))
-	}
 
 	if _, err := os.Stat(data.PlanFilePath); err == nil {
 		args = append(args, data.PlanFilePath)
@@ -308,12 +279,8 @@ func (t *TerraformProvider) createApplyArgs(
 }
 
 // Creates the terraform destroy CLI arguments
-func (t *TerraformProvider) createDestroyArgs(isRemoteBackendConfig bool, autoApprove bool) []string {
+func (t *TerraformProvider) createDestroyArgs(autoApprove bool) []string {
 	args := []string{fmt.Sprintf("-var-file=%s", t.parametersFilePath())}
-
-	if !isRemoteBackendConfig {
-		args = append(args, fmt.Sprintf("-state=%s", t.localStateFilePath()))
-	}
 
 	if autoApprove {
 		args = append(args, "-auto-approve")
@@ -352,13 +319,8 @@ func (t *TerraformProvider) init(ctx context.Context) (string, error) {
 func (t *TerraformProvider) createOutputParameters(
 	ctx context.Context,
 	modulePath string,
-	isRemoteBackend bool,
 ) (map[string]OutputParameter, error) {
 	cmd := []string{}
-
-	if !isRemoteBackend {
-		cmd = append(cmd, fmt.Sprintf("-state=%s", t.localStateFilePath()))
-	}
 
 	runResult, err := t.cli.Output(ctx, modulePath, cmd...)
 	if err != nil {
@@ -424,13 +386,8 @@ func (t *TerraformProvider) convertOutputs(outputMap map[string]terraformOutput)
 func (t *TerraformProvider) showCurrentState(
 	ctx context.Context,
 	modulePath string,
-	isRemoteBackend bool,
 ) (*terraformShowOutput, error) {
 	cmd := []string{}
-
-	if !isRemoteBackend {
-		cmd = append(cmd, t.localStateFilePath())
-	}
 
 	runResult, err := t.cli.Show(ctx, modulePath, cmd...)
 	if err != nil {
@@ -578,12 +535,6 @@ func (t *TerraformProvider) planFilePath() string {
 	return filepath.Join(t.projectPath, azdcontext.EnvironmentDirectoryName, t.env.Name(), t.options.Path, planFilename)
 }
 
-// Gets the path to the staging .azure terraform local state file path
-func (t *TerraformProvider) localStateFilePath() string {
-	return filepath.Join(
-		t.projectPath, azdcontext.EnvironmentDirectoryName, t.env.Name(), t.options.Path, "terraform.tfstate")
-}
-
 // Gets the path to the staging .azure backend config file path
 func (t *TerraformProvider) parametersFilePath() string {
 	parametersFilename := fmt.Sprintf("%s.tfvars.json", t.options.Module)
@@ -594,43 +545,6 @@ func (t *TerraformProvider) parametersFilePath() string {
 // Gets the path to the current env.
 func (t *TerraformProvider) dataDirPath() string {
 	return filepath.Join(t.projectPath, azdcontext.EnvironmentDirectoryName, t.env.Name(), t.options.Path, ".terraform")
-}
-
-type providerTf struct {
-	TerraformConfig terraformConfig `hcl:"terraform,block"`
-	Provider        providerConfig  `hcl:"provider,block"`
-	Data            dataConfig      `hcl:"data,block"`
-}
-
-type providerConfig struct{}
-type dataConfig struct{}
-
-type terraformConfig struct {
-	RequiredVersion string       `hcl:"required_version"`
-	Backend         backedConfig `hcl:"backend,block"`
-}
-
-type backedConfig struct {
-	AzureRm *azureRmBackEnd `hcl:"azurerm,block"`
-}
-
-type azureRmBackEnd struct {
-}
-
-// Check terraform file for remote backend provider
-func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
-	providerTfPath := filepath.Join(t.modulePath(), "provider.tf")
-	providerTfFile, diags := hclparse.NewParser().ParseHCLFile(providerTfPath)
-	if diags.HasErrors() {
-		return false, fmt.Errorf("error parsing provider.tf file: %w", diags)
-	}
-
-	var provider providerTf
-	_ = gohcl.DecodeBody(providerTfFile.Body, nil, &provider)
-	if provider.TerraformConfig.Backend.AzureRm == nil {
-		return false, nil
-	}
-	return true, nil
 }
 
 // Copies the an input parameters file templateFilePath to inputFilePath after replacing environment variable references in

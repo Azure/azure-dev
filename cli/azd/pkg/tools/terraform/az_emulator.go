@@ -1,4 +1,4 @@
-package exec
+package terraform
 
 import (
 	"fmt"
@@ -18,7 +18,7 @@ const (
 
 // IsAzEmulator returns true if the AZURE_AZ_EMULATOR environment variable is defined.
 // It does not matter the value of the environment variable, as long as it is defined.
-func IsAzEmulator() bool {
+func isAzEmulator() bool {
 	_, emulateEnvVarDefined := os.LookupEnv(emulatorEnvName)
 	return emulateEnvVarDefined
 }

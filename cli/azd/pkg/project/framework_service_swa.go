@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"

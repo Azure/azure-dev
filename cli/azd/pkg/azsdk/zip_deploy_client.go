@@ -29,9 +29,10 @@ const (
 // https://github.com/MicrosoftDocs/azure-docs/blob/main/includes/app-service-deploy-zip-push-rest.md
 // https://github.com/projectkudu/kudu/wiki/REST-API
 type ZipDeployClient struct {
-	hostName string
-	pipeline runtime.Pipeline
-	cred     azcore.TokenCredential
+	hostName         string
+	pipeline         runtime.Pipeline
+	cred             azcore.TokenCredential
+	armClientOptions *arm.ClientOptions
 }
 
 type DeployResponse struct {
@@ -61,30 +62,33 @@ type DeployStatus struct {
 func NewZipDeployClient(
 	hostName string,
 	credential azcore.TokenCredential,
-	options *arm.ClientOptions,
+	armClientOptions *arm.ClientOptions,
 ) (*ZipDeployClient, error) {
-	if options == nil {
-		options = &arm.ClientOptions{}
+	zipDeployOptions := &arm.ClientOptions{}
+	if armClientOptions != nil {
+		optionsCopy := *armClientOptions
+		zipDeployOptions = &optionsCopy
 	}
 
 	// We do not have a Resource provider to register
-	options.DisableRPRegistration = true
+	zipDeployOptions.DisableRPRegistration = true
 
 	// Increase default retry attempts from 3 to 4 as zipdeploy often fails with 3 retries.
 	// With the default azcore.policy options of 800ms RetryDelay, this introduces up to 20 seconds of exponential back-off.
-	options.Retry = policy.RetryOptions{
+	zipDeployOptions.Retry = policy.RetryOptions{
 		MaxRetries: 4,
 	}
 
-	pipeline, err := armruntime.NewPipeline("zip-deploy", "1.0.0", credential, runtime.PipelineOptions{}, options)
+	pipeline, err := armruntime.NewPipeline("zip-deploy", "1.0.0", credential, runtime.PipelineOptions{}, zipDeployOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating HTTP pipeline: %w", err)
 	}
 
 	return &ZipDeployClient{
-		hostName: hostName,
-		pipeline: pipeline,
-		cred:     credential,
+		hostName:         hostName,
+		pipeline:         pipeline,
+		cred:             credential,
+		armClientOptions: armClientOptions,
 	}, nil
 }
 

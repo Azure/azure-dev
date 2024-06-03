@@ -305,7 +305,7 @@ func (cli *bicepCli) BuildBicepParam(ctx context.Context, file string, env []str
 func (cli *bicepCli) runCommand(ctx context.Context, env []string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs(cli.path, args...)
 	if env != nil {
-		runArgs = runArgs.WithEnv(env)
+		runArgs = runArgs.WithEnv(env).WithSystemEnvMerged()
 	}
 	return cli.runner.Run(ctx, runArgs)
 }

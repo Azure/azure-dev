@@ -95,7 +95,8 @@ func (cli *terraformCli) SetEnv(env []string) {
 func (cli *terraformCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("terraform", args...).
-		WithEnv(cli.env)
+		WithEnv(cli.env).
+		WithSystemEnvMerged()
 
 	return cli.commandRunner.Run(ctx, runArgs)
 }
@@ -104,6 +105,7 @@ func (cli *terraformCli) runInteractive(ctx context.Context, args ...string) (ex
 	runArgs := exec.
 		NewRunArgs("terraform", args...).
 		WithEnv(cli.env).
+		WithSystemEnvMerged().
 		WithInteractive(true)
 
 	return cli.commandRunner.Run(ctx, runArgs)

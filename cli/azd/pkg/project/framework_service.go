@@ -15,15 +15,16 @@ import (
 type ServiceLanguageKind string
 
 const (
-	ServiceLanguageNone       ServiceLanguageKind = ""
-	ServiceLanguageDotNet     ServiceLanguageKind = "dotnet"
-	ServiceLanguageCsharp     ServiceLanguageKind = "csharp"
-	ServiceLanguageFsharp     ServiceLanguageKind = "fsharp"
-	ServiceLanguageJavaScript ServiceLanguageKind = "js"
-	ServiceLanguageTypeScript ServiceLanguageKind = "ts"
-	ServiceLanguagePython     ServiceLanguageKind = "python"
-	ServiceLanguageJava       ServiceLanguageKind = "java"
-	ServiceLanguageDocker     ServiceLanguageKind = "docker"
+	ServiceLanguageNone                   ServiceLanguageKind = ""
+	ServiceLanguageDotNet                 ServiceLanguageKind = "dotnet"
+	ServiceLanguageCsharp                 ServiceLanguageKind = "csharp"
+	ServiceLanguageFsharp                 ServiceLanguageKind = "fsharp"
+	ServiceLanguageJavaScript             ServiceLanguageKind = "js"
+	ServiceLanguageTypeScript             ServiceLanguageKind = "ts"
+	ServiceLanguagePython                 ServiceLanguageKind = "python"
+	ServiceLanguageJava                   ServiceLanguageKind = "java"
+	ServiceLanguageDocker                 ServiceLanguageKind = "docker"
+	ServiceLanguageDotNetContainerPublish ServiceLanguageKind = "dotnet-container-publish"
 )
 
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
@@ -41,7 +42,8 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		ServiceLanguageTypeScript,
 		ServiceLanguagePython,
 		ServiceLanguageJava:
-		// Excluding ServiceLanguageDocker since it is implicitly derived currently, and not an actual language
+		// Excluding ServiceLanguageDocker and ServiceLanguageDotNetContainerPublish since they are implicitly derived
+		// currently, and not an actual language.
 		return kind, nil
 	}
 

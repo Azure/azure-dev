@@ -153,6 +153,7 @@ func createContainerAppServiceTarget(
 		containerRegistryService,
 		dockerCli,
 		cloud.AzurePublic(),
+		nil,
 	)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)

@@ -838,6 +838,7 @@ func createAksServiceTarget(
 		containerRegistryService,
 		dockerCli,
 		cloud.AzurePublic(),
+		nil,
 	)
 
 	if userConfig == nil {

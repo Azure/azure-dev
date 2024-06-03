@@ -113,12 +113,6 @@ func (at *staticWebAppTarget) Deploy(
 				return
 			}
 
-			mainComponent, err := serviceConfig.Main()
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
 			// Get the static webapp deployment token
 			task.SetProgress(NewServiceProgress("Retrieving deployment token"))
 			deploymentToken, err := at.cli.GetStaticWebAppApiKey(
@@ -147,7 +141,6 @@ func (at *staticWebAppTarget) Deploy(
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
-				mainComponent.RelativePath,
 				DefaultStaticWebAppEnvironmentName,
 				*deploymentToken,
 				dOptions)

@@ -645,8 +645,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, component *Co
 				err,
 			)
 		}
-	} else if serviceConfig.Host == StaticWebAppTarget {
-		withSwaConfig, err := swa.ContainsSwaConfig(serviceConfig.Path())
+	} else if component.Service.Host == StaticWebAppTarget {
+		withSwaConfig, err := swa.ContainsSwaConfig(component.Path())
 		if err != nil {
 			return nil, fmt.Errorf("checking for swa-cli.config.json: %w", err)
 		}
@@ -654,8 +654,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, component *Co
 			if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageSwa), &compositeFramework); err != nil {
 				return nil, fmt.Errorf(
 					"failed resolving composite framework service for '%s', language '%s': %w",
-					serviceConfig.Name,
-					serviceConfig.Language,
+					component.Name,
+					component.Language,
 					err,
 				)
 			}

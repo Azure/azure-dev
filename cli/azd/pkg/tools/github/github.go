@@ -410,7 +410,7 @@ func (cli *ghCli) newRunArgs(args ...string) exec.RunArgs {
 
 	runArgs := exec.NewRunArgs(cli.path, args...)
 	if RunningOnCodespaces() {
-		runArgs = runArgs.WithEnv([]string{"GITHUB_TOKEN=", "GH_TOKEN="}).WithSystemEnvMerged()
+		runArgs = runArgs.WithEnv([]string{"GITHUB_TOKEN=", "GH_TOKEN="})
 	}
 
 	return runArgs

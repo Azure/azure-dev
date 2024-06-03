@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 // AuthTokenResult is the value returned by `azd get-access-token`. It matches the shape of `azcore.AccessToken`
@@ -29,7 +29,7 @@ type AzEmulateAuthTokenResult struct {
 type RFC3339Time time.Time
 
 func (r RFC3339Time) MarshalJSON() ([]byte, error) {
-	if exec.IsAzEmulator() {
+	if osutil.IsAzEmulator() {
 		return []byte(fmt.Sprintf(`"%s"`, time.Time(r).Format("2006-01-02 15:04:05.000000"))), nil
 	}
 	return []byte(fmt.Sprintf(`"%s"`, time.Time(r).Format(time.RFC3339))), nil

@@ -316,7 +316,7 @@ func newRunArgs(args ...string) exec.RunArgs {
 	if github.RunningOnCodespaces() {
 		// azd running git in codespaces should not use the Codespaces token.
 		// As azd needs bigger access across repos. And the token in codespaces is mono-repo by default
-		runArgs = runArgs.WithEnv([]string{"GITHUB_TOKEN=", "GH_TOKEN="}).WithSystemEnvMerged()
+		runArgs = runArgs.WithEnv([]string{"GITHUB_TOKEN=", "GH_TOKEN="})
 	}
 
 	return runArgs

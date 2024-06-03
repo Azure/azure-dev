@@ -169,7 +169,7 @@ func (cli *dotNetCli) PublishAppHostManifest(
 	}
 
 	if envArgs != nil {
-		runArgs = runArgs.WithEnv(envArgs).WithSystemEnvMerged()
+		runArgs = runArgs.WithEnv(envArgs)
 	}
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)
@@ -199,7 +199,7 @@ func (cli *dotNetCli) PublishContainer(
 	runArgs = runArgs.WithEnv([]string{
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_UNAME=%s", username),
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_PWORD=%s", password),
-	}).WithSystemEnvMerged()
+	})
 
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -321,7 +321,7 @@ func newDotNetRunArgs(args ...string) exec.RunArgs {
 
 	runArgs = runArgs.WithEnv([]string{
 		"DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1",
-	}).WithSystemEnvMerged()
+	})
 
 	return runArgs
 }

@@ -12,17 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-const (
-	emulatorEnvName string = "AZURE_AZ_EMULATOR"
-)
-
-// IsAzEmulator returns true if the AZURE_AZ_EMULATOR environment variable is defined.
-// It does not matter the value of the environment variable, as long as it is defined.
-func isAzEmulator() bool {
-	_, emulateEnvVarDefined := os.LookupEnv(emulatorEnvName)
-	return emulateEnvVarDefined
-}
-
 // creates a copy of azd binary and renames it to az and returns the path to it
 func emulateAzFromPath() (string, error) {
 	path, err := exec.LookPath("azd")

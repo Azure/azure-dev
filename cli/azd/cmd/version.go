@@ -11,8 +11,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -57,7 +57,7 @@ func newVersionAction(
 func (v *versionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// fake-az in env makes azd to simulate az cli output.
 	// This is to make tools like terraform to use azd when they thing they are using az.
-	if exec.IsAzEmulator() {
+	if osutil.IsAzEmulator() {
 		fmt.Fprintf(v.console.Handles().Stdout, `{
 			"azure-cli": "2.61.0",
 			"azure-cli-core": "2.61.0",

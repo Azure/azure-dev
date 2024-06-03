@@ -24,7 +24,6 @@ func TestNewRunArgs(t *testing.T) {
 		runArgs := NewRunArgs("az", "login").
 			WithCwd("cwd").
 			WithEnv([]string{"foo", "bar"}).
-			WithSystemEnvMerged().
 			WithInteractive(true).
 			WithShell(true).
 			WithDebugLogging(true).

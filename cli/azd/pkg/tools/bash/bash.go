@@ -40,7 +40,6 @@ func (bs *bashScript) Execute(ctx context.Context, path string, options tools.Ex
 	runArgs = runArgs.
 		WithCwd(bs.cwd).
 		WithEnv(bs.envVars).
-		WithSystemEnvMerged().
 		WithShell(true)
 
 	if options.Interactive != nil {

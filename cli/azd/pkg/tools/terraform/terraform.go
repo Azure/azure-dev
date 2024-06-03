@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -95,20 +97,31 @@ func (cli *terraformCli) SetEnv(env []string) {
 func (cli *terraformCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("terraform", args...).
-		WithEnv(cli.env).
-		WithSystemEnvMerged()
+		WithEnv(cli.env)
 
-	return cli.commandRunner.Run(ctx, runArgs)
+	return withAzEmulator(ctx, cli.commandRunner, runArgs)
 }
 
 func (cli *terraformCli) runInteractive(ctx context.Context, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("terraform", args...).
 		WithEnv(cli.env).
-		WithSystemEnvMerged().
 		WithInteractive(true)
 
-	return cli.commandRunner.Run(ctx, runArgs)
+	return withAzEmulator(ctx, cli.commandRunner, runArgs)
+}
+
+func withAzEmulator(ctx context.Context, commandRunner exec.CommandRunner, runArgs exec.RunArgs) (exec.RunResult, error) {
+	azEmulatorPath, err := emulateAzFromPath()
+	if err != nil {
+		return exec.RunResult{}, fmt.Errorf("emulating az path: %w", err)
+	}
+	defer os.RemoveAll(azEmulatorPath)
+	runArgs.AppendParams(
+		osutil.AzEmulateKey(),
+		fmt.Sprintf("PATH=%s", azEmulatorPath),
+	)
+	return commandRunner.Run(ctx, runArgs)
 }
 
 func (cli *terraformCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {

@@ -4,6 +4,7 @@
 package osutil
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 )
@@ -24,4 +25,19 @@ func GetNewLineSeparator() string {
 	} else {
 		return "\n"
 	}
+}
+
+const (
+	emulatorEnvName string = "AZURE_AZ_EMULATOR"
+)
+
+// IsAzEmulator returns true if the AZURE_AZ_EMULATOR environment variable is defined.
+// It does not matter the value of the environment variable, as long as it is defined.
+func IsAzEmulator() bool {
+	_, emulateEnvVarDefined := os.LookupEnv(emulatorEnvName)
+	return emulateEnvVarDefined
+}
+
+func AzEmulateKey() string {
+	return fmt.Sprintf("%s=%s", emulatorEnvName, "true")
 }

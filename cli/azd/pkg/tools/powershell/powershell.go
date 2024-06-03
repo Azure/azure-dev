@@ -27,7 +27,7 @@ type powershellScript struct {
 func (bs *powershellScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("pwsh", path).
 		WithCwd(bs.cwd).
-		WithEnv(bs.envVars).WithSystemEnvMerged().
+		WithEnv(bs.envVars).
 		WithShell(true)
 
 	if options.Interactive != nil {

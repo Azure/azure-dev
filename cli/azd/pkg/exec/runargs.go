@@ -32,6 +32,13 @@ type RunArgs struct {
 
 	// When set will call the command with the specified StdOut
 	StdOut io.Writer
+
+	// When set, any calls within the command to `az` will be sent to `azd`
+	AzEmulator bool
+
+	// When set, the command will merge the system environment variables with the provided environment variables
+	// giving priority to the provided environment variables.
+	MergeSystemEnv bool
 }
 
 // NewRunArgs creates a new instance with the specified cmd and args
@@ -67,6 +74,20 @@ func (b RunArgs) WithCwd(cwd string) RunArgs {
 // Updates the environment variables to used for the command
 func (b RunArgs) WithEnv(env []string) RunArgs {
 	b.Env = env
+	return b
+}
+
+// Makes any call to `az` from the command to call azd with az emulator.
+// Commands depending on az cli for auth can use this to use azd instead with the help of the command runner.
+func (b RunArgs) WithAzEmulator() RunArgs {
+	b.AzEmulator = true
+	return b
+}
+
+// Merges the system environment variables with the provided environment variables
+// giving priority to the provided environment variables.
+func (b RunArgs) WithSystemEnvMerged() RunArgs {
+	b.MergeSystemEnv = true
 	return b
 }
 

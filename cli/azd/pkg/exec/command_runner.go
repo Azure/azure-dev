@@ -97,7 +97,39 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	if err != nil {
 		return RunResult{}, err
 	}
+	return r.runImpl(ctx, cmd, args)
+}
 
+func arrayToMap(env []string) map[string]string {
+	envMap := make(map[string]string, len(env))
+	for _, envVar := range env {
+		keyAndValue := strings.SplitN(envVar, "=", 2)
+		value := ""
+		if len(keyAndValue) > 1 {
+			value = keyAndValue[1]
+		}
+		envMap[keyAndValue[0]] = value
+	}
+	return envMap
+}
+
+func mergeInjectEnv(initialEnv []string) []string {
+	systemEnv := arrayToMap(os.Environ())
+	// create a map from initial Env to check if the key is already present
+	sourceEnv := arrayToMap(initialEnv)
+	mergedEnv := initialEnv
+
+	for key, val := range systemEnv {
+		_, isInInitialEnv := sourceEnv[key]
+		if !isInInitialEnv {
+			mergedEnv = append(mergedEnv, fmt.Sprintf("%s=%s", key, val))
+			continue
+		}
+	}
+	return mergedEnv
+}
+
+func (r *commandRunner) runImpl(ctx context.Context, cmd CmdTree, args RunArgs) (RunResult, error) {
 	cmd.Dir = args.Cwd
 
 	var stdin io.Reader
@@ -109,7 +141,24 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	var stdout, stderr bytes.Buffer
 
-	cmd.Env = appendEnv(args.Env)
+	// args.Env == nil makes the cmd to inherit the environment variables from the parent process
+	cmdEnv := args.Env
+	if args.MergeSystemEnv {
+		cmdEnv = mergeInjectEnv(cmdEnv)
+	}
+	if args.AzEmulator {
+		// makes azd to emulate azd in this env
+		cmdEnv = append(cmdEnv, emulatorEnvName+"=true")
+		emuPath, err := emulateAzFromPath()
+		if err != nil {
+			return RunResult{}, err
+		}
+		defer os.Remove(emuPath)
+		// replaces PATH with the path to the emulated az
+		cmdEnv = append(cmdEnv, "PATH="+emuPath)
+	}
+
+	cmd.Env = cmdEnv
 
 	if args.Interactive {
 		cmd.Stdin = r.stdin
@@ -155,7 +204,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		cmd.Kill()
 	}()
 
-	err = cmd.Wait()
+	err := cmd.Wait()
 
 	var result RunResult
 
@@ -194,68 +243,7 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 	if err != nil {
 		return NewRunResult(-1, "", ""), err
 	}
-
-	process.Cmd.Dir = args.Cwd
-	process.Env = appendEnv(args.Env)
-
-	var stdOutBuf bytes.Buffer
-	var stdErrBuf bytes.Buffer
-
-	if process.Stdout == nil {
-		process.Stdout = &stdOutBuf
-	}
-
-	if process.Stderr == nil {
-		process.Stderr = &stdErrBuf
-	}
-
-	debugLogging := r.debugLogging
-	if args.DebugLogging != nil {
-		debugLogging = *args.DebugLogging
-	}
-
-	logMsg := logBuilder{
-		// use the actual shell command invoked in the log message
-		args: process.Cmd.Args,
-		env:  args.Env,
-	}
-	defer func() {
-		logMsg.Write(debugLogging, args.SensitiveData)
-	}()
-
-	if err := process.Start(); err != nil {
-		logMsg.err = err
-		return NewRunResult(-1, "", ""), fmt.Errorf("error starting process: %w", err)
-	}
-	defer process.Kill()
-
-	err = process.Wait()
-	result := NewRunResult(
-		process.ProcessState.ExitCode(),
-		stdOutBuf.String(),
-		stdErrBuf.String(),
-	)
-	logMsg.result = &result
-
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		err = NewExitError(
-			*exitErr,
-			args.Cmd,
-			result.Stdout,
-			result.Stderr,
-			true)
-	}
-
-	return result, err
-}
-
-func appendEnv(env []string) []string {
-	if len(env) > 0 {
-		return append(os.Environ(), env...)
-	}
-
-	return nil
+	return r.runImpl(ctx, process, args)
 }
 
 // logBuilder builds messages for running of commands.

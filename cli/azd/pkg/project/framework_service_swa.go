@@ -111,7 +111,7 @@ func (p *swaProject) Build(
 			p.console.StopPreviewer(ctx, false)
 
 			if err != nil {
-				task.SetError(fmt.Errorf("swa build: %w", err))
+				task.SetError(err)
 				return
 			}
 

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 )
 
 var (
@@ -56,7 +56,5 @@ func GetConnection(
 	}
 
 	organizationUrl := fmt.Sprintf("https://%s/%s", AzDoHostName, organization)
-	connection := azuredevops.NewPatConnection(organizationUrl, personalAccessToken)
-
-	return connection, nil
+	return azuredevops.NewPatConnection(organizationUrl, personalAccessToken), nil
 }

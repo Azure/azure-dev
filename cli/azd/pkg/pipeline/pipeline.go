@@ -131,7 +131,8 @@ type CiProvider interface {
 		repoDetails *gitRepositoryDetails,
 		infraOptions provisioning.Options,
 		authType PipelineAuthType,
-	) *CredentialOptions
+		credentials *azcli.AzureCredentials,
+	) (*CredentialOptions, error)
 }
 
 // mergeProjectVariablesAndSecrets returns the list of variables and secrets to be used in the pipeline

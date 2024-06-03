@@ -60,9 +60,23 @@ func (at *staticWebAppTarget) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			if usingSwaConfig(packageOutput) {
+				// The swa framework service does not set a packageOutput.PackagePath during package b/c the output
+				// is governed by the swa-cli.config.json file.
+				task.SetResult(packageOutput)
+				return
+			}
+
+			// packageOutput.PackagePath != "" -> This means swa framework service is not used to build/deploy and there
+			// is no a swa-cli.config.json file to govern the output.
+			// In this case, the serviceConfig.OutputPath (azure.yaml -> service -> dist) defines where is the output from
+			// the language framework service.
+			// If serviceConfig.OutputPath is not defined, azd should use the package path defined by the language framework
+			// service.
+
 			packagePath := serviceConfig.OutputPath
 			if strings.TrimSpace(packagePath) == "" {
-				packagePath = "build"
+				packagePath = packageOutput.PackagePath
 			}
 
 			task.SetResult(&ServicePackageResult{
@@ -71,6 +85,12 @@ func (at *staticWebAppTarget) Package(
 			})
 		},
 	)
+}
+
+func usingSwaConfig(packageResult *ServicePackageResult) bool {
+	// The swa framework service does not set a packageOutput.PackagePath during package b/c the output
+	// is governed by the swa-cli.config.json file.
+	return packageResult.PackagePath == ""
 }
 
 // Deploys the packaged build output using the SWA CLI
@@ -101,17 +121,23 @@ func (at *staticWebAppTarget) Deploy(
 			}
 
 			// SWA performs a zip & deploy of the specified output folder and deploys it to the configured environment
-			task.SetProgress(NewServiceProgress("Uploading deployment artifacts"))
+			task.SetProgress(NewServiceProgress("swa cli deploy"))
+			dOptions := swa.DeployOptions{}
+			cwd := serviceConfig.Path()
+			if !usingSwaConfig(packageOutput) {
+				dOptions.AppFolderPath = serviceConfig.RelativePath
+				dOptions.OutputRelativeFolderPath = packageOutput.PackagePath
+				cwd = serviceConfig.Project.Path
+			}
 			res, err := at.swa.Deploy(ctx,
-				serviceConfig.Project.Path,
+				cwd,
 				at.env.GetTenantId(),
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
-				serviceConfig.RelativePath,
-				packageOutput.PackagePath,
 				DefaultStaticWebAppEnvironmentName,
-				*deploymentToken)
+				*deploymentToken,
+				dOptions)
 
 			log.Println(res)
 

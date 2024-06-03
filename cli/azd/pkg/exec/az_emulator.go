@@ -23,10 +23,6 @@ func IsAzEmulator() bool {
 	return emulateEnvVarDefined
 }
 
-func emulateAz(cmd *CmdTree) error {
-	return nil
-}
-
 // creates a copy of azd binary and renames it to az and returns the path to it
 func emulateAzFromPath() (string, error) {
 	path, err := exec.LookPath("azd")

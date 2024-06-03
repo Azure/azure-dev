@@ -66,6 +66,10 @@ param revisionMode string = 'Single'
 @secure()
 param secrets object = {}
 
+@description('The keyvault identities required for the container')
+@secure()
+param keyvaultIdentities object = {}
+
 @description('The service binds associated with the container')
 param serviceBinds array = []
 
@@ -84,6 +88,17 @@ var usePrivateRegistry = !empty(identityName) && !empty(containerRegistryName)
 
 // Automatically set to `UserAssigned` when an `identityName` has been set
 var normalizedIdentityType = !empty(identityName) ? 'UserAssigned' : identityType
+
+var keyvalueSecrets = [for secret in items(secrets): {
+  name: secret.key
+  value: secret.value
+}]
+
+var keyvaultIdentitySecrets = [for secret in items(keyvaultIdentities): {
+  name: secret.key
+  keyVaultUrl: secret.value.keyVaultUrl
+  identity: secret.value.identity
+}] 
 
 module containerRegistryAccess '../security/registry-access.bicep' = if (usePrivateRegistry) {
   name: '${deployment().name}-registry-access'
@@ -124,10 +139,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
         appProtocol: daprAppProtocol
         appPort: ingressEnabled ? targetPort : 0
       } : { enabled: false }
-      secrets: [for secret in items(secrets): {
-        name: secret.key
-        value: secret.value
-      }]
+      secrets: concat(keyvalueSecrets, keyvaultIdentitySecrets)
       service: !empty(serviceType) ? { type: serviceType } : null
       registries: usePrivateRegistry ? [
         {

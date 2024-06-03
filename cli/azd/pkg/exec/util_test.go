@@ -6,8 +6,10 @@ package exec
 import (
 	"bytes"
 	"context"
+	"os"
 	"regexp"
 	"runtime"
+	"sort"
 	"testing"
 	"time"
 
@@ -80,6 +82,20 @@ func TestKillCommand(t *testing.T) {
 	// what we're sleeping on in the powershell)
 	since := time.Since(s)
 	require.LessOrEqual(t, since, 10*time.Second)
+}
+
+func TestAppendEnv(t *testing.T) {
+	require.Nil(t, appendEnv([]string{}))
+	require.Nil(t, appendEnv(nil))
+
+	expectedEnv := os.Environ()
+	expectedEnv = append(expectedEnv, "azd_random_var=world")
+	sort.Strings(expectedEnv)
+
+	actualEnv := appendEnv([]string{"azd_random_var=world"})
+	sort.Strings(actualEnv)
+
+	require.Equal(t, expectedEnv, actualEnv)
 }
 
 func TestRunList(t *testing.T) {

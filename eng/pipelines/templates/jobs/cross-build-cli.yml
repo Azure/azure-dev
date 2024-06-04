@@ -41,6 +41,7 @@ jobs:
       # Ensure that a compatible version of goversioninfo is installed.
       - pwsh: |
           go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
+          Get-ChildItem -Path (Join-Path (go env GOPATH) "bin") -Recurse | ForEach-Object { Write-Host $_.FullName }
         condition: and(succeeded(), eq(variables['GOOS'], 'windows'))
         displayName: Install goversioninfo (Windows x86_64)
         env:

@@ -2,6 +2,7 @@ package azcli
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 
@@ -48,6 +49,11 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 		return nil, err
 	}
 
+	hostName, err := appServiceRepositoryHost(app, appName)
+	if err != nil {
+		return nil, err
+	}
+
 	plansClient, err := armappservice.NewPlansClient(subscriptionId, cred, cli.armClientOptions)
 	if err != nil {
 		return nil, err
@@ -61,22 +67,22 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 		return nil, err
 	}
 
-	hostName, err := appServiceRepositoryHost(app, appName)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
-	if err != nil {
-		return nil, err
-	}
-
 	if strings.ToLower(*plan.SKU.Tier) == "flexconsumption" {
+		client, err := azsdk.NewFuncAppHostClient(hostName, cred, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating func app client: %w", err)
+		}
+
 		response, err := client.Publish(ctx, deployZipFile, &azsdk.PublishOptions{RemoteBuild: remoteBuild})
 		if err != nil {
 			return nil, err
 		}
 		return convert.RefOf(response.StatusText), nil
+	}
+
+	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
+	if err != nil {
+		return nil, err
 	}
 
 	response, err := client.Deploy(ctx, deployZipFile)

@@ -40,6 +40,7 @@ jobs:
       # on the x86_64 host.
       # Ensure that a compatible version of goversioninfo is installed.
       - pwsh: |
+          Write-Host "GOOS: '$env:GOOS' GOARCH: '$env:GOARCH'"
           go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
           Get-ChildItem -Path (Join-Path (go env GOPATH) "bin") -Recurse | ForEach-Object { Write-Host $_.FullName }
         condition: and(succeeded(), eq(variables['GOOS'], 'windows'))

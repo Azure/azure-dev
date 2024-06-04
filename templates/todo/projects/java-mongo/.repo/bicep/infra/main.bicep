@@ -206,7 +206,7 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.1.0' = {
   }
 }
 
-// Store secrets in a keyvault
+// Create a keyvault to store secrets
 module keyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
   name: 'keyvault'
   scope: rg

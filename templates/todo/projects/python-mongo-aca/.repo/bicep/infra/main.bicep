@@ -261,7 +261,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
   }
 }
 
-// Store secrets in a keyvault
+// Create a keyvault to store secrets
 module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   name: 'keyvault'
   scope: rg

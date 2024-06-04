@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/appservice"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -31,6 +32,7 @@ type dotnetContainerAppTarget struct {
 	env                 *environment.Environment
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
+	functionAppService  *appservice.FunctionAppService
 	resourceManager     ResourceManager
 	dotNetCli           *dotnet.Cli
 	cosmosDbService     cosmosdb.CosmosDbService
@@ -51,6 +53,7 @@ func NewDotNetContainerAppTarget(
 	env *environment.Environment,
 	containerHelper *ContainerHelper,
 	containerAppService containerapps.ContainerAppService,
+	functionAppService *appservice.FunctionAppService,
 	resourceManager ResourceManager,
 	dotNetCli *dotnet.Cli,
 	cosmosDbService cosmosdb.CosmosDbService,
@@ -62,6 +65,7 @@ func NewDotNetContainerAppTarget(
 		env:                 env,
 		containerHelper:     containerHelper,
 		containerAppService: containerAppService,
+		functionAppService:  functionAppService,
 		resourceManager:     resourceManager,
 		dotNetCli:           dotNetCli,
 		cosmosDbService:     cosmosDbService,
@@ -162,7 +166,12 @@ func (at *dotnetContainerAppTarget) Deploy(
 		remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
 	}
 
-	progress.SetProgress(NewServiceProgress("Updating container app"))
+	appType := "container"
+	if serviceConfig.DotNetContainerApp.FunctionApp {
+		appType = "function"
+	}
+
+	progress.SetProgress(NewServiceProgress(fmt.Sprintf("Updating %s app", appType)))
 
 	var manifest string
 
@@ -187,15 +196,27 @@ func (at *dotnetContainerAppTarget) Deploy(
 			serviceConfig.DotNetContainerApp.AppHostPath,
 			serviceConfig.DotNetContainerApp.ProjectName)
 
-		generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			serviceConfig.DotNetContainerApp.Manifest,
-			serviceConfig.DotNetContainerApp.ProjectName,
-			apphost.AppHostOptions{},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("generating container app manifest: %w", err)
+		if !serviceConfig.DotNetContainerApp.FunctionApp {
+			generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
+				serviceConfig.DotNetContainerApp.Manifest,
+				serviceConfig.DotNetContainerApp.ProjectName,
+				apphost.AppHostOptions{},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("generating container app manifest: %w", err)
+			}
+			manifest = generatedManifest
+		} else {
+			generatedManifest, err := apphost.FunctionAppManifestTemplateForProject(
+				serviceConfig.DotNetContainerApp.Manifest,
+				serviceConfig.DotNetContainerApp.ProjectName,
+				apphost.AppHostOptions{},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("generating container app manifest: %w", err)
+			}
+			manifest = generatedManifest
 		}
-		manifest = generatedManifest
 	}
 
 	fns := &containerAppTemplateManifestFuncs{
@@ -209,7 +230,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		keyvaultService:     at.keyvaultService,
 	}
 
-	tmpl, err := template.New("containerApp.tmpl.yaml").
+	tmpl, err := template.New("").
 		Option("missingkey=error").
 		Funcs(template.FuncMap{
 			"urlHost":   fns.UrlHost,
@@ -229,7 +250,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		}).
 		Parse(manifest)
 	if err != nil {
-		return nil, fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err)
+		return nil, fmt.Errorf("failing parsing manifest template: %w", err)
 	}
 
 	var inputs map[string]any
@@ -254,40 +275,75 @@ func (at *dotnetContainerAppTarget) Deploy(
 		return nil, fmt.Errorf("failed executing template file: %w", err)
 	}
 
-	err = at.containerAppService.DeployYaml(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		serviceConfig.Name,
-		[]byte(builder.String()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("updating container app service: %w", err)
-	}
-
-	progress.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
-
-	containerAppTarget := environment.NewTargetResource(
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		serviceConfig.Name,
-		string(azapi.AzureResourceTypeContainerApp))
-
-	endpoints, err := at.Endpoints(ctx, serviceConfig, containerAppTarget)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ServiceDeployResult{
-		Package: packageOutput,
-		TargetResourceId: azure.ContainerAppRID(
+	if !serviceConfig.DotNetContainerApp.FunctionApp {
+		err = at.containerAppService.DeployYaml(
+			ctx,
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
 			serviceConfig.Name,
-		),
-		Kind:      ContainerAppTarget,
-		Endpoints: endpoints,
-	}, nil
+			[]byte(builder.String()),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("updating container app service: %w", err)
+		}
+
+		progress.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+
+		containerAppTarget := environment.NewTargetResource(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			serviceConfig.Name,
+			string(azapi.AzureResourceTypeContainerApp))
+
+		endpoints, err := at.Endpoints(ctx, serviceConfig, containerAppTarget)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ServiceDeployResult{
+			Package: packageOutput,
+			TargetResourceId: azure.ContainerAppRID(
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				serviceConfig.Name,
+			),
+			Kind:      ContainerAppTarget,
+			Endpoints: endpoints,
+		}, nil
+	} else {
+		err = at.functionAppService.DeployYAML(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			serviceConfig.Name,
+			[]byte(builder.String()),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("updating container app service: %w", err)
+		}
+		progress.SetProgress(NewServiceProgress("Fetching endpoints"))
+
+		endpoints, err := at.functionAppService.Endpoints(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			serviceConfig.Name,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ServiceDeployResult{
+			Package: packageOutput,
+			TargetResourceId: azure.WebsiteRID(
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				serviceConfig.Name,
+			),
+			Kind:      ContainerAppTarget,
+			Endpoints: endpoints,
+		}, nil
+	}
 }
 
 // Gets endpoint for the container app service

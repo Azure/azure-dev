@@ -62,10 +62,6 @@ func (d *Cli) Build(
 	buildEnv []string,
 	buildProgress io.Writer,
 ) (string, error) {
-	if strings.TrimSpace(platform) == "" {
-		platform = DefaultPlatform
-	}
-
 	tmpFolder, err := os.MkdirTemp(os.TempDir(), "azd-docker-build")
 	defer func() {
 		// fail to remove tmp files is not so bad as the OS will delete it
@@ -81,7 +77,10 @@ func (d *Cli) Build(
 	args := []string{
 		"build",
 		"-f", dockerFilePath,
-		"--platform", platform,
+	}
+
+	if platform != "" {
+		args = append(args, "--platform", platform)
 	}
 
 	if target != "" {

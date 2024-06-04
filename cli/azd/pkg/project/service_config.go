@@ -53,6 +53,8 @@ type DotNetContainerAppOptions struct {
 	ProjectName string
 	// ContainerImage is non-empty when a prebuilt container image is being used.
 	ContainerImage string
+	// FunctionApp is true when this container app is a azure functions function app.
+	FunctionApp bool
 }
 
 // Path returns the fully qualified path to the project

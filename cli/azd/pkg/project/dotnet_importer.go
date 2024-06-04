@@ -256,6 +256,49 @@ func (ai *DotNetImporter) Services(
 		services[svc.Name] = svc
 	}
 
+	functions := apphost.Functions(manifest)
+	for name, function := range functions {
+		function.Path = filepath.Join(filepath.Dir(function.Path), "Dockerfile")
+
+		relPath, err := filepath.Rel(p.Path, filepath.Dir(function.Path))
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
+		svc := &ServiceConfig{
+			RelativePath: relPath,
+			Language:     ServiceLanguageDocker,
+			Host:         DotNetContainerAppTarget,
+			Docker: DockerProjectOptions{
+				Path: function.Path,
+				// TODO(ellismg): This is a hack - the function.v0 resources is backed by a Dockerfile since we can not
+				// `dotnet publish` it. We need the context to include the Service Defaults project which is a sibling of
+				// this.  We should either have a `context` field on function.v0 and set this in the apphost or just make
+				// `dotnet publish` work for function app csproj's.
+				Context: filepath.Dir(filepath.Dir(function.Path)),
+			},
+		}
+
+		svc.Name = name
+		svc.Project = p
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
+
+		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.DotNetContainerApp = &DotNetContainerAppOptions{
+			Manifest:    manifest,
+			ProjectName: name,
+			AppHostPath: svcConfig.Path(),
+			FunctionApp: true,
+		}
+
+		services[svc.Name] = svc
+	}
+
 	containers := apphost.Containers(manifest)
 	for name, container := range containers {
 		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
@@ -510,11 +553,25 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
-	writeManifestForResource := func(name string) error {
-		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			manifest, name, apphost.AppHostOptions{})
-		if err != nil {
-			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
+	writeManifestForResource := func(name string, isFunc bool) error {
+		var manifestText string
+
+		if isFunc {
+			functionAppManifest, err := apphost.FunctionAppManifestTemplateForProject(
+				manifest, name, apphost.AppHostOptions{})
+			if err != nil {
+				return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
+			}
+
+			manifestText = functionAppManifest
+		} else {
+			containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
+				manifest, name, apphost.AppHostOptions{})
+			if err != nil {
+				return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
+			}
+
+			manifestText = containerAppManifest
 		}
 
 		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
@@ -533,23 +590,29 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
-		return generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		return generatedFS.WriteFile(manifestPath, []byte(manifestText), osutil.PermissionFileOwnerOnly)
 	}
 
 	for name := range apphost.ProjectPaths(manifest) {
-		if err := writeManifestForResource(name); err != nil {
+		if err := writeManifestForResource(name, false); err != nil {
 			return nil, err
 		}
 	}
 
 	for name := range apphost.Dockerfiles(manifest) {
-		if err := writeManifestForResource(name); err != nil {
+		if err := writeManifestForResource(name, false); err != nil {
 			return nil, err
 		}
 	}
 
 	for name := range apphost.Containers(manifest) {
-		if err := writeManifestForResource(name); err != nil {
+		if err := writeManifestForResource(name, false); err != nil {
+			return nil, err
+		}
+	}
+
+	for name := range apphost.Functions(manifest) {
+		if err := writeManifestForResource(name, true); err != nil {
 			return nil, err
 		}
 	}
@@ -559,7 +622,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return nil, err
 	}
 	for name := range bcs {
-		if err := writeManifestForResource(name); err != nil {
+		if err := writeManifestForResource(name, false); err != nil {
 			return nil, err
 		}
 	}

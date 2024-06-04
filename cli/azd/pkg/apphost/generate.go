@@ -140,6 +140,24 @@ func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 	return res
 }
 
+// Functions returns information about all function.v0 resources from a manifest.
+func Functions(manifest *Manifest) map[string]genFunction {
+	res := make(map[string]genFunction)
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "function.v0":
+			res[name] = genFunction{
+				Path:     *comp.Path,
+				Env:      comp.Env,
+				Bindings: comp.Bindings,
+			}
+		}
+	}
+
+	return res
+}
+
 // Containers returns information about all container.v0 resources from a manifest.
 func Containers(manifest *Manifest) map[string]genContainer {
 	res := make(map[string]genContainer)
@@ -218,6 +236,32 @@ func ContainerAppManifestTemplateForProject(
 	}
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
+	if err != nil {
+		return "", fmt.Errorf("executing template: %w", err)
+	}
+
+	return buf.String(), nil
+}
+
+// FunctionAppManifestTemplateForProject returns the function app manifest template for a given project.
+// It can be used (after evaluation) to deploy the service to a container app environment.
+func FunctionAppManifestTemplateForProject(
+	manifest *Manifest, projectName string, options AppHostOptions) (string, error) {
+	generator := newInfraGenerator()
+
+	if err := generator.LoadManifest(manifest); err != nil {
+		return "", err
+	}
+
+	if err := generator.Compile(); err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+
+	tmplCtx := generator.containerAppTemplateContexts[projectName]
+
+	err := genTemplates.ExecuteTemplate(&buf, "funcApp.tmpl.yaml", tmplCtx)
 	if err != nil {
 		return "", fmt.Errorf("executing template: %w", err)
 	}
@@ -434,6 +478,7 @@ type infraGenerator struct {
 	containers        map[string]genContainer
 	dapr              map[string]genDapr
 	dockerfiles       map[string]genDockerfile
+	functions         map[string]genFunction
 	projects          map[string]genProject
 	connectionStrings map[string]string
 	// keeps the value from value.v0 resources if provided.
@@ -450,6 +495,7 @@ func newInfraGenerator() *infraGenerator {
 	return &infraGenerator{
 		bicepContext: genBicepTemplateContext{
 			ContainerAppEnvironmentServices: make(map[string]genContainerAppEnvironmentServices),
+			Functions:                       make([]string, 0),
 			KeyVaults:                       make(map[string]genKeyVault),
 			ContainerApps:                   make(map[string]genContainerApp),
 			DaprComponents:                  make(map[string]genDaprComponent),
@@ -461,6 +507,7 @@ func newInfraGenerator() *infraGenerator {
 		containers:                   make(map[string]genContainer),
 		dapr:                         make(map[string]genDapr),
 		dockerfiles:                  make(map[string]genDockerfile),
+		functions:                    make(map[string]genFunction),
 		projects:                     make(map[string]genProject),
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
@@ -561,6 +608,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			if err != nil {
 				return err
 			}
+		case "function.v0":
+			b.addFunctionApp(name, *comp.Path, comp.Env, comp.Bindings)
 		case "dockerfile.v0":
 			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs, comp.Args)
 		case "parameter.v0":
@@ -602,6 +651,11 @@ func (b *infraGenerator) requireCluster() {
 
 func (b *infraGenerator) requireContainerRegistry() {
 	b.bicepContext.HasContainerRegistry = true
+}
+
+func (b *infraGenerator) requireAppInsights() {
+	b.requireLogAnalyticsWorkspace()
+	b.bicepContext.HasAppInsights = true
 }
 
 func (b *infraGenerator) requireDaprStore() string {
@@ -1052,6 +1106,22 @@ func (b *infraGenerator) addDockerfile(
 	}
 }
 
+func (b *infraGenerator) addFunctionApp(name string, path string, env map[string]string,
+	bindings custommaps.WithOrder[Binding]) {
+	b.requireCluster()
+	b.requireContainerRegistry()
+	b.requireAppInsights()
+
+	app := genFunction{
+		Path:     path,
+		Env:      env,
+		Bindings: bindings,
+	}
+
+	b.bicepContext.Functions = append(b.bicepContext.Functions, name)
+	b.functions[name] = app
+}
+
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
@@ -1078,6 +1148,16 @@ func (b *infraGenerator) compileIngress() error {
 	}
 	for name, docker := range b.dockerfiles {
 		ingress, bindingsFromIngress, err := buildAcaIngress(docker.Bindings, 80)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
+	for name, function := range b.functions {
+		ingress, bindingsFromIngress, err := buildAcaIngress(function.Bindings, 80)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
 		}
@@ -1200,6 +1280,22 @@ func (b *infraGenerator) Compile() error {
 
 		if err := b.buildArgsBlock(docker.Args, &projectTemplateCtx); err != nil {
 			return err
+		}
+
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
+	}
+
+	for resourceName, funcapp := range b.functions {
+		projectTemplateCtx := genContainerAppManifestTemplateContext{
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+		}
+
+		if err := b.buildEnvBlock(funcapp.Env, &projectTemplateCtx); err != nil {
+			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
 		}
 
 		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
@@ -1364,7 +1460,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	}
 
 	switch {
-	case targetType == "project.v0" || targetType == "container.v0" || targetType == "dockerfile.v0":
+	case targetType == "project.v0" ||
+		targetType == "container.v0" ||
+		targetType == "dockerfile.v0" ||
+		targetType == "function.v0":
+
 		if !strings.HasPrefix(prop, "bindings.") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
@@ -1389,6 +1489,9 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			binding, has = bindings.Get(bindingName)
 		} else if targetType == "dockerfile.v0" {
 			bindings := b.dockerfiles[resource].Bindings
+			binding, has = bindings.Get(bindingName)
+		} else if targetType == "function.v0" {
+			bindings := b.functions[resource].Bindings
 			binding, has = bindings.Get(bindingName)
 		}
 

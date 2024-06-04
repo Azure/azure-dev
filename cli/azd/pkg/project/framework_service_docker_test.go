@@ -72,7 +72,6 @@ services:
 		require.Equal(t, []string{
 			"build",
 			"-f", "./Dockerfile",
-			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
 			".",
 		}, argsNoFile)
@@ -176,7 +175,6 @@ services:
 		require.Equal(t, []string{
 			"build",
 			"-f", "./Dockerfile.dev",
-			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
 			"../",
 		}, argsNoFile)
@@ -258,8 +256,6 @@ func Test_DockerProject_Build(t *testing.T) {
 				"build",
 				"-f",
 				"./Dockerfile",
-				"--platform",
-				"linux/amd64",
 				"-t",
 				"test-app-api",
 				".",
@@ -312,8 +308,6 @@ func Test_DockerProject_Build(t *testing.T) {
 				"build",
 				"-f",
 				"./Dockerfile",
-				"--platform",
-				"linux/amd64",
 				"-t",
 				"test-app-api",
 				".",

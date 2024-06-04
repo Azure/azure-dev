@@ -52,7 +52,14 @@ if ($IsWindows) {
     if (! (Get-Command "goversioninfo" -ErrorAction SilentlyContinue)) {
         Write-Host "goversioninfo not found, installing"
         go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
-        Get-Command "goversioninfo" -ErrorAction Stop
+
+        try {
+            Get-Command "goversioninfo" -ErrorAction Stop
+        } catch {
+            Write-Host "Could not find goversioninfo after installing"
+            Write-Host "Environment PATH: $env:PATH"
+            Get-ChildItem -Path (Join-Path (go env GOPATH) "bin") | ForEach-Object { Write-Host $_.FullName }
+        }
     }
 
     $VERSION_INFO_PATH = "$PSScriptRoot/versioninfo.json"

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -17,7 +16,7 @@ import (
 
 // creates a copy of azd binary and renames it to az and returns the path to it
 func emulateAzFromPath() (string, error) {
-	path, err := exec.LookPath("azd")
+	path, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("azd binary not found in PATH: %w", err)
 	}

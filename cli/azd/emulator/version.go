@@ -17,10 +17,12 @@ const (
 )
 
 func versionCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use: "version",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println(emulatedAzVersion)
 		},
 	}
+	cmd.Flags().StringP("output", "o", "", "Output format")
+	return cmd
 }

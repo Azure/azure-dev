@@ -32,7 +32,7 @@ func emulateAzFromPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not create directory for azEmulate: %w", err)
 	}
-	emuPath = filepath.Join(emuPath, strings.ReplaceAll(filepath.Base(path), "azd", "az"))
+	emuPath = filepath.Join(emuPath, strings.ReplaceAll(filepath.Base(path), filepath.Base(path), "az"))
 
 	srcFile, err := os.Open(path)
 	if err != nil {
@@ -51,5 +51,5 @@ func emulateAzFromPath() (string, error) {
 		return "", fmt.Errorf("copying binary: %w", err)
 	}
 
-	return emuPath, nil
+	return filepath.Dir(emuPath), nil
 }

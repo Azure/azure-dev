@@ -117,7 +117,7 @@ func withAzEmulator(ctx context.Context, commandRunner exec.CommandRunner, runAr
 		return exec.RunResult{}, fmt.Errorf("emulating az path: %w", err)
 	}
 	defer os.RemoveAll(azEmulatorPath)
-	runArgs.AppendParams(
+	runArgs.Env = append(runArgs.Env,
 		osutil.AzEmulateKey(),
 		fmt.Sprintf("PATH=%s", azEmulatorPath),
 	)

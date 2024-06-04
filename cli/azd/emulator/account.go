@@ -73,6 +73,7 @@ func showCmd() *cobra.Command {
 			return nil
 		},
 	}
+	showCmd.Flags().StringP("output", "o", "", "Output format")
 	return showCmd
 }
 

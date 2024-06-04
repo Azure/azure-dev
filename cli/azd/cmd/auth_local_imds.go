@@ -31,8 +31,7 @@ type TokenResponse struct {
 func (lia *localIMDSAction) tokenHandler(w http.ResponseWriter, r *http.Request) {
 	resource := r.URL.Query().Get("resource")
 	if resource == "" {
-		http.Error(w, "Missing 'resource' query parameter", http.StatusBadRequest)
-		return
+		resource = "https://management.azure.com/"
 	}
 
 	fmt.Printf("Received request for resource: %s\n", resource)

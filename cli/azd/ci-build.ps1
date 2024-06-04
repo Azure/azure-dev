@@ -5,6 +5,7 @@ param(
     [switch] $BuildRecordMode,
     [string] $MSYS2Shell # path to msys2_shell.cmd
 )
+$PSNativeCommandArgumentPassing = 'Legacy'
 
 # specifying $MSYS2Shell implies building with OneAuth integration
 $OneAuth = $MSYS2Shell.length -gt 0 -and $IsWindows

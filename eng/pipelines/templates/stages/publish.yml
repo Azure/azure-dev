@@ -483,7 +483,9 @@ stages:
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
               $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
+              $windowsArmReleaseUrl = "$urlBase/azd-windows-arm64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
+              $msiArmReleaseUrl = "$urlBase/azd-windows-arm64.msi"
 
               $refDocContent = Get-Content docs/azd.md -Raw
 
@@ -532,11 +534,14 @@ stages:
               * MacOS - 
                   * x86_64 - $macosReleaseUrl
                   * ARM64 - $macosReleaseUrlArm64
-              * Windows - $windowsReleaseUrl
+              * Windows -
+                  * x86_64 - $windowsReleaseUrl
+                  * ARM64 - $windowsArmReleaseUrl
 
               ### MSI
 
-              * $msiReleaseUrl
+              * x86_64 - $msiReleaseUrl
+              * ARM64 - $msiArmReleaseUrl
 
               ## Documentation
 

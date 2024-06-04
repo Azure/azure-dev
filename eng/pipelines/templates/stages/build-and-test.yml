@@ -30,6 +30,16 @@ parameters:
           GOARCH: arm64
           # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
           CGO_ENABLED: 1
+      WindowsARM64:
+        Pool: $(WINDOWSPOOL)
+        OSVmImage: $(WINDOWSVMIMAGE)
+        OS: windows
+        ImageKey: image
+        Variables:
+          BuildTarget: azd-windows-arm64.exe
+          BuildOutputName: azd.exe
+          GOOS: windows
+          GOARCH: arm64
 
 stages: 
   - stage: BuildAndTest
@@ -53,7 +63,7 @@ stages:
       - ${{ each build in parameters.CrossBuildMatrix }}: 
         - template: /eng/pipelines/templates/jobs/cross-build-cli.yml
           parameters:
-            NameSuffix: ${{ build.key}}
+            NameSuffix: ${{ build.key }}
             Pool: ${{ build.value.Pool }}
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }} 
@@ -92,7 +102,7 @@ stages:
               artifact: linux-packages
               displayName: Publish merged linux packages
 
-      - job: ValidateCrossCompile
+      - job: ValidateCrossCompileLinux
         dependsOn: 
           - ${{ each build in parameters.CrossBuildMatrix }}: 
             - CrossBuildCLI_${{ build.key }}

@@ -73,6 +73,7 @@ steps:
       New-Item -ItemType Directory -Path release -Force
       zip release/azd-darwin-amd64.zip -j signed/mac/azd-darwin-amd64 NOTICE.txt
       zip release/azd-windows-amd64.zip -j signed/win/azd-windows-amd64.exe NOTICE.txt
+      zip release/azd-windows-arm64.zip -j signed/win/azd-windows-arm64.exe NOTICE.txt
 
       # Must place NOTICE.txt in file tree for tar to pick it up and place it in
       # the same place in the directory structure
@@ -96,7 +97,9 @@ steps:
 
 
   - ${{ if eq('true', parameters.UploadMsi) }}: 
-    - pwsh: Copy-Item signed/win/azd-windows-amd64.msi release/
+    - pwsh: |
+        Copy-Item signed/win/azd-windows-amd64.msi release/
+        # TODO: Copy signed MSI to release
       displayName: Copy MSI to release
 
   - pwsh: |

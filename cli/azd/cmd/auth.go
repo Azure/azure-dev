@@ -41,10 +41,9 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newLogoutAction,
 	})
 
-	// Register the new `local-imds` command
-	group.Add("local-imds", &actions.ActionDescriptorOptions{
-		Command:        newLocalIMDSCmd("auth"),
-		ActionResolver: newLocalIMDSAction,
+	group.Add("serve", &actions.ActionDescriptorOptions{
+		Command:        newServeCmd("auth"),
+		ActionResolver: newServeAction,
 	})
 
 	return group

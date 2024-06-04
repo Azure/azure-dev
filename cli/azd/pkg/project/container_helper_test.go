@@ -31,8 +31,16 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	envName := "dev"
 	projectName := "my-app"
 	serviceName := "web"
-	component := &ComponentConfig{}
-	defaultImageName := fmt.Sprintf("%s/%s-%s", projectName, serviceName, envName)
+	component := &ComponentConfig{
+		Name: DefaultComponentName,
+		Service: &ServiceConfig{
+			Name: serviceName,
+			Project: &ProjectConfig{
+				Name: projectName,
+			},
+		},
+	}
+	defaultImageName := fmt.Sprintf("%s/%s/%s-%s", projectName, serviceName, DefaultComponentName, envName)
 
 	tests := []struct {
 		name         string
@@ -401,7 +409,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
 			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
 			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
-			require.Equal(t, tt.expectedRemoteImage, env.GetServiceProperty("api", "IMAGE_NAME"))
+			require.Equal(t, tt.expectedRemoteImage, env.GetServiceProperty("api_main", "IMAGE_NAME"))
 		})
 	}
 }
@@ -428,7 +436,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			name: "with defaults",
 			expectedImage: docker.ContainerImage{
 				Registry:   "",
-				Repository: "test-app/api-dev",
+				Repository: "test-app/api/main-dev",
 				Tag:        "azd-deploy-0",
 			},
 		},
@@ -437,7 +445,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			tag:  osutil.NewExpandableString("custom-tag"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "",
-				Repository: "test-app/api-dev",
+				Repository: "test-app/api/main-dev",
 				Tag:        "custom-tag",
 			},
 		},
@@ -465,7 +473,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "contoso.azurecr.io",
-				Repository: "test-app/api-dev",
+				Repository: "test-app/api/main-dev",
 				Tag:        "azd-deploy-0",
 			},
 		},
@@ -597,11 +605,11 @@ func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 		containerHelper := NewContainerHelper(
 			env, envManager, clock.NewMock(), mockContainerService, nil, cloud.AzurePublic())
 
-		serviceConfig := createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageDotNet)
-		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
+		component := createTestComponentConfig("path", ContainerAppTarget, ServiceLanguageDotNet)
+		component.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
 		targetResource := environment.NewTargetResource("sub", "rg", "name", "rType")
 
-		credential, err := containerHelper.Credentials(*mockContext.Context, serviceConfig, targetResource)
+		credential, err := containerHelper.Credentials(*mockContext.Context, component, targetResource)
 		require.NoError(t, err)
 		require.NotNil(t, credential)
 		require.Equal(t, 1, mockContainerService.totalRetries())

@@ -81,7 +81,7 @@ func Test_ServiceManager_Initialize(t *testing.T) {
 	component := createTestComponentConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	fakeServiceTarget := &fakeServiceTarget{}
-	fakeServiceTarget.On("Initialize", *mockContext.Context, component).Return(nil)
+	fakeServiceTarget.On("Initialize", *mockContext.Context, component.Service).Return(nil)
 
 	fakeFramework := &fakeFramework{}
 	fakeFramework.
@@ -94,7 +94,7 @@ func Test_ServiceManager_Initialize(t *testing.T) {
 	require.NoError(t, err)
 
 	fakeServiceTarget.AssertCalled(t, "Initialize", *mockContext.Context, component.Service)
-	fakeFramework.AssertCalled(t, "Initialize", *mockContext.Context, component.Service)
+	fakeFramework.AssertCalled(t, "Initialize", *mockContext.Context, component)
 }
 
 func Test_ServiceManager_Restore(t *testing.T) {
@@ -221,7 +221,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 
 	fakeServiceTarget := &fakeServiceTarget{}
 	fakeServiceTarget.
-		On("Package", *mockContext.Context, component, mock.Anything).
+		On("Package", *mockContext.Context, component.Service, mock.Anything).
 		Return(serviceTargetPackageTask)
 
 	frameworkPackageTask := async.RunTaskWithProgress(
@@ -254,7 +254,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 	require.True(t, raisedPrePackageEvent)
 	require.True(t, raisedPostPackageEvent)
 
-	fakeServiceTarget.AssertCalled(t, "Package", *mockContext.Context, component, mock.Anything)
+	fakeServiceTarget.AssertCalled(t, "Package", *mockContext.Context, component.Service, mock.Anything)
 	fakeFramework.AssertCalled(t, "Package", *mockContext.Context, component, mock.Anything)
 }
 
@@ -415,7 +415,7 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 
 	fakeServiceTarget := &fakeServiceTarget{}
 	fakeServiceTarget.
-		On("Package", *mockContext.Context, component, mock.Anything).
+		On("Package", *mockContext.Context, component.Service, mock.Anything).
 		Return(serviceTargetPackageTask)
 
 	frameworkPackageTask := async.RunTaskWithProgress(

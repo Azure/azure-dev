@@ -331,7 +331,11 @@ func (ch *ContainerHelper) Deploy(
 			if writeImageToEnv {
 				// Save the name of the image we pushed into the environment with a well known key.
 				log.Printf("writing image name to environment")
-				ch.env.SetServiceProperty(component.Name, "IMAGE_NAME", remoteImage)
+				ch.env.SetServiceProperty(
+					fmt.Sprintf("%s_%s", strings.ToUpper(component.Service.Name), strings.ToUpper(component.Name)),
+					"IMAGE_NAME",
+					remoteImage,
+				)
 
 				if err := ch.envManager.Save(ctx, ch.env); err != nil {
 					task.SetError(fmt.Errorf("saving image name to environment: %w", err))

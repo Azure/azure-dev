@@ -11,7 +11,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
@@ -41,22 +40,22 @@ func Test_MavenProject(t *testing.T) {
 			})
 
 		env := environment.New("test")
-		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
+		component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
 		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
-		err = mavenProject.Initialize(*mockContext.Context, serviceConfig.ComponentConfig)
+		err = mavenProject.Initialize(*mockContext.Context, component)
 		require.NoError(t, err)
 
-		restoreTask := mavenProject.Restore(*mockContext.Context, serviceConfig.ComponentConfig)
+		restoreTask := mavenProject.Restore(*mockContext.Context, component)
 		logProgress(restoreTask)
 
 		result, err := restoreTask.Await()
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())
-		require.Equal(t, serviceConfig.Path(), runArgs.Cwd)
+		require.Equal(t, component.Path(), runArgs.Cwd)
 		require.Equal(t,
 			[]string{"dependency:resolve"},
 			runArgs.Args,
@@ -77,15 +76,15 @@ func Test_MavenProject(t *testing.T) {
 			})
 
 		env := environment.New("test")
-		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
+		component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
 		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
-		err = mavenProject.Initialize(*mockContext.Context, serviceConfig.ComponentConfig)
+		err = mavenProject.Initialize(*mockContext.Context, component)
 		require.NoError(t, err)
 
-		buildTask := mavenProject.Build(*mockContext.Context, serviceConfig.ComponentConfig, nil)
+		buildTask := mavenProject.Build(*mockContext.Context, component, nil)
 		logProgress(buildTask)
 
 		result, err := buildTask.Await()
@@ -112,26 +111,26 @@ func Test_MavenProject(t *testing.T) {
 			})
 
 		env := environment.New("test")
-		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
+		component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
 		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		// Simulate a build output with a jar file
-		buildOutputDir := filepath.Join(serviceConfig.Path(), "target")
+		buildOutputDir := filepath.Join(component.Path(), "target")
 		err = os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
 		require.NoError(t, err)
 		err = os.WriteFile(filepath.Join(buildOutputDir, "test.jar"), []byte("test"), osutil.PermissionFile)
 		require.NoError(t, err)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
-		err = mavenProject.Initialize(*mockContext.Context, serviceConfig.ComponentConfig)
+		err = mavenProject.Initialize(*mockContext.Context, component)
 		require.NoError(t, err)
 
 		packageTask := mavenProject.Package(
 			*mockContext.Context,
-			serviceConfig.ComponentConfig,
+			component,
 			&ServiceBuildResult{
-				BuildOutputPath: serviceConfig.Path(),
+				BuildOutputPath: component.Path(),
 			},
 		)
 		logProgress(packageTask)
@@ -151,7 +150,7 @@ func Test_MavenProject(t *testing.T) {
 func Test_MavenProject_Package(t *testing.T) {
 	type args struct {
 		// service config to be packaged.
-		svc *ServiceConfig
+		component *ComponentConfig
 		// test setup parameter.
 		// file extension of java archives to create. empty means no archives are created.
 		archivesExt []string
@@ -164,15 +163,11 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"Default",
 			args{
-				&ServiceConfig{
-					Host: AppServiceTarget,
-					ComponentConfig: &ComponentConfig{
-						Project:      &ProjectConfig{},
-						Name:         "api",
-						RelativePath: "src/api",
-						Language:     ServiceLanguageJava,
-					},
-					EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+				&ComponentConfig{
+					Service:      &ServiceConfig{Project: &ProjectConfig{}},
+					Name:         "api",
+					RelativePath: "src/api",
+					Language:     ServiceLanguageJava,
 				},
 				[]string{".jar"},
 			},
@@ -180,16 +175,12 @@ func Test_MavenProject_Package(t *testing.T) {
 		},
 		{
 			"SpecifyOutputDir",
-			args{&ServiceConfig{
-				Host: AppServiceTarget,
-				ComponentConfig: &ComponentConfig{
-					Project:      &ProjectConfig{},
-					Name:         "api",
-					RelativePath: "src/api",
-					OutputPath:   "mydir",
-					Language:     ServiceLanguageJava,
-				},
-				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+			args{&ComponentConfig{
+				Service:      &ServiceConfig{Project: &ProjectConfig{}},
+				Name:         "api",
+				RelativePath: "src/api",
+				OutputPath:   "mydir",
+				Language:     ServiceLanguageJava,
 			},
 				[]string{".war"},
 			},
@@ -197,17 +188,12 @@ func Test_MavenProject_Package(t *testing.T) {
 		},
 		{
 			"SpecifyOutputFile",
-			args{&ServiceConfig{
-				Host: AppServiceTarget,
-				Components: map[string]*ComponentConfig{
-					DefaultComponentName: {
-					Project:      &ProjectConfig{},
-					Name:         "api",
-					RelativePath: "src/api",
-					OutputPath:   "mydir/ear.ear",
-					Language:     ServiceLanguageJava,
-				},
-				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+			args{&ComponentConfig{
+				Service:      &ServiceConfig{Project: &ProjectConfig{}},
+				Name:         "api",
+				RelativePath: "src/api",
+				OutputPath:   "mydir/ear.ear",
+				Language:     ServiceLanguageJava,
 			},
 				[]string{".ear"},
 			},
@@ -215,16 +201,11 @@ func Test_MavenProject_Package(t *testing.T) {
 		},
 		{
 			"ErrNoArchive",
-			args{&ServiceConfig{
-				Host: AppServiceTarget,
-				Components: map[string]*ComponentConfig{
-					DefaultComponentName: {
-						Name:         "api",
-						RelativePath: "src/api",
-						Language:     ServiceLanguageJava,
-					},
-				},
-				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+			args{&ComponentConfig{
+				Service:      &ServiceConfig{Project: &ProjectConfig{}},
+				Name:         "api",
+				RelativePath: "src/api",
+				Language:     ServiceLanguageJava,
 			},
 				[]string{},
 			},
@@ -232,16 +213,12 @@ func Test_MavenProject_Package(t *testing.T) {
 		},
 		{
 			"ErrMultipleArchives",
-			args{&ServiceConfig{
-				Host: AppServiceTarget,
-				ComponentConfig: &ComponentConfig{
-					Project:      &ProjectConfig{},
-					Name:         "api",
-					RelativePath: "src/api",
-					OutputPath:   "mydir",
-					Language:     ServiceLanguageJava,
-				},
-				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+			args{&ComponentConfig{
+				Service:      &ServiceConfig{Project: &ProjectConfig{}},
+				Name:         "api",
+				RelativePath: "src/api",
+				OutputPath:   "mydir",
+				Language:     ServiceLanguageJava,
 			},
 				[]string{".jar", ".war", ".ear"},
 			},
@@ -252,8 +229,8 @@ func Test_MavenProject_Package(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			temp := t.TempDir()
 			// fill in the project path to avoid setting cwd
-			tt.args.svc.Project.Path = temp
-			svcDir := filepath.Join(temp, tt.args.svc.RelativePath)
+			tt.args.component.Service.Project.Path = temp
+			svcDir := filepath.Join(temp, tt.args.component.RelativePath)
 			require.NoError(t, os.MkdirAll(svcDir, osutil.PermissionDirectory))
 			err := os.WriteFile(filepath.Join(svcDir, getMvnwCmd()), nil, osutil.PermissionExecutableFile)
 			require.NoError(t, err)
@@ -267,7 +244,7 @@ func Test_MavenProject_Package(t *testing.T) {
 				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 					runArgs = args
 
-					packageSrcPath := filepath.Join(svcDir, tt.args.svc.OutputPath)
+					packageSrcPath := filepath.Join(svcDir, tt.args.component.OutputPath)
 					if strings.Contains(packageSrcPath, ".") { // an archive file path
 						err = os.MkdirAll(filepath.Dir(packageSrcPath), osutil.PermissionDirectory)
 						require.NoError(t, err)
@@ -275,7 +252,7 @@ func Test_MavenProject_Package(t *testing.T) {
 						err = os.WriteFile(packageSrcPath, []byte("test"), osutil.PermissionFile)
 						require.NoError(t, err)
 					} else { // a directory
-						if tt.args.svc.OutputPath == "" {
+						if tt.args.component.OutputPath == "" {
 							// default maven target directory
 							packageSrcPath = filepath.Join(packageSrcPath, "target")
 						}
@@ -297,13 +274,12 @@ func Test_MavenProject_Package(t *testing.T) {
 			mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 			javaCli := javac.NewCli(mockContext.CommandRunner)
 			mavenProject := NewMavenProject(env, mavenCli, javaCli)
-			svc := tt.args.svc
-			err = mavenProject.Initialize(*mockContext.Context, svc.ComponentConfig)
+			err = mavenProject.Initialize(*mockContext.Context, tt.args.component)
 			require.NoError(t, err)
 
 			packageTask := mavenProject.Package(
 				*mockContext.Context,
-				svc.ComponentConfig,
+				tt.args.component,
 				&ServiceBuildResult{},
 			)
 			logProgress(packageTask)

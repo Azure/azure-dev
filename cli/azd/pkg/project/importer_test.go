@@ -43,21 +43,22 @@ func TestImportManagerHasService(t *testing.T) {
 		}),
 	})
 
-	// has service
-	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
+	testServiceConfig := createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageJava)
+	testServiceConfig.Name = "test"
+
+	projectConfig := &ProjectConfig{
 		Services: map[string]*ServiceConfig{
-			"test": createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageJava),
+			"test": testServiceConfig,
 		},
-	}, "test")
+	}
+
+	// has service
+	r, e := manager.HasService(*mockContext.Context, projectConfig, "test")
 	require.NoError(t, e)
 	require.True(t, r)
 
 	// has not
-	r, e = manager.HasService(*mockContext.Context, &ProjectConfig{
-		Services: map[string]*ServiceConfig{
-			"test": createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageJava),
-		},
-	}, "other")
+	r, e = manager.HasService(*mockContext.Context, projectConfig, "other")
 	require.NoError(t, e)
 	require.False(t, r)
 }

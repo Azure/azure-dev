@@ -54,7 +54,7 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 	allServices := make(map[string]*ServiceConfig)
 
 	for name, svcConfig := range projectConfig.Services {
-		if len(svcConfig.Components) == 0 {
+		if len(svcConfig.Components) == 1 {
 			mainComponent, err := svcConfig.Main()
 			if err != nil {
 				return nil, err

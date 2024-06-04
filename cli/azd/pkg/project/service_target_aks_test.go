@@ -149,7 +149,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.IsType(t, []*kubectl.Deployment{}, deployResult.Details)
 	require.Greater(t, len(deployResult.Endpoints), 0)
 	// New env variable is created
-	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_MAIN_IMAGE_NAME"])
 }
 
 func Test_Resolve_Cluster_Name(t *testing.T) {

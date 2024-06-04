@@ -41,6 +41,26 @@ type ServiceConfig struct {
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }
 
+type singleComponentServiceConfig struct {
+	// Reference to the parent project configuration
+	Project *ProjectConfig `yaml:"-"`
+	// The azure hosting model to use, ex) appservice, function, containerapp
+	Host      ServiceTargetKind `yaml:"host,omitempty"`
+	Component *ComponentConfig  `yaml:",inline"`
+	// The azure resource group to deploy the service to
+	ResourceGroupName osutil.ExpandableString `yaml:"resourceGroup,omitempty"`
+	// The name used to override the default azure resource name
+	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
+	// The optional K8S / AKS options
+	K8s AksOptions `yaml:"k8s,omitempty"`
+	// The optional Azure Spring Apps options
+	Spring SpringOptions `yaml:"spring,omitempty"`
+	// Hook configuration for service
+	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+	// Custom configuration for the service target
+	Config map[string]any `yaml:"config,omitempty"`
+}
+
 func (sc *ServiceConfig) Path() string {
 	if filepath.IsAbs(sc.RelativePath) {
 		return sc.RelativePath
@@ -95,23 +115,34 @@ func (sc *ServiceConfig) Main() (*ComponentConfig, error) {
 }
 
 func (sc *ServiceConfig) MarshalYAML() (interface{}, error) {
-	type serviceConfig ServiceConfig
+	for key, component := range sc.Components {
+		if component.Name == "" {
+			component.Name = key
+		}
+	}
 
-	svc := serviceConfig(*sc)
+	if len(sc.Components) == 1 {
+		main, err := sc.Main()
+		if err == nil && main.Name == DefaultComponentName {
+			singleComponentService := singleComponentServiceConfig{
+				Component:         sc.Components[DefaultComponentName],
+				Project:           sc.Project,
+				Host:              sc.Host,
+				ResourceGroupName: sc.ResourceGroupName,
+				ResourceName:      sc.ResourceName,
+				K8s:               sc.K8s,
+				Spring:            sc.Spring,
+				Hooks:             sc.Hooks,
+				Config:            sc.Config,
+			}
 
-	// // If there is only a single container and it maps to our "default" convention,
-	// // then we can promote the container to the service level
-	// if _, has := svc.Components[DefaultComponentName]; has && len(svc.Components) == 1 {
-	// 	svc.ComponentConfig = svc.Components[DefaultComponentName]
-	// 	svc.Components = nil
-	// } else {
-	// 	// Host can be ignored
-	// 	for _, value := range svc.Components {
-	// 		value.Service.Host = ""
-	// 	}
-	// }
+			// Override the component name to be the service name
+			singleComponentService.Component.Name = sc.Name
+			return singleComponentService, nil
+		}
+	}
 
-	return svc, nil
+	return *sc, nil
 }
 
 func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -122,11 +153,16 @@ func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 
+	// When the service configuration does not contain any components, create a default component.
 	if len(svc.Components) == 0 {
 		var component ComponentConfig
 		if err := unmarshal(&component); err != nil {
 			return err
 		}
+
+		// We do not want to copy the relative path from the service because it is possible for components to have
+		// their own relative path from the service path.
+		component.RelativePath = ""
 
 		svc.Components = map[string]*ComponentConfig{
 			DefaultComponentName: &component,

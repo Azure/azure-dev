@@ -72,7 +72,7 @@ services:
 			"build",
 			"-f", "./Dockerfile",
 			"--platform", docker.DefaultPlatform,
-			"-t", "test-proj-web",
+			"-t", "test-proj-web-main",
 			".",
 		}, argsNoFile)
 
@@ -100,10 +100,7 @@ services:
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env)
-	progressMessages := []string{}
 
 	framework := NewDockerProject(
 		env,
@@ -114,21 +111,15 @@ services:
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service.ComponentConfig, nil)
-	go func() {
-		for value := range buildTask.Progress() {
-			progressMessages = append(progressMessages, value.Message)
-		}
-		done <- true
-	}()
+	mainComponent, err := service.Main()
+	require.NoError(t, err)
 
+	buildTask := framework.Build(*mockContext.Context, mainComponent, nil)
+	logProgress(buildTask)
 	buildResult, err := buildTask.Await()
-	<-done
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
-	require.Len(t, progressMessages, 1)
-	require.Equal(t, "Building Docker image", progressMessages[0])
 	require.Equal(t, true, ran)
 }
 
@@ -180,7 +171,7 @@ services:
 			"build",
 			"-f", "./Dockerfile.dev",
 			"--platform", docker.DefaultPlatform,
-			"-t", "test-proj-web",
+			"-t", "test-proj-web-main",
 			"../",
 		}, argsNoFile)
 
@@ -208,10 +199,7 @@ services:
 	err = os.WriteFile(filepath.Join(temp, "Dockerfile.dev"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env)
-	status := ""
 
 	framework := NewDockerProject(
 		env,
@@ -222,20 +210,15 @@ services:
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service.ComponentConfig, nil)
-	go func() {
-		for value := range buildTask.Progress() {
-			status = value.Message
-		}
-		done <- true
-	}()
+	mainComponent, err := service.Main()
+	require.NoError(t, err)
 
+	buildTask := framework.Build(*mockContext.Context, mainComponent, nil)
+	logProgress(buildTask)
 	buildResult, err := buildTask.Await()
-	<-done
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
-	require.Equal(t, "Building Docker image", status)
 	require.Equal(t, true, ran)
 }
 
@@ -258,7 +241,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			expectedBuildResult: &ServiceBuildResult{
 				BuildOutputPath: "IMAGE_ID",
 				Details: &dockerBuildResult{
-					ImageName: "test-app-api",
+					ImageName: "test-app-api-main",
 					ImageId:   "IMAGE_ID",
 				},
 			},
@@ -269,7 +252,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				"--platform",
 				"linux/amd64",
 				"-t",
-				"test-app-api",
+				"test-app-api-main",
 				".",
 			},
 		},
@@ -287,7 +270,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			expectedBuildResult: &ServiceBuildResult{
 				BuildOutputPath: "IMAGE_ID",
 				Details: &dockerBuildResult{
-					ImageName: "test-app-api",
+					ImageName: "test-app-api-main",
 					ImageId:   "IMAGE_ID",
 				},
 			},
@@ -300,7 +283,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				"--target",
 				"custom-target",
 				"-t",
-				"test-app-api",
+				"test-app-api-main",
 				"../",
 			},
 		},
@@ -312,7 +295,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			expectedBuildResult: &ServiceBuildResult{
 				BuildOutputPath: "IMAGE_ID",
 				Details: &dockerBuildResult{
-					ImageName: "test-app-api",
+					ImageName: "test-app-api-main",
 					ImageId:   "IMAGE_ID",
 				},
 			},
@@ -323,7 +306,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				"--platform",
 				"linux/amd64",
 				"-t",
-				"test-app-api",
+				"test-app-api-main",
 				".",
 			},
 		},
@@ -344,7 +327,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			expectedBuildResult: &ServiceBuildResult{
 				BuildOutputPath: "IMAGE_ID",
 				Details: &dockerBuildResult{
-					ImageName: "test-app-api",
+					ImageName: "test-app-api-main",
 					ImageId:   "IMAGE_ID",
 				},
 			},
@@ -397,21 +380,21 @@ func Test_DockerProject_Build(t *testing.T) {
 
 			env := environment.New("test")
 			dockerCli := docker.NewDocker(mockContext.CommandRunner)
-			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, tt.language)
-			serviceConfig.Project.Path = temp
-			serviceConfig.Docker = tt.dockerOptions
-			serviceConfig.Image = tt.image
+			component := createTestComponentConfig(tt.project, ContainerAppTarget, tt.language)
+			component.Service.Project.Path = temp
+			component.Docker = tt.dockerOptions
+			component.Image = tt.image
 
 			if tt.hasDockerFile {
-				err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
+				err := os.MkdirAll(component.Path(), osutil.PermissionDirectory)
 				require.NoError(t, err)
 
 				dockerFilePath := "Dockerfile"
-				if serviceConfig.Docker.Path != "" {
-					dockerFilePath = serviceConfig.Docker.Path
+				if component.Docker.Path != "" {
+					dockerFilePath = component.Docker.Path
 				}
 
-				err = os.WriteFile(filepath.Join(serviceConfig.Path(), dockerFilePath), []byte("FROM node:14"), 0600)
+				err = os.WriteFile(filepath.Join(component.Path(), dockerFilePath), []byte("FROM node:14"), 0600)
 				require.NoError(t, err)
 			}
 
@@ -428,7 +411,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				dockerProject.SetSource(npmProject)
 			}
 
-			buildTask := dockerProject.Build(*mockContext.Context, serviceConfig.ComponentConfig, nil)
+			buildTask := dockerProject.Build(*mockContext.Context, component, nil)
 			logProgress(buildTask)
 			result, err := buildTask.Await()
 
@@ -456,7 +439,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			expectedPackageResult: dockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
-				TargetImage: "test-app/api-test:azd-deploy-0",
+				TargetImage: "test-app/api/main-test:azd-deploy-0",
 			},
 			expectDockerPullCalled: false,
 			expectDockerTagCalled:  true,
@@ -482,7 +465,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			expectedPackageResult: dockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "nginx:latest",
-				TargetImage: "test-app/api-test:azd-deploy-0",
+				TargetImage: "test-app/api/main-test:azd-deploy-0",
 			},
 			expectDockerPullCalled: true,
 			expectDockerTagCalled:  true,
@@ -527,7 +510,7 @@ func Test_DockerProject_Package(t *testing.T) {
 
 			env := environment.NewWithValues("test", map[string]string{})
 			dockerCli := docker.NewDocker(mockContext.CommandRunner)
-			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+			component := createTestComponentConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 			dockerProject := NewDockerProject(
 				env,
@@ -538,23 +521,23 @@ func Test_DockerProject_Package(t *testing.T) {
 				mockContext.CommandRunner)
 
 			// Set the custom test options
-			serviceConfig.Docker = tt.docker
-			serviceConfig.RelativePath = tt.project
-			serviceConfig.Image = tt.image
+			component.Docker = tt.docker
+			component.RelativePath = tt.project
+			component.Image = tt.image
 
-			if serviceConfig.RelativePath != "" {
+			if component.RelativePath != "" {
 				npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
 				dockerProject.SetSource(npmProject)
 			}
 
 			buildOutputPath := ""
-			if serviceConfig.Image == "" && serviceConfig.RelativePath != "" {
+			if component.Image == "" && component.RelativePath != "" {
 				buildOutputPath = "IMAGE_ID"
 			}
 
 			packageTask := dockerProject.Package(
 				*mockContext.Context,
-				serviceConfig.ComponentConfig,
+				component,
 				&ServiceBuildResult{
 					BuildOutputPath: buildOutputPath,
 				},

@@ -44,8 +44,8 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		endpointName,
 		string(infra.AzureMachineLearningEndpoint),
 	)
-	serviceConfig := createTestServiceConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
-	serviceConfig.Config = map[string]any{
+	component := createTestComponentConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
+	component.Service.Config = map[string]any{
 		"flow": map[string]any{
 			"name": flowName,
 			"path": ".",
@@ -104,16 +104,16 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		On("ValidateWorkspace", *mockContext.Context, scopeType).
 		Return(nil)
 	aiHelper.
-		On("CreateFlow", *mockContext.Context, scopeType, serviceConfig, componentConfigType).
+		On("CreateFlow", *mockContext.Context, scopeType, component, componentConfigType).
 		Return(flow, nil)
 	aiHelper.
-		On("CreateEnvironmentVersion", *mockContext.Context, scopeType, serviceConfig, componentConfigType).
+		On("CreateEnvironmentVersion", *mockContext.Context, scopeType, component, componentConfigType).
 		Return(environmentVersion, nil)
 	aiHelper.
-		On("CreateModelVersion", *mockContext.Context, scopeType, serviceConfig, componentConfigType).
+		On("CreateModelVersion", *mockContext.Context, scopeType, component, componentConfigType).
 		Return(modelVersion, nil)
 	aiHelper.
-		On("DeployToEndpoint", *mockContext.Context, scopeType, serviceConfig, endpointName, endpointDeploymentConfigType).
+		On("DeployToEndpoint", *mockContext.Context, scopeType, component, endpointName, endpointDeploymentConfigType).
 		Return(onlineDeployment, nil)
 	aiHelper.
 		On("UpdateTraffic", *mockContext.Context, scopeType, endpointName, expectedDeploymentName).
@@ -126,7 +126,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		Return(onlineEndpoint, nil)
 
 	serviceTarget := createMlEndpointTarget(mockContext, env, aiHelper)
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, servicePackage, targetResource)
+	deployTask := serviceTarget.Deploy(*mockContext.Context, component.Service, servicePackage, targetResource)
 	require.NotNil(t, deployTask)
 	logProgress(deployTask)
 

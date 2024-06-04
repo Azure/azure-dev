@@ -36,7 +36,8 @@ jobs:
           Condition: false
 
       # Installing goversioninfo on x86_64 Windows with GOARCH set to another
-      # value will compile goversioninfo for that architecture and it won't run.
+      # arch will compile goversioninfo for that architecture and it won't run
+      # on the x86_64 host.
       # Ensure that a compatible version of goversioninfo is installed.
       - pwsh: |
           go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0

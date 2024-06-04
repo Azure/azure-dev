@@ -28,7 +28,7 @@ type TokenResponse struct {
 }
 
 // tokenHandler handles token requests.
-func (lia *localIMDSAction) tokenHandler(w http.ResponseWriter, r *http.Request) {
+func (serve *serveAction) tokenHandler(w http.ResponseWriter, r *http.Request) {
 	resource := r.URL.Query().Get("resource")
 	if resource == "" {
 		resource = "https://management.azure.com/"
@@ -39,7 +39,7 @@ func (lia *localIMDSAction) tokenHandler(w http.ResponseWriter, r *http.Request)
 	ctx := context.Background()
 	var cred azcore.TokenCredential
 
-	cred, err := lia.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+	cred, err := serve.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
 		NoPrompt: true,
 		TenantID: "",
 	})
@@ -67,10 +67,9 @@ func (lia *localIMDSAction) tokenHandler(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// startIMDSServer starts the IMDS emulator server.
-func (lia *localIMDSAction) startIMDSServer(port string) {
-	http.HandleFunc("/MSI/token", lia.tokenHandler)
-	http.HandleFunc("/metadata/identity/oauth2/token", lia.tokenHandler)
+func (serve *serveAction) start(port string) {
+	http.HandleFunc("/MSI/token", serve.tokenHandler)
+	http.HandleFunc("/metadata/identity/oauth2/token", serve.tokenHandler)
 
 	srv := &http.Server{
 		Addr:         ":" + port,
@@ -102,29 +101,29 @@ func (lia *localIMDSAction) startIMDSServer(port string) {
 	os.Exit(0)
 }
 
-func newLocalIMDSCmd(parent string) *cobra.Command {
+func newServeCmd(parent string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "local-imds",
-		Short: "Starts a local IMDS emulator",
+		Use:   "serve",
+		Short: "Starts a local Managed Identity endpoint for development purposes.",
 		Annotations: map[string]string{
 			loginCmdParentAnnotation: parent,
 		},
 	}
 }
 
-type localIMDSAction struct {
+type serveAction struct {
 	console            input.Console
 	credentialProvider CredentialProviderFn
 	formatter          output.Formatter
 	writer             io.Writer
 }
 
-func newLocalIMDSAction(
+func newServeAction(
 	console input.Console,
 	credentialProvider CredentialProviderFn,
 	formatter output.Formatter,
 	writer io.Writer) actions.Action {
-	return &localIMDSAction{
+	return &serveAction{
 		console:            console,
 		credentialProvider: credentialProvider,
 		formatter:          formatter,
@@ -132,11 +131,11 @@ func newLocalIMDSAction(
 	}
 }
 
-func (lia *localIMDSAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	port := os.Getenv("IMDS_PORT")
+func (serve *serveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	port := os.Getenv("AZD_AUTH_SERVER_PORT")
 	if port == "" {
 		port = "53028"
 	}
-	lia.startIMDSServer(port)
+	serve.start(port)
 	return nil, nil
 }

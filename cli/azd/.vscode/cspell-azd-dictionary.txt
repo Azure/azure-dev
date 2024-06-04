@@ -114,7 +114,6 @@ gotestsum
 hotspot
 ignorefile
 iidfile
-imds
 ineffassign
 jaegertracing
 javac

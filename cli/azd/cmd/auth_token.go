@@ -173,15 +173,6 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("fetching token: %w", err)
 	}
 
-	if osutil.IsAzEmulator() {
-		res := contracts.AzEmulateAuthTokenResult{
-			AccessToken: token.Token,
-			ExpiresOn:   contracts.RFC3339Time(token.ExpiresOn),
-		}
-
-		return nil, a.formatter.Format(res, a.writer, nil)
-	}
-
 	res := contracts.AuthTokenResult{
 		Token:     token.Token,
 		ExpiresOn: contracts.RFC3339Time(token.ExpiresOn),

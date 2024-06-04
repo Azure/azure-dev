@@ -24,6 +24,7 @@ import (
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/azure/azure-dev/cli/azd/cmd"
+	"github.com/azure/azure-dev/cli/azd/emulator"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -54,6 +55,15 @@ func main() {
 	}
 
 	log.Printf("azd version: %s", internal.Version)
+
+	if osutil.IsAzEmulator() {
+		log.Println("Running az emulation")
+		emulateErr := emulator.NewRootCmd().ExecuteContext(ctx)
+		if emulateErr != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 
 	ts := telemetry.GetTelemetrySystem()
 

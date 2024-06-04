@@ -22,7 +22,10 @@ func emulateAzFromPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not get user config dir: %w", err)
 	}
-	emuPath := filepath.Join(azdConfigPath, "bin", "azEmulate")
+	emuPath, err := os.MkdirTemp(filepath.Join(azdConfigPath, "bin"), "azEmulate")
+	if err != nil {
+		return "", fmt.Errorf("could not create directory for azEmulate: %w", err)
+	}
 	err = os.MkdirAll(emuPath, osutil.PermissionDirectoryOwnerOnly)
 	if err != nil {
 		return "", fmt.Errorf("could not create directory for azEmulate: %w", err)

@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -48,9 +47,6 @@ func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComma
 	f.global = global
 	local.StringArrayVar(&f.scopes, "scope", nil, "The scope to use when requesting an access token")
 	local.StringVar(&f.tenantID, "tenant-id", "", "The tenant id to use when requesting an access token.")
-	if osutil.IsAzEmulator() {
-		local.StringVar(&f.tenantID, "tenant", "", "The tenant id to use when requesting an access token.")
-	}
 }
 
 type CredentialProviderFn func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)

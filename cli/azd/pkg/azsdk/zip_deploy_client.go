@@ -138,7 +138,33 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, err
 	}
 
-	response, err := c.pipeline.Do(request)
+	var response *http.Response
+	err = retry.Do(
+		ctx,
+		// using default retires in azure sdk for go
+		retry.WithMaxRetries(3, retry.NewConstant(4*time.Second)),
+		func(ctx context.Context) error {
+			responseRetry, err := c.pipeline.Do(request)
+			if err != nil {
+				var httpErr *azcore.ResponseError
+				if errors.As(err, &httpErr) {
+					// Status codes that run default three retires in go sdk
+					if httpErr.StatusCode == 408 ||
+						httpErr.StatusCode == 429 ||
+						httpErr.StatusCode == 500 ||
+						httpErr.StatusCode == 502 ||
+						httpErr.StatusCode == 503 ||
+						httpErr.StatusCode == 504 {
+						return retry.RetryableError(err)
+					}
+				}
+				return err
+			}
+
+			response = responseRetry
+
+			return nil
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -172,14 +198,7 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 				var httpErr *azcore.ResponseError
 				if errors.As(err, &httpErr) {
 					// 404 - Retry if the resource is not found as deployment id doesn't match with temp deployment id
-					// Rest is the status code that runs default three retires in go sdk
-					if httpErr.StatusCode == 404 ||
-						httpErr.StatusCode == 408 ||
-						httpErr.StatusCode == 429 ||
-						httpErr.StatusCode == 500 ||
-						httpErr.StatusCode == 502 ||
-						httpErr.StatusCode == 503 ||
-						httpErr.StatusCode == 504 {
+					if httpErr.StatusCode == 404 {
 						return retry.RetryableError(err)
 					}
 				}

@@ -66,8 +66,7 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                    "project",
-                    "language"
+                    "host"
                 ],
                 "properties": {
                     "resourceName": {
@@ -79,18 +78,23 @@
                         "type": "string",
                         "title": "Path to the service source code directory"
                     },
+"image": {
+                        "type": "string",
+                        "title": "Optional. The source image to be used for the container image instead of building from source.",
+                        "description": "If omitted, container image will be built from source specified in the 'project' property. Setting both 'project' and 'image' is invalid."
+                    },
                     "host": {
                         "type": "string",
-                        "title": "Type of Azure resource used for service implementation",
-                        "description": "If omitted, App Service will be assumed.",
+                        "title": "Required. The type of Azure resource used for service implementation",
+                        "description": "The Azure service that will be used as the target for deployment operations for the service.",
                         "enum": [
-                            "",
                             "appservice",
                             "containerapp",
                             "function",
                             "springapp",
                             "staticwebapp",
-                            "aks"
+                            "aks",
+                            "ai.endpoint"
                         ]
                     },
                     "language": {
@@ -121,6 +125,10 @@
                     },
                     "k8s": {
                         "$ref": "#/definitions/aksOptions"
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": true
                     },
                     "hooks": {
                         "type": "object",
@@ -162,6 +170,58 @@
                     }
                 },
                 "allOf": [
+{
+                        "if": {
+                            "properties": {
+                                "host": {
+                                    "const": "containerapp"
+                                }
+                            }
+                        },
+                        "then": {
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "image"
+                                    ],
+                                    "properties": {
+                                        "language": false
+                                    },
+                                    "not": {
+                                        "required": [
+                                            "project"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "required": [
+                                        "project"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "image"
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "if": {
+                            "not": {
+                                "properties": {
+                                    "host": {
+                                        "const": "containerapp"
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "image": false
+                            }
+                        }
+                    },
                     {
                         "if": {
                             "not": {
@@ -169,15 +229,41 @@
                                     "host": {
                                         "enum": [
                                             "containerapp",
-                                            "aks"
+                                            "aks",
+                                            "ai.endpoint"
                                         ]
                                     }
                                 }
                             }
                         },
                         "then": {
+                            "required": [
+                                "project",
+                                "language"
+                            ],
                             "properties": {
                                 "docker": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "host": {
+                                    "const": "ai.endpoint"
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": [
+                                "config"
+                            ],
+                            "properties": {
+                                "config": {
+                                    "$ref": "#/definitions/aiEndpointConfig",
+                                    "title": "The Azure AI endpoint configuration.",
+                                    "description": "Required. Provides additional configuration for Azure AI online endpoint deployment."
+                                }
                             }
                         }
                     },
@@ -239,6 +325,22 @@
                         "github",
                         "azdo"
                     ]
+                },
+                "variables": {
+                    "type": "array",
+                    "title": "Optional. List of azd environment variables to be used in the pipeline as variables.",
+                    "description": "If variable is found on azd environment, it is set as a variable for the pipeline.",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "secrets": {
+                    "type": "array",
+                    "title": "Optional. List of azd environment variables to be used in the pipeline as secrets.",
+                    "description": "If variable is found on azd environment, it is set as a secret for the pipeline.",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -437,6 +539,28 @@
                     }
                 }
             ]
+        },
+        "workflows": {
+            "type": "object",
+            "title": "The workflows configuration used for the project.",
+            "description": "Optional. Provides additional configuration for workflows such as override azd up behavior.",
+            "additionalProperties": false,
+            "properties": {
+                "up": {
+                    "title": "The up workflow configuration",
+                    "description": "When specified will override the default behavior for the azd up workflow. Common use cases include changing the order of the provision, package and deploy commands.",
+                    "$ref": "#/definitions/workflow"
+                }
+            }
+        },
+        "cloud": {
+            "type": "object",
+            "title": "The cloud configuration used for the project.",
+            "description": "Optional. Provides additional configuration for deploying to sovereign clouds such as Azure Government. The default cloud is AzureCloud.",
+            "additionalProperties": false,
+            "properties": {
+                "name": { "enum": [ "AzureCloud", "AzureChinaCloud", "AzureUSGovernment" ] }
+            }
         }
     },
     "definitions": {
@@ -527,15 +651,21 @@
                     "type": "string",
                     "title": "The platform target",
                     "default": "amd64"
-                },                
-                "target": {
+                },
+                "registry": {
                     "type": "string",
-                    "title": "The target build stage to build"
+                    "title": "Optional. The container registry to push the image to.",
+                    "description": "If omitted, will default to value of AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable. Supports environment variable substitution."
+                },
+                "image": {
+                    "type": "string",
+                    "title": "Optional. The name that will be applied to the built container image.",
+                    "description": "If omitted, will default to the '{appName}/{serviceName}-{environmentName}'. Supports environment variable substitution."
                 },
                 "tag": {
                     "type": "string",
                     "title": "The tag that will be applied to the built container image.",
-                    "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azd-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
+                    "description": "If omitted, will default to 'azd-deploy-{unix time (seconds)}'. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
                 },
                 "buildArgs": {
                     "type": "array",
@@ -603,6 +733,112 @@
                             "description": "When set will be appended to the root of your ingress resource path."
                         }
                     }
+},
+                "helm": {
+                    "type": "object",
+                    "title": "Optional. The helm configuration",
+                    "additionalProperties": false,
+                    "properties": {
+                        "repositories": {
+                            "type": "array",
+                            "title": "Optional. The helm repositories to add",
+                            "description": "When set will add the helm repositories to the helm client.",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "name",
+                                    "url"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "title": "The name of the helm repository",
+                                        "description": "The name of the helm repository to add."
+                                    },
+                                    "url": {
+                                        "type": "string",
+                                        "title": "The url of the helm repository",
+                                        "description": "The url of the helm repository to add."
+                                    }
+                                }
+                            }
+                        },
+                        "releases": {
+                            "type": "array",
+                            "title": "Optional. The helm releases to install",
+                            "description": "When set will install the helm releases to the k8s cluster.",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "name",
+                                    "chart"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "title": "The name of the helm release",
+                                        "description": "The name of the helm release to install."
+                                    },
+                                    "chart": {
+                                        "type": "string",
+                                        "title": "The name of the helm chart",
+                                        "description": "The name of the helm chart to install."
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "title": "The version of the helm chart",
+                                        "description": "The version of the helm chart to install."
+                                    },
+                                    "namespace": {
+                                        "type": "string",
+                                        "title": "Optional. The k8s namespace to install the helm chart",
+                                        "description": "When set will install the helm chart to the specified namespace. Defaults to the service namespace."
+                                    },
+                                    "values": {
+                                        "type": "string",
+                                        "title": "Optional. Relative path from service to a values.yaml to pass to the helm chart",
+                                        "description": "When set will pass the values to the helm chart."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "kustomize": {
+                    "type": "object",
+                    "title": "Optional. The kustomize configuration",
+                    "additionalProperties": false,
+                    "properties": {
+                        "dir": {
+                            "type": "string",
+                            "title": "Optional. The relative path to the kustomize directory.",
+                            "description": "When set will use the kustomize directory to deploy to the k8s cluster. Supports environment variable substitution."
+                        },
+                        "edits": {
+                            "type": "array",
+                            "title": "Optional. The kustomize edits to apply before deployment.",
+                            "description": "When set will apply the edits to the kustomize directory before deployment. Supports environment variable substitution.",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "env": {
+                            "type": "object",
+                            "title": "Optional. The environment key/value pairs used to generate a .env file.",
+                            "description": "When set will generate a .env file in the kustomize directory. Values support environment variable substitution.",
+                            "additionalProperties": {
+                                "type": [
+                                    "string",
+                                    "boolean",
+                                    "number"
+                                ]
+                            }
+                        }
+                    }
                 }
             }
         },
@@ -664,6 +900,147 @@
                     "description": "Optional. Used as the default environment type for this project."
                 }
             }
+        },
+        "workflow": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "steps"
+                    ],
+                    "properties": {
+                        "steps": {
+                            "type": "array",
+                            "title": "The steps to execute in the workflow",
+                            "description": "The steps to execute in the workflow. (Example: provision, package, deploy)",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "$ref": "#/definitions/workflowStep"
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "$ref": "#/definitions/workflowStep"
+                    }
+                }
+            ]
+        },
+        "workflowStep": {
+            "properties": {
+                "azd": {
+                    "title": "The azd command command configuration",
+                    "description": "The azd command configuration to execute. (Example: up)",
+                    "$ref": "#/definitions/azdCommand"
+                }
+            }
+        },
+        "azdCommand": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "title": "The azd command to execute",
+                    "description": "The name and args of the azd command to execute. (Example: deploy --all)"
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "args"
+                    ],
+                    "properties": {
+                        "args": {
+                            "type": "array",
+                            "title": "The arguments or flags to pass to the azd command",
+                            "description": "The arguments to pass to the azd command. (Example: --all)",
+                            "minItems": 1
+                        }
+                    }
+                }
+            ]
+        },
+        "aiComponentConfig": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "title": "Name of the AI component.",
+                    "description": "Optional. When omitted AZD will generate a name based on the component type and the service name. Supports environment variable substitution."
+                },
+                "path": {
+                    "type": "string",
+                    "title": "Path to the AI component configuration file or path.",
+                    "description": "Required. The path to the AI component configuration file or path to the AI component source code."
+                },
+                "overrides": {
+                    "type": "object",
+                    "title": "A map of key value pairs used to override the AI component configuration.",
+                    "description": "Optional. Supports environment variable substitution.",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": [
+                "path"
+            ]
+        },
+        "aiDeploymentConfig": {
+            "allOf": [
+                { "$ref": "#/definitions/aiComponentConfig" },
+                {
+                    "type": "object",
+                    "properties": {
+                        "environment": {
+                            "type": "object",
+                            "title": "A map of key/value pairs to set as environment variables for the deployment.",
+                            "description": "Optional. Values support OS & AZD environment variable substitution.",
+                            "additionalProperties":{
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "aiEndpointConfig": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "workspace": {
+                    "type": "string",
+                    "title": "The name of the AI Studio project workspace.",
+                    "description": "Optional. When omitted AZD will use the value specified in the 'AZUREAI_PROJECT_NAME' environment variable. Supports environment variable substitution."
+                },
+                "flow": {
+                    "$ref": "#/definitions/aiComponentConfig",
+                    "title": "The Azure AI Studio Prompt Flow configuration.",
+                    "description": "Optional. When omitted a prompt flow will be not created."
+                },
+                "environment": {
+                    "$ref": "#/definitions/aiComponentConfig",
+                    "title": "The Azure AI Studio custom environment configuration.",
+                    "description": "Optional. When omitted a custom environment will not be created."
+                },
+                "model": {
+                    "$ref": "#/definitions/aiComponentConfig",
+                    "title": "The Azure AI Studio model configuration.",
+                    "description": "Optional. When omitted a model will not be created."
+                },
+                "deployment": {
+                    "$ref": "#/definitions/aiDeploymentConfig",
+                    "title": "The Azure AI Studio online endpoint deployment configuration.",
+                    "description": "Required. A new online endpoint deployment will be created and traffic will automatically to shifted to the new deployment upon successful completion."
+                }
+            },
+            "required": [
+                "deployment"
+            ]
         }
     }
 }

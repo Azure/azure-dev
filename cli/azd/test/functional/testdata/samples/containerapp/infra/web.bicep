@@ -6,7 +6,7 @@ param containerAppsEnvironmentName string
 var tags = { 'azd-env-name': environmentName }
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' existing = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
   name: containerRegistryName
 }
 
@@ -14,7 +14,7 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01'
   name: containerAppsEnvironmentName
 }
 
-resource app 'Microsoft.App/containerApps@2022-03-01' = {
+resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
   name: 'ca-${resourceToken}'
   location: location
   tags: union(tags, { 'azd-service-name': 'web' })

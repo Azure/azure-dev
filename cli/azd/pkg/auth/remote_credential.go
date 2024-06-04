@@ -86,16 +86,19 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 		return azcore.AccessToken{}, fmt.Errorf("unmarshalling response: %w", err)
 	}
 
-	if tokenResp.Status != "success" {
+	switch tokenResp.Status {
+	case "success":
+		return azcore.AccessToken{
+			Token:     *tokenResp.Token,
+			ExpiresOn: *tokenResp.ExpiresOn,
+		}, nil
+	case "error":
 		return azcore.AccessToken{}, fmt.Errorf("RemoteCredential: failed to acquire token: code: %s message: %s",
 			*tokenResp.Code,
 			*tokenResp.Message)
+	default:
+		return azcore.AccessToken{}, fmt.Errorf("RemoteCredential: unexpected status: %s", tokenResp.Status)
 	}
-
-	return azcore.AccessToken{
-		Token:     *tokenResp.Token,
-		ExpiresOn: *tokenResp.ExpiresOn,
-	}, nil
 }
 
 var _ = azcore.TokenCredential(&RemoteCredential{})

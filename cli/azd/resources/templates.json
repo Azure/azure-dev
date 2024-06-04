@@ -2,81 +2,165 @@
   {
     "name": "Starter - Bicep",
     "description": "A starter template with Bicep as infrastructure provider",
-    "repositoryPath": "azd-starter-bicep"
+    "repositoryPath": "azd-starter-bicep",
+    "tags": [
+      "bicep"
+    ]
   },
   {
     "name": "Starter - Terraform",
     "description": "A starter template with Terraform as infrastructure provider",
-    "repositoryPath": "azd-starter-terraform"
+    "repositoryPath": "azd-starter-terraform",
+    "tags": [
+      "terraform"
+    ]
   },
   {
     "name": "React Web App with C# API and MongoDB",
     "description": "A blueprint for getting a React web app with a C# API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly.",
-    "repositoryPath": "todo-csharp-cosmos-sql"
+    "repositoryPath": "todo-csharp-cosmos-sql",
+    "tags": [
+      "bicep",
+      "csharp",
+      "cosmos",
+      "sql"
+    ]
   },
   {
     "name": "React Web App with C# API and SQL Database",
     "description": "A blueprint for getting a React web app with a C# API and a SQL database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly.",
-    "repositoryPath": "todo-csharp-sql"
+    "repositoryPath": "todo-csharp-sql",
+    "tags": [
+      "bicep",
+      "csharp",
+      "sql"
+    ]
   },
   {
     "name": "React Web App with Java API and MongoDB",
     "description": "A blueprint for getting a React.js web app with a Java API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "todo-java-mongo"
+    "repositoryPath": "todo-java-mongo",
+    "tags": [
+      "bicep",
+      "java",
+      "mongo"
+    ]
   },
   {
     "name": "React Web App with Node.js API and MongoDB",
     "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "todo-nodejs-mongo"
+    "repositoryPath": "todo-nodejs-mongo",
+    "tags": [
+      "bicep",
+      "nodejs",
+      "mongo"
+    ]
   },
   {
     "name": "React Web App with Node.js API and MongoDB - Terraform",
     "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Terraform) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "todo-nodejs-mongo-terraform"
+    "repositoryPath": "todo-nodejs-mongo-terraform",
+    "tags": [
+      "terraform",
+      "nodejs",
+      "mongo"
+    ]
   },
   {
     "name": "React Web App with Python API and MongoDB",
     "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "todo-python-mongo"
+    "repositoryPath": "todo-python-mongo",
+    "tags": [
+      "bicep",
+      "python",
+      "mongo"
+    ]
   },
   {
     "name": "React Web App with Python API and MongoDB - Terraform",
     "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Terraform) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "todo-python-mongo-terraform"
+    "repositoryPath": "todo-python-mongo-terraform",
+    "tags": [
+      "terraform",
+      "python",
+      "mongo"
+    ]
   },
   {
     "name": "Containerized React Web App with Java API and MongoDB",
     "description": "A blueprint for getting a React web app with a Java API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running containerized apps or microservices on a serverless platform.",
-    "repositoryPath": "todo-java-mongo-aca"
+    "repositoryPath": "todo-java-mongo-aca",
+    "tags": [
+      "bicep",
+      "java",
+      "mongo",
+      "containerapp"
+    ]
   },
   {
     "name": "Containerized React Web App with Node.js API and MongoDB",
     "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running containerized apps or microservices on a serverless platform. This architecture is for running containerized microservices without managing the servers.",
-    "repositoryPath": "todo-nodejs-mongo-aca"
+    "repositoryPath": "todo-nodejs-mongo-aca",
+    "tags": [
+      "bicep",
+      "nodejs",
+      "mongo",
+      "containerapp"
+    ]
   },
   {
     "name": "Containerized React Web App with Python API and MongoDB",
     "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The frontend, currently a ToDo application, is designed as a placeholder that can easily be removed and replaced with your own frontend code. This architecture is for running containerized apps or microservices on a serverless platform.",
-    "repositoryPath": "todo-python-mongo-aca"
+    "repositoryPath": "todo-python-mongo-aca",
+    "tags": [
+      "bicep",
+      "python",
+      "mongo",
+      "containerapp"
+    ]
   },
   {
     "name": "Static React Web App + Functions with C# API and SQL Database",
     "description": "A blueprint for getting a React web app with a C# API and a SQL database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting static web apps with serverless logic and functionality.",
-    "repositoryPath": "todo-csharp-sql-swa-func"
+    "repositoryPath": "todo-csharp-sql-swa-func",
+    "tags": [
+      "bicep",
+      "csharp",
+      "sql",
+      "functions"
+    ]
   },
   {
     "name": "Static React Web App + Functions with Node.js API and MongoDB",
     "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting static web apps with serverless logic and functionality.",
-    "repositoryPath": "todo-nodejs-mongo-swa-func"
+    "repositoryPath": "todo-nodejs-mongo-swa-func",
+    "tags": [
+      "bicep",
+      "nodejs",
+      "mongo",
+      "functions"
+    ]
   },
   {
     "name": "Static React Web App + Functions with Python API and MongoDB",
     "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The frontend, currently a ToDo application, is designed as a placeholder that can easily be removed and replaced with your own frontend code. This architecture is for hosting static web apps with serverless logic and functionality.",
-    "repositoryPath": "todo-python-mongo-swa-func"
+    "repositoryPath": "todo-python-mongo-swa-func",
+    "tags": [
+      "bicep",
+      "python",
+      "mongo",
+      "functions"
+    ]
   },
   {
     "name": "Kubernetes React Web App with Node.js API and MongoDB",
     "description": "A blueprint for getting a React.js web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running Kubernetes clusters without setting up the control plane.",
-    "repositoryPath": "todo-nodejs-mongo-aks"
+    "repositoryPath": "todo-nodejs-mongo-aks",
+    "tags": [
+      "bicep",
+      "nodejs",
+      "mongo",
+      "aks"
+    ]
   }
 ]

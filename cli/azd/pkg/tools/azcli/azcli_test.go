@@ -94,5 +94,6 @@ func newAzCliFromMockContext(mockContext *mocks.MockContext) AzCli {
 		}),
 		mockContext.HttpClient,
 		NewAzCliArgs{},
+		mockContext.ArmClientOptions,
 	)
 }

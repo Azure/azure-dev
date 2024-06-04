@@ -34,9 +34,12 @@ import (
 type GitHubCli interface {
 	tools.ExternalTool
 	GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error)
-	ListSecrets(ctx context.Context, repo string) error
+	ListSecrets(ctx context.Context, repo string) ([]string, error)
+	ListVariables(ctx context.Context, repo string) ([]string, error)
 	SetSecret(ctx context.Context, repo string, name string, value string) error
+	DeleteSecret(ctx context.Context, repo string, name string) error
 	SetVariable(ctx context.Context, repoSlug string, name string, value string) error
+	DeleteVariable(ctx context.Context, repoSlug string, name string) error
 	Login(ctx context.Context, hostname string) error
 	ListRepositories(ctx context.Context) ([]GhCliRepository, error)
 	ViewRepository(ctx context.Context, name string) (GhCliRepository, error)
@@ -214,17 +217,39 @@ func (cli *ghCli) Login(ctx context.Context, hostname string) error {
 	return nil
 }
 
-func (cli *ghCli) ListSecrets(ctx context.Context, repoSlug string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "list")
-	_, err := cli.run(ctx, runArgs)
-	if err != nil {
-		return fmt.Errorf("failed running gh secret list: %w", err)
+func ghOutputToList(output string) []string {
+	lines := strings.Split(output, "\n")
+	result := make([]string, len(lines)-1)
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		valueParts := strings.Split(line, "\t")
+		result[i] = valueParts[0]
 	}
-	return nil
+	return result
+}
+
+func (cli *ghCli) ListSecrets(ctx context.Context, repoSlug string) ([]string, error) {
+	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "list")
+	output, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed running gh secret list: %w", err)
+	}
+	return ghOutputToList(output.Stdout), nil
+}
+
+func (cli *ghCli) ListVariables(ctx context.Context, repoSlug string) ([]string, error) {
+	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "list")
+	output, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed running gh secret list: %w", err)
+	}
+	return ghOutputToList(output.Stdout), nil
 }
 
 func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "set", name, "--body", value)
+	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "set", name).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh secret set: %w", err)
@@ -233,10 +258,28 @@ func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, v
 }
 
 func (cli *ghCli) SetVariable(ctx context.Context, repoSlug string, name string, value string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name, "--body", value)
+	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh variable set: %w", err)
+	}
+	return nil
+}
+
+func (cli *ghCli) DeleteSecret(ctx context.Context, repoSlug string, name string) error {
+	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "delete", name)
+	_, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed running gh secret delete: %w", err)
+	}
+	return nil
+}
+
+func (cli *ghCli) DeleteVariable(ctx context.Context, repoSlug string, name string) error {
+	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "delete", name)
+	_, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed running gh variable delete: %w", err)
 	}
 	return nil
 }

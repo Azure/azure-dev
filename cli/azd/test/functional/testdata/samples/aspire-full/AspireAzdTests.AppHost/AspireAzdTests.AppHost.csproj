@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsAspireHost>true</IsAspireHost>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\AspireAzdTests.ApiService\AspireAzdTests.ApiService.csproj" />
+		<ProjectReference Include="..\AspireAzdTests.Web\AspireAzdTests.Web.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Aspire.Hosting.AppHost" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.Azure" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.Azure.Redis" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.Azure.Storage" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.Azure.CosmosDB" Version="$(AspireVersion)" />
+	</ItemGroup>
+
+</Project>

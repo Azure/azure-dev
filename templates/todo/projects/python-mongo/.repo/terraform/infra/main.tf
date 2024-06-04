@@ -85,6 +85,7 @@ module "appserviceplan" {
   rg_name        = azurerm_resource_group.rg.name
   tags           = azurerm_resource_group.rg.tags
   resource_token = local.resource_token
+  sku_name       = "B3"
 }
 
 # ------------------------------------------------------------------------------------------------------
@@ -101,12 +102,10 @@ module "web" {
   appservice_plan_id = module.appserviceplan.APPSERVICE_PLAN_ID
 
   app_settings = {
-    "SCM_DO_BUILD_DURING_DEPLOYMENT"                  = "false"
-    "REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING" = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
-    "REACT_APP_API_BASE_URL"                          = "https://app-api-${local.resource_token}.azurewebsites.net"
+    "SCM_DO_BUILD_DURING_DEPLOYMENT" = "false"
   }
 
-  app_command_line = "./entrypoint.sh -o ./env-config.js && pm2 serve /home/site/wwwroot --no-daemon --spa"
+  app_command_line = "pm2 serve /home/site/wwwroot --no-daemon --spa"
 }
 
 # ------------------------------------------------------------------------------------------------------
@@ -127,13 +126,23 @@ module "api" {
     "SCM_DO_BUILD_DURING_DEPLOYMENT"        = "true"
     "AZURE_KEY_VAULT_ENDPOINT"              = module.keyvault.AZURE_KEY_VAULT_ENDPOINT
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
-    "API_ALLOW_ORIGINS"                     = "https://app-web-${local.resource_token}.azurewebsites.net"
   }
 
   app_command_line = local.api_command_line
   identity = [{
     type = "SystemAssigned"
   }]
+}
+
+# Workaround: set API_ALLOW_ORIGINS to the web app URI
+resource "null_resource" "api_set_allow_origins" {
+  triggers = {
+    web_uri = module.web.URI
+  }
+
+  provisioner "local-exec" {
+    command = "az webapp config appsettings set --resource-group ${azurerm_resource_group.rg.name} --name ${module.api.APPSERVICE_NAME} --settings API_ALLOW_ORIGINS=${module.web.URI}"
+  }
 }
 
 # ------------------------------------------------------------------------------------------------------
@@ -147,7 +156,7 @@ module "apim" {
   rg_name                   = azurerm_resource_group.rg.name
   tags                      = merge(local.tags, { "azd-service-name" : var.environment_name })
   application_insights_name = module.applicationinsights.APPLICATIONINSIGHTS_NAME
-  sku                       = "Consumption"
+  sku                       = var.apimSKU
 }
 
 # ------------------------------------------------------------------------------------------------------

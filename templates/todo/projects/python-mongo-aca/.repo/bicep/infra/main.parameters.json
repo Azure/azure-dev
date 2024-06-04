@@ -18,10 +18,16 @@
       "value": "${SERVICE_WEB_RESOURCE_EXISTS=false}"
     },
     "webApiBaseUrl": {
-      "value": "${REACT_APP_API_BASE_URL}"
+      "value": "${API_BASE_URL}"
     },
     "useAPIM": {
       "value": "${USE_APIM=false}"
+    },
+    "apimSku": {
+      "value": "${APIM_SKU=Consumption}"
+    },
+    "containerRegistryHostSuffix": {
+      "value": "${CONTAINER_REGISTRY_HOST_SUFFIX=azurecr.io}"
     }
   }
 }

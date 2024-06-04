@@ -6,6 +6,7 @@ param(
     [string] $OutLocation = "winget",
     [switch] $Submit
 )
+$PSNativeCommandArgumentPassing = 'Legacy'
 
 Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 

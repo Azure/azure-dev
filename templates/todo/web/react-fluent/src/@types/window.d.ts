@@ -1,10 +1,10 @@
-export { };
+/// <reference types="vite/client" />
 
-declare global {
-    interface Window {
-        ENV_CONFIG: {
-            REACT_APP_API_BASE_URL: string;
-            REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: string;
-        }
-    }
+interface ImportMetaEnv {
+    readonly VITE_API_BASE_URL: string;
+    readonly VITE_APPLICATIONINSIGHTS_CONNECTION_STRING: string;
+}
+
+interface ImportMeta {
+    readonly env: ImportMetaEnv
 }

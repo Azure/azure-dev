@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,7 +95,7 @@ func TestReLoginRequired(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, got := newReLoginRequiredError(tt.resp, LoginScopes)
+			_, got := newReLoginRequiredError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic())
 			require.Equal(t, tt.want, got)
 		})
 	}

@@ -1,5 +1,5 @@
 import { CommandBar, DetailsList, DetailsListLayoutMode, IStackStyles, Selection, Label, Spinner, SpinnerSize, Stack, IIconProps, SearchBox, Text, IGroup, IColumn, MarqueeSelection, FontIcon, IObjectWithKey, CheckboxVisibility, IDetailsGroupRenderProps, getTheme } from '@fluentui/react';
-import React, { ReactElement, useEffect, useState, FormEvent, FC } from 'react';
+import { ReactElement, useEffect, useState, FormEvent, FC } from 'react';
 import { useNavigate } from 'react-router';
 import { TodoItem, TodoItemState, TodoList } from '../models';
 import { stackItemPadding } from '../ux/styles';
@@ -135,7 +135,7 @@ const TodoItemListPane: FC<TodoItemListPaneProps> = (props: TodoItemListPaneProp
         }
     }
 
-    const onNewItemChanged = (evt?: FormEvent<HTMLInputElement>, value?: string) => {
+    const onNewItemChanged = (_evt?: FormEvent<HTMLInputElement>, value?: string) => {
         setNewItemName(value || '');
     }
 
@@ -167,7 +167,7 @@ const TodoItemListPane: FC<TodoItemListPaneProps> = (props: TodoItemListPaneProp
         }
     }
 
-    const renderItemColumn = (item: TodoDisplayItem, index?: number, column?: IColumn) => {
+    const renderItemColumn = (item: TodoDisplayItem, _index?: number, column?: IColumn) => {
         const fieldContent = item[column?.fieldName as keyof TodoDisplayItem] as string;
 
         switch (column?.key) {

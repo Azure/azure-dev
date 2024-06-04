@@ -68,7 +68,11 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
 		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 		servicePrincipal, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -109,7 +113,11 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
 		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 		servicePrincipal, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -147,7 +155,11 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		// Note how role assignment returns a 409 conflict
 		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusConflict)
 
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 		servicePrincipal, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -180,7 +192,11 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		// Note how retrieval of matching role assignments is empty
 		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, []*armauthorization.RoleDefinition{})
 
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 		servicePrincipal, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -200,7 +216,11 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		// Note that the application creation returns an unauthorized error
 		mockgraphsdk.RegisterApplicationCreateItemMock(mockContext, http.StatusUnauthorized, nil)
 
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 		servicePrincipal, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
@@ -224,7 +244,11 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 	t.Run("AppNotFound", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mockContext, http.StatusNotFound, *mockApplication.AppId, nil)
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 
 		credentials, err := adService.ApplyFederatedCredentials(
 			*mockContext.Context,
@@ -276,7 +300,11 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 			http.StatusCreated,
 			&graphsdk.FederatedIdentityCredential{},
 		)
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 
 		credentials, err := adService.ApplyFederatedCredentials(
 			*mockContext.Context,
@@ -337,7 +365,11 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 			http.StatusCreated,
 			&graphsdk.FederatedIdentityCredential{},
 		)
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 
 		credentials, err := adService.ApplyFederatedCredentials(
 			*mockContext.Context,
@@ -379,7 +411,11 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 			mockApplication,
 		)
 		mockgraphsdk.RegisterFederatedCredentialsListMock(mockContext, *mockApplication.Id, http.StatusOK, mockCredentials)
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 
 		credentials, err := adService.ApplyFederatedCredentials(
 			*mockContext.Context,
@@ -438,7 +474,11 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 			mockApplicationPassword,
 		)
 
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 		credentials, err := adService.ResetPasswordCredentials(
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
@@ -456,7 +496,11 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mockContext, http.StatusOK, *mockApplication.AppId, nil)
 
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 		credentials, err := adService.ResetPasswordCredentials(
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
@@ -478,7 +522,11 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 		mockgraphsdk.RegisterServicePrincipalListMock(mockContext, http.StatusOK, mockServicePrincipals)
 		mockgraphsdk.RegisterApplicationRemovePasswordMock(mockContext, http.StatusBadRequest, *mockApplication.Id)
 
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 		credentials, err := adService.ResetPasswordCredentials(
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
@@ -501,7 +549,11 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 		mockgraphsdk.RegisterApplicationRemovePasswordMock(mockContext, http.StatusNoContent, *mockApplication.Id)
 		mockgraphsdk.RegisterApplicationAddPasswordMock(mockContext, http.StatusBadRequest, *mockApplication.Id, nil)
 
-		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		adService := NewAdService(
+			mockContext.SubscriptionCredentialProvider,
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+		)
 		credentials, err := adService.ResetPasswordCredentials(
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",

@@ -19,6 +19,7 @@ func NewAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
 		}),
 		mockContext.HttpClient,
 		azcli.NewAzCliArgs{},
+		mockContext.ArmClientOptions,
 	)
 }
 
@@ -28,7 +29,8 @@ func NewDeploymentOperationsServiceFromMockContext(
 		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
 		}),
-		mockContext.HttpClient)
+		mockContext.ArmClientOptions,
+	)
 }
 
 func NewDeploymentsServiceFromMockContext(
@@ -37,5 +39,6 @@ func NewDeploymentsServiceFromMockContext(
 		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
 		}),
-		mockContext.HttpClient)
+		mockContext.ArmClientOptions,
+	)
 }

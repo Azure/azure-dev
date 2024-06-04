@@ -7,7 +7,10 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -17,6 +20,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
+
+func armClientOptions(httpTransport *mockhttp.MockHttpClient) *arm.ClientOptions {
+	return &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{Transport: httpTransport},
+	}
+}
 
 func Test_GetAccountDefaults(t *testing.T) {
 	defaultSubscription := Subscription{
@@ -43,7 +52,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -68,7 +77,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -102,7 +111,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -136,7 +145,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -158,7 +167,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+				armClientOptions(mockHttp),
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -193,7 +202,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -222,7 +231,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			))
@@ -260,7 +269,7 @@ func Test_GetLocations(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -281,7 +290,7 @@ func Test_GetLocations(t *testing.T) {
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+				armClientOptions(mockHttp),
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -301,7 +310,7 @@ func Test_GetLocations(t *testing.T) {
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+				armClientOptions(mockHttp),
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -329,7 +338,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+				armClientOptions(mockHttp),
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -355,7 +364,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+				armClientOptions(mockHttp),
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -394,7 +403,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -418,7 +427,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
-				mockHttp,
+				armClientOptions(mockHttp),
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -445,7 +454,7 @@ func Test_Clear(t *testing.T) {
 	manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
 		NewSubscriptionsService(
 			&mocks.MockMultiTenantCredentialProvider{},
-			mockHttp,
+			armClientOptions(mockHttp),
 		),
 		NewBypassSubscriptionsCache()))
 	require.NoError(t, err)
@@ -496,7 +505,7 @@ func Test_HasDefaults(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -515,7 +524,7 @@ func Test_HasDefaults(t *testing.T) {
 			NewSubscriptionsManagerWithCache(
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
-					mockHttp,
+					armClientOptions(mockHttp),
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -661,11 +670,11 @@ type InMemorySubCache struct {
 	stored []Subscription
 }
 
-func (imc *InMemorySubCache) Load() ([]Subscription, error) {
+func (imc *InMemorySubCache) Load(key string) ([]Subscription, error) {
 	return imc.stored, nil
 }
 
-func (imc *InMemorySubCache) Save(save []Subscription) error {
+func (imc *InMemorySubCache) Save(key string, save []Subscription) error {
 	imc.stored = save
 	return nil
 }
@@ -704,18 +713,26 @@ func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID(ctx cont
 	return nil, nil
 }
 
+func (p *principalInfoProviderMock) ClaimsForCurrentUser(
+	ctx context.Context, options *auth.ClaimsForCurrentUserOptions) (auth.TokenClaims, error) {
+	return auth.TokenClaims{
+		UniqueName: "test_user",
+		Oid:        "test_oid",
+	}, nil
+}
+
 type BypassSubscriptionsCache struct {
 }
 
-func (b *BypassSubscriptionsCache) Load() ([]Subscription, error) {
+func (b *BypassSubscriptionsCache) Load(ctx context.Context, key string) ([]Subscription, error) {
 	return nil, errors.New("bypass cache")
 }
 
-func (b *BypassSubscriptionsCache) Save(save []Subscription) error {
+func (b *BypassSubscriptionsCache) Save(ctx context.Context, key string, save []Subscription) error {
 	return nil
 }
 
-func (b *BypassSubscriptionsCache) Clear() error {
+func (b *BypassSubscriptionsCache) Clear(ctx context.Context) error {
 	return nil
 }
 

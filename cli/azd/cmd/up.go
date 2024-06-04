@@ -2,39 +2,43 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type upFlags struct {
-	provisionFlags
-	deployFlags
+	cmd.ProvisionFlags
+	cmd.DeployFlags
 	global *internal.GlobalCommandOptions
-	envFlag
+	internal.EnvFlag
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	u.envFlag.Bind(local, global)
+	u.EnvFlag.Bind(local, global)
 	u.global = global
 
-	u.provisionFlags.bindNonCommon(local, global)
-	u.provisionFlags.setCommon(&u.envFlag)
-	u.deployFlags.bindNonCommon(local, global)
-	u.deployFlags.setCommon(&u.envFlag)
+	u.ProvisionFlags.BindNonCommon(local, global)
+	u.ProvisionFlags.SetCommon(&u.EnvFlag)
+	u.DeployFlags.BindNonCommon(local, global)
+	u.DeployFlags.SetCommon(&u.EnvFlag)
 }
 
 func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {
@@ -57,6 +61,8 @@ type upAction struct {
 	env                 *environment.Environment
 	projectConfig       *project.ProjectConfig
 	provisioningManager *provisioning.Manager
+	envManager          environment.Manager
+	prompters           prompt.Prompter
 	importManager       *project.ImportManager
 	workflowRunner      *workflow.Runner
 }
@@ -77,6 +83,8 @@ func newUpAction(
 	_ auth.LoggedInGuard,
 	projectConfig *project.ProjectConfig,
 	provisioningManager *provisioning.Manager,
+	envManager environment.Manager,
+	prompters prompt.Prompter,
 	importManager *project.ImportManager,
 	workflowRunner *workflow.Runner,
 ) actions.Action {
@@ -86,6 +94,8 @@ func newUpAction(
 		env:                 env,
 		projectConfig:       projectConfig,
 		provisioningManager: provisioningManager,
+		envManager:          envManager,
+		prompters:           prompters,
 		importManager:       importManager,
 		workflowRunner:      workflowRunner,
 	}
@@ -98,8 +108,16 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	defer func() { _ = infra.Cleanup() }()
 
+	// TODO(weilim): remove this once we have decided if it's okay to not set AZURE_SUBSCRIPTION_ID and AZURE_LOCATION
+	// early in the up workflow in #3745
 	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
-	if err != nil {
+	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
+		// If bicep is not available, we continue to prompt for subscription and location unfiltered
+		err = provisioning.EnsureSubscriptionAndLocation(ctx, u.envManager, u.env, u.prompters, nil)
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
 		return nil, err
 	}
 

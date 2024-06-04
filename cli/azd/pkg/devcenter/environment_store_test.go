@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockdevcentersdk"
@@ -126,13 +128,12 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 	t.Run("Exists", func(t *testing.T) {
 		mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", mockEnvironments[0].Name, mockEnvironments[0])
 
+		// Config EnvironmentType & User intentionally omitted and should be set in environment after sync
 		config := &Config{
 			Name:                  "DEV_CENTER_01",
 			Project:               "Project1",
 			EnvironmentDefinition: "WebApp",
 			Catalog:               "SampleCatalog",
-			EnvironmentType:       "Dev",
-			User:                  "me",
 		}
 
 		outputs := map[string]provisioning.OutputParameter{
@@ -148,7 +149,10 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 
 		manager := &mockDevCenterManager{}
 		manager.
-			On("Outputs", *mockContext.Context, mock.AnythingOfType("*devcentersdk.Environment")).
+			On("Outputs",
+				*mockContext.Context,
+				mock.AnythingOfType("*devcenter.Config"),
+				mock.AnythingOfType("*devcentersdk.Environment")).
 			Return(outputs, nil)
 
 		store := newEnvironmentStoreForTest(t, mockContext, config, manager)
@@ -171,7 +175,9 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 
 		envConfig, err := ParseConfig(devCenterNode)
 		require.NoError(t, err)
-		require.Equal(t, *envConfig, *config)
+		require.Equal(t, envConfig.EnvironmentType, mockEnvironments[0].EnvironmentType)
+		require.Equal(t, envConfig.User, mockEnvironments[0].User)
+
 	})
 
 	t.Run("DoesNotExist", func(t *testing.T) {
@@ -210,43 +216,92 @@ func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
 }
 
 func Test_EnvironmentStore_Save(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	tests := []struct {
+		name     string
+		env      *environment.Environment
+		config   *Config
+		isNew    bool
+		validate func(t *testing.T, env *environment.Environment)
+	}{
+		{
+			name: "NewEnvironment",
+			env: environment.NewWithValues(mockEnvironments[0].Name, map[string]string{
+				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+				environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP_NAME",
+			}),
+			isNew: true,
+			config: &Config{
+				Name:                  "DEV_CENTER_01",
+				Project:               "Project1",
+				EnvironmentDefinition: "WebApp",
+				Catalog:               "SampleCatalog",
+				EnvironmentType:       "Dev",
+				User:                  "me",
+			},
+			validate: func(t *testing.T, env *environment.Environment) {
+				// Before provisioning we do know know the subscription id or resource group name
+				// At this point we should not persist any addidtional project information in the azd config.
+				_, hasProject := env.Config.Get(DevCenterProjectPath)
+				_, hasEnvType := env.Config.Get(DevCenterEnvTypePath)
 
-	config := &Config{
-		Name:                  "DEV_CENTER_01",
-		Project:               "Project1",
-		EnvironmentDefinition: "WebApp",
-		Catalog:               "SampleCatalog",
-		EnvironmentType:       "Dev",
-		User:                  "me",
+				require.False(t, hasProject)
+				require.False(t, hasEnvType)
+			},
+		},
+		{
+			name: "ExistingEnvironment",
+			env: environment.NewWithValues(mockEnvironments[0].Name, map[string]string{
+				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+				environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP_NAME",
+			}),
+			isNew: false,
+			config: &Config{
+				Name:                  "DEV_CENTER_01",
+				Project:               "Project1",
+				EnvironmentDefinition: "WebApp",
+				Catalog:               "SampleCatalog",
+				EnvironmentType:       "Dev",
+				User:                  "me",
+			},
+			validate: func(t *testing.T, env *environment.Environment) {
+				// After provisioning completes the subscription id and resource group name are stored in the azd environment
+				// At this point azd should also persist the devcenter project and environment type in the config
+				project, projectOk := env.Config.Get(DevCenterProjectPath)
+				envType, envTypeOk := env.Config.Get(DevCenterEnvTypePath)
+
+				require.True(t, projectOk)
+				require.Equal(t, "Project1", project)
+				require.True(t, envTypeOk)
+				require.Equal(t, "Dev", envType)
+			},
+		},
 	}
 
-	store := newEnvironmentStoreForTest(t, mockContext, config, nil)
-	err := store.Save(*mockContext.Context, environment.New(mockEnvironments[0].Name))
-	require.NoError(t, err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			store := newEnvironmentStoreForTest(t, mockContext, test.config, nil)
+			err := store.Save(*mockContext.Context, test.env, &environment.SaveOptions{IsNew: test.isNew})
+			require.NoError(t, err)
+			test.validate(t, test.env)
+		})
+	}
 }
 
 func newEnvironmentStoreForTest(
 	t *testing.T,
 	mockContext *mocks.MockContext,
-	config *Config,
+	devCenterConfig *Config,
 	manager Manager,
 ) environment.RemoteDataStore {
-	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
-		BuildCoreClientOptions()
-
-	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
-		BuildArmClientOptions()
-
-	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, armOptions)
+	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, mockContext.ArmClientOptions)
 	require.NoError(t, err)
 
 	devCenterClient, err := devcentersdk.NewDevCenterClient(
 		mockContext.Credentials,
-		coreOptions,
+		mockContext.CoreClientOptions,
 		resourceGraphClient,
+		cloud.AzurePublic(),
 	)
 
 	require.NoError(t, err)
@@ -254,7 +309,11 @@ func newEnvironmentStoreForTest(
 	if manager == nil {
 		manager = &mockDevCenterManager{}
 	}
-	prompter := NewPrompter(config, mockContext.Console, manager, devCenterClient)
+	prompter := NewPrompter(mockContext.Console, manager, devCenterClient)
 
-	return NewEnvironmentStore(config, devCenterClient, prompter, manager)
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	dataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+
+	return NewEnvironmentStore(devCenterConfig, devCenterClient, prompter, manager, dataStore)
 }

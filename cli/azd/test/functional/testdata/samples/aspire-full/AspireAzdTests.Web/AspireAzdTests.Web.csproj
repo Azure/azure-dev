@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <None Remove="Resources\aboutus.md" />
+	  <None Remove="Resources\helloworld.md" />
+	  <None Remove="Resources\privacy.md" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <EmbeddedResource Include="Resources\aboutus.md" />
+	  <EmbeddedResource Include="Resources\helloworld.md" />
+	  <EmbeddedResource Include="Resources\privacy.md" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\AspireAzdTests.ServiceDefaults\AspireAzdTests.ServiceDefaults.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Aspire.Azure.Data.Tables" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Azure.Storage.Blobs" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Azure.Storage.Queues" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.StackExchange.Redis" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.StackExchange.Redis.OutputCaching" Version="$(AspireVersion)" />
+		<PackageReference Include="Markdig" Version="0.34.0" />
+	</ItemGroup>
+
+</Project>

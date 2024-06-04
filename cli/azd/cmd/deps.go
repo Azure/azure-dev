@@ -12,7 +12,7 @@ import (
 )
 
 func createHttpClient() *http.Client {
-	return &http.Client{}
+	return http.DefaultClient
 }
 
 func createClock() clock.Clock {

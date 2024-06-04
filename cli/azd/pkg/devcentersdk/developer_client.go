@@ -12,7 +12,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+)
+
+const (
+	projectKey   = "projects"
+	devCenterKey = "devcenters"
 )
 
 type DevCenterClient interface {
@@ -26,14 +32,16 @@ type devCenterClient struct {
 	options             *azcore.ClientOptions
 	resourceGraphClient *armresourcegraph.Client
 	pipeline            runtime.Pipeline
-	cache               map[string]interface{}
+	cache               sync.Map
 	cacheMutex          sync.RWMutex
+	cloud               *cloud.Cloud
 }
 
 func NewDevCenterClient(
 	credential azcore.TokenCredential,
 	options *azcore.ClientOptions,
 	resourceGraphClient *armresourcegraph.Client,
+	cloud *cloud.Cloud,
 ) (DevCenterClient, error) {
 	options.PerCallPolicies = append(options.PerCallPolicies, NewApiVersionPolicy(nil))
 	pipeline := NewPipeline(credential, ServiceConfig, options)
@@ -43,7 +51,8 @@ func NewDevCenterClient(
 		credential:          credential,
 		options:             options,
 		resourceGraphClient: resourceGraphClient,
-		cache:               map[string]interface{}{},
+		cache:               sync.Map{},
+		cloud:               cloud,
 	}, nil
 }
 
@@ -60,9 +69,10 @@ func (c *devCenterClient) DevCenterByName(name string) *DevCenterItemRequestBuil
 }
 
 func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {
-	projects, ok := c.cache["projects"].([]*Project)
-	if ok {
-		return projects, nil
+	if cachedProjects, has := c.cache.Load(projectKey); has {
+		if value, ok := cachedProjects.([]*Project); ok {
+			return value, nil
+		}
 	}
 
 	query := `
@@ -98,7 +108,7 @@ func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {
 		return nil, fmt.Errorf("failed unmarshalling list: %w", err)
 	}
 
-	projects = []*Project{}
+	projects := []*Project{}
 	for _, resource := range resources {
 		projectId, err := NewResourceId(resource.Id)
 		if err != nil {
@@ -135,7 +145,7 @@ func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {
 	// This cache is safe since during the lifetime of this client the list will be only be used by a single user
 	c.cacheMutex.Lock()
 	defer c.cacheMutex.Unlock()
-	c.cache["projects"] = projects
+	c.cache.Store(projectKey, projects)
 
 	return projects, nil
 }
@@ -181,12 +191,13 @@ func (c *devCenterClient) projectByDevCenter(
 }
 
 func (c *devCenterClient) devCenterList(ctx context.Context) ([]*DevCenter, error) {
-	devCenters, ok := c.cache["devcenters"].([]*DevCenter)
-	if ok {
-		return devCenters, nil
+	if cachedDevCenters, has := c.cache.Load(devCenterKey); has {
+		if value, ok := cachedDevCenters.([]*DevCenter); ok {
+			return value, nil
+		}
 	}
 
-	devCenters = []*DevCenter{}
+	devCenters := []*DevCenter{}
 	projects, err := c.projectList(ctx)
 	if err != nil {
 		return nil, err
@@ -206,7 +217,7 @@ func (c *devCenterClient) devCenterList(ctx context.Context) ([]*DevCenter, erro
 	// This cache is safe since during the lifetime of this client the list will be only be used by a single user
 	c.cacheMutex.Lock()
 	defer c.cacheMutex.Unlock()
-	c.cache["devcenters"] = devCenters
+	c.cache.Store(devCenterKey, devCenters)
 
 	return devCenters, nil
 }

@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 export interface ApiConfig {
     baseUrl: string
 }
@@ -13,10 +15,10 @@ export interface AppConfig {
 
 const config: AppConfig = {
     api: {
-        baseUrl: window.ENV_CONFIG.REACT_APP_API_BASE_URL || 'http://localhost:3100'
+        baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3100'
     },
     observability: {
-        connectionString: window.ENV_CONFIG.REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING || ''
+        connectionString: import.meta.env.VITE_APPLICATIONINSIGHTS_CONNECTION_STRING || ''
     }
 }
 

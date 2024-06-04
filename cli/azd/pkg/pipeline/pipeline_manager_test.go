@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -32,6 +34,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 	mockContext := mocks.NewMockContext(ctx)
 	setupGithubCliMocks(mockContext)
+	setupGitCliMocks(mockContext, tempDir)
 
 	t.Run("no folders error", func(t *testing.T) {
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
@@ -39,7 +42,8 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.EqualError(
 			t,
 			err,
-			"no CI/CD provider configuration found. Expecting either github and/or azdo folder in the project root directory.",
+			//nolint:lll
+			"no CI/CD provider configuration found. Expecting either github and/or azdo folder in the repository root directory.",
 		)
 	})
 
@@ -51,7 +55,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.ErrorContains(
-			t, err, "finding pipeline provider: reading project file:")
+			t, err, "Loading project configuration: reading project file:")
 		os.Remove(ghFolder)
 	})
 
@@ -98,7 +102,14 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		file, err := os.Create(filepath.Join(tempDir, azdoYml))
+		infraFolder := filepath.Join(tempDir, "infra")
+		err = os.MkdirAll(infraFolder, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		file, err := os.Create(filepath.Join(infraFolder, "main.foo"))
+		file.Close()
+		assert.NoError(t, err)
+
+		file, err = os.Create(filepath.Join(tempDir, azdoYml))
 		file.Close()
 		assert.NoError(t, err)
 
@@ -107,9 +118,9 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		env := environment.NewWithValues("test-env", envValues)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		assert.NoError(t, err)
 		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
 
 		os.Remove(azdoFolder)
 	})
@@ -405,7 +416,11 @@ func createPipelineManager(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, env).Return(nil)
 
-	adService := azcli.NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+	adService := azcli.NewAdService(
+		mockContext.SubscriptionCredentialProvider,
+		mockContext.ArmClientOptions,
+		mockContext.CoreClientOptions,
+	)
 
 	// Singletons
 	ioc.RegisterInstance(mockContext.Container, *mockContext.Context)
@@ -444,4 +459,13 @@ func createPipelineManager(
 		mockContext.Container,
 		project.NewImportManager(nil),
 	)
+}
+
+func setupGitCliMocks(mockContext *mocks.MockContext, repoPath string) {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "rev-parse --show-toplevel")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, repoPath, ""), nil
+	})
+
 }

@@ -83,6 +83,7 @@ steps:
               BRANCH_NAME=$(TemplateBranchName)
               ENV_NAME_PREFIX=$(EnvPrefixName)
               TEMPLATE_NAME=$(TemplateName)
+              VALIDATE=$(TemplateName)
               PLAYWRIGHT_REPORTER='list'
               LOCATION=$(AzureLocation)
               SUBSCRIPTION=$(SubscriptionId)
@@ -104,6 +105,11 @@ steps:
                 curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --version $(AzdVersion) --verbose
               fi
 
+              RUN_VALIDATION=true
+              if [[ $TEMPLATE_NAME == *aks* ]]; then
+                RUN_VALIDATION=false
+              fi
+
               azd version
 
               # Login azd
@@ -120,12 +126,12 @@ steps:
                 --tenant "$(arm-tenant-id)"
 
               # set default sub for az to be the same used by azd
-              az account set --subscription "$(SubscriptionId)" 
+              az account set --subscription "$(SubscriptionId)"
 
               # enable alpha features
               azd config set alpha.all on
 
-              # Install these packages for playwright tests. Otherwise, it will cause a error of playwright missing libraries 
+              # Install these packages for playwright tests. Otherwise, it will cause a error of playwright missing libraries
               sudo add-apt-repository ppa:gstreamer-developers/ppa
               sudo apt-get update
               sudo apt-get install -y gstreamer1.0*
@@ -142,6 +148,7 @@ steps:
                 -l '$(AzureLocation)' \
                 -p 'list' \
                 -c '$(SynchronousCleanup)' \
+                -v "$RUN_VALIDATION" \
 
       displayName: Test templates in Devcontainer
 

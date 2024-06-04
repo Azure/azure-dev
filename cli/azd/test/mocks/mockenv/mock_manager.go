@@ -16,7 +16,7 @@ func (m *MockEnvManager) Create(ctx context.Context, spec environment.Spec) (*en
 	return args.Get(0).(*environment.Environment), args.Error(1)
 }
 
-func (m *MockEnvManager) LoadOrCreateInteractive(ctx context.Context, name string) (*environment.Environment, error) {
+func (m *MockEnvManager) LoadOrInitInteractive(ctx context.Context, name string) (*environment.Environment, error) {
 	args := m.Called(ctx, name)
 	return args.Get(0).(*environment.Environment), args.Error(1)
 }
@@ -36,6 +36,15 @@ func (m *MockEnvManager) Save(ctx context.Context, env *environment.Environment)
 	return args.Error(0)
 }
 
+func (m *MockEnvManager) SaveWithOptions(
+	ctx context.Context,
+	env *environment.Environment,
+	options *environment.SaveOptions,
+) error {
+	args := m.Called(ctx, env, options)
+	return args.Error(0)
+}
+
 func (m *MockEnvManager) Reload(ctx context.Context, env *environment.Environment) error {
 	args := m.Called(ctx, env)
 	return args.Error(0)
@@ -49,4 +58,9 @@ func (m *MockEnvManager) EnvPath(env *environment.Environment) string {
 func (m *MockEnvManager) ConfigPath(env *environment.Environment) string {
 	args := m.Called(env)
 	return args.String(0)
+}
+
+func (m *MockEnvManager) Delete(ctx context.Context, name string) error {
+	args := m.Called(name)
+	return args.Error(0)
 }

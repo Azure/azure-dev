@@ -3,6 +3,7 @@ param(
     $PackageVersion,
     $TimeoutInSeconds = 300
 )
+$PSNativeCommandArgumentPassing = 'Legacy'
 
 if (!(Test-Path wingetcreate.exe)) {
     Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe

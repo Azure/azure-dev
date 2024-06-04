@@ -66,8 +66,7 @@ func (cli *azCli) createApimDeletedClient(
 		return nil, err
 	}
 
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	apimClient, err := armapimanagement.NewDeletedServicesClient(subscriptionId, credential, options)
+	apimClient, err := armapimanagement.NewDeletedServicesClient(subscriptionId, credential, cli.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}
@@ -85,8 +84,7 @@ func (cli *azCli) createApimClient(
 		return nil, err
 	}
 
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	apimClient, err := armapimanagement.NewServiceClient(subscriptionId, credential, options)
+	apimClient, err := armapimanagement.NewServiceClient(subscriptionId, credential, cli.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}

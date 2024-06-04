@@ -3,8 +3,10 @@ package project
 import (
 	"context"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
@@ -16,7 +18,7 @@ import (
 type ProjectConfig struct {
 	RequiredVersions  *RequiredVersions          `yaml:"requiredVersions,omitempty"`
 	Name              string                     `yaml:"name"`
-	ResourceGroupName ExpandableString           `yaml:"resourceGroup,omitempty"`
+	ResourceGroupName osutil.ExpandableString    `yaml:"resourceGroup,omitempty"`
 	Path              string                     `yaml:"-"`
 	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig  `yaml:"services,omitempty"`
@@ -26,6 +28,7 @@ type ProjectConfig struct {
 	State             *state.Config              `yaml:"state,omitempty"`
 	Platform          *platform.Config           `yaml:"platform,omitempty"`
 	Workflows         workflow.WorkflowMap       `yaml:"workflows,omitempty"`
+	Cloud             *cloud.Config              `yaml:"cloud,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }
@@ -39,7 +42,9 @@ type RequiredVersions struct {
 
 // options supported in azure.yaml
 type PipelineOptions struct {
-	Provider string `yaml:"provider"`
+	Provider  string   `yaml:"provider"`
+	Variables []string `yaml:"variables"`
+	Secrets   []string `yaml:"secrets"`
 }
 
 // Project lifecycle event arguments

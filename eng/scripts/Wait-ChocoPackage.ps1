@@ -3,6 +3,7 @@ param(
     $PackageVersion,
     $TimeoutInSeconds = 300
 )
+$PSNativeCommandArgumentPassing = 'Legacy'
 
 $startTime = Get-Date
 

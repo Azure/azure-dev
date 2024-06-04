@@ -11,13 +11,11 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 type Deployments interface {
@@ -88,18 +86,16 @@ var (
 
 type deployments struct {
 	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
+	armClientOptions   *arm.ClientOptions
 }
 
 func NewDeployments(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
+	armClientOptions *arm.ClientOptions,
 ) Deployments {
 	return &deployments{
 		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
+		armClientOptions:   armClientOptions,
 	}
 }
 
@@ -218,8 +214,7 @@ func (ds *deployments) createDeploymentsClient(
 		return nil, err
 	}
 
-	options := ds.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armresources.NewDeploymentsClient(subscriptionId, credential, options)
+	client, err := armresources.NewDeploymentsClient(subscriptionId, credential, ds.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
@@ -526,11 +521,4 @@ func createDeploymentError(err error) error {
 	}
 
 	return err
-}
-
-func (ds *deployments) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
-	return azsdk.NewClientOptionsBuilder().
-		WithTransport(ds.httpClient).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(ds.userAgent)).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }

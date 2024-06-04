@@ -84,11 +84,31 @@ type ArmTemplateParameterDefinition struct {
 }
 
 func (d *ArmTemplateParameterDefinition) Secure() bool {
-	return d.Type == "secureObject" || d.Type == "secureString"
+	lowerCase := strings.ToLower(d.Type)
+	return lowerCase == "secureobject" || lowerCase == "securestring"
 }
 
+type AutoGenInput struct {
+	Length     uint  `json:"length,omitempty"`
+	NoLower    *bool `json:"noLower,omitempty"`
+	NoUpper    *bool `json:"noUpper,omitempty"`
+	NoNumeric  *bool `json:"noNumeric,omitempty"`
+	NoSpecial  *bool `json:"noSpecial,omitempty"`
+	MinLower   *uint `json:"minLower,omitempty"`
+	MinUpper   *uint `json:"minUpper,omitempty"`
+	MinNumeric *uint `json:"minNumeric,omitempty"`
+	MinSpecial *uint `json:"minSpecial,omitempty"`
+}
+
+type AzdMetadataType string
+
+const AzdMetadataTypeLocation AzdMetadataType = "location"
+const AzdMetadataTypeGenerate AzdMetadataType = "generate"
+const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
+
 type AzdMetadata struct {
-	Type *string `json:"type,omitempty"`
+	Type               *AzdMetadataType `json:"type,omitempty"`
+	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

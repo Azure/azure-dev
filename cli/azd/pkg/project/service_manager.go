@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
 
 const (
@@ -109,6 +110,7 @@ type serviceManager struct {
 	serviceLocator      ioc.ServiceLocator
 	operationCache      ServiceOperationCache
 	alphaFeatureManager *alpha.FeatureManager
+	initialized         map[*ServiceConfig]map[any]bool
 }
 
 // NewServiceManager creates a new instance of the ServiceManager component
@@ -125,6 +127,7 @@ func NewServiceManager(
 		serviceLocator:      serviceLocator,
 		operationCache:      operationCache,
 		alphaFeatureManager: alphaFeatureManager,
+		initialized:         map[*ServiceConfig]map[any]bool{},
 	}
 }
 
@@ -149,12 +152,7 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 
 // Initializes the service configuration and dependent framework & service target
 // This allows frameworks & service targets to hook into a services lifecycle events
-
 func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	if serviceConfig.initialized {
-		return nil
-	}
-
 	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
 	if err != nil {
 		return fmt.Errorf("getting framework service: %w", err)
@@ -165,15 +163,21 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 		return fmt.Errorf("getting service target: %w", err)
 	}
 
-	if err := frameworkService.Initialize(ctx, serviceConfig); err != nil {
-		return err
+	if ok := sm.isComponentInitialized(serviceConfig, frameworkService); !ok {
+		if err := frameworkService.Initialize(ctx, serviceConfig); err != nil {
+			return err
+		}
+
+		sm.initialized[serviceConfig][frameworkService] = true
 	}
 
-	if err := serviceTarget.Initialize(ctx, serviceConfig); err != nil {
-		return err
-	}
+	if ok := sm.isComponentInitialized(serviceConfig, serviceTarget); !ok {
+		if err := serviceTarget.Initialize(ctx, serviceConfig); err != nil {
+			return err
+		}
 
-	serviceConfig.initialized = true
+		sm.initialized[serviceConfig][serviceTarget] = true
+	}
 
 	return nil
 }
@@ -184,7 +188,7 @@ func (sm *serviceManager) Restore(
 	serviceConfig *ServiceConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventRestore))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceRestoreResult))
 			return
@@ -212,7 +216,7 @@ func (sm *serviceManager) Restore(
 		}
 
 		task.SetResult(restoreResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventRestore), restoreResult)
+		sm.setOperationResult(serviceConfig, string(ServiceEventRestore), restoreResult)
 	})
 }
 
@@ -224,14 +228,14 @@ func (sm *serviceManager) Build(
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventBuild))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceBuildResult))
 			return
 		}
 
 		if restoreOutput == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
+			cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventRestore))
 			if ok && cachedResult != nil {
 				restoreOutput = cachedResult.(*ServiceRestoreResult)
 			}
@@ -259,7 +263,7 @@ func (sm *serviceManager) Build(
 		}
 
 		task.SetResult(buildResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventBuild), buildResult)
+		sm.setOperationResult(serviceConfig, string(ServiceEventBuild), buildResult)
 	})
 }
 
@@ -277,14 +281,14 @@ func (sm *serviceManager) Package(
 			options = &PackageOptions{}
 		}
 
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServicePackageResult))
 			return
 		}
 
 		if buildOutput == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
+			cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventBuild))
 			if ok && cachedResult != nil {
 				buildOutput = cachedResult.(*ServiceBuildResult)
 			}
@@ -370,7 +374,7 @@ func (sm *serviceManager) Package(
 			}
 
 			packageResult = serviceTargetPackageResult
-			sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPackage), packageResult)
+			sm.setOperationResult(serviceConfig, string(ServiceEventPackage), packageResult)
 
 			return nil
 		})
@@ -432,14 +436,14 @@ func (sm *serviceManager) Deploy(
 	packageResult *ServicePackageResult,
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy))
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventDeploy))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceDeployResult))
 			return
 		}
 
 		if packageResult == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
+			cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
 			if ok && cachedResult != nil {
 				packageResult = cachedResult.(*ServicePackageResult)
 			}
@@ -471,8 +475,19 @@ func (sm *serviceManager) Deploy(
 				containerEnvName = parts[len(parts)-1]
 			}
 
+			// Get any explicitly configured resource group name
+			// 1. Service level override
+			// 2. Project level override
+			resourceGroupNameTemplate := serviceConfig.ResourceGroupName
+			if resourceGroupNameTemplate.Empty() {
+				resourceGroupNameTemplate = serviceConfig.Project.ResourceGroupName
+			}
+
 			resourceGroupName, err := sm.resourceManager.GetResourceGroupName(
-				ctx, sm.env.GetSubscriptionId(), serviceConfig.Project)
+				ctx,
+				sm.env.GetSubscriptionId(),
+				resourceGroupNameTemplate,
+			)
 			if err != nil {
 				task.SetError(fmt.Errorf("getting resource group name: %w", err))
 				return
@@ -515,7 +530,7 @@ func (sm *serviceManager) Deploy(
 		}
 
 		task.SetResult(deployResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventDeploy), deployResult)
+		sm.setOperationResult(serviceConfig, string(ServiceEventDeploy), deployResult)
 	})
 }
 
@@ -536,12 +551,12 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 	}
 
 	if err := sm.serviceLocator.ResolveNamed(host, &target); err != nil {
-		panic(fmt.Errorf(
+		return nil, fmt.Errorf(
 			"failed to resolve service host '%s' for service '%s', %w",
 			serviceConfig.Host,
 			serviceConfig.Name,
 			err,
-		))
+		)
 	}
 
 	return target, nil
@@ -551,30 +566,52 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
 	var frameworkService FrameworkService
 
+	// Publishing from an existing image currently follows the same lifecycle as a docker project
+	if serviceConfig.Language == ServiceLanguageNone && serviceConfig.Image != "" {
+		serviceConfig.Language = ServiceLanguageDocker
+	}
+
 	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Language), &frameworkService); err != nil {
-		panic(fmt.Errorf(
+		return nil, fmt.Errorf(
 			"failed to resolve language '%s' for service '%s', %w",
 			serviceConfig.Language,
 			serviceConfig.Name,
 			err,
-		))
+		)
 	}
 
+	var compositeFramework CompositeFrameworkService
 	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
 	// project that handles the containerization.
-	if serviceConfig.Host.RequiresContainer() && serviceConfig.Language != ServiceLanguageDocker {
-		var compositeFramework CompositeFrameworkService
+	requiresLanguage := serviceConfig.Language != ServiceLanguageDocker && serviceConfig.Language != ServiceLanguageNone
+	if serviceConfig.Host.RequiresContainer() && requiresLanguage {
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
-			panic(fmt.Errorf(
+			return nil, fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",
 				serviceConfig.Name,
 				serviceConfig.Language,
 				err,
-			))
+			)
 		}
-
+	} else if serviceConfig.Host == StaticWebAppTarget {
+		withSwaConfig, err := swa.ContainsSwaConfig(serviceConfig.Path())
+		if err != nil {
+			return nil, fmt.Errorf("checking for swa-cli.config.json: %w", err)
+		}
+		if withSwaConfig {
+			if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageSwa), &compositeFramework); err != nil {
+				return nil, fmt.Errorf(
+					"failed resolving composite framework service for '%s', language '%s': %w",
+					serviceConfig.Name,
+					serviceConfig.Language,
+					err,
+				)
+			}
+			log.Println("Using swa-cli for build and deploy because swa-cli.config.json was found in the service path")
+		}
+	}
+	if compositeFramework != nil {
 		compositeFramework.SetSource(frameworkService)
-
 		frameworkService = compositeFramework
 	}
 
@@ -602,11 +639,7 @@ func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env 
 }
 
 // Attempts to retrieve the result of a previous operation from the cache
-func (sm *serviceManager) getOperationResult(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	operationName string,
-) (any, bool) {
+func (sm *serviceManager) getOperationResult(serviceConfig *ServiceConfig, operationName string) (any, bool) {
 	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	value, ok := sm.operationCache[key]
 
@@ -614,14 +647,25 @@ func (sm *serviceManager) getOperationResult(
 }
 
 // Sets the result of an operation in the cache
-func (sm *serviceManager) setOperationResult(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	operationName string,
-	result any,
-) {
+func (sm *serviceManager) setOperationResult(serviceConfig *ServiceConfig, operationName string, result any) {
 	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	sm.operationCache[key] = result
+}
+
+// isComponentInitialized Checks if a component has been initialized for a service configuration
+func (sm *serviceManager) isComponentInitialized(serviceConfig *ServiceConfig, component any) bool {
+	if componentMap, has := sm.initialized[serviceConfig]; has && len(componentMap) > 0 {
+		initialized := false
+		if ok, has := componentMap[component]; has && ok {
+			initialized = ok
+		}
+
+		return initialized
+	}
+
+	sm.initialized[serviceConfig] = map[any]bool{}
+
+	return false
 }
 
 func runCommand[T comparable, P comparable](

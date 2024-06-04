@@ -5,6 +5,7 @@ aiopg
 alphafeatures
 apimanagement
 apims
+apiservice
 appconfiguration
 appdetect
 apphost
@@ -20,8 +21,11 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 armcosmos
+armmachinelearning
 armresourcegraph
 armsql
+aspnet
+aspnetcore
 asyncmy
 asyncpg
 azapi
@@ -39,8 +43,10 @@ azdtest
 azfile
 azruntime
 azsdk
+azureai
 AZURECLI
 azureedge
+azureml
 azurestaticapps
 azuretools
 azureutil
@@ -57,6 +63,7 @@ circleci
 cmdrecord
 cmdsubst
 cognitiveservices
+conditionalize
 consolesize
 containerapp
 containerapps
@@ -65,6 +72,7 @@ createdby
 csharpapp
 csharpapptest
 cupaloy
+custommaps
 deletedservices
 devcenter
 devcenters
@@ -102,6 +110,7 @@ javac
 jmes
 jquery
 keychain
+kubelogin
 LASTEXITCODE
 ldflags
 lechnerc77
@@ -123,6 +132,7 @@ nodeapp
 nolint
 notrail
 omitempty
+oneauth
 oneline
 opentelemetry
 ostest
@@ -133,6 +143,7 @@ otlp
 otlpconfig
 otlptrace
 otlptracehttp
+overriden
 paketobuildpacks
 pflag
 posix
@@ -167,6 +178,8 @@ sqlserver
 sstore
 staticcheck
 staticwebapp
+stdbool
+stdlib
 stdouttrace
 STRINGSLICE
 structs
@@ -176,6 +189,7 @@ Syncer
 teamcity
 testdata
 tmpl
+toplevel
 tracesdk
 tracetest
 trafficmanager
@@ -183,11 +197,16 @@ Truef
 typeflag
 unhide
 unmarshaled
+unmarshalled
 unmarshalling
 unsetenvs
 unsets
+upgrader
 utsname
+vite
+vsrpc
 vuejs
+webfrontend
 westus2
 wireinject
 yacspin

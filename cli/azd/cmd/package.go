@@ -20,13 +20,13 @@ import (
 type packageFlags struct {
 	all    bool
 	global *internal.GlobalCommandOptions
-	*envFlag
+	*internal.EnvFlag
 	outputPath string
 }
 
 func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *packageFlags {
 	flags := &packageFlags{
-		envFlag: &envFlag{},
+		EnvFlag: &internal.EnvFlag{},
 	}
 
 	flags.Bind(cmd.Flags(), global)
@@ -35,7 +35,7 @@ func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 }
 
 func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	pf.envFlag.Bind(local, global)
+	pf.EnvFlag.Bind(local, global)
 	pf.global = global
 
 	local.BoolVar(

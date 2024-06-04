@@ -1,0 +1,143 @@
+{
+    "resources": {
+      "parameter": {
+        "type": "parameter.v0",
+        "value": "{parameter.inputs.value}",
+        "inputs": {
+          "value": {
+          }
+        }
+      },
+      "test": {
+        "type": "azure.bicep.v0",
+        "path": "test.bicep",
+        "params": {
+          "test": "{parameter.value}",
+          "url": "{frontend.bindings.http.url}",
+          "host": "{frontend.bindings.http.host}",
+          "values": [
+            "one",
+            "two"
+          ]
+        }
+      },
+      "administrator-login": {
+        "type": "parameter.v0",
+        "value": "{administrator-login.inputs.value}",
+        "inputs": {
+          "value": {
+          }
+        }
+      },
+      "administratorLoginPassword": {
+        "type": "parameter.v0",
+        "value": "{administratorLoginPassword.inputs.value}",
+        "inputs": {
+          "value": {
+            "secret": true
+          }
+        }
+      },
+      "postgres-2": {
+        "type": "azure.bicep.v0",
+        "connectionString": "{postgres-2.secretOutputs.connectionString}",
+        "path": "aspire.hosting.azure.bicep.postgres.bicep",
+        "params": {
+          "serverName": "postgres-2",
+          "keyVaultName": "",
+          "containerAppEnvironmentName": "",
+          "containerAppEnvironmentId": "",
+          "administratorLogin": "{administrator-login.value}",
+          "administratorLoginPassword": "{administratorLoginPassword.value}",
+          "databases": [
+            "db2"
+          ]
+        }
+      },
+      "db2": {
+        "type": "value.v0",
+        "parent": "postgres-2",
+        "connectionString": "{postgres-2.connectionString};Database=db2;"
+      },
+      "s-b": {
+        "type": "azure.bicep.v0",
+        "connectionString": "{s-b.outputs.serviceBusEndpoint}",
+        "path": "aspire.hosting.azure.bicep.servicebus.bicep",
+        "params": {
+          "serviceBusNamespaceName": "s-b",
+          "principalId": "",
+          "principalType": "",
+          "queues": [
+            "queue1"
+          ],
+          "topics": [
+            {
+              "name": "topic1",
+              "subscriptions": [
+                "subscription1",
+                "subscription2"
+              ]
+            },
+            {
+              "name": "topic2",
+              "subscriptions": [
+                "subscription1"
+              ]
+            }
+          ]
+        }
+      },
+      "ai": {
+        "type": "azure.bicep.v0",
+        "connectionString": "{ai.outputs.appInsightsConnectionString}",
+        "path": "aspire.hosting.azure.bicep.appinsights.bicep",
+        "params": {
+          "appInsightsName": "ai",
+          "logAnalyticsWorkspaceId": ""
+        }
+      },
+      "sql": {
+        "type": "azure.bicep.v0",
+        "connectionString": "Server=tcp:{sql.outputs.sqlServerFqdn},1433;Encrypt=True;Authentication=\u0022Active Directory Default\u0022",
+        "path": "aspire.hosting.azure.bicep.sql.bicep",
+        "params": {
+          "serverName": "sql",
+          "principalId": "",
+          "principalName": "",
+          "databases": [
+            "db"
+          ]
+        }
+      },
+      "db": {
+        "type": "value.v0",
+        "connectionString": "{sql.connectionString};Database=db"
+      },
+      "frontend": {
+        "type": "project.v0",
+        "path": "../Test1.Web/Test1.Web.csproj",
+        "env": {
+          "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
+          "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
+          "ConnectionStrings__db2": "{db2.connectionString}",
+          "bicepValue_test": "{test.outputs.test}",
+          "bicepValue0": "{test.outputs.val0}",
+          "ConnectionStrings__s-b": "{s-b.connectionString}",
+          "APPLICATIONINSIGHTS_CONNECTION_STRING": "{ai.connectionString}",
+          "ConnectionStrings__db": "{db.connectionString}"
+        },
+        "bindings": {
+          "http": {
+            "scheme": "http",
+            "protocol": "tcp",
+            "transport": "http"
+          },
+          "https": {
+            "scheme": "https",
+            "protocol": "tcp",
+            "transport": "http"
+          }
+        }
+      }
+    }
+  }

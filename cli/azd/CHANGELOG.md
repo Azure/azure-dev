@@ -1,6 +1,6 @@
 # Release History
 
-## 1.6.0-beta.1 (Unreleased)
+## 1.10.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,177 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.9.3 (2024-05-20)
+
+### Other Changes
+
+- [[3925]](https://github.com/Azure/azure-dev/pull/3925) Graduates alpha feature: `Aspire Dashboard`
+- [[3929]](https://github.com/Azure/azure-dev/pull/3929) Graduates alpha feature: `Aspire Auto Configure Data Protection`
+
+## 1.9.2 (2024-05-15)
+
+### Bugs Fixed
+
+- [[3915]](https://github.com/Azure/azure-dev/pull/3915) Revert - Add deployment status tracking for linux web apps.
+
+## 1.9.1 (2024-05-14)
+
+### Bugs Fixed
+
+- [[3876]](https://github.com/Azure/azure-dev/pull/3876) Take infra section of azure.yaml into account.
+- [[3881]](https://github.com/Azure/azure-dev/pull/3881) Make azd to wait until the expected state can be seen from the online endpoint.
+- [[3763]](https://github.com/Azure/azure-dev/pull/3763) Add deployment status tracking for linux web apps.
+- [[3897]](https://github.com/Azure/azure-dev/pull/3897) Update ResolvedRaw() to remove reference to the vault.
+- [[3898]](https://github.com/Azure/azure-dev/pull/3898) Easy Init: Improve handling for empty state.
+- [[3903]](https://github.com/Azure/azure-dev/pull/3903) Fix type issues in PromptDialog with external prompting.
+
+## 1.9.0 (2024-05-07)
+
+### Features Added
+
+- [[3718]](https://github.com/Azure/azure-dev/pull/3718) Deploy AI/ML studio online endpoints with host `ml.endpoint`. Starter templates `azd-ai-starter` and `azd-aistudio-starter` are available to get started with ease.
+- [[3840]](https://github.com/Azure/azure-dev/pull/3840) Filter templates when running `azd init` or `azd template list` with `--filter`
+- .NET Aspire:
+  - [[3267]](https://github.com/Azure/azure-dev/pull/3267) Support services with multiple exposed ports
+  - [[3820]](https://github.com/Azure/azure-dev/pull/3820) Container resources now supports reference expressions, and are now modeled the same as project resources
+
+### Bugs Fixed
+
+- [[3822]](https://github.com/Azure/azure-dev/pull/3822) Fix Aspire KeyVault references in manifest files
+- [[3858]](https://github.com/Azure/azure-dev/pull/3858) Allow overriding location for Aspire bicep modules
+
+### Other Changes
+
+- [[3821]](https://github.com/Azure/azure-dev/pull/3821) Support running `azd init` in Aspire app host directory
+- [[3848]](https://github.com/Azure/azure-dev/pull/3848) Add "Demo Mode" which hides subscription IDs
+- [[3828]](https://github.com/Azure/azure-dev/pull/3828) Update Bicep CLI to version 0.26.170.
+- [[3800]](https://github.com/Azure/azure-dev/pull/3800) Write ACA Container Manifests in the `infra` directory under the AppHost during `infra synth`.
+
+**Note:** If you had previously used `infra synth`, you will need to move the container app manifests from their old location to the new one for `azd` to use them. If you do not do so, `azd` will generate the default IaC based on your current app host. To do this, move the `containerApp.tmpl.yaml` file in the `manifests` folder under each individual project into an `infra` folder next to the `.csproj` file for your project's Aspire App Host and rename it from `containerApp.tmpl.yaml` to `<name-passed-to-AddProject>.tmpl.yaml` (e.g. `apiserver.tmpl.yaml`, if you write `builder.AddProject<...>("apiserver")`).
+
+## 1.8.2 (2024-04-30)
+
+### Features Added
+
+- [[3804]](https://github.com/Azure/azure-dev/pull/3804) Add user vault storage for development secrets
+- [[3755]](https://github.com/Azure/azure-dev/pull/3755) Store `secure()` Bicep parameters outside source tree
+
+### Bugs Fixed
+
+- [[3788]](https://github.com/Azure/azure-dev/pull/3788) Avoid panic in prompting with option details
+- [[3796]](https://github.com/Azure/azure-dev/pull/3796) Fix `env refresh` failing when no bicep files are present
+- [[3801]](https://github.com/Azure/azure-dev/pull/3801) Fix `azd provision` failing for `.bicepparam` files
+
+### Other Changes
+
+- [[3798]](https://github.com/Azure/azure-dev/pull/3798) Update provider.tf files with skip_provider_registration = "true"
+
+## 1.8.1 (2024-04-23)
+
+### Features Added
+
+- [[3731]](https://github.com/Azure/azure-dev/pull/3731) Support Data Protection Runtime feature for .NET Aspire in ACA under feature flag `azd config set alpha.aspire.autoConfigureDataProtection on`
+- [[3715]](https://github.com/Azure/azure-dev/pull/3715) Improved security to prevent committing an environment to the repository
+
+### Bugs Fixed
+
+- [[3748]](https://github.com/Azure/azure-dev/pull/3748) Fix cross-build configuration
+
+## 1.8.0 (2024-04-09)
+
+### Features Added
+
+- [[3569]](https://github.com/Azure/azure-dev/pull/3569) Adds `--from-code ` flag to initialize from existing code when running `azd init`
+- Dotnet Aspire:
+  - [[3612]](https://github.com/Azure/azure-dev/pull/3612) Supports Aspire apps with multiple exposed ports
+  - [[3484]](https://github.com/Azure/azure-dev/pull/3484) Discovers export port from the result of `dotnet publish`
+  - [[3556]](https://github.com/Azure/azure-dev/pull/3556) Adds Aspire volumes support
+  - [[3561]](https://github.com/Azure/azure-dev/pull/3561) Supports more input generation in Aspire manifest
+
+### Breaking Changes
+
+- [[3589]](https://github.com/Azure/azure-dev/pull/3589) Secrets are now marked as secure() in `container-app.bicep` and `container-app-upsert.bicep`. Thanks @pamelafox for the contribution
+- [[3594]](https://github.com/Azure/azure-dev/pull/3594) Updates Node.js version to 20 for templates and pipelines
+- [[3578]](https://github.com/Azure/azure-dev/issues/3578) Updates Node.js version to 20 for [installing `azd` GitHub Action](https://github.com/Azure/setup-azd)
+
+### Bugs Fixed
+
+- [[3651]](https://github.com/Azure/azure-dev/pull/3651) Fixes trailing comma for `todo-nodejs-mongo-aks` template's invalid url in GitHub Action
+- [[3638]](https://github.com/Azure/azure-dev/pull/3638) Fixes `InvalidAuthenticationTokenTenant` error
+- Dotnet Aspire: 
+  - [[3610]](https://github.com/Azure/azure-dev/pull/3610) Fixes too long auto-generated Azure Key Vault name by using Hash
+  - [[3650]](https://github.com/Azure/azure-dev/pull/3650) Writes default port to manifest for docker
+  - [[3545]](https://github.com/Azure/azure-dev/pull/3545) Updates Aspire generator to use the build args from the dockerfile resources
+  - [[3554]](https://github.com/Azure/azure-dev/pull/3554) Fixes `azd infra synth` doesn't convert dashes to underscores in `containerApp.tmpl.yaml`
+
+### Other Changes
+
+- [[3522]](https://github.com/Azure/azure-dev/pull/3522) Fixes typo in `next-steps.md`. Thanks @mikekistler for the contribution
+- [[3495]](https://github.com/Azure/azure-dev/pull/3495) Updates `infra/core` to adapt more azdevify templates
+- [[3171]](https://github.com/Azure/azure-dev/pull/3171) Updates web project `react-fluentui` to use `vite`
+
+## 1.7.0 (2024-03-12)
+
+### Features Added
+
+- [[3450]](https://github.com/Azure/azure-dev/pull/3450) Adds support for pushing container images to external container registries
+- [[3452]](https://github.com/Azure/azure-dev/pull/3452) Adds support for other clouds
+- Dotnet Aspire:
+  - [[3349]](https://github.com/Azure/azure-dev/pull/3349) Adds support for bicep and prompts for parameters
+  - [[3411]](https://github.com/Azure/azure-dev/pull/3411) Adds support for `value.v0`
+  - [[3425]](https://github.com/Azure/azure-dev/pull/3425) Sets `DOTNET_ENVIRONMENT` when running AppHost
+
+### Bugs Fixed
+
+- [[3381]](https://github.com/Azure/azure-dev/pull/3381) Removes session `container` and `manifest` caching
+- [[3407]](https://github.com/Azure/azure-dev/pull/3407) Fixes docker build/package for Aspire projects
+- [[3418]](https://github.com/Azure/azure-dev/pull/3418) Fixes issues where deploying to AKS fails when service does not build any container
+- [[3445]](https://github.com/Azure/azure-dev/pull/3445) Fixes concurrent map issues in dev center client
+- [[3390]](https://github.com/Azure/azure-dev/pull/3390) Fixes issues where the ADE configuration was not being refreshed during `azd init` or `azd provision` in dev center
+- [[3382]](https://github.com/Azure/azure-dev/pull/3382) Cleans empty secrets and variables before setting them again
+- [[3448]](https://github.com/Azure/azure-dev/pull/3448) Fixes issues where `azd infra synth` doesn't generate autogenerate inputs
+- [[3506]](https://github.com/Azure/azure-dev/pull/3506) Fixes service config handlers referencing stale components
+- [[3513]](https://github.com/Azure/azure-dev/pull/3513) Fixes rules for setting secret environment variables in Aspire
+- [[3516]](https://github.com/Azure/azure-dev/pull/3516) Fixes issues where output bicep is invalid when using dash in resource names
+
+### Other Changes
+
+- [[3357]](https://github.com/Azure/azure-dev/pull/3357) Allows selection on existing environments when default environment isn't set
+- [[3282]](https://github.com/Azure/azure-dev/pull/3282) Updates `azure-dev.yaml` for `azd-starter-bicep`. Thanks @IEvangelist for the contribution
+- [[3334]](https://github.com/Azure/azure-dev/pull/3334) Adds MySQL to bicep core. Thanks @john0isaac for the contribution
+- [[3413]](https://github.com/Azure/azure-dev/pull/3413) Adds Azure App Configuration store to bicep core. Thanks @RichardChen820 for the contribution
+- [[3442]](https://github.com/Azure/azure-dev/pull/3442) Updates AKS template tests without playwright validation
+- [[3478]](https://github.com/Azure/azure-dev/pull/3478) Updates `azd` to use default http client
+
+## 1.6.1 (2024-02-15)
+
+### Bugs Fixed
+
+- [[3375]](https://github.com/Azure/azure-dev/pull/3375) Fixes issues deploying to AKS service targets
+- [[3373]](https://github.com/Azure/azure-dev/pull/3373) Fixes resolution of AZD compatible templates within azure dev center catalogs
+- [[3372]](https://github.com/Azure/azure-dev/pull/3372) Removes requirement for dev center projects to include an `infra` folder
+
+## 1.6.0 (2024-02-13)
+
+### Features Added
+
+- [[3269]](https://github.com/Azure/azure-dev/pull/3269) Adds support for external/prebuilt container image references
+- [[3251]](https://github.com/Azure/azure-dev/pull/3251) Adds additional configuration resolving container registry names
+- [[3249]](https://github.com/Azure/azure-dev/pull/3249) Adds additional configuration resolving AKS cluster names
+- [[3223]](https://github.com/Azure/azure-dev/pull/3223) Updates AKS core modules for `azd` to easily enable RBAC clusters
+- [[3211]](https://github.com/Azure/azure-dev/pull/3211) Adds support for RBAC enabled AKS clusters using `kubelogin`
+- [[3196]](https://github.com/Azure/azure-dev/pull/3196) Adds support for Helm and Kustomize for AKS service targets
+- [[3173]](https://github.com/Azure/azure-dev/pull/3173) Adds support for defining customizable `azd up` workflows
+- Dotnet Aspire additions:
+  - [[3164]](https://github.com/Azure/azure-dev/pull/3164) Azure Cosmos DB.
+  - [[3226]](https://github.com/Azure/azure-dev/pull/3226) Azure SQL Database.
+  - [[3276]](https://github.com/Azure/azure-dev/pull/3276) Secrets handling improvement.
+- [[3155]](https://github.com/Azure/azure-dev/pull/3155) Adds support to define secrets and variables for `azd pipeline config`.
+
+### Bugs Fixed
+
+- [[3097]](https://github.com/Azure/azure-dev/pull/3097) For Dotnet Aspire projects, do not fail if folder `infra` is empty.
 
 ## 1.5.1 (2023-12-20)
 

@@ -17,7 +17,7 @@ parameters:
   displayName: | 
     Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'python-mongo'
   type: string
-  default: '^Azure-Samples/todo-((?!aks).)*$'
+  default: '^Azure-Samples/todo-.*$'
 
 - name: TemplateBranchName
   displayName: The template repository branch to test against
@@ -53,13 +53,23 @@ parameters:
   type: boolean
   default: false
 
+- name: Pool
+  type: string
+  default: azsdk-pool-mms-ubuntu-2004-general
+
+# Image name (compliant image required for 1ES pipelines that release)
+- name: Image
+  type: string
+  default: MMSUbuntu20.04
+
 jobs:
   - job: TemplateTest_CreateMatrix
     condition: ${{ parameters.JobCondition }}
     dependsOn: ${{ parameters.JobDependsOn }}
     pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      vmImage: MMSUbuntu20.04
+      name: ${{ parameters.Pool }}
+      image: ${{ parameters.Image }}
+      os: linux
 
     variables:
     - name: AzdVersion
@@ -109,8 +119,9 @@ jobs:
       maxParallel: 10
 
     pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      vmImage: MMSUbuntu20.04
+      name: ${{ parameters.Pool }}
+      image: ${{ parameters.Image }}
+      os: linux
 
     steps:
       - checkout: self

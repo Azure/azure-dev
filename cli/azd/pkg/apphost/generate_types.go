@@ -1,5 +1,7 @@
 package apphost
 
+import "github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+
 type genAppInsight struct{}
 
 type genStorageAccount struct {
@@ -21,39 +23,57 @@ type genContainerAppEnvironmentServices struct {
 	Type string
 }
 
-type genKeyVault struct{}
+type genKeyVault struct {
+	// when true, the bicep definition for tags is not generated
+	NoTags bool
+	// when provided, the principalId from the user provisioning the key vault gets read access
+	ReadAccessPrincipalId bool
+}
 
 type genContainerApp struct {
-	Image   string
-	Dapr    *genContainerAppManifestTemplateContextDapr
-	Env     map[string]string
-	Ingress *genContainerAppIngress
+	Volumes []*Volume
+}
+
+type genContainerAppIngressPort struct {
+	External    bool
+	TargetPort  int
+	ExposedPort int
+}
+
+type genContainerAppIngressAdditionalPortMappings struct {
+	genContainerAppIngressPort
+	ExposedPort int
 }
 
 type genContainerAppIngress struct {
-	External      bool
-	TargetPort    int
-	Transport     string
-	AllowInsecure bool
+	genContainerAppIngressPort
+	Transport              string
+	AllowInsecure          bool
+	AdditionalPortMappings []genContainerAppIngressAdditionalPortMappings
 }
 
 type genContainer struct {
 	Image    string
 	Env      map[string]string
-	Bindings map[string]*Binding
+	Bindings custommaps.WithOrder[Binding]
+	Inputs   map[string]Input
+	Volumes  []*Volume
 }
 
 type genDockerfile struct {
-	Path     string
-	Context  string
-	Env      map[string]string
-	Bindings map[string]*Binding
+	Path      string
+	Context   string
+	Env       map[string]string
+	Bindings  custommaps.WithOrder[Binding]
+	BuildArgs map[string]string
+	Args      []string
 }
 
 type genProject struct {
 	Path     string
 	Env      map[string]string
-	Bindings map[string]*Binding
+	Args     []string
+	Bindings custommaps.WithOrder[Binding]
 }
 
 type genAppConfig struct{}
@@ -85,13 +105,18 @@ type genDaprComponent struct {
 	Version  string
 }
 
-type genInput struct {
-	Secret           bool
-	DefaultMinLength int
-}
-
 type genSqlServer struct {
 	Databases []string
+}
+
+type genOutputParameter struct {
+	Type  string
+	Value string
+}
+
+type genBicepModules struct {
+	Path   string
+	Params map[string]string
 }
 
 type genBicepTemplateContext struct {
@@ -99,6 +124,8 @@ type genBicepTemplateContext struct {
 	HasContainerEnvironment         bool
 	HasDaprStore                    bool
 	HasLogAnalyticsWorkspace        bool
+	RequiresPrincipalId             bool
+	RequiresStorageVolume           bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount
@@ -109,14 +136,23 @@ type genBicepTemplateContext struct {
 	DaprComponents                  map[string]genDaprComponent
 	CosmosDbAccounts                map[string]genCosmosAccount
 	SqlServers                      map[string]genSqlServer
+	InputParameters                 map[string]Input
+	OutputParameters                map[string]genOutputParameter
+	OutputSecretParameters          map[string]genOutputParameter
+	BicepModules                    map[string]genBicepModules
+	// parameters to be passed from main.bicep to resources.bicep
+	mappedParameters []string
 }
 
 type genContainerAppManifestTemplateContext struct {
-	Name    string
-	Ingress *genContainerAppIngress
-	Env     map[string]string
-	Secrets map[string]string
-	Dapr    *genContainerAppManifestTemplateContextDapr
+	Name            string
+	Ingress         *genContainerAppIngress
+	Env             map[string]string
+	Secrets         map[string]string
+	KeyVaultSecrets map[string]string
+	Dapr            *genContainerAppManifestTemplateContextDapr
+	Args            []string
+	Volumes         []*Volume
 }
 
 type genProjectFileContext struct {

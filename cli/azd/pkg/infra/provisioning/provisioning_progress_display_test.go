@@ -16,6 +16,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -75,7 +76,7 @@ func (mock *mockResourceManager) AddInProgressOperation() {
 }
 
 func (mock *mockResourceManager) MarkComplete(i int) {
-	mock.operations[i].Properties.ProvisioningState = to.Ptr(succeededProvisioningState)
+	mock.operations[i].Properties.ProvisioningState = to.Ptr(string(armresources.ProvisioningStateSucceeded))
 	mock.operations[i].Properties.Timestamp = to.Ptr(time.Now().UTC())
 }
 
@@ -104,7 +105,14 @@ func TestReportProgress(t *testing.T) {
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
-	scope := infra.NewSubscriptionDeployment(depService, depOpService, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	scope := infra.NewSubscriptionDeployment(
+		depService,
+		depOpService,
+		"eastus2",
+		"SUBSCRIPTION_ID",
+		"DEPLOYMENT_NAME",
+		cloud.AzurePublic().PortalUrlBase,
+	)
 	mockAzDeploymentShow(t, *mockContext)
 
 	startTime := time.Now()

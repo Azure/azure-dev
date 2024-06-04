@@ -7,9 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -83,7 +85,7 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 
 		expected := "hello"
 		envManager := createEnvManagerForManagerTest(t, mockContext)
-		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, expected)
+		env, err := envManager.LoadOrInitInteractive(*mockContext.Context, expected)
 		require.NoError(t, err)
 		require.NotNil(t, env)
 		require.Equal(t, expected, env.Name())
@@ -93,16 +95,18 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 		expected := "someEnv"
 
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "would you like to create it?")
-		}).Respond(true)
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Select an environment to use")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			return 0, nil // Create an environment
+		})
 
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return true
 		}).Respond(expected)
 
 		envManager := createEnvManagerForManagerTest(t, mockContext)
-		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, "")
+		env, err := envManager.LoadOrInitInteractive(*mockContext.Context, "")
 
 		require.NoError(t, err)
 		require.NotNil(t, env)
@@ -127,7 +131,7 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 		}).Respond(true)
 
 		envManager := createEnvManagerForManagerTest(t, mockContext)
-		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, invalidEnvName)
+		env, err := envManager.LoadOrInitInteractive(*mockContext.Context, invalidEnvName)
 		require.Error(t, err)
 		require.Nil(t, env)
 		require.ErrorContains(t, err, fmt.Sprintf("environment name '%s' is invalid", invalidEnvName))
@@ -223,7 +227,7 @@ func Test_EnvManager_Get(t *testing.T) {
 
 		localDataStore.On("Get", *mockContext.Context, "env1").Return(nil, ErrNotFound)
 		remoteDataStore.On("Get", *mockContext.Context, "env1").Return(getEnv, nil)
-		localDataStore.On("Save", *mockContext.Context, getEnv).Return(nil)
+		localDataStore.On("Save", *mockContext.Context, getEnv, mock.Anything).Return(nil)
 
 		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		env, err := manager.Get(*mockContext.Context, "env1")
@@ -255,7 +259,7 @@ func Test_EnvManager_Get(t *testing.T) {
 		})
 
 		localDataStore.On("Get", *mockContext.Context, "env1").Return(foundEnv, nil)
-		localDataStore.On("Save", *mockContext.Context, foundEnv).Return(nil)
+		localDataStore.On("Save", *mockContext.Context, foundEnv, mock.Anything).Return(nil)
 
 		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
 		env, err := manager.Get(*mockContext.Context, "env1")
@@ -265,7 +269,7 @@ func Test_EnvManager_Get(t *testing.T) {
 		require.Equal(t, "env1", env.Name())
 		require.Equal(t, "env1", env.Getenv(EnvNameEnvVarName))
 
-		localDataStore.AssertCalled(t, "Save", *mockContext.Context, foundEnv)
+		localDataStore.AssertCalled(t, "Save", *mockContext.Context, foundEnv, mock.Anything)
 	})
 }
 
@@ -281,15 +285,15 @@ func Test_EnvManager_Save(t *testing.T) {
 			"key1": "value1",
 		})
 
-		localDataStore.On("Save", *mockContext.Context, env).Return(nil)
-		remoteDataStore.On("Save", *mockContext.Context, env).Return(nil)
+		localDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(nil)
+		remoteDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(nil)
 
 		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		err := manager.Save(*mockContext.Context, env)
 		require.NoError(t, err)
 
-		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env)
-		remoteDataStore.AssertCalled(t, "Save", *mockContext.Context, env)
+		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env, mock.Anything)
+		remoteDataStore.AssertCalled(t, "Save", *mockContext.Context, env, mock.Anything)
 	})
 
 	t.Run("Error", func(t *testing.T) {
@@ -300,14 +304,14 @@ func Test_EnvManager_Save(t *testing.T) {
 			"key1": "value1",
 		})
 
-		localDataStore.On("Save", *mockContext.Context, env).Return(errors.New("error"))
+		localDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(errors.New("error"))
 
 		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		err := manager.Save(*mockContext.Context, env)
 		require.Error(t, err)
 
-		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env)
-		remoteDataStore.AssertNotCalled(t, "Save", *mockContext.Context, env)
+		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env, mock.Anything)
+		remoteDataStore.AssertNotCalled(t, "Save", *mockContext.Context, env, mock.Anything)
 	})
 }
 
@@ -358,10 +362,17 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() httputil.UserAgent {
 		return httputil.UserAgent(internal.UserAgent())
 	})
+	mockContext.Container.MustRegisterSingleton(func() auth.MultiTenantCredentialProvider {
+		return mockContext.MultiTenantCredentialProvider
+	})
+
 	mockContext.Container.MustRegisterSingleton(NewManager)
 	mockContext.Container.MustRegisterSingleton(NewLocalFileDataStore)
 	mockContext.Container.MustRegisterNamedSingleton(string(RemoteKindAzureBlobStorage), NewStorageBlobDataStore)
 
+	mockContext.Container.MustRegisterSingleton(func() *azcore.ClientOptions {
+		return mockContext.CoreClientOptions
+	})
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobSdkClient)
 	mockContext.Container.MustRegisterSingleton(config.NewManager)
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobClient)
@@ -380,6 +391,10 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	}
 	mockContext.Container.MustRegisterSingleton(func() *storage.AccountConfig {
 		return storageAccountConfig
+	})
+
+	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
+		return cloud.AzurePublic()
 	})
 }
 
@@ -418,7 +433,12 @@ func (m *MockDataStore) Reload(ctx context.Context, env *Environment) error {
 	return args.Error(0)
 }
 
-func (m *MockDataStore) Save(ctx context.Context, env *Environment) error {
-	args := m.Called(ctx, env)
+func (m *MockDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
+	args := m.Called(ctx, env, options)
+	return args.Error(0)
+}
+
+func (m *MockDataStore) Delete(ctx context.Context, name string) error {
+	args := m.Called(ctx, name)
 	return args.Error(0)
 }

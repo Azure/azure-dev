@@ -27,12 +27,15 @@ func Test_CLI_Package_Err_WorkingDirectory(t *testing.T) {
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
 
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit("testenv"), "init")
+	require.NoError(t, err)
+
 	// cd infra
 	err = os.MkdirAll(filepath.Join(dir, "infra"), osutil.PermissionDirectory)
 	require.NoError(t, err)
 	cli.WorkingDirectory = filepath.Join(dir, "infra")
 
-	result, err := cli.RunCommandWithStdIn(ctx, stdinForInit("testenv"), "package")
+	result, err := cli.RunCommand(ctx, "package")
 	require.Error(t, err, "package should fail in non-project and non-service directory")
 	require.Contains(t, result.Stdout, "current working directory")
 }
@@ -53,9 +56,12 @@ func Test_CLI_Package_FromServiceDirectory(t *testing.T) {
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
 
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit("testenv"), "init")
+	require.NoError(t, err)
+
 	cli.WorkingDirectory = filepath.Join(dir, "src", "dotnet")
 
-	result, err := cli.RunCommandWithStdIn(ctx, stdinForInit("testenv"), "package")
+	result, err := cli.RunCommand(ctx, "package")
 	require.NoError(t, err)
 	require.Contains(t, result.Stdout, "Packaging service web")
 }
@@ -78,9 +84,11 @@ func Test_CLI_Package_WithOutputPath(t *testing.T) {
 		err := copySample(dir, "webapp")
 		require.NoError(t, err, "failed expanding sample")
 
-		packageResult, err := cli.RunCommandWithStdIn(
+		_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+		require.NoError(t, err)
+
+		packageResult, err := cli.RunCommand(
 			ctx,
-			stdinForInit(envName),
 			"package", "--output-path", "./dist",
 		)
 		require.NoError(t, err)
@@ -109,9 +117,11 @@ func Test_CLI_Package_WithOutputPath(t *testing.T) {
 		err := copySample(dir, "webapp")
 		require.NoError(t, err, "failed expanding sample")
 
-		packageResult, err := cli.RunCommandWithStdIn(
+		_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+		require.NoError(t, err)
+
+		packageResult, err := cli.RunCommand(
 			ctx,
-			stdinForInit(envName),
 			"package", "web", "--output-path", "./dist/web.zip",
 		)
 		require.NoError(t, err)
@@ -143,7 +153,10 @@ func Test_CLI_Package(t *testing.T) {
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
 
-	packageResult, err := cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "package", "web")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	packageResult, err := cli.RunCommand(ctx, "package", "web")
 	require.NoError(t, err)
 	require.Contains(t, packageResult.Stdout, fmt.Sprintf("Package Output: %s", os.TempDir()))
 }

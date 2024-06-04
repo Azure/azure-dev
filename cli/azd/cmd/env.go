@@ -11,13 +11,16 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -95,12 +98,12 @@ func newEnvSetCmd() *cobra.Command {
 }
 
 type envSetFlags struct {
-	envFlag
+	internal.EnvFlag
 	global *internal.GlobalCommandOptions
 }
 
 func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.envFlag.Bind(local, global)
+	f.EnvFlag.Bind(local, global)
 	f.global = global
 }
 
@@ -175,7 +178,7 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
 
-	if err := e.azdCtx.SetDefaultEnvironmentName(e.args[0]); err != nil {
+	if err := e.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: e.args[0]}); err != nil {
 		return nil, fmt.Errorf("setting default environment: %w", err)
 	}
 
@@ -327,7 +330,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	if err := en.azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
+	if err := en.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
@@ -337,13 +340,13 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 type envRefreshFlags struct {
 	hint   string
 	global *internal.GlobalCommandOptions
-	envFlag
+	internal.EnvFlag
 }
 
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(&er.hint, "hint", "", "", "Hint to help identify the environment to refresh")
 
-	er.envFlag.Bind(local, global)
+	er.EnvFlag.Bind(local, global)
 	er.global = global
 }
 
@@ -371,14 +374,14 @@ func newEnvRefreshCmd() *cobra.Command {
 				return nil
 			}
 
-			if flagValue, err := cmd.Flags().GetString(environmentNameFlag); err == nil {
+			if flagValue, err := cmd.Flags().GetString(internal.EnvironmentNameFlagName); err == nil {
 				if flagValue != "" && args[0] != flagValue {
 					return errors.New(
 						"the --environment flag and an explicit environment name as an argument may not be used together")
 				}
 			}
 
-			return cmd.Flags().Set(environmentNameFlag, args[0])
+			return cmd.Flags().Set(internal.EnvironmentNameFlagName, args[0])
 		},
 		Annotations: map[string]string{},
 	}
@@ -396,6 +399,7 @@ type envRefreshAction struct {
 	projectManager   project.ProjectManager
 	env              *environment.Environment
 	envManager       environment.Manager
+	prompters        prompt.Prompter
 	flags            *envRefreshFlags
 	console          input.Console
 	formatter        output.Formatter
@@ -409,6 +413,7 @@ func newEnvRefreshAction(
 	projectManager project.ProjectManager,
 	env *environment.Environment,
 	envManager environment.Manager,
+	prompters prompt.Prompter,
 	flags *envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
@@ -420,6 +425,7 @@ func newEnvRefreshAction(
 		projectManager:   projectManager,
 		env:              env,
 		envManager:       envManager,
+		prompters:        prompters,
 		console:          console,
 		flags:            flags,
 		formatter:        formatter,
@@ -445,10 +451,18 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	if err := ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, infra.Options); err != nil {
+	// env refresh supports "BYOI" infrastructure where bicep isn't available
+	err = ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, infra.Options)
+	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
+		// If bicep is not available, we continue to prompt for subscription and location unfiltered
+		err = provisioning.EnsureSubscriptionAndLocation(ctx, ef.envManager, ef.env, ef.prompters,
+			func(_ account.Location) bool { return true })
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
-
 	// If resource group is defined within the project but not in the environment then
 	// add it to the environment to support BYOI lookup scenarios like ADE
 	// Infra providers do not currently have access to project configuration
@@ -463,7 +477,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}
 
-	if err := ef.provisionManager.UpdateEnvironment(ctx, ef.env, getStateResult.State.Outputs); err != nil {
+	if err := ef.provisionManager.UpdateEnvironment(ctx, getStateResult.State.Outputs); err != nil {
 		return nil, err
 	}
 
@@ -518,12 +532,12 @@ func newEnvGetValuesCmd() *cobra.Command {
 }
 
 type envGetValuesFlags struct {
-	envFlag
+	internal.EnvFlag
 	global *internal.GlobalCommandOptions
 }
 
 func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	eg.envFlag.Bind(local, global)
+	eg.EnvFlag.Bind(local, global)
 	eg.global = global
 }
 
@@ -563,8 +577,8 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	// and later, when envManager.Get() is called with the empty string, azd returns an error.
 	// But if there is already an environment (default to be selected), azd must honor the --environment flag
 	// over the default environment.
-	if eg.flags.environmentName != "" {
-		name = eg.flags.environmentName
+	if eg.flags.EnvironmentName != "" {
+		name = eg.flags.EnvironmentName
 	}
 	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {

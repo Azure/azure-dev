@@ -30,6 +30,10 @@ param resourceGroupName string = ''
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
+@description('The type of principal to assign application roles')
+@allowed(['Device', 'ForeignGroup', 'Group', 'ServicePrincipal', 'User'])
+param principalType string = 'User'
+
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -51,6 +55,11 @@ module aks '../../../../../../common/infra/bicep/core/host/aks.bicep' = {
     containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
     logAnalyticsName: monitoring.outputs.logAnalyticsWorkspaceName
     keyVaultName: keyVault.outputs.name
+    principalId: principalId
+    principalType: principalType
+    // Set enableAzureRbac & disableLocalAccounts to use Azure AD for authentication and authorization
+    enableAzureRbac: false
+    disableLocalAccounts: false
   }
 }
 
@@ -106,4 +115,3 @@ output AZURE_AKS_CLUSTER_NAME string = aks.outputs.clusterName
 output AZURE_AKS_IDENTITY_CLIENT_ID string = aks.outputs.clusterIdentity.clientId
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = aks.outputs.containerRegistryLoginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = aks.outputs.containerRegistryName
-output REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString

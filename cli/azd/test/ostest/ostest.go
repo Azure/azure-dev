@@ -3,6 +3,7 @@ package ostest
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -75,4 +76,22 @@ func Chdir(t *testing.T, dir string) {
 		err = os.Chdir(wd)
 		require.NoError(t, err)
 	})
+}
+
+// CombinedPaths collects all PATH strings from the provided environment variables, in the form of 'PATH=<path>',
+// and combines them into a single PATH string, also in the form of 'PATH=<collected paths>'.
+// It returns an empty string if no PATH strings are found.
+func CombinedPaths(environ []string) string {
+	pathStrings := []string{}
+	for _, env := range environ {
+		if strings.HasPrefix(env, "PATH=") {
+			pathStrings = append(pathStrings, env[5:])
+		}
+	}
+
+	if len(pathStrings) == 0 {
+		return ""
+	}
+
+	return "PATH=" + strings.Join(pathStrings, string(os.PathListSeparator))
 }

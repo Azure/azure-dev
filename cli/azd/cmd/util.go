@@ -13,15 +13,12 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	azdExec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/cli/browser"
-	"github.com/spf13/pflag"
 )
 
 // CmdAnnotations on a command
@@ -29,56 +26,13 @@ type CmdAnnotations map[string]string
 
 type Asker func(p survey.Prompt, response interface{}) error
 
-const environmentNameFlag string = "environment"
-
-type envFlag struct {
-	environmentName string
-}
-
-func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVarP(
-		&e.environmentName,
-		environmentNameFlag,
-		"e",
-		// Set the default value to AZURE_ENV_NAME value if available
-		os.Getenv(environment.EnvNameEnvVarName),
-		"The name of the environment to use.")
-}
-
-func getResourceGroupFollowUp(
-	ctx context.Context,
-	formatter output.Formatter,
-	projectConfig *project.ProjectConfig,
-	resourceManager project.ResourceManager,
-	env *environment.Environment,
-	whatIf bool,
-) (followUp string) {
-	if formatter.Kind() == output.JsonFormat {
-		return followUp
-	}
-
-	subscriptionId := env.GetSubscriptionId()
-	if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
-		defaultFollowUpText := fmt.Sprintf(
-			"You can view the resources created under the resource group %s in Azure Portal:", resourceGroupName)
-		if whatIf {
-			defaultFollowUpText = fmt.Sprintf(
-				"You can view the current resources under the resource group %s in Azure Portal:", resourceGroupName)
-		}
-		followUp = fmt.Sprintf("%s\n%s",
-			defaultFollowUpText,
-			azurePortalLink(subscriptionId, resourceGroupName))
-	}
-
-	return followUp
-}
-
-func azurePortalLink(subscriptionId, resourceGroupName string) string {
+func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) string {
 	if subscriptionId == "" || resourceGroupName == "" {
 		return ""
 	}
 	return output.WithLinkFormat(fmt.Sprintf(
-		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		"%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		portalUrlBase,
 		subscriptionId,
 		resourceGroupName))
 }

@@ -15,170 +15,137 @@ pr:
       - templates/
       - eng/pipelines/repoman.yml
 
-variables:
-  - template: /eng/pipelines/templates/variables/globals.yml
-  - name: StagingRemoteName
-    value: azure-samples-staging
-
-stages:
-  - stage: Validation
-    jobs:
-      - job: Generate_Repos_For_PR
-        condition:  >-
-          and(
-            succeeded(),
-            or(
-              eq(variables['BuildReasonOverride'], 'PullRequest'),
-              and(
-                eq('', variables['BuildReasonOverride']),
-                eq(variables['Build.Reason'], 'PullRequest')
-              )
-            )
-          )
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          vmImage: MMSUbuntu20.04
+extends: 
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - stage: Validation
 
         variables:
-          RepoManResultsFile: $(Pipeline.Workspace)/repoman.md
+          - template: /eng/pipelines/templates/variables/globals.yml
+          - name: StagingRemoteName
+            value: azure-samples-staging
 
-        steps:
-          - checkout: self
-
-          - pwsh: |
-              $PRNumber = '$(System.PullRequest.PullRequestNumber)'
-              if ($env:PRNUMBEROVERRIDE) {
-                Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
-                $PRNumber = "$($env:PRNUMBEROVERRIDE)"
-              }
-              Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
-            displayName: Set PRNumber
-
-          - template: /eng/pipelines/templates/steps/repoman-generate.yml
-            parameters:
-              TargetBranchName: pr/$(PRNumber)
-              RemoteName: $(StagingRemoteName)
-              ResultsFileLocation: $(RepoManResultsFile)
-
-          - task: PowerShell@2
-            name: DetermineChanged
-            displayName: Set repoman changed templates
-            inputs:
-              pwsh: true
-              targetType: filePath
-              filePath: ./eng/scripts/Set-RepomanChangedRepositories.ps1
-              arguments: >-
-                -ResultsFile $(RepoManResultsFile)
-                -OutputTemplatesVariable "TemplateList"
-                -OutputTemplateBranchVariable "TemplateBranch"
-
-          - pwsh: |
-              $repomanContent = "No changes detected."
-              $repomanOutputFile = "$(RepoManResultsFile)"
-              if (Test-Path $repomanOutputFile) {
-                $repomanContent = Get-Content $repomanOutputFile -Raw
-              }
-
-              $tag ='<!-- #comment-repoman-generate -->'
-              $content = @"
-              $tag
-              ## Repoman Generation Results
-              Repoman pushed changes to remotes for the following projects:
-              $repomanContent
-              "@
-              $file = New-TemporaryFile
-              Set-Content -Path $file -Value $content
-              Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
-            displayName: Set Repoman Content
-
-          - task: PowerShell@2
-            displayName: Post PR comment
-            inputs:
-              pwsh: true
-              targetType: filePath
-              filePath: ./eng/scripts/Update-PRComment.ps1
-              arguments: >-
-                -Repo 'azure/azure-dev'
-                -PRNumber '$(PRNumber)'
-                -BodyFile '$(CommentBodyFile)'
-                -Tag '<!-- #comment-repoman-generate -->'
-            env:
-              GH_TOKEN: $(azuresdk-github-pat)
-
-      - template: /eng/pipelines/templates/jobs/run-template-tests.yml
-        parameters:
-          TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] ]
-          TemplateBranchName: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateBranch'] ]
-          # Exclude AKS templates due to internal security policies restricting ingress network traffic
-          # That will cause the Playwright tests to fail since the host is not reachable
-          TemplateListFilter: '^Azure-Samples/todo-((?!aks).)*$'
-          JobCondition: >-
-            and(
-              succeeded(),
-              ne(dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] , '')
-            )
-          JobDependsOn: Generate_Repos_For_PR
-
-      - job: Publish_Staging
-        condition: >-
-          and(
-            succeeded(),
-            or(
-              in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
+        jobs:
+          - job: Generate_Repos_For_PR
+            condition:  >-
               and(
-                eq('', variables['BuildReasonOverride']),
-                in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+                succeeded(),
+                or(
+                  eq(variables['BuildReasonOverride'], 'PullRequest'),
+                  and(
+                    eq('', variables['BuildReasonOverride']),
+                    eq(variables['Build.Reason'], 'PullRequest')
+                  )
+                )
               )
-            )
-          )
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          vmImage: MMSUbuntu20.04
+            pool:
+              name: azsdk-pool-mms-ubuntu-2004-general
+              image: azsdk-pool-mms-ubuntu-2004-1espt
+              os: linux
 
-        steps:
-          - checkout: self
+            variables:
+              RepoManResultsFile: $(Pipeline.Workspace)/repoman.md
 
-          - pwsh: |
-              $targetBranchName = 'staging'
-              if ($env:TARGETBRANCHNAMEOVERRIDE) {
-                Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
-                $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
-              }
-              Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
-            displayName: Set TargetBranchName
-
-          - template: /eng/pipelines/templates/steps/repoman-generate.yml
-            parameters:
-              TargetBranchName: $(TargetBranchName)
-              RemoteName: $(StagingRemoteName)
-
-  - stage: Publish_Repos
-    condition: >-
-      and(
-        succeeded(),
-        or(
-          eq(variables['BuildReasonOverride'], 'Manual'),
-          and(
-            eq('', variables['BuildReasonOverride']),
-            eq(variables['Build.Reason'], 'Manual')
-          )
-        )
-      )
-    jobs:
-    - deployment: Publish_Repos
-      environment: azure-dev
-      pool:
-        name: azsdk-pool-mms-ubuntu-2004-general
-        vmImage: MMSUbuntu20.04
-
-      strategy:
-        runOnce:
-          deploy:
             steps:
               - checkout: self
 
               - pwsh: |
-                  $targetBranchName = ''
+                  $PRNumber = '$(System.PullRequest.PullRequestNumber)'
+                  if ($env:PRNUMBEROVERRIDE) {
+                    Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                    $PRNumber = "$($env:PRNUMBEROVERRIDE)"
+                  }
+                  Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+                displayName: Set PRNumber
+
+              - template: /eng/pipelines/templates/steps/repoman-generate.yml
+                parameters:
+                  TargetBranchName: pr/$(PRNumber)
+                  RemoteName: $(StagingRemoteName)
+                  ResultsFileLocation: $(RepoManResultsFile)
+
+              - task: PowerShell@2
+                name: DetermineChanged
+                displayName: Set repoman changed templates
+                inputs:
+                  pwsh: true
+                  targetType: filePath
+                  filePath: ./eng/scripts/Set-RepomanChangedRepositories.ps1
+                  arguments: >-
+                    -ResultsFile $(RepoManResultsFile)
+                    -OutputTemplatesVariable "TemplateList"
+                    -OutputTemplateBranchVariable "TemplateBranch"
+
+              - pwsh: |
+                  $repomanContent = "No changes detected."
+                  $repomanOutputFile = "$(RepoManResultsFile)"
+                  if (Test-Path $repomanOutputFile) {
+                    $repomanContent = Get-Content $repomanOutputFile -Raw
+                  }
+
+                  $tag ='<!-- #comment-repoman-generate -->'
+                  $content = @"
+                  $tag
+                  ## Repoman Generation Results
+                  Repoman pushed changes to remotes for the following projects:
+                  $repomanContent
+                  "@
+                  $file = New-TemporaryFile
+                  Set-Content -Path $file -Value $content
+                  Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+                displayName: Set Repoman Content
+
+              - task: PowerShell@2
+                displayName: Post PR comment
+                inputs:
+                  pwsh: true
+                  targetType: filePath
+                  filePath: ./eng/scripts/Update-PRComment.ps1
+                  arguments: >-
+                    -Repo 'azure/azure-dev'
+                    -PRNumber '$(PRNumber)'
+                    -BodyFile '$(CommentBodyFile)'
+                    -Tag '<!-- #comment-repoman-generate -->'
+                env:
+                  GH_TOKEN: $(azuresdk-github-pat)
+
+          - template: /eng/pipelines/templates/jobs/run-template-tests.yml
+            parameters:
+              TemplateList: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] ]
+              TemplateBranchName: $[ dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateBranch'] ]
+              TemplateListFilter: '^Azure-Samples/todo-.*$'
+              JobCondition: >-
+                and(
+                  succeeded(),
+                  ne(dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] , '')
+                )
+              JobDependsOn: Generate_Repos_For_PR
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              Image: azsdk-pool-mms-ubuntu-2004-1espt
+
+          - job: Publish_Staging
+            condition: >-
+              and(
+                succeeded(),
+                or(
+                  in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
+                  and(
+                    eq('', variables['BuildReasonOverride']),
+                    in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+                  )
+                )
+              )
+            pool:
+              name: azsdk-pool-mms-ubuntu-2004-general
+              image: azsdk-pool-mms-ubuntu-2004-1espt
+              os: linux
+
+            steps:
+              - checkout: self
+
+              - pwsh: |
+                  $targetBranchName = 'staging'
                   if ($env:TARGETBRANCHNAMEOVERRIDE) {
                     Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
                     $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
@@ -189,4 +156,52 @@ stages:
               - template: /eng/pipelines/templates/steps/repoman-generate.yml
                 parameters:
                   TargetBranchName: $(TargetBranchName)
-                  RemoteName: azure-samples-main
+                  RemoteName: $(StagingRemoteName)
+
+      - stage: Publish_Repos
+        condition: >-
+          and(
+            succeeded(),
+            or(
+              eq(variables['BuildReasonOverride'], 'Manual'),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'Manual')
+              )
+            )
+          )
+
+        variables:
+          - template: /eng/pipelines/templates/variables/globals.yml
+
+        jobs:
+        - deployment: Publish_Repos
+          environment: azure-dev
+
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
+            os: linux
+
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - pwsh: |
+                      $targetBranchName = ''
+                      if ($env:TARGETBRANCHNAMEOVERRIDE) {
+                        Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
+                        $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
+                      }
+                      Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+                    displayName: Set TargetBranchName
+
+                  - template: /eng/pipelines/templates/steps/repoman-generate.yml
+                    parameters:
+                      TargetBranchName: $(TargetBranchName)
+                      RemoteName: azure-samples-main

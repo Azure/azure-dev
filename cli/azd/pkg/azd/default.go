@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -109,7 +108,6 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	container.MustRegisterSingleton(storage.NewBlobSdkClient)
 
 	// cosmosdb
-	ioc.RegisterInstance(container, &arm.ClientOptions{})
 	container.MustRegisterSingleton(cosmosdb.NewCosmosDbService)
 
 	// sqldb

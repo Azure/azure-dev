@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -27,26 +28,69 @@ func init() {
 	}
 }
 
-func Test_msCorrelationPolicy_Do(t *testing.T) {
+func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 	tests := []struct {
-		name   string
-		ctx    context.Context
-		expect *string
+		name                  string
+		ctx                   context.Context
+		expect                *string
+		headerName            string
+		correlationPolicyFunc func() policy.Policy
 	}{
 		{
-			name:   "WithTraceId",
-			ctx:    trace.ContextWithSpanContext(context.Background(), trace.SpanContext{}.WithTraceID(traceId)),
-			expect: convert.RefOf(traceId.String()),
+			name: "WithTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(traceId),
+			),
+			expect:                convert.RefOf(traceId.String()),
+			headerName:            cMsCorrelationIdHeader,
+			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
-			name:   "WithInvalidTraceId",
-			ctx:    trace.ContextWithSpanContext(context.Background(), trace.SpanContext{}.WithTraceID(invalidTraceId)),
-			expect: convert.RefOf(""),
+			name: "WithInvalidTraceId",
+			// nolint:lll
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(invalidTraceId),
+			),
+			expect:                convert.RefOf(""),
+			headerName:            cMsCorrelationIdHeader,
+			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
-			name:   "WithoutTraceId",
-			ctx:    context.Background(),
-			expect: nil,
+			name:                  "WithoutTraceId",
+			ctx:                   context.Background(),
+			expect:                nil,
+			headerName:            cMsCorrelationIdHeader,
+			correlationPolicyFunc: NewMsCorrelationPolicy,
+		},
+		{
+			name: "WithTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(traceId),
+			),
+			expect:                convert.RefOf(traceId.String()),
+			headerName:            cMsGraphCorrelationIdHeader,
+			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
+		},
+		{
+			name: "WithInvalidTraceId",
+			// nolint:lll
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(invalidTraceId),
+			),
+			expect:                convert.RefOf(""),
+			headerName:            cMsGraphCorrelationIdHeader,
+			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
+		},
+		{
+			name:                  "WithoutTraceId",
+			ctx:                   context.Background(),
+			expect:                nil,
+			headerName:            cMsGraphCorrelationIdHeader,
+			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 	}
 	for _, tt := range tests {
@@ -60,7 +104,7 @@ func Test_msCorrelationPolicy_Do(t *testing.T) {
 
 			clientOptions := NewClientOptionsBuilder().
 				WithTransport(httpClient).
-				WithPerCallPolicy(NewMsCorrelationPolicy(tt.ctx)).
+				WithPerCallPolicy(tt.correlationPolicyFunc()).
 				BuildArmClientOptions()
 
 			client, err := armresources.NewClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, clientOptions)
@@ -72,10 +116,10 @@ func Test_msCorrelationPolicy_Do(t *testing.T) {
 			_, _ = client.GetByID(ctx, "RESOURCE_ID", "", nil)
 
 			if tt.expect != nil {
-				require.Equal(t, response.Request.Header.Get(cMsCorrelationIdHeader), *tt.expect)
+				require.Equal(t, *tt.expect, response.Request.Header.Get(tt.headerName))
 			} else {
 				for header := range response.Request.Header {
-					if header == cMsCorrelationIdHeader {
+					if header == tt.headerName {
 						require.Fail(t, "should not contain correlation id header")
 					}
 				}

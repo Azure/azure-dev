@@ -1,5 +1,5 @@
 import { IIconProps, INavLink, INavLinkGroup, Nav, Stack, TextField } from '@fluentui/react';
-import React, { FC, ReactElement, useState, FormEvent, MouseEvent } from 'react';
+import { FC, ReactElement, useState, FormEvent, MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { TodoList } from '../models/todoList';
 import { stackItemPadding } from '../ux/styles';
@@ -42,7 +42,7 @@ const TodoListMenu: FC<TodoListMenuProps> = (props: TodoListMenuProps): ReactEle
         }]
     }
 
-    const onNewListNameChange = (evt: FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+    const onNewListNameChange = (_evt: FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
         setNewListName(value || '');
     }
 

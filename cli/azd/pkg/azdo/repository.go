@@ -8,8 +8,8 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 )
 
 // create a new repository in the current project

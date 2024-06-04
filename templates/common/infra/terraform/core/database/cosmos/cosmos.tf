@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     azurerm = {
-      version = "~>3.47.0"
+      version = "~>3.97.1"
       source  = "hashicorp/azurerm"
     }
     azurecaf = {
@@ -68,7 +68,6 @@ resource "azurerm_cosmosdb_mongo_collection" "list" {
 
   index {
     keys   = ["_id"]
-    unique = true
   }
 }
 
@@ -81,6 +80,5 @@ resource "azurerm_cosmosdb_mongo_collection" "item" {
 
   index {
     keys   = ["_id"]
-    unique = true
   }
 }

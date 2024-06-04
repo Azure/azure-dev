@@ -1,7 +1,7 @@
 {
     "analysisServicesServers": "as",
     "apiManagementService": "apim-",
-    "appConfigurationConfigurationStores": "appcs-",
+    "appConfigurationStores": "appcs-",
     "appManagedEnvironments": "cae-",
     "appContainerApps": "ca-",
     "authorizationPolicyDefinitions": "policy-",
@@ -14,6 +14,7 @@
     "cognitiveServicesAccounts": "cog-",
     "cognitiveServicesFormRecognizer": "cog-fr-",
     "cognitiveServicesTextAnalytics": "cog-ta-",
+    "cognitiveServicesSpeech": "cog-sp-",
     "computeAvailabilitySets": "avail-",
     "computeCloudServices": "cld-",
     "computeDiskEncryptionSets": "des",

@@ -3,6 +3,7 @@ package scaffold
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -97,7 +98,7 @@ func lowerCase(r byte) byte {
 // Provide a reasonable limit for the container app infix to avoid name length issues
 // This is calculated as follows:
 //  1. Start with max initial length of 32 characters from the Container App name
-//     https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
+//     https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
 //  2. Prefix abbreviation of 'ca-' from abbreviations.json (4 characters)
 //  3. Bicep resource token (13 characters) + separator '-' (1 character) -- total of 14 characters
 //
@@ -155,6 +156,17 @@ func ContainerAppName(name string) string {
 // alphanumeric character
 func ContainerAppSecretName(name string) string {
 	return strings.ReplaceAll(strings.ToLower(name), "_", "-")
+}
+
+// camelCaseRegex is a regular expression used to match camel case patterns.
+// It matches a lowercase letter or digit followed by an uppercase letter.
+var camelCaseRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)
+
+// EnvFormat takes an input parameter like `fooParam` which is expected to be in camel case and returns it in
+// upper snake case with env var template, like `${AZURE_FOO_PARAM}`.
+func EnvFormat(src string) string {
+	snake := strings.ReplaceAll(strings.ToUpper(camelCaseRegex.ReplaceAllString(src, "${1}_${2}")), "-", "_")
+	return fmt.Sprintf("${AZURE_%s}", snake)
 }
 
 // ContainerAppInfix returns a suitable infix for a container app resource.

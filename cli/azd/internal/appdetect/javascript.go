@@ -13,7 +13,8 @@ import (
 )
 
 type PackagesJson struct {
-	Dependencies map[string]string `json:"dependencies"`
+	Dependencies    map[string]string `json:"dependencies"`
+	DevDependencies map[string]string `json:"devDependencies"`
 }
 
 type javaScriptDetector struct {
@@ -44,6 +45,7 @@ func (nd *javaScriptDetector) DetectProject(ctx context.Context, path string, en
 			}
 
 			angularAdded := false
+			viteAdded := false
 			databaseDepMap := map[DatabaseDep]struct{}{}
 
 			for dep := range packagesJson.Dependencies {
@@ -52,8 +54,11 @@ func (nd *javaScriptDetector) DetectProject(ctx context.Context, path string, en
 					project.Dependencies = append(project.Dependencies, JsReact)
 				case "jquery":
 					project.Dependencies = append(project.Dependencies, JsJQuery)
-				case "vue":
-					project.Dependencies = append(project.Dependencies, JsVue)
+				case "vite":
+					project.Dependencies = append(project.Dependencies, JsVite)
+					viteAdded = true
+				case "next":
+					project.Dependencies = append(project.Dependencies, JsNext)
 				default:
 					if strings.HasPrefix(dep, "@angular") && !angularAdded {
 						project.Dependencies = append(project.Dependencies, JsAngular)
@@ -72,6 +77,15 @@ func (nd *javaScriptDetector) DetectProject(ctx context.Context, path string, en
 					databaseDepMap[DbSqlServer] = struct{}{}
 				case "redis", "redis-om":
 					databaseDepMap[DbRedis] = struct{}{}
+				}
+			}
+
+			for dep := range packagesJson.DevDependencies {
+				switch dep {
+				case "vite":
+					if !viteAdded {
+						project.Dependencies = append(project.Dependencies, JsVite)
+					}
 				}
 			}
 

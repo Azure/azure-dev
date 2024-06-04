@@ -75,8 +75,10 @@ func NewZipDeployClient(
 
 	// Increase default retry attempts from 3 to 4 as zipdeploy often fails with 3 retries.
 	// With the default azcore.policy options of 800ms RetryDelay, this introduces up to 20 seconds of exponential back-off.
-	zipDeployOptions.Retry = policy.RetryOptions{
-		MaxRetries: 4,
+	if zipDeployOptions.Retry.MaxRetries == 3 {
+		zipDeployOptions.Retry = policy.RetryOptions{
+			MaxRetries: 4,
+		}
 	}
 
 	pipeline, err := armruntime.NewPipeline("zip-deploy", "1.0.0", credential, runtime.PipelineOptions{}, zipDeployOptions)
@@ -147,12 +149,7 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, runtime.NewResponseError(response)
 	}
 
-	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, &arm.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			Retry: policy.RetryOptions{
-				MaxRetries: -1},
-		},
-	})
+	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, c.armClientOptions)
 
 	if err != nil {
 		return nil, fmt.Errorf("creating web app client: %w", err)

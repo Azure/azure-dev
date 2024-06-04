@@ -124,6 +124,7 @@ grpcserver
 hotspot
 ignorefile
 iidfile
+imds
 ineffassign
 jaegertracing
 javac

@@ -35,6 +35,16 @@ jobs:
         parameters:
           Condition: false
 
+      # Installing goversioninfo on x86_64 Windows with GOARCH set to another
+      # value will compile goversioninfo for that architecture and it won't run.
+      # Ensure that a compatible version of goversioninfo is installed.
+      - pwsh: |
+          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
+        condition: and(succeeded(), eq(variables['GOOS'], 'windows'))
+        displayName: Install goversioninfo (Windows x86_64)
+        env:
+          GOARCH: amd64
+
       - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
       - task: PowerShell@2

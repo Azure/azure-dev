@@ -6,3 +6,5 @@
   description: "Enable Helm support for AKS deployments."
 - id: aks.kustomize
   description: "Enable Kustomize support for AKS deployments."
+- id: aca.persistDomains
+  description: "Do not change custom domains when deploying Azure Container Apps."

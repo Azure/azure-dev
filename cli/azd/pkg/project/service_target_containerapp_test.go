@@ -139,6 +139,7 @@ func createContainerAppServiceTarget(
 		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
 	)
 	containerRegistryService := azcli.NewContainerRegistryService(
 		credentialProvider,

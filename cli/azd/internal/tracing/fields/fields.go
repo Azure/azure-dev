@@ -41,6 +41,9 @@ const (
 	// guarantees.
 	MachineIdKey = attribute.Key("machine.id")
 
+	// The unique DevDeviceId associated with the device.
+	DevDeviceIdKey = attribute.Key("machine.devdeviceid")
+
 	// An enumeration of possible environments that the application is running on.
 	//
 	// Example: Desktop, Azure Pipelines, Visual Studio.

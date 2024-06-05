@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
+	devid "github.com/microsoft/go-deviceid"
+
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -21,6 +23,17 @@ var invalidMacAddresses = map[string]struct{}{
 	"00:00:00:00:00:00": {},
 	"ff:ff:ff:ff:ff:ff": {},
 	"ac:de:48:00:11:22": {},
+}
+
+func DevDeviceId() string {
+	deviceId, err := devid.Get()
+
+	if err != nil {
+		log.Println("could not get device id, returning empty: ", err)
+		return ""
+	}
+
+	return deviceId
 }
 
 // MachineId returns a unique ID for the machine.

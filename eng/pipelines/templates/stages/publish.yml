@@ -72,7 +72,6 @@ stages:
                       PublishUpdatedDocs: true
                       UploadMsi: true
                       PublishBrewFormula: true
-                      PublishArm64Binaries: true
 
         - deployment: Publish_Container
           dependsOn: Publish_Release
@@ -388,7 +387,6 @@ stages:
                 PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
                 PublishShield: false
                 UploadMsi: true
-                PublishArm64Binaries: true
 
             - template: /eng/pipelines/templates/steps/publish-cli-container.yml
               parameters:
@@ -446,7 +444,6 @@ stages:
               PublishUploadLocations: pr/$(PRNumber)
               UploadInstaller: true
               UploadMsi: true
-              PublishArm64Binaries: true
 
               ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
                 StorageAccountName: $(azdev-storage-account-name)
@@ -483,9 +480,8 @@ stages:
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
               $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
-              $windowsArmReleaseUrl = "$urlBase/azd-windows-arm64.zip"
+              $windowsReleaseUrlArm64 = "$urlBase/azd-windows-arm64-alpha.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
-              $msiArmReleaseUrl = "$urlBase/azd-windows-arm64.msi"
 
               $refDocContent = Get-Content docs/azd.md -Raw
 
@@ -536,12 +532,11 @@ stages:
                   * ARM64 - $macosReleaseUrlArm64
               * Windows -
                   * x86_64 - $windowsReleaseUrl
-                  * ARM64 - $windowsArmReleaseUrl
 
               ### MSI
 
               * x86_64 - $msiReleaseUrl
-              * ARM64 - $msiArmReleaseUrl
+              * ARM64 - $msiReleaseUrlArm64
 
               ## Documentation
 

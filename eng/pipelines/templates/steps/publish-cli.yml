@@ -9,7 +9,6 @@ parameters:
   StorageAccountKey: $(azdev-storage-account-key)
   StorageContainerName: azd
   PublishBrewFormula: false
-  PublishArm64Binaries: false
   AllowPrerelease: false
   CliVersion: $(CLI_VERSION)
 
@@ -73,28 +72,26 @@ steps:
       New-Item -ItemType Directory -Path release -Force
       zip release/azd-darwin-amd64.zip -j signed/mac/azd-darwin-amd64 NOTICE.txt
       zip release/azd-windows-amd64.zip -j signed/win/azd-windows-amd64.exe NOTICE.txt
-      zip release/azd-windows-arm64.zip -j signed/win/azd-windows-arm64.exe NOTICE.txt
 
       # Must place NOTICE.txt in file tree for tar to pick it up and place it in
       # the same place in the directory structure
       Copy-Item NOTICE.txt ./release-staging/
       tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
+
+      # ARM64 releases
+      zip release/azd-windows-arm64-alpha.zip -j signed/win/azd-windows-arm64.exe NOTICE.txt
+
+      Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64
+      Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
+
+      New-Item -ItemType Directory -Path release -Force
+      zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
+
+      # Must place NOTICE.txt in file tree for tar to pick it up and place it in
+      # the same place in the directory structure
+      Copy-Item NOTICE.txt ./release-staging/
+      tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
     displayName: Compress standalone binary for release
-
-  - ${{ if eq('true', parameters.PublishArm64Binaries) }}: 
-    - pwsh: |
-        Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64 
-        Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
-
-        New-Item -ItemType Directory -Path release -Force
-        zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
-
-        # Must place NOTICE.txt in file tree for tar to pick it up and place it in
-        # the same place in the directory structure
-        Copy-Item NOTICE.txt ./release-staging/
-        tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
-      displayName: Compress standalone binary for release (ARM64)
-
 
   - ${{ if eq('true', parameters.UploadMsi) }}: 
     - pwsh: |

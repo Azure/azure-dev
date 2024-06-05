@@ -532,11 +532,11 @@ stages:
                   * ARM64 - $macosReleaseUrlArm64
               * Windows -
                   * x86_64 - $windowsReleaseUrl
+                  * ARM64 - $windowsReleaseUrlArm64
 
               ### MSI
 
               * x86_64 - $msiReleaseUrl
-              * ARM64 - $msiReleaseUrlArm64
 
               ## Documentation
 

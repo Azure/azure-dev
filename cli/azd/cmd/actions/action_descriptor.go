@@ -150,6 +150,8 @@ type CommandGroupOptions struct {
 
 // EnvironmentOptions contains options for the environment flag and initialization
 type EnvironmentOptions struct {
+	// Optional should be set to true when an azd environment is optional within an azd command.
+	// Well known use cases for this are for `azd init` and `azd show`
 	Optional bool
 }
 

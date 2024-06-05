@@ -343,6 +343,9 @@ func NewRootCmd(
 			return !descriptor.Options.DisableTelemetry
 		}).
 		UseMiddlewareWhen("environment", middleware.NewEnvironmentMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			// The environment middleware will only be applied to commands that have the environment flag
+			// AND
+			// on commands where an environment is always required
 			_, err := descriptor.Options.Command.Flags().GetString(internal.EnvironmentNameFlagName)
 			return err == nil && !descriptor.Options.Environment.Optional
 		})

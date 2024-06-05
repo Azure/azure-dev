@@ -85,6 +85,24 @@ type Resource struct {
 
 	// container.v0 uses volumes field to define the volumes of the container.
 	Volumes []*Volume `json:"volumes,omitempty"`
+
+	// The entrypoint to use for the container image when executed.
+	Entrypoint string `json:"entrypoint,omitempty"`
+
+	// An object that captures properties that control the building of a container image.
+	Build ContainerV1Build `json:"build,omitempty"`
+}
+
+type ContainerV1Build struct {
+	// The path to the context directory for the container build.
+	// Can be relative of absolute. If relative it is relative to the location of the manifest file.
+	Context string `json:"context"`
+
+	// The path to the Dockerfile. Can be relative or absolute. If relative it is relative to the manifest file.
+	Dockerfile string `json:"dockerfile"`
+
+	// Args is optionally present on project.v0 and dockerfile.v0 resources and are the arguments to pass to the container.
+	Args []string `json:"args,omitempty"`
 }
 
 type DaprResourceMetadata struct {

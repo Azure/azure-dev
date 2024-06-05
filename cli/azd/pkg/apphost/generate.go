@@ -513,6 +513,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			if err != nil {
 				return err
 			}
+		case "container.v1":
+			b.addContainerV1(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
 		case "dockerfile.v0":
 			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs, comp.Args)
 		case "redis.v0":
@@ -880,6 +882,29 @@ func (b *infraGenerator) addStorageTable(storageAccount, tableName string) {
 func (b *infraGenerator) addContainer(
 	name string,
 	image string,
+	env map[string]string,
+	bindings custommaps.WithOrder[Binding],
+	inputs map[string]Input,
+	volumes []*Volume) {
+	b.requireCluster()
+
+	if len(volumes) > 0 {
+		b.requireStorageVolume()
+	}
+
+	b.containers[name] = genContainer{
+		Image:    image,
+		Env:      env,
+		Bindings: bindings,
+		Inputs:   inputs,
+		Volumes:  volumes,
+	}
+}
+
+func (b *infraGenerator) addContainerV1(
+	name string,
+	image string,
+	entrypoint string,
 	env map[string]string,
 	bindings custommaps.WithOrder[Binding],
 	inputs map[string]Input,

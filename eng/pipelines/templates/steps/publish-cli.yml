@@ -79,7 +79,8 @@ steps:
       tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
 
       # ARM64 releases
-      zip release/azd-windows-arm64-alpha.zip -j signed/win/azd-windows-arm64.exe NOTICE.txt
+      Rename-Item signed/win/azd-windows-arm64.exe azd-windows-arm64-alpha.exe
+      zip release/azd-windows-arm64-alpha.zip -j signed/win/azd-windows-arm64-alpha.exe NOTICE.txt
 
       Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64
       Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64

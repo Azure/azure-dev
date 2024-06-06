@@ -15,7 +15,7 @@ param applicationInsightsName string
 @description('Resource name for backend Web App or Function App')
 param apiAppName string = ''
 
-// Necessary due to https://github.com/Azure/bicep/issues/9594
+// Necessary due to https://github.com/Azure/bicep/issues/3750
 // placeholderName is never deployed, it is merely used to make the child name validation pass
 var appNameForBicep = !empty(apiAppName) ? apiAppName : 'placeholderName'
 

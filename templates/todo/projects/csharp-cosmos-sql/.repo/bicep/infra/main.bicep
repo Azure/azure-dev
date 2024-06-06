@@ -29,6 +29,9 @@ param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
+@description('API Management SKU to use if APIM is enabled')
+param apimSku string = 'Consumption'
+
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
@@ -37,6 +40,7 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 var tags = { 'azd-env-name': environmentName }
 var webUri = 'https://${web.outputs.defaultHostname}'
 var apiUri = 'https://${api.outputs.defaultHostname}'
+var apimApiUri = 'https://${apim.outputs.name}.azure-api.net/todo'
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -89,7 +93,7 @@ module api 'br/public:avm/res/web/site:0.3.4' = {
     appSettingsKeyValuePairs: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
       AZURE_COSMOS_CONNECTION_STRING_KEY: connectionStringKey
-      AZURE_COSMOS_DATABASE_NAME: !empty(cosmosDatabaseName) ? cosmosDatabaseName: 'Todo'
+      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
       AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
       API_ALLOW_ORIGINS: webUri
       SCM_DO_BUILD_DURING_DEPLOYMENT: 'False'
@@ -99,7 +103,7 @@ module api 'br/public:avm/res/web/site:0.3.4' = {
 }
 
 // Give the API access to KeyVault
-module accesskeyvault 'br/public:avm/res/key-vault/vault:0.5.1' = {
+module accessKeyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   name: 'accesskeyvault'
   scope: rg
   params: {
@@ -134,7 +138,7 @@ module apiCosmosSqlRoleAssign '../../../../../../common/infra/bicep/core/databas
 }
 
 // Give the API the role to access Cosmos
-module userComsosSqlRoleAssign '../../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos-sql-role-assign.bicep' = if (principalId != '') {
+module userCosmosSqlRoleAssign '../../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos-sql-role-assign.bicep' = if (principalId != '') {
   name: 'user-cosmos-access'
   scope: rg
   params: {
@@ -187,7 +191,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
 }
 
 // Monitor application with Azure loganalytics
-module loganalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
+module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
   name: 'loganalytics'
   scope: rg
   params: {
@@ -198,11 +202,11 @@ module loganalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
 
 // Monitor application with Azure applicationInsights
 module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
-  name: 'applicationInsights'
+  name: 'applicationinsights'
   scope: rg
   params: {
     name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    workspaceResourceId: loganalytics.outputs.resourceId
+    workspaceResourceId: logAnalytics.outputs.resourceId
     location: location
   }
 }
@@ -219,7 +223,7 @@ module applicationInsightsDashboard '../../../../../common/infra/bicep/app/appli
 }
 
 // Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
-module apim 'br/public:avm/res/api-management/service:0.1.6' = if (useAPIM) {
+module apim 'br/public:avm/res/api-management/service:0.1.7' = if (useAPIM) {
   name: 'apim-deployment'
   scope: rg
   params: {
@@ -228,6 +232,8 @@ module apim 'br/public:avm/res/api-management/service:0.1.6' = if (useAPIM) {
     publisherName: 'n/a'
     location: location
     tags: tags
+    sku: apimSku
+    skuCount: 0
     apis: [
       {
         name: 'todo-api'
@@ -236,6 +242,8 @@ module apim 'br/public:avm/res/api-management/service:0.1.6' = if (useAPIM) {
         apiDescription: 'This is a simple Todo API'
         serviceUrl: apiUri
         subscriptionRequired: false
+        protocols: [ 'https' ]
+        type: 'http'
         value: loadTextContent('../../../../../api/common/openapi.yaml')
         policies: [
           {
@@ -249,7 +257,7 @@ module apim 'br/public:avm/res/api-management/service:0.1.6' = if (useAPIM) {
 }
 
 // Configures the API in the Azure API Management (APIM) service
-module apimsettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
+module apimSettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
   name: 'apim-api-settings'
   scope: rg
   params: {
@@ -264,7 +272,7 @@ module apimsettings '../../../../../common/infra/bicep/app/apim-api-settings.bic
 // Data outputs
 output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.endpoint
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = !empty(cosmosDatabaseName) ? cosmosDatabaseName: 'Todo'
+output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
@@ -272,7 +280,7 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output API_BASE_URL string = useAPIM ? 'https://${apim.outputs.name}.azure-api.net/todo' : apiUri
+output API_BASE_URL string = useAPIM ? apimApiUri : apiUri
 output REACT_APP_WEB_BASE_URL string = webUri
 output USE_APIM bool = useAPIM
-output SERVICE_API_ENDPOINTS array = useAPIM ? [ 'https://${apim.outputs.name}.azure-api.net/todo', apiUri ]: []
+output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApiUri, apiUri ]: []

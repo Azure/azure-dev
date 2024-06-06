@@ -77,6 +77,8 @@ param systemPoolType string = 'CostOptimised'
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
+var defaultDatabaseName = 'Todo'
+var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : defaultDatabaseName
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var aksClusterAdminRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b')
 var systemPoolSpec = nodePoolPresets[systemPoolType]
@@ -157,10 +159,10 @@ module managedCluster 'br/public:avm/res/container-service/managed-cluster:0.1.7
         roleDefinitionIdOrName: aksClusterAdminRole
       }
     ]
-    monitoringWorkspaceId: loganalytics.outputs.resourceId
+    monitoringWorkspaceId: logAnalytics.outputs.resourceId
     diagnosticSettings: [
       {
-        workspaceResourceId: loganalytics.outputs.resourceId
+        workspaceResourceId: logAnalytics.outputs.resourceId
         logCategoriesAndGroups: [
           {
             category: 'cluster-autoscaler'
@@ -214,7 +216,7 @@ module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' =
     location: location
     diagnosticSettings: [
       {
-        workspaceResourceId: loganalytics.outputs.resourceId
+        workspaceResourceId: logAnalytics.outputs.resourceId
         logCategoriesAndGroups: [
           {
             category: 'ContainerRegistryRepositoryEvents'
@@ -259,7 +261,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.5.1' = {
     location: location
     mongodbDatabases: [
       {
-        name: 'Todo'
+        name: actualDatabaseName
         tags: tags
         collections: collections
       }
@@ -298,7 +300,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
 }
 
 // Monitor application with Azure loganalytics
-module loganalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
+module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
   name: 'loganalytics'
   scope: rg
   params: {
@@ -309,11 +311,11 @@ module loganalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
 
 // Monitor application with Azure applicationInsights
 module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
-  name: 'applicationInsights'
+  name: 'applicationinsights'
   scope: rg
   params: {
     name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    workspaceResourceId: loganalytics.outputs.resourceId
+    workspaceResourceId: logAnalytics.outputs.resourceId
     location: location
   }
 }
@@ -331,7 +333,7 @@ module applicationInsightsDashboard '../../../../../common/infra/bicep/app/appli
 
 // Data outputs
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = !empty(cosmosDatabaseName) ? cosmosDatabaseName: 'Todo'
+output AZURE_COSMOS_DATABASE_NAME string = actualDatabaseName
 
 // App outputs
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString

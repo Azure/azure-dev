@@ -69,6 +69,22 @@ type genDockerfile struct {
 	Args      []string
 }
 
+type genBuildContainer struct {
+	Image      string
+	Entrypoint string
+	Args       []string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Volumes    []*Volume
+	Build      *genBuildContainerDetails
+}
+
+type genBuildContainerDetails struct {
+	Context    string
+	Dockerfile string
+	Args       []string
+}
+
 type genProject struct {
 	Path     string
 	Env      map[string]string

@@ -90,7 +90,7 @@ type Resource struct {
 	Entrypoint string `json:"entrypoint,omitempty"`
 
 	// An object that captures properties that control the building of a container image.
-	Build ContainerV1Build `json:"build,omitempty"`
+	Build *ContainerV1Build `json:"build,omitempty"`
 }
 
 type ContainerV1Build struct {

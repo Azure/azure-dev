@@ -392,6 +392,7 @@ type infraGenerator struct {
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
 	allServicesIngress           map[string]ingressDetails
+	buildContainers              map[string]genBuildContainer
 }
 
 func newInfraGenerator() *infraGenerator {
@@ -419,6 +420,7 @@ func newInfraGenerator() *infraGenerator {
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
+		buildContainers:              make(map[string]genBuildContainer),
 	}
 }
 
@@ -514,7 +516,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return err
 			}
 		case "container.v1":
-			b.addContainerV1(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
+			b.addBuildContainer(name, comp)
 		case "dockerfile.v0":
 			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs, comp.Args)
 		case "redis.v0":
@@ -901,27 +903,73 @@ func (b *infraGenerator) addContainer(
 	}
 }
 
-func (b *infraGenerator) addContainerV1(
+// buildContainer represents a container defined with a pre-build image or a build context.
+// container.v0 resources are used to define containers with pre-built images.
+//   - uses image field
+//
+// dockerfile.v0 resources are used to define containers with build context.
+//   - uses path and context fields
+//
+// container.v1 resources are used to define containers with either build context or pre-built images.
+//   - uses image field or build field
+func (b *infraGenerator) addBuildContainer(
 	name string,
-	image string,
-	entrypoint string,
-	env map[string]string,
-	bindings custommaps.WithOrder[Binding],
-	inputs map[string]Input,
-	volumes []*Volume) {
-	b.requireCluster()
+	r *Resource) error {
+	if r.Image != nil && r.Build != nil {
+		return fmt.Errorf("Resource '%s' cannot have both an image and a build", name)
+	}
 
-	if len(volumes) > 0 {
+	b.requireCluster()
+	if len(r.Volumes) > 0 {
 		b.requireStorageVolume()
 	}
 
-	b.containers[name] = genContainer{
-		Image:    image,
-		Env:      env,
-		Bindings: bindings,
-		Inputs:   inputs,
-		Volumes:  volumes,
+	// common fields for all build containers
+	bc := genBuildContainer{
+		Entrypoint: r.Entrypoint,
+		Args:       r.Args,
+		Env:        r.Env,
+		Bindings:   r.Bindings,
+		Volumes:    r.Volumes,
 	}
+
+	// container.v0 and container.v1+pre-build image
+	if r.Image != nil {
+		bc.Image = *r.Image
+		b.buildContainers[name] = bc
+		return nil
+	}
+
+	// details to build container, either from dockerfile.v0 or container.v1
+	var build *genBuildContainerDetails
+
+	// dockerfile.v0
+	if r.Context != nil {
+		build = &genBuildContainerDetails{
+			Context: *r.Context,
+			Args:    r.Args,
+		}
+		if r.Path != nil {
+			build.Dockerfile = *r.Path
+		}
+	} else
+
+	// container.v1+build
+	if r.Build != nil {
+		build = &genBuildContainerDetails{
+			Context:    r.Build.Context,
+			Dockerfile: r.Build.Dockerfile,
+			Args:       r.Build.Args,
+		}
+	}
+
+	if build == nil {
+		return fmt.Errorf("container resource '%s' must have either an image, context or a build", name)
+	}
+
+	bc.Build = build
+	b.buildContainers[name] = bc
+	return nil
 }
 
 func (b *infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) error {
@@ -1080,6 +1128,16 @@ func (b *infraGenerator) compileIngress() error {
 			ingressBindings: bindingsFromIngress,
 		}
 	}
+	for name, bc := range b.buildContainers {
+		ingress, bindingsFromIngress, err := buildAcaIngress(bc.Bindings, 8080)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
 	b.allServicesIngress = result
 	return nil
 }
@@ -1111,6 +1169,29 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
+			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
+	}
+
+	for resourceName, bc := range b.buildContainers {
+		cs := genContainerApp{
+			Volumes: bc.Volumes,
+		}
+
+		b.bicepContext.ContainerApps[resourceName] = cs
+
+		projectTemplateCtx := genContainerAppManifestTemplateContext{
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Volumes:         bc.Volumes,
+		}
+
+		if err := b.buildEnvBlock(bc.Env, &projectTemplateCtx); err != nil {
 			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
 		}
 

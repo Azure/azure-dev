@@ -103,7 +103,7 @@ module monitoring '../../../../../../common/infra/bicep/core/monitor/monitoring.
 }
 
 // Manage configuration in Azure App Configuration
-module azappconfig '../../../../../../common/infra/bicep/core/config/configstore.bicep' = {
+module configStore '../../../../../../common/infra/bicep/core/config/configstore.bicep' = {
   name: 'azappconfig'
   scope: rg
   params: {
@@ -131,7 +131,7 @@ output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStri
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
-output AZURE_APP_CONFIGURATION_ENDPOINT string = azappconfig.outputs.endpoint
+output AZURE_APP_CONFIGURATION_ENDPOINT string = configStore.outputs.endpoint
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location

@@ -91,7 +91,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 		registerDeployMocks(mockContext, &ran)
 		registerPollingMocks(mockContext, &ran)
 
-		zipFile := bytes.NewBuffer([]byte{})
+		zipFile := bytes.NewReader([]byte{})
 
 		res, err := azCli.DeployFunctionAppUsingZipFile(
 			*mockContext.Context,
@@ -114,7 +114,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 		registerInfoMocks(mockContext, &ran)
 		registerConflictMocks(mockContext, &ran)
 
-		zipFile := bytes.NewBuffer([]byte{})
+		zipFile := bytes.NewReader([]byte{})
 
 		res, err := azCli.DeployFunctionAppUsingZipFile(
 			*mockContext.Context,

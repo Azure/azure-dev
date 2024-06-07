@@ -53,14 +53,14 @@ type AzCli interface {
 		subscriptionId string,
 		resourceGroup string,
 		appName string,
-		deployZipFile io.Reader,
+		deployZipFile io.ReadSeeker,
 	) (*string, error)
 	DeployFunctionAppUsingZipFile(
 		ctx context.Context,
 		subscriptionID string,
 		resourceGroup string,
 		funcName string,
-		deployZipFile io.Reader,
+		deployZipFile io.ReadSeeker,
 	) (*string, error)
 	GetFunctionAppProperties(
 		ctx context.Context,

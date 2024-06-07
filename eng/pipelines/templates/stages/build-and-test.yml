@@ -45,7 +45,7 @@ parameters:
         ValidateCrossCompile: true
         ValidateVm:
           PoolName: $(ARMPOOL)
-          ImageName: $(WINDOWSVMIMAGE)
+          ImageName: $(WINDOWSARMVMIMAGE)
           Os: windows
         ValidationTask: script
         ValidationScript: azd-windows-arm64.exe version

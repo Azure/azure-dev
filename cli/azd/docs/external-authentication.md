@@ -54,6 +54,8 @@ The server should take this request and fetch a token using the given configurat
 }
 ```
 
+> Import note. The `expiresOn` field should be expressed in RFC3339 and using invariant culture. Using local machine time format can make azd to fail trying to parse the response.
+
 ### Failure
 
 ```jsonc

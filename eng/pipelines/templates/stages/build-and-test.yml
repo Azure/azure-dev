@@ -10,6 +10,13 @@ parameters:
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
         ImageKey: image
+        ValidateCrossCompile: true
+        ValidateVm:
+          PoolName: $(LINUXARMPOOL)
+          ImageName: $(LINUXARMVMIMAGE)
+          Os: linux
+        ValidationTask: bash
+        ValidationScript: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
         Variables: 
           BuildTarget: azd-linux-arm64
           BuildOutputName: azd
@@ -30,6 +37,25 @@ parameters:
           GOARCH: arm64
           # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
           CGO_ENABLED: 1
+      WindowsARM64:
+        Pool: $(WINDOWSPOOL)
+        OSVmImage: $(WINDOWSVMIMAGE)
+        OS: windows
+        ImageKey: image
+        ValidateCrossCompile: true
+        ValidateVm:
+          PoolName: $(ARMPOOL)
+          ImageName: $(WINDOWSARMVMIMAGE)
+          Os: windows
+        ValidationTask: script
+        ValidationScript: |
+          dir
+          azd-windows-arm64.exe version
+        Variables:
+          BuildTarget: azd-windows-arm64.exe
+          BuildOutputName: azd.exe
+          GOOS: windows
+          GOARCH: arm64
 
 stages: 
   - stage: BuildAndTest
@@ -53,7 +79,7 @@ stages:
       - ${{ each build in parameters.CrossBuildMatrix }}: 
         - template: /eng/pipelines/templates/jobs/cross-build-cli.yml
           parameters:
-            NameSuffix: ${{ build.key}}
+            NameSuffix: ${{ build.key }}
             Pool: ${{ build.value.Pool }}
             ImageKey: ${{ build.value.ImageKey }}
             OSVmImage: ${{ build.value.OSVmImage }} 
@@ -92,25 +118,27 @@ stages:
               artifact: linux-packages
               displayName: Publish merged linux packages
 
-      - job: ValidateCrossCompile
-        dependsOn: 
-          - ${{ each build in parameters.CrossBuildMatrix }}: 
-            - CrossBuildCLI_${{ build.key }}
-        pool: 
-          name: $(LINUXARMPOOL)
-          image: $(LINUXARMVMIMAGE)
-          os: linux
-        timeoutInMinutes: 5
-        steps: 
-          - checkout: none 
+      - ${{ each validationBuild in parameters.CrossBuildMatrix }}:
+        - ${{ if validationBuild.value.ValidateCrossCompile }}:
+          - job: ValidateCrossCompile${{ validationBuild.key }}
+            dependsOn:
+              - ${{ each build in parameters.CrossBuildMatrix }}:
+                - CrossBuildCLI_${{ build.key }}
+            pool:
+              name: ${{ validationBuild.value.ValidateVm.PoolName }}
+              image: ${{ validationBuild.value.ValidateVm.ImageName }}
+              os: ${{ validationBuild.value.ValidateVm.Os }}
+            timeoutInMinutes: 5
+            steps:
+              - checkout: none
 
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifact: azd-linux-arm64
-              targetPath: $(Build.SourcesDirectory)
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  artifact: ${{ validationBuild.value.Variables.BuildTarget}}
+                  targetPath: $(Build.SourcesDirectory)
 
-          - bash: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
-            displayName: azd version
+              - ${{ validationBuild.value.ValidationTask }}: ${{ validationBuild.value.ValidationScript }}
+                displayName: Validate cross-compiled binary
 
       - job: GenerateReleaseArtifacts
         pool:

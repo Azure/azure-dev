@@ -117,25 +117,26 @@ stages:
               displayName: Publish merged linux packages
 
       - ${{ each validationBuild in parameters.CrossBuildMatrix }}:
-        - job: ValidateCrossCompile${{ validationBuild.key }}
-          dependsOn:
-            - ${{ each build in parameters.CrossBuildMatrix }}:
-              - CrossBuildCLI_${{ build.key }}
-          pool:
-            name: ${{ validationBuild.value.ValidateVm.PoolName }}
-            image: ${{ validationBuild.value.ValidateVm.ImageName }}
-            os: ${{ validationBuild.value.ValidateVm.Os }}
-          timeoutInMinutes: 5
-          steps:
-            - checkout: none
+        - ${{ if validationBuild.value.ValidateCrossCompile }}:
+          - job: ValidateCrossCompile${{ validationBuild.key }}
+            dependsOn:
+              - ${{ each build in parameters.CrossBuildMatrix }}:
+                - CrossBuildCLI_${{ build.key }}
+            pool:
+              name: ${{ validationBuild.value.ValidateVm.PoolName }}
+              image: ${{ validationBuild.value.ValidateVm.ImageName }}
+              os: ${{ validationBuild.value.ValidateVm.Os }}
+            timeoutInMinutes: 5
+            steps:
+              - checkout: none
 
-            - task: DownloadPipelineArtifact@2
-              inputs:
-                artifact: ${{ parameters.validationBuild.value.Variables.BuildTarget}}
-                targetPath: $(Build.SourcesDirectory)
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  artifact: ${{ parameters.validationBuild.value.Variables.BuildTarget}}
+                  targetPath: $(Build.SourcesDirectory)
 
-            - ${{ validationBuild.value.ValidationTask }}: ${{ validationBuild.value.ValidationScript }}
-              displayName: Validate cross-compiled binary
+              - ${{ validationBuild.value.ValidationTask }}: ${{ validationBuild.value.ValidationScript }}
+                displayName: Validate cross-compiled binary
 
       - job: GenerateReleaseArtifacts
         pool:

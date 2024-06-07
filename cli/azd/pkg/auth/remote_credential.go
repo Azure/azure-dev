@@ -83,7 +83,7 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 	}
 
 	if err := json.NewDecoder(res.Body).Decode(&tokenResp); err != nil {
-		return azcore.AccessToken{}, remoteCredentialError(fmt.Errorf("unexpected format for token response: %w", err))
+		return azcore.AccessToken{}, remoteCredentialError(fmt.Errorf("decoding token response: %w", err))
 	}
 
 	switch tokenResp.Status {

@@ -34,8 +34,8 @@ func newRemoteCredential(endpoint, key, tenantID string, httpClient httputil.Htt
 	}
 }
 
-func remoteCredentialError(err error) error {
-	return fmt.Errorf("RemoteCredential: %w", err)
+func remoteCredentialError(err string, w error) error {
+	return fmt.Errorf("RemoteCredential: %w", fmt.Errorf("%s: %w", err, w))
 }
 
 // GetToken implements azcore.TokenCredential.
@@ -59,7 +59,7 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 		fmt.Sprintf("%s/token?api-version=2023-07-12-preview", rc.endpoint),
 		bytes.NewReader(body))
 	if err != nil {
-		return azcore.AccessToken{}, remoteCredentialError(fmt.Errorf("building request: %w", err))
+		return azcore.AccessToken{}, remoteCredentialError("building request", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -67,11 +67,11 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 
 	res, err := rc.httpClient.Do(req)
 	if err != nil {
-		return azcore.AccessToken{}, remoteCredentialError(fmt.Errorf("making request: %w", err))
+		return azcore.AccessToken{}, remoteCredentialError("making request", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return azcore.AccessToken{}, remoteCredentialError(fmt.Errorf("unexpected status code: %d", res.StatusCode))
+		return azcore.AccessToken{}, remoteCredentialError("unexpected status code", fmt.Errorf("%d", res.StatusCode))
 	}
 
 	var tokenResp struct {
@@ -87,7 +87,7 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 	}
 
 	if err := json.NewDecoder(res.Body).Decode(&tokenResp); err != nil {
-		return azcore.AccessToken{}, remoteCredentialError(fmt.Errorf("decoding token response: %w", err))
+		return azcore.AccessToken{}, remoteCredentialError("decoding token response", err)
 	}
 
 	switch tokenResp.Status {
@@ -97,11 +97,11 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 			ExpiresOn: *tokenResp.ExpiresOn,
 		}, nil
 	case "error":
-		return azcore.AccessToken{}, remoteCredentialError(fmt.Errorf("failed to acquire token: code: %s message: %s",
+		return azcore.AccessToken{}, remoteCredentialError("failed to acquire token", fmt.Errorf("code: %s message: %s",
 			*tokenResp.Code,
 			*tokenResp.Message))
 	default:
-		return azcore.AccessToken{}, remoteCredentialError(fmt.Errorf("unexpected status: %s", tokenResp.Status))
+		return azcore.AccessToken{}, remoteCredentialError("unexpected status", fmt.Errorf(tokenResp.Status))
 	}
 }
 

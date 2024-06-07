@@ -134,7 +134,7 @@ stages:
 
               - task: DownloadPipelineArtifact@2
                 inputs:
-                  artifact: ${{ parameters.validationBuild.value.Variables.BuildTarget}}
+                  artifact: ${{ validationBuild.value.Variables.BuildTarget}}
                   targetPath: $(Build.SourcesDirectory)
 
               - ${{ validationBuild.value.ValidationTask }}: ${{ validationBuild.value.ValidationScript }}

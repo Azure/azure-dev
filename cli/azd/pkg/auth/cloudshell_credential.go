@@ -58,7 +58,7 @@ func (t CloudShellCredential) GetToken(ctx context.Context, options policy.Token
 		return azcore.AccessToken{}, err
 	}
 	req.Header.Add("Metadata", "true")
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add(contentTypeHeader, "application/x-www-form-urlencoded")
 
 	resp, err := t.httpClient.Do(req)
 	if err != nil {

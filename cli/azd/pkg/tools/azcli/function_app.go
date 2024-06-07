@@ -32,7 +32,7 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
-	deployZipFile io.Reader,
+	deployZipFile io.ReadSeeker,
 ) (*string, error) {
 	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {

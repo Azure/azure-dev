@@ -95,6 +95,20 @@ overrides:
     words:
       - kustomization
       - templating
+  - filename: CHANGELOG.md
+    words:
+      - aistudio
+      - apiserver
+      - azdevify
+      - creds
+      - Moby
+      - upsert
+  - filename: docs/proxy-configuration.md
+    words:
+      - Telerik
+  - filename: test/functional/testdata/samples/funcapp/getting_started.md
+    words:
+      - funcignore
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

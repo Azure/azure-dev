@@ -12,7 +12,7 @@ parameters:
         ImageKey: image
         ValidateCrossCompile: true
         ValidateVm:
-          PoolName: $(ARMPOOL)
+          PoolName: $(LINUXARMPOOL)
           ImageName: $(LINUXARMVMIMAGE)
           Os: linux
         ValidationTask: bash
@@ -48,7 +48,9 @@ parameters:
           ImageName: $(WINDOWSARMVMIMAGE)
           Os: windows
         ValidationTask: script
-        ValidationScript: azd-windows-arm64.exe version
+        ValidationScript: |
+          dir
+          azd-windows-arm64.exe version
         Variables:
           BuildTarget: azd-windows-arm64.exe
           BuildOutputName: azd.exe

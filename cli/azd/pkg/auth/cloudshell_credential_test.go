@@ -58,7 +58,7 @@ func TestCloudShellCredentialGetToken(t *testing.T) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.URL.String() == "http://localhost:50342/oauth2/token" &&
 			request.Method == http.MethodPost &&
-			request.Header.Get(contentTypeHeader) == "application/x-www-form-urlencoded" &&
+			request.Header.Get("Content-Type") == "application/x-www-form-urlencoded" &&
 			request.Header.Get("Metadata") == "true" &&
 			request.FormValue("resource") == "https://management.azure.com/"
 	}).Respond(&http.Response{

@@ -34,6 +34,10 @@ func newRemoteCredential(endpoint, key, tenantID string, httpClient httputil.Htt
 	}
 }
 
+func remoteCredentialError(err error) error {
+	return fmt.Errorf("RemoteCredential: %w", err)
+}
+
 // GetToken implements azcore.TokenCredential.
 func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	tenantID := rc.tenantID
@@ -58,8 +62,8 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 		return azcore.AccessToken{}, remoteCredentialError(fmt.Errorf("building request: %w", err))
 	}
 
-	req.Header.Set(contentTypeHeader, "application/json")
-	req.Header.Set(authorizationHeader, fmt.Sprintf("Bearer %s", rc.key))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", rc.key))
 
 	res, err := rc.httpClient.Do(req)
 	if err != nil {

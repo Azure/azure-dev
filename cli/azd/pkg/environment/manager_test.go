@@ -227,7 +227,7 @@ func Test_EnvManager_Get(t *testing.T) {
 
 		localDataStore.On("Get", *mockContext.Context, "env1").Return(nil, ErrNotFound)
 		remoteDataStore.On("Get", *mockContext.Context, "env1").Return(getEnv, nil)
-		localDataStore.On("Save", *mockContext.Context, getEnv).Return(nil)
+		localDataStore.On("Save", *mockContext.Context, getEnv, mock.Anything).Return(nil)
 
 		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		env, err := manager.Get(*mockContext.Context, "env1")
@@ -259,7 +259,7 @@ func Test_EnvManager_Get(t *testing.T) {
 		})
 
 		localDataStore.On("Get", *mockContext.Context, "env1").Return(foundEnv, nil)
-		localDataStore.On("Save", *mockContext.Context, foundEnv).Return(nil)
+		localDataStore.On("Save", *mockContext.Context, foundEnv, mock.Anything).Return(nil)
 
 		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
 		env, err := manager.Get(*mockContext.Context, "env1")
@@ -269,7 +269,7 @@ func Test_EnvManager_Get(t *testing.T) {
 		require.Equal(t, "env1", env.Name())
 		require.Equal(t, "env1", env.Getenv(EnvNameEnvVarName))
 
-		localDataStore.AssertCalled(t, "Save", *mockContext.Context, foundEnv)
+		localDataStore.AssertCalled(t, "Save", *mockContext.Context, foundEnv, mock.Anything)
 	})
 }
 
@@ -285,15 +285,15 @@ func Test_EnvManager_Save(t *testing.T) {
 			"key1": "value1",
 		})
 
-		localDataStore.On("Save", *mockContext.Context, env).Return(nil)
-		remoteDataStore.On("Save", *mockContext.Context, env).Return(nil)
+		localDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(nil)
+		remoteDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(nil)
 
 		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		err := manager.Save(*mockContext.Context, env)
 		require.NoError(t, err)
 
-		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env)
-		remoteDataStore.AssertCalled(t, "Save", *mockContext.Context, env)
+		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env, mock.Anything)
+		remoteDataStore.AssertCalled(t, "Save", *mockContext.Context, env, mock.Anything)
 	})
 
 	t.Run("Error", func(t *testing.T) {
@@ -304,14 +304,14 @@ func Test_EnvManager_Save(t *testing.T) {
 			"key1": "value1",
 		})
 
-		localDataStore.On("Save", *mockContext.Context, env).Return(errors.New("error"))
+		localDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(errors.New("error"))
 
 		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		err := manager.Save(*mockContext.Context, env)
 		require.Error(t, err)
 
-		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env)
-		remoteDataStore.AssertNotCalled(t, "Save", *mockContext.Context, env)
+		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env, mock.Anything)
+		remoteDataStore.AssertNotCalled(t, "Save", *mockContext.Context, env, mock.Anything)
 	})
 }
 
@@ -433,8 +433,8 @@ func (m *MockDataStore) Reload(ctx context.Context, env *Environment) error {
 	return args.Error(0)
 }
 
-func (m *MockDataStore) Save(ctx context.Context, env *Environment) error {
-	args := m.Called(ctx, env)
+func (m *MockDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
+	args := m.Called(ctx, env, options)
 	return args.Error(0)
 }
 

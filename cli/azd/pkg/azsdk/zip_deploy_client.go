@@ -14,6 +14,7 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/sethvargo/go-retry"
@@ -97,7 +98,7 @@ func NewZipDeployClient(
 // Begins a zip deployment and returns a poller to check for status
 func (c *ZipDeployClient) BeginDeploy(
 	ctx context.Context,
-	zipFile io.Reader,
+	zipFile io.ReadSeeker,
 ) (*runtime.Poller[*DeployResponse], error) {
 	request, err := c.createDeployRequest(ctx, zipFile)
 	if err != nil {
@@ -348,9 +349,7 @@ func (c *ZipDeployClient) DeployTrackStatus(
 }
 
 // Deploys the specified application zip to the azure app service and waits for completion
-func (c *ZipDeployClient) Deploy(
-	ctx context.Context,
-	zipFile io.Reader) (*DeployResponse, error) {
+func (c *ZipDeployClient) Deploy(ctx context.Context, zipFile io.ReadSeeker) (*DeployResponse, error) {
 	poller, err := c.BeginDeploy(ctx, zipFile)
 	if err != nil {
 		return nil, err
@@ -369,7 +368,7 @@ func (c *ZipDeployClient) Deploy(
 // Creates the HTTP request for the zip deployment operation
 func (c *ZipDeployClient) createDeployRequest(
 	ctx context.Context,
-	zipFile io.Reader,
+	zipFile io.ReadSeeker,
 ) (*policy.Request, error) {
 	endpoint := fmt.Sprintf("https://%s/api/zipdeploy", c.hostName)
 	req, err := runtime.NewRequest(ctx, http.MethodPost, endpoint)
@@ -377,11 +376,13 @@ func (c *ZipDeployClient) createDeployRequest(
 		return nil, fmt.Errorf("creating deploy request: %w", err)
 	}
 
+	if err = req.SetBody(streaming.NopCloser(zipFile), "application/octet-stream"); err != nil {
+		return nil, fmt.Errorf("setting request body: %w", err)
+	}
+
 	rawRequest := req.Raw()
-	rawRequest.Body = io.NopCloser(zipFile)
 	query := rawRequest.URL.Query()
 	query.Set("isAsync", "true")
-	rawRequest.Header.Set("Content-Type", "application/octet-stream")
 	rawRequest.Header.Set("Accept", "application/json")
 	rawRequest.URL.RawQuery = query.Encode()
 

@@ -44,7 +44,7 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 		return nil, err
 	}
 
-	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName, cli.armClientOptions)
+	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
 	if err != nil {
 		return nil, err
 	}

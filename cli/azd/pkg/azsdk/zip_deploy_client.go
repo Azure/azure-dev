@@ -30,10 +30,9 @@ const (
 // https://github.com/MicrosoftDocs/azure-docs/blob/main/includes/app-service-deploy-zip-push-rest.md
 // https://github.com/projectkudu/kudu/wiki/REST-API
 type ZipDeployClient struct {
-	hostName         string
-	pipeline         runtime.Pipeline
-	cred             azcore.TokenCredential
-	armClientOptions *arm.ClientOptions
+	hostName string
+	pipeline runtime.Pipeline
+	cred     azcore.TokenCredential
 }
 
 type DeployResponse struct {
@@ -63,35 +62,32 @@ type DeployStatus struct {
 func NewZipDeployClient(
 	hostName string,
 	credential azcore.TokenCredential,
-	armClientOptions *arm.ClientOptions,
+	options *arm.ClientOptions,
 ) (*ZipDeployClient, error) {
-	zipDeployOptions := &arm.ClientOptions{}
-	if armClientOptions != nil {
-		optionsCopy := *armClientOptions
-		zipDeployOptions = &optionsCopy
+	if options == nil {
+		options = &arm.ClientOptions{}
 	}
 
 	// We do not have a Resource provider to register
-	zipDeployOptions.DisableRPRegistration = true
+	options.DisableRPRegistration = true
 
-	// Increase default retry attempts from 3 to 4 as zipdeploy often fails with 3 retries.
+	// When using default retry (3), increase its attempts from 3 to 4 as zipdeploy often fails with 3 retries.
 	// With the default azcore.policy options of 800ms RetryDelay, this introduces up to 20 seconds of exponential back-off.
-	if zipDeployOptions.Retry.MaxRetries == 3 {
-		zipDeployOptions.Retry = policy.RetryOptions{
+	if options.Retry.MaxRetries == 3 {
+		options.Retry = policy.RetryOptions{
 			MaxRetries: 4,
 		}
 	}
 
-	pipeline, err := armruntime.NewPipeline("zip-deploy", "1.0.0", credential, runtime.PipelineOptions{}, zipDeployOptions)
+	pipeline, err := armruntime.NewPipeline("zip-deploy", "1.0.0", credential, runtime.PipelineOptions{}, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating HTTP pipeline: %w", err)
 	}
 
 	return &ZipDeployClient{
-		hostName:         hostName,
-		pipeline:         pipeline,
-		cred:             credential,
-		armClientOptions: armClientOptions,
+		hostName: hostName,
+		pipeline: pipeline,
+		cred:     credential,
 	}, nil
 }
 
@@ -129,7 +125,7 @@ func (c *ZipDeployClient) BeginDeploy(
 // Deploys the specified application zip to the azure app service using deployment status api and waits for completion
 func (c *ZipDeployClient) BeginDeployTrackStatus(
 	ctx context.Context,
-	zipFile io.Reader,
+	zipFile io.ReadSeeker,
 	subscriptionId,
 	resourceGroup,
 	appName string,
@@ -139,33 +135,7 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, err
 	}
 
-	var response *http.Response
-	err = retry.Do(
-		ctx,
-		// using default retires in azure sdk for go
-		retry.WithMaxRetries(3, retry.NewConstant(4*time.Second)),
-		func(ctx context.Context) error {
-			responseRetry, err := c.pipeline.Do(request)
-			if err != nil {
-				var httpErr *azcore.ResponseError
-				if errors.As(err, &httpErr) {
-					// Status codes that run default three retires in go sdk
-					if httpErr.StatusCode == 408 ||
-						httpErr.StatusCode == 429 ||
-						httpErr.StatusCode == 500 ||
-						httpErr.StatusCode == 502 ||
-						httpErr.StatusCode == 503 ||
-						httpErr.StatusCode == 504 {
-						return retry.RetryableError(err)
-					}
-				}
-				return err
-			}
-
-			response = responseRetry
-
-			return nil
-		})
+	response, err := c.pipeline.Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +146,7 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, runtime.NewResponseError(response)
 	}
 
-	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, c.armClientOptions)
+	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, nil)
 
 	if err != nil {
 		return nil, fmt.Errorf("creating web app client: %w", err)
@@ -286,7 +256,7 @@ func logWebAppDeploymentStatus(
 
 func (c *ZipDeployClient) DeployTrackStatus(
 	ctx context.Context,
-	zipFile io.Reader,
+	zipFile io.ReadSeeker,
 	subscriptionId string,
 	resourceGroup string,
 	appName string,

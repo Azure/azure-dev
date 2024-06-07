@@ -27,7 +27,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 		registerLinuxWebAppZipDeployMocks(mockContext, &ran)
 		registerLinuxWebAppDeployRuntimeSuccessfulMocks(mockContext, &ran)
 
-		zipFile := bytes.NewBuffer([]byte{})
+		zipFile := bytes.NewReader([]byte{})
 
 		res, err := azCli.DeployAppServiceZip(
 			*mockContext.Context,
@@ -52,7 +52,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 		registerLinuxWebAppZipDeployMocks(mockContext, &ran)
 		registerLinuxWebAppDeployRuntimeFailedMocks(mockContext, &ran)
 
-		zipFile := bytes.NewBuffer([]byte{})
+		zipFile := bytes.NewReader([]byte{})
 
 		res, err := azCli.DeployAppServiceZip(
 			*mockContext.Context,

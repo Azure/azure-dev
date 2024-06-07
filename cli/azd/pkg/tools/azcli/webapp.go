@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -95,27 +94,20 @@ func (cli *azCli) DeployAppServiceZip(
 		return nil, err
 	}
 
+	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
+	if err != nil {
+		return nil, err
+	}
+
 	// Deployment Status API only support linux web app for now
 	if isLinuxWebApp(app) {
-		// No retries in azure sdk for go to prevent silence build failure caused by io.Reader point to EOF
-		cli.armClientOptions.Retry.MaxRetries = -1
-		client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName, cli.armClientOptions)
-		if err != nil {
-			return nil, err
-		}
-
-		if err = client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
+		if err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
 			return nil, err
 		}
 
 		// Deployment is successful
 		statusText := "OK"
 		return convert.RefOf(statusText), nil
-	}
-
-	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName, cli.armClientOptions)
-	if err != nil {
-		return nil, err
 	}
 
 	response, err := client.Deploy(ctx, deployZipFile)
@@ -144,14 +136,13 @@ func (cli *azCli) createZipDeployClient(
 	ctx context.Context,
 	subscriptionId string,
 	hostName string,
-	armClientOptions *arm.ClientOptions,
 ) (*azsdk.ZipDeployClient, error) {
 	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := azsdk.NewZipDeployClient(hostName, credential, armClientOptions)
+	client, err := azsdk.NewZipDeployClient(hostName, credential, cli.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating WebApps client: %w", err)
 	}

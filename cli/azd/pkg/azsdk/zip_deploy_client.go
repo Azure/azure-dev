@@ -33,6 +33,7 @@ type ZipDeployClient struct {
 	hostName string
 	pipeline runtime.Pipeline
 	cred     azcore.TokenCredential
+	option   *arm.ClientOptions
 }
 
 type DeployResponse struct {
@@ -88,6 +89,7 @@ func NewZipDeployClient(
 		hostName: hostName,
 		pipeline: pipeline,
 		cred:     credential,
+		option:   options,
 	}, nil
 }
 
@@ -146,7 +148,7 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, runtime.NewResponseError(response)
 	}
 
-	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, nil)
+	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, c.option)
 
 	if err != nil {
 		return nil, fmt.Errorf("creating web app client: %w", err)

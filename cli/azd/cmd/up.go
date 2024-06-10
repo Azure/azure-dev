@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -11,14 +10,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -56,15 +51,10 @@ func newUpCmd() *cobra.Command {
 }
 
 type upAction struct {
-	flags               *upFlags
-	console             input.Console
-	env                 *environment.Environment
-	projectConfig       *project.ProjectConfig
-	provisioningManager *provisioning.Manager
-	envManager          environment.Manager
-	prompters           prompt.Prompter
-	importManager       *project.ImportManager
-	workflowRunner      *workflow.Runner
+	console        input.Console
+	projectConfig  *project.ProjectConfig
+	importManager  *project.ImportManager
+	workflowRunner *workflow.Runner
 }
 
 var defaultUpWorkflow = &workflow.Workflow{
@@ -77,27 +67,17 @@ var defaultUpWorkflow = &workflow.Workflow{
 }
 
 func newUpAction(
-	flags *upFlags,
 	console input.Console,
-	env *environment.Environment,
 	_ auth.LoggedInGuard,
 	projectConfig *project.ProjectConfig,
-	provisioningManager *provisioning.Manager,
-	envManager environment.Manager,
-	prompters prompt.Prompter,
 	importManager *project.ImportManager,
 	workflowRunner *workflow.Runner,
 ) actions.Action {
 	return &upAction{
-		flags:               flags,
-		console:             console,
-		env:                 env,
-		projectConfig:       projectConfig,
-		provisioningManager: provisioningManager,
-		envManager:          envManager,
-		prompters:           prompters,
-		importManager:       importManager,
-		workflowRunner:      workflowRunner,
+		console:        console,
+		projectConfig:  projectConfig,
+		importManager:  importManager,
+		workflowRunner: workflowRunner,
 	}
 }
 
@@ -107,19 +87,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 	defer func() { _ = infra.Cleanup() }()
-
-	// TODO(weilim): remove this once we have decided if it's okay to not set AZURE_SUBSCRIPTION_ID and AZURE_LOCATION
-	// early in the up workflow in #3745
-	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
-	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
-		// If bicep is not available, we continue to prompt for subscription and location unfiltered
-		err = provisioning.EnsureSubscriptionAndLocation(ctx, u.envManager, u.env, u.prompters, nil)
-		if err != nil {
-			return nil, err
-		}
-	} else if err != nil {
-		return nil, err
-	}
 
 	startTime := time.Now()
 

@@ -170,7 +170,8 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 			if err != nil {
 				var httpErr *azcore.ResponseError
 				if errors.As(err, &httpErr) {
-					// 404 - Retry if the resource is not found as deployment id doesn't match with temp deployment id
+					// We get temporary 404s when the KUDO API received the request and created a temp deployment id
+					// as a intermediate step before deployed with actual deployment id
 					if httpErr.StatusCode == 404 {
 						return retry.RetryableError(err)
 					}
@@ -277,7 +278,7 @@ func (c *ZipDeployClient) DeployTrackStatus(
 
 		resp, err = poller.Poll(ctx)
 		if err != nil {
-			break
+			return err
 		}
 
 		if err := runtime.UnmarshalAsJSON(resp, &response); err != nil {

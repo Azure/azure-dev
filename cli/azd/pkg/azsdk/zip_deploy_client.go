@@ -161,6 +161,7 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 	// and created a temp deployment id as a intermediate step before deployed with actual deployment id
 	retryCtx := policy.WithRetryOptions(ctx, policy.RetryOptions{
 		MaxRetries: 4,
+		RetryDelay: 5 * time.Second,
 		StatusCodes: append([]int{
 			http.StatusRequestTimeout,      // 408
 			http.StatusTooManyRequests,     // 429

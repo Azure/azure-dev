@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/psanford/memfs"
 )
 
 const baseRoot = "scaffold/base"
@@ -46,6 +47,25 @@ func copyFS(embedFs fs.FS, root string, target string) error {
 			return fmt.Errorf("reading file: %w", err)
 		}
 		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
+	})
+}
+
+func copyFsToMemFs(embedFs fs.FS, targetFs *memfs.FS, root string, target string) error {
+	return fs.WalkDir(embedFs, root, func(name string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		targetPath := path.Join(target, name[len(root):])
+
+		if d.IsDir() {
+			return targetFs.MkdirAll(targetPath, osutil.PermissionDirectory)
+		}
+
+		contents, err := fs.ReadFile(embedFs, name)
+		if err != nil {
+			return fmt.Errorf("reading file: %w", err)
+		}
+		return targetFs.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
 }
 
@@ -149,6 +169,56 @@ func ExecInfra(
 	return nil
 }
 
+// ExecInfra scaffolds infrastructure files for the given spec, using the loaded templates in t. The resulting files
+// are written to the target directory.
+func ExecInfraFs(
+	t *template.Template,
+	spec InfraSpec) (*memfs.FS, error) {
+	fs := memfs.New()
+	infraApp := "app"
+
+	// Pre-execution expansion. Additional parameters are added, derived from the initial spec.
+	preExecExpand(&spec)
+
+	err := copyFsToMemFs(resources.ScaffoldBase, fs, baseRoot, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if spec.DbCosmosMongo != nil {
+		err = executeToFS(fs, t, "db-cosmos-mongo.bicep", path.Join(infraApp, "db-cosmos-mongo.bicep"), spec.DbCosmosMongo)
+		if err != nil {
+			return nil, fmt.Errorf("scaffolding cosmos mongodb: %w", err)
+		}
+	}
+
+	if spec.DbPostgres != nil {
+		err = executeToFS(fs, t, "db-postgres.bicep", path.Join(infraApp, "db-postgres.bicep"), spec.DbPostgres)
+		if err != nil {
+			return nil, fmt.Errorf("scaffolding postgres: %w", err)
+		}
+	}
+
+	for _, svc := range spec.Services {
+		err = executeToFS(fs, t, "host-containerapp.bicep", path.Join(infraApp, svc.Name+".bicep"), svc)
+		if err != nil {
+			return nil, fmt.Errorf("scaffolding containerapp: %w", err)
+		}
+	}
+
+	err = executeToFS(fs, t, "main.bicep", "main.bicep", spec)
+	if err != nil {
+		return nil, fmt.Errorf("scaffolding main.bicep: %w", err)
+	}
+
+	err = executeToFS(fs, t, "main.parameters.json", "main.parameters.json", spec)
+	if err != nil {
+		return nil, fmt.Errorf("scaffolding main.parameters.json: %w", err)
+	}
+
+	return fs, nil
+}
+
 func preExecExpand(spec *InfraSpec) {
 	// postgres requires specific password seeding parameters
 	if spec.DbPostgres != nil {
@@ -168,4 +238,24 @@ func preExecExpand(spec *InfraSpec) {
 		spec.Parameters = append(spec.Parameters,
 			serviceDefPlaceholder(svc.Name))
 	}
+}
+
+// executeToFS executes the given template with the given name and context, and writes the result to the given path in
+// the given target filesystem.
+func executeToFS(targetFS *memfs.FS, tmpl *template.Template, name string, path string, context any) error {
+	buf := bytes.NewBufferString("")
+
+	if err := tmpl.ExecuteTemplate(buf, name, context); err != nil {
+		return fmt.Errorf("executing template: %w", err)
+	}
+
+	if err := targetFS.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	if err := targetFS.WriteFile(path, buf.Bytes(), osutil.PermissionFile); err != nil {
+		return fmt.Errorf("writing file: %w", err)
+	}
+
+	return nil
 }

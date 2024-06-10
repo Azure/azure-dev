@@ -11,9 +11,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type ImportManager struct {
@@ -86,6 +89,12 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 		allServices[name] = svcConfig
 	}
 
+	for name, svcConfig := range projectConfig.Services {
+		if svcConfig.ServiceType == "" || svcConfig.ServiceType == ServiceTypeProject {
+			allServices[name] = svcConfig
+		}
+	}
+
 	// Collect all the services and then sort the resulting list by name. This provides a stable ordering of services.
 	allServicesSlice := make([]*ServiceConfig, 0, len(allServices))
 	for _, v := range allServices {
@@ -148,7 +157,131 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
-	return &Infra{}, nil
+	infraSpec := scaffold.InfraSpec{}
+	backendMapping := map[string]string{}
+	for _, svc := range projectConfig.Services {
+		switch svc.ServiceType {
+		case ServiceTypeProject, "":
+			svcSpec := scaffold.ServiceSpec{
+				Name: svc.Name,
+				Port: -1,
+			}
+
+			if svc.Port != "" {
+				port, err := strconv.Atoi(svc.Port)
+				if err != nil {
+					return nil, fmt.Errorf("invalid port value %s for service %s", svc.Port, svc.Name)
+				}
+
+				if port < 1 || port > 65535 {
+					return nil, fmt.Errorf("port value %s for service %s must be between 1 and 65535", svc.Port, svc.Name)
+				}
+
+				svcSpec.Port = port
+			} else if svc.Docker.Path == "" {
+				// default builder always specifies port 80
+				svcSpec.Port = 80
+
+				if svc.Language == ServiceLanguageJava {
+					svcSpec.Port = 8080
+				}
+			}
+
+			for _, use := range svc.Uses {
+				useSvc, ok := projectConfig.Services[use]
+				if !ok {
+					return nil, fmt.Errorf("service %s uses service %s, which does not exist", svc.Name, use)
+				}
+
+				switch useSvc.ServiceType {
+				case ServiceTypeDbMongo:
+					svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useSvc.Name}
+				case ServiceTypeDbPostgres:
+					svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useSvc.Name}
+				case ServiceTypeDbRedis:
+					svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useSvc.Name}
+				case "", ServiceTypeProject:
+					if svcSpec.Frontend == nil {
+						svcSpec.Frontend = &scaffold.Frontend{}
+					}
+
+					svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
+						scaffold.ServiceReference{Name: useSvc.Name})
+					backendMapping[useSvc.Name] = svc.Name
+				}
+			}
+
+			infraSpec.Services = append(infraSpec.Services, svcSpec)
+		case ServiceTypeDbMongo:
+			// todo: support servers and databases
+			infraSpec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
+				DatabaseName: svc.Name,
+			}
+		case ServiceTypeDbPostgres:
+			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
+				DatabaseName: svc.Name,
+			}
+		}
+	}
+
+	// create reverse mapping
+	for _, svc := range infraSpec.Services {
+		if front, ok := backendMapping[svc.Name]; ok {
+			if svc.Backend == nil {
+				svc.Backend = &scaffold.Backend{}
+			}
+
+			svc.Backend.Frontends = append(svc.Backend.Frontends, scaffold.ServiceReference{Name: front})
+		}
+	}
+	tmpDir, err := os.MkdirTemp("", "azd-infra")
+	if err != nil {
+		return nil, fmt.Errorf("creating temporary directory: %w", err)
+	}
+
+	t, err := scaffold.Load()
+	if err != nil {
+		return nil, fmt.Errorf("loading scaffold templates: %w", err)
+	}
+
+	files, err := scaffold.ExecInfraFs(t, infraSpec)
+	if err != nil {
+		return nil, fmt.Errorf("executing scaffold templates: %w", err)
+	}
+
+	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		target := filepath.Join(tmpDir, path)
+		if err := os.MkdirAll(filepath.Dir(target), osutil.PermissionDirectoryOwnerOnly); err != nil {
+			return err
+		}
+
+		contents, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(target, contents, d.Type().Perm())
+	})
+	if err != nil {
+		return nil, fmt.Errorf("writing infrastructure: %w", err)
+	}
+
+	return &Infra{
+		Options: provisioning.Options{
+			Provider: provisioning.Bicep,
+			Path:     tmpDir,
+			Module:   DefaultModule,
+		},
+		cleanupDir: tmpDir,
+	}, nil
 }
 
 // pathHasModule returns true if there is a file named "<module>" or "<module.bicep>" in path.

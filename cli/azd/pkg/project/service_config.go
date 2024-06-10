@@ -9,9 +9,21 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
+type ServiceType string
+
+const (
+	ServiceTypeProject ServiceType = "project"
+
+	ServiceTypeDbRedis    ServiceType = "db.redis"
+	ServiceTypeDbPostgres ServiceType = "db.postgres"
+	ServiceTypeDbMongo    ServiceType = "db.mongo"
+)
+
 type ServiceConfig struct {
 	// Reference to the parent project configuration
 	Project *ProjectConfig `yaml:"-"`
+	// Type of service
+	ServiceType ServiceType `yaml:"type"`
 	// The friendly name/key of the project from the azure.yaml file
 	Name string `yaml:"-"`
 	// The azure resource group to deploy the service to
@@ -43,6 +55,9 @@ type ServiceConfig struct {
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
 	// Custom configuration for the service target
 	Config map[string]any `yaml:"config,omitempty"`
+	// The list of services that this service depends on
+	Uses []string `yaml:"uses,omitempty"`
+	Port string   `yaml:"port,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }

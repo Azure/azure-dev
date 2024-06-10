@@ -2,7 +2,6 @@ package azsdk
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,7 +16,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/sethvargo/go-retry"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -159,31 +157,23 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, fmt.Errorf("empty deployment status id")
 	}
 
+	// Add 404 to default retry errors in azure-sdk-for-go. We get temporary 404s when the KUDO API received the request
+	// and created a temp deployment id as a intermediate step before deployed with actual deployment id
+	retryCtx := policy.WithRetryOptions(ctx, policy.RetryOptions{
+		MaxRetries: 4,
+		StatusCodes: append([]int{
+			http.StatusRequestTimeout,      // 408
+			http.StatusTooManyRequests,     // 429
+			http.StatusInternalServerError, // 500
+			http.StatusBadGateway,          // 502
+			http.StatusServiceUnavailable,  // 503
+			http.StatusGatewayTimeout,      // 504
+		}, http.StatusNotFound), // 404
+	})
+
 	// nolint:lll
 	// Example definition: https://github.com/Azure/azure-rest-api-specs/tree/main/specification/web/resource-manager/Microsoft.Web/stable/2022-03-01/examples/GetSiteDeploymentStatus.json
-	var poller *runtime.Poller[armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse]
-	err = retry.Do(
-		ctx,
-		retry.WithMaxRetries(3, retry.NewConstant(5*time.Second)),
-		func(ctx context.Context) error {
-			pollerRetry, err := client.BeginGetProductionSiteDeploymentStatus(ctx, resourceGroup, appName, deploymentStatusId, nil)
-			if err != nil {
-				var httpErr *azcore.ResponseError
-				if errors.As(err, &httpErr) {
-					// We get temporary 404s when the KUDO API received the request and created a temp deployment id
-					// as a intermediate step before deployed with actual deployment id
-					if httpErr.StatusCode == 404 {
-						return retry.RetryableError(err)
-					}
-				}
-				return err
-			}
-
-			poller = pollerRetry
-
-			return nil
-		})
-
+	poller, err := client.BeginGetProductionSiteDeploymentStatus(retryCtx, resourceGroup, appName, deploymentStatusId, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment status: %w", err)
 	}

@@ -148,7 +148,7 @@ func (c *ZipDeployClient) BeginDeployTrackStatus(
 		return nil, runtime.NewResponseError(response)
 	}
 
-	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, c.option)
+	client, err := armappservice.NewWebAppsClient(subscriptionId, c.cred, c.armClientOptions)
 
 	if err != nil {
 		return nil, fmt.Errorf("creating web app client: %w", err)

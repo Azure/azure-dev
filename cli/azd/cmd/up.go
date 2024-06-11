@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -51,10 +52,11 @@ func newUpCmd() *cobra.Command {
 }
 
 type upAction struct {
-	console        input.Console
-	projectConfig  *project.ProjectConfig
-	importManager  *project.ImportManager
-	workflowRunner *workflow.Runner
+	console             input.Console
+	projectConfig       *project.ProjectConfig
+	provisioningManager *provisioning.Manager
+	importManager       *project.ImportManager
+	workflowRunner      *workflow.Runner
 }
 
 var defaultUpWorkflow = &workflow.Workflow{
@@ -70,14 +72,16 @@ func newUpAction(
 	console input.Console,
 	_ auth.LoggedInGuard,
 	projectConfig *project.ProjectConfig,
+	provisioningManager *provisioning.Manager,
 	importManager *project.ImportManager,
 	workflowRunner *workflow.Runner,
 ) actions.Action {
 	return &upAction{
-		console:        console,
-		projectConfig:  projectConfig,
-		importManager:  importManager,
-		workflowRunner: workflowRunner,
+		console:             console,
+		projectConfig:       projectConfig,
+		provisioningManager: provisioningManager,
+		importManager:       importManager,
+		workflowRunner:      workflowRunner,
 	}
 }
 
@@ -87,6 +91,12 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 	defer func() { _ = infra.Cleanup() }()
+
+	// TODO(weilim): remove this once we have decided if it's okay to not set AZURE_SUBSCRIPTION_ID and AZURE_LOCATION
+	// early in the up workflow in #3745
+	if err := u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options); err != nil {
+		return nil, err
+	}
 
 	startTime := time.Now()
 

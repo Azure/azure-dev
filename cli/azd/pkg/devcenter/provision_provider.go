@@ -80,6 +80,10 @@ func (p *ProvisionProvider) Initialize(ctx context.Context, projectPath string, 
 	return p.EnsureEnv(ctx)
 }
 
+func (p *ProvisionProvider) CollectData(ctx context.Context) error {
+	return nil
+}
+
 // State returns the state of the environment from the most recent ARM deployment
 func (p *ProvisionProvider) State(
 	ctx context.Context,

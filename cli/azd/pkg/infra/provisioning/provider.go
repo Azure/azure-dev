@@ -53,6 +53,7 @@ type StateResult struct {
 type Provider interface {
 	Name() string
 	Initialize(ctx context.Context, projectPath string, options Options) error
+	CollectData(ctx context.Context) error
 	State(ctx context.Context, options *StateOptions) (*StateResult, error)
 	Deploy(ctx context.Context) (*DeployResult, error)
 	Preview(ctx context.Context) (*DeployPreviewResult, error)

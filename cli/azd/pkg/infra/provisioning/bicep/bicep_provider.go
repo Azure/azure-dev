@@ -111,16 +111,113 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 		p.options.Path = defaultPath
 	}
 
+	p.ignoreDeploymentState = options.IgnoreDeploymentState
+
+	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
+	defer p.console.StopSpinner(ctx, "", input.Step)
+
+	if err := p.validate(ctx); err != nil {
+		return err
+	}
+
+	if err := p.ensureSubscriptionAndLocation(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// CollectData collects any additional data required for provisioning including prompting the user for any
+// required parameter values
+func (p *BicepProvider) CollectData(ctx context.Context) error {
+	modulePath := p.modulePath()
+
+	compileResult, compileErr := p.compileBicep(ctx, modulePath)
+	if compileErr != nil {
+		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
+	}
+
+	if _, err := p.ensureParameters(ctx, compileResult.Template); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validate validates the environment and the required tools for the Bicep provider.
+func (p *BicepProvider) validate(ctx context.Context) error {
+	modulePath := p.modulePath()
+
 	requiredTools := p.RequiredExternalTools()
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
 	}
-	p.ignoreDeploymentState = options.IgnoreDeploymentState
 
-	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
-	err := p.EnsureEnv(ctx)
-	p.console.StopSpinner(ctx, "", input.Step)
-	return err
+	compileResult, compileErr := p.compileBicep(ctx, modulePath)
+	if compileErr != nil {
+		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
+	}
+
+	// for .bicep, azd must load a parameters.json file and create the ArmParameters
+	if isBicepFile(modulePath) {
+		var filterLocation = func(loc account.Location) bool {
+			if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
+				if locationParam.AllowedValues != nil {
+					return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
+						allowedValueString, goodCast := allowedValue.(string)
+						return goodCast && loc.Name == allowedValueString
+					}) != -1
+				}
+			}
+			return true
+		}
+
+		if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation); err != nil {
+			return err
+		}
+	}
+
+	scope, err := compileResult.Template.TargetScope()
+	if err != nil {
+		return err
+	}
+
+	if scope == azure.DeploymentScopeResourceGroup {
+		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
+			return ErrResourceGroupScopeNotSupported
+		}
+
+		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
+
+		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+			rgName, err := p.prompters.PromptResourceGroup(ctx)
+			if err != nil {
+				return err
+			}
+
+			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+			if err := p.envManager.Save(ctx, p.env); err != nil {
+				return fmt.Errorf("saving resource group name: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// ensureSubscriptionAndLocation collects the required subscription and location information from the user.
+func (p *BicepProvider) ensureSubscriptionAndLocation(ctx context.Context) error {
+	modulePath := p.modulePath()
+
+	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
+	// which can reference these values
+	if isBicepParamFile(modulePath) {
+		if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")

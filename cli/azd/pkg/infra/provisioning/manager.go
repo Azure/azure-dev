@@ -58,6 +58,10 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	return m.provider.Initialize(ctx, projectPath, options)
 }
 
+func (m *Manager) CollectData(ctx context.Context) error {
+	return m.provider.CollectData(ctx)
+}
+
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
 	result, err := m.provider.State(ctx, options)

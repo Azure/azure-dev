@@ -83,6 +83,16 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	}
 
 	for key, svc := range projectConfig.Services {
+		if svc.ServiceType == "" {
+			svc.ServiceType = ServiceTypeProject
+		}
+
+		if svc.ServiceType != ServiceTypeProject {
+			svc.Name = key
+			svc.Project = &projectConfig
+			break
+		}
+
 		svc.Name = key
 		svc.Project = &projectConfig
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()

@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/psanford/memfs"
 )
 
 type ImportManager struct {
@@ -157,6 +158,156 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
+	infraSpec, err := infraSpec(projectConfig)
+	if err != nil {
+		return nil, fmt.Errorf("parsing infrastructure: %w", err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "azd-infra")
+	if err != nil {
+		return nil, fmt.Errorf("creating temporary directory: %w", err)
+	}
+
+	t, err := scaffold.Load()
+	if err != nil {
+		return nil, fmt.Errorf("loading scaffold templates: %w", err)
+	}
+
+	files, err := scaffold.ExecInfraFs(t, *infraSpec)
+	if err != nil {
+		return nil, fmt.Errorf("executing scaffold templates: %w", err)
+	}
+
+	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		target := filepath.Join(tmpDir, path)
+		if err := os.MkdirAll(filepath.Dir(target), osutil.PermissionDirectoryOwnerOnly); err != nil {
+			return err
+		}
+
+		contents, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(target, contents, d.Type().Perm())
+	})
+	if err != nil {
+		return nil, fmt.Errorf("writing infrastructure: %w", err)
+	}
+
+	return &Infra{
+		Options: provisioning.Options{
+			Provider: provisioning.Bicep,
+			Path:     tmpDir,
+			Module:   DefaultModule,
+		},
+		cleanupDir: tmpDir,
+	}, nil
+}
+
+// pathHasModule returns true if there is a file named "<module>" or "<module.bicep>" in path.
+func pathHasModule(path, module string) (bool, error) {
+	files, err := os.ReadDir(path)
+	if err != nil {
+		return false, fmt.Errorf("error while iterating directory: %w", err)
+	}
+
+	return slices.ContainsFunc(files, func(file fs.DirEntry) bool {
+		fileName := file.Name()
+		fileNameNoExt := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+		return !file.IsDir() && fileNameNoExt == module
+	}), nil
+
+}
+
+func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
+	for _, svcConfig := range projectConfig.Services {
+		if svcConfig.Language == ServiceLanguageDotNet {
+			if len(projectConfig.Services) != 1 {
+				return nil, errNoMultipleServicesWithAppHost
+			}
+
+			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig)
+		}
+	}
+
+	infraSpec, err := infraSpec(projectConfig)
+	if err != nil {
+		return nil, fmt.Errorf("parsing infrastructure: %w", err)
+	}
+
+	if len(infraSpec.Services) > 0 {
+		generatedFS := memfs.New()
+		t, err := scaffold.Load()
+		if err != nil {
+			return nil, fmt.Errorf("loading scaffold templates: %w", err)
+		}
+
+		infraFS, err := scaffold.ExecInfraFs(t, *infraSpec)
+		if err != nil {
+			return nil, fmt.Errorf("executing scaffold templates: %w", err)
+		}
+
+		infraPathPrefix := DefaultPath
+		if projectConfig.Infra.Path != "" {
+			infraPathPrefix = projectConfig.Infra.Path
+		}
+
+		err = fs.WalkDir(infraFS, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if d.IsDir() {
+				return nil
+			}
+
+			err = generatedFS.MkdirAll(filepath.Join(infraPathPrefix, filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
+			if err != nil {
+				return err
+			}
+
+			contents, err := fs.ReadFile(infraFS, path)
+			if err != nil {
+				return err
+			}
+
+			return generatedFS.WriteFile(filepath.Join(infraPathPrefix, path), contents, d.Type().Perm())
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return generatedFS, nil
+	}
+
+	return nil, fmt.Errorf("this project does not contain any infrastructure to synthesize")
+}
+
+// Infra represents the (possibly temporarily generated) infrastructure. Call [Cleanup] when done with infrastructure,
+// which will cause any temporarily generated files to be removed.
+type Infra struct {
+	Options    provisioning.Options
+	cleanupDir string
+}
+
+func (i *Infra) Cleanup() error {
+	if i.cleanupDir != "" {
+		return os.RemoveAll(i.cleanupDir)
+	}
+
+	return nil
+}
+
+func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	infraSpec := scaffold.InfraSpec{}
 	backendMapping := map[string]string{}
 	for _, svc := range projectConfig.Services {
@@ -234,96 +385,6 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 			svc.Backend.Frontends = append(svc.Backend.Frontends, scaffold.ServiceReference{Name: front})
 		}
 	}
-	tmpDir, err := os.MkdirTemp("", "azd-infra")
-	if err != nil {
-		return nil, fmt.Errorf("creating temporary directory: %w", err)
-	}
 
-	t, err := scaffold.Load()
-	if err != nil {
-		return nil, fmt.Errorf("loading scaffold templates: %w", err)
-	}
-
-	files, err := scaffold.ExecInfraFs(t, infraSpec)
-	if err != nil {
-		return nil, fmt.Errorf("executing scaffold templates: %w", err)
-	}
-
-	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		target := filepath.Join(tmpDir, path)
-		if err := os.MkdirAll(filepath.Dir(target), osutil.PermissionDirectoryOwnerOnly); err != nil {
-			return err
-		}
-
-		contents, err := fs.ReadFile(files, path)
-		if err != nil {
-			return err
-		}
-
-		return os.WriteFile(target, contents, d.Type().Perm())
-	})
-	if err != nil {
-		return nil, fmt.Errorf("writing infrastructure: %w", err)
-	}
-
-	return &Infra{
-		Options: provisioning.Options{
-			Provider: provisioning.Bicep,
-			Path:     tmpDir,
-			Module:   DefaultModule,
-		},
-		cleanupDir: tmpDir,
-	}, nil
-}
-
-// pathHasModule returns true if there is a file named "<module>" or "<module.bicep>" in path.
-func pathHasModule(path, module string) (bool, error) {
-	files, err := os.ReadDir(path)
-	if err != nil {
-		return false, fmt.Errorf("error while iterating directory: %w", err)
-	}
-
-	return slices.ContainsFunc(files, func(file fs.DirEntry) bool {
-		fileName := file.Name()
-		fileNameNoExt := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-		return !file.IsDir() && fileNameNoExt == module
-	}), nil
-
-}
-
-func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
-	for _, svcConfig := range projectConfig.Services {
-		if svcConfig.Language == ServiceLanguageDotNet {
-			if len(projectConfig.Services) != 1 {
-				return nil, errNoMultipleServicesWithAppHost
-			}
-
-			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig)
-		}
-	}
-
-	return nil, fmt.Errorf("this project does not contain any infrastructure to synthesize")
-}
-
-// Infra represents the (possibly temporarily generated) infrastructure. Call [Cleanup] when done with infrastructure,
-// which will cause any temporarily generated files to be removed.
-type Infra struct {
-	Options    provisioning.Options
-	cleanupDir string
-}
-
-func (i *Infra) Cleanup() error {
-	if i.cleanupDir != "" {
-		return os.RemoveAll(i.cleanupDir)
-	}
-
-	return nil
+	return &infraSpec, nil
 }

@@ -55,7 +55,10 @@ func copyFsToMemFs(embedFs fs.FS, targetFs *memfs.FS, root string, target string
 		if err != nil {
 			return err
 		}
-		targetPath := path.Join(target, name[len(root):])
+		targetPath := name[len(root):]
+		if target != "" {
+			targetPath = path.Join(target, name[len(root):])
+		}
 
 		if d.IsDir() {
 			return targetFs.MkdirAll(targetPath, osutil.PermissionDirectory)
@@ -180,7 +183,7 @@ func ExecInfraFs(
 	// Pre-execution expansion. Additional parameters are added, derived from the initial spec.
 	preExecExpand(&spec)
 
-	err := copyFsToMemFs(resources.ScaffoldBase, fs, baseRoot, "")
+	err := copyFsToMemFs(resources.ScaffoldBase, fs, baseRoot, ".")
 	if err != nil {
 		return nil, err
 	}

@@ -44,12 +44,12 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 		return nil, err
 	}
 
-	cred, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	hostName, err := appServiceRepositoryHost(app, appName)
 	if err != nil {
 		return nil, err
 	}
 
-	hostName, err := appServiceRepositoryHost(app, appName)
+	cred, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -70,12 +70,12 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 	if strings.ToLower(*plan.SKU.Tier) == "flexconsumption" {
 		client, err := azsdk.NewFuncAppHostClient(hostName, cred, cli.armClientOptions)
 		if err != nil {
-			return nil, fmt.Errorf("creating func app client: %w", err)
+			return nil, fmt.Errorf("creating func app host client: %w", err)
 		}
 
 		response, err := client.Publish(ctx, deployZipFile, &azsdk.PublishOptions{RemoteBuild: remoteBuild})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("publishing zip file: %w", err)
 		}
 		return convert.RefOf(response.StatusText), nil
 	}

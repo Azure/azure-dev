@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // FuncAppHostClient contains methods for interacting with the Azure Functions application host, usually located
@@ -30,13 +28,16 @@ func NewFuncAppHostClient(
 	credential azcore.TokenCredential,
 	options *arm.ClientOptions,
 ) (*FuncAppHostClient, error) {
-	if options == nil {
-		options = &arm.ClientOptions{}
+	funcAppHostOptions := &arm.ClientOptions{}
+	if options != nil {
+		optionsCopy := *options
+		funcAppHostOptions = &optionsCopy
 	}
 
 	options.DisableRPRegistration = true
 
-	pipeline, err := armruntime.NewPipeline("funcapp-deploy", "1.0.0", credential, runtime.PipelineOptions{}, options)
+	pipeline, err := armruntime.NewPipeline(
+		"funcapp-deploy", "1.0.0", credential, runtime.PipelineOptions{}, funcAppHostOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating HTTP pipeline: %w", err)
 	}
@@ -55,11 +56,11 @@ type PublishOptions struct {
 }
 
 // Publish deploys an application zip file to the function app host.
-// This is currently only supported for Flex-consumption plans.
+// This is currently only supported for flexconsumption plans.
 func (c *FuncAppHostClient) Publish(
 	ctx context.Context,
 	zipFile io.ReadSeeker,
-	options *PublishOptions) (*PublishResponse, error) {
+	options *PublishOptions) (PublishResponse, error) {
 	if options == nil {
 		options = &PublishOptions{}
 	}
@@ -67,10 +68,12 @@ func (c *FuncAppHostClient) Publish(
 	endpoint := fmt.Sprintf("https://%s/api/publish", c.hostName)
 	request, err := runtime.NewRequest(ctx, http.MethodPost, endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("creating deploy request: %w", err)
+		return PublishResponse{}, fmt.Errorf("creating deploy request: %w", err)
 	}
 
 	rawRequest := request.Raw()
+	rawRequest.Header.Set("Accept", "application/json")
+
 	query := rawRequest.URL.Query()
 	if options.RemoteBuild {
 		query.Set("RemoteBuild", "true")
@@ -79,49 +82,46 @@ func (c *FuncAppHostClient) Publish(
 
 	err = request.SetBody(streaming.NopCloser(zipFile), "application/zip")
 	if err != nil {
-		return nil, fmt.Errorf("setting request body: %w", err)
+		return PublishResponse{}, fmt.Errorf("setting request body: %w", err)
 	}
-	rawRequest.Header.Set("Accept", "application/json")
 
 	response, err := c.pipeline.Do(request)
 	if err != nil {
-		return nil, err
+		return PublishResponse{}, err
 	}
 
 	defer response.Body.Close()
 
 	if !runtime.HasStatusCode(response, http.StatusAccepted) {
-		return nil, runtime.NewResponseError(response)
+		return PublishResponse{}, runtime.NewResponseError(response)
 	}
 
 	body, err := runtime.Payload(response)
 	if err != nil {
-		return nil, err
+		return PublishResponse{}, err
 	}
 
 	// the response body is the deployment id and nothing else.
 	var deploymentId string
 	if err := json.Unmarshal(body, &deploymentId); err != nil {
-		return nil, err
+		return PublishResponse{}, err
 	}
 
 	if deploymentId == "" {
-		return nil, fmt.Errorf("missing deployment id")
+		return PublishResponse{}, fmt.Errorf("missing deployment id")
 	}
-
-	logResponse(response)
-
-	var finalResponse *PublishResponse
 
 	location := fmt.Sprintf("https://%s/api/deployments/%s", c.hostName, deploymentId)
 	handler := newPublishPollingHandler(c.pipeline, location)
-	pollerOptions := &runtime.NewPollerOptions[*PublishResponse]{
+
+	var finalResponse PublishResponse
+	pollerOptions := &runtime.NewPollerOptions[PublishResponse]{
 		Response: &finalResponse,
 		Handler:  handler,
 	}
 	poller, err := runtime.NewPoller(response, c.pipeline, pollerOptions)
 	if err != nil {
-		return nil, err
+		return PublishResponse{}, err
 	}
 
 	rsp, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
@@ -129,7 +129,7 @@ func (c *FuncAppHostClient) Publish(
 		Frequency: 1 * time.Second,
 	})
 	if err != nil {
-		return nil, err
+		return PublishResponse{}, err
 	}
 
 	return rsp, nil
@@ -210,65 +210,46 @@ func (h *publishPollingHandler) Poll(ctx context.Context) (*http.Response, error
 		return nil, err
 	}
 
-	logResponse(response)
-
-	// According to the service team, it's possible to observe a 404 response after the deployment is complete.
-	// This 404 is due to the deployment record being "recycled". See work item TODO.
+	// It's possible to observe a 404 response after the deployment is complete.
+	// If a 404 is observed, we assume the deployment is complete and return the last response.
+	//
+	// This 404 is due to the deployment worker being "recycled".
+	// This shortcoming would be fixed by work item https://msazure.visualstudio.com/Antares/_workitems/edit/24715654.
 	if response.StatusCode == http.StatusNotFound && h.lastResponse != nil {
 		h.result = h.lastResponse
 		return response, nil
 	}
 
-	// after the deployment is in-progress
+	// The deployment is in-progress
 	if response.StatusCode != http.StatusAccepted && response.StatusCode != http.StatusOK {
 		return nil, runtime.NewResponseError(response)
 	}
 
-	resp, err := httputil.ReadRawResponse[PublishResponse](response)
-	if err != nil {
+	resp := PublishResponse{}
+	if err := runtime.UnmarshalAsJSON(response, &resp); err != nil {
 		return nil, err
 	}
 
-	// Server returns response with status code 200 even if the deployment is still in progress.
-	// as a result, we need to read the body in full to determine the actual status.
+	// Server always returns status code of OK-200 whether the deployment is in-progress or complete.
+	// Thus, we always read the response body to determine the actual status.
 	switch resp.Status {
 	case PublishStatusCancelled:
 		return nil, fmt.Errorf("deployment was cancelled")
 	case PublishStatusFailed:
 		return nil, fmt.Errorf("deployment failed: %s", resp.StatusText)
 	case PublishStatusSuccess:
-		h.result = resp
+		h.result = &resp
 	case PublishStatusConflict:
 		return nil, fmt.Errorf("deployment was cancelled due to another deployment being in progress")
 	case PublishStatusPartialSuccess:
-		return nil, fmt.Errorf("deployment was partially successful")
+		return nil, fmt.Errorf("deployment was partially successful: %s", resp.StatusText)
 	}
 
-	h.lastResponse = resp
+	h.lastResponse = &resp
 	return response, nil
 }
 
-// Gets the result of the deploy operation
-func (h *publishPollingHandler) Result(ctx context.Context, out **PublishResponse) error {
-	*out = h.result
+func (h *publishPollingHandler) Result(ctx context.Context, out *PublishResponse) error {
+	*out = *h.result
 	return nil
-}
-
-func logResponse(response *http.Response) {
-	log.Println("==== RESPONSE HEADERS ===== ")
-	for k, v := range response.Header {
-		for _, vv := range v {
-			log.Printf("%s: %s\n", k, vv)
-		}
-	}
-	log.Println("==== END RESPONSE HEADERS ===== ")
-
-	log.Println("==== RESPONSE BODY ===== ")
-	body, err := runtime.Payload(response)
-	if err != nil {
-		log.Println("failed to read response body")
-	} else {
-		log.Println(string(body))
-	}
-	log.Println("==== END RESPONSE BODY ===== ")
 }

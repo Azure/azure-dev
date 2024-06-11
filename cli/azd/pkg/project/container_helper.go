@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -15,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/benbjohnson/clock"
+	"github.com/sethvargo/go-retry"
 )
 
 type ContainerHelper struct {
@@ -192,6 +195,8 @@ func (ch *ContainerHelper) Login(
 	return registryName, nil
 }
 
+var defaultCredentialsRetryDelay = 20 * time.Second
+
 func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -202,7 +207,29 @@ func (ch *ContainerHelper) Credentials(
 		return nil, err
 	}
 
-	return ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
+	var credential *azcli.DockerCredentials
+	credentialsError := retry.Do(
+		ctx,
+		// will retry just once after 1 minute based on:
+		// https://learn.microsoft.com/en-us/azure/dns/dns-faq#how-long-does-it-take-for-dns-changes-to-take-effect-
+		retry.WithMaxRetries(3, retry.NewConstant(defaultCredentialsRetryDelay)),
+		func(ctx context.Context) error {
+			cred, err := ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
+			if err != nil {
+				var httpErr *azcore.ResponseError
+				if errors.As(err, &httpErr) {
+					if httpErr.StatusCode == 404 {
+						// Retry if the registry is not found while logging in
+						return retry.RetryableError(err)
+					}
+				}
+				return err
+			}
+			credential = cred
+			return nil
+		})
+
+	return credential, credentialsError
 }
 
 // Deploy pushes and image to a remote server, and optionally writes the fully qualified remote image name to the

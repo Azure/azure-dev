@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -57,7 +58,7 @@ type PublishOptions struct {
 // This is currently only supported for Flex-consumption plans.
 func (c *FuncAppHostClient) Publish(
 	ctx context.Context,
-	zipFile io.ReadSeekCloser,
+	zipFile io.ReadSeeker,
 	options *PublishOptions) (*PublishResponse, error) {
 	if options == nil {
 		options = &PublishOptions{}
@@ -76,7 +77,7 @@ func (c *FuncAppHostClient) Publish(
 	}
 	rawRequest.URL.RawQuery = query.Encode()
 
-	err = request.SetBody(zipFile, "application/zip")
+	err = request.SetBody(streaming.NopCloser(zipFile), "application/zip")
 	if err != nil {
 		return nil, fmt.Errorf("setting request body: %w", err)
 	}

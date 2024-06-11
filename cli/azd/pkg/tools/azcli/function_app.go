@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
@@ -36,7 +36,7 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
-	deployZipFile io.ReadSeekCloser,
+	deployZipFile io.ReadSeeker,
 	remoteBuild bool,
 ) (*string, error) {
 	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)

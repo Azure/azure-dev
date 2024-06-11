@@ -24,6 +24,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	mockContext.Clock.Set(time.Now())
 	env := environment.NewWithValues("test", map[string]string{
 		AiProjectNameEnvVarName:              "AI_WORKSPACE",
+		environment.TenantIdEnvVarName:       "TENANT_ID",
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 		environment.ResourceGroupEnvVarName:  "RESOURCE_GROUP",
 	})
@@ -85,6 +86,9 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		Properties: &armmachinelearning.OnlineEndpointProperties{
 			ScoringURI: convert.RefOf("https://SCRORING_URI"),
 			SwaggerURI: convert.RefOf("https://SWAGGER_URI"),
+			Traffic: map[string]*int32{
+				deploymentName: convert.RefOf(int32(100)),
+			},
 		},
 	}
 
@@ -131,7 +135,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
 	require.IsType(t, &AiEndpointDeploymentResult{}, deployResult.Details)
-	require.Len(t, deployResult.Endpoints, 2)
+	require.Len(t, deployResult.Endpoints, 4)
 
 	deploymentDetails := deployResult.Details.(*AiEndpointDeploymentResult)
 

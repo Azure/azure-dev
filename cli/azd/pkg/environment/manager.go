@@ -66,6 +66,7 @@ type Manager interface {
 	Get(ctx context.Context, name string) (*Environment, error)
 
 	Save(ctx context.Context, env *Environment) error
+	SaveWithOptions(ctx context.Context, env *Environment, options *SaveOptions) error
 	Reload(ctx context.Context, env *Environment) error
 
 	// Delete deletes the environment from local storage.
@@ -149,7 +150,7 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 		env.SetLocation(spec.Location)
 	}
 
-	if err := m.Save(ctx, env); err != nil {
+	if err := m.SaveWithOptions(ctx, env, &SaveOptions{IsNew: true}); err != nil {
 		return nil, err
 	}
 
@@ -166,7 +167,7 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 	}
 
 	if isNew {
-		if err := m.Save(ctx, env); err != nil {
+		if err := m.SaveWithOptions(ctx, env, &SaveOptions{IsNew: isNew}); err != nil {
 			return nil, err
 		}
 
@@ -358,7 +359,7 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 			return nil, err
 		}
 
-		if err := m.local.Save(ctx, remoteEnv); err != nil {
+		if err := m.local.Save(ctx, remoteEnv, nil); err != nil {
 			return nil, err
 		}
 
@@ -379,7 +380,16 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 
 // Save saves the environment to the persistent data store
 func (m *manager) Save(ctx context.Context, env *Environment) error {
-	if err := m.local.Save(ctx, env); err != nil {
+	return m.SaveWithOptions(ctx, env, nil)
+}
+
+// Save saves the environment to the persistent data store with the specified options
+func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options *SaveOptions) error {
+	if options == nil {
+		options = &SaveOptions{}
+	}
+
+	if err := m.local.Save(ctx, env, options); err != nil {
 		return fmt.Errorf("saving local environment, %w", err)
 	}
 
@@ -387,7 +397,7 @@ func (m *manager) Save(ctx context.Context, env *Environment) error {
 		return nil
 	}
 
-	if err := m.remote.Save(ctx, env); err != nil {
+	if err := m.remote.Save(ctx, env, options); err != nil {
 		return fmt.Errorf("saving remote environment, %w", err)
 	}
 

@@ -10,8 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -92,7 +91,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 		registerDeployMocks(mockContext, &ran)
 		registerPollingMocks(mockContext, &ran)
 
-		zipFile := streaming.NopCloser(bytes.NewReader([]byte{}))
+		zipFile := bytes.NewReader([]byte{})
 
 		res, err := azCli.DeployFunctionAppUsingZipFile(
 			*mockContext.Context,
@@ -116,7 +115,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 		registerInfoMocks(mockContext, &ran)
 		registerConflictMocks(mockContext, &ran)
 
-		zipFile := streaming.NopCloser(bytes.NewReader([]byte{}))
+		zipFile := bytes.NewReader([]byte{})
 
 		res, err := azCli.DeployFunctionAppUsingZipFile(
 			*mockContext.Context,

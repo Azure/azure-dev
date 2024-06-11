@@ -13,9 +13,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/taskagent"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/taskagent"
 )
 
 // Creates a variable to be associated with a Pipeline
@@ -272,7 +272,8 @@ func QueueBuild(
 	ctx context.Context,
 	connection *azuredevops.Connection,
 	projectId string,
-	buildDefinition *build.BuildDefinition) error {
+	buildDefinition *build.BuildDefinition,
+	branchName string) error {
 	client, err := build.NewClient(ctx, connection)
 	if err != nil {
 		return err
@@ -282,7 +283,8 @@ func QueueBuild(
 	}
 
 	newBuild := &build.Build{
-		Definition: definitionReference,
+		Definition:   definitionReference,
+		SourceBranch: &branchName,
 	}
 	queueBuildArgs := build.QueueBuildArgs{
 		Project: &projectId,

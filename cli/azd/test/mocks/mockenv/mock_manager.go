@@ -36,6 +36,15 @@ func (m *MockEnvManager) Save(ctx context.Context, env *environment.Environment)
 	return args.Error(0)
 }
 
+func (m *MockEnvManager) SaveWithOptions(
+	ctx context.Context,
+	env *environment.Environment,
+	options *environment.SaveOptions,
+) error {
+	args := m.Called(ctx, env, options)
+	return args.Error(0)
+}
+
 func (m *MockEnvManager) Reload(ctx context.Context, env *environment.Environment) error {
 	args := m.Called(ctx, env)
 	return args.Error(0)

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
@@ -49,6 +49,14 @@ func (cli *azCli) appService(
 	return &webApp, nil
 }
 
+func isLinuxWebApp(response *armappservice.WebAppsClientGetResponse) bool {
+	if response.Properties != nil && response.Properties.SiteConfig != nil &&
+		response.Properties.SiteConfig.LinuxFxVersion != nil {
+		return true
+	}
+	return false
+}
+
 func appServiceRepositoryHost(
 	response *armappservice.WebAppsClientGetResponse,
 	appName string,
@@ -73,7 +81,8 @@ func (cli *azCli) DeployAppServiceZip(
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
-	deployZipFile io.Reader,
+	deployZipFile io.ReadSeeker,
+	progressLog func(string),
 ) (*string, error) {
 	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
@@ -88,6 +97,17 @@ func (cli *azCli) DeployAppServiceZip(
 	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
 	if err != nil {
 		return nil, err
+	}
+
+	// Deployment Status API only support linux web app for now
+	if isLinuxWebApp(app) {
+		if err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
+			return nil, err
+		}
+
+		// Deployment is successful
+		statusText := "OK"
+		return convert.RefOf(statusText), nil
 	}
 
 	response, err := client.Deploy(ctx, deployZipFile)

@@ -173,14 +173,14 @@ const (
 )
 
 type Environment struct {
-	Name                      string
-	EnvironmentType           string
-	User                      string
-	ProvisioningState         ProvisioningState
-	ResourceGroupId           string
-	CatalogName               string
-	EnvironmentDefinitionName string
-	Parameters                map[string]any
+	Name                      string            `json:"name"`
+	EnvironmentType           string            `json:"environmentType"`
+	User                      string            `json:"user"`
+	ProvisioningState         ProvisioningState `json:"provisioningState"`
+	ResourceGroupId           string            `json:"resourceGroupId"`
+	CatalogName               string            `json:"catalogName"`
+	EnvironmentDefinitionName string            `json:"environmentDefinitionName"`
+	Parameters                map[string]any    `json:"parameters"`
 }
 
 type EnvironmentListResponse struct {
@@ -204,4 +204,14 @@ type OperationStatus struct {
 	Status    string    `json:"status"`
 	StartTime time.Time `json:"startTime"`
 	EndTime   time.Time `json:"endTime"`
+}
+
+type OutputListResponse struct {
+	Outputs map[string]OutputParameter `json:"outputs"`
+}
+
+type OutputParameter struct {
+	Type      string `json:"type"`
+	Value     any    `json:"value"`
+	Sensitive bool   `json:"sensitive"`
 }

@@ -211,7 +211,17 @@ type OutputListResponse struct {
 }
 
 type OutputParameter struct {
-	Type      string `json:"type"`
-	Value     any    `json:"value"`
-	Sensitive bool   `json:"sensitive"`
+	Type      OutputParameterType `json:"type"`
+	Value     any                 `json:"value"`
+	Sensitive bool                `json:"sensitive"`
 }
+
+type OutputParameterType string
+
+const (
+	OutputParameterTypeArray   OutputParameterType = "array"
+	OutputParameterTypeBoolean OutputParameterType = "boolean"
+	OutputParameterTypeNumber  OutputParameterType = "number"
+	OutputParameterTypeObject  OutputParameterType = "object"
+	OutputParameterTypeString  OutputParameterType = "string"
+)

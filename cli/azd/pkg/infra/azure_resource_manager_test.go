@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -249,6 +250,11 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewBuffer([]byte("{}"))),
 			Request: &http.Request{
 				Method: http.MethodGet,
+				URL: &url.URL{
+					Scheme: "https",
+					Host:   "management.azure.com",
+					Path:   "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
+				},
 			},
 		}, nil
 	})

@@ -2,6 +2,7 @@ package devcenter
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -284,8 +285,6 @@ func (m *manager) LatestArmDeployment(
 }
 
 // Outputs gets the outputs for the latest deployment of the specified environment
-// Right now this will retrieve the outputs from the latest azure deployment
-// Long term this will call into ADE Outputs API
 func (m *manager) Outputs(
 	ctx context.Context,
 	config *Config,
@@ -296,14 +295,57 @@ func (m *manager) Outputs(
 		return nil, fmt.Errorf("failed parsing resource group id: %w", err)
 	}
 
-	latestDeployment, err := m.LatestArmDeployment(ctx, config, env, func(d *azapi.ResourceDeployment) bool {
-		return d.ProvisioningState == azapi.DeploymentProvisioningStateSucceeded
-	})
+	outputsResponse, err := m.client.DevCenterByName(config.Name).
+		ProjectByName(config.Project).
+		EnvironmentsByUser(env.User).
+		EnvironmentByName(env.Name).
+		Outputs().
+		Get(ctx)
+
 	if err != nil {
-		return nil, fmt.Errorf("failed getting latest deployment: %w", err)
+		return nil, fmt.Errorf("failed getting outputs: %w", err)
 	}
 
-	outputs := createOutputParameters(azapi.CreateDeploymentOutput(latestDeployment.Outputs))
+	outputs := map[string]provisioning.OutputParameter{}
+
+	// Store any outputs from the deployment response
+	for key, output := range outputsResponse.Outputs {
+		var paramType provisioning.ParameterType
+		var value any
+
+		switch output.Type {
+		case devcentersdk.OutputParameterTypeString:
+			paramType = provisioning.ParameterTypeString
+			value = output.Value
+		case devcentersdk.OutputParameterTypeNumber:
+			paramType = provisioning.ParameterTypeNumber
+			value = output.Value
+		case devcentersdk.OutputParameterTypeBoolean:
+			paramType = provisioning.ParameterTypeBoolean
+			value = output.Value
+		case devcentersdk.OutputParameterTypeArray:
+			jsonBytes, err := json.Marshal(output.Value)
+			if err != nil {
+				return nil, fmt.Errorf("failed marshalling output value: %w", err)
+			}
+
+			paramType = provisioning.ParameterTypeArray
+			value = string(jsonBytes)
+		case devcentersdk.OutputParameterTypeObject:
+			jsonBytes, err := json.Marshal(output.Value)
+			if err != nil {
+				return nil, fmt.Errorf("failed marshalling output value: %w", err)
+			}
+
+			paramType = provisioning.ParameterTypeObject
+			value = string(jsonBytes)
+		}
+
+		outputs[strings.ToUpper(key)] = provisioning.OutputParameter{
+			Type:  paramType,
+			Value: value,
+		}
+	}
 
 	// Set up AZURE_SUBSCRIPTION_ID and AZURE_RESOURCE_GROUP environment variables
 	// These are required for azd deploy to work as expected

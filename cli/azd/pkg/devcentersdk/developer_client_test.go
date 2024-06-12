@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
@@ -18,7 +17,7 @@ import (
 )
 
 func Test_DevCenter_Client(t *testing.T) {
-	//t.Skip("azure/azure-dev#2944")
+	t.Skip("azure/azure-dev#2944")
 
 	publicCloud := cloud.AzurePublic()
 
@@ -43,9 +42,6 @@ func Test_DevCenter_Client(t *testing.T) {
 
 	credentials, err := authManager.CredentialForCurrentUser(*mockContext.Context, nil)
 	require.NoError(t, err)
-
-	token, err := credentials.GetToken(*mockContext.Context, policy.TokenRequestOptions{})
-	fmt.Println(token.Token)
 
 	resourceGraphClient, err := armresourcegraph.NewClient(credentials, armClientOptions)
 	require.NoError(t, err)
@@ -194,18 +190,19 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, outputs)
 
+	// Update environment
+	err = projectClient.
+		EnvironmentsByMe().
+		EnvironmentByName(envName).
+		Put(*mockContext.Context, envSpec)
+
+	require.NoError(t, err)
+
 	// Delete environment
 	err = projectClient.
 		EnvironmentsByMe().
 		EnvironmentByName(envName).
 		Delete(*mockContext.Context)
-
-	require.NoError(t, err)
-
-	err = projectClient.
-		EnvironmentsByMe().
-		EnvironmentByName(envName).
-		Put(*mockContext.Context, envSpec)
 
 	require.NoError(t, err)
 

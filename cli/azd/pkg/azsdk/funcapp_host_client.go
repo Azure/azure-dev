@@ -19,7 +19,6 @@ import (
 // at *.scm.azurewebsites.net
 type FuncAppHostClient struct {
 	hostName string
-	options  *arm.ClientOptions
 	pipeline runtime.Pipeline
 }
 

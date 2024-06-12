@@ -43,6 +43,10 @@ func (p *TestProvider) Initialize(ctx context.Context, projectPath string, optio
 	return p.EnsureEnv(ctx)
 }
 
+func (p *TestProvider) CollectData(ctx context.Context) error {
+	return nil
+}
+
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
 // values are unset.
 //

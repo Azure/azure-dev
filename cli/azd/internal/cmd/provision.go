@@ -191,6 +191,10 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
+	if err := p.provisionManager.CollectData(ctx); err != nil {
+		return nil, fmt.Errorf("collecting data for provisioning: %w", err)
+	}
+
 	// Get Subscription to Display in Command Title Note
 	// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
 	// is not displayed.

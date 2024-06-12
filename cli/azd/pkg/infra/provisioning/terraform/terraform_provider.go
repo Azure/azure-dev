@@ -115,6 +115,10 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 	return nil
 }
 
+func (t *TerraformProvider) CollectData(ctx context.Context) error {
+	return nil
+}
+
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
 // values are unset.
 //

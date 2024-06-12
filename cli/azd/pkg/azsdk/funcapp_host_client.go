@@ -13,6 +13,7 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // FuncAppHostClient contains methods for interacting with the Azure Functions application host, usually located
@@ -33,7 +34,7 @@ func NewFuncAppHostClient(
 		funcAppHostOptions = &optionsCopy
 	}
 
-	options.DisableRPRegistration = true
+	funcAppHostOptions.DisableRPRegistration = true
 
 	pipeline, err := armruntime.NewPipeline(
 		"funcapp-deploy", "1.0.0", credential, runtime.PipelineOptions{}, funcAppHostOptions)
@@ -111,33 +112,78 @@ func (c *FuncAppHostClient) Publish(
 	}
 
 	location := fmt.Sprintf("https://%s/api/deployments/%s", c.hostName, deploymentId)
-	handler := newPublishPollingHandler(c.pipeline, location)
+	return c.waitForDeployment(ctx, location)
+}
 
-	var finalResponse PublishResponse
-	pollerOptions := &runtime.NewPollerOptions[PublishResponse]{
-		Response: &finalResponse,
-		Handler:  handler,
-	}
-	poller, err := runtime.NewPoller(response, c.pipeline, pollerOptions)
-	if err != nil {
-		return PublishResponse{}, err
-	}
+func (c *FuncAppHostClient) waitForDeployment(ctx context.Context, location string) (PublishResponse, error) {
+	// This frequency is recommended by the service team.
+	polLDelay := 1 * time.Second
+	var lastResponse *PublishResponse
 
-	rsp, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
-		// This frequency is recommended by the service team.
-		Frequency: 1 * time.Second,
-	})
-	if err != nil {
-		return PublishResponse{}, err
-	}
+	for {
+		req, err := runtime.NewRequest(ctx, http.MethodGet, location)
+		if err != nil {
+			return PublishResponse{}, err
+		}
 
-	return rsp, nil
+		response, err := c.pipeline.Do(req)
+		if err != nil {
+			return PublishResponse{}, err
+		}
+
+		// It's possible to observe a 404 response after the deployment is complete.
+		// If a 404 is observed, we assume the deployment is complete and return the last response.
+		//
+		// This 404 is due to the deployment worker being "recycled".
+		// This shortcoming would be fixed by work item https://msazure.visualstudio.com/Antares/_workitems/edit/24715654.
+		if response.StatusCode == http.StatusNotFound && lastResponse != nil {
+			return *lastResponse, nil
+		}
+
+		if response.StatusCode != http.StatusAccepted && response.StatusCode != http.StatusOK {
+			return PublishResponse{}, runtime.NewResponseError(response)
+		}
+
+		// Server always returns status code of OK-200 whether the deployment is in-progress or complete.
+		// Thus, we always read the response body to determine the actual status.
+		resp := PublishResponse{}
+		if err := runtime.UnmarshalAsJSON(response, &resp); err != nil {
+			return PublishResponse{}, err
+		}
+
+		switch resp.Status {
+		case PublishStatusCancelled:
+			return PublishResponse{}, fmt.Errorf("deployment was cancelled")
+		case PublishStatusFailed:
+			return PublishResponse{}, fmt.Errorf("deployment failed: %s", resp.StatusText)
+		case PublishStatusSuccess:
+			return resp, nil
+		case PublishStatusConflict:
+			return PublishResponse{}, fmt.Errorf("deployment was cancelled due to another deployment being in progress")
+		case PublishStatusPartialSuccess:
+			return PublishResponse{}, fmt.Errorf("deployment was partially successful: %s", resp.StatusText)
+		}
+
+		// Record the latest response
+		lastResponse = &resp
+
+		delay := polLDelay
+		if retryAfter := httputil.RetryAfter(response); retryAfter > 0 {
+			delay = polLDelay
+		}
+
+		select {
+		case <-ctx.Done():
+			return PublishResponse{}, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
 }
 
 // The response for a deployment located at api/deployments/{id} that represents the deployment initiated by api/publish.
 type PublishResponse struct {
 	Id                 string              `json:"id"`
-	Status             int                 `json:"status"`
+	Status             PublishStatus       `json:"status"`
 	StatusText         string              `json:"status_text"`
 	AuthorEmail        string              `json:"author_email"`
 	Author             string              `json:"author"`
@@ -164,91 +210,15 @@ type PublishBuildSummary struct {
 	Warnings []string `json:"warnings"`
 }
 
+type PublishStatus int
+
 const (
-	PublishStatusCancelled      int = -1
-	PublishStatusPending        int = 0
-	PublishStatusBuilding       int = 1
-	PublishStatusDeploying      int = 2
-	PublishStatusFailed         int = 3
-	PublishStatusSuccess        int = 4
-	PublishStatusConflict       int = 5
-	PublishStatusPartialSuccess int = 6
+	PublishStatusCancelled      PublishStatus = -1
+	PublishStatusPending        PublishStatus = 0
+	PublishStatusBuilding       PublishStatus = 1
+	PublishStatusDeploying      PublishStatus = 2
+	PublishStatusFailed         PublishStatus = 3
+	PublishStatusSuccess        PublishStatus = 4
+	PublishStatusConflict       PublishStatus = 5
+	PublishStatusPartialSuccess PublishStatus = 6
 )
-
-// publishPollingHandler implements [runtime.PollingHandler].
-type publishPollingHandler struct {
-	pipeline runtime.Pipeline
-	location string
-
-	lastResponse *PublishResponse
-	// final result
-	result *PublishResponse
-}
-
-func newPublishPollingHandler(
-	pipeline runtime.Pipeline,
-	location string) *publishPollingHandler {
-	return &publishPollingHandler{
-		pipeline: pipeline,
-		location: location,
-	}
-}
-
-func (h *publishPollingHandler) Done() bool {
-	return h.result != nil && h.result.Complete
-}
-
-func (h *publishPollingHandler) Poll(ctx context.Context) (*http.Response, error) {
-	req, err := runtime.NewRequest(ctx, http.MethodGet, h.location)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := h.pipeline.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	// It's possible to observe a 404 response after the deployment is complete.
-	// If a 404 is observed, we assume the deployment is complete and return the last response.
-	//
-	// This 404 is due to the deployment worker being "recycled".
-	// This shortcoming would be fixed by work item https://msazure.visualstudio.com/Antares/_workitems/edit/24715654.
-	if response.StatusCode == http.StatusNotFound && h.lastResponse != nil {
-		h.result = h.lastResponse
-		return response, nil
-	}
-
-	// The deployment is in-progress
-	if response.StatusCode != http.StatusAccepted && response.StatusCode != http.StatusOK {
-		return nil, runtime.NewResponseError(response)
-	}
-
-	resp := PublishResponse{}
-	if err := runtime.UnmarshalAsJSON(response, &resp); err != nil {
-		return nil, err
-	}
-
-	// Server always returns status code of OK-200 whether the deployment is in-progress or complete.
-	// Thus, we always read the response body to determine the actual status.
-	switch resp.Status {
-	case PublishStatusCancelled:
-		return nil, fmt.Errorf("deployment was cancelled")
-	case PublishStatusFailed:
-		return nil, fmt.Errorf("deployment failed: %s", resp.StatusText)
-	case PublishStatusSuccess:
-		h.result = &resp
-	case PublishStatusConflict:
-		return nil, fmt.Errorf("deployment was cancelled due to another deployment being in progress")
-	case PublishStatusPartialSuccess:
-		return nil, fmt.Errorf("deployment was partially successful: %s", resp.StatusText)
-	}
-
-	h.lastResponse = &resp
-	return response, nil
-}
-
-func (h *publishPollingHandler) Result(ctx context.Context, out *PublishResponse) error {
-	*out = *h.result
-	return nil
-}

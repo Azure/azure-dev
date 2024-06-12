@@ -61,6 +61,10 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 
 	planId := *app.Properties.ServerFarmID
 	sep := strings.LastIndexByte(planId, '/')
+	if sep == -1 {
+		return nil, fmt.Errorf("unexpected ServerFarmID %s", planId)
+	}
+
 	planName := planId[sep+1:]
 	plan, err := plansClient.Get(ctx, resourceGroup, planName, nil)
 	if err != nil {

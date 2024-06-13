@@ -72,8 +72,10 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 func registerIsLinuxWebAppMocks(mockContext *mocks.MockContext, ran *bool) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
-			strings.Contains(request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/sites/LINUX_WEB_APP_NAME")
+			strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/sites/LINUX_WEB_APP_NAME",
+			)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		*ran = true
 		response := armappservice.WebAppsClientGetResponse{

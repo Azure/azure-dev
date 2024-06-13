@@ -325,45 +325,9 @@ func (m *manager) Outputs(
 		return nil, fmt.Errorf("failed getting outputs: %w", err)
 	}
 
-	outputs := map[string]provisioning.OutputParameter{}
-
-	// Store any outputs from the deployment response
-	for key, output := range outputsResponse.Outputs {
-		var paramType provisioning.ParameterType
-		var value any
-
-		switch output.Type {
-		case devcentersdk.OutputParameterTypeString:
-			paramType = provisioning.ParameterTypeString
-			value = output.Value
-		case devcentersdk.OutputParameterTypeNumber:
-			paramType = provisioning.ParameterTypeNumber
-			value = output.Value
-		case devcentersdk.OutputParameterTypeBoolean:
-			paramType = provisioning.ParameterTypeBoolean
-			value = output.Value
-		case devcentersdk.OutputParameterTypeArray:
-			jsonBytes, err := json.Marshal(output.Value)
-			if err != nil {
-				return nil, fmt.Errorf("failed marshalling output value: %w", err)
-			}
-
-			paramType = provisioning.ParameterTypeArray
-			value = string(jsonBytes)
-		case devcentersdk.OutputParameterTypeObject:
-			jsonBytes, err := json.Marshal(output.Value)
-			if err != nil {
-				return nil, fmt.Errorf("failed marshalling output value: %w", err)
-			}
-
-			paramType = provisioning.ParameterTypeObject
-			value = string(jsonBytes)
-		}
-
-		outputs[strings.ToUpper(key)] = provisioning.OutputParameter{
-			Type:  paramType,
-			Value: value,
-		}
+	outputs, err := createOutputParameters(outputsResponse)
+	if err != nil {
+		return nil, fmt.Errorf("failed resolving output parameters: %w", err)
 	}
 
 	// Set up AZURE_SUBSCRIPTION_ID and AZURE_RESOURCE_GROUP environment variables
@@ -383,4 +347,64 @@ func (m *manager) Outputs(
 	}
 
 	return outputs, nil
+}
+
+func mapDevCenterTypeToParamType(devCenterType devcentersdk.OutputParameterType) (provisioning.ParameterType, error) {
+	switch devCenterType {
+	case devcentersdk.OutputParameterTypeString:
+		return provisioning.ParameterTypeString, nil
+	case devcentersdk.OutputParameterTypeBoolean:
+		return provisioning.ParameterTypeBoolean, nil
+	case devcentersdk.OutputParameterTypeNumber:
+		return provisioning.ParameterTypeNumber, nil
+	case devcentersdk.OutputParameterTypeObject:
+		return provisioning.ParameterTypeObject, nil
+	case devcentersdk.OutputParameterTypeArray:
+		return provisioning.ParameterTypeArray, nil
+	default:
+		return "", fmt.Errorf("unexpected output parameter type: '%s'", string(devCenterType))
+	}
+}
+
+// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
+// casings.
+func createOutputParameters(
+	outputsResponse *devcentersdk.OutputListResponse,
+) (map[string]provisioning.OutputParameter, error) {
+	outputParams := map[string]provisioning.OutputParameter{}
+
+	for key, devCenterParam := range outputsResponse.Outputs {
+		// To support BYOI (bring your own infrastructure) scenarios we will default to UPPER when canonical casing
+		// is not found in the parameters file to workaround strange azure behavior with OUTPUT values that look
+		// like `azurE_RESOURCE_GROUP`
+		paramName := strings.ToUpper(key)
+		value := devCenterParam.Value
+
+		paramType, err := mapDevCenterTypeToParamType(devCenterParam.Type)
+		if err != nil {
+			return nil, err
+		}
+
+		requiresJsonMarshalling := slices.Contains(
+			[]devcentersdk.OutputParameterType{
+				devcentersdk.OutputParameterTypeObject,
+				devcentersdk.OutputParameterTypeArray,
+			}, devCenterParam.Type)
+
+		if requiresJsonMarshalling {
+			jsonBytes, err := json.Marshal(devCenterParam.Value)
+			if err != nil {
+				return nil, fmt.Errorf("failed marshalling output value: %w", err)
+			}
+
+			value = string(jsonBytes)
+		}
+
+		outputParams[paramName] = provisioning.OutputParameter{
+			Type:  paramType,
+			Value: value,
+		}
+	}
+
+	return outputParams, nil
 }

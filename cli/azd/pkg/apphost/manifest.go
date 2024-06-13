@@ -235,6 +235,16 @@ func ManifestFromAppHost(
 				*res.Context = filepath.Join(manifestDir, *res.Context)
 			}
 		}
+		if res.Type == "container.v1" {
+			if res.Build != nil {
+				if !filepath.IsAbs(res.Build.Dockerfile) {
+					res.Build.Dockerfile = filepath.Join(manifestDir, res.Build.Dockerfile)
+				}
+				if !filepath.IsAbs(res.Build.Context) {
+					res.Build.Context = filepath.Join(manifestDir, res.Build.Context)
+				}
+			}
+		}
 	}
 
 	return &manifest, nil

@@ -4,13 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -278,20 +282,35 @@ func (ai *DotNetImporter) Services(
 		return nil, err
 	}
 	for name, bContainer := range buildContainers {
-		defaultLanguage := ServiceLanguageDotNet
 
+		defaultLanguage := ServiceLanguageDotNet
+		relativePath := svcConfig.RelativePath
 		var dOptions DockerProjectOptions
+
 		if bContainer.Build != nil {
 			defaultLanguage = ServiceLanguageDocker
+			relPath, err := filepath.Rel(p.Path, filepath.Dir(bContainer.Build.Dockerfile))
+			if err != nil {
+				return nil, err
+			}
+			relativePath = relPath
+			env, err := ai.lazyEnv.GetValue()
+			if err != nil {
+				return nil, fmt.Errorf("getting environment: %w", err)
+			}
+			bArgs, err := evaluateArgsWithConfig(*manifest, bContainer.Build.Args, env.Config)
+			if err != nil {
+				return nil, fmt.Errorf("evaluating build args for service %s: %w", name, err)
+			}
 			dOptions = DockerProjectOptions{
 				Path:      bContainer.Build.Dockerfile,
 				Context:   bContainer.Build.Context,
-				BuildArgs: mapToStringSlice(bContainer.Build.Args, "="),
+				BuildArgs: mapToStringSlice(bArgs, "="),
 			}
 		}
 
 		svc := &ServiceConfig{
-			RelativePath: svcConfig.RelativePath,
+			RelativePath: relativePath,
 			Language:     defaultLanguage,
 			Host:         DotNetContainerAppTarget,
 			Docker:       dOptions,
@@ -312,11 +331,64 @@ func (ai *DotNetImporter) Services(
 			ProjectName:    name,
 			AppHostPath:    svcConfig.Path(),
 		}
-
 		services[svc.Name] = svc
 
 	}
 	return services, nil
+}
+
+var argExpression = regexp.MustCompile(`\{([^}]+)\}`)
+
+func evaluateArgsWithConfig(
+	manifest apphost.Manifest, args map[string]string, config config.Config) (map[string]string, error) {
+	result := make(map[string]string, len(args))
+	for argKey, argValue := range args {
+		var replaceError error
+		result[argKey] = argExpression.ReplaceAllStringFunc(argValue, func(match string) string {
+			exp := match[1 : len(match)-1]
+			resourceAndPath := strings.SplitN(exp, ".", 2)
+			if len(resourceAndPath) != 2 {
+				replaceError = fmt.Errorf("invalid expression %q. Expecting the form of: resource.value", exp)
+				return match
+			}
+			resourceName := resourceAndPath[0]
+			resource, has := manifest.Resources[resourceName]
+			if !has {
+				replaceError = fmt.Errorf("resource %q not found in manifest", resourceName)
+				return match
+			}
+			if resource.Type != "parameter.v0" {
+				replaceError = fmt.Errorf(
+					"resource %q is not a parameter. Only parameters are supported for build args expressions",
+					resourceName)
+				return match
+			}
+			inputParam, err := apphost.InputParameter(resourceName, resource)
+			if err != nil {
+				replaceError = fmt.Errorf("getting input parameter for resource %q: %w", resourceName, err)
+				return match
+			}
+			if inputParam == nil {
+				// parameter not using inputs, has a constant value, use it
+				return resource.Value
+			}
+			fromEnvVar := strings.TrimSuffix(scaffold.EnvFormat(resourceName)[2:], "}")
+			if valueInEnv := os.Getenv(fromEnvVar); valueInEnv != "" {
+				log.Println("Using value from environment variable", fromEnvVar, "for parameter", resourceName)
+				return valueInEnv
+			}
+			pValue, has := config.GetString(fmt.Sprintf("infra.parameters.%s", resourceName))
+			if !has {
+				replaceError = fmt.Errorf("parameter %q not found in system environment or project config", resourceName)
+				return match
+			}
+			return pValue
+		})
+		if replaceError != nil {
+			return nil, replaceError
+		}
+	}
+	return result, nil
 }
 
 func (ai *DotNetImporter) SynthAllInfrastructure(

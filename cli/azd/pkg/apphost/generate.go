@@ -534,7 +534,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return err
 			}
 		case "container.v1":
-			b.addBuildContainer(name, comp)
+			err := b.addBuildContainer(name, comp)
+			if err != nil {
+				return err
+			}
 		case "dockerfile.v0":
 			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs, comp.Args)
 		case "redis.v0":
@@ -654,20 +657,34 @@ func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
 }
 
 func (b *infraGenerator) addInputParameter(name string, comp *Resource) error {
-	pValue := comp.Value
-
-	if !hasInputs(pValue) {
-		// no inputs in the value, nothing to do
-		return nil
-	}
-
-	input, err := resolveResourceInput(name, comp)
+	input, err := InputParameter(name, comp)
 	if err != nil {
 		return fmt.Errorf("resolving input for parameter %s: %w", name, err)
 	}
 
-	b.bicepContext.InputParameters[name] = input
+	if input == nil {
+		// no inputs in the value, nothing to do
+		return nil
+	}
+
+	b.bicepContext.InputParameters[name] = *input
 	return nil
+}
+
+// InputParameter gets the Input from a parameter. If the parameter does not have an input, it returns nil.
+func InputParameter(name string, comp *Resource) (*Input, error) {
+	pValue := comp.Value
+
+	if !hasInputs(pValue) {
+		// no inputs in the value, nothing to do
+		return nil, nil
+	}
+
+	input, err := resolveResourceInput(name, comp)
+	if err != nil {
+		return nil, fmt.Errorf("resolving input for parameter %s: %w", name, err)
+	}
+	return &input, nil
 }
 
 func hasInputs(value string) bool {

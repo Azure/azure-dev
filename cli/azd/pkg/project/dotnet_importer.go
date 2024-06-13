@@ -272,6 +272,50 @@ func (ai *DotNetImporter) Services(
 
 		services[svc.Name] = svc
 	}
+
+	buildContainers, err := apphost.BuildContainers(manifest)
+	if err != nil {
+		return nil, err
+	}
+	for name, bContainer := range buildContainers {
+		defaultLanguage := ServiceLanguageDotNet
+
+		var dOptions DockerProjectOptions
+		if bContainer.Build != nil {
+			defaultLanguage = ServiceLanguageDocker
+			dOptions = DockerProjectOptions{
+				Path:      bContainer.Build.Dockerfile,
+				Context:   bContainer.Build.Context,
+				BuildArgs: mapToStringSlice(bContainer.Build.Args, "="),
+			}
+		}
+
+		svc := &ServiceConfig{
+			RelativePath: svcConfig.RelativePath,
+			Language:     defaultLanguage,
+			Host:         DotNetContainerAppTarget,
+			Docker:       dOptions,
+		}
+
+		svc.Name = name
+		svc.Project = p
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
+
+		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.DotNetContainerApp = &DotNetContainerAppOptions{
+			ContainerImage: bContainer.Image,
+			Manifest:       manifest,
+			ProjectName:    name,
+			AppHostPath:    svcConfig.Path(),
+		}
+
+		services[svc.Name] = svc
+
+	}
 	return services, nil
 }
 
@@ -374,6 +418,16 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	}
 
 	for name := range apphost.Containers(manifest) {
+		if err := writeManifestForResource(name); err != nil {
+			return nil, err
+		}
+	}
+
+	bcs, err := apphost.BuildContainers(manifest)
+	if err != nil {
+		return nil, err
+	}
+	for name := range bcs {
 		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}

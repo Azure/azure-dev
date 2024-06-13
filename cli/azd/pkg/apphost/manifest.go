@@ -102,7 +102,7 @@ type ContainerV1Build struct {
 	Dockerfile string `json:"dockerfile"`
 
 	// Args is optionally present on project.v0 and dockerfile.v0 resources and are the arguments to pass to the container.
-	Args []string `json:"args,omitempty"`
+	Args map[string]string `json:"args,omitempty"`
 }
 
 type DaprResourceMetadata struct {

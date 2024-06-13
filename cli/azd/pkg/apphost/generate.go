@@ -159,6 +159,24 @@ func Containers(manifest *Manifest) map[string]genContainer {
 	return res
 }
 
+// Containers returns information about all container.v1 resources from a manifest.
+func BuildContainers(manifest *Manifest) (map[string]genBuildContainer, error) {
+	res := make(map[string]genBuildContainer)
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "container.v1":
+			bc, err := buildContainerFromResource(comp)
+			if err != nil {
+				return nil, fmt.Errorf("building container from resource %s: %w", name, err)
+			}
+			res[name] = *bc
+		}
+	}
+
+	return res, nil
+}
+
 type AppHostOptions struct {
 }
 
@@ -925,7 +943,17 @@ func (b *infraGenerator) addBuildContainer(
 	}
 
 	// common fields for all build containers
-	bc := genBuildContainer{
+	bc, err := buildContainerFromResource(r)
+	if err != nil {
+		return fmt.Errorf("container resource '%s': %w", name, err)
+	}
+	b.buildContainers[name] = *bc
+	return nil
+}
+
+func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
+	// common fields for all build containers
+	bc := &genBuildContainer{
 		Entrypoint: r.Entrypoint,
 		Args:       r.Args,
 		Env:        r.Env,
@@ -936,8 +964,7 @@ func (b *infraGenerator) addBuildContainer(
 	// container.v0 and container.v1+pre-build image
 	if r.Image != nil {
 		bc.Image = *r.Image
-		b.buildContainers[name] = bc
-		return nil
+		return bc, nil
 	}
 
 	// details to build container, either from dockerfile.v0 or container.v1
@@ -947,7 +974,7 @@ func (b *infraGenerator) addBuildContainer(
 	if r.Context != nil {
 		build = &genBuildContainerDetails{
 			Context: *r.Context,
-			Args:    r.Args,
+			Args:    nil, // dockerfile.v0 does not support build args, it only has top level args []string
 		}
 		if r.Path != nil {
 			build.Dockerfile = *r.Path
@@ -964,12 +991,11 @@ func (b *infraGenerator) addBuildContainer(
 	}
 
 	if build == nil {
-		return fmt.Errorf("container resource '%s' must have either an image, context or a build", name)
+		return nil, fmt.Errorf("container resource must have either an image, context or a build")
 	}
 
 	bc.Build = build
-	b.buildContainers[name] = bc
-	return nil
+	return bc, nil
 }
 
 func (b *infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) error {

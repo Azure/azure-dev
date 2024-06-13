@@ -82,7 +82,7 @@ type genBuildContainer struct {
 type genBuildContainerDetails struct {
 	Context    string
 	Dockerfile string
-	Args       []string
+	Args       map[string]string
 }
 
 type genProject struct {

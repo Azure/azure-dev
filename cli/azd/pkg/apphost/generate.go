@@ -959,10 +959,12 @@ func (b *infraGenerator) addBuildContainer(
 		b.requireStorageVolume()
 	}
 
-	// common fields for all build containers
 	bc, err := buildContainerFromResource(r)
 	if err != nil {
 		return fmt.Errorf("container resource '%s': %w", name, err)
+	}
+	if bc.Build != nil {
+		b.requireContainerRegistry()
 	}
 	b.buildContainers[name] = *bc
 	return nil
@@ -1004,6 +1006,7 @@ func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
 			Context:    r.Build.Context,
 			Dockerfile: r.Build.Dockerfile,
 			Args:       r.Build.Args,
+			Secrets:    r.Build.Secrets,
 		}
 	}
 

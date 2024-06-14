@@ -41,6 +41,10 @@ type DockerProjectOptions struct {
 	Image     osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
 	Tag       osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
 	BuildArgs []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
+	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
+	BuildSecrets []string `yaml:"-" json:"-"`
+	BuildEnv     []string `yaml:"-" json:"-"`
 }
 
 type dockerBuildResult struct {
@@ -262,6 +266,8 @@ func (p *dockerProject) Build(
 				dockerOptions.Context,
 				imageName,
 				dockerOptions.BuildArgs,
+				dockerOptions.BuildSecrets,
+				dockerOptions.BuildEnv,
 				previewerWriter,
 			)
 			p.console.StopPreviewer(ctx, false)

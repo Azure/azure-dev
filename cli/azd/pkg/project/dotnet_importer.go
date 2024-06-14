@@ -302,10 +302,17 @@ func (ai *DotNetImporter) Services(
 			if err != nil {
 				return nil, fmt.Errorf("evaluating build args for service %s: %w", name, err)
 			}
+
+			bArgsArray, reqEnv, err := buildArgsArrayAndEnv(*manifest, bContainer.Build.Secrets, env.Config)
+			if err != nil {
+				return nil, fmt.Errorf("converting build args to array for service %s: %w", name, err)
+			}
 			dOptions = DockerProjectOptions{
-				Path:      bContainer.Build.Dockerfile,
-				Context:   bContainer.Build.Context,
-				BuildArgs: mapToStringSlice(bArgs, "="),
+				Path:         bContainer.Build.Dockerfile,
+				Context:      bContainer.Build.Context,
+				BuildArgs:    mapToStringSlice(bArgs, "="),
+				BuildSecrets: bArgsArray,
+				BuildEnv:     reqEnv,
 			}
 		}
 
@@ -337,58 +344,111 @@ func (ai *DotNetImporter) Services(
 	return services, nil
 }
 
+// buildArgsArray produces an array of args to pass to the container build command.
+// See: https://docs.docker.com/build/building/secrets/
+func buildArgsArrayAndEnv(
+	manifest apphost.Manifest,
+	bArgs map[string]apphost.ContainerV1BuildSecrets,
+	config config.Config) ([]string, []string, error) {
+	var result []string
+	var reqEnv []string
+
+	for bArgKey, bArg := range bArgs {
+		if bArg.Type != "env" && bArg.Type != "file" {
+			return nil, nil, fmt.Errorf("unsupported secret type %q for build arg %q", bArg.Type, bArgKey)
+		}
+
+		baseArg := fmt.Sprintf("id=%s", bArgKey)
+		if bArg.Type == "file" {
+			if bArg.Source == nil {
+				return nil, nil, fmt.Errorf("missing source for file secret %q", bArgKey)
+			}
+			baseArg = fmt.Sprintf("id=%s,src=%s", bArgKey, *bArg.Source)
+		}
+		if bArg.Type == "env" {
+			if bArg.Value == nil {
+				return nil, nil, fmt.Errorf("missing value for env secret %q", bArgKey)
+			}
+			bArgValue, err := evaluateExpressions(*bArg.Value, manifest, config)
+			if err != nil {
+				return nil, nil, fmt.Errorf("evaluating value for env secret %q: %w", bArgKey, err)
+			}
+			reqEnv = append(reqEnv, fmt.Sprintf("%s=%s", bArgKey, bArgValue))
+		}
+		result = append(result, baseArg)
+	}
+
+	return result, reqEnv, nil
+}
+
 var argExpression = regexp.MustCompile(`\{([^}]+)\}`)
 
 func evaluateArgsWithConfig(
 	manifest apphost.Manifest, args map[string]string, config config.Config) (map[string]string, error) {
 	result := make(map[string]string, len(args))
 	for argKey, argValue := range args {
-		var replaceError error
-		result[argKey] = argExpression.ReplaceAllStringFunc(argValue, func(match string) string {
-			exp := match[1 : len(match)-1]
-			resourceAndPath := strings.SplitN(exp, ".", 2)
-			if len(resourceAndPath) != 2 {
-				replaceError = fmt.Errorf("invalid expression %q. Expecting the form of: resource.value", exp)
-				return match
-			}
-			resourceName := resourceAndPath[0]
-			resource, has := manifest.Resources[resourceName]
-			if !has {
-				replaceError = fmt.Errorf("resource %q not found in manifest", resourceName)
-				return match
-			}
-			if resource.Type != "parameter.v0" {
-				replaceError = fmt.Errorf(
-					"resource %q is not a parameter. Only parameters are supported for build args expressions",
-					resourceName)
-				return match
-			}
-			inputParam, err := apphost.InputParameter(resourceName, resource)
-			if err != nil {
-				replaceError = fmt.Errorf("getting input parameter for resource %q: %w", resourceName, err)
-				return match
-			}
-			if inputParam == nil {
-				// parameter not using inputs, has a constant value, use it
-				return resource.Value
-			}
-			fromEnvVar := strings.TrimSuffix(scaffold.EnvFormat(resourceName)[2:], "}")
-			if valueInEnv := os.Getenv(fromEnvVar); valueInEnv != "" {
-				log.Println("Using value from environment variable", fromEnvVar, "for parameter", resourceName)
-				return valueInEnv
-			}
-			pValue, has := config.GetString(fmt.Sprintf("infra.parameters.%s", resourceName))
-			if !has {
-				replaceError = fmt.Errorf("parameter %q not found in system environment or project config", resourceName)
-				return match
-			}
-			return pValue
-		})
-		if replaceError != nil {
-			return nil, replaceError
+		evaluatedValue, err := evaluateExpressions(argValue, manifest, config)
+		if err != nil {
+			return nil, err
 		}
+		result[argKey] = evaluatedValue
+
 	}
 	return result, nil
+}
+
+func evaluateExpressions(source string, manifest apphost.Manifest, config config.Config) (string, error) {
+	var replaceError error
+	evaluated := argExpression.ReplaceAllStringFunc(source, func(match string) string {
+		replacement, err := evaluateSingleExpressionMatch(match, manifest, config)
+		if err != nil {
+			replaceError = err
+			return match
+		}
+		return replacement
+	})
+	if replaceError != nil {
+		return "", replaceError
+	}
+	return evaluated, nil
+}
+
+func evaluateSingleExpressionMatch(
+	match string, manifest apphost.Manifest, config config.Config) (string, error) {
+
+	exp := match[1 : len(match)-1]
+	resourceAndPath := strings.SplitN(exp, ".", 2)
+	if len(resourceAndPath) != 2 {
+		return match, fmt.Errorf("invalid expression %q. Expecting the form of: resource.value", exp)
+	}
+	resourceName := resourceAndPath[0]
+	resource, has := manifest.Resources[resourceName]
+	if !has {
+		return match, fmt.Errorf("resource %q not found in manifest", resourceName)
+	}
+	if resource.Type != "parameter.v0" {
+		return match, fmt.Errorf(
+			"resource %q is not a parameter. Only parameters are supported for build args expressions",
+			resourceName)
+	}
+	inputParam, err := apphost.InputParameter(resourceName, resource)
+	if err != nil {
+		return match, fmt.Errorf("getting input parameter for resource %q: %w", resourceName, err)
+	}
+	if inputParam == nil {
+		// parameter not using inputs, has a constant value, use it
+		return resource.Value, nil
+	}
+	fromEnvVar := strings.TrimSuffix(scaffold.EnvFormat(resourceName)[2:], "}")
+	if valueInEnv := os.Getenv(fromEnvVar); valueInEnv != "" {
+		log.Println("Using value from environment variable", fromEnvVar, "for parameter", resourceName)
+		return valueInEnv, nil
+	}
+	pValue, has := config.GetString(fmt.Sprintf("infra.parameters.%s", resourceName))
+	if !has {
+		return match, fmt.Errorf("parameter %q not found in system environment or project config", resourceName)
+	}
+	return pValue, nil
 }
 
 func (ai *DotNetImporter) SynthAllInfrastructure(

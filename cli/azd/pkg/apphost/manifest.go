@@ -103,6 +103,18 @@ type ContainerV1Build struct {
 
 	// Args is optionally present on project.v0 and dockerfile.v0 resources and are the arguments to pass to the container.
 	Args map[string]string `json:"args,omitempty"`
+
+	// A list of build arguments which are used during container build."
+	Secrets map[string]ContainerV1BuildSecrets `json:"secrets,omitempty"`
+}
+
+type ContainerV1BuildSecrets struct {
+	// "env" (will come with value) or "file" (will come with source).
+	Type string `json:"type"`
+	// If provided use as the value for the environment variable when docker build is run.
+	Value *string `json:"value,omitempty"`
+	// Path to secret file. If relative, the path is relative to the manifest file.
+	Source *string `json:"source,omitempty"`
 }
 
 type DaprResourceMetadata struct {
@@ -242,6 +254,11 @@ func ManifestFromAppHost(
 				}
 				if !filepath.IsAbs(res.Build.Context) {
 					res.Build.Context = filepath.Join(manifestDir, res.Build.Context)
+				}
+				for _, secret := range res.Build.Secrets {
+					if secret.Source != nil && !filepath.IsAbs(*secret.Source) {
+						*secret.Source = filepath.Join(manifestDir, *secret.Source)
+					}
 				}
 			}
 		}

@@ -83,6 +83,7 @@ type genBuildContainerDetails struct {
 	Context    string
 	Dockerfile string
 	Args       map[string]string
+	Secrets    map[string]ContainerV1BuildSecrets
 }
 
 type genProject struct {

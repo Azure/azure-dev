@@ -375,8 +375,11 @@ func (_ *containerAppTemplateManifestFuncs) UrlHost(s string) (string, error) {
 	return u.Hostname(), nil
 }
 
+const infraParametersKey = "infra.parameters."
+
 func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, error) {
-	val, found := fns.env.Config.Get("infra.parameters." + name)
+	key := infraParametersKey + name
+	val, found := fns.env.Config.Get(key)
 	if !found {
 		return "", fmt.Errorf("parameter %s not found", name)
 	}

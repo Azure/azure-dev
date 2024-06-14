@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -294,19 +293,16 @@ func (ai *DotNetImporter) Services(
 				return nil, err
 			}
 			relativePath = relPath
-			env, err := ai.lazyEnv.GetValue()
-			if err != nil {
-				return nil, fmt.Errorf("getting environment: %w", err)
-			}
-			bArgs, err := evaluateArgsWithConfig(*manifest, bContainer.Build.Args, env.Config)
+
+			bArgs, err := evaluateArgsWithConfig(*manifest, bContainer.Build.Args)
 			if err != nil {
 				return nil, fmt.Errorf("evaluating build args for service %s: %w", name, err)
 			}
-
-			bArgsArray, reqEnv, err := buildArgsArrayAndEnv(*manifest, bContainer.Build.Secrets, env.Config)
+			bArgsArray, reqEnv, err := buildArgsArrayAndEnv(*manifest, bContainer.Build.Secrets)
 			if err != nil {
 				return nil, fmt.Errorf("converting build args to array for service %s: %w", name, err)
 			}
+
 			dOptions = DockerProjectOptions{
 				Path:         bContainer.Build.Dockerfile,
 				Context:      bContainer.Build.Context,
@@ -348,8 +344,7 @@ func (ai *DotNetImporter) Services(
 // See: https://docs.docker.com/build/building/secrets/
 func buildArgsArrayAndEnv(
 	manifest apphost.Manifest,
-	bArgs map[string]apphost.ContainerV1BuildSecrets,
-	config config.Config) ([]string, []string, error) {
+	bArgs map[string]apphost.ContainerV1BuildSecrets) ([]string, []string, error) {
 	var result []string
 	var reqEnv []string
 
@@ -369,7 +364,7 @@ func buildArgsArrayAndEnv(
 			if bArg.Value == nil {
 				return nil, nil, fmt.Errorf("missing value for env secret %q", bArgKey)
 			}
-			bArgValue, err := evaluateExpressions(*bArg.Value, manifest, config)
+			bArgValue, err := evaluateExpressions(*bArg.Value, manifest)
 			if err != nil {
 				return nil, nil, fmt.Errorf("evaluating value for env secret %q: %w", bArgKey, err)
 			}
@@ -384,10 +379,10 @@ func buildArgsArrayAndEnv(
 var argExpression = regexp.MustCompile(`\{([^}]+)\}`)
 
 func evaluateArgsWithConfig(
-	manifest apphost.Manifest, args map[string]string, config config.Config) (map[string]string, error) {
+	manifest apphost.Manifest, args map[string]string) (map[string]string, error) {
 	result := make(map[string]string, len(args))
 	for argKey, argValue := range args {
-		evaluatedValue, err := evaluateExpressions(argValue, manifest, config)
+		evaluatedValue, err := evaluateExpressions(argValue, manifest)
 		if err != nil {
 			return nil, err
 		}
@@ -397,10 +392,10 @@ func evaluateArgsWithConfig(
 	return result, nil
 }
 
-func evaluateExpressions(source string, manifest apphost.Manifest, config config.Config) (string, error) {
+func evaluateExpressions(source string, manifest apphost.Manifest) (string, error) {
 	var replaceError error
 	evaluated := argExpression.ReplaceAllStringFunc(source, func(match string) string {
-		replacement, err := evaluateSingleExpressionMatch(match, manifest, config)
+		replacement, err := evaluateSingleExpressionMatch(match, manifest)
 		if err != nil {
 			replaceError = err
 			return match
@@ -414,7 +409,7 @@ func evaluateExpressions(source string, manifest apphost.Manifest, config config
 }
 
 func evaluateSingleExpressionMatch(
-	match string, manifest apphost.Manifest, config config.Config) (string, error) {
+	match string, manifest apphost.Manifest) (string, error) {
 
 	exp := match[1 : len(match)-1]
 	resourceAndPath := strings.SplitN(exp, ".", 2)
@@ -444,11 +439,11 @@ func evaluateSingleExpressionMatch(
 		log.Println("Using value from environment variable", fromEnvVar, "for parameter", resourceName)
 		return valueInEnv, nil
 	}
-	pValue, has := config.GetString(fmt.Sprintf("infra.parameters.%s", resourceName))
-	if !has {
-		return match, fmt.Errorf("parameter %q not found in system environment or project config", resourceName)
-	}
-	return pValue, nil
+	// can't resolve the parameter here yet, best we can do is resolve the name of the parameter, removing the path
+	// of the resource from the expression, keeping only the name of the expected parameter.
+	// The parameter might not be requested at this point, because it could be
+	// the first time azd is running for the project.
+	return fmt.Sprintf("{%s%s}", infraParametersKey, resourceName), nil
 }
 
 func (ai *DotNetImporter) SynthAllInfrastructure(

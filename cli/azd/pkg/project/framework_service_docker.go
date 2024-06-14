@@ -195,6 +195,25 @@ func (p *dockerProject) Build(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
+			resolveParameters := func(source []string) []string {
+				result := make([]string, len(source))
+				for i, arg := range source {
+					result[i] = string(argExpression.ReplaceAllStringFunc(arg, func(match string) string {
+						path := match[1 : len(match)-1]
+						value, has := p.env.Config.GetString(path)
+						if !has {
+							task.SetError(fmt.Errorf("parameter %s not found", path))
+							return ""
+						}
+						return value
+					}))
+				}
+				return result
+			}
+			// resolve parameters for build args and secrets
+			dockerOptions.BuildArgs = resolveParameters(dockerOptions.BuildArgs)
+			dockerOptions.BuildEnv = resolveParameters(dockerOptions.BuildEnv)
+
 			// For services that do not specify a project path and have not specified a language then
 			// there is nothing to build and we can return an empty build result
 			// Ex) A container app project that uses an external image path

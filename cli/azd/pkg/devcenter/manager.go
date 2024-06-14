@@ -331,16 +331,16 @@ func (m *manager) Outputs(
 }
 
 func mapDevCenterTypeToParamType(devCenterType devcentersdk.OutputParameterType) (provisioning.ParameterType, error) {
-	switch devCenterType {
-	case devcentersdk.OutputParameterTypeString:
+	switch strings.ToLower(string(devCenterType)) {
+	case string(devcentersdk.OutputParameterTypeString):
 		return provisioning.ParameterTypeString, nil
-	case devcentersdk.OutputParameterTypeBoolean:
+	case string(devcentersdk.OutputParameterTypeBoolean):
 		return provisioning.ParameterTypeBoolean, nil
-	case devcentersdk.OutputParameterTypeNumber:
+	case string(devcentersdk.OutputParameterTypeNumber):
 		return provisioning.ParameterTypeNumber, nil
-	case devcentersdk.OutputParameterTypeObject:
+	case string(devcentersdk.OutputParameterTypeObject):
 		return provisioning.ParameterTypeObject, nil
-	case devcentersdk.OutputParameterTypeArray:
+	case string(devcentersdk.OutputParameterTypeArray):
 		return provisioning.ParameterTypeArray, nil
 	default:
 		return "", fmt.Errorf("unexpected output parameter type: '%s'", string(devCenterType))

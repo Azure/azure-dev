@@ -62,6 +62,7 @@ type AzCli interface {
 		resourceGroup string,
 		funcName string,
 		deployZipFile io.ReadSeeker,
+		remoteBuild bool,
 	) (*string, error)
 	GetFunctionAppProperties(
 		ctx context.Context,

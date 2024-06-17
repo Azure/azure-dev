@@ -99,6 +99,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 			"RESOURCE_GROUP_ID",
 			"FUNC_APP_NAME",
 			zipFile,
+			false,
 		)
 
 		require.NoError(t, err)
@@ -122,6 +123,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 			"RESOURCE_GROUP_ID",
 			"FUNC_APP_NAME",
 			zipFile,
+			false,
 		)
 
 		require.Nil(t, res)
@@ -156,10 +158,35 @@ func registerInfoMocks(mockContext *mocks.MockContext, ran *bool) {
 								Name:     convert.RefOf("FUNC_APP_NAME_SCM_HOST"),
 							},
 						},
+						//nolint:lll
+						ServerFarmID: convert.RefOf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN_NAME"),
 					},
 				},
 			},
 		)
+
+		return response, nil
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		//nolint:lll
+		return request.Method == http.MethodGet &&
+			strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN_NAME",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		response, _ := mocks.CreateHttpResponseWithBody(
+			request,
+			http.StatusOK,
+			armappservice.PlansClientGetResponse{
+				Plan: armappservice.Plan{
+					SKU: &armappservice.SKUDescription{
+						Name: convert.RefOf("Y1"),
+						Tier: convert.RefOf("Dynamic"),
+					},
+				},
+			})
 
 		return response, nil
 	})

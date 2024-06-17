@@ -303,7 +303,7 @@ func (c *ZipDeployClient) DeployTrackStatus(
 
 		select {
 		case <-ctx.Done():
-			return err
+			return ctx.Err()
 		case <-time.After(delay):
 			pollCount++
 		}

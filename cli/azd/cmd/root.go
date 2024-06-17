@@ -288,6 +288,7 @@ func NewRootCmd(
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupManage,
 			},
+			RequireLogin: true,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -335,6 +336,9 @@ func NewRootCmd(
 		UseMiddleware("experimentation", middleware.NewExperimentationMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
+		}).
+		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			return descriptor.Options.RequireLogin
 		})
 
 	// Register common dependencies for the IoC rootContainer

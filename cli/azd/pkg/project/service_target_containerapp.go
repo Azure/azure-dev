@@ -135,7 +135,9 @@ func (at *containerAppTarget) Deploy(
 					return
 				}
 
-				imageName := at.env.GetServiceProperty(component.Name, "IMAGE_NAME")
+				imageName := at.env.GetServiceProperty(
+					fmt.Sprintf("%s_%s", component.Service.Name, component.Name), "IMAGE_NAME",
+				)
 				rootTask.SetProgress(NewServiceProgress("Updating container app revision"))
 
 				var matchingContainer *armappcontainers.Container

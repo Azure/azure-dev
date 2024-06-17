@@ -270,7 +270,7 @@ func (t *aksTarget) Deploy(
 			deployed = deployed || len(deployments) > 0
 
 			if !deployed {
-				rootTask.SetError(errors.New("no deployment manifests found"))
+				rootTask.SetError(err)
 				return
 			}
 
@@ -324,7 +324,7 @@ func (t *aksTarget) deployManifests(
 
 	// Manifests are optional so we will continue if the directory does not exist
 	if _, err := os.Stat(deploymentPath); os.IsNotExist(err) {
-		return nil, err
+		return nil, fmt.Errorf("no deployment manifests found at '%s', %w", deploymentPath, err)
 	}
 
 	task.SetProgress(NewServiceProgress("Applying k8s manifests"))

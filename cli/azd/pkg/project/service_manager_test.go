@@ -462,9 +462,8 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 
 func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 	tests := []struct {
-		name      string
-		eventName string
-		run       func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error)
+		name string
+		run  func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error)
 	}{
 		{
 			name: "restore",
@@ -485,7 +484,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "package",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				packageTask := serviceManager.Package(ctx, serviceConfig, nil, nil)
+				packageTask := serviceManager.Package(ctx, serviceConfig, &ServiceBuildResult{}, &PackageOptions{})
 				logProgress(packageTask)
 				return packageTask.Await()
 			},
@@ -503,7 +502,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			setupMocksForServiceManager(mockContext, nil, nil)
+			setupMocksForServiceManager(mockContext, newFakeServiceTarget(), newFakeFramework())
 			env := environment.NewWithValues("test", map[string]string{
 				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 			})
@@ -512,10 +511,10 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 
 			eventTypes := []string{"pre", "post"}
 			for _, eventType := range eventTypes {
-				t.Run(test.eventName, func(t *testing.T) {
-					test.eventName = eventType + test.name
+				eventName := eventType + test.name
+				t.Run(eventName, func(t *testing.T) {
 					_ = serviceConfig.AddHandler(
-						ext.Event(test.eventName),
+						ext.Event(eventName),
 						func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 							return errors.New("error")
 						},

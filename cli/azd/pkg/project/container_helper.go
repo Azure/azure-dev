@@ -278,7 +278,7 @@ func (ch *ContainerHelper) Deploy(
 					// When the project does not contain source and we are using an external image we first need to pull the image
 					// before we're able to push it to a remote registry
 					// In most cases this pull will have already been part of the package step
-					if packageDetails != nil && component.RelativePath == "" {
+					if packageDetails != nil && component.RelativePath == "" && sourceImage != "" {
 						task.SetProgress(NewServiceProgress("Pulling container image"))
 						err = ch.docker.Pull(ctx, sourceImage)
 						if err != nil {
@@ -332,7 +332,7 @@ func (ch *ContainerHelper) Deploy(
 				// Save the name of the image we pushed into the environment with a well known key.
 				log.Printf("writing image name to environment")
 				ch.env.SetServiceProperty(
-					fmt.Sprintf("%s_%s", strings.ToUpper(component.Service.Name), strings.ToUpper(component.Name)),
+					fmt.Sprintf("%s_%s", component.Service.Name, component.Name),
 					"IMAGE_NAME",
 					remoteImage,
 				)

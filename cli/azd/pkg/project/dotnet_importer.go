@@ -415,7 +415,12 @@ func (ai *DotNetImporter) ReadManifest(ctx context.Context, svcConfig *ServiceCo
 	}
 
 	ai.console.ShowSpinner(ctx, "Analyzing Aspire Application (this might take a moment...)", input.Step)
-	manifest, err := apphost.ManifestFromAppHost(ctx, svcConfig.Components[DefaultComponentName].Path(), ai.dotnetCli, dotnetEnv)
+	manifest, err := apphost.ManifestFromAppHost(
+		ctx,
+		svcConfig.Components[DefaultComponentName].Path(),
+		ai.dotnetCli,
+		dotnetEnv,
+	)
 	ai.console.StopSpinner(ctx, "", input.Step)
 	if err != nil {
 		return nil, err

@@ -167,7 +167,7 @@ func (cas *containerAppService) DeployYaml(
 	}
 
 	if shouldPersist := cas.alphaFeatureManager.IsEnabled(persistCustomDomainsFeature); shouldPersist {
-		aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
+		aca, err := cas.Get(ctx, subscriptionId, resourceGroupName, appName)
 		if err == nil {
 			acaAsConfig := config.NewConfig(obj)
 			err := acaAsConfig.Set(

@@ -58,7 +58,7 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 func (m *HooksMiddleware) registerCommandHooks(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	if m.projectConfig.Hooks == nil || len(m.projectConfig.Hooks) == 0 {
 		log.Println(
-			"azd project is not available or does not contain any command hooks, skipping command hook registrations.",
+			"azd project does not contain any command hooks, skipping command hook registrations.",
 		)
 		return next(ctx)
 	}

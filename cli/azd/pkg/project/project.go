@@ -83,16 +83,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	}
 
 	for key, svc := range projectConfig.Services {
-		if svc.ServiceType == "" {
-			svc.ServiceType = ServiceTypeProject
-		}
-
-		if svc.ServiceType != ServiceTypeProject {
-			svc.Name = key
-			svc.Project = &projectConfig
-			break
-		}
-
 		svc.Name = key
 		svc.Project = &projectConfig
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
@@ -119,6 +109,11 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		if svc.Host == ContainerAppTarget && svc.Language == ServiceLanguageNone && svc.Image == "" {
 			return nil, fmt.Errorf("parsing service %s: must specify language or image", svc.Name)
 		}
+	}
+
+	for key, svc := range projectConfig.Resources {
+		svc.Name = key
+		svc.Project = &projectConfig
 	}
 
 	return &projectConfig, nil

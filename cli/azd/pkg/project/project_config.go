@@ -29,6 +29,7 @@ type ProjectConfig struct {
 	Platform          *platform.Config           `yaml:"platform,omitempty"`
 	Workflows         workflow.WorkflowMap       `yaml:"workflows,omitempty"`
 	Cloud             *cloud.Config              `yaml:"cloud,omitempty"`
+	Resources         map[string]*ResourceConfig `yaml:"resources,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }

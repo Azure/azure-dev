@@ -90,12 +90,6 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 		allServices[name] = svcConfig
 	}
 
-	for name, svcConfig := range projectConfig.Services {
-		if svcConfig.ServiceType == "" || svcConfig.ServiceType == ServiceTypeProject {
-			allServices[name] = svcConfig
-		}
-	}
-
 	// Collect all the services and then sort the resulting list by name. This provides a stable ordering of services.
 	allServicesSlice := make([]*ServiceConfig, 0, len(allServices))
 	for _, v := range allServices {
@@ -310,69 +304,77 @@ func (i *Infra) Cleanup() error {
 func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	infraSpec := scaffold.InfraSpec{}
 	backendMapping := map[string]string{}
-	for _, svc := range projectConfig.Services {
-		switch svc.ServiceType {
-		case ServiceTypeProject, "":
-			svcSpec := scaffold.ServiceSpec{
-				Name: svc.Name,
-				Port: -1,
-			}
 
-			if svc.Port != "" {
-				port, err := strconv.Atoi(svc.Port)
-				if err != nil {
-					return nil, fmt.Errorf("invalid port value %s for service %s", svc.Port, svc.Name)
-				}
-
-				if port < 1 || port > 65535 {
-					return nil, fmt.Errorf("port value %s for service %s must be between 1 and 65535", svc.Port, svc.Name)
-				}
-
-				svcSpec.Port = port
-			} else if svc.Docker.Path == "" {
-				// default builder always specifies port 80
-				svcSpec.Port = 80
-
-				if svc.Language == ServiceLanguageJava {
-					svcSpec.Port = 8080
-				}
-			}
-
-			for _, use := range svc.Uses {
-				useSvc, ok := projectConfig.Services[use]
-				if !ok {
-					return nil, fmt.Errorf("service %s uses service %s, which does not exist", svc.Name, use)
-				}
-
-				switch useSvc.ServiceType {
-				case ServiceTypeDbMongo:
-					svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useSvc.Name}
-				case ServiceTypeDbPostgres:
-					svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useSvc.Name}
-				case ServiceTypeDbRedis:
-					svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useSvc.Name}
-				case "", ServiceTypeProject:
-					if svcSpec.Frontend == nil {
-						svcSpec.Frontend = &scaffold.Frontend{}
-					}
-
-					svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
-						scaffold.ServiceReference{Name: useSvc.Name})
-					backendMapping[useSvc.Name] = svc.Name
-				}
-			}
-
-			infraSpec.Services = append(infraSpec.Services, svcSpec)
-		case ServiceTypeDbMongo:
+	for _, res := range projectConfig.Resources {
+		switch res.Type {
+		case ResourceTypeDbMongo:
 			// todo: support servers and databases
 			infraSpec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
-				DatabaseName: svc.Name,
+				DatabaseName: res.Name,
 			}
-		case ServiceTypeDbPostgres:
+		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
-				DatabaseName: svc.Name,
+				DatabaseName: res.Name,
 			}
 		}
+	}
+
+	for _, svc := range projectConfig.Services {
+		svcSpec := scaffold.ServiceSpec{
+			Name: svc.Name,
+			Port: -1,
+		}
+
+		if svc.Port != "" {
+			port, err := strconv.Atoi(svc.Port)
+			if err != nil {
+				return nil, fmt.Errorf("invalid port value %s for service %s", svc.Port, svc.Name)
+			}
+
+			if port < 1 || port > 65535 {
+				return nil, fmt.Errorf("port value %s for service %s must be between 1 and 65535", svc.Port, svc.Name)
+			}
+
+			svcSpec.Port = port
+		} else if svc.Docker.Path == "" {
+			// default builder always specifies port 80
+			svcSpec.Port = 80
+
+			if svc.Language == ServiceLanguageJava {
+				svcSpec.Port = 8080
+			}
+		}
+
+		for _, use := range svc.Uses {
+			useRes, isRes := projectConfig.Resources[use]
+			if isRes {
+				switch useRes.Type {
+				case ResourceTypeDbMongo:
+					svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+				case ResourceTypeDbPostgres:
+					svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+				case ResourceTypeDbRedis:
+					svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+				}
+				continue
+			}
+
+			_, ok := projectConfig.Services[use]
+			if ok {
+				if svcSpec.Frontend == nil {
+					svcSpec.Frontend = &scaffold.Frontend{}
+				}
+
+				svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
+					scaffold.ServiceReference{Name: use})
+				backendMapping[use] = svc.Name
+				continue
+			}
+
+			return nil, fmt.Errorf("service %s uses %s, which does not exist", svc.Name, use)
+		}
+
+		infraSpec.Services = append(infraSpec.Services, svcSpec)
 	}
 
 	// create reverse mapping

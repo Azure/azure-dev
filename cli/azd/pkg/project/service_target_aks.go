@@ -262,7 +262,7 @@ func (t *aksTarget) Deploy(
 
 			// Vanilla k8s manifests with minimal templating support
 			deployments, err := t.deployManifests(ctx, serviceConfig, rootTask)
-			if err != nil && !os.IsNotExist(err) {
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				rootTask.SetError(err)
 				return
 			}

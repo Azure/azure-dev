@@ -46,7 +46,7 @@ properties:
 {{- end}}
 {{- end}}
       external: {{ .Ingress.External }}
-      targetPort: {{ "{{ targetPortOrDefault " }}{{ .Ingress.TargetPort }}{{ " }}" }}
+      targetPort: {{ .TargetPortExpression }}
 {{- if gt .Ingress.ExposedPort 0 }}
       exposedPort: {{ .Ingress.ExposedPort }}
 {{- end}}

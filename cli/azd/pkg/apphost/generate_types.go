@@ -49,6 +49,7 @@ type genContainerAppIngress struct {
 	genContainerAppIngressPort
 	Transport              string
 	AllowInsecure          bool
+	UsingDefaultPort       bool
 	AdditionalPortMappings []genContainerAppIngressAdditionalPortMappings
 }
 

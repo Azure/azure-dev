@@ -44,8 +44,8 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		endpointName,
 		string(infra.AzureMachineLearningEndpoint),
 	)
-	serviceConfig := createTestServiceConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
-	serviceConfig.Config = map[string]any{
+	component := createTestComponentConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
+	component.Service.Config = map[string]any{
 		"flow": map[string]any{
 			"name": flowName,
 			"path": ".",
@@ -104,16 +104,16 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		On("ValidateWorkspace", *mockContext.Context, scopeType).
 		Return(nil)
 	aiHelper.
-		On("CreateFlow", *mockContext.Context, scopeType, serviceConfig, componentConfigType).
+		On("CreateFlow", *mockContext.Context, scopeType, component, componentConfigType).
 		Return(flow, nil)
 	aiHelper.
-		On("CreateEnvironmentVersion", *mockContext.Context, scopeType, serviceConfig, componentConfigType).
+		On("CreateEnvironmentVersion", *mockContext.Context, scopeType, component, componentConfigType).
 		Return(environmentVersion, nil)
 	aiHelper.
-		On("CreateModelVersion", *mockContext.Context, scopeType, serviceConfig, componentConfigType).
+		On("CreateModelVersion", *mockContext.Context, scopeType, component, componentConfigType).
 		Return(modelVersion, nil)
 	aiHelper.
-		On("DeployToEndpoint", *mockContext.Context, scopeType, serviceConfig, endpointName, endpointDeploymentConfigType).
+		On("DeployToEndpoint", *mockContext.Context, scopeType, component, endpointName, endpointDeploymentConfigType).
 		Return(onlineDeployment, nil)
 	aiHelper.
 		On("UpdateTraffic", *mockContext.Context, scopeType, endpointName, expectedDeploymentName).
@@ -126,7 +126,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		Return(onlineEndpoint, nil)
 
 	serviceTarget := createMlEndpointTarget(mockContext, env, aiHelper)
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, servicePackage, targetResource)
+	deployTask := serviceTarget.Deploy(*mockContext.Context, component.Service, servicePackage, targetResource)
 	require.NotNil(t, deployTask)
 	logProgress(deployTask)
 
@@ -178,20 +178,20 @@ func (m *mockAiHelper) ValidateWorkspace(ctx context.Context, scope *ai.Scope) e
 func (m *mockAiHelper) CreateEnvironmentVersion(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.ComponentConfig,
 ) (*armmachinelearning.EnvironmentVersion, error) {
-	args := m.Called(ctx, scope, serviceConfig, config)
+	args := m.Called(ctx, scope, component, config)
 	return args.Get(0).(*armmachinelearning.EnvironmentVersion), args.Error(1)
 }
 
 func (m *mockAiHelper) CreateModelVersion(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.ComponentConfig,
 ) (*armmachinelearning.ModelVersion, error) {
-	args := m.Called(ctx, scope, serviceConfig, config)
+	args := m.Called(ctx, scope, component, config)
 	return args.Get(0).(*armmachinelearning.ModelVersion), args.Error(1)
 }
 
@@ -207,21 +207,21 @@ func (m *mockAiHelper) GetEndpoint(
 func (m *mockAiHelper) DeployToEndpoint(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	endpointName string,
 	config *ai.EndpointDeploymentConfig,
 ) (*armmachinelearning.OnlineDeployment, error) {
-	args := m.Called(ctx, scope, serviceConfig, endpointName, config)
+	args := m.Called(ctx, scope, component, endpointName, config)
 	return args.Get(0).(*armmachinelearning.OnlineDeployment), args.Error(1)
 }
 
 func (m *mockAiHelper) CreateFlow(
 	ctx context.Context,
 	scope *ai.Scope,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	config *ai.ComponentConfig,
 ) (*ai.Flow, error) {
-	args := m.Called(ctx, scope, serviceConfig, config)
+	args := m.Called(ctx, scope, component, config)
 	return args.Get(0).(*ai.Flow), args.Error(1)
 }
 

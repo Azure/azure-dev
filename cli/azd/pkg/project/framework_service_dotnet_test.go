@@ -40,9 +40,11 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	serviceConfig := &ServiceConfig{
-		Project: &ProjectConfig{
-			Path: "/sample/path/for/test",
+	component := &ComponentConfig{
+		Service: &ServiceConfig{
+			Project: &ProjectConfig{
+				Path: "/sample/path/for/test",
+			},
 		},
 		RelativePath: "",
 	}
@@ -50,7 +52,7 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
 	dp := NewDotNetProject(dotNetCli, environment.New("test")).(*dotnetProject)
 
-	err := dp.setUserSecretsFromOutputs(*mockContext.Context, serviceConfig, ServiceLifecycleEventArgs{
+	err := dp.setUserSecretsFromOutputs(*mockContext.Context, component, ServiceLifecycleEventArgs{
 		Args: map[string]any{
 			"bicepOutput": map[string]provisioning.OutputParameter{
 				"EXAMPLE_OUTPUT":          {Type: "string", Value: "foo"},
@@ -94,16 +96,16 @@ func Test_DotNetProject_Init(t *testing.T) {
 
 	env := environment.New("test")
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageDotNet)
+	component := createTestComponentConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageDotNet)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 
-	err = dotnetProject.Initialize(*mockContext.Context, serviceConfig)
+	err = dotnetProject.Initialize(*mockContext.Context, component)
 	require.NoError(t, err)
 
 	eventArgs := ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
+		Project: component.Service.Project,
+		Service: component.Service,
 		Args: map[string]any{
 			"bicepOutput": map[string]provisioning.OutputParameter{
 				"EXAMPLE_OUTPUT": {Type: "string", Value: "value"},
@@ -111,7 +113,7 @@ func Test_DotNetProject_Init(t *testing.T) {
 		},
 	}
 
-	err = serviceConfig.RaiseEvent(*mockContext.Context, ServiceEventEnvUpdated, eventArgs)
+	err = component.Service.RaiseEvent(*mockContext.Context, ServiceEventEnvUpdated, eventArgs)
 	require.NoError(t, err)
 	require.True(t, ranUserSecrets)
 
@@ -146,10 +148,10 @@ func Test_DotNetProject_Restore(t *testing.T) {
 
 	env := environment.New("test")
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
+	component := createTestComponentConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	restoreTask := dotnetProject.Restore(*mockContext.Context, serviceConfig)
+	restoreTask := dotnetProject.Restore(*mockContext.Context, component)
 	logProgress(restoreTask)
 
 	result, err := restoreTask.Await()
@@ -157,7 +159,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"restore", serviceConfig.RelativePath},
+		[]string{"restore", component.RelativePath},
 		runArgs.Args,
 	)
 }
@@ -186,14 +188,14 @@ func Test_DotNetProject_Build(t *testing.T) {
 
 	env := environment.New("test")
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
+	component := createTestComponentConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
-	buildOutputDir := filepath.Join(serviceConfig.Path(), "bin", "Release", "net8.0")
+	buildOutputDir := filepath.Join(component.Path(), "bin", "Release", "net8.0")
 	err = os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
 	require.NoError(t, err)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	buildTask := dotnetProject.Build(*mockContext.Context, serviceConfig, nil)
+	buildTask := dotnetProject.Build(*mockContext.Context, component, nil)
 	logProgress(buildTask)
 
 	result, err := buildTask.Await()
@@ -201,7 +203,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"build", filepath.Join(serviceConfig.RelativePath, "test.csproj"), "-c", "Release"},
+		[]string{"build", filepath.Join(component.RelativePath, "test.csproj"), "-c", "Release"},
 		runArgs.Args,
 	)
 }
@@ -244,14 +246,14 @@ func Test_DotNetProject_Package(t *testing.T) {
 
 	env := environment.New("test")
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api/test3.csproj", AppServiceTarget, ServiceLanguageCsharp)
+	component := createTestComponentConfig("./src/api/test3.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	packageTask := dotnetProject.Package(
 		*mockContext.Context,
-		serviceConfig,
+		component,
 		&ServiceBuildResult{
-			BuildOutputPath: serviceConfig.Path(),
+			BuildOutputPath: component.Path(),
 		},
 	)
 	logProgress(packageTask)
@@ -263,7 +265,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
 		[]string{"publish",
-			serviceConfig.RelativePath,
+			component.RelativePath,
 			"-c",
 			"Release",
 			"--output",

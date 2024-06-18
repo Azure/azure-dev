@@ -27,13 +27,13 @@ func (n *noOpProject) Requirements() FrameworkRequirements {
 	}
 }
 
-func (n *noOpProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+func (n *noOpProject) Initialize(ctx context.Context, component *ComponentConfig) error {
 	return nil
 }
 
 func (n *noOpProject) Restore(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
@@ -44,7 +44,7 @@ func (n *noOpProject) Restore(
 
 func (n *noOpProject) Build(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -56,7 +56,7 @@ func (n *noOpProject) Build(
 
 func (n *noOpProject) Package(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(

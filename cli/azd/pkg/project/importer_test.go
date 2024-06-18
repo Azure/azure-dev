@@ -43,27 +43,22 @@ func TestImportManagerHasService(t *testing.T) {
 		}),
 	})
 
-	// has service
-	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
+	testServiceConfig := createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageJava)
+	testServiceConfig.Name = "test"
+
+	projectConfig := &ProjectConfig{
 		Services: map[string]*ServiceConfig{
-			"test": {
-				Name:     "test",
-				Language: ServiceLanguageJava,
-			},
+			"test": testServiceConfig,
 		},
-	}, "test")
+	}
+
+	// has service
+	r, e := manager.HasService(*mockContext.Context, projectConfig, "test")
 	require.NoError(t, e)
 	require.True(t, r)
 
 	// has not
-	r, e = manager.HasService(*mockContext.Context, &ProjectConfig{
-		Services: map[string]*ServiceConfig{
-			"test": {
-				Name:     "test",
-				Language: ServiceLanguageJava,
-			},
-		},
-	}, "other")
+	r, e = manager.HasService(*mockContext.Context, projectConfig, "other")
 	require.NoError(t, e)
 	require.False(t, r)
 }
@@ -99,22 +94,8 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
 		Path: "path",
 		Services: map[string]*ServiceConfig{
-			"test": {
-				Name:         "test",
-				Language:     ServiceLanguageDotNet,
-				RelativePath: "path",
-				Project: &ProjectConfig{
-					Path: "path",
-				},
-			},
-			"foo": {
-				Name:         "foo",
-				Language:     ServiceLanguageDotNet,
-				RelativePath: "path2",
-				Project: &ProjectConfig{
-					Path: "path",
-				},
-			},
+			"test": createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageDotNet),
+			"foo":  createTestServiceConfig("path2", ContainerAppTarget, ServiceLanguageDotNet),
 		},
 	}, "other")
 	require.Error(t, e, errNoMultipleServicesWithAppHost)
@@ -152,15 +133,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
 		Path: "path",
 		Services: map[string]*ServiceConfig{
-			"test": {
-				Name:         "test",
-				Language:     ServiceLanguageDotNet,
-				Host:         StaticWebAppTarget,
-				RelativePath: "path",
-				Project: &ProjectConfig{
-					Path: "path",
-				},
-			},
+			"test": createTestServiceConfig("path", StaticWebAppTarget, ServiceLanguageDotNet),
 		},
 	}, "other")
 	require.Error(t, e, errAppHostMustTargetContainerApp)
@@ -329,15 +302,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	// Use an a dotnet project and use the mock to simulate an Aspire project
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
-			"test": {
-				Name:         "test",
-				Language:     ServiceLanguageDotNet,
-				Host:         ContainerAppTarget,
-				RelativePath: "path",
-				Project: &ProjectConfig{
-					Path: "path",
-				},
-			},
+			"test": createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageDotNet),
 		},
 	})
 
@@ -356,15 +321,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	// Use an a dotnet project and use the mock to simulate an Aspire project
 	_, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
-			"test": {
-				Name:         "test",
-				Language:     ServiceLanguageDotNet,
-				Host:         ContainerAppTarget,
-				RelativePath: "path",
-				Project: &ProjectConfig{
-					Path: "path",
-				},
-			},
+			"test": createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageDotNet),
 		},
 	})
 

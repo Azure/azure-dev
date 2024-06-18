@@ -1,0 +1,16 @@
+name: test-proj
+services:
+    todo:
+        host: containerapp
+        containers:
+            main:
+                project: ./src/api
+                language: js
+                docker:
+                    path: ./Dockerfile
+                    registry: docker.io
+                    image: test-image
+                    tag: latest
+            sidecar:
+                image: docker.io/sidecar:latest
+

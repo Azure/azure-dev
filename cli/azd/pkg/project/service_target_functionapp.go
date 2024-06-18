@@ -53,11 +53,29 @@ func (f *functionAppTarget) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			mainComponent, err := serviceConfig.Main()
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			componentPackageResults, ok := packageOutput.Details.(map[string]*ServicePackageResult)
+			if !ok {
+				task.SetError(fmt.Errorf("invalid package details"))
+				return
+			}
+
+			mainPackageOutput, has := componentPackageResults[mainComponent.Name]
+			if !has {
+				task.SetError(fmt.Errorf("missing main component package output"))
+				return
+			}
+
 			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
 			zipFilePath, err := createDeployableZip(
 				serviceConfig.Project.Name,
 				serviceConfig.Name,
-				packageOutput.PackagePath,
+				mainPackageOutput.PackagePath,
 			)
 			if err != nil {
 				task.SetError(err)
@@ -65,7 +83,7 @@ func (f *functionAppTarget) Package(
 			}
 
 			task.SetResult(&ServicePackageResult{
-				Build:       packageOutput.Build,
+				Build:       mainPackageOutput.Build,
 				PackagePath: zipFilePath,
 			})
 		},
@@ -95,10 +113,17 @@ func (f *functionAppTarget) Deploy(
 			defer os.Remove(packageOutput.PackagePath)
 			defer zipFile.Close()
 
+			mainComponent, err := serviceConfig.Main()
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
 			task.SetProgress(NewServiceProgress("Uploading deployment package"))
-			remoteBuild := serviceConfig.Language == ServiceLanguageJavaScript ||
-				serviceConfig.Language == ServiceLanguageTypeScript ||
-				serviceConfig.Language == ServiceLanguagePython
+			remoteBuild := mainComponent.Language == ServiceLanguageJavaScript ||
+				mainComponent.Language == ServiceLanguageTypeScript ||
+				mainComponent.Language == ServiceLanguagePython
+
 			res, err := f.cli.DeployFunctionAppUsingZipFile(
 				ctx,
 				targetResource.SubscriptionId(),

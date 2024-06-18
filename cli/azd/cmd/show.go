@@ -117,19 +117,22 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	for _, svc := range stableServices {
-		path, err := getFullPathToProjectForService(svc)
-		if err != nil {
-			return nil, err
-		}
+		for _, component := range svc.Components {
+			path, err := getFullPathToProjectForService(component)
+			if err != nil {
+				return nil, err
+			}
 
-		showSvc := contracts.ShowService{
-			Project: contracts.ShowServiceProject{
-				Path: path,
-				Type: showTypeFromLanguage(svc.Language),
-			},
-		}
+			showSvc := contracts.ShowService{
+				Project: contracts.ShowServiceProject{
+					Path: path,
+					Type: showTypeFromLanguage(component.Language),
+				},
+			}
 
-		res.Services[svc.Name] = showSvc
+			componentName := fmt.Sprintf("%s/%s", svc.Name, component.Name)
+			res.Services[componentName] = showSvc
+		}
 	}
 
 	// Add information about the target of each service, if we can determine it (if the infrastructure has
@@ -294,18 +297,18 @@ func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowTy
 // this includes the project file (e.g Todo.Api.csproj). For dotnet services, if the `path` component of the configuration
 // does not include the project file, we attempt to determine it by looking for a single .csproj/.vbproj/.fsproj file
 // in that directory. If there are multiple, an error is returned.
-func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) {
-	if showTypeFromLanguage(svc.Language) != contracts.ShowTypeDotNet {
-		return svc.Path(), nil
+func getFullPathToProjectForService(component *project.ComponentConfig) (string, error) {
+	if showTypeFromLanguage(component.Language) != contracts.ShowTypeDotNet {
+		return component.Path(), nil
 	}
 
-	stat, err := os.Stat(svc.Path())
+	stat, err := os.Stat(component.Path())
 	if err != nil {
-		return "", fmt.Errorf("stating project %s: %w", svc.Path(), err)
+		return "", fmt.Errorf("stating project %s: %w", component.Path(), err)
 	} else if stat.IsDir() {
-		entries, err := os.ReadDir(svc.Path())
+		entries, err := os.ReadDir(component.Path())
 		if err != nil {
-			return "", fmt.Errorf("listing files for service %s: %w", svc.Name, err)
+			return "", fmt.Errorf("listing files for service %s: %w", component.Name, err)
 		}
 		var projectFile string
 		for _, entry := range entries {
@@ -318,8 +321,8 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 						"multiple .NET project files detected in %s for service %s, "+
 							"include the name of the .NET project file in 'project' "+
 							"setting in %s for this service",
-						svc.Path(),
-						svc.Name,
+						component.Path(),
+						component.Name,
 						azdcontext.ProjectFileName)
 				} else {
 					projectFile = entry.Name()
@@ -331,16 +334,16 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 				"could not determine the .NET project file for service %s,"+
 					" include the name of the .NET project file in project setting in %s for"+
 					" this service",
-				svc.Name,
+				component.Name,
 				azdcontext.ProjectFileName)
 		} else {
-			if svc.RelativePath != "" {
-				svc.RelativePath = filepath.Join(svc.RelativePath, projectFile)
+			if component.RelativePath != "" {
+				component.RelativePath = filepath.Join(component.RelativePath, projectFile)
 			} else {
-				svc.Project.Path = filepath.Join(svc.Project.Path, projectFile)
+				component.Service.Project.Path = filepath.Join(component.Service.Project.Path, projectFile)
 			}
 		}
 	}
 
-	return svc.Path(), nil
+	return component.Path(), nil
 }

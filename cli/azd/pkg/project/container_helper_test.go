@@ -31,14 +31,16 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	envName := "dev"
 	projectName := "my-app"
 	serviceName := "web"
-	serviceConfig := &ServiceConfig{
-		Name: serviceName,
-		Host: "containerapp",
-		Project: &ProjectConfig{
-			Name: projectName,
+	component := &ComponentConfig{
+		Name: DefaultComponentName,
+		Service: &ServiceConfig{
+			Name: serviceName,
+			Project: &ProjectConfig{
+				Name: projectName,
+			},
 		},
 	}
-	defaultImageName := fmt.Sprintf("%s/%s-%s", projectName, serviceName, envName)
+	defaultImageName := fmt.Sprintf("%s/%s/%s-%s", projectName, serviceName, DefaultComponentName, envName)
 
 	tests := []struct {
 		name         string
@@ -62,9 +64,9 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			env := environment.NewWithValues("dev", map[string]string{})
 			containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, cloud.AzurePublic())
-			serviceConfig.Docker = tt.dockerConfig
+			component.Docker = tt.dockerConfig
 
-			tag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
+			tag, err := containerHelper.LocalImageTag(*mockContext.Context, component)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, tag)
 		})
@@ -114,10 +116,14 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, ServiceLanguageTypeScript)
-			serviceConfig.Docker.Registry = tt.registry
+			component := createTestComponentConfig(tt.project, ContainerAppTarget, ServiceLanguageTypeScript)
+			component.Docker.Registry = tt.registry
 
-			remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, tt.localImageTag)
+			remoteTag, err := containerHelper.RemoteImageTag(
+				*mockContext.Context,
+				component,
+				tt.localImageTag,
+			)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -138,8 +144,8 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		})
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, cloud.AzurePublic())
-		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
+		component := createTestComponentConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, component)
 
 		require.NoError(t, err)
 		require.Equal(t, "contoso.azurecr.io", registryName)
@@ -150,9 +156,9 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		env := environment.NewWithValues("dev", map[string]string{})
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, cloud.AzurePublic())
-		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
-		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
+		component := createTestComponentConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+		component.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, component)
 
 		require.NoError(t, err)
 		require.Equal(t, "contoso.azurecr.io", registryName)
@@ -164,9 +170,9 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		env.DotenvSet("MY_CUSTOM_REGISTRY", "custom.azurecr.io")
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, cloud.AzurePublic())
-		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		serviceConfig.Docker.Registry = osutil.NewExpandableString("${MY_CUSTOM_REGISTRY}")
-		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
+		component := createTestComponentConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+		component.Docker.Registry = osutil.NewExpandableString("${MY_CUSTOM_REGISTRY}")
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, component)
 
 		require.NoError(t, err)
 		require.Equal(t, "custom.azurecr.io", registryName)
@@ -177,8 +183,8 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		env := environment.NewWithValues("dev", map[string]string{})
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, cloud.AzurePublic())
-		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
+		component := createTestComponentConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, component)
 
 		require.Error(t, err)
 		require.Empty(t, registryName)
@@ -347,18 +353,24 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				dockerCli,
 				cloud.AzurePublic(),
 			)
-			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+			component := createTestComponentConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
-			serviceConfig.Image = tt.image
-			serviceConfig.RelativePath = tt.project
-			serviceConfig.Docker.Registry = tt.registry
+			component.Image = tt.image
+			component.RelativePath = tt.project
+			component.Docker.Registry = tt.registry
 
 			packageOutput := &ServicePackageResult{
 				Details:     tt.dockerDetails,
 				PackagePath: tt.packagePath,
 			}
 
-			deployTask := containerHelper.Deploy(*mockContext.Context, serviceConfig, packageOutput, targetResource, true)
+			deployTask := containerHelper.Deploy(
+				*mockContext.Context,
+				component,
+				packageOutput,
+				targetResource,
+				true,
+			)
 			logProgress(deployTask)
 			deployResult, err := deployTask.Await()
 
@@ -397,7 +409,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
 			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
 			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
-			require.Equal(t, tt.expectedRemoteImage, env.GetServiceProperty("api", "IMAGE_NAME"))
+			require.Equal(t, tt.expectedRemoteImage, env.GetServiceProperty("api_main", "IMAGE_NAME"))
 		})
 	}
 }
@@ -424,7 +436,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			name: "with defaults",
 			expectedImage: docker.ContainerImage{
 				Registry:   "",
-				Repository: "test-app/api-dev",
+				Repository: "test-app/api/main-dev",
 				Tag:        "azd-deploy-0",
 			},
 		},
@@ -433,7 +445,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			tag:  osutil.NewExpandableString("custom-tag"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "",
-				Repository: "test-app/api-dev",
+				Repository: "test-app/api/main-dev",
 				Tag:        "custom-tag",
 			},
 		},
@@ -461,7 +473,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "contoso.azurecr.io",
-				Repository: "test-app/api-dev",
+				Repository: "test-app/api/main-dev",
 				Tag:        "azd-deploy-0",
 			},
 		},
@@ -508,23 +520,23 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+			component := createTestComponentConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 			if tt.projectName != "" {
-				serviceConfig.Project.Name = tt.projectName
+				component.Service.Project.Name = tt.projectName
 			}
 			if tt.serviceName != "" {
-				serviceConfig.Name = tt.serviceName
+				component.Name = tt.serviceName
 			}
-			serviceConfig.Image = tt.sourceImage
-			serviceConfig.Docker.Registry = tt.registry
-			serviceConfig.Docker.Image = tt.image
-			serviceConfig.Docker.Tag = tt.tag
+			component.Image = tt.sourceImage
+			component.Docker.Registry = tt.registry
+			component.Docker.Image = tt.image
+			component.Docker.Tag = tt.tag
 
 			for k, v := range tt.env {
 				env.DotenvSet(k, v)
 			}
 
-			image, err := containerHelper.GeneratedImage(*mockContext.Context, serviceConfig)
+			image, err := containerHelper.GeneratedImage(*mockContext.Context, component)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -593,11 +605,11 @@ func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 		containerHelper := NewContainerHelper(
 			env, envManager, clock.NewMock(), mockContainerService, nil, cloud.AzurePublic())
 
-		serviceConfig := createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageDotNet)
-		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
+		component := createTestComponentConfig("path", ContainerAppTarget, ServiceLanguageDotNet)
+		component.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
 		targetResource := environment.NewTargetResource("sub", "rg", "name", "rType")
 
-		credential, err := containerHelper.Credentials(*mockContext.Context, serviceConfig, targetResource)
+		credential, err := containerHelper.Credentials(*mockContext.Context, component, targetResource)
 		require.NoError(t, err)
 		require.NotNil(t, credential)
 		require.Equal(t, 1, mockContainerService.totalRetries())

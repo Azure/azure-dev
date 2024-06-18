@@ -59,8 +59,8 @@ func Test_CLI_ShowWorksWithoutEnvironment(t *testing.T) {
 
 	require.Equal(t, "webapp", showRes.Name)
 	require.Equal(t, 1, len(showRes.Services))
-	require.NotNil(t, showRes.Services["web"])
-	require.Nil(t, showRes.Services["web"].Target)
+	require.NotNil(t, showRes.Services["web/main"])
+	require.Nil(t, showRes.Services["web/main"].Target)
 
 	// Repeat the process but passing an explicit environment name for an environment that doesn't exist and ensure
 	// that we get an error, as the selected env does not exists.

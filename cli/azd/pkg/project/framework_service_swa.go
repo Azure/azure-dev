@@ -68,8 +68,8 @@ func (p *swaProject) RequiredExternalTools(context.Context) []tools.ExternalTool
 }
 
 // Initializes the swa project
-func (p *swaProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	return p.framework.Initialize(ctx, serviceConfig)
+func (p *swaProject) Initialize(ctx context.Context, component *ComponentConfig) error {
+	return p.framework.Initialize(ctx, component)
 }
 
 // Sets the inner framework service used for restore and build command
@@ -80,17 +80,17 @@ func (p *swaProject) SetSource(inner FrameworkService) {
 // Restores the dependencies for the swa project
 func (p *swaProject) Restore(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.Restore(ctx, serviceConfig)
+	return p.framework.Restore(ctx, component)
 }
 
 // Builds the swa project based on the swa-cli.config.json options specified within the Service path
 func (p *swaProject) Build(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -104,7 +104,7 @@ func (p *swaProject) Build(
 				})
 			err := p.swa.Build(
 				ctx,
-				serviceConfig.Path(),
+				component.Path(),
 				previewerWriter,
 			)
 			p.console.StopPreviewer(ctx, false)
@@ -123,7 +123,7 @@ func (p *swaProject) Build(
 
 func (p *swaProject) Package(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(

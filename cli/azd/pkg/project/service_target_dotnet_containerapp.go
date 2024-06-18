@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -153,7 +152,9 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
 				remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 			} else {
-				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
+				imageName := fmt.Sprintf("%s:%s",
+					at.containerHelper.DefaultImageName(serviceConfig),
+					at.containerHelper.DefaultImageTag())
 
 				portNumber, err = at.dotNetCli.PublishContainer(
 					ctx,

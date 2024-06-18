@@ -398,7 +398,7 @@ func evaluateExpressions(source string, manifest apphost.Manifest) (string, erro
 func evaluateSingleExpressionMatch(
 	match string, manifest apphost.Manifest) (string, error) {
 
-	exp := match[1 : len(match)-1]
+	exp := match
 	resourceAndPath := strings.SplitN(exp, ".", 2)
 	if len(resourceAndPath) != 2 {
 		return match, fmt.Errorf("invalid expression %q. Expecting the form of: resource.value", exp)

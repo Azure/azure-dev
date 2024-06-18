@@ -200,7 +200,7 @@ func (p *dockerProject) Build(
 				result := make([]string, len(source))
 				for i, arg := range source {
 					evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
-						path := match[1 : len(match)-1]
+						path := match
 						value, has := p.env.Config.GetString(path)
 						if !has {
 							return "", fmt.Errorf("parameter %s not found", path)

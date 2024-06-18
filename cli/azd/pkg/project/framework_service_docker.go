@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -198,15 +199,19 @@ func (p *dockerProject) Build(
 			resolveParameters := func(source []string) []string {
 				result := make([]string, len(source))
 				for i, arg := range source {
-					result[i] = string(argExpression.ReplaceAllStringFunc(arg, func(match string) string {
+					evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
 						path := match[1 : len(match)-1]
 						value, has := p.env.Config.GetString(path)
 						if !has {
-							task.SetError(fmt.Errorf("parameter %s not found", path))
-							return ""
+							return "", fmt.Errorf("parameter %s not found", path)
 						}
-						return value
-					}))
+						return value, nil
+					})
+					if err != nil {
+						task.SetError(err)
+						return nil
+					}
+					result[i] = evaluatedString
 				}
 				return result
 			}

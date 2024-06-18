@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -376,8 +375,6 @@ func buildArgsArrayAndEnv(
 	return result, reqEnv, nil
 }
 
-var argExpression = regexp.MustCompile(`\{([^}]+)\}`)
-
 func evaluateArgsWithConfig(
 	manifest apphost.Manifest, args map[string]string) (map[string]string, error) {
 	result := make(map[string]string, len(args))
@@ -393,19 +390,9 @@ func evaluateArgsWithConfig(
 }
 
 func evaluateExpressions(source string, manifest apphost.Manifest) (string, error) {
-	var replaceError error
-	evaluated := argExpression.ReplaceAllStringFunc(source, func(match string) string {
-		replacement, err := evaluateSingleExpressionMatch(match, manifest)
-		if err != nil {
-			replaceError = err
-			return match
-		}
-		return replacement
+	return apphost.EvalString(source, func(match string) (string, error) {
+		return evaluateSingleExpressionMatch(match, manifest)
 	})
-	if replaceError != nil {
-		return "", replaceError
-	}
-	return evaluated, nil
 }
 
 func evaluateSingleExpressionMatch(

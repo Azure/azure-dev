@@ -251,11 +251,7 @@ func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress
 		finalIngress.TargetPort = props.port
 		if finalIngress.TargetPort == 0 {
 			finalIngress.TargetPort = defaultPort
-		} else {
-			// negative target port means the target port is defined in the manifest and is not using a default value
-			// azd won't change the value of the target port after building a dotnet project. azd will just use the
-			// value defined in the manifest (will remove the negative).
-			finalIngress.TargetPort *= -1
+			finalIngress.UsingDefaultPort = true
 		}
 		finalIngress.Transport = acaIngressSchemaHttp
 		if props.hasHttp2 {

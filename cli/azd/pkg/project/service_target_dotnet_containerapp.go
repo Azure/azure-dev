@@ -232,11 +232,6 @@ func (at *dotnetContainerAppTarget) Deploy(
 					"securedParameter": fns.Parameter,
 					"secretOutput":     fns.kvSecret,
 					"targetPortOrDefault": func(targetPortFromManifest int) int {
-						if targetPortFromManifest < 0 {
-							// a negative target port means the target port was defined in the manifest and should not
-							// be changed.
-							return targetPortFromManifest * -1
-						}
 						// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
 						if portNumber == 0 {
 							return targetPortFromManifest

@@ -41,6 +41,7 @@ func TestBuildAcaIngress(t *testing.T) {
 			Transport:              acaIngressTransportHttp2,
 			AllowInsecure:          true,
 			AdditionalPortMappings: []genContainerAppIngressAdditionalPortMappings(nil),
+			UsingDefaultPort:       true,
 		}
 		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
 		assert.NoError(t, err)
@@ -176,6 +177,7 @@ func TestBuildAcaIngress(t *testing.T) {
 					},
 				},
 			},
+			UsingDefaultPort: true,
 		}
 		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
 		assert.NoError(t, err)

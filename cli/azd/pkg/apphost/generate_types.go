@@ -2,23 +2,6 @@ package apphost
 
 import "github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 
-type genAppInsight struct{}
-
-type genStorageAccount struct {
-	Blobs  []string
-	Tables []string
-	Queues []string
-}
-
-type genCosmosAccount struct {
-	Databases []string
-}
-
-type genServiceBus struct {
-	Queues []string
-	Topics []string
-}
-
 type genContainerAppEnvironmentServices struct {
 	Type string
 }
@@ -105,10 +88,6 @@ type genDaprComponent struct {
 	Version  string
 }
 
-type genSqlServer struct {
-	Databases []string
-}
-
 type genOutputParameter struct {
 	Type  string
 	Value string
@@ -126,16 +105,10 @@ type genBicepTemplateContext struct {
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
 	RequiresStorageVolume           bool
-	AppInsights                     map[string]genAppInsight
-	ServiceBuses                    map[string]genServiceBus
-	StorageAccounts                 map[string]genStorageAccount
 	KeyVaults                       map[string]genKeyVault
 	ContainerAppEnvironmentServices map[string]genContainerAppEnvironmentServices
 	ContainerApps                   map[string]genContainerApp
-	AppConfigs                      map[string]genAppConfig
 	DaprComponents                  map[string]genDaprComponent
-	CosmosDbAccounts                map[string]genCosmosAccount
-	SqlServers                      map[string]genSqlServer
 	InputParameters                 map[string]Input
 	OutputParameters                map[string]genOutputParameter
 	OutputSecretParameters          map[string]genOutputParameter

@@ -23,7 +23,7 @@ func TestZipDeploy(t *testing.T) {
 		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
-		zipFile := bytes.NewBuffer([]byte{})
+		zipFile := bytes.NewReader([]byte{})
 		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.NotNil(t, poller)
 		require.NoError(t, err)
@@ -44,7 +44,7 @@ func TestZipDeploy(t *testing.T) {
 		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
-		zipFile := bytes.NewBuffer([]byte{})
+		zipFile := bytes.NewReader([]byte{})
 		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.NotNil(t, poller)
 		require.NoError(t, err)
@@ -64,7 +64,7 @@ func TestZipDeploy(t *testing.T) {
 		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, mockContext.ArmClientOptions)
 		require.NoError(t, err)
 
-		zipFile := bytes.NewBuffer([]byte{})
+		zipFile := bytes.NewReader([]byte{})
 		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.Nil(t, poller)
 		require.Error(t, err)

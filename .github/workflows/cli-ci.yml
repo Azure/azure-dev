@@ -39,7 +39,7 @@ jobs:
           node-version: "20"
       - run: npm install -g cspell
       - name: Spell check for CLI source code
-        run: cspell lint '**/*.go' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
+        run: cspell lint '**/*.{go,md}' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
 
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml

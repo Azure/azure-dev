@@ -92,6 +92,7 @@ errcheck
 errorinfo
 errorlint
 executil
+flexconsumption
 Frontends
 funcapp
 functestapp
@@ -103,9 +104,12 @@ godotenv
 golangci
 gosec
 goterm
+gotest
+gotestsum
 hotspot
 iidfile
 ineffassign
+jaegertracing
 javac
 jmes
 jquery
@@ -182,6 +186,7 @@ stdbool
 stdlib
 stdouttrace
 STRINGSLICE
+struct
 structs
 substr
 swacli

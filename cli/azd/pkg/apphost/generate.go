@@ -159,7 +159,7 @@ func Containers(manifest *Manifest) map[string]genContainer {
 	return res
 }
 
-// Containers returns information about all container.v1 resources from a manifest.
+// BuildContainers returns information about all container.v1 resources from a manifest.
 func BuildContainers(manifest *Manifest) (map[string]genBuildContainer, error) {
 	res := make(map[string]genBuildContainer)
 

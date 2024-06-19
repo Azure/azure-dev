@@ -9,6 +9,7 @@ param appServicePlanId string
 param keyVaultName string = ''
 param managedIdentity bool = !empty(keyVaultName)
 param storageAccountName string
+param virtualNetworkSubnetId string = ''
 
 // Runtime Properties
 @allowed([
@@ -74,6 +75,7 @@ module functions 'appservice.bicep' = {
     runtimeNameAndVersion: runtimeNameAndVersion
     scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
     use32BitWorkerProcess: use32BitWorkerProcess
+    virtualNetworkSubnetId: virtualNetworkSubnetId
   }
 }
 

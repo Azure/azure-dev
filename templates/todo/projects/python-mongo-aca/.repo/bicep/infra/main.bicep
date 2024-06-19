@@ -26,6 +26,9 @@ param resourceGroupName string = ''
 param webContainerAppName string = ''
 param apimServiceName string = ''
 param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param primaryReadonlyConnectionStringSecretName string= 'PRIMARY-READONLY-CONNECTION-STRING'
+param secondaryWriteConnectionStringSecretName string = 'SECONDARY-WRITE-CONNECTION-STRING'
+param secondaryReadonlyConnectionStringSecretName string = 'SECONDARY-READONLY-CONNECTION-STRING'
 param collections array = [
   {
     name: 'TodoList'
@@ -263,6 +266,9 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
     secretsKeyVault: {
       keyVaultName: keyVault.outputs.name
       primaryWriteConnectionStringSecretName: connectionStringKey
+      primaryReadonlyConnectionStringSecretName: primaryReadonlyConnectionStringSecretName
+      secondaryWriteConnectionStringSecretName: secondaryWriteConnectionStringSecretName
+      secondaryReadonlyConnectionStringSecretName: secondaryReadonlyConnectionStringSecretName
     }
   }
 }

@@ -20,18 +20,24 @@ class Settings(BaseSettings):
             credential = DefaultAzureCredential()
             keyvault_client = SecretClient(self.AZURE_KEY_VAULT_ENDPOINT, credential)
             for secret in keyvault_client.list_properties_of_secrets():
-                if secret.name == "AZURE-COSMOS-CONNECTION-STRING":
-                    setattr(
-                        self,
-                        keyvault_name_as_attr(secret.name),
-                        keyvault_client.get_secret(secret.name).value,
-                    )
+                setattr(
+                    self,
+                    keyvault_name_as_attr(secret.name),
+                    keyvault_client.get_secret(secret.name).value,
+                )
 
     AZURE_COSMOS_CONNECTION_STRING: str = ""
     AZURE_COSMOS_DATABASE_NAME: str = "Todo"
     AZURE_KEY_VAULT_ENDPOINT: Optional[str] = None
     APPLICATIONINSIGHTS_CONNECTION_STRING: Optional[str] = None
     APPLICATIONINSIGHTS_ROLENAME: Optional[str] = "API"
+    PRIMARY_WRITE_KEY: str = ""
+    PRIMARY_READONLY_KEY: str = ""
+    SECONDARY_WRITE_CONNECTION_STRING: str = ""
+    PRIMARY_READONLY_CONNECTION_STRING: str = ""
+    SECONDARY_WRITE_KEY: str = ""
+    SECONDARY_READONLY_KEY: str = ""
+    SECONDARY_READONLY_CONNECTION_STRING: str = ""
 
     class Config:
         env_file = ".env"

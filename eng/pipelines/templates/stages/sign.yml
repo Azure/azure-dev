@@ -90,7 +90,19 @@ stages:
         - task: DownloadPipelineArtifact@2
           inputs:
             artifact: azd-windows-amd64.exe
-            path: win
+            path: win-x86_64
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-windows-arm64.exe
+            path: win-arm64
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path win
+
+            Copy-Item win-x86_64/azd-windows-amd64.exe win/
+            Copy-Item win-arm64/azd-windows-arm64.exe win/
+          displayName: Package windows binary for signing
 
         - task: DownloadPipelineArtifact@2
           inputs:
@@ -98,7 +110,9 @@ stages:
             path: installer
 
         - pwsh: |
-            Remove-Item -Recurse -Force win/_manifest
+            if (Test-Path win/_manifest) {
+              Remove-Item -Recurse -Force win/_manifest
+            }
             Copy-Item installer/*.ps1 win
 
             Get-Childitem -Recurse win/ | Select-Object -Property Length,FullName

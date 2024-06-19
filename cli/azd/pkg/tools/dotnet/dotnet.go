@@ -191,7 +191,7 @@ func (cli *dotNetCli) PublishContainer(
 		"-r", "linux-x64",
 		"-c", configuration,
 		"/t:PublishContainer",
-		fmt.Sprintf("-p:ContainerImageName=%s", imageName),
+		fmt.Sprintf("-p:ContainerRepository=%s", imageName),
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
 		"--getProperty:GeneratedContainerConfiguration",
 	)

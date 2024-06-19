@@ -14,7 +14,7 @@ properties:
         autoConfigureDataProtection: true
     ingress:
       external: false
-      targetPort: {{ targetPortOrDefault 6379 }}
+      targetPort: 6379
       transport: tcp
       allowInsecure: false
     registries:

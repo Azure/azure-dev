@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
 
 const (
@@ -579,11 +580,11 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		)
 	}
 
+	var compositeFramework CompositeFrameworkService
 	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
 	// project that handles the containerization.
 	requiresLanguage := serviceConfig.Language != ServiceLanguageDocker && serviceConfig.Language != ServiceLanguageNone
 	if serviceConfig.Host.RequiresContainer() && requiresLanguage {
-		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			return nil, fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",
@@ -592,7 +593,24 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 				err,
 			)
 		}
-
+	} else if serviceConfig.Host == StaticWebAppTarget {
+		withSwaConfig, err := swa.ContainsSwaConfig(serviceConfig.Path())
+		if err != nil {
+			return nil, fmt.Errorf("checking for swa-cli.config.json: %w", err)
+		}
+		if withSwaConfig {
+			if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageSwa), &compositeFramework); err != nil {
+				return nil, fmt.Errorf(
+					"failed resolving composite framework service for '%s', language '%s': %w",
+					serviceConfig.Name,
+					serviceConfig.Language,
+					err,
+				)
+			}
+			log.Println("Using swa-cli for build and deploy because swa-cli.config.json was found in the service path")
+		}
+	}
+	if compositeFramework != nil {
 		compositeFramework.SetSource(frameworkService)
 		frameworkService = compositeFramework
 	}

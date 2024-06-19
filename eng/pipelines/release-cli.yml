@@ -47,15 +47,15 @@ extends:
             ImageKey: image
             UploadArtifact: true
             Variables:
-                BuildTarget: azd-linux-amd64
-                BuildOutputName: azd
-                SetExecutableBit: true
-                SetShieldInfo: true
-                BuildLinuxPackages: true
-                AZURE_DEV_CI_OS: lin
-                Codeql.Enabled: true
-                Codeql.SkipTaskAutoInjection: false
-                Codeql.BuildIdentifier: cli_linux
+              BuildTarget: azd-linux-amd64
+              BuildOutputName: azd
+              SetExecutableBit: true
+              SetShieldInfo: true
+              BuildLinuxPackages: true
+              AZURE_DEV_CI_OS: lin
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: cli_linux
           Mac:
             Pool: Azure Pipelines
             OSVmImage: $(MACVMIMAGE)

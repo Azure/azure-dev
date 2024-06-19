@@ -47,6 +47,19 @@ func NewContainerHelper(
 	}
 }
 
+// DefaultImageName returns a default image name generated from the service name and environment name.
+func (ch *ContainerHelper) DefaultImageName(serviceConfig *ServiceConfig) string {
+	return fmt.Sprintf("%s/%s-%s",
+		strings.ToLower(serviceConfig.Project.Name),
+		strings.ToLower(serviceConfig.Name),
+		strings.ToLower(ch.env.Name()))
+}
+
+// DefaultImageTag returns a default image tag generated from the current time.
+func (ch *ContainerHelper) DefaultImageTag() string {
+	return fmt.Sprintf("azd-deploy-%d", ch.clock.Now().Unix())
+}
+
 // RegistryName returns the name of the destination container registry to use for the current environment from the following:
 // 1. AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable
 // 2. docker.registry from the service configuration
@@ -97,11 +110,7 @@ func (ch *ContainerHelper) GeneratedImage(
 
 	// Set default image name if not configured
 	if configuredImage == "" {
-		configuredImage = fmt.Sprintf("%s/%s-%s",
-			strings.ToLower(serviceConfig.Project.Name),
-			strings.ToLower(serviceConfig.Name),
-			strings.ToLower(ch.env.Name()),
-		)
+		configuredImage = ch.DefaultImageName(serviceConfig)
 	}
 
 	parsedImage, err := docker.ParseContainerImage(configuredImage)
@@ -117,9 +126,7 @@ func (ch *ContainerHelper) GeneratedImage(
 
 		// Set default tag if not configured
 		if configuredTag == "" {
-			configuredTag = fmt.Sprintf("azd-deploy-%d",
-				ch.clock.Now().Unix(),
-			)
+			configuredTag = ch.DefaultImageTag()
 		}
 
 		parsedImage.Tag = configuredTag

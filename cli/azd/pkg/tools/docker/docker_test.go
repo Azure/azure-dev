@@ -68,6 +68,8 @@ func Test_DockerBuild(t *testing.T) {
 			imageName,
 			buildArgs,
 			nil,
+			nil,
+			nil,
 		)
 
 		require.Equal(t, true, ran)
@@ -125,6 +127,8 @@ func Test_DockerBuild(t *testing.T) {
 			imageName,
 			buildArgs,
 			nil,
+			nil,
+			nil,
 		)
 
 		require.Equal(t, true, ran)
@@ -180,7 +184,8 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 		}, nil
 	})
 
-	result, err := docker.Build(context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil)
+	result, err := docker.Build(
+		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)
@@ -228,7 +233,8 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 		}, nil
 	})
 
-	result, err := docker.Build(context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil)
+	result, err := docker.Build(
+		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)
@@ -278,7 +284,8 @@ func Test_DockerBuildArgsMultiple(t *testing.T) {
 		}, nil
 	})
 
-	result, err := docker.Build(context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil)
+	result, err := docker.Build(
+		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)

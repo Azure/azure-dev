@@ -75,6 +75,16 @@ param serviceType string = ''
 @description('The target port for the container')
 param targetPort int = 80
 
+@description('The ingress transport protocol')
+@allowed([ 'auto', 'http', 'http2', 'tcp' ])
+param transport string = 'auto'
+
+@description('Specifies if unsecure HTTP connections are allowed')
+param allowInsecure bool = false
+
+@description('Additional ports to expose on the container app. Each item should be in the format of { targetPort: 80, exposedPort: 8080, external: true }')
+param additionalPortMappings array = []
+
 resource userIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = if (!empty(identityName)) {
   name: identityName
 }
@@ -113,10 +123,12 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
       ingress: ingressEnabled ? {
         external: external
         targetPort: targetPort
-        transport: 'auto'
+        transport: transport
+        allowInsecure: allowInsecure
         corsPolicy: {
           allowedOrigins: union([ 'https://portal.azure.com', 'https://ms.portal.azure.com' ], allowedOrigins)
         }
+        additionalPortMappings: !empty(additionalPortMappings) ? additionalPortMappings : null
       } : null
       dapr: daprEnabled ? {
         enabled: true

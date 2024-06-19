@@ -1,10 +1,16 @@
 package project
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMapToStringSlice(t *testing.T) {
@@ -36,4 +42,106 @@ func TestMapToStringSlice(t *testing.T) {
 	result3 := mapToStringSlice(m3, ":")
 	slices.Sort(result3)
 	assert.Equal(t, expected3, result3)
+}
+
+func TestEvaluateArgsWithConfig(t *testing.T) {
+	envParamName := "param4"
+	envParamKey := strings.TrimSuffix(scaffold.EnvFormat(envParamName)[2:], "}")
+	envParamExpected := "valueFromEnv"
+	t.Setenv(envParamKey, envParamExpected)
+
+	manifest := apphost.Manifest{
+		Resources: map[string]*apphost.Resource{
+			"param1": {
+				Type:  "parameter.v0",
+				Value: "value1",
+			},
+			"param2": {
+				Type:  "parameter.v0",
+				Value: "value2",
+			},
+			"param3": {
+				Type:  "parameter.v0",
+				Value: "{param3.inputs.iParam}",
+				Inputs: map[string]apphost.Input{
+					"iParam": {
+						Type: "string",
+					},
+				},
+			},
+			envParamName: {
+				Type:  "parameter.v0",
+				Value: fmt.Sprintf("{%s.inputs.foo}", envParamName),
+				Inputs: map[string]apphost.Input{
+					"foo": {
+						Type: "string",
+					},
+				},
+			},
+		},
+	}
+
+	args := map[string]string{
+		"arg1": "{param1.value}",
+		"arg2": "{param2.value}",
+		"arg3": "constant",
+		"arg4": "{param3.value}",
+		"arg5": "{param4.value}",
+	}
+
+	expected := map[string]string{
+		// evaluation completed
+		"arg1": "value1",
+		"arg2": "value2",
+		// constant value
+		"arg3": "constant",
+		// evaluation delayed until building container
+		"arg4": "{infra.parameters.param3}",
+		// evaluation from environment variable
+		"arg5": envParamExpected,
+	}
+
+	result, err := evaluateArgsWithConfig(manifest, args)
+	require.NoError(t, err)
+	require.EqualValues(t, expected, result)
+}
+
+func TestBuildArgsArrayAndEnv(t *testing.T) {
+	manifest := apphost.Manifest{
+		Resources: map[string]*apphost.Resource{
+			"param1": {
+				Type:  "parameter.v0",
+				Value: "value1",
+			},
+			"param2": {
+				Type:  "parameter.v0",
+				Value: "value2",
+			},
+		},
+	}
+
+	bArgs := map[string]apphost.ContainerV1BuildSecrets{
+		"arg1": {
+			Type:  "env",
+			Value: to.Ptr("{param1.value}"),
+		},
+		"arg2": {
+			Type:   "file",
+			Source: to.Ptr("/path/to/secret"),
+		},
+	}
+
+	expectedArgs := []string{
+		"id=arg1",
+		"id=arg2,src=/path/to/secret",
+	}
+
+	expectedEnv := []string{
+		"arg1=value1",
+	}
+
+	args, env, err := buildArgsArrayAndEnv(manifest, bArgs)
+	require.NoError(t, err)
+	assert.EqualValues(t, expectedArgs, args)
+	assert.EqualValues(t, expectedEnv, env)
 }

@@ -138,27 +138,6 @@ func ExecInfra(
 		return err
 	}
 
-	if spec.DbCosmosMongo != nil {
-		err = Execute(t, "db-cosmos-mongo.bicep", spec.DbCosmosMongo, filepath.Join(infraApp, "db-cosmos-mongo.bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding cosmos mongodb: %w", err)
-		}
-	}
-
-	if spec.DbPostgres != nil {
-		err = Execute(t, "db-postgres.bicep", spec.DbPostgres, filepath.Join(infraApp, "db-postgres.bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding postgres: %w", err)
-		}
-	}
-
-	for _, svc := range spec.Services {
-		err = Execute(t, "host-containerapp.bicep", svc, filepath.Join(infraApp, svc.Name+".bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding containerapp: %w", err)
-		}
-	}
-
 	err = Execute(t, "main.bicep", spec, filepath.Join(infraRoot, "main.bicep"))
 	if err != nil {
 		return fmt.Errorf("scaffolding main.bicep: %w", err)
@@ -178,7 +157,6 @@ func ExecInfraFs(
 	t *template.Template,
 	spec InfraSpec) (*memfs.FS, error) {
 	fs := memfs.New()
-	infraApp := "app"
 
 	// Pre-execution expansion. Additional parameters are added, derived from the initial spec.
 	preExecExpand(&spec)
@@ -186,27 +164,6 @@ func ExecInfraFs(
 	err := copyFsToMemFs(resources.ScaffoldBase, fs, baseRoot, ".")
 	if err != nil {
 		return nil, err
-	}
-
-	if spec.DbCosmosMongo != nil {
-		err = executeToFS(fs, t, "db-cosmos-mongo.bicep", path.Join(infraApp, "db-cosmos-mongo.bicep"), spec.DbCosmosMongo)
-		if err != nil {
-			return nil, fmt.Errorf("scaffolding cosmos mongodb: %w", err)
-		}
-	}
-
-	if spec.DbPostgres != nil {
-		err = executeToFS(fs, t, "db-postgres.bicep", path.Join(infraApp, "db-postgres.bicep"), spec.DbPostgres)
-		if err != nil {
-			return nil, fmt.Errorf("scaffolding postgres: %w", err)
-		}
-	}
-
-	for _, svc := range spec.Services {
-		err = executeToFS(fs, t, "host-containerapp.bicep", path.Join(infraApp, svc.Name+".bicep"), svc)
-		if err != nil {
-			return nil, fmt.Errorf("scaffolding containerapp: %w", err)
-		}
 	}
 
 	err = executeToFS(fs, t, "main.bicep", "main.bicep", spec)
@@ -238,8 +195,6 @@ func preExecExpand(spec *InfraSpec) {
 		// containerapp requires a global '_exist' parameter for each service
 		spec.Parameters = append(spec.Parameters,
 			containerAppExistsParameter(svc.Name))
-		spec.Parameters = append(spec.Parameters,
-			serviceDefPlaceholder(svc.Name))
 	}
 }
 

@@ -3,7 +3,7 @@ targetScope = 'subscription'
 
 @minLength(1)
 @maxLength(64)
-@description('Name of the environment that can be used as part of naming resource convention')
+@description('Name of the the environment which is used to generate a short unique hash used in all resources.')
 param environmentName string
 
 @minLength(1)
@@ -31,147 +31,301 @@ var tags = {
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
+// Organize resources in a resource group
+resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: 'rg-${environmentName}'
   location: location
   tags: tags
 }
 
-module monitoring './shared/monitoring.bicep' = {
-  name: 'monitoring'
-  params: {
-    location: location
-    tags: tags
-    logAnalyticsName: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
-    applicationInsightsName: '${abbrs.insightsComponents}${resourceToken}'
-  }
+// Monitor application with Azure loganalytics
+module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
+  name: 'loganalytics'
   scope: rg
+  params: {
+    name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    location: location
+  }
 }
 
-module dashboard './shared/dashboard-web.bicep' = {
+// Monitor application with Azure applicationInsights
+module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
+  name: 'applicationinsights'
+  scope: rg
+  params: {
+    name: '${abbrs.insightsComponents}${resourceToken}'
+    workspaceResourceId: logAnalytics.outputs.resourceId
+    location: location
+  }
+}
+
+module dashboard 'dashboard-web.bicep' = {
   name: 'dashboard'
   params: {
     name: '${abbrs.portalDashboards}${resourceToken}'
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    applicationInsightsName: applicationInsights.outputs.name
     location: location
     tags: tags
   }
   scope: rg
 }
 
-module registry './shared/registry.bicep' = {
+// Container registry
+module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' = {
   name: 'registry'
+  scope: rg
   params: {
-    location: location
-    tags: tags
     name: '${abbrs.containerRegistryRegistries}${resourceToken}'
-  }
-  scope: rg
-}
-
-module keyVault './shared/keyvault.bicep' = {
-  name: 'keyvault'
-  params: {
     location: location
+    acrAdminUserEnabled: true
     tags: tags
-    name: '${abbrs.keyVaultVaults}${resourceToken}'
-    principalId: principalId
+    publicNetworkAccess: 'Enabled'
+    roleAssignments:[
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+      }
+      {{- end}}
+    ]
   }
-  scope: rg
 }
 
-module appsEnv './shared/apps-env.bicep' = {
-  name: 'apps-env'
+//Container apps environment
+module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5' = {
+  name: 'container-apps-environment'
+  scope: rg
   params: {
+    logAnalyticsWorkspaceResourceId: logAnalytics.outputs.resourceId
     name: '${abbrs.appManagedEnvironments}${resourceToken}'
     location: location
+    zoneRedundant: false
     tags: tags
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
-    logAnalyticsWorkspaceName: monitoring.outputs.logAnalyticsWorkspaceName
   }
-  scope: rg
 }
-{{- if (or .DbCosmosMongo .DbPostgres)}}
 
-resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: keyVault.outputs.name
-  scope: rg
-}
-{{- end}}
 {{- if .DbCosmosMongo}}
 
-module cosmosDb './app/db-cosmos-mongo.bicep' = {
-  name: 'cosmosDb'
-  params: {
-    accountName: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-    location: location
-    tags: tags
-    keyVaultName: keyVault.outputs.name
-  }
+// The application database
+module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
+  name: 'cosmos'
   scope: rg
+  params: {
+    locations: [
+      {
+        failoverPriority: 0
+        isZoneRedundant: false
+        locationName: location
+      }
+    ]
+    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    location: location
+    {{- if .DbCosmosMongo.DatabaseName}}
+    mongodbDatabases: [
+      {
+        name: '{{ .DbCosmosMongo.DatabaseName }}'
+      }
+    ]
+    {{- end}}
+    secretsKeyVault: {
+      keyVaultName: keyVault.outputs.name
+      primaryWriteConnectionStringSecretName: 'AZURE-COSMOS-CONNECTION-STRING'
+    }
+  }
 }
 {{- end}}
-{{- if .DbPostgres}}
 
-module postgresDb './app/db-postgres.bicep' = {
-  name: 'postgresDb'
+{{- if .DbPostgres}}
+var databaseName = '{{ .DbPostgres.DatabaseName }}'
+var databaseUser = '{{ .DbPostgres.DatabaseUser }}'
+module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.6' = {
+  name: 'postgreServer'
   params: {
-    serverName: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
+    // Required parameters
+    name: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
+    skuName: 'Standard_B1s'
+    tier: 'Burstable'
+    // Non-required parameters
+    administratorLogin: databaseUser
+    administratorLoginPassword: databasePassword
+    geoRedundantBackup: 'Disabled'
+    databases: [
+      {
+        name: databaseName
+      }
+    ]
     location: location
-    tags: tags
-    databasePassword: databasePassword
-    keyVaultName: keyVault.outputs.name
-    allowAllIPsFirewall: true
   }
   scope: rg
 }
 {{- end}}
+
+
+//the managed identity for web frontend
 {{- range .Services}}
 
-module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
-  name: '{{.Name}}'
+module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
+  name: '{{bicepName .Name}}identity'
+  scope: rg
   params: {
-    name: '${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}'
+    name: '${abbrs.managedIdentityUserAssignedIdentities}{{bicepName .Name}}-${resourceToken}'
     location: location
-    tags: tags
-    identityName: '${abbrs.managedIdentityUserAssignedIdentities}{{containerAppInfix .Name}}-${resourceToken}'
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
-    containerAppsEnvironmentName: appsEnv.outputs.name
-    containerRegistryName: registry.outputs.name
+  }
+}
+
+module {{bicepName .Name}}FetchLatestImage 'fetch-container-image.bicep' = {
+  name: '{{bicepName .Name}}-fetch-image'
+  params: {
     exists: {{bicepName .Name}}Exists
-    appDefinition: {{bicepName .Name}}Definition
-    {{- if .DbRedis}}
-    redisName: 'rd-{{containerAppInfix .Name}}-${resourceToken}'
-    {{- end}}
-    {{- if .DbCosmosMongo}}
-    cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
-    {{- end}}
-    {{- if .DbPostgres}}
-    databaseName: postgresDb.outputs.databaseName
-    databaseHost: postgresDb.outputs.databaseHost
-    databaseUser: postgresDb.outputs.databaseUser
-    databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
-    {{- end}}
-    {{- if (and .Frontend .Frontend.Backends)}}
-    apiUrls: [
-      {{- range .Frontend.Backends}}
-      {{bicepName .Name}}.outputs.uri
-      {{- end}}
-    ]
-    {{- end}}
-    {{- if (and .Backend .Backend.Frontends)}}
-    allowedOrigins: [
-      {{- range .Backend.Frontends}}
-      'https://${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}.${appsEnv.outputs.domain}'
-      {{- end}}
-    ]
-    {{- end}}
+    name: '${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}'
   }
   scope: rg
 }
+
+module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.2.0' = {
+  name: '{{bicepName .Name}}'
+  scope: rg
+  params: {
+    name: '${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}'
+    {{- if ne .Port 0}}
+    ingressTargetPort: {{.Port}}
+    {{- end}}
+    scaleMinReplicas: 1
+    scaleMaxReplicas: 10
+    containers: [
+      {
+        image: {{bicepName .Name}}FetchLatestImage.outputs.?containers[?0].?image ?? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+        name: 'main'
+        resources: {
+          cpu: json('0.5')
+          memory: '1.0Gi'
+        }
+        env: [
+          {
+            name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+            value: applicationInsights.outputs.connectionString
+          }
+          {{- if .DbCosmosMongo}}
+          {
+            name: 'AZURE_COSMOS_MONGODB_CONNECTION_STRING'
+            secretRef: 'azure-cosmos-connection-string'
+          }
+          {{- end}}
+          {{- if .DbPostgres}}
+          {
+            name: 'POSTGRES_HOST'
+            value: postgreServer.outputs.fqdn
+          }
+          {
+            name: 'POSTGRES_USERNAME'
+            value: databaseUser
+          }
+          {
+            name: 'POSTGRES_DATABASE'
+            value: databaseName
+          }
+          {
+            name: 'POSTGRES_PASSWORD'
+            secretRef: 'db-pass'
+          }
+          {
+            name: 'POSTGRES_PORT'
+            value: '5432'
+          }
+          {{- end}}
+          {{- if .Frontend}}
+          {{- range $i, $e := .Frontend.Backends}}
+          {
+            name: '{{upper .Name}}_BASE_URL'
+            value: 'https://{{bicepName .Name}}.internal.${containerAppsEnvironment.outputs.defaultDomain}'
+          }
+          {{- end}}
+          {{- end}}
+          {{- if ne .Port 0}}
+          {
+            name: 'PORT'
+            value: '{{ .Port }}'
+          }
+          {{- end}}
+        ]
+        secrets: [
+          {{- if .DbCosmosMongo}}
+          {
+            name: 'azure-cosmos-connection-string'
+            identity:{{bicepName .Name}}Identity.outputs.resourceId
+            keyVaultUrl: '${keyVault.outputs.uri}/secrets/AZURE-COSMOS-CONNECTION-STRING'
+          }
+          {{- end}}
+          {{- if .DbPostgres}}
+          {
+            name: 'db-pass'
+            secretRef: databasePassword
+          }
+          {{- end}}
+        ]
+      }
+    ]
+    managedIdentities:{
+      systemAssigned: false
+      userAssignedResourceIds: [{{bicepName .Name}}Identity.outputs.resourceId]
+    }
+    registries:[
+      {
+        server: containerRegistry.outputs.loginServer
+        identity: {{bicepName .Name}}Identity.outputs.resourceId
+      }
+    ]
+    dapr: {
+        enabled: true
+        appId: 'main'
+        appProtocol: 'http'
+        appPort: 80
+    }
+    environmentId: containerAppsEnvironment.outputs.resourceId
+    location: location
+    tags: union(tags, { 'azd-service-name': '{{.Name}}' })
+  }
+}
 {{- end}}
 
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
+// Create a keyvault to store secrets
+module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
+  name: 'keyvault'
+  scope: rg
+  params: {
+    name: '${abbrs.keyVaultVaults}${resourceToken}'
+    location: location
+    tags: tags
+    enableRbacAuthorization: false
+    accessPolicies: [
+      {
+        objectId: principalId
+        permissions: {
+          secrets: [ 'get', 'list' ]
+        }
+      }
+      {{- range .Services}}
+      {
+        objectId: {{bicepName .Name}}Identity.outputs.principalId
+        permissions: {
+          secrets: [ 'get', 'list' ]
+        }
+      }
+      {{- end}}
+    ]
+    secrets: [
+      {{- if .DbPostgres}}
+      {
+        name: 'db-pass'
+        value: databasePassword
+      }
+      {{- end}}
+    ]
+  }
+}
+
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 {{ end}}

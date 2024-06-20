@@ -44,7 +44,7 @@ jobs:
           BuildOutputName: azd
         Mac:
           Pool: Azure Pipelines
-          OSVmImage: macOS-11
+          OSVmImage: macOS-latest
           BuildTarget: azd-darwin-amd64
           BuildOutputName: azd
     pool:
@@ -90,7 +90,7 @@ jobs:
           OSVmImage:  MMSUbuntu20.04
         Mac:
           Pool: Azure Pipelines
-          OSVmImage: macOS-11
+          OSVmImage: macOS-latest
 
     pool:
       name: $(Pool)

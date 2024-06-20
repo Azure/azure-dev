@@ -260,8 +260,8 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 	require.Equal(t, expectedDefaultModule, r.Options.Module)
 }
 
-//go:embed testdata/aspire-escaping.json
-var aspireEscapingManifest []byte
+//go:embed testdata/aspire-simple.json
+var aspireSimpleManifest []byte
 
 func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	manifestInvokeCount := 0
@@ -289,7 +289,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 
 		require.Contains(t, args.Env, "DOTNET_ENVIRONMENT=Development")
 
-		err := os.WriteFile(args.Args[6], aspireEscapingManifest, osutil.PermissionFile)
+		err := os.WriteFile(args.Args[6], aspireSimpleManifest, osutil.PermissionFile)
 		if err != nil {
 			return exec.RunResult{
 				ExitCode: -1,

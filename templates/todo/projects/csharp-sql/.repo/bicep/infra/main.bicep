@@ -247,6 +247,7 @@ module applicationInsightsDashboard '../../../../../common/infra/bicep/app/appli
     name: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
     location: location
     applicationInsightsName: applicationInsights.outputs.name
+    applicationInsightsId: applicationInsights.outputs.resourceId
   }
 }
 

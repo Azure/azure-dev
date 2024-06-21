@@ -146,7 +146,7 @@ module managedCluster 'br/public:avm/res/container-service/managed-cluster:0.1.7
       )
     ]
     skuTier: 'Free'
-    kubernetesVersion: '1.27.7'
+    kubernetesVersion: '1.27.9'
     location: location
     networkPlugin: 'azure'
     networkPolicy: 'azure'
@@ -328,6 +328,7 @@ module applicationInsightsDashboard '../../../../../common/infra/bicep/app/appli
     name: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
     location: location
     applicationInsightsName: applicationInsights.outputs.name
+    applicationInsightsId: applicationInsights.outputs.resourceId
   }
 }
 

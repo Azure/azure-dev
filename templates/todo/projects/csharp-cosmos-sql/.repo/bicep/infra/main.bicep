@@ -38,6 +38,7 @@ param principalId string = ''
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
+var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : 'Todo'
 var webUri = 'https://${web.outputs.defaultHostname}'
 var apiUri = 'https://${api.outputs.defaultHostname}'
 var apimApiUri = 'https://${apim.outputs.name}.azure-api.net/todo'
@@ -93,7 +94,7 @@ module api 'br/public:avm/res/web/site:0.3.4' = {
     appSettingsKeyValuePairs: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
       AZURE_COSMOS_CONNECTION_STRING_KEY: connectionStringKey
-      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
+      AZURE_COSMOS_DATABASE_NAME: actualDatabaseName
       AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
       API_ALLOW_ORIGINS: webUri
       SCM_DO_BUILD_DURING_DEPLOYMENT: 'False'
@@ -126,38 +127,63 @@ module accessKeyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   }
 }
 
-// Give the API the role to access Cosmos
-module apiCosmosSqlRoleAssign '../../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos-sql-role-assign.bicep' = {
-  name: 'api-cosmos-access'
-  scope: rg
-  params: {
-    accountName: cosmos.outputs.accountName
-    roleDefinitionId: cosmos.outputs.roleDefinitionId
-    principalId: api.outputs.systemAssignedMIPrincipalId
-  }
-}
-
-// Give the API the role to access Cosmos
-module userCosmosSqlRoleAssign '../../../../../../common/infra/bicep/core/database/cosmos/sql/cosmos-sql-role-assign.bicep' = if (principalId != '') {
-  name: 'user-cosmos-access'
-  scope: rg
-  params: {
-    accountName: cosmos.outputs.accountName
-    roleDefinitionId: cosmos.outputs.roleDefinitionId
-    principalId: principalId
-  }
-}
-
 // The application database
-module cosmos '../../../../../common/infra/bicep/app/cosmos-sql-db.bicep' = {
+module cosmos 'br/public:avm/res/document-db/database-account:0.5.5' = {
   name: 'cosmos'
   scope: rg
   params: {
-    accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-    databaseName: cosmosDatabaseName
+    name: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
     location: location
-    tags: tags
-    keyVaultName: keyVault.outputs.name
+    locations: [
+      {
+        failoverPriority: 0
+        locationName: location
+        isZoneRedundant: false
+      }
+    ]
+    secretsKeyVault: {
+      keyVaultName: keyVault.outputs.name
+      primaryWriteConnectionStringSecretName: connectionStringKey
+    }
+    capabilitiesToAdd: [ 'EnableServerless' ] 
+    automaticFailover: false
+    sqlDatabases: [
+      {
+        name: actualDatabaseName
+        containers: [
+          {
+            name: 'TodoList'
+            paths: [ 'id' ]
+          }
+          {
+            name: 'TodoItem'
+            paths: [ 'id' ]
+          }
+        ]
+      }
+    ] 
+    sqlRoleAssignmentsPrincipalIds: [ principalId ]
+    sqlRoleDefinitions: [
+      {
+        name: 'writer'
+      }
+    ]
+  }
+}
+
+// Give the API the role to access Cosmos
+module apiCosmosSqlRoleAssign 'br/public:avm/res/document-db/database-account:0.5.5' = {
+  name: 'api-cosmos-access'
+  scope: rg
+  params: {
+    name: cosmos.outputs.name
+    location: location
+    sqlRoleAssignmentsPrincipalIds: [ api.outputs.systemAssignedMIPrincipalId ]
+    sqlRoleDefinitions: [
+      {
+        name: 'writer'
+      }
+    ]
   }
 }
 
@@ -219,6 +245,7 @@ module applicationInsightsDashboard '../../../../../common/infra/bicep/app/appli
     name: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
     location: location
     applicationInsightsName: applicationInsights.outputs.name
+    applicationInsightsId: applicationInsights.outputs.resourceId
   }
 }
 
@@ -272,7 +299,7 @@ module apimSettings '../../../../../common/infra/bicep/app/apim-api-settings.bic
 // Data outputs
 output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.endpoint
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
+output AZURE_COSMOS_DATABASE_NAME string = actualDatabaseName
 
 // App outputs
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString

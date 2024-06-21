@@ -1,15 +1,17 @@
 metadata description = 'Creates a dashboard for an Application Insights instance.'
 param name string
 param applicationInsightsName string
+param applicationInsightsId string
 param location string = resourceGroup().location
 param tags object = {}
 
 // 2020-09-01-preview because that is the latest valid version
-resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-preview' = {
-  name: name
-  location: location
-  tags: tags
-  properties: {
+module dashboard 'br/public:avm/res/portal/dashboard:0.1.0' = {
+  name: 'dashboard-deployment'
+  params: {
+    name: name
+    location: location
+    tags: tags
     lenses: [
       {
         order: 0
@@ -25,7 +27,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
               inputs: [
                 {
                   name: 'id'
-                  value: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                  value: applicationInsightsId
                 }
                 {
                   name: 'Version'
@@ -53,7 +55,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                 {
                   name: 'ComponentId'
                   value: {
-                    Name: applicationInsights.name
+                    Name: applicationInsightsName
                     SubscriptionId: subscription().subscriptionId
                     ResourceGroup: resourceGroup().name
                   }
@@ -84,14 +86,14 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                 {
                   name: 'ComponentId'
                   value: {
-                    Name: applicationInsights.name
+                    Name: applicationInsightsName
                     SubscriptionId: subscription().subscriptionId
                     ResourceGroup: resourceGroup().name
                   }
                 }
                 {
                   name: 'ResourceId'
-                  value: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                  value: applicationInsightsId
                 }
               ]
               #disable-next-line BCP036
@@ -114,7 +116,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                 {
                   name: 'ComponentId'
                   value: {
-                    Name: applicationInsights.name
+                    Name: applicationInsightsName
                     SubscriptionId: subscription().subscriptionId
                     ResourceGroup: resourceGroup().name
                   }
@@ -155,7 +157,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                 {
                   name: 'ComponentId'
                   value: {
-                    Name: applicationInsights.name
+                    Name: applicationInsightsName
                     SubscriptionId: subscription().subscriptionId
                     ResourceGroup: resourceGroup().name
                   }
@@ -217,7 +219,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                 {
                   name: 'ComponentId'
                   value: {
-                    Name: applicationInsights.name
+                    Name: applicationInsightsName
                     SubscriptionId: subscription().subscriptionId
                     ResourceGroup: resourceGroup().name
                   }
@@ -274,7 +276,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
               inputs: [
                 {
                   name: 'ResourceId'
-                  value: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                  value: applicationInsightsId
                 }
                 {
                   name: 'DataModel'
@@ -338,7 +340,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
               inputs: [
                 {
                   name: 'ResourceId'
-                  value: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                  value: applicationInsightsId
                 }
                 {
                   name: 'DataModel'
@@ -403,7 +405,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                 {
                   name: 'ComponentId'
                   value: {
-                    Name: applicationInsights.name
+                    Name: applicationInsightsName
                     SubscriptionId: subscription().subscriptionId
                     ResourceGroup: resourceGroup().name
                   }
@@ -441,7 +443,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                 {
                   name: 'id'
                   value: {
-                    Name: applicationInsights.name
+                    Name: applicationInsightsName
                     SubscriptionId: subscription().subscriptionId
                     ResourceGroup: resourceGroup().name
                   }
@@ -476,7 +478,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'sessions/count'
                           aggregationType: 5
@@ -488,7 +490,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                         }
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'users/count'
                           aggregationType: 5
@@ -524,7 +526,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                           extensionName: 'HubsExtension'
                           bladeName: 'ResourceMenuBlade'
                           parameters: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                             menuid: 'segmentationUsers'
                           }
                         }
@@ -558,7 +560,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'requests/failed'
                           aggregationType: 7
@@ -594,7 +596,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                           extensionName: 'HubsExtension'
                           bladeName: 'ResourceMenuBlade'
                           parameters: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                             menuid: 'failures'
                           }
                         }
@@ -628,7 +630,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'requests/duration'
                           aggregationType: 4
@@ -664,7 +666,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                           extensionName: 'HubsExtension'
                           bladeName: 'ResourceMenuBlade'
                           parameters: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                             menuid: 'performance'
                           }
                         }
@@ -698,7 +700,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'browserTimings/networkDuration'
                           aggregationType: 4
@@ -710,7 +712,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                         }
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'browserTimings/processingDuration'
                           aggregationType: 4
@@ -722,7 +724,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                         }
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'browserTimings/sendDuration'
                           aggregationType: 4
@@ -734,7 +736,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                         }
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'browserTimings/receiveDuration'
                           aggregationType: 4
@@ -793,7 +795,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'availabilityResults/availabilityPercentage'
                           aggregationType: 4
@@ -829,7 +831,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                           extensionName: 'HubsExtension'
                           bladeName: 'ResourceMenuBlade'
                           parameters: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                             menuid: 'availability'
                           }
                         }
@@ -863,7 +865,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'exceptions/server'
                           aggregationType: 7
@@ -875,7 +877,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                         }
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'dependencies/failed'
                           aggregationType: 7
@@ -934,7 +936,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'performanceCounters/processorCpuPercentage'
                           aggregationType: 4
@@ -946,7 +948,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                         }
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'performanceCounters/processCpuPercentage'
                           aggregationType: 4
@@ -1005,7 +1007,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'exceptions/browser'
                           aggregationType: 7
@@ -1064,7 +1066,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'availabilityResults/count'
                           aggregationType: 7
@@ -1123,7 +1125,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'performanceCounters/processIOBytesPerSecond'
                           aggregationType: 4
@@ -1182,7 +1184,7 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
                       metrics: [
                         {
                           resourceMetadata: {
-                            id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${resourceGroup().name}/providers/Microsoft.Insights/components/${applicationInsights.name}'
+                            id: applicationInsightsId
                           }
                           name: 'performanceCounters/memoryAvailableBytes'
                           aggregationType: 4
@@ -1229,8 +1231,4 @@ resource applicationInsightsDashboard 'Microsoft.Portal/dashboards@2020-09-01-pr
       }
     ]
   }
-}
-
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: applicationInsightsName
 }

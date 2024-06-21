@@ -397,7 +397,8 @@ func (p *GitHubCiProvider) credentialOptions(
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	authType PipelineAuthType,
-) *CredentialOptions {
+	credentials *azcli.AzureCredentials,
+) (*CredentialOptions, error) {
 	// Default auth type to client-credentials for terraform
 	if infraOptions.Provider == provisioning.Terraform && authType == "" {
 		authType = AuthTypeClientCredentials
@@ -406,7 +407,7 @@ func (p *GitHubCiProvider) credentialOptions(
 	if authType == AuthTypeClientCredentials {
 		return &CredentialOptions{
 			EnableClientCredentials: true,
-		}
+		}, nil
 	}
 
 	// If not specified default to federated credentials
@@ -445,13 +446,13 @@ func (p *GitHubCiProvider) credentialOptions(
 		return &CredentialOptions{
 			EnableFederatedCredentials: true,
 			FederatedCredentialOptions: federatedCredentials,
-		}
+		}, nil
 	}
 
 	return &CredentialOptions{
 		EnableClientCredentials:    false,
 		EnableFederatedCredentials: false,
-	}
+	}, nil
 }
 
 // ***  ciProvider implementation ******

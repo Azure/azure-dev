@@ -5,6 +5,9 @@ param tags object = {}
 
 param principalId string = ''
 
+@description('Allow the key vault to be used for template deployment.')
+param enabledForDeployment bool = false
+
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   name: name
   location: location
@@ -19,6 +22,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
         tenantId: subscription().tenantId
       }
     ] : []
+    enabledForDeployment: enabledForDeployment
   }
 }
 

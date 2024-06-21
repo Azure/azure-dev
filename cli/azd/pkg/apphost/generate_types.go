@@ -50,6 +50,7 @@ type genContainerAppIngress struct {
 	genContainerAppIngressPort
 	Transport              string
 	AllowInsecure          bool
+	UsingDefaultPort       bool
 	AdditionalPortMappings []genContainerAppIngressAdditionalPortMappings
 }
 
@@ -69,6 +70,23 @@ type genDockerfile struct {
 	Bindings  custommaps.WithOrder[Binding]
 	BuildArgs map[string]string
 	Args      []string
+}
+
+type genBuildContainer struct {
+	Image      string
+	Entrypoint string
+	Args       []string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Volumes    []*Volume
+	Build      *genBuildContainerDetails
+}
+
+type genBuildContainerDetails struct {
+	Context    string
+	Dockerfile string
+	Args       map[string]string
+	Secrets    map[string]ContainerV1BuildSecrets
 }
 
 type genProject struct {

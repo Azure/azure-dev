@@ -6,6 +6,7 @@ package swa
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
+
+var testPath = filepath.Join("projectPath", "service", "path")
 
 func Test_SwaBuild(t *testing.T) {
 	ran := false
@@ -26,12 +29,10 @@ func Test_SwaBuild(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath", args.Cwd)
+			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.6",
-				"build",
-				"--app-location", "service/path",
-				"--output-location", "build",
+				"-y", cSwaCliPackage,
+				"build", "-V",
 			}, args.Args)
 
 			return exec.RunResult{
@@ -44,7 +45,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, nil
 		})
 
-		err := swacli.Build(context.Background(), "./projectPath", "service/path", "build")
+		err := swacli.Build(context.Background(), testPath, nil)
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
@@ -58,12 +59,10 @@ func Test_SwaBuild(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath", args.Cwd)
+			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.6",
-				"build",
-				"--app-location", "service/path",
-				"--output-location", "build",
+				"-y", cSwaCliPackage,
+				"build", "-V",
 			}, args.Args)
 
 			return exec.RunResult{
@@ -73,7 +72,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, errors.New("exit code: 1")
 		})
 
-		err := swacli.Build(context.Background(), "./projectPath", "service/path", "build")
+		err := swacli.Build(context.Background(), testPath, nil)
 		require.True(t, ran)
 		require.EqualError(
 			t,
@@ -95,16 +94,14 @@ func Test_SwaDeploy(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath", args.Cwd)
+			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.6",
+				"-y", cSwaCliPackage,
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--app-location", "service/path",
-				"--output-location", "build",
 				"--env", "default",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
@@ -122,15 +119,66 @@ func Test_SwaDeploy(t *testing.T) {
 
 		_, err := swacli.Deploy(
 			context.Background(),
-			"./projectPath",
+			testPath,
 			"tenantID",
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"service/path",
-			"build",
 			"default",
 			"deploymentToken",
+			DeployOptions{},
+		)
+		require.NoError(t, err)
+		require.True(t, ran)
+	})
+
+	t.Run("NoErrorsNoConfig", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		swacli := NewSwaCli(mockContext.CommandRunner)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "npx")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			ran = true
+
+			require.Equal(t, testPath, args.Cwd)
+			require.Equal(t, []string{
+				"-y", cSwaCliPackage,
+				"deploy",
+				"--tenant-id", "tenantID",
+				"--subscription-id", "subscriptionID",
+				"--resource-group", "resourceGroupID",
+				"--app-name", "appName",
+				"--env", "default",
+				"--no-use-keychain",
+				"--deployment-token", "deploymentToken",
+				"--app-location", "appFolderPath",
+				"--output-location", "outputRelativeFolderPath",
+			}, args.Args)
+
+			return exec.RunResult{
+				Stdout: "",
+				Stderr: "",
+				// if the returned `error` is nil we don't return an error. The underlying 'exec'
+				// returns an error if the command returns a non-zero exit code so we don't actually
+				// need to check it.
+				ExitCode: 1,
+			}, nil
+		})
+
+		_, err := swacli.Deploy(
+			context.Background(),
+			testPath,
+			"tenantID",
+			"subscriptionID",
+			"resourceGroupID",
+			"appName",
+			"default",
+			"deploymentToken",
+			DeployOptions{
+				AppFolderPath:            "appFolderPath",
+				OutputRelativeFolderPath: "outputRelativeFolderPath",
+			},
 		)
 		require.NoError(t, err)
 		require.True(t, ran)
@@ -145,16 +193,14 @@ func Test_SwaDeploy(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
-			require.Equal(t, "./projectPath", args.Cwd)
+			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.6",
+				"-y", cSwaCliPackage,
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
 				"--resource-group", "resourceGroupID",
 				"--app-name", "appName",
-				"--app-location", "service/path",
-				"--output-location", "build",
 				"--env", "default",
 				"--no-use-keychain",
 				"--deployment-token", "deploymentToken",
@@ -169,15 +215,14 @@ func Test_SwaDeploy(t *testing.T) {
 
 		_, err := swacli.Deploy(
 			context.Background(),
-			"./projectPath",
+			testPath,
 			"tenantID",
 			"subscriptionID",
 			"resourceGroupID",
 			"appName",
-			"service/path",
-			"build",
 			"default",
 			"deploymentToken",
+			DeployOptions{},
 		)
 		require.True(t, ran)
 		require.EqualError(

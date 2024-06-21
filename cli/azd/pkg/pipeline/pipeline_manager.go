@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -627,118 +629,80 @@ func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepo
 	})
 }
 
-func (pm *PipelineManager) resolveProvider(prj *project.ProjectConfig) (string, error) {
-	// 1) if provider is set on azure.yaml, it should override the `lastUsedProvider`, as it can be changed by customer
-	// at any moment.
-	if prj.Pipeline.Provider != "" {
-		return prj.Pipeline.Provider, nil
+// resolveProviderAndDetermine resolves the pipeline provider based on project configuration and environment,
+// or determines it if not already set.
+func (pm *PipelineManager) resolveProviderAndDetermine(ctx context.Context, projectPath string) (string, error) {
+	prjConfig, err := project.Load(ctx, projectPath)
+	if err != nil {
+		return "", fmt.Errorf("Loading project configuration: %w", err)
 	}
 
-	// 2) check if there is a persisted value from a previous run in env
+	// 1) Check if provider is set on azure.yaml, it should override the `lastUsedProvider`
+	if prjConfig.Pipeline.Provider != "" {
+		return prjConfig.Pipeline.Provider, nil
+	}
+
+	// 2) Check if there is a persisted value from a previous run in the environment
 	if lastUsedProvider, configExists := pm.env.LookupEnv(envPersistedKey); configExists {
-		// Setting override value based on last run. This will force detector to use the same
-		// configuration.
+		// Use the persisted value based on last run
 		return lastUsedProvider, nil
 	}
 
-	// 3) No config on azure.yaml or from previous run. The provider will be set after
-	// inspecting the existing project folders.
-	return "", nil
+	// 3) No config on azure.yaml or from previous run, so use the determineProvider logic
+	return pm.determineProvider(ctx)
 }
 
-// DetectProviders get azd context from the context and pulls the project directory from it.
-// Depending on the project directory, returns pipeline scm and ci providers based on:
-//   - if .github folder is found and .azdo folder is missing: GitHub scm and ci as provider
-//   - if .azdo folder is found and .github folder is missing: Azdo scm and ci as provider
-//   - both .github and .azdo folders found: GitHub scm and ci as provider
-//   - overrideProvider set to github (regardless of folders): GitHub scm and ci as provider
-//   - overrideProvider set to azdo (regardless of folders): Azdo scm and ci as provider
-//   - none of the folders found: return error
-//   - no azd context in the ctx: return error
-//   - overrideProvider set to neither github or azdo: return error
-//   - Note: The provider is persisted in the environment so the next time the function is run
-//     the same provider is used directly, unless the overrideProvider is used to change
-//     the last used configuration
+// initialize sets up the SCM and CI providers based on the provided override
+// or the detected configuration in the repository.
+// Logic:
+//   - If the user specifies a provider through the arguments, that provider is used.
+//   - If no provider is specified:
+//   - If both GitHub and Azure DevOps configurations are detected, prompt the user to choose which one to use.
+//   - If only GitHub configuration is found, use GitHub Actions.
+//   - If only Azure DevOps configuration is found, use Azure DevOps.
+//   - If no configuration is found, prompt the user to select which one to set up.
+//   - Default to GitHub Actions if no provider is specified or selected.
+//   - Prompt the user to confirm adding the azure-dev file if it’s missing, and inform them where the file is created.
+//   - The provider is persisted in the environment so the next time the function is run,
+//     the same provider is used directly, unless the overrideProvider is used to change the last used configuration.
 func (pm *PipelineManager) initialize(ctx context.Context, override string) error {
 	projectDir := pm.azdCtx.ProjectDirectory()
 	projectPath := pm.azdCtx.ProjectPath()
-	pm.args.PipelineProvider = override
-	pipelineProvider := strings.ToLower(pm.args.PipelineProvider)
 	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
 	if err != nil {
 		repoRoot = projectDir
 		log.Printf("using project root as repo root, since git repo wasn't available: %s", err)
 	}
 
-	// detecting pipeline folder configuration
-	hasGitHubFolder := folderExists(filepath.Join(repoRoot, githubFolder))
-	hasAzDevOpsFolder := folderExists(filepath.Join(repoRoot, azdoFolder))
-	hasAzDevOpsYml := ymlExists(filepath.Join(repoRoot, azdoYml))
-
-	// Error missing config for any provider
-	if !hasGitHubFolder && !hasAzDevOpsFolder {
-		return fmt.Errorf(
-			"no CI/CD provider configuration found. Expecting either %s and/or %s folder in the repository root directory.",
-			gitHubLabel,
-			azdoLabel)
-	}
-
-	// Figure out what is the expected provider to use for provisioning
-	prjConfig, err := project.Load(ctx, projectPath)
-	if err != nil {
-		return fmt.Errorf("Loading project configuration: %w", err)
-	}
-
-	// overrideWith is the last overriding mode. When it is empty
-	// we can re-assign it based on a previous run (persisted data)
-	// or based on the azure.yaml
+	// Use the provided pipeline provider if specified, otherwise resolve or determine the provider
+	pipelineProvider := strings.ToLower(override)
 	if pipelineProvider == "" {
-		resolved, err := pm.resolveProvider(prjConfig)
+		pipelineProvider, err = pm.resolveProviderAndDetermine(ctx, projectPath)
 		if err != nil {
-			return fmt.Errorf("resolving provider when no provider arg was used: %w", err)
+			return err
 		}
-		pipelineProvider = resolved
 	}
 
-	// Check override errors for missing folder
-	if pipelineProvider == gitHubLabel && !hasGitHubFolder {
-		return fmt.Errorf("%s folder is missing. Can't use selected provider", githubFolder)
+	// Check and prompt for missing CI/CD files
+	if err := pm.checkAndPromptForProviderFiles(ctx, repoRoot, pipelineProvider); err != nil {
+		return err
 	}
-	if pipelineProvider == azdoLabel && !hasAzDevOpsFolder {
-		return fmt.Errorf("%s folder is missing. Can't use selected provider", azdoFolder)
-	}
-	// pipeline yml file is not in azdo folder
-	if pipelineProvider == azdoLabel && !hasAzDevOpsYml {
-		return fmt.Errorf("%s file is missing in %s folder. Can't use selected provider", azdoYml, azdoFolder)
-	}
-	// using wrong override value
-	if pipelineProvider != "" && pipelineProvider != azdoLabel && pipelineProvider != gitHubLabel {
-		return fmt.Errorf("%s is not a known pipeline provider", pipelineProvider)
+
+	// Save the provider to the environment
+	if err := pm.savePipelineProviderToEnv(ctx, pipelineProvider, pm.env); err != nil {
+		return err
 	}
 
 	var scmProviderName, ciProviderName string
-
-	// At this point, we know that override value has either:
-	// - github or azdo value
-	// - OR is not set
-	// And we know that github and azdo folders are present.
-	// checking positive cases for overriding
-	if pipelineProvider == azdoLabel || hasAzDevOpsFolder && !hasGitHubFolder {
-		// Azdo only either by override or by finding only that folder
+	if pipelineProvider == azdoLabel {
 		log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps"))
-
 		scmProviderName = azdoLabel
 		ciProviderName = azdoLabel
 	} else {
-		// Both folders exists and no override value. Default to GitHub
-		// Or override value is github and the folder is available
 		log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub"))
-
 		scmProviderName = gitHubLabel
 		ciProviderName = gitHubLabel
 	}
-
-	_ = pm.savePipelineProviderToEnv(ctx, scmProviderName, pm.env)
 
 	var scmProvider ScmProvider
 	if err := pm.serviceLocator.ResolveNamed(scmProviderName+"-scm", &scmProvider); err != nil {
@@ -752,6 +716,11 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 
 	pm.scmProvider = scmProvider
 	pm.ciProvider = ciProvider
+
+	prjConfig, err := project.Load(ctx, projectPath)
+	if err != nil {
+		return fmt.Errorf("Loading project configuration: %w", err)
+	}
 
 	infra, err := pm.importManager.ProjectInfrastructure(ctx, prjConfig)
 	if err != nil {
@@ -780,4 +749,120 @@ func (pm *PipelineManager) savePipelineProviderToEnv(
 		return err
 	}
 	return nil
+}
+
+func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, repoRoot, pipelineProvider string) error {
+	if pipelineProvider == "" {
+		return nil // No provider, no need to check for files
+	}
+
+	hasGitHubYml := ymlExists(filepath.Join(repoRoot, githubYml))
+	hasAzDevOpsYml := ymlExists(filepath.Join(repoRoot, azdoYml))
+
+	switch pipelineProvider {
+	case gitHubLabel:
+		if !hasGitHubYml {
+			return pm.promptForCiFiles(ctx, gitHubLabel, repoRoot)
+		}
+	case azdoLabel:
+		if !hasAzDevOpsYml {
+			return pm.promptForCiFiles(ctx, azdoLabel, repoRoot)
+		}
+	}
+
+	return nil
+}
+
+// promptForCiFiles creates CI/CD files for the specified provider, confirming with the user before creation.
+func (pm *PipelineManager) promptForCiFiles(ctx context.Context, provider, repoRoot string) error {
+	folderPath, ymlPath := "", ""
+	contents := ""
+
+	switch provider {
+	case gitHubLabel:
+		folderPath = filepath.Join(repoRoot, githubFolder)
+		ymlPath = filepath.Join(repoRoot, githubYml)
+		contents = `# Sample GitHub Actions Workflow`
+	case azdoLabel:
+		folderPath = filepath.Join(repoRoot, azdoFolder)
+		ymlPath = filepath.Join(repoRoot, azdoYml)
+		contents = `# Sample Azure DevOps Pipeline`
+	default:
+		return fmt.Errorf("unknown provider: %s", provider)
+	}
+
+	// Confirm with the user before adding the file
+	confirm, err := pm.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      fmt.Sprintf("Would you like to create the %s file at %s?", filepath.Base(ymlPath), folderPath),
+		DefaultValue: true,
+	})
+	if err != nil {
+		return fmt.Errorf("prompting to create file: %w", err)
+	}
+
+	if confirm {
+		if !folderExists(folderPath) {
+			if err := os.MkdirAll(folderPath, os.ModePerm); err != nil {
+				return fmt.Errorf("creating folder %s: %w", folderPath, err)
+			}
+		}
+
+		if !ymlExists(ymlPath) {
+			if err := os.WriteFile(ymlPath, []byte(contents), osutil.PermissionFile); err != nil {
+				return fmt.Errorf("creating file %s: %w", ymlPath, err)
+			}
+			pm.console.Message(ctx,
+				fmt.Sprintf("The %s file has been created at %s. You can use it as-is or modify it to suit your needs.",
+					filepath.Base(ymlPath), ymlPath))
+		}
+	}
+
+	return nil
+}
+
+func (pm *PipelineManager) determineProvider(ctx context.Context) (string, error) {
+	// Check for existence of official YAML files
+	hasGitHubYml := ymlExists(githubYml)
+	hasAzDevOpsYml := ymlExists(azdoYml)
+
+	switch {
+	case !hasGitHubYml && !hasAzDevOpsYml:
+		// No official YAML files found for either provider
+		return pm.promptForProvider(ctx, "No CI/CD configuration found. Which CI/CD provider would you like to set up?")
+
+	case hasGitHubYml && !hasAzDevOpsYml:
+		// GitHub Actions YAML found, Azure DevOps YAML not found
+		return gitHubLabel, nil
+
+	case hasAzDevOpsYml && !hasGitHubYml:
+		// Azure DevOps YAML found, GitHub Actions YAML not found
+		return azdoLabel, nil
+
+	case hasGitHubYml && hasAzDevOpsYml:
+		// Both YAML files found
+		return pm.promptForProvider(ctx,
+			"Both GitHub Actions and Azure DevOps configurations are detected. Which CI/CD provider would you like to use?")
+	}
+
+	// Default to GitHub Actions if no provider is specified
+	return gitHubLabel, nil
+}
+
+// promptForProvider prompts the user to select a CI/CD provider.
+func (pm *PipelineManager) promptForProvider(ctx context.Context, message string) (string, error) {
+	choice, err := pm.console.Select(ctx, input.ConsoleOptions{
+		Message: message,
+		Options: []string{"GitHub Actions", "Azure DevOps"},
+	})
+	if err != nil {
+		return "", fmt.Errorf("prompting for CI/CD provider: %w", err)
+	}
+
+	if choice == 0 {
+		return gitHubLabel, nil
+	} else if choice == 1 {
+		return azdoLabel, nil
+	}
+
+	return "", nil // This case should never occur with the current options.
 }

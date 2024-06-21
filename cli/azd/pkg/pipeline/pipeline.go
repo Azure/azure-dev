@@ -184,5 +184,6 @@ const (
 var (
 	githubFolder string = filepath.Join(".github", "workflows")
 	azdoFolder   string = filepath.Join(".azdo", "pipelines")
+	githubYml    string = filepath.Join(githubFolder, "azure-dev.yml")
 	azdoYml      string = filepath.Join(azdoFolder, "azure-dev.yml")
 )

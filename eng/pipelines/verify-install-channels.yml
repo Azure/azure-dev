@@ -19,7 +19,7 @@ parameters:
         TestCommand: brew tap azure/azd && brew install azd
 
 jobs:
-  - ${{ foreach channel in parameters.matrix }}:
+  - ${{ each channel in parameters.matrix }}:
     - job: VerifyInstallChannels
 
       variables:

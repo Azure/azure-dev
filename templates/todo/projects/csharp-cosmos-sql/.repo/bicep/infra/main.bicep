@@ -25,6 +25,8 @@ param resourceGroupName string = ''
 param webServiceName string = ''
 param apimServiceName string = ''
 param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
+param apimApiName string = 'todo-api'
+param apimLoggerName string = 'app-insights-logger'
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
@@ -250,7 +252,7 @@ module applicationInsightsDashboard '../../../../../common/infra/bicep/app/appli
 }
 
 // Creates Azure API Management (APIM) service to mediate the requests between the frontend and the backend API
-module apim 'br/public:avm/res/api-management/service:0.1.7' = if (useAPIM) {
+module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
   name: 'apim-deployment'
   scope: rg
   params: {
@@ -261,9 +263,59 @@ module apim 'br/public:avm/res/api-management/service:0.1.7' = if (useAPIM) {
     tags: tags
     sku: apimSku
     skuCount: 0
+    customProperties: {}
+    zones: []
+    apiDiagnostics: [
+      {
+        apiName: apimApiName
+        alwaysLog: 'allErrors'
+        backend: {
+          request: {
+            body: {
+              bytes: 1024
+            }
+          }
+          response: {
+            body: {
+              bytes: 1024
+            }
+          }
+        }
+        frontend: {
+          request: {
+            body: {
+              bytes: 1024
+            }
+          }
+          response: {
+            body: {
+              bytes: 1024
+            }
+          }
+        }
+        httpCorrelationProtocol: 'W3C'
+        logClientIp: true
+        loggerName: apimLoggerName
+        metrics: true
+        verbosity: 'verbose'
+        name: 'applicationinsights'
+      }
+    ]
+    loggers: [
+      {
+        name: apimLoggerName
+        credentials: {
+          instrumentationKey: applicationInsights.outputs.instrumentationKey
+        }
+        loggerDescription: 'Logger to Azure Application Insights'
+        isBuffered: false
+        loggerType: 'applicationInsights'
+        targetResourceId: applicationInsights.outputs.resourceId
+      }
+    ]
     apis: [
       {
-        name: 'todo-api'
+        name: apimApiName
         path: 'todo'
         displayName: 'Simple Todo API'
         apiDescription: 'This is a simple Todo API'
@@ -283,16 +335,14 @@ module apim 'br/public:avm/res/api-management/service:0.1.7' = if (useAPIM) {
   }
 }
 
-// Configures the API in the Azure API Management (APIM) service
-module apimSettings '../../../../../common/infra/bicep/app/apim-api-settings.bicep' = if (useAPIM) {
-  name: 'apim-api-settings'
+//Configures the API settings for an api app within the Azure API Management (APIM) service.
+module apiConfig '../../../../../common/infra/bicep/app/website-config.bicep' = if (useAPIM) {
+  name: 'apiconfig'
   scope: rg
   params: {
+    apimServiceId: apim.outputs.resourceId
+    apiName: apimApiName
     apiAppName: api.outputs.name
-    apiName: 'todo-api'
-    name: useAPIM ? apim.outputs.name : ''
-    apiPath: 'todo'
-    applicationInsightsName: applicationInsights.outputs.name
   }
 }
 

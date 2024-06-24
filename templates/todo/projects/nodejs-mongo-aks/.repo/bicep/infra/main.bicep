@@ -82,14 +82,6 @@ var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : defau
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var aksClusterAdminRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b')
 var systemPoolSpec = nodePoolPresets[systemPoolType]
-var nodePoolBase = {
-  osType: 'Linux'
-  maxPods: 30
-  type: 'VirtualMachineScaleSets'
-  upgradeSettings: {
-    maxSurge: '33%'
-  }
-}
 var nodePoolPresets = {
   CostOptimised: {
     vmSize: 'Standard_B4ms'
@@ -122,6 +114,14 @@ var nodePoolPresets = {
       '2'
       '3'
     ]
+  }
+}
+var nodePoolBase = {
+  osType: 'Linux'
+  maxPods: 30
+  type: 'VirtualMachineScaleSets'
+  upgradeSettings: {
+    maxSurge: '33%'
   }
 }
 
@@ -310,7 +310,7 @@ module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
 }
 
 // Monitor application with Azure applicationInsights
-module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
+module applicationInsights 'br/public:avm/res/insights/component:0.3.1' = {
   name: 'applicationinsights'
   scope: rg
   params: {

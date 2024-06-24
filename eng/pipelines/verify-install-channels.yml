@@ -20,7 +20,7 @@ parameters:
 
 jobs:
   - ${{ each channel in parameters.matrix }}:
-    - job: VerifyInstallChannels
+    - job: VerifyInstallChannels_${{ channel.key }}
 
       variables:
       - template: /eng/pipelines/templates/variables/image.yml

@@ -175,15 +175,28 @@ func ymlExists(ymlPath string) bool {
 	return false
 }
 
+func isDirEmpty(dir string) bool {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return true // treat error as empty directory
+	}
+	return len(files) == 0
+}
+
 const (
-	gitHubLabel     string = "github"
-	azdoLabel       string = "azdo"
-	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
+	gitHubDisplayName       string = "GitHub"
+	azdoDisplayName         string = "Azure DevOps"
+	gitHubLabel             string = "github"
+	azdoLabel               string = "azdo"
+	envPersistedKey         string = "AZD_PIPELINE_PROVIDER"
+	defaultPipelineFileName string = "azure-dev.yml"
+	gitHubFolder            string = ".github"
+	azdoFolder              string = ".azdo"
 )
 
 var (
-	githubFolder string = filepath.Join(".github", "workflows")
-	azdoFolder   string = filepath.Join(".azdo", "pipelines")
-	githubYml    string = filepath.Join(githubFolder, "azure-dev.yml")
-	azdoYml      string = filepath.Join(azdoFolder, "azure-dev.yml")
+	gitHubWorkflowsFolder string = filepath.Join(gitHubFolder, "workflows")
+	azdoPipelinesFolder   string = filepath.Join(azdoFolder, "pipelines")
+	gitHubYml             string = filepath.Join(gitHubWorkflowsFolder, defaultPipelineFileName)
+	azdoYml               string = filepath.Join(azdoPipelinesFolder, defaultPipelineFileName)
 )

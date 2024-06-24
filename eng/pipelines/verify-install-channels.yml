@@ -1,0 +1,36 @@
+parameters:
+  - name: matrix
+    type: object
+    default:
+      WinGet:
+        Pool: $(WINDOWSPOOL)
+        Image: $(WINDOWSVMIMAGE)
+        OS: windows
+        TestCommand: winget install Microsoft.Azd
+      Choco:
+        Pool: $(WINDOWSPOOL)
+        Image: $(WINDOWSVMIMAGE)
+        OS: windows
+        TestCommand: choco install azd
+      Brew:
+        Pool: Azure Pipelines
+        Image: $(MACVMIMAGE)
+        OS: macOS
+        TestCommand: brew tap azure/azd && brew install azd
+
+jobs:
+  - ${{ foreach channel in parameters.matrix }}:
+    - job: VerifyInstallChannels
+
+      variables:
+      - template: /eng/pipelines/templates/variables/image.yml
+
+      pool:
+        name: ${{ channel.value.Pool }}
+        vmImage: ${{ channel.value.Image }}
+
+      steps:
+        - checkout: none
+
+        - pwsh: ${{ channel.value.TestCommand }}
+          displayName: Test install azd from ${{ channel.name }}

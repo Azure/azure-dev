@@ -820,7 +820,6 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 // promptForCiFiles creates CI/CD files for the specified provider, confirming with the user before creation.
 func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvider, infraProvider, repoRoot string) error {
 	folderPath, ymlPath := "", ""
-	content_bytes := []byte("")
 	switch pipelineProvider {
 	case gitHubLabel:
 		folderPath = filepath.Join(repoRoot, gitHubWorkflowsFolder)
@@ -864,9 +863,8 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 			if err != nil {
 				return fmt.Errorf("reading embedded file %s: %w", embedFilePath, err)
 			}
-			content_bytes = contents
 			log.Printf("Creating file %s", ymlPath)
-			if err := os.WriteFile(ymlPath, content_bytes, osutil.PermissionFile); err != nil {
+			if err := os.WriteFile(ymlPath, contents, osutil.PermissionFile); err != nil {
 				return fmt.Errorf("creating file %s: %w", ymlPath, err)
 			}
 			pm.console.Message(ctx,

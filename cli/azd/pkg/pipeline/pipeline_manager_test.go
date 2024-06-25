@@ -586,7 +586,7 @@ func deleteYamlFiles(t *testing.T, tempDir string, deleteOptions ...string) {
 	}
 }
 
-func simulateUserInteraction(mockContext *mocks.MockContext, providerLabel string, createConfirmation bool) error {
+func simulateUserInteraction(mockContext *mocks.MockContext, providerLabel string, createConfirmation bool) {
 	var providerIndex int
 
 	switch providerLabel {
@@ -595,7 +595,7 @@ func simulateUserInteraction(mockContext *mocks.MockContext, providerLabel strin
 	case azdoLabel:
 		providerIndex = 1
 	default:
-		return fmt.Errorf("%s is not a known pipeline provider", providerLabel)
+		providerIndex = 0
 	}
 
 	// Simulate the user selecting the CI/CD provider
@@ -609,8 +609,6 @@ func simulateUserInteraction(mockContext *mocks.MockContext, providerLabel strin
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Would you like to create the")
 	}).Respond(createConfirmation)
-
-	return nil
 }
 
 func verifyProvider(t *testing.T, manager *PipelineManager, providerLabel string, err error) {

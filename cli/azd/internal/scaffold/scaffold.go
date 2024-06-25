@@ -143,6 +143,11 @@ func ExecInfra(
 		return fmt.Errorf("scaffolding main.bicep: %w", err)
 	}
 
+	err = Execute(t, "resources.bicep", spec, filepath.Join(infraRoot, "resources.bicep"))
+	if err != nil {
+		return fmt.Errorf("scaffolding resources.bicep: %w", err)
+	}
+
 	err = Execute(t, "main.parameters.json", spec, filepath.Join(infraRoot, "main.parameters.json"))
 	if err != nil {
 		return fmt.Errorf("scaffolding main.parameters.json: %w", err)
@@ -169,6 +174,11 @@ func ExecInfraFs(
 	err = executeToFS(fs, t, "main.bicep", "main.bicep", spec)
 	if err != nil {
 		return nil, fmt.Errorf("scaffolding main.bicep: %w", err)
+	}
+
+	err = executeToFS(fs, t, "resources.bicep", "resources.bicep", spec)
+	if err != nil {
+		return nil, fmt.Errorf("scaffolding resources.bicep: %w", err)
 	}
 
 	err = executeToFS(fs, t, "main.parameters.json", "main.parameters.json", spec)

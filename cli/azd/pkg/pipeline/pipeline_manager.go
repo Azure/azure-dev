@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/sethvargo/go-retry"
 	"golang.org/x/exp/slices"
 )
@@ -687,8 +688,21 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 		}
 	}
 
+	prjConfig, err := project.Load(ctx, projectPath)
+	if err != nil {
+		return fmt.Errorf("Loading project configuration: %w", err)
+	}
+
+	infra, err := pm.importManager.ProjectInfrastructure(ctx, prjConfig)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = infra.Cleanup() }()
+	pm.infra = infra
+
 	// Check and prompt for missing CI/CD files
-	if err := pm.checkAndPromptForProviderFiles(ctx, repoRoot, pipelineProvider); err != nil {
+	if err := pm.checkAndPromptForProviderFiles(
+		ctx, repoRoot, pipelineProvider, string(pm.infra.Options.Provider)); err != nil {
 		return err
 	}
 
@@ -721,18 +735,6 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	pm.scmProvider = scmProvider
 	pm.ciProvider = ciProvider
 
-	prjConfig, err := project.Load(ctx, projectPath)
-	if err != nil {
-		return fmt.Errorf("Loading project configuration: %w", err)
-	}
-
-	infra, err := pm.importManager.ProjectInfrastructure(ctx, prjConfig)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = infra.Cleanup() }()
-	pm.infra = infra
-
 	pm.configOptions = &configurePipelineOptions{
 		projectVariables:     slices.Clone(prjConfig.Pipeline.Variables),
 		projectSecrets:       slices.Clone(prjConfig.Pipeline.Secrets),
@@ -755,7 +757,8 @@ func (pm *PipelineManager) savePipelineProviderToEnv(
 	return nil
 }
 
-func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, repoRoot, pipelineProvider string) error {
+func (pm *PipelineManager) checkAndPromptForProviderFiles(
+	ctx context.Context, repoRoot, pipelineProvider string, infraProvider string) error {
 	if pipelineProvider == "" {
 		return nil // No provider, no need to check for files
 	}
@@ -785,7 +788,7 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, r
 	}
 
 	if shouldPrompt {
-		err := pm.promptForCiFiles(ctx, pipelineProvider, repoRoot)
+		err := pm.promptForCiFiles(ctx, pipelineProvider, infraProvider, repoRoot)
 		if err != nil {
 			return err
 		}
@@ -815,25 +818,22 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, r
 }
 
 // promptForCiFiles creates CI/CD files for the specified provider, confirming with the user before creation.
-func (pm *PipelineManager) promptForCiFiles(ctx context.Context, provider, repoRoot string) error {
+func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvider, infraProvider, repoRoot string) error {
 	folderPath, ymlPath := "", ""
-	contents := ""
-
-	switch provider {
+	content_bytes := []byte("")
+	switch pipelineProvider {
 	case gitHubLabel:
 		folderPath = filepath.Join(repoRoot, gitHubWorkflowsFolder)
 		ymlPath = filepath.Join(repoRoot, gitHubYml)
-		contents = `# Sample GitHub Actions Workflow`
 		log.Printf("GitHub folder path: %s", folderPath)
 		log.Printf("GitHub YAML path: %s", ymlPath)
 	case azdoLabel:
 		folderPath = filepath.Join(repoRoot, azdoPipelinesFolder)
 		ymlPath = filepath.Join(repoRoot, azdoYml)
-		contents = `# Sample Azure DevOps Pipeline`
 		log.Printf("Azure DevOps folder path: %s", folderPath)
 		log.Printf("Azure DevOps YAML path: %s", ymlPath)
 	default:
-		return fmt.Errorf("unknown provider: %s", provider)
+		return fmt.Errorf("unknown provider: %s", pipelineProvider)
 	}
 
 	// Confirm with the user before adding the file
@@ -856,8 +856,17 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, provider, repoR
 		}
 
 		if !ymlExists(ymlPath) {
+			embedFilePath := fmt.Sprintf("pipeline/.%s/azure-dev.yml", pipelineProvider)
+			if infraProvider == "terraform" {
+				embedFilePath = fmt.Sprintf("pipeline/.%s/azure-dev-tf.yml", pipelineProvider)
+			}
+			contents, err := resources.PipelineFiles.ReadFile(embedFilePath)
+			if err != nil {
+				return fmt.Errorf("reading embedded file %s: %w", embedFilePath, err)
+			}
+			content_bytes = contents
 			log.Printf("Creating file %s", ymlPath)
-			if err := os.WriteFile(ymlPath, []byte(contents), osutil.PermissionFile); err != nil {
+			if err := os.WriteFile(ymlPath, content_bytes, osutil.PermissionFile); err != nil {
 				return fmt.Errorf("creating file %s: %w", ymlPath, err)
 			}
 			pm.console.Message(ctx,

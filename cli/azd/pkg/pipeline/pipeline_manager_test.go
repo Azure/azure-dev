@@ -68,6 +68,30 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		deleteYamlFiles(t, tempDir)
 	})
+	t.Run("no files - github selected - empty workflows dir", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
+
+		deleteYamlFiles(t, tempDir)
+
+		simulateUserInteraction(mockContext, gitHubLabel, false)
+
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.Nil(t, manager)
+		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
+			gitHubLabel, gitHubWorkflowsFolder))
+	})
+	t.Run("no files - azdo selected - empty pipelines dir", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
+
+		deleteYamlFiles(t, tempDir)
+
+		simulateUserInteraction(mockContext, azdoLabel, false)
+
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.Nil(t, manager)
+		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
+			azdoLabel, azdoPipelinesFolder))
+	})
 	t.Run("no files - azdo selected", func(t *testing.T) {
 
 		mockContext = resetContext(tempDir, ctx)

@@ -780,6 +780,8 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, r
 			log.Printf("Azure DevOps YAML not found, prompting for creation")
 			shouldPrompt = true
 		}
+	default:
+		return fmt.Errorf("%s is not a known pipeline provider", pipelineProvider)
 	}
 
 	if shouldPrompt {

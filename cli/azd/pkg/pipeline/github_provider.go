@@ -73,7 +73,7 @@ func (p *GitHubScmProvider) preConfigureCheck(
 
 // name returns the name of the provider
 func (p *GitHubScmProvider) Name() string {
-	return "GitHub"
+	return gitHubDisplayName
 }
 
 // ***  scmProvider implementation ******
@@ -389,7 +389,7 @@ func (p *GitHubCiProvider) preConfigureCheck(
 
 // name returns the name of the provider.
 func (p *GitHubCiProvider) Name() string {
-	return "GitHub"
+	return gitHubDisplayName
 }
 
 func (p *GitHubCiProvider) credentialOptions(

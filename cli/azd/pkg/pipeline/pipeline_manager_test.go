@@ -535,9 +535,9 @@ func createYamlFiles(t *testing.T, tempDir string, createOptions ...string) {
 		shouldCreateAzdo = false
 		for _, option := range createOptions {
 			switch option {
-			case "github":
+			case gitHubLabel:
 				shouldCreateGitHub = true
-			case "azdo":
+			case azdoLabel:
 				shouldCreateAzdo = true
 			}
 		}
@@ -577,9 +577,9 @@ func deleteYamlFiles(t *testing.T, tempDir string, deleteOptions ...string) {
 		shouldDeleteAzdo = false
 		for _, option := range deleteOptions {
 			switch option {
-			case "github":
+			case gitHubLabel:
 				shouldDeleteGitHub = true
-			case "azdo":
+			case azdoLabel:
 				shouldDeleteAzdo = true
 			}
 		}

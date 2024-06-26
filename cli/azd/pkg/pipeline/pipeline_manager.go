@@ -920,7 +920,7 @@ func (pm *PipelineManager) promptForProvider(ctx context.Context, message string
 	log.Printf("Prompting user to select a CI/CD provider.")
 	choice, err := pm.console.Select(ctx, input.ConsoleOptions{
 		Message: message,
-		Options: []string{"GitHub", "Azure DevOps"},
+		Options: []string{gitHubDisplayName, azdoDisplayName},
 	})
 	if err != nil {
 		return "", fmt.Errorf("prompting for CI/CD provider: %w", err)

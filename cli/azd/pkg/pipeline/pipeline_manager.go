@@ -796,15 +796,16 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 	}
 
 	// Check for files in the selected provider directory before exiting the method
-	providerDir := ""
-	providerDirDisplay := ""
+	providerDir, providerDirDisplay, providerDisplayName := "", "", ""
 	switch pipelineProvider {
 	case gitHubLabel:
 		providerDir = filepath.Join(repoRoot, gitHubWorkflowsDirectory)
 		providerDirDisplay = gitHubWorkflowsDirectory
+		providerDisplayName = gitHubDisplayName
 	case azdoLabel:
 		providerDir = filepath.Join(repoRoot, azdoPipelinesDirectory)
 		providerDirDisplay = azdoPipelinesDirectory
+		providerDisplayName = azdoDisplayName
 	}
 
 	log.Printf("Checking if directory %s is empty", providerDir)
@@ -814,8 +815,8 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 	}
 	if isEmpty {
 		return fmt.Errorf(
-			"%s provider selected, but %s is empty. Please add pipeline files.",
-			pipelineProvider, providerDirDisplay)
+			"You selected the %s provider, but %s is empty. Please add your own pipeline files.",
+			providerDisplayName, providerDirDisplay)
 	}
 
 	log.Printf("Provider files are present for: %s", pipelineProvider)
@@ -842,7 +843,7 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 
 	// Confirm with the user before adding the file
 	confirm, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      fmt.Sprintf("Would you like to create the %s file at %s?", filepath.Base(ymlPath), directoryPath),
+		Message: "The default azure-dev.yml file, which contains a basic workflow to help you get started, is missing from your project. Would you like to add it now?",
 		DefaultValue: true,
 	})
 	if err != nil {
@@ -920,7 +921,7 @@ func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot strin
 func (pm *PipelineManager) promptForProvider(ctx context.Context) (string, error) {
 	log.Printf("Prompting user to select a CI/CD provider.")
 	choice, err := pm.console.Select(ctx, input.ConsoleOptions{
-		Message: "Which provider would you like to set up?",
+		Message: "Which provider would you like to configure?",
 		Options: []string{gitHubDisplayName, azdoDisplayName},
 	})
 	if err != nil {

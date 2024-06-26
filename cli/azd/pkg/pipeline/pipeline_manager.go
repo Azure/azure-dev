@@ -897,7 +897,7 @@ func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot strin
 	case (!hasGitHubYml && !hasAzDevOpsYml) || (hasGitHubYml && hasAzDevOpsYml):
 		// No official YAML files found for either provider or both are found
 		log.Printf("Neither or both YAML files found. Prompting user for provider selection.")
-		return pm.promptForProvider(ctx, "Which provider would you like to set up?")
+		return pm.promptForProvider(ctx)
 
 	case hasGitHubYml && !hasAzDevOpsYml:
 		// GitHub Actions YAML found, Azure DevOps YAML not found
@@ -917,10 +917,10 @@ func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot strin
 }
 
 // promptForProvider prompts the user to select a CI/CD provider.
-func (pm *PipelineManager) promptForProvider(ctx context.Context, message string) (string, error) {
+func (pm *PipelineManager) promptForProvider(ctx context.Context) (string, error) {
 	log.Printf("Prompting user to select a CI/CD provider.")
 	choice, err := pm.console.Select(ctx, input.ConsoleOptions{
-		Message: message,
+		Message: "Which provider would you like to set up?",
 		Options: []string{gitHubDisplayName, azdoDisplayName},
 	})
 	if err != nil {

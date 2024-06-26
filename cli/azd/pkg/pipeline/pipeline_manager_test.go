@@ -485,12 +485,17 @@ func resetAzureYaml(t *testing.T, projectFilePath string) {
 	if err != nil {
 		t.Fatalf("Failed to create or reset azure.yaml file: %v", err)
 	}
-	defer projectFile.Close()
 
 	// Write the default content to the file
 	_, err = projectFile.WriteString(defaultContent)
 	if err != nil {
+		projectFile.Close() // Ensure the file is closed before handling the error
 		t.Fatalf("Failed to write default content to azure.yaml file: %v", err)
+	}
+
+	err = projectFile.Close()
+	if err != nil {
+		t.Fatalf("Failed to close azure.yaml file: %v", err)
 	}
 }
 
@@ -500,12 +505,17 @@ func appendToAzureYaml(t *testing.T, projectFilePath string, content string) {
 	if err != nil {
 		t.Fatalf("Failed to open azure.yaml file for appending: %v", err)
 	}
-	defer projectFile.Close()
 
 	// Append the provided content to the file
 	_, err = projectFile.WriteString(content)
 	if err != nil {
+		projectFile.Close() // Ensure the file is closed before handling the error
 		t.Fatalf("Failed to append content to azure.yaml file: %v", err)
+	}
+
+	err = projectFile.Close()
+	if err != nil {
+		t.Fatalf("Failed to close azure.yaml file: %v", err)
 	}
 }
 
@@ -539,7 +549,9 @@ func createYamlFiles(t *testing.T, tempDir string, createOptions ...string) {
 		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 		ghYmlFile := filepath.Join(ghFolder, defaultPipelineFileName)
-		_, err = os.Create(ghYmlFile)
+		file, err := os.Create(ghYmlFile)
+		assert.NoError(t, err)
+		err = file.Close()
 		assert.NoError(t, err)
 	}
 
@@ -549,7 +561,9 @@ func createYamlFiles(t *testing.T, tempDir string, createOptions ...string) {
 		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 		azdoYmlFile := filepath.Join(azdoFolder, defaultPipelineFileName)
-		_, err = os.Create(azdoYmlFile)
+		file, err := os.Create(azdoYmlFile)
+		assert.NoError(t, err)
+		err = file.Close()
 		assert.NoError(t, err)
 	}
 }

@@ -78,7 +78,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-			gitHubLabel, gitHubWorkflowsFolder))
+			gitHubLabel, gitHubWorkflowsDirectory))
 	})
 	t.Run("no files - azdo selected - empty pipelines dir", func(t *testing.T) {
 		mockContext = resetContext(tempDir, ctx)
@@ -90,7 +90,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-			azdoLabel, azdoPipelinesFolder))
+			azdoLabel, azdoPipelinesDirectory))
 	})
 	t.Run("no files - azdo selected", func(t *testing.T) {
 
@@ -115,7 +115,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		deleteYamlFiles(t, tempDir)
 	})
 	t.Run("from persisted data azdo error", func(t *testing.T) {
-		// User selects Azure DevOps, but the required folder is missing
+		// User selects Azure DevOps, but the required directory is missing
 		mockContext = resetContext(tempDir, ctx)
 
 		envValues := map[string]string{}
@@ -127,7 +127,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-			azdoLabel, azdoPipelinesFolder))
+			azdoLabel, azdoPipelinesDirectory))
 	})
 	t.Run("from persisted data azdo", func(t *testing.T) {
 		// User has azdo persisted in env and they have the files
@@ -145,7 +145,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		deleteYamlFiles(t, tempDir)
 	})
 	t.Run("from persisted data github error", func(t *testing.T) {
-		// User selects Github, but the required folder is missing
+		// User selects Github, but the required directory is missing
 		mockContext = resetContext(tempDir, ctx)
 
 		envValues := map[string]string{}
@@ -157,7 +157,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-			gitHubLabel, gitHubWorkflowsFolder))
+			gitHubLabel, gitHubWorkflowsDirectory))
 	})
 	t.Run("from persisted data github", func(t *testing.T) {
 		// User has azdo persisted in env and they have the files
@@ -260,7 +260,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		resetAzureYaml(t, projectFileName)
 		deleteYamlFiles(t, tempDir)
 	})
-	t.Run("github folder only", func(t *testing.T) {
+	t.Run("github directory only", func(t *testing.T) {
 		mockContext = resetContext(tempDir, ctx)
 
 		simulateUserInteraction(mockContext, gitHubLabel, true)
@@ -271,7 +271,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		deleteYamlFiles(t, tempDir)
 	})
-	t.Run("azdo folder only", func(t *testing.T) {
+	t.Run("azdo directory only", func(t *testing.T) {
 		mockContext = resetContext(tempDir, ctx)
 
 		simulateUserInteraction(mockContext, azdoLabel, true)
@@ -544,11 +544,11 @@ func createYamlFiles(t *testing.T, tempDir string, createOptions ...string) {
 	}
 
 	if shouldCreateGitHub {
-		// Create the GitHub Actions folder and file
-		ghFolder := filepath.Join(tempDir, gitHubWorkflowsFolder)
-		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
+		// Create the GitHub Actions directory and file
+		ghDirectory := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(ghDirectory, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		ghYmlFile := filepath.Join(ghFolder, defaultPipelineFileName)
+		ghYmlFile := filepath.Join(ghDirectory, defaultPipelineFileName)
 		file, err := os.Create(ghYmlFile)
 		assert.NoError(t, err)
 		err = file.Close()
@@ -556,11 +556,11 @@ func createYamlFiles(t *testing.T, tempDir string, createOptions ...string) {
 	}
 
 	if shouldCreateAzdo {
-		// Create the Azure DevOps folder and file
-		azdoFolder := filepath.Join(tempDir, azdoPipelinesFolder)
-		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
+		// Create the Azure DevOps directory and file
+		azdoDirectory := filepath.Join(tempDir, azdoPipelinesDirectory)
+		err := os.MkdirAll(azdoDirectory, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		azdoYmlFile := filepath.Join(azdoFolder, defaultPipelineFileName)
+		azdoYmlFile := filepath.Join(azdoDirectory, defaultPipelineFileName)
 		file, err := os.Create(azdoYmlFile)
 		assert.NoError(t, err)
 		err = file.Close()
@@ -586,16 +586,16 @@ func deleteYamlFiles(t *testing.T, tempDir string, deleteOptions ...string) {
 	}
 
 	if shouldDeleteGitHub {
-		// Delete the GitHub Actions folder and file
-		ghFolder := filepath.Join(tempDir, gitHubWorkflowsFolder)
-		err := os.RemoveAll(ghFolder)
+		// Delete the GitHub Actions directory and file
+		ghDirectory := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.RemoveAll(ghDirectory)
 		assert.NoError(t, err)
 	}
 
 	if shouldDeleteAzdo {
-		// Delete the Azure DevOps folder and file
-		azdoFolder := filepath.Join(tempDir, azdoPipelinesFolder)
-		err := os.RemoveAll(azdoFolder)
+		// Delete the Azure DevOps directory and file
+		azdoDirectory := filepath.Join(tempDir, azdoPipelinesDirectory)
+		err := os.RemoveAll(azdoDirectory)
 		assert.NoError(t, err)
 	}
 }

@@ -241,7 +241,7 @@ func (p *GitHubScmProvider) notifyWhenGitHubActionsAreDisabled(
 		".github",
 		"workflows")
 	err = filepath.WalkDir(defaultGitHubWorkflowPathLocation,
-		func(folderName string, file fs.DirEntry, e error) error {
+		func(directoryName string, file fs.DirEntry, e error) error {
 			if e != nil {
 				return e
 			}
@@ -252,7 +252,7 @@ func (p *GitHubScmProvider) notifyWhenGitHubActionsAreDisabled(
 				// Now check if this file is already tracked by git.
 				// If the file is not tracked, it means this is a new file (never pushed to mainstream)
 				// A git untracked file should not be considered as GitHub workflow until it is pushed.
-				newFile, err := p.gitCli.IsUntrackedFile(ctx, gitProjectPath, folderName)
+				newFile, err := p.gitCli.IsUntrackedFile(ctx, gitProjectPath, directoryName)
 				if err != nil {
 					return fmt.Errorf("checking workflow file %w", err)
 				}
@@ -613,7 +613,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 }
 
 // configurePipeline is a no-op for GitHub, as the pipeline is automatically
-// created by creating the workflow files in .github folder.
+// created by creating the workflow files in .github directory.
 func (p *GitHubCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
@@ -840,12 +840,12 @@ func getRemoteUrlFromNewRepository(
 	console input.Console,
 ) (string, error) {
 	var repoName string
-	currentFolderName := filepath.Base(currentPathName)
+	currentDirectoryName := filepath.Base(currentPathName)
 
 	for {
 		name, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message:      "Enter the name for your new repository OR Hit enter to use this name:",
-			DefaultValue: currentFolderName,
+			DefaultValue: currentDirectoryName,
 		})
 		if err != nil {
 			return "", fmt.Errorf("asking for new repository name: %w", err)

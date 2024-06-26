@@ -765,8 +765,8 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 
 	log.Printf("Checking for provider files for: %s", pipelineProvider)
 
-	hasGitHubYml := ymlExists(filepath.Join(repoRoot, gitHubYml))
-	hasAzDevOpsYml := ymlExists(filepath.Join(repoRoot, azdoYml))
+	hasGitHubYml := osutil.FileExists(filepath.Join(repoRoot, gitHubYml))
+	hasAzDevOpsYml := osutil.FileExists(filepath.Join(repoRoot, azdoYml))
 
 	log.Printf("hasGitHubYml: %t, hasAzDevOpsYml: %t", hasGitHubYml, hasAzDevOpsYml)
 
@@ -799,15 +799,19 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 	providerDirDisplay := ""
 	switch pipelineProvider {
 	case gitHubLabel:
-		providerDir = filepath.Join(repoRoot, gitHubWorkflowsFolder)
-		providerDirDisplay = gitHubWorkflowsFolder
+		providerDir = filepath.Join(repoRoot, gitHubWorkflowsDirectory)
+		providerDirDisplay = gitHubWorkflowsDirectory
 	case azdoLabel:
-		providerDir = filepath.Join(repoRoot, azdoPipelinesFolder)
-		providerDirDisplay = azdoPipelinesFolder
+		providerDir = filepath.Join(repoRoot, azdoPipelinesDirectory)
+		providerDirDisplay = azdoPipelinesDirectory
 	}
 
 	log.Printf("Checking if directory %s is empty", providerDir)
-	if isDirEmpty(providerDir) {
+	isEmpty, err := osutil.IsDirEmpty(providerDir, true)
+	if err != nil {
+		return fmt.Errorf("error checking if directory is empty: %w", err)
+	}
+	if isEmpty {
 		return fmt.Errorf(
 			"%s provider selected, but %s is empty. Please add pipeline files.",
 			pipelineProvider, providerDirDisplay)
@@ -819,17 +823,17 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 
 // promptForCiFiles creates CI/CD files for the specified provider, confirming with the user before creation.
 func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvider, infraProvider, repoRoot string) error {
-	folderPath, ymlPath := "", ""
+	directoryPath, ymlPath := "", ""
 	switch pipelineProvider {
 	case gitHubLabel:
-		folderPath = filepath.Join(repoRoot, gitHubWorkflowsFolder)
+		directoryPath = filepath.Join(repoRoot, gitHubWorkflowsDirectory)
 		ymlPath = filepath.Join(repoRoot, gitHubYml)
-		log.Printf("GitHub folder path: %s", folderPath)
+		log.Printf("GitHub directory path: %s", directoryPath)
 		log.Printf("GitHub YAML path: %s", ymlPath)
 	case azdoLabel:
-		folderPath = filepath.Join(repoRoot, azdoPipelinesFolder)
+		directoryPath = filepath.Join(repoRoot, azdoPipelinesDirectory)
 		ymlPath = filepath.Join(repoRoot, azdoYml)
-		log.Printf("Azure DevOps folder path: %s", folderPath)
+		log.Printf("Azure DevOps directory path: %s", directoryPath)
 		log.Printf("Azure DevOps YAML path: %s", ymlPath)
 	default:
 		return fmt.Errorf("unknown provider: %s", pipelineProvider)
@@ -837,7 +841,7 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 
 	// Confirm with the user before adding the file
 	confirm, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      fmt.Sprintf("Would you like to create the %s file at %s?", filepath.Base(ymlPath), folderPath),
+		Message:      fmt.Sprintf("Would you like to create the %s file at %s?", filepath.Base(ymlPath), directoryPath),
 		DefaultValue: true,
 	})
 	if err != nil {
@@ -845,16 +849,16 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 	}
 
 	if confirm {
-		log.Printf("Confirmed creation of %s file at %s", filepath.Base(ymlPath), folderPath)
+		log.Printf("Confirmed creation of %s file at %s", filepath.Base(ymlPath), directoryPath)
 
-		if !folderExists(folderPath) {
-			log.Printf("Creating folder %s", folderPath)
-			if err := os.MkdirAll(folderPath, os.ModePerm); err != nil {
-				return fmt.Errorf("creating folder %s: %w", folderPath, err)
+		if !osutil.DirExists(directoryPath) {
+			log.Printf("Creating directory %s", directoryPath)
+			if err := os.MkdirAll(directoryPath, os.ModePerm); err != nil {
+				return fmt.Errorf("creating directory %s: %w", directoryPath, err)
 			}
 		}
 
-		if !ymlExists(ymlPath) {
+		if !osutil.FileExists(ymlPath) {
 			embedFilePath := fmt.Sprintf("pipeline/.%s/azure-dev.yml", pipelineProvider)
 			if infraProvider == "terraform" {
 				embedFilePath = fmt.Sprintf("pipeline/.%s/azure-dev-tf.yml", pipelineProvider)
@@ -872,7 +876,7 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 					filepath.Base(ymlPath), ymlPath))
 		}
 	} else {
-		log.Printf("User declined creation of %s file at %s", filepath.Base(ymlPath), folderPath)
+		log.Printf("User declined creation of %s file at %s", filepath.Base(ymlPath), directoryPath)
 	}
 
 	return nil
@@ -882,8 +886,8 @@ func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot strin
 	log.Printf("Checking for CI/CD YAML files in the repository root: %s", repoRoot)
 
 	// Check for existence of official YAML files in the repo root
-	hasGitHubYml := ymlExists(filepath.Join(repoRoot, gitHubYml))
-	hasAzDevOpsYml := ymlExists(filepath.Join(repoRoot, azdoYml))
+	hasGitHubYml := osutil.FileExists(filepath.Join(repoRoot, gitHubYml))
+	hasAzDevOpsYml := osutil.FileExists(filepath.Join(repoRoot, azdoYml))
 
 	log.Printf("GitHub Actions YAML exists: %v", hasGitHubYml)
 	log.Printf("Azure DevOps YAML exists: %v", hasAzDevOpsYml)

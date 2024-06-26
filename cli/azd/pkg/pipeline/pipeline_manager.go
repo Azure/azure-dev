@@ -843,7 +843,8 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 
 	// Confirm with the user before adding the file
 	confirm, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-		Message: "The default azure-dev.yml file, which contains a basic workflow to help you get started, is missing from your project. Would you like to add it now?",
+		Message: "The default azure-dev.yml file, which contains a basic workflow to help you get started, " +
+			"is missing from your project. Would you like to add it now?",
 		DefaultValue: true,
 	})
 	if err != nil {

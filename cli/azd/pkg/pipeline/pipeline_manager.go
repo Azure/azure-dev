@@ -711,16 +711,17 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 		return err
 	}
 
-	var scmProviderName, ciProviderName string
+	var scmProviderName, ciProviderName, displayName string
 	if pipelineProvider == azdoLabel {
-		log.Printf("Using pipeline provider: %s", output.WithHighLightFormat(azdoDisplayName))
 		scmProviderName = azdoLabel
 		ciProviderName = azdoLabel
+		displayName = azdoDisplayName
 	} else {
-		log.Printf("Using pipeline provider: %s", output.WithHighLightFormat(gitHubDisplayName))
 		scmProviderName = gitHubLabel
 		ciProviderName = gitHubLabel
+		displayName = gitHubDisplayName
 	}
+	log.Printf("Using pipeline provider: %s", output.WithHighLightFormat(displayName))
 
 	var scmProvider ScmProvider
 	if err := pm.serviceLocator.ResolveNamed(scmProviderName+"-scm", &scmProvider); err != nil {

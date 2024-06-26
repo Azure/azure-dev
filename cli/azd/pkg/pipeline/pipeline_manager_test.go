@@ -77,8 +77,8 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-			gitHubLabel, gitHubWorkflowsDirectory))
+		assert.EqualError(t, err, fmt.Sprintf("You selected the %s provider, but %s is empty. Please add your own pipeline files.",
+			gitHubDisplayName, gitHubWorkflowsDirectory))
 	})
 	t.Run("no files - azdo selected - empty pipelines dir", func(t *testing.T) {
 		mockContext = resetContext(tempDir, ctx)
@@ -89,8 +89,8 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-			azdoLabel, azdoPipelinesDirectory))
+		assert.EqualError(t, err, fmt.Sprintf("You selected the %s provider, but %s is empty. Please add your own pipeline files.",
+			azdoDisplayName, azdoPipelinesDirectory))
 	})
 	t.Run("no files - azdo selected", func(t *testing.T) {
 
@@ -126,8 +126,8 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-			azdoLabel, azdoPipelinesDirectory))
+		assert.EqualError(t, err, fmt.Sprintf("You selected the %s provider, but %s is empty. Please add your own pipeline files.",
+			azdoDisplayName, azdoPipelinesDirectory))
 	})
 	t.Run("from persisted data azdo", func(t *testing.T) {
 		// User has azdo persisted in env and they have the files
@@ -156,8 +156,8 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-			gitHubLabel, gitHubWorkflowsDirectory))
+		assert.EqualError(t, err, fmt.Sprintf("You selected the %s provider, but %s is empty. Please add your own pipeline files.",
+			gitHubDisplayName, gitHubWorkflowsDirectory))
 	})
 	t.Run("from persisted data github", func(t *testing.T) {
 		// User has azdo persisted in env and they have the files
@@ -614,14 +614,14 @@ func simulateUserInteraction(mockContext *mocks.MockContext, providerLabel strin
 
 	// Simulate the user selecting the CI/CD provider
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Which provider would you like to set up?")
+		return strings.Contains(options.Message, "Which provider would you like to configure?")
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		return providerIndex, nil
 	})
 
 	// Simulate the user responding to the creation confirmation
 	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Would you like to create the")
+		return strings.Contains(options.Message, "The default azure-dev.yml file")
 	}).Respond(createConfirmation)
 }
 

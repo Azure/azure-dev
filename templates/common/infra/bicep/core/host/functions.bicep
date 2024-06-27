@@ -7,8 +7,10 @@ param tags object = {}
 param applicationInsightsName string = ''
 param appServicePlanId string
 param keyVaultName string = ''
-param managedIdentity bool = !empty(keyVaultName)
+param managedIdentity bool = !empty(keyVaultName) || storageManagedIdentity
 param storageAccountName string
+param storageManagedIdentity bool = false
+param virtualNetworkSubnetId string = ''
 
 // Runtime Properties
 @allowed([
@@ -55,7 +57,8 @@ module functions 'appservice.bicep' = {
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     appSettings: union(appSettings, {
-        AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+        AzureWebJobsStorage__accountName: storageManagedIdentity ? storage.name : null
+        AzureWebJobsStorage: storageManagedIdentity ? null : 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
         FUNCTIONS_EXTENSION_VERSION: extensionVersion
         FUNCTIONS_WORKER_RUNTIME: runtimeName
       })
@@ -74,6 +77,17 @@ module functions 'appservice.bicep' = {
     runtimeNameAndVersion: runtimeNameAndVersion
     scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
     use32BitWorkerProcess: use32BitWorkerProcess
+    virtualNetworkSubnetId: virtualNetworkSubnetId
+  }
+}
+
+module storageOwnerRole '../../core/security/role.bicep' = if (storageManagedIdentity) {
+  name: 'search-index-contrib-role-api'
+  params: {
+    principalId: functions.outputs.identityPrincipalId
+    // Search Index Data Contributor
+    roleDefinitionId: '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
+    principalType: 'ServicePrincipal'
   }
 }
 

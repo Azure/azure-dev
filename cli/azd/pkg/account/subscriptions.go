@@ -3,7 +3,9 @@ package account
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -111,6 +113,24 @@ func (s *SubscriptionsService) ListSubscriptionLocations(
 	locations := []Location{}
 	pager := client.NewListLocationsPager(subscriptionId, nil)
 
+	includeLocation := func(location *armsubscriptions.Location) bool {
+		// By default, we only include physical regions that have a physical location. In practice this filters out the EUAP
+		// regions and other regions like centralusstage that some customers have access to. We have found that these testing
+		// regions often don't support all the features of the other azure regions and including them by default in our list
+		// of locations to pick leads to user confusion and issues.
+		//
+		// However, sometimes you want to be able to access these regions, i.e. when trying to do end to end testing with azd
+		// of features which have not yet been promoted to GA. We always allowed you to explicitly set a region by using
+		// `azd env set AZURE_LOCATION <location-name>`, but to make things easier, we also allow setting
+		// AZD_DEBUG_INCLUDE_ALL_LOCATIONS so all these regions show up in the list.
+		if v, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_INCLUDE_ALL_LOCATIONS")); err == nil && v {
+			return true
+		}
+
+		return *location.Metadata.RegionType == "Physical" &&
+			!compare.PtrValueEquals(location.Metadata.PhysicalLocation, "")
+	}
+
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -118,9 +138,7 @@ func (s *SubscriptionsService) ListSubscriptionLocations(
 		}
 
 		for _, location := range page.LocationListResult.Value {
-			// Only include physical locations
-			if *location.Metadata.RegionType == "Physical" &&
-				!compare.PtrValueEquals(location.Metadata.PhysicalLocation, "") {
+			if includeLocation(location) {
 				displayName := convert.ToValueWithDefault(location.DisplayName, *location.Name)
 				regionalDisplayName := convert.ToValueWithDefault(location.RegionalDisplayName, displayName)
 

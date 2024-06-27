@@ -561,7 +561,7 @@ func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositor
 			}
 
 			initRepoMsg := "Creating Git repository locally."
-			pm.console.Message(ctx, "") // we need a new line here
+			pm.console.Message(ctx, "")
 			pm.console.ShowSpinner(ctx, initRepoMsg, input.Step)
 			if err := pm.gitCli.InitRepo(ctx, repoPath); err != nil {
 				pm.console.StopSpinner(ctx, initRepoMsg, input.StepFailed)
@@ -761,62 +761,74 @@ func (pm *PipelineManager) savePipelineProviderToEnv(
 func (pm *PipelineManager) checkAndPromptForProviderFiles(
 	ctx context.Context, repoRoot, pipelineProvider string, infraProvider string) error {
 	if pipelineProvider == "" {
-		return nil // No provider, no need to check for files
+		log.Println("Pipeline provider is empty, no need to check for files.")
+		return nil
 	}
 
 	log.Printf("Checking for provider files for: %s", pipelineProvider)
 
-	hasGitHubYml := osutil.FileExists(filepath.Join(repoRoot, gitHubYml))
-	hasAzDevOpsYml := osutil.FileExists(filepath.Join(repoRoot, azdoYml))
-
-	log.Printf("hasGitHubYml: %t, hasAzDevOpsYml: %t", hasGitHubYml, hasAzDevOpsYml)
-
-	shouldPrompt := false
-
-	switch pipelineProvider {
-	case gitHubLabel:
-		if !hasGitHubYml {
-			log.Printf("GitHub YAML not found, prompting for creation")
-			shouldPrompt = true
-		}
-	case azdoLabel:
-		if !hasAzDevOpsYml {
-			log.Printf("Azure DevOps YAML not found, prompting for creation")
-			shouldPrompt = true
-		}
-	default:
-		return fmt.Errorf("%s is not a known pipeline provider", pipelineProvider)
+	providerFileChecks := map[string]struct {
+		ymlPath             string
+		dirPath             string
+		dirDisplayName      string
+		providerDisplayName string
+	}{
+		gitHubLabel: {
+			ymlPath:             filepath.Join(repoRoot, gitHubYml),
+			dirPath:             filepath.Join(repoRoot, gitHubWorkflowsDirectory),
+			dirDisplayName:      gitHubWorkflowsDirectory,
+			providerDisplayName: gitHubDisplayName,
+		},
+		azdoLabel: {
+			ymlPath:             filepath.Join(repoRoot, azdoYml),
+			dirPath:             filepath.Join(repoRoot, azdoPipelinesDirectory),
+			dirDisplayName:      azdoPipelinesDirectory,
+			providerDisplayName: azdoDisplayName,
+		},
 	}
 
-	if shouldPrompt {
-		err := pm.promptForCiFiles(ctx, pipelineProvider, infraProvider, repoRoot)
-		if err != nil {
+	providerCheck, exists := providerFileChecks[pipelineProvider]
+	if !exists {
+		errMsg := fmt.Sprintf("%s is not a known pipeline provider", pipelineProvider)
+		log.Println("Error:", errMsg)
+		return fmt.Errorf(errMsg)
+	}
+
+	log.Printf("YAML path: %s", providerCheck.ymlPath)
+	log.Printf("Directory path: %s", providerCheck.dirPath)
+
+	if !osutil.FileExists(providerCheck.ymlPath) {
+		log.Printf("%s YAML not found, prompting for creation", providerCheck.providerDisplayName)
+		if err := pm.promptForCiFiles(ctx, pipelineProvider, infraProvider, repoRoot); err != nil {
+			log.Println("Error prompting for CI files:", err)
 			return err
 		}
+		log.Println("Prompt for CI files completed successfully.")
 	}
 
-	// Check for files in the selected provider directory before exiting the method
-	providerDir, providerDirDisplay, providerDisplayName := "", "", ""
-	switch pipelineProvider {
-	case gitHubLabel:
-		providerDir = filepath.Join(repoRoot, gitHubWorkflowsDirectory)
-		providerDirDisplay = gitHubWorkflowsDirectory
-		providerDisplayName = gitHubDisplayName
-	case azdoLabel:
-		providerDir = filepath.Join(repoRoot, azdoPipelinesDirectory)
-		providerDirDisplay = azdoPipelinesDirectory
-		providerDisplayName = azdoDisplayName
-	}
-
-	log.Printf("Checking if directory %s is empty", providerDir)
-	isEmpty, err := osutil.IsDirEmpty(providerDir, true)
+	log.Printf("Checking if directory %s is empty", providerCheck.dirPath)
+	isEmpty, err := osutil.IsDirEmpty(providerCheck.dirPath, true)
 	if err != nil {
+		log.Println("Error checking if directory is empty:", err)
 		return fmt.Errorf("error checking if directory is empty: %w", err)
 	}
+
 	if isEmpty {
-		return fmt.Errorf(
-			"You selected the %s provider, but %s is empty. Please add your own pipeline files.",
-			providerDisplayName, providerDirDisplay)
+		if pipelineProvider == azdoLabel {
+			message := fmt.Sprintf(
+				"%s provider selected, but %s is empty. Please add pipeline files and try again.",
+				providerCheck.providerDisplayName, providerCheck.dirDisplayName)
+			log.Println("Error:", message)
+			return fmt.Errorf(message)
+		}
+		if pipelineProvider == gitHubLabel {
+			message := fmt.Sprintf(
+				"%s provider selected, but %s is empty. Please add pipeline files.",
+				providerCheck.providerDisplayName, providerCheck.dirDisplayName)
+			log.Println("Info:", message)
+			pm.console.Message(ctx, message)
+		}
+		pm.console.Message(ctx, "")
 	}
 
 	log.Printf("Provider files are present for: %s", pipelineProvider)
@@ -825,43 +837,52 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 
 // promptForCiFiles creates CI/CD files for the specified provider, confirming with the user before creation.
 func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvider, infraProvider, repoRoot string) error {
-	directoryPath, ymlPath := "", ""
-	switch pipelineProvider {
-	case gitHubLabel:
-		directoryPath = filepath.Join(repoRoot, gitHubWorkflowsDirectory)
-		ymlPath = filepath.Join(repoRoot, gitHubYml)
-		log.Printf("GitHub directory path: %s", directoryPath)
-		log.Printf("GitHub YAML path: %s", ymlPath)
-	case azdoLabel:
-		directoryPath = filepath.Join(repoRoot, azdoPipelinesDirectory)
-		ymlPath = filepath.Join(repoRoot, azdoYml)
-		log.Printf("Azure DevOps directory path: %s", directoryPath)
-		log.Printf("Azure DevOps YAML path: %s", ymlPath)
-	default:
-		return fmt.Errorf("unknown provider: %s", pipelineProvider)
+	paths := map[string]struct {
+		directory string
+		yml       string
+	}{
+		gitHubLabel: {filepath.Join(repoRoot, gitHubWorkflowsDirectory), filepath.Join(repoRoot, gitHubYml)},
+		azdoLabel:   {filepath.Join(repoRoot, azdoPipelinesDirectory), filepath.Join(repoRoot, azdoYml)},
 	}
 
+	providerPaths, exists := paths[pipelineProvider]
+	if !exists {
+		errMsg := fmt.Sprintf("Unknown provider: %s", pipelineProvider)
+		log.Println("Error:", errMsg)
+		return fmt.Errorf(errMsg)
+	}
+
+	log.Printf("Directory path: %s", providerPaths.directory)
+	log.Printf("YAML path: %s", providerPaths.yml)
+
 	// Confirm with the user before adding the file
+	pm.console.Message(ctx, "")
+	pm.console.Message(ctx,
+		fmt.Sprintf("The default %s file, which contains a basic workflow to help you get started, is missing from your project.",
+			output.WithHighLightFormat("azure-dev.yml")))
+	pm.console.Message(ctx, "")
+
+	// Prompt the user for confirmation
 	confirm, err := pm.console.Confirm(ctx, input.ConsoleOptions{
-		Message: "The default azure-dev.yml file, which contains a basic workflow to help you get started, " +
-			"is missing from your project. Would you like to add it now?",
+		Message:      "Would you like to add it now?",
 		DefaultValue: true,
 	})
 	if err != nil {
 		return fmt.Errorf("prompting to create file: %w", err)
 	}
+	pm.console.Message(ctx, "")
 
 	if confirm {
-		log.Printf("Confirmed creation of %s file at %s", filepath.Base(ymlPath), directoryPath)
+		log.Printf("Confirmed creation of %s file at %s", filepath.Base(providerPaths.yml), providerPaths.directory)
 
-		if !osutil.DirExists(directoryPath) {
-			log.Printf("Creating directory %s", directoryPath)
-			if err := os.MkdirAll(directoryPath, os.ModePerm); err != nil {
-				return fmt.Errorf("creating directory %s: %w", directoryPath, err)
+		if !osutil.DirExists(providerPaths.directory) {
+			log.Printf("Creating directory %s", providerPaths.directory)
+			if err := os.MkdirAll(providerPaths.directory, os.ModePerm); err != nil {
+				return fmt.Errorf("creating directory %s: %w", providerPaths.directory, err)
 			}
 		}
 
-		if !osutil.FileExists(ymlPath) {
+		if !osutil.FileExists(providerPaths.yml) {
 			embedFilePath := fmt.Sprintf("pipeline/.%s/azure-dev.yml", pipelineProvider)
 			if infraProvider == "terraform" {
 				embedFilePath = fmt.Sprintf("pipeline/.%s/azure-dev-tf.yml", pipelineProvider)
@@ -870,17 +891,24 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 			if err != nil {
 				return fmt.Errorf("reading embedded file %s: %w", embedFilePath, err)
 			}
-			log.Printf("Creating file %s", ymlPath)
-			if err := os.WriteFile(ymlPath, contents, osutil.PermissionFile); err != nil {
-				return fmt.Errorf("creating file %s: %w", ymlPath, err)
+			log.Printf("Creating file %s", providerPaths.yml)
+			if err := os.WriteFile(providerPaths.yml, contents, osutil.PermissionFile); err != nil {
+				return fmt.Errorf("creating file %s: %w", providerPaths.yml, err)
 			}
 			pm.console.Message(ctx,
-				fmt.Sprintf("The %s file has been created at %s. You can use it as-is or modify it to suit your needs.",
-					filepath.Base(ymlPath), ymlPath))
+				fmt.Sprintf(
+					"The %s file has been created at %s. You can use it as-is or modify it to suit your needs.",
+					output.WithHighLightFormat(filepath.Base(providerPaths.yml)),
+					output.WithHighLightFormat(providerPaths.yml)),
+			)
+			pm.console.Message(ctx, "")
+
 		}
-	} else {
-		log.Printf("User declined creation of %s file at %s", filepath.Base(ymlPath), directoryPath)
+
+		return nil
 	}
+
+	log.Printf("User declined creation of %s file at %s", filepath.Base(providerPaths.yml), providerPaths.directory)
 
 	return nil
 }
@@ -921,8 +949,9 @@ func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot strin
 // promptForProvider prompts the user to select a CI/CD provider.
 func (pm *PipelineManager) promptForProvider(ctx context.Context) (string, error) {
 	log.Printf("Prompting user to select a CI/CD provider.")
+	pm.console.Message(ctx, "")
 	choice, err := pm.console.Select(ctx, input.ConsoleOptions{
-		Message: "Which provider would you like to configure?",
+		Message: "Select a provider:",
 		Options: []string{gitHubDisplayName, azdoDisplayName},
 	})
 	if err != nil {

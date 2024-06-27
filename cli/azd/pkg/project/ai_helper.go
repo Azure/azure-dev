@@ -462,6 +462,13 @@ func (a *aiHelper) DeployToEndpoint(
 		return nil, err
 	}
 
+	// Wait for the deployment to be available. This is because it can take some time for the AI service to replicate
+	// 404 response is retried up to 5 times with a 10 second delay
+	err = a.waitForDeployment(ctx, scope, endpointName, deploymentName, 5, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("trying to get deployment: %w", err)
+	}
+
 	// Poll for deployment and wait till it reaches a terminal state
 	onlineDeployment, err := a.pollForDeployment(ctx, scope, endpointName, deploymentName)
 	if err != nil {
@@ -685,6 +692,39 @@ func (a *aiHelper) pollForDeployment(
 			timer.Reset(regularDelay)
 		}
 	}
+}
+
+// waitForDeployment makes up to maxRetry attempts to wait for the deployment to be available. This is because it can take
+// some time for the AI service to replicate a new created deployment to all regions.
+func (a *aiHelper) waitForDeployment(
+	ctx context.Context,
+	scope *ai.Scope,
+	endpointName string,
+	deploymentName string,
+	maxRetry uint64,
+	retryDelay time.Duration,
+) error {
+	return retry.Do(ctx, retry.WithMaxRetries(maxRetry, retry.NewConstant(retryDelay)), func(ctx context.Context) error {
+		_, err := a.deploymentsClient.Get(
+			ctx,
+			scope.ResourceGroup(),
+			scope.Workspace(),
+			endpointName,
+			deploymentName,
+			nil,
+		)
+		if err != nil {
+			var sdkErr *azcore.ResponseError
+			parseOk := errors.As(err, &sdkErr)
+			if parseOk && sdkErr.StatusCode == http.StatusNotFound {
+				// retryable error
+				return retry.RetryableError(err)
+			}
+			// non retryable error
+			return err
+		}
+		return nil
+	})
 }
 
 // getEnvironmentVersionName returns the latest environment version name

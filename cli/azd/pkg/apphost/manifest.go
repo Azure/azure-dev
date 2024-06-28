@@ -94,6 +94,18 @@ type Resource struct {
 
 	// container.v0 uses bind mounts field to define the volumes with initial data of the container.
 	BindMounts []*BindMount `json:"bindMounts,omitempty"`
+
+	// Deployment is used by project.v1 resources to customize the deployment of the project.
+	Deployment *ProjectV1Deployment `json:"deployment,omitempty"`
+}
+
+type ProjectV1Deployment struct {
+	// The type of deployment to use for the project. Presently, only azure.bicep.v0 is supported.
+	Type string `json:"type"`
+	// Path to the deployment file. If relative, the path is relative to the manifest file.
+	Path string `json:"path"`
+	// Parameters to pass to the deployment file.
+	Params map[string]string `json:"params"`
 }
 
 type ContainerV1Build struct {
@@ -275,6 +287,16 @@ func ManifestFromAppHost(
 						*secret.Source = filepath.Join(manifestDir, *secret.Source)
 					}
 				}
+			}
+		}
+
+		if res.Type == "project.v1" {
+			if res.Deployment != nil {
+				if !filepath.IsAbs(res.Deployment.Path) {
+					res.Deployment.Path = filepath.Join(manifestDir, res.Deployment.Path)
+				}
+
+				// TOOD(ellismg): Do we need to do some of the other work we do above for azure.bicep.v0 resources?
 			}
 		}
 	}

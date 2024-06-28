@@ -96,6 +96,14 @@ type genProject struct {
 	Bindings custommaps.WithOrder[Binding]
 }
 
+type genProjectV1 struct {
+	Path             string
+	Args             []string
+	Bindings         custommaps.WithOrder[Binding]
+	DeploymentPath   string
+	DeploymentParams map[string]string
+}
+
 type genAppConfig struct{}
 
 type genDapr struct {

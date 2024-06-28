@@ -48,9 +48,10 @@ type ServiceConfig struct {
 }
 
 type DotNetContainerAppOptions struct {
-	Manifest    *apphost.Manifest
-	AppHostPath string
-	ProjectName string
+	Manifest           *apphost.Manifest
+	AppHostPath        string
+	ProjectName        string
+	UseBicepDeplyoment bool
 	// ContainerImage is non-empty when a prebuilt container image is being used.
 	ContainerImage string
 }

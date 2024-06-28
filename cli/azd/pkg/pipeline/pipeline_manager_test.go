@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -30,150 +31,175 @@ import (
 func Test_PipelineManager_Initialize(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
-
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	mockContext := mocks.NewMockContext(ctx)
-	setupGithubCliMocks(mockContext)
-	setupGitCliMocks(mockContext, tempDir)
+	mockContext := resetContext(tempDir, ctx)
 
-	t.Run("no folders error", func(t *testing.T) {
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
-		assert.Nil(t, manager)
-		assert.EqualError(
-			t,
-			err,
-			//nolint:lll
-			"no CI/CD provider configuration found. Expecting either github and/or azdo folder in the repository root directory.",
-		)
-	})
-
+	//1. Test without a project file
 	t.Run("can't load project settings", func(t *testing.T) {
-		ghFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
-
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.ErrorContains(
 			t, err, "Loading project configuration: reading project file:")
-		os.Remove(ghFolder)
 	})
 
+	//2. Then create the project file
 	projectFileName := filepath.Join(tempDir, "azure.yaml")
-	projectFile, err := os.Create(projectFileName)
-	assert.NoError(t, err)
-	_, err = projectFile.WriteString("name: test\n")
-	assert.NoError(t, err)
-	defer projectFile.Close()
+	resetAzureYaml(t, projectFileName)
 
-	t.Run("from persisted data azdo error", func(t *testing.T) {
-		azdoFolderTest := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(azdoFolderTest, osutil.PermissionDirectory)
+	t.Run("no files - github selected", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
+
+		deleteYamlFiles(t, tempDir)
+
+		simulateUserInteraction(mockContext, gitHubLabel, true)
+
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.NotNil(t, manager)
+
+		verifyProvider(t, manager, gitHubLabel, err)
+
+		// Execute the initialize method, which should trigger the confirmation prompt
+		err = manager.initialize(ctx, "")
 		assert.NoError(t, err)
 
-		envValues := map[string]string{}
-		envValues[envPersistedKey] = azdoLabel
-		env := environment.NewWithValues("test-env", envValues)
+		// Check if the azure-dev.yml file was created in the expected path
+		gitHubYmlPath := filepath.Join(tempDir, gitHubYml)
+		assert.FileExists(t, gitHubYmlPath)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
-		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s folder is missing. Can't use selected provider", azdoFolder))
-
-		os.Remove(azdoFolderTest)
+		deleteYamlFiles(t, tempDir)
 	})
-	t.Run("from persisted data azdo yml error", func(t *testing.T) {
-		azdoFolderTest := filepath.Join(tempDir, azdoFolder)
-		err := os.MkdirAll(azdoFolderTest, osutil.PermissionDirectory)
+	t.Run("no files - github selected - empty workflows dir", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
+
+		deleteYamlFiles(t, tempDir)
+
+		simulateUserInteraction(mockContext, gitHubLabel, false)
+
+		_, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		// No error for GitHub, just a message to the console
 		assert.NoError(t, err)
+		assert.Contains(t,
+			mockContext.Console.Output(), fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
+				gitHubDisplayName, gitHubWorkflowsDirectory))
+	})
+	t.Run("no files - azdo selected - empty pipelines dir", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
+
+		deleteYamlFiles(t, tempDir)
+
+		simulateUserInteraction(mockContext, azdoLabel, false)
+
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.Nil(t, manager)
+		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files and try again.",
+			azdoDisplayName, azdoPipelinesDirectory))
+	})
+	t.Run("no files - azdo selected", func(t *testing.T) {
+
+		mockContext = resetContext(tempDir, ctx)
+
+		deleteYamlFiles(t, tempDir)
+
+		simulateUserInteraction(mockContext, azdoLabel, true)
+
+		// Initialize the PipelineManager
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.NotNil(t, manager)
+		assert.NoError(t, err)
+
+		// Execute the initialize method, which should trigger the confirmation prompt
+		err = manager.initialize(ctx, "")
+		verifyProvider(t, manager, azdoLabel, err)
+
+		// Check if the azure-dev.yml file was created in the expected path
+		azdoYmlPath := filepath.Join(tempDir, azdoYml)
+		assert.FileExists(t, azdoYmlPath)
+		deleteYamlFiles(t, tempDir)
+	})
+	t.Run("from persisted data azdo error", func(t *testing.T) {
+		// User selects Azure DevOps, but the required directory is missing
+		mockContext = resetContext(tempDir, ctx)
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = azdoLabel
 		env := environment.NewWithValues("test-env", envValues)
 
+		simulateUserInteraction(mockContext, azdoLabel, false)
+
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s file is missing in %s folder. Can't use selected provider",
-			azdoYml, azdoFolder))
-
-		os.Remove(azdoFolderTest)
+		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files and try again.",
+			azdoDisplayName, azdoPipelinesDirectory))
 	})
 	t.Run("from persisted data azdo", func(t *testing.T) {
-		azdoFolder := filepath.Join(tempDir, azdoFolder)
-		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
-
-		infraFolder := filepath.Join(tempDir, "infra")
-		err = os.MkdirAll(infraFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
-		file, err := os.Create(filepath.Join(infraFolder, "main.foo"))
-		file.Close()
-		assert.NoError(t, err)
-
-		file, err = os.Create(filepath.Join(tempDir, azdoYml))
-		file.Close()
-		assert.NoError(t, err)
+		// User has azdo persisted in env and they have the files
+		mockContext = resetContext(tempDir, ctx)
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = azdoLabel
 		env := environment.NewWithValues("test-env", envValues)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
-		assert.NoError(t, err)
-		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
+		simulateUserInteraction(mockContext, azdoLabel, true)
 
-		os.Remove(azdoFolder)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		verifyProvider(t, manager, azdoLabel, err)
+
+		deleteYamlFiles(t, tempDir)
 	})
-	t.Run("from persisted data github error", func(t *testing.T) {
-		azdoFolder := filepath.Join(tempDir, azdoFolder)
-		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+	t.Run("from persisted data github message", func(t *testing.T) {
+		// User selects Github, but the required directory is missing
+		mockContext = resetContext(tempDir, ctx)
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = gitHubLabel
 		env := environment.NewWithValues("test-env", envValues)
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
-		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s folder is missing. Can't use selected provider",
-			githubFolder))
 
-		os.Remove(azdoFolder)
+		simulateUserInteraction(mockContext, gitHubLabel, false)
+
+		_, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		// No error for GitHub, just a message to the console
+		assert.NoError(t, err)
+		assert.Contains(t,
+			mockContext.Console.Output(), fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
+				gitHubDisplayName, gitHubWorkflowsDirectory))
 	})
 	t.Run("from persisted data github", func(t *testing.T) {
-		azdoFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+		// User has azdo persisted in env and they have the files
+		mockContext = resetContext(tempDir, ctx)
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = gitHubLabel
 		env := environment.NewWithValues("test-env", envValues)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
-		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
+		simulateUserInteraction(mockContext, gitHubLabel, true)
 
-		os.Remove(azdoFolder)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+
+		verifyProvider(t, manager, gitHubLabel, err)
+
+		deleteYamlFiles(t, tempDir)
 	})
 	t.Run("unknown override value from arg", func(t *testing.T) {
-		ghFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+		// User provides an invalid provider name as an argument
+		mockContext = resetContext(tempDir, ctx)
+
+		simulateUserInteraction(mockContext, gitHubLabel, true)
 
 		args := &PipelineManagerArgs{
 			PipelineProvider: "other",
 		}
+
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, args)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "other is not a known pipeline provider")
 
-		// Remove folder - reset state
-		os.Remove(ghFolder)
+		deleteYamlFiles(t, tempDir)
 	})
 	t.Run("unknown override value from env", func(t *testing.T) {
-		ghFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+		// User provides an invalid provider name in env
+		mockContext = resetContext(tempDir, ctx)
+
+		simulateUserInteraction(mockContext, gitHubLabel, true)
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "other"
@@ -183,37 +209,28 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "other is not a known pipeline provider")
 
-		// Remove folder - reset state
-		os.Remove(ghFolder)
+		deleteYamlFiles(t, tempDir)
 	})
 	t.Run("unknown override value from yaml", func(t *testing.T) {
-		ghFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+		mockContext = resetContext(tempDir, ctx)
 
-		_, err = projectFile.WriteString("pipeline:\n\r  provider: other")
-		assert.NoError(t, err)
+		simulateUserInteraction(mockContext, gitHubLabel, true)
+
+		appendToAzureYaml(t, projectFileName, "pipeline:\n\r  provider: other")
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "other is not a known pipeline provider")
 
-		// Remove folder - reset state
-		os.Remove(ghFolder)
-		projectFile.Close()
-		os.Remove(projectFileName)
-		projectFile, err = os.Create(projectFileName)
-		assert.NoError(t, err)
-		_, err = projectFile.WriteString("name: test\n")
-		assert.NoError(t, err)
+		resetAzureYaml(t, projectFileName)
+		deleteYamlFiles(t, tempDir)
 	})
 	t.Run("override persisted value with yaml", func(t *testing.T) {
-		ghFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+		mockContext = resetContext(tempDir, ctx)
 
-		_, err = projectFile.WriteString("pipeline:\n\r  provider: fromYaml")
-		assert.NoError(t, err)
+		simulateUserInteraction(mockContext, gitHubLabel, true)
+
+		appendToAzureYaml(t, projectFileName, "pipeline:\n\r  provider: fromYaml")
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "persisted"
@@ -223,22 +240,15 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "fromYaml is not a known pipeline provider")
 
-		// Remove folder - reset state
-		os.Remove(ghFolder)
-		projectFile.Close()
-		os.Remove(projectFileName)
-		projectFile, err = os.Create(projectFileName)
-		assert.NoError(t, err)
-		_, err = projectFile.WriteString("name: test\n")
-		assert.NoError(t, err)
+		resetAzureYaml(t, projectFileName)
+		deleteYamlFiles(t, tempDir)
 	})
 	t.Run("override persisted and yaml with arg", func(t *testing.T) {
-		ghFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+		mockContext = resetContext(tempDir, ctx)
 
-		_, err = projectFile.WriteString("pipeline:\n\r  provider: fromYaml")
-		assert.NoError(t, err)
+		simulateUserInteraction(mockContext, gitHubLabel, true)
+
+		appendToAzureYaml(t, projectFileName, "pipeline:\n\r  provider: fromYaml")
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "persisted"
@@ -251,59 +261,76 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "arg is not a known pipeline provider")
 
-		// Remove folder - reset state
-		os.Remove(ghFolder)
-		projectFile.Close()
-		os.Remove(projectFileName)
-		projectFile, err = os.Create(projectFileName)
-		assert.NoError(t, err)
-		_, err = projectFile.WriteString("name: test\n")
-		assert.NoError(t, err)
+		resetAzureYaml(t, projectFileName)
+		deleteYamlFiles(t, tempDir)
 	})
-	t.Run("github folder only", func(t *testing.T) {
-		ghFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+	t.Run("github directory only", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
+
+		simulateUserInteraction(mockContext, gitHubLabel, true)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
-		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
 
-		os.Remove(ghFolder)
+		verifyProvider(t, manager, gitHubLabel, err)
+
+		deleteYamlFiles(t, tempDir)
 	})
-	t.Run("azdo folder only", func(t *testing.T) {
-		azdoFolder := filepath.Join(tempDir, azdoFolder)
-		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+	t.Run("azdo directory only", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
+
+		simulateUserInteraction(mockContext, azdoLabel, true)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
-		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
 
-		os.Remove(azdoFolder)
+		verifyProvider(t, manager, azdoLabel, err)
+
+		deleteYamlFiles(t, tempDir)
 	})
-	t.Run("both folders and not arguments", func(t *testing.T) {
-		ghFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
-		azdoFolder := filepath.Join(tempDir, azdoFolder)
-		err = os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+	t.Run("both files - user selects GitHub", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
 
+		createYamlFiles(t, tempDir)
+
+		simulateUserInteraction(mockContext, gitHubLabel, true)
+
+		// Initialize the PipelineManager
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
-		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
+		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
-		os.Remove(ghFolder)
-		os.Remove(azdoFolder)
+		// Execute the initialize method, which should trigger the provider selection prompt
+		err = manager.initialize(ctx, "")
+
+		verifyProvider(t, manager, gitHubLabel, err)
+
+		deleteYamlFiles(t, tempDir)
 	})
+
+	t.Run("both files - user selects azdo", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
+
+		createYamlFiles(t, tempDir)
+
+		simulateUserInteraction(mockContext, azdoLabel, true)
+
+		// Initialize the PipelineManager
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.NotNil(t, manager)
+		assert.NoError(t, err)
+
+		// Execute the initialize method, which should trigger the provider selection prompt
+		err = manager.initialize(ctx, "")
+
+		verifyProvider(t, manager, azdoLabel, err)
+
+		deleteYamlFiles(t, tempDir)
+	})
+
 	t.Run("persist selection on environment", func(t *testing.T) {
-		azdoFolder := filepath.Join(tempDir, azdoFolder)
-		err = os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+
+		mockContext = resetContext(tempDir, ctx)
+
+		simulateUserInteraction(mockContext, azdoLabel, true)
 
 		env := environment.New("test")
 		args := &PipelineManagerArgs{
@@ -311,9 +338,8 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		}
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, args)
-		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
+
+		verifyProvider(t, manager, azdoLabel, err)
 
 		envValue, found := env.Dotenv()[envPersistedKey]
 		assert.True(t, found)
@@ -321,44 +347,37 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		// Calling function again with same env and without override arg should use the persisted
 		err = manager.initialize(*mockContext.Context, "")
-		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
 
-		os.Remove(azdoFolder)
+		verifyProvider(t, manager, azdoLabel, err)
+
+		deleteYamlFiles(t, tempDir)
 	})
 	t.Run("persist selection on environment and override with yaml", func(t *testing.T) {
-		azdoFolder := filepath.Join(tempDir, azdoFolder)
-		err = os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
-		ghFolder := filepath.Join(tempDir, githubFolder)
-		err = os.MkdirAll(ghFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
+
+		mockContext = resetContext(tempDir, ctx)
+
+		createYamlFiles(t, tempDir)
 
 		env := environment.New("test")
 		args := &PipelineManagerArgs{
 			PipelineProvider: azdoLabel,
 		}
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, args)
-		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
+
+		verifyProvider(t, manager, azdoLabel, err)
 
 		// Calling function again with same env and without override arg should use the persisted
 		err = manager.initialize(*mockContext.Context, "")
-		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
+
+		verifyProvider(t, manager, azdoLabel, err)
 
 		// Write yaml to override
-		_, err = projectFile.WriteString("pipeline:\n\r  provider: github")
-		assert.NoError(t, err)
+		appendToAzureYaml(t, projectFileName, "pipeline:\n\r  provider: github")
 
 		// Calling function again with same env and without override arg should detect yaml change and override persisted
 		err = manager.initialize(*mockContext.Context, "")
-		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
+
+		verifyProvider(t, manager, gitHubLabel, err)
 
 		// the persisted choice should be updated based on the value set on yaml
 		envValue, found := env.Dotenv()[envPersistedKey]
@@ -367,15 +386,11 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		// Call again to check persisted(github) after one change (and yaml is still present)
 		err = manager.initialize(*mockContext.Context, "")
-		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
+		verifyProvider(t, manager, gitHubLabel, err)
 
 		// Check argument override having yaml(github) config and persisted config(github)
 		err = manager.initialize(*mockContext.Context, azdoLabel)
-		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
+		verifyProvider(t, manager, azdoLabel, err)
 
 		// the persisted selection is now azdo(env) but yaml is github
 		envValue, found = env.Dotenv()[envPersistedKey]
@@ -385,16 +400,12 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		// persisted = azdo (per last run) and yaml = github, should return github
 		// as yaml overrides a persisted run
 		err = manager.initialize(*mockContext.Context, "")
-		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
-		assert.NoError(t, err)
+		verifyProvider(t, manager, gitHubLabel, err)
 
 		// reset state
-		projectFile.Close()
-		os.Remove(projectFileName)
+		resetAzureYaml(t, projectFileName)
 
-		os.Remove(azdoFolder)
-		os.Remove(ghFolder)
+		deleteYamlFiles(t, tempDir)
 	})
 }
 
@@ -467,5 +478,168 @@ func setupGitCliMocks(mockContext *mocks.MockContext, repoPath string) {
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, repoPath, ""), nil
 	})
+}
 
+func resetAzureYaml(t *testing.T, projectFilePath string) {
+	// Default content to write
+	defaultContent := "name: test\n"
+
+	// Create or reset the file with default content
+	projectFile, err := os.Create(projectFilePath)
+	if err != nil {
+		t.Fatalf("Failed to create or reset azure.yaml file: %v", err)
+	}
+
+	// Write the default content to the file
+	_, err = projectFile.WriteString(defaultContent)
+	if err != nil {
+		projectFile.Close() // Ensure the file is closed before handling the error
+		t.Fatalf("Failed to write default content to azure.yaml file: %v", err)
+	}
+
+	err = projectFile.Close()
+	if err != nil {
+		t.Fatalf("Failed to close azure.yaml file: %v", err)
+	}
+}
+
+func appendToAzureYaml(t *testing.T, projectFilePath string, content string) {
+	// Open the file in append mode
+	projectFile, err := os.OpenFile(projectFilePath, os.O_APPEND|os.O_WRONLY, osutil.PermissionFile)
+	if err != nil {
+		t.Fatalf("Failed to open azure.yaml file for appending: %v", err)
+	}
+
+	// Append the provided content to the file
+	_, err = projectFile.WriteString(content)
+	if err != nil {
+		projectFile.Close() // Ensure the file is closed before handling the error
+		t.Fatalf("Failed to append content to azure.yaml file: %v", err)
+	}
+
+	err = projectFile.Close()
+	if err != nil {
+		t.Fatalf("Failed to close azure.yaml file: %v", err)
+	}
+}
+
+func resetContext(tempDir string, ctx context.Context) *mocks.MockContext {
+	newMockContext := mocks.NewMockContext(ctx)
+	setupGithubCliMocks(newMockContext)
+	setupGitCliMocks(newMockContext, tempDir)
+	return newMockContext
+}
+
+func createYamlFiles(t *testing.T, tempDir string, createOptions ...string) {
+	shouldCreateGitHub := true
+	shouldCreateAzdo := true
+
+	if len(createOptions) > 0 {
+		shouldCreateGitHub = false
+		shouldCreateAzdo = false
+		for _, option := range createOptions {
+			switch option {
+			case gitHubLabel:
+				shouldCreateGitHub = true
+			case azdoLabel:
+				shouldCreateAzdo = true
+			}
+		}
+	}
+
+	if shouldCreateGitHub {
+		// Create the GitHub Actions directory and file
+		ghDirectory := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(ghDirectory, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		ghYmlFile := filepath.Join(ghDirectory, defaultPipelineFileName)
+		file, err := os.Create(ghYmlFile)
+		assert.NoError(t, err)
+		err = file.Close()
+		assert.NoError(t, err)
+	}
+
+	if shouldCreateAzdo {
+		// Create the Azure DevOps directory and file
+		azdoDirectory := filepath.Join(tempDir, azdoPipelinesDirectory)
+		err := os.MkdirAll(azdoDirectory, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		azdoYmlFile := filepath.Join(azdoDirectory, defaultPipelineFileName)
+		file, err := os.Create(azdoYmlFile)
+		assert.NoError(t, err)
+		err = file.Close()
+		assert.NoError(t, err)
+	}
+}
+
+func deleteYamlFiles(t *testing.T, tempDir string, deleteOptions ...string) {
+	shouldDeleteGitHub := true
+	shouldDeleteAzdo := true
+
+	if len(deleteOptions) > 0 {
+		shouldDeleteGitHub = false
+		shouldDeleteAzdo = false
+		for _, option := range deleteOptions {
+			switch option {
+			case gitHubLabel:
+				shouldDeleteGitHub = true
+			case azdoLabel:
+				shouldDeleteAzdo = true
+			}
+		}
+	}
+
+	if shouldDeleteGitHub {
+		// Delete the GitHub Actions directory and file
+		ghDirectory := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.RemoveAll(ghDirectory)
+		assert.NoError(t, err)
+	}
+
+	if shouldDeleteAzdo {
+		// Delete the Azure DevOps directory and file
+		azdoDirectory := filepath.Join(tempDir, azdoPipelinesDirectory)
+		err := os.RemoveAll(azdoDirectory)
+		assert.NoError(t, err)
+	}
+}
+
+func simulateUserInteraction(mockContext *mocks.MockContext, providerLabel string, createConfirmation bool) {
+	var providerIndex int
+
+	switch providerLabel {
+	case gitHubLabel:
+		providerIndex = 0
+	case azdoLabel:
+		providerIndex = 1
+	default:
+		providerIndex = 0
+	}
+
+	// Simulate the user selecting the CI/CD provider
+	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "Select a provider:")
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		return providerIndex, nil
+	})
+
+	// Simulate the user responding to the creation confirmation
+	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "Would you like")
+	}).Respond(createConfirmation)
+}
+
+func verifyProvider(t *testing.T, manager *PipelineManager, providerLabel string, err error) {
+	assert.NoError(t, err)
+
+	switch providerLabel {
+	case gitHubLabel:
+		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
+	case azdoLabel:
+		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
+	default:
+		t.Fatalf("%s is not a known pipeline provider", providerLabel)
+	}
 }

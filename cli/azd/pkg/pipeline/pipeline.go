@@ -6,7 +6,6 @@ package pipeline
 import (
 	"context"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 
@@ -159,30 +158,20 @@ func mergeProjectVariablesAndSecrets(
 	return variables, secrets
 }
 
-func folderExists(folderPath string) bool {
-	if _, err := os.Stat(folderPath); err == nil {
-		return true
-	}
-	return false
-}
-
-func ymlExists(ymlPath string) bool {
-	info, err := os.Stat(ymlPath)
-	// if it is a file with no error
-	if err == nil && info.Mode().IsRegular() {
-		return true
-	}
-	return false
-}
-
 const (
-	gitHubLabel     string = "github"
-	azdoLabel       string = "azdo"
-	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
+	gitHubDisplayName       string = "GitHub"
+	azdoDisplayName         string = "Azure DevOps"
+	gitHubLabel             string = "github"
+	azdoLabel               string = "azdo"
+	envPersistedKey         string = "AZD_PIPELINE_PROVIDER"
+	defaultPipelineFileName string = "azure-dev.yml"
+	gitHubDirectory         string = ".github"
+	azdoDirectory           string = ".azdo"
 )
 
 var (
-	githubFolder string = filepath.Join(".github", "workflows")
-	azdoFolder   string = filepath.Join(".azdo", "pipelines")
-	azdoYml      string = filepath.Join(azdoFolder, "azure-dev.yml")
+	gitHubWorkflowsDirectory string = filepath.Join(gitHubDirectory, "workflows")
+	azdoPipelinesDirectory   string = filepath.Join(azdoDirectory, "pipelines")
+	gitHubYml                string = filepath.Join(gitHubWorkflowsDirectory, defaultPipelineFileName)
+	azdoYml                  string = filepath.Join(azdoPipelinesDirectory, defaultPipelineFileName)
 )

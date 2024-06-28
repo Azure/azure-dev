@@ -110,7 +110,7 @@ func (p *AzdoScmProvider) saveEnvironmentConfig(ctx context.Context, key string,
 
 // name returns the name of the provider
 func (p *AzdoScmProvider) Name() string {
-	return "Azure DevOps"
+	return azdoDisplayName
 }
 
 // ***  scmProvider implementation ******
@@ -692,7 +692,7 @@ func (p *AzdoCiProvider) preConfigureCheck(
 
 // name returns the name of the provider.
 func (p *AzdoCiProvider) Name() string {
-	return "Azure DevOps"
+	return azdoDisplayName
 }
 
 // ***  ciProvider implementation ******

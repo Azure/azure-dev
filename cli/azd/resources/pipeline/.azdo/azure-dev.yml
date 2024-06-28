@@ -13,7 +13,7 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-  - task: setup-azd@0
+  - task: setup-azd@0 
     displayName: Install azd
 
   # If you can't install above task in your organization, you can comment it and uncomment below task to install azd
@@ -41,12 +41,6 @@ steps:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
       AZURE_ENV_NAME: $(AZURE_ENV_NAME)
       AZURE_LOCATION: $(AZURE_LOCATION)
-      ARM_TENANT_ID: $(ARM_TENANT_ID)
-      ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-      ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-      RS_RESOURCE_GROUP: $(RS_RESOURCE_GROUP)
-      RS_STORAGE_ACCOUNT: $(RS_STORAGE_ACCOUNT)
-      RS_CONTAINER_NAME: $(RS_CONTAINER_NAME)
       AZD_INITIAL_ENVIRONMENT_CONFIG: $(secrets.AZD_INITIAL_ENVIRONMENT_CONFIG)
 
   - task: AzureCLI@2

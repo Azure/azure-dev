@@ -2,10 +2,13 @@ package storage
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azfile/service"
@@ -15,7 +18,7 @@ import (
 
 type FileShareService interface {
 	// Upload files from source path to a file share
-	UploadPath(ctx context.Context, subId, fileShareUrl, source, dest string) error
+	UploadPath(ctx context.Context, subId, shareUrl, source string) error
 }
 
 func NewFileShareService(
@@ -33,12 +36,30 @@ type fileShareClient struct {
 	options      *arm.ClientOptions
 }
 
-// UploadPath implements FileShareService.
-func (f *fileShareClient) UploadPath(ctx context.Context, subId, fileShareUrl, source, dest string) error {
+func (f *fileShareClient) UploadPath(ctx context.Context, subId, shareUrl, source string) error {
 	credential, err := f.accountCreds.CredentialForSubscription(ctx, subId)
 	if err != nil {
 		return err
 	}
+
+	return filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			destination := strings.TrimPrefix(path, source+string(filepath.Separator))
+			if err := f.uploadFile(ctx, subId, shareUrl, path, destination, credential); err != nil {
+				return fmt.Errorf("error uploading file to file share: %w", err)
+			}
+		}
+		return nil
+	})
+
+}
+
+// uploadFile implements FileShareService.
+func (f *fileShareClient) uploadFile(
+	ctx context.Context, subId, fileShareUrl, source, dest string, credential azcore.TokenCredential) error {
 
 	client, err := share.NewClient(fileShareUrl, credential, &share.ClientOptions{
 		ClientOptions:     f.options.ClientOptions,

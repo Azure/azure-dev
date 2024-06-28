@@ -6,11 +6,10 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -156,20 +155,13 @@ type azdOperationsModel struct {
 }
 
 func azdOperations(infraPath string, env environment.Environment) (azdOperationsModel, error) {
-	// Check if the file exists
 	path := filepath.Join(infraPath, azdOperationsFileName)
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			// File does not exist
-			return azdOperationsModel{}, nil
-		}
-		// Error occurred while checking file status
-		return azdOperationsModel{}, err
-	}
-
-	// Read the file
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// file not found is not an error, there's just nothing to do
+			return azdOperationsModel{}, nil
+		}
 		return azdOperationsModel{}, err
 	}
 
@@ -222,19 +214,7 @@ func bindMountOperation(
 	cloud, subId, storageAccount, fileShareName, source string) error {
 
 	shareUrl := fmt.Sprintf("https://%s.file.%s/%s", storageAccount, cloud, fileShareName)
-
-	return filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			destination := strings.TrimPrefix(path, source+string(filepath.Separator))
-			if err := fileShareService.UploadPath(ctx, subId, shareUrl, path, destination); err != nil {
-				return fmt.Errorf("error uploading files to file share: %w", err)
-			}
-		}
-		return nil
-	})
+	return fileShareService.UploadPath(ctx, subId, shareUrl, source)
 }
 
 // Preview generates the list of changes to be applied as part of the provisioning.

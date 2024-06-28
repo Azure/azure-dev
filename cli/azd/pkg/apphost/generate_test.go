@@ -290,10 +290,10 @@ func TestAspireContainerGeneration(t *testing.T) {
 		})
 	}
 
-	files, err := BicepTemplate("main", m, AppHostOptions{})
-	require.Error(t, provisioning.ErrBindMountOperationDisabled)
+	_, err = BicepTemplate("main", m, AppHostOptions{})
+	require.Error(t, err, provisioning.ErrBindMountOperationDisabled)
 
-	files, err = BicepTemplate("main", m, AppHostOptions{
+	files, err := BicepTemplate("main", m, AppHostOptions{
 		AzdOperations: true,
 	})
 	require.NoError(t, err)

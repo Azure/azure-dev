@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -290,6 +291,11 @@ func TestAspireContainerGeneration(t *testing.T) {
 	}
 
 	files, err := BicepTemplate("main", m, AppHostOptions{})
+	require.Error(t, provisioning.ErrBindMountOperationDisabled)
+
+	files, err = BicepTemplate("main", m, AppHostOptions{
+		AzdOperations: true,
+	})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {

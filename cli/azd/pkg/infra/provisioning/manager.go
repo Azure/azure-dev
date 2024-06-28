@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"gopkg.in/yaml.v3"
@@ -78,6 +79,8 @@ func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResul
 	return result, nil
 }
 
+var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
+
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	// Apply the infrastructure deployment
@@ -100,30 +103,19 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(m.projectPath, m.options.Path)
 	}
-	fileShareUploadOperations, err := azdFileShareUploadOperations(infraRoot, *m.env)
-	if err != nil {
-		return nil, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
+	bindMountOperations, err := azdFileShareUploadOperations(infraRoot, *m.env)
+	azdOperationsEnabled := m.alphaFeatureManager.IsEnabled(AzdOperationsFeatureKey)
+	if !azdOperationsEnabled && len(bindMountOperations) > 0 {
+		m.console.Message(ctx, ErrBindMountOperationDisabled.Error())
 	}
-
-	if len(fileShareUploadOperations) > 0 {
-		m.console.ShowSpinner(ctx, "uploading files to fileShare", input.StepFailed)
-	}
-	for _, op := range fileShareUploadOperations {
-		if err := bindMountOperation(
-			ctx,
-			m.fileShareService,
-			m.cloud.StorageEndpointSuffix,
-			m.env.GetSubscriptionId(),
-			op.StorageAccount,
-			op.FileShareName,
-			op.Path); err != nil {
-			return nil, fmt.Errorf("error binding mount: %w", err)
+	if azdOperationsEnabled {
+		if err != nil {
+			return nil, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
 		}
-		m.console.MessageUxItem(ctx, &ux.DisplayedResource{
-			Type:  fileShareUploadOperation,
-			Name:  op.Description,
-			State: ux.SucceededState,
-		})
+		if err := doBindMountOperation(
+			ctx, bindMountOperations, *m.env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix); err != nil {
+			return nil, fmt.Errorf("error running bind mount operation: %w", err)
+		}
 	}
 
 	// make sure any spinner is stopped
@@ -206,6 +198,48 @@ func azdFileShareUploadOperations(infraPath string, env environment.Environment)
 		}
 	}
 	return fileShareUploadOperations, nil
+}
+
+var ErrAzdOperationsNotEnabled = fmt.Errorf(fmt.Sprintf(
+	"azd operations (alpha feature) is required but disabled. You can enable azd operations by running: %s",
+	output.WithGrayFormat(alpha.GetEnableCommand(AzdOperationsFeatureKey))))
+
+var ErrBindMountOperationDisabled = fmt.Errorf(
+	"%sYour project has bind mounts.\n  - %w\n%s\n",
+	output.WithWarningFormat("*Note: "),
+	ErrAzdOperationsNotEnabled,
+	output.WithWarningFormat("Ignoring bind mounts."),
+)
+
+func doBindMountOperation(
+	ctx context.Context,
+	fileShareUploadOperations []azdOperationFileShareUpload,
+	env environment.Environment,
+	console input.Console,
+	fileShareService storage.FileShareService,
+	cloudStorageEndpointSuffix string,
+) error {
+	if len(fileShareUploadOperations) > 0 {
+		console.ShowSpinner(ctx, "uploading files to fileShare", input.StepFailed)
+	}
+	for _, op := range fileShareUploadOperations {
+		if err := bindMountOperation(
+			ctx,
+			fileShareService,
+			cloudStorageEndpointSuffix,
+			env.GetSubscriptionId(),
+			op.StorageAccount,
+			op.FileShareName,
+			op.Path); err != nil {
+			return fmt.Errorf("error binding mount: %w", err)
+		}
+		console.MessageUxItem(ctx, &ux.DisplayedResource{
+			Type:  fileShareUploadOperation,
+			Name:  op.Description,
+			State: ux.SucceededState,
+		})
+	}
+	return nil
 }
 
 func bindMountOperation(

@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
@@ -179,6 +180,7 @@ func BuildContainers(manifest *Manifest) (map[string]genBuildContainer, error) {
 }
 
 type AppHostOptions struct {
+	AzdOperations bool
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
@@ -305,10 +307,16 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 
 	// azd operations
 	if generator.bicepContext.HasBindMounts {
-		if err := executeToFS(
-			fs, genTemplates, "azd.operations.yaml", "azd.operations.yaml", generator.bicepContext); err != nil {
-			return nil, fmt.Errorf("generating infra/azd.operations.yaml: %w", err)
+		if options.AzdOperations {
+			if err := executeToFS(
+				fs, genTemplates, "azd.operations.yaml", "azd.operations.yaml", generator.bicepContext); err != nil {
+				return nil, fmt.Errorf("generating infra/azd.operations.yaml: %w", err)
+			}
+		} else {
+			// returning fs because this error can be handled by the caller as expected
+			return fs, provisioning.ErrBindMountOperationDisabled
 		}
+
 	}
 
 	return fs, nil

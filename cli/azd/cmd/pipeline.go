@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -62,6 +63,14 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 		pipeline.DefaultRoleNames,
 		"The roles to assign to the service principal. By default the service principal will be granted the Contributor and User Access Administrator roles.",
 	)
+
+	local.DurationVar(
+		&pc.PipelineClientSecretDuration,
+		"client-secret-duration",
+		time.Duration(180*time.Hour*24),
+		"The duration for which the client secret should be valid. The default is 180 days.",
+	)
+
 	// default provider is empty because it can be set from azure.yaml. By letting default here be empty, we know that
 	// there no customer input using --provider
 	local.StringVar(&pc.PipelineProvider, "provider", "",

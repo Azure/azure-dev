@@ -172,13 +172,15 @@ func (c *ApplicationItemRequestBuilder) RemovePassword(ctx context.Context, keyI
 	return nil
 }
 
-func (c *ApplicationItemRequestBuilder) AddPassword(ctx context.Context) (*ApplicationPasswordCredential, error) {
+func (c *ApplicationItemRequestBuilder) AddPassword(
+	ctx context.Context, lifetime time.Duration,
+) (*ApplicationPasswordCredential, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodPost, fmt.Sprintf("%s/applications/%s/addPassword", c.client.host, c.id))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
 
-	endDateTime := time.Now().Add(time.Hour * 24 * 180)
+	endDateTime := time.Now().Add(lifetime)
 	addPasswordRequest := ApplicationAddPasswordRequest{
 		PasswordCredential: ApplicationPasswordCredential{
 			DisplayName: convert.RefOf("Azure Developer CLI"),

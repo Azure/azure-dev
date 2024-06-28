@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -483,6 +484,7 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
 			*mockApplication.AppId,
+			180*24*time.Hour,
 		)
 		require.NoError(t, err)
 		require.NotNil(t, credentials)
@@ -505,6 +507,7 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
 			*mockApplication.AppId,
+			180*24*time.Hour,
 		)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed finding matching application")
@@ -531,6 +534,7 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
 			*mockApplication.AppId,
+			180*24*time.Hour,
 		)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed removing credentials")
@@ -558,6 +562,7 @@ func Test_ResetPasswordCredentials(t *testing.T) {
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
 			*mockApplication.AppId,
+			180*24*time.Hour,
 		)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed adding new password credential")

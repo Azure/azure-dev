@@ -50,6 +50,7 @@ type AdService interface {
 		ctx context.Context,
 		subscriptionId string,
 		appId string,
+		duration time.Duration,
 	) (*AzureCredentials, error)
 	ApplyFederatedCredentials(
 		ctx context.Context,
@@ -136,6 +137,7 @@ func (ad *adService) ResetPasswordCredentials(
 	ctx context.Context,
 	subscriptionId string,
 	appId string,
+	duration time.Duration,
 ) (*AzureCredentials, error) {
 	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
 	if err != nil {
@@ -164,7 +166,7 @@ func (ad *adService) ResetPasswordCredentials(
 
 	credential, err := graphClient.
 		ApplicationById(*application.Id).
-		AddPassword(ctx)
+		AddPassword(ctx, duration)
 
 	if err != nil {
 		return nil, fmt.Errorf(

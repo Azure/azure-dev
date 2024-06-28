@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -188,7 +189,7 @@ func TestApplicationAddPassword(t *testing.T) {
 
 		actual, err := client.
 			ApplicationById(*application.Id).
-			AddPassword(*mockContext.Context)
+			AddPassword(*mockContext.Context, 180*234*time.Hour)
 
 		require.NoError(t, err)
 		require.NotNil(t, actual)
@@ -206,7 +207,7 @@ func TestApplicationAddPassword(t *testing.T) {
 
 		actual, err := client.
 			ApplicationById("bad-app-id").
-			AddPassword(*mockContext.Context)
+			AddPassword(*mockContext.Context, 180*24*time.Hour)
 
 		require.Error(t, err)
 		require.Nil(t, actual)

@@ -59,7 +59,7 @@ func (s *environmentService) LoadEnvironmentAsync(
 }
 
 func (s *environmentService) loadEnvironmentAsync(
-	ctx context.Context, container *container, name string, mustLoadServices bool,
+	ctx context.Context, container *container, name string, mustLoentraIdServices bool,
 ) (*Environment, error) {
 	var c struct {
 		azdCtx         *azdcontext.AzdContext  `container:"type"`
@@ -113,7 +113,7 @@ func (s *environmentService) loadEnvironmentAsync(
 
 	// If we would have to discover the app host or load the manifest from disk and the caller did not request it
 	// skip this somewhat expensive operation, at the expense of not building out the services array.
-	if !mustLoadServices {
+	if !mustLoentraIdServices {
 		return ret, nil
 	}
 

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -19,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -427,7 +427,7 @@ func createPipelineManager(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, env).Return(nil)
 
-	adService := azcli.NewAdService(
+	entraIdService := entraid.NewEntraIdService(
 		mockContext.SubscriptionCredentialProvider,
 		mockContext.ArmClientOptions,
 		mockContext.CoreClientOptions,
@@ -438,7 +438,7 @@ func createPipelineManager(
 	ioc.RegisterInstance(mockContext.Container, azdContext)
 	ioc.RegisterInstance[environment.Manager](mockContext.Container, envManager)
 	ioc.RegisterInstance(mockContext.Container, env)
-	ioc.RegisterInstance(mockContext.Container, adService)
+	ioc.RegisterInstance(mockContext.Container, entraIdService)
 	ioc.RegisterInstance[account.SubscriptionCredentialProvider](
 		mockContext.Container,
 		mockContext.SubscriptionCredentialProvider,
@@ -461,7 +461,7 @@ func createPipelineManager(
 	return NewPipelineManager(
 		*mockContext.Context,
 		envManager,
-		adService,
+		entraIdService,
 		git.NewGitCli(mockContext.CommandRunner),
 		azdContext,
 		env,

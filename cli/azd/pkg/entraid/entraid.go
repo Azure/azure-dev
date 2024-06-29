@@ -1,4 +1,4 @@
-package azcli
+package entraid
 
 import (
 	"context"
@@ -33,8 +33,8 @@ type AzureCredentials struct {
 	TenantId       string `json:"tenantId"`
 }
 
-// AdService provides actions on top of Azure Active Directory (AD)
-type AdService interface {
+// EntraIdService provides actions on top of Azure Active Directory (AD)
+type EntraIdService interface {
 	GetServicePrincipal(
 		ctx context.Context,
 		subscriptionId string,
@@ -44,7 +44,7 @@ type AdService interface {
 		ctx context.Context,
 		subscriptionId string,
 		appIdOrName string,
-		rolesToAssign []string,
+		options CreateOrUpdateServicePrincipalOptions,
 	) (*graphsdk.ServicePrincipal, error)
 	ResetPasswordCredentials(
 		ctx context.Context,
@@ -59,20 +59,20 @@ type AdService interface {
 	) ([]*graphsdk.FederatedIdentityCredential, error)
 }
 
-type adService struct {
+type entraIdService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	clientCache        map[string]*graphsdk.GraphClient
 	armClientOptions   *arm.ClientOptions
 	coreClientOptions  *azcore.ClientOptions
 }
 
-// Creates a new instance of the AdService
-func NewAdService(
+// Creates a new instance of the EntraIdService
+func NewEntraIdService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	armClientOptions *arm.ClientOptions,
 	coreClientOptions *azcore.ClientOptions,
-) AdService {
-	return &adService{
+) EntraIdService {
+	return &entraIdService{
 		credentialProvider: credentialProvider,
 		clientCache:        map[string]*graphsdk.GraphClient{},
 		armClientOptions:   armClientOptions,
@@ -81,7 +81,7 @@ func NewAdService(
 }
 
 // GetServicePrincipal gets the service principal for the specified application ID or name
-func (ad *adService) GetServicePrincipal(
+func (ad *entraIdService) GetServicePrincipal(
 	ctx context.Context,
 	subscriptionId string,
 	appIdOrName string,
@@ -94,11 +94,16 @@ func (ad *adService) GetServicePrincipal(
 	return ad.getServicePrincipal(ctx, subscriptionId, application)
 }
 
-func (ad *adService) CreateOrUpdateServicePrincipal(
+type CreateOrUpdateServicePrincipalOptions struct {
+	RolesToAssign []string
+	Description   string
+}
+
+func (ad *entraIdService) CreateOrUpdateServicePrincipal(
 	ctx context.Context,
 	subscriptionId string,
 	appIdOrName string,
-	roleNames []string,
+	options CreateOrUpdateServicePrincipalOptions,
 ) (*graphsdk.ServicePrincipal, error) {
 	var application *graphsdk.Application
 	var err error
@@ -122,7 +127,7 @@ func (ad *adService) CreateOrUpdateServicePrincipal(
 	}
 
 	// Apply specified role assignments
-	err = ad.ensureRoleAssignments(ctx, subscriptionId, roleNames, servicePrincipal)
+	err = ad.ensureRoleAssignments(ctx, subscriptionId, options.RolesToAssign, servicePrincipal)
 	if err != nil {
 		return nil, fmt.Errorf("failed applying role assignment: %w", err)
 	}
@@ -132,7 +137,7 @@ func (ad *adService) CreateOrUpdateServicePrincipal(
 
 // Removes any existing password credentials from the application
 // and creates a new password credential
-func (ad *adService) ResetPasswordCredentials(
+func (ad *entraIdService) ResetPasswordCredentials(
 	ctx context.Context,
 	subscriptionId string,
 	appId string,
@@ -182,7 +187,7 @@ func (ad *adService) ResetPasswordCredentials(
 	}, nil
 }
 
-func (ad *adService) ApplyFederatedCredentials(
+func (ad *entraIdService) ApplyFederatedCredentials(
 	ctx context.Context,
 	subscriptionId string,
 	clientId string,
@@ -231,7 +236,7 @@ func (ad *adService) ApplyFederatedCredentials(
 	return createdCredentials, nil
 }
 
-func (ad *adService) getApplicationByNameOrId(
+func (ad *entraIdService) getApplicationByNameOrId(
 	ctx context.Context,
 	subscriptionId string,
 	appIdOrName string,
@@ -251,7 +256,7 @@ func (ad *adService) getApplicationByNameOrId(
 	return application, nil
 }
 
-func (ad *adService) getApplicationByAppId(
+func (ad *entraIdService) getApplicationByAppId(
 	ctx context.Context,
 	subscriptionId string,
 	appId string,
@@ -272,7 +277,7 @@ func (ad *adService) getApplicationByAppId(
 	return application, nil
 }
 
-func (ad *adService) getApplicationByName(
+func (ad *entraIdService) getApplicationByName(
 	ctx context.Context,
 	subscriptionId string,
 	applicationName string,
@@ -303,7 +308,7 @@ func (ad *adService) getApplicationByName(
 }
 
 // Gets or creates an application with the specified name
-func (ad *adService) createApplication(
+func (ad *entraIdService) createApplication(
 	ctx context.Context,
 	subscriptionId string,
 	applicationName string,
@@ -328,7 +333,7 @@ func (ad *adService) createApplication(
 	return newApp, nil
 }
 
-func (ad *adService) getServicePrincipal(
+func (ad *entraIdService) getServicePrincipal(
 	ctx context.Context,
 	subscriptionId string,
 	application *graphsdk.Application,
@@ -359,7 +364,7 @@ func (ad *adService) getServicePrincipal(
 }
 
 // Gets or creates a service principal for the specified application name
-func (ad *adService) ensureServicePrincipal(
+func (ad *entraIdService) ensureServicePrincipal(
 	ctx context.Context,
 	subscriptionId string,
 	application *graphsdk.Application,
@@ -390,7 +395,7 @@ func (ad *adService) ensureServicePrincipal(
 }
 
 // Ensures that the federated credential exists on the application otherwise create a new one
-func (ad *adService) ensureFederatedCredential(
+func (ad *entraIdService) ensureFederatedCredential(
 	ctx context.Context,
 	subscriptionId string,
 	application *graphsdk.Application,
@@ -428,7 +433,7 @@ func (ad *adService) ensureFederatedCredential(
 }
 
 // Applies the Azure selected RBAC role assignments to the specified service principal
-func (ad *adService) ensureRoleAssignments(
+func (ad *entraIdService) ensureRoleAssignments(
 	ctx context.Context,
 	subscriptionId string,
 	roleNames []string,
@@ -445,7 +450,7 @@ func (ad *adService) ensureRoleAssignments(
 }
 
 // Applies the Azure selected RBAC role assignments to the specified service principal
-func (ad *adService) ensureRoleAssignment(
+func (ad *entraIdService) ensureRoleAssignment(
 	ctx context.Context,
 	subscriptionId string,
 	roleName string,
@@ -469,7 +474,7 @@ func (ad *adService) ensureRoleAssignment(
 
 // Applies the role assignment to the specified service principal
 // This operation will retry up to 10 times to ensure the new service principal is available in Azure AD
-func (ad *adService) applyRoleAssignmentWithRetry(
+func (ad *entraIdService) applyRoleAssignmentWithRetry(
 	ctx context.Context,
 	subscriptionId string,
 	roleDefinition *armauthorization.RoleDefinition,
@@ -525,7 +530,7 @@ func (ad *adService) applyRoleAssignmentWithRetry(
 }
 
 // Find the Azure role definition for the specified scope and role name
-func (ad *adService) getRoleDefinition(
+func (ad *entraIdService) getRoleDefinition(
 	ctx context.Context,
 	subscriptionId string,
 	scope string,
@@ -559,7 +564,7 @@ func (ad *adService) getRoleDefinition(
 }
 
 // Creates a graph users client using credentials from the Go context.
-func (ad *adService) createRoleDefinitionsClient(
+func (ad *entraIdService) createRoleDefinitionsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armauthorization.RoleDefinitionsClient, error) {
@@ -577,7 +582,7 @@ func (ad *adService) createRoleDefinitionsClient(
 }
 
 // Creates a graph users client using credentials from the Go context.
-func (ad *adService) createRoleAssignmentsClient(
+func (ad *entraIdService) createRoleAssignmentsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armauthorization.RoleAssignmentsClient, error) {
@@ -595,7 +600,7 @@ func (ad *adService) createRoleAssignmentsClient(
 }
 
 // Creates a graph users client using credentials from the Go context.
-func (ad *adService) getOrCreateGraphClient(
+func (ad *entraIdService) getOrCreateGraphClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*graphsdk.GraphClient, error) {

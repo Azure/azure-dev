@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider
@@ -122,7 +122,7 @@ type CiProvider interface {
 		provisioningProvider provisioning.Options,
 		servicePrincipal *graphsdk.ServicePrincipal,
 		authType PipelineAuthType,
-		credentials *azcli.AzureCredentials,
+		credentials *entraid.AzureCredentials,
 	) error
 	// Gets the credential options that should be configured for the provider
 	credentialOptions(
@@ -130,7 +130,7 @@ type CiProvider interface {
 		repoDetails *gitRepositoryDetails,
 		infraOptions provisioning.Options,
 		authType PipelineAuthType,
-		credentials *azcli.AzureCredentials,
+		credentials *entraid.AzureCredentials,
 	) (*CredentialOptions, error)
 }
 

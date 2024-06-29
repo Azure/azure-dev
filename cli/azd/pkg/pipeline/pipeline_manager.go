@@ -992,15 +992,15 @@ func (pm *PipelineManager) promptForProvider(ctx context.Context) (string, error
 	return "", nil // This case should never occur with the current options.
 }
 
+// resolveSmf resolves the service management reference from the user, project, or environment configuration.
 func resolveSmf(smfArg string, projectConfig config.Config, userConfig config.Config) *string {
 	if smfArg != "" {
-		// If the user has provided a value for the --service-management-reference flag, use it
+		// If the user has provided a value for the --smf flag, use it
 		return &smfArg
 	}
 
-	smfConfigKey := "pipeline.config.smf"
 	smfFromConfig := func(config config.Config) *string {
-		if smf, ok := config.GetString(smfConfigKey); ok {
+		if smf, ok := config.GetString("pipeline.config.smf"); ok {
 			return &smf
 		}
 		return nil

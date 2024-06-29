@@ -72,9 +72,9 @@ func Test_CLI_DeployInvalidFlags(t *testing.T) {
 	require.NoError(t, err)
 
 	// invalid service name
-	res, err := cli.RunCommand(ctx, "deploy", "bentraIdServiceName")
+	res, err := cli.RunCommand(ctx, "deploy", "badServiceName")
 	require.Error(t, err)
-	require.Contains(t, res.Stdout, "bentraIdServiceName")
+	require.Contains(t, res.Stdout, "badServiceName")
 
 	// --service with --all
 	res, err = cli.RunCommand(ctx, "deploy", "web", "--all")

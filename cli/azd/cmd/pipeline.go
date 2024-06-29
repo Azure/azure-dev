@@ -69,7 +69,8 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	local.StringVar(&pc.ServiceManagementReference, "smf", "",
 		"Service Management Reference. "+
 			"References application or service contact information from a Service or Asset Management database. "+
-			"This value must be a Universally Unique Identifier (UUID).")
+			"This value must be a Universally Unique Identifier (UUID). "+
+			"You can set this value globally by running azd config set pipeline.config.smf <UUID>.")
 	pc.EnvFlag.Bind(local, global)
 	pc.global = global
 }

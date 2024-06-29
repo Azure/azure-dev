@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -469,7 +470,19 @@ func createPipelineManager(
 		args,
 		mockContext.Container,
 		project.NewImportManager(nil),
+		&mockUserConfigManager{},
 	)
+}
+
+type mockUserConfigManager struct {
+}
+
+func (m *mockUserConfigManager) Load() (config.Config, error) {
+	return config.NewEmptyConfig(), nil
+}
+
+func (m *mockUserConfigManager) Save(c config.Config) error {
+	return nil
 }
 
 func setupGitCliMocks(mockContext *mocks.MockContext, repoPath string) {

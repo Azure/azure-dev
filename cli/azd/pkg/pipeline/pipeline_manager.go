@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -28,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 	"golang.org/x/exp/slices"
 )
@@ -59,6 +61,7 @@ type PipelineManagerArgs struct {
 	PipelineRoleNames            []string
 	PipelineProvider             string
 	PipelineAuthTypeName         string
+	ServiceManagementReference   string
 }
 
 // CredentialOptions represents the options for configuring credentials for a pipeline.
@@ -76,19 +79,20 @@ type PipelineConfigResult struct {
 // PipelineManager takes care of setting up the scm and pipeline.
 // The manager allows to use and test scm providers without a cobra command.
 type PipelineManager struct {
-	envManager     environment.Manager
-	scmProvider    ScmProvider
-	ciProvider     CiProvider
-	args           *PipelineManagerArgs
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	entraIdService entraid.EntraIdService
-	gitCli         git.GitCli
-	console        input.Console
-	serviceLocator ioc.ServiceLocator
-	importManager  *project.ImportManager
-	configOptions  *configurePipelineOptions
-	infra          *project.Infra
+	envManager        environment.Manager
+	scmProvider       ScmProvider
+	ciProvider        CiProvider
+	args              *PipelineManagerArgs
+	azdCtx            *azdcontext.AzdContext
+	env               *environment.Environment
+	entraIdService    entraid.EntraIdService
+	gitCli            git.GitCli
+	console           input.Console
+	serviceLocator    ioc.ServiceLocator
+	importManager     *project.ImportManager
+	configOptions     *configurePipelineOptions
+	infra             *project.Infra
+	userConfigManager config.UserConfigManager
 }
 
 func NewPipelineManager(
@@ -102,17 +106,19 @@ func NewPipelineManager(
 	args *PipelineManagerArgs,
 	serviceLocator ioc.ServiceLocator,
 	importManager *project.ImportManager,
+	userConfigManager config.UserConfigManager,
 ) (*PipelineManager, error) {
 	pipelineProvider := &PipelineManager{
-		azdCtx:         azdCtx,
-		envManager:     envManager,
-		env:            env,
-		args:           args,
-		entraIdService: entraIdService,
-		gitCli:         gitCli,
-		console:        console,
-		serviceLocator: serviceLocator,
-		importManager:  importManager,
+		azdCtx:            azdCtx,
+		envManager:        envManager,
+		env:               env,
+		args:              args,
+		entraIdService:    entraIdService,
+		gitCli:            gitCli,
+		console:           console,
+		serviceLocator:    serviceLocator,
+		importManager:     importManager,
+		userConfigManager: userConfigManager,
 	}
 
 	// check that scm and ci providers are set
@@ -213,7 +219,7 @@ func servicePrincipal(
 
 // Configure is the main function from the pipeline manager which takes care
 // of creating or setting up the git project, the ci pipeline and the Azure connection.
-func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfigResult, err error) {
+func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (result *PipelineConfigResult, err error) {
 	// check all required tools are installed
 	requiredTools, err := pm.requiredTools(ctx)
 	if err != nil {
@@ -221,6 +227,17 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return result, err
+	}
+
+	userConfig, err := pm.userConfigManager.Load()
+	if err != nil {
+		return result, fmt.Errorf("loading user configuration: %w", err)
+	}
+	smf := resolveSmf(pm.args.ServiceManagementReference, pm.env.Config, userConfig)
+	if smf != nil {
+		if _, err := uuid.Parse(*smf); err != nil {
+			return result, fmt.Errorf("Invalid service management reference %s: %w", *smf, err)
+		}
 	}
 
 	infra := pm.infra
@@ -265,8 +282,11 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
+	description := fmt.Sprintf("Created by Azure Developer CLI for project: %s", projectName)
 	options := entraid.CreateOrUpdateServicePrincipalOptions{
-		RolesToAssign: pm.args.PipelineRoleNames,
+		RolesToAssign:              pm.args.PipelineRoleNames,
+		Description:                &description,
+		ServiceManagementReference: smf,
 	}
 	servicePrincipal, err := pm.entraIdService.CreateOrUpdateServicePrincipal(
 		ctx,
@@ -970,4 +990,30 @@ func (pm *PipelineManager) promptForProvider(ctx context.Context) (string, error
 	}
 
 	return "", nil // This case should never occur with the current options.
+}
+
+func resolveSmf(smfArg string, projectConfig config.Config, userConfig config.Config) *string {
+	if smfArg != "" {
+		// If the user has provided a value for the --service-management-reference flag, use it
+		return &smfArg
+	}
+
+	smfConfigKey := "pipeline.config.smf"
+	smfFromConfig := func(config config.Config) *string {
+		if smf, ok := config.GetString(smfConfigKey); ok {
+			return &smf
+		}
+		return nil
+	}
+
+	// per environment configuration
+	if smf := smfFromConfig(projectConfig); smf != nil {
+		return smf
+	}
+	// per user configuration
+	if smf := smfFromConfig(userConfig); smf != nil {
+		return smf
+	}
+	// no smf configuration
+	return nil
 }

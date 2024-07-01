@@ -8,3 +8,5 @@
   description: "Enable Kustomize support for AKS deployments."
 - id: aca.persistDomains
   description: "Do not change custom domains when deploying Azure Container Apps."
+- id: azd.operations
+  description: "Extends provisioning providers with azd operations."

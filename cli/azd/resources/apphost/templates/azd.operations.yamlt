@@ -1,0 +1,13 @@
+{{define "azd.operations.yaml" -}}
+operations:
+{{range $name, $value := .ContainerApps -}}
+{{range $bMount := $value.BindMounts -}}
+- type: FileShareUpload
+  description: Upload files for {{$name}}
+  config:
+    storageAccount: ${AZURE_VOLUMES_STORAGE_ACCOUNT}
+    fileShareName: ${SERVICE_{{alphaSnakeUpper $name}}_FILE_SHARE_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME}
+    path: {{$bMount.Source}}
+{{end -}}
+{{end -}}
+{{end}}

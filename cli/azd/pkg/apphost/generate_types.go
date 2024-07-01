@@ -31,7 +31,8 @@ type genKeyVault struct {
 }
 
 type genContainerApp struct {
-	Volumes []*Volume
+	Volumes    []*Volume
+	BindMounts []*BindMount
 }
 
 type genContainerAppIngressPort struct {
@@ -54,11 +55,12 @@ type genContainerAppIngress struct {
 }
 
 type genContainer struct {
-	Image    string
-	Env      map[string]string
-	Bindings custommaps.WithOrder[Binding]
-	Inputs   map[string]Input
-	Volumes  []*Volume
+	Image      string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Inputs     map[string]Input
+	Volumes    []*Volume
+	BindMounts []*BindMount
 }
 
 type genDockerfile struct {
@@ -144,6 +146,7 @@ type genBicepTemplateContext struct {
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
 	RequiresStorageVolume           bool
+	HasBindMounts                   bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount
@@ -171,6 +174,7 @@ type genContainerAppManifestTemplateContext struct {
 	Dapr            *genContainerAppManifestTemplateContextDapr
 	Args            []string
 	Volumes         []*Volume
+	BindMounts      []*BindMount
 }
 
 type genProjectFileContext struct {

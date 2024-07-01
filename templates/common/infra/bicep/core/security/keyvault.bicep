@@ -5,8 +5,10 @@ param tags object = {}
 
 param principalId string = ''
 
-@description('Allow the key vault to be used for template deployment.')
+@description('Allow the key vault to be used during resource creation.')
 param enabledForDeployment bool = false
+@description('Allow the key vault to be used for template deployment.')
+param enabledForTemplateDeployment bool = false
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   name: name
@@ -23,6 +25,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
       }
     ] : []
     enabledForDeployment: enabledForDeployment
+    enabledForTemplateDeployment: enabledForTemplateDeployment
   }
 }
 

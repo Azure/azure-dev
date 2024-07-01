@@ -124,6 +124,14 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.6
     administratorLogin: databaseUser
     administratorLoginPassword: databasePassword
     geoRedundantBackup: 'Disabled'
+    passwordAuth:'Enabled'
+    firewallRules: [
+      {
+        name: 'AllowAllIps'
+        startIpAddress: '0.0.0.0'
+        endIpAddress: '255.255.255.255'
+      }
+    ]
     databases: [
       {
         name: databaseName
@@ -178,6 +186,13 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.2.0' = {
           value: databasePassword
         }
         {{- end}}
+        {{- if .DbRedis}}
+        {
+          name: 'redis-pass'
+          identity:{{bicepName .Name}}Identity.outputs.resourceId
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
+        }
+        {{- end}}
       ]
     }
     containers: [
@@ -221,6 +236,24 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.2.0' = {
             value: '5432'
           }
           {{- end}}
+          {{- if .DbRedis}}
+          {
+            name: 'REDIS_HOST'
+            value: redis.outputs.hostName
+          }
+          {
+            name: 'REDIS_PORT'
+            value: string(redis.outputs.sslPort)
+          }
+          {
+            name: 'REDIS_ENDPOINT'
+            value: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
+          }
+          {
+            name: 'REDIS_PASSWORD'
+            secretRef: 'redis-pass'
+          }
+          {{- end}}
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
           {
@@ -251,6 +284,28 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.2.0' = {
     environmentId: containerAppsEnvironment.outputs.resourceId
     location: location
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
+  }
+}
+{{- end}}
+
+{{- if .DbRedis}}
+
+module redis 'br/public:avm/res/cache/redis:0.3.2' = {
+  name: 'redisDeployment'
+  params: {
+    // Required parameters
+    name: '${abbrs.cacheRedis}${resourceToken}'
+    // Non-required parameters
+    location: location
+  }
+}
+
+module redisConn 'set-redis-conn.bicep' = {
+  name: 'redisConn'
+  params: {
+    name: redis.outputs.name
+    secretName: 'REDIS-PASSWORD'
+    keyVaultName: keyVault.outputs.name
   }
 }
 {{- end}}

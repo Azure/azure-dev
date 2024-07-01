@@ -307,6 +307,8 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 
 	for _, res := range projectConfig.Resources {
 		switch res.Type {
+		case ResourceTypeDbRedis:
+			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
 		case ResourceTypeDbMongo:
 			// todo: support servers and databases
 			infraSpec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
@@ -388,6 +390,10 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			svc.Backend.Frontends = append(svc.Backend.Frontends, scaffold.ServiceReference{Name: front})
 		}
 	}
+
+	slices.SortFunc(infraSpec.Services, func(a, b scaffold.ServiceSpec) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 
 	return &infraSpec, nil
 }

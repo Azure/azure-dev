@@ -7,11 +7,21 @@ workflows:
   up: 
     steps:
       - azd: provision
-      - azd: deploy --all
+      - azd: deploy configProvider
+      - azd: deploy api
+      - azd: deploy web
 pipeline:
   variables:
     - AZURE_PRINCIPAL_TYPE
 services:
+  configProvider:
+    host: aks
+    k8s:
+      namespace: azappconfig-system
+      helm:
+         releases:
+          - name: azureappconfigprovider
+            chart: oci://mcr.microsoft.com/azure-app-configuration/helmchart/kubernetes-provider
   web:
     project: ../../web/react-fluent
     dist: dist

@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
@@ -147,11 +148,12 @@ func Containers(manifest *Manifest) map[string]genContainer {
 		switch comp.Type {
 		case "container.v0":
 			res[name] = genContainer{
-				Image:    *comp.Image,
-				Env:      comp.Env,
-				Bindings: comp.Bindings,
-				Inputs:   comp.Inputs,
-				Volumes:  comp.Volumes,
+				Image:      *comp.Image,
+				Env:        comp.Env,
+				Bindings:   comp.Bindings,
+				Inputs:     comp.Inputs,
+				Volumes:    comp.Volumes,
+				BindMounts: comp.BindMounts,
 			}
 		}
 	}
@@ -178,6 +180,7 @@ func BuildContainers(manifest *Manifest) (map[string]genBuildContainer, error) {
 }
 
 type AppHostOptions struct {
+	AzdOperations bool
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
@@ -300,6 +303,20 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	if err := executeToFS(
 		fs, genTemplates, "main.parameters.json", name+".parameters.json", generator.bicepContext); err != nil {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
+	}
+
+	// azd operations
+	if generator.bicepContext.HasBindMounts {
+		if options.AzdOperations {
+			if err := executeToFS(
+				fs, genTemplates, "azd.operations.yaml", "azd.operations.yaml", generator.bicepContext); err != nil {
+				return nil, fmt.Errorf("generating infra/azd.operations.yaml: %w", err)
+			}
+		} else {
+			// returning fs because this error can be handled by the caller as expected
+			return fs, provisioning.ErrBindMountOperationDisabled
+		}
+
 	}
 
 	return fs, nil
@@ -534,7 +551,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "project.v0":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
 		case "container.v0":
-			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
+			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts)
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
 			if err != nil {
@@ -655,6 +672,10 @@ func (b *infraGenerator) requireLogAnalyticsWorkspace() {
 
 func (b *infraGenerator) requireStorageVolume() {
 	b.bicepContext.RequiresStorageVolume = true
+}
+
+func (b *infraGenerator) hasBindMounts() {
+	b.bicepContext.HasBindMounts = true
 }
 
 func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
@@ -934,19 +955,26 @@ func (b *infraGenerator) addContainer(
 	env map[string]string,
 	bindings custommaps.WithOrder[Binding],
 	inputs map[string]Input,
-	volumes []*Volume) {
+	volumes []*Volume,
+	bindMounts []*BindMount) {
 	b.requireCluster()
 
 	if len(volumes) > 0 {
 		b.requireStorageVolume()
 	}
 
+	if len(bindMounts) > 0 {
+		b.requireStorageVolume()
+		b.hasBindMounts()
+	}
+
 	b.containers[name] = genContainer{
-		Image:    image,
-		Env:      env,
-		Bindings: bindings,
-		Inputs:   inputs,
-		Volumes:  volumes,
+		Image:      image,
+		Env:        env,
+		Bindings:   bindings,
+		Inputs:     inputs,
+		Volumes:    volumes,
+		BindMounts: bindMounts,
 	}
 }
 
@@ -1211,8 +1239,26 @@ func (b *infraGenerator) Compile() error {
 	}
 
 	for resourceName, container := range b.containers {
+		var bMounts []*BindMount
+		if len(container.BindMounts) > 0 {
+			// must grant write role to the Storage File Share to upload data
+			b.bicepContext.RequiresPrincipalId = true
+		}
+		for count, bm := range container.BindMounts {
+			bMounts = append(bMounts, &BindMount{
+				// adding a name using the index. This name is used for naming the resource in bicep.
+				Name: fmt.Sprintf("bm%d", count),
+				// mount bind is not supported across devices, as it depends on a local path which might be missing in
+				// another device.
+				Source:   bm.Source,
+				Target:   bm.Target,
+				ReadOnly: bm.ReadOnly,
+			})
+		}
+
 		cs := genContainerApp{
-			Volumes: container.Volumes,
+			Volumes:    container.Volumes,
+			BindMounts: bMounts,
 		}
 
 		b.bicepContext.ContainerApps[resourceName] = cs
@@ -1224,6 +1270,7 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 			Ingress:         b.allServicesIngress[resourceName].ingress,
 			Volumes:         container.Volumes,
+			BindMounts:      bMounts,
 		}
 
 		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {

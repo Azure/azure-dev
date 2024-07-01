@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -289,7 +290,12 @@ func TestAspireContainerGeneration(t *testing.T) {
 		})
 	}
 
-	files, err := BicepTemplate("main", m, AppHostOptions{})
+	_, err = BicepTemplate("main", m, AppHostOptions{})
+	require.Error(t, err, provisioning.ErrBindMountOperationDisabled)
+
+	files, err := BicepTemplate("main", m, AppHostOptions{
+		AzdOperations: true,
+	})
 	require.NoError(t, err)
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -297,6 +303,10 @@ func TestAspireContainerGeneration(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
+			return nil
+		}
+		if d.Name() == "azd.operations.yaml" {
+			// can't snapshot this file as it contains a path that on CI is different depending on OS
 			return nil
 		}
 		contents, err := fs.ReadFile(files, path)

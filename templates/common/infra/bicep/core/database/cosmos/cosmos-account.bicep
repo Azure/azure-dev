@@ -9,6 +9,8 @@ param keyVaultName string
 @allowed([ 'GlobalDocumentDB', 'MongoDB', 'Parse' ])
 param kind string
 
+param disableLocalAuth bool = false
+
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
   name: name
   kind: kind
@@ -29,6 +31,7 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
     apiProperties: (kind == 'MongoDB') ? { serverVersion: '4.2' } : {}
     capabilities: [ { name: 'EnableServerless' } ]
     minimalTlsVersion: 'Tls12'
+    disableLocalAuth: disableLocalAuth
   }
 }
 

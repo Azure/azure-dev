@@ -24,6 +24,15 @@ type containerAppTarget struct {
 	resourceManager     ResourceManager
 }
 
+// Environ implements ServiceTarget.
+func (at *containerAppTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+	return at.containerAppService.GetEnviron(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName())
+}
+
 // NewContainerAppTarget creates the container app service target.
 //
 // The target resource can be partially filled with only ResourceGroupName, since container apps

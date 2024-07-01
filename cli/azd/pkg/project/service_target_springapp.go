@@ -34,6 +34,11 @@ type springAppTarget struct {
 	springService azcli.SpringService
 }
 
+// Environ implements ServiceTarget.
+func (st *springAppTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+	panic("unimplemented")
+}
+
 // NewSpringAppTarget creates the spring app service target.
 //
 // The target resource can be partially filled with only ResourceGroupName, since spring apps

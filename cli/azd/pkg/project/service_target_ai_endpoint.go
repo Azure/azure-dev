@@ -19,6 +19,11 @@ type aiEndpointTarget struct {
 	aiHelper   AiHelper
 }
 
+// Environ implements ServiceTarget.
+func (m *aiEndpointTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+	panic("unimplemented")
+}
+
 // NewAiEndpointTarget creates a new aiEndpointTarget instance
 func NewAiEndpointTarget(
 	env *environment.Environment,

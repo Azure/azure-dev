@@ -8,7 +8,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -47,6 +49,7 @@ func newShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *sh
 
 func newShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
+		Use:   "show <resource path>",
 		Short: "Display information about your app and its resources.",
 	}
 
@@ -67,6 +70,7 @@ type showAction struct {
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
 	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
 	portalUrlBase        string
+	args                 []string
 }
 
 func newShowAction(
@@ -80,6 +84,7 @@ func newShowAction(
 	importManager *project.ImportManager,
 	azdCtx *azdcontext.AzdContext,
 	flags *showFlags,
+	args []string,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
 	portalUrlBase cloud.PortalUrlBase,
@@ -98,11 +103,11 @@ func newShowAction(
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
 		portalUrlBase:        string(portalUrlBase),
+		args:                 args,
 	}
 }
 
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-
 	s.console.ShowSpinner(ctx, "Gathering information about your app and its resources...", input.Step)
 	defer s.console.StopSpinner(ctx, "", input.Step)
 
@@ -114,6 +119,20 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	stableServices, err := s.importManager.ServiceStable(ctx, s.projectConfig)
 	if err != nil {
 		return nil, err
+	}
+
+	showService := ""
+	if len(s.args) >= 1 {
+		for _, ss := range stableServices {
+			if ss.Name == s.args[0] {
+				showService = ss.Name
+				break
+			}
+		}
+	}
+
+	if len(s.args) >= 1 && showService == "" {
+		return nil, fmt.Errorf("service %s not found", s.args[0])
 	}
 
 	for _, svc := range stableServices {
@@ -168,6 +187,10 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			rgName, err = azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
 			if err == nil {
 				for _, serviceConfig := range stableServices {
+					if showService != "" && showService != serviceConfig.Name {
+						continue
+					}
+
 					svcName := serviceConfig.Name
 					resources, err := resourceManager.GetServiceResources(ctx, subId, rgName, serviceConfig)
 					if err == nil {
@@ -181,6 +204,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 							ResourceIds: resourceIds,
 						}
 						resSvc.IngresUrl = s.serviceEndpoint(ctx, subId, serviceConfig, env)
+						resSvc.RemoteEnviron = s.serviceEnviron(ctx, subId, serviceConfig)
 						res.Services[svcName] = resSvc
 					} else {
 						log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
@@ -197,6 +221,28 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if s.formatter.Kind() == output.JsonFormat {
 		return nil, s.formatter.Format(res, s.writer, nil)
+	}
+
+	if len(s.args) > 1 && s.args[1] == "env" {
+		s.console.Message(ctx, fmt.Sprintf("Environment variables for %s", showService))
+		environ := res.Services[showService].RemoteEnviron
+		show := []string{}
+		show = append(show, "Key\tValue")
+		show = append(show, "------\t-----")
+
+		env := []string{}
+		for k, v := range environ {
+			env = append(env, fmt.Sprintf("%s\t%s", k, v))
+		}
+		slices.Sort(env)
+		show = append(show, env...)
+
+		formatted, err := tabWrite(show, 10)
+		if err != nil {
+			return nil, err
+		}
+		s.console.Message(ctx, strings.Join(formatted, "\n"))
+		return nil, nil
 	}
 
 	appEnvironments, err := s.envManager.List(ctx)
@@ -233,6 +279,56 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return nil, nil
 }
 
+// tabWrite transforms tabbed output into formatted strings with a given minimal padding.
+// For more information, refer to the tabwriter package.
+func tabWrite(selections []string, padding int) ([]string, error) {
+	tabbed := strings.Builder{}
+	tabW := tabwriter.NewWriter(&tabbed, 0, 0, padding, ' ', 0)
+	_, err := tabW.Write([]byte(strings.Join(selections, "\n")))
+	if err != nil {
+		return nil, err
+	}
+	err = tabW.Flush()
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.Split(tabbed.String(), "\n"), nil
+}
+
+func (s *showAction) serviceEnviron(
+	ctx context.Context, subId string, serviceConfig *project.ServiceConfig) map[string]string {
+	resourceManager, err := s.lazyResourceManager.GetValue()
+	if err != nil {
+		log.Printf("error: getting lazy target-resource. Environ will be empty: %v", err)
+		return map[string]string{}
+	}
+	targetResource, err := resourceManager.GetTargetResource(ctx, subId, serviceConfig)
+	if err != nil {
+		log.Printf("error: getting target-resource. Environ will be empty: %v", err)
+		return map[string]string{}
+	}
+
+	serviceManager, err := s.lazyServiceManager.GetValue()
+	if err != nil {
+		log.Printf("error: getting lazy service manager. Environ will be empty: %v", err)
+		return map[string]string{}
+	}
+	st, err := serviceManager.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		log.Printf("error: getting service target. Environ will be empty: %v", err)
+		return map[string]string{}
+	}
+
+	environ, err := st.Environ(ctx, serviceConfig, targetResource)
+	if err != nil {
+		log.Printf("error: getting service target. Environ will be empty: %v", err)
+		return map[string]string{}
+	}
+
+	return environ
+}
+
 func (s *showAction) serviceEndpoint(
 	ctx context.Context, subId string, serviceConfig *project.ServiceConfig, env *environment.Environment) string {
 	resourceManager, err := s.lazyResourceManager.GetValue()
@@ -256,6 +352,7 @@ func (s *showAction) serviceEndpoint(
 		log.Printf("error: getting service target. Endpoints will be empty: %v", err)
 		return ""
 	}
+
 	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		log.Printf("error: getting service endpoints. Endpoints might be empty: %v", err)

@@ -41,6 +41,11 @@ type dotnetContainerAppTarget struct {
 	alphaFeatureManager *alpha.FeatureManager
 }
 
+// Environ implements ServiceTarget.
+func (at *dotnetContainerAppTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+	panic("unimplemented")
+}
+
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
 // [ContainerAppTarget], this target does not require a Dockerfile to be present in the project. Instead, it uses the built
 // in support in .NET 8 for publishing containers using `dotnet publish`. In addition, it uses a different deployment

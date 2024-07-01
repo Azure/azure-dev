@@ -29,6 +29,11 @@ type staticWebAppTarget struct {
 	swa swa.SwaCli
 }
 
+// Environ implements ServiceTarget.
+func (at *staticWebAppTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+	panic("unimplemented")
+}
+
 // NewStaticWebAppTarget creates a new instance of the Static Web App target
 func NewStaticWebAppTarget(
 	env *environment.Environment,

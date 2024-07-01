@@ -27,6 +27,9 @@ type ShowService struct {
 	// to.
 	Target    *ShowTargetArm `json:"target,omitempty"`
 	IngresUrl string         `json:"-"`
+
+	// Remote environment
+	RemoteEnviron map[string]string `json:"env"`
 }
 
 // ShowServiceProject is the contract for a service's project as returned by `azd show`

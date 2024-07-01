@@ -90,6 +90,13 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		targetResource *environment.TargetResource,
 	) ([]string, error)
+
+	// Environ gets the environment a service exposes.
+	Environ(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		targetResource *environment.TargetResource,
+	) (map[string]string, error)
 }
 
 // NewServiceDeployResult is a helper function to create a new ServiceDeployResult

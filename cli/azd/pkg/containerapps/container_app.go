@@ -53,6 +53,11 @@ type ContainerAppService interface {
 		resourceGroupName string,
 		appName string,
 	) ([]*armappcontainers.ContainerAppSecret, error)
+	GetEnviron(ctx context.Context,
+		subscriptionId string,
+		resourceGroup string,
+		appName string,
+	) (map[string]string, error)
 }
 
 // NewContainerAppService creates a new ContainerAppService
@@ -84,6 +89,52 @@ type containerAppService struct {
 
 type ContainerAppIngressConfiguration struct {
 	HostNames []string
+}
+
+func (cas *containerAppService) GetEnviron(ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) (map[string]string, error) {
+	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	containerApp, err := appClient.Get(ctx, resourceGroup, appName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
+	}
+
+	secretsRes, err := appClient.ListSecrets(ctx, resourceGroup, appName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing secrets: %w", err)
+	}
+
+	secrets := secretsRes.Value
+
+	res := map[string]string{}
+	envVar := containerApp.Properties.Template.Containers[0].Env
+	for _, env := range envVar {
+		if env.Name == nil {
+			continue
+		}
+
+		key := *env.Name
+		val := env.Value
+		if env.SecretRef != nil {
+			for _, secret := range secrets {
+				if *env.SecretRef == *secret.Name {
+					val = secret.Value
+					break
+				}
+			}
+		}
+
+		res[key] = *val
+	}
+
+	return res, nil
 }
 
 // Gets the ingress configuration for the specified container app

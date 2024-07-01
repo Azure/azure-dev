@@ -22,6 +22,11 @@ type appServiceTarget struct {
 	cli azcli.AzCli
 }
 
+// Environ implements ServiceTarget.
+func (st *appServiceTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+	panic("unimplemented")
+}
+
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
 	env *environment.Environment,

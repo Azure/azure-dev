@@ -91,6 +91,11 @@ type aksTarget struct {
 	featureManager         *alpha.FeatureManager
 }
 
+// Environ implements ServiceTarget.
+func (t *aksTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+	panic("unimplemented")
+}
+
 // Creates a new instance of the AKS service target
 func NewAksTarget(
 	env *environment.Environment,

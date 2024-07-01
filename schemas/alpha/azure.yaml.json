@@ -135,6 +135,14 @@
                         "type": "object",
                         "additionalProperties": true
                     },
+                    "uses": {
+                        "type": "array",
+                        "title": "List of services/resources that this service uses",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true
+                    },
                     "hooks": {
                         "type": "object",
                         "title": "Service level hooks",
@@ -316,6 +324,28 @@
                         }
                     }
                 ]
+            }
+        },
+        "resources": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "type"
+                ],
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "title": "Type of resource",
+                        "description": "The type of resource to be created. (Example: db.postgres)",
+                        "enum": [
+                            "db.postgres",
+                            "db.redis",
+                            "db.mongo"
+                        ]
+                    }
+                }
             }
         },
         "pipeline": {

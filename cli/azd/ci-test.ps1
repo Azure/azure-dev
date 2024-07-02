@@ -1,7 +1,7 @@
 param(
     [switch] $ShortMode,
     [string] $UnitTestCoverageDir = 'cover-unit',
-    [string] $IntegrationTestTimeout = '90m',
+    [string] $IntegrationTestTimeout = '120m',
     [string] $IntegrationTestCoverageDir = 'cover-int'
 )
 

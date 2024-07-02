@@ -215,7 +215,7 @@ func (p *dockerProject) Build(
 				}
 				return result
 			}
-			// resolve parameters for build args and secrets...
+			// resolve parameters for build args and secrets
 			dockerOptions.BuildArgs = resolveParameters(dockerOptions.BuildArgs)
 			dockerOptions.BuildEnv = resolveParameters(dockerOptions.BuildEnv)
 

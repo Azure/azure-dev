@@ -7,6 +7,7 @@ Usage
 Available Commands
   login 	: Log in to Azure.
   logout	: Log out of Azure.
+  serve 	: Starts a local Managed Identity endpoint for development purposes.
 
 Flags
         --docs 	: Opens the documentation for azd auth in your web browser.

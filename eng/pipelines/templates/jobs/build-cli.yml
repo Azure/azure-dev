@@ -97,8 +97,9 @@ jobs:
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
           azureSubscription: azure-sdk-tests
+          keepAzSessionActive: true
           scriptType: PowerShell Core
-          scriptPath: cli/azd/ci-test.ps1
+          scriptPath: ci-test.ps1
           scriptArguments: >-
             -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
             -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'

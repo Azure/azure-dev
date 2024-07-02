@@ -1,14 +1,30 @@
 # Release History
 
-## 1.10.0-beta.1 (Unreleased)
+## 1.9.4 (2024-07-02)
 
 ### Features Added
 
-### Breaking Changes
+- [[3924]](https://github.com/Azure/azure-dev/pull/3924) Updating azd pipeline config to support Federated Credential for Azure DevOps.
+- [[3553]](https://github.com/Azure/azure-dev/pull/3553) Support swa-cli.config.json for Azure Static Web Apps.
+- [[3955]](https://github.com/Azure/azure-dev/pull/3955) Adding `alpha` feature `alpha.aca.persistDomains`.
+- [[3723]](https://github.com/Azure/azure-dev/pull/3723) Add --managed-identity to azd auth login.
+- [[3965]](https://github.com/Azure/azure-dev/pull/3965) Add deployment status tracking for linux web apps.
+- [[4003]](https://github.com/Azure/azure-dev/pull/4003) Add support for deploying flex-consumption function apps.
+- [[4008]](https://github.com/Azure/azure-dev/pull/4008) Add support for container.v1 [Aspire].
+- [[4030]](https://github.com/Azure/azure-dev/pull/4030) Prompt to add pipeline definition file during azd pipeline config.
+- [[3790]](https://github.com/Azure/azure-dev/pull/3790) Adding `alpha` feature `azd.operations` to support .Net Aspire bind mounts.
+- [[4049]](https://github.com/Azure/azure-dev/pull/4049) Adding pipeline config `--applicationServiceManagementReference`.
 
 ### Bugs Fixed
 
+- [[3941]](https://github.com/Azure/azure-dev/pull/3941) Fix exposed ports for Aspire projects.
+- [[3948]](https://github.com/Azure/azure-dev/pull/3948) Adds missing namespace property to Helm configuration schema.
+- [[3942]](https://github.com/Azure/azure-dev/pull/3942) Fixes issue selected environment with different environment type.
+- [[3985]](https://github.com/Azure/azure-dev/pull/3985) Reset the read cursor in zip deployments to fix bugs in retry.
+
 ### Other Changes
+
+- [[4043]](https://github.com/Azure/azure-dev/pull/4043) wait for Ai-studio deployments before polling.
 
 ## 1.9.3 (2024-05-20)
 

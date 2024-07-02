@@ -99,10 +99,10 @@ jobs:
           azureSubscription: azure-sdk-tests
           keepAzSessionActive: true
           scriptType: PowerShell Core
+          scriptLocation: inlineScript
           inlineScript: |
             echo "Running go test"
             ls
-          workingDirectory: cli/azd
         displayName: ttt
 
       - task: AzureCLI@2
@@ -111,11 +111,11 @@ jobs:
           azureSubscription: azure-sdk-tests
           keepAzSessionActive: true
           scriptType: PowerShell Core
-          scriptPath: ./ci-test.ps1
+          scriptLocation: scriptPath
+          scriptPath: cli/azd/ci-test.ps1
           scriptArguments: >-
             -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
             -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
-          workingDirectory: cli/azd
         displayName: Test Go Binary
         env:
           # AZD live test setup variables

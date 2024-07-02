@@ -103,7 +103,7 @@ jobs:
             echo "Running go test"
             ls
           workingDirectory: cli/azd
-        displayName: Test Go Binary
+        displayName: ttt
 
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

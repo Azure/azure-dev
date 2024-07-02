@@ -152,10 +152,6 @@ steps:
 
       displayName: Test templates in Devcontainer
 
-    - template: /eng/pipelines/templates/steps/az-login.yml
-      parameters:
-          Condition: always()
-
     # First tag the resource group (if exists) so that it can get cleaned up
     # by the cleanup pipeline. Then attempt to delete the resource group
     # directly. If the delete fails the cleanup pipeline will delete it.

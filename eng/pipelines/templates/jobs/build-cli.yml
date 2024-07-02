@@ -89,21 +89,17 @@ jobs:
       - bash: dotnet nuget add source --name dotnet8 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8/nuget/v3/index.json
         displayName: Add internal dotnet nuget feed
 
-      - template: /eng/pipelines/templates/steps/az-login.yml
-        parameters:
-          Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-
       - template: /eng/pipelines/templates/steps/azd-login.yml
         parameters:
           AzdDirectory: cli/azd
 
-      - task: PowerShell@2
+      - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: cli/azd/ci-test.ps1
-          arguments: >-
+          azureSubscription: azure-sdk-tests
+          scriptType: PowerShell Core
+          scriptPath: cli/azd/ci-test.ps1
+          scriptArguments: >-
             -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
             -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
           workingDirectory: cli/azd

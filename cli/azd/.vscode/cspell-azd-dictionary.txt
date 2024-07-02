@@ -86,6 +86,7 @@ doublestar
 dskip
 eastus
 endregion
+entraid
 envlist
 envname
 errcheck

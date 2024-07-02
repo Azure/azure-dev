@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
@@ -25,9 +27,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 	"golang.org/x/exp/slices"
 )
@@ -59,6 +61,7 @@ type PipelineManagerArgs struct {
 	PipelineRoleNames            []string
 	PipelineProvider             string
 	PipelineAuthTypeName         string
+	ServiceManagementReference   string
 }
 
 // CredentialOptions represents the options for configuring credentials for a pipeline.
@@ -76,25 +79,26 @@ type PipelineConfigResult struct {
 // PipelineManager takes care of setting up the scm and pipeline.
 // The manager allows to use and test scm providers without a cobra command.
 type PipelineManager struct {
-	envManager     environment.Manager
-	scmProvider    ScmProvider
-	ciProvider     CiProvider
-	args           *PipelineManagerArgs
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	adService      azcli.AdService
-	gitCli         git.GitCli
-	console        input.Console
-	serviceLocator ioc.ServiceLocator
-	importManager  *project.ImportManager
-	configOptions  *configurePipelineOptions
-	infra          *project.Infra
+	envManager        environment.Manager
+	scmProvider       ScmProvider
+	ciProvider        CiProvider
+	args              *PipelineManagerArgs
+	azdCtx            *azdcontext.AzdContext
+	env               *environment.Environment
+	entraIdService    entraid.EntraIdService
+	gitCli            git.GitCli
+	console           input.Console
+	serviceLocator    ioc.ServiceLocator
+	importManager     *project.ImportManager
+	configOptions     *configurePipelineOptions
+	infra             *project.Infra
+	userConfigManager config.UserConfigManager
 }
 
 func NewPipelineManager(
 	ctx context.Context,
 	envManager environment.Manager,
-	adService azcli.AdService,
+	entraIdService entraid.EntraIdService,
 	gitCli git.GitCli,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
@@ -102,17 +106,19 @@ func NewPipelineManager(
 	args *PipelineManagerArgs,
 	serviceLocator ioc.ServiceLocator,
 	importManager *project.ImportManager,
+	userConfigManager config.UserConfigManager,
 ) (*PipelineManager, error) {
 	pipelineProvider := &PipelineManager{
-		azdCtx:         azdCtx,
-		envManager:     envManager,
-		env:            env,
-		args:           args,
-		adService:      adService,
-		gitCli:         gitCli,
-		console:        console,
-		serviceLocator: serviceLocator,
-		importManager:  importManager,
+		azdCtx:            azdCtx,
+		envManager:        envManager,
+		env:               env,
+		args:              args,
+		entraIdService:    entraIdService,
+		gitCli:            gitCli,
+		console:           console,
+		serviceLocator:    serviceLocator,
+		importManager:     importManager,
+		userConfigManager: userConfigManager,
 	}
 
 	// check that scm and ci providers are set
@@ -142,7 +148,7 @@ func servicePrincipal(
 	ctx context.Context,
 	envClientId,
 	subscriptionId string,
-	args *PipelineManagerArgs, adService azcli.AdService) (*servicePrincipalResult, error) {
+	args *PipelineManagerArgs, entraIdService entraid.EntraIdService) (*servicePrincipalResult, error) {
 	// Existing Service Principal Lookup strategy
 	// 1. --principal-id
 	// 2. --principal-name
@@ -173,7 +179,7 @@ func servicePrincipal(
 		}, nil
 	}
 
-	servicePrincipal, err := adService.GetServicePrincipal(ctx, subscriptionId, appIdOrName)
+	servicePrincipal, err := entraIdService.GetServicePrincipal(ctx, subscriptionId, appIdOrName)
 	if err != nil {
 		// If an explicit client id was specified but not found then fail
 		if lookupKind == lookupKindPrincipalId {
@@ -213,7 +219,7 @@ func servicePrincipal(
 
 // Configure is the main function from the pipeline manager which takes care
 // of creating or setting up the git project, the ci pipeline and the Azure connection.
-func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfigResult, err error) {
+func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (result *PipelineConfigResult, err error) {
 	// check all required tools are installed
 	requiredTools, err := pm.requiredTools(ctx)
 	if err != nil {
@@ -221,6 +227,17 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return result, err
+	}
+
+	userConfig, err := pm.userConfigManager.Load()
+	if err != nil {
+		return result, fmt.Errorf("loading user configuration: %w", err)
+	}
+	smr := resolveSmr(pm.args.ServiceManagementReference, pm.env.Config, userConfig)
+	if smr != nil {
+		if _, err := uuid.Parse(*smr); err != nil {
+			return result, fmt.Errorf("Invalid service management reference %s: %w", *smr, err)
+		}
 	}
 
 	infra := pm.infra
@@ -249,7 +266,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 
 	// see if SP already exists - This step will not create the SP if it doesn't exist.
 	spConfig, err := servicePrincipal(
-		ctx, pm.env.Getenv(AzurePipelineClientIdEnvVarName), pm.env.GetSubscriptionId(), pm.args, pm.adService)
+		ctx, pm.env.Getenv(AzurePipelineClientIdEnvVarName), pm.env.GetSubscriptionId(), pm.args, pm.entraIdService)
 	if err != nil {
 		return result, err
 	}
@@ -265,11 +282,17 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
-	servicePrincipal, err := pm.adService.CreateOrUpdateServicePrincipal(
+	description := fmt.Sprintf("Created by Azure Developer CLI for project: %s", projectName)
+	options := entraid.CreateOrUpdateServicePrincipalOptions{
+		RolesToAssign:              pm.args.PipelineRoleNames,
+		Description:                &description,
+		ServiceManagementReference: smr,
+	}
+	servicePrincipal, err := pm.entraIdService.CreateOrUpdateServicePrincipal(
 		ctx,
 		pm.env.GetSubscriptionId(),
 		spConfig.appIdOrName,
-		pm.args.PipelineRoleNames)
+		options)
 
 	if err != nil {
 		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
@@ -292,7 +315,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 
 	subscriptionId := pm.env.GetSubscriptionId()
-	credentials := &azcli.AzureCredentials{
+	credentials := &entraid.AzureCredentials{
 		ClientId:       servicePrincipal.AppId,
 		TenantId:       *servicePrincipal.AppOwnerOrganizationId,
 		SubscriptionId: subscriptionId,
@@ -315,7 +338,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		spinnerMessage := "Configuring client credentials for service principal"
 		pm.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-		creds, err := pm.adService.ResetPasswordCredentials(ctx, subscriptionId, servicePrincipal.AppId)
+		creds, err := pm.entraIdService.ResetPasswordCredentials(ctx, subscriptionId, servicePrincipal.AppId)
 		pm.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 		if err != nil {
 			return result, fmt.Errorf("failed to reset password credentials: %w", err)
@@ -326,7 +349,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 
 	// Enable federated credentials if requested
 	if credentialOptions.EnableFederatedCredentials {
-		createdCredentials, err := pm.adService.ApplyFederatedCredentials(
+		createdCredentials, err := pm.entraIdService.ApplyFederatedCredentials(
 			ctx, subscriptionId,
 			servicePrincipal.AppId,
 			credentialOptions.FederatedCredentialOptions,
@@ -967,4 +990,30 @@ func (pm *PipelineManager) promptForProvider(ctx context.Context) (string, error
 	}
 
 	return "", nil // This case should never occur with the current options.
+}
+
+// resolveSmr resolves the service management reference from the user, project, or environment configuration.
+func resolveSmr(smrArg string, projectConfig config.Config, userConfig config.Config) *string {
+	if smrArg != "" {
+		// If the user has provided a value for the --applicationServiceManagementReference flag, use it
+		return &smrArg
+	}
+
+	smrFromConfig := func(config config.Config) *string {
+		if smr, ok := config.GetString("pipeline.config.applicationServiceManagementReference"); ok {
+			return &smr
+		}
+		return nil
+	}
+
+	// per environment configuration
+	if smr := smrFromConfig(projectConfig); smr != nil {
+		return smr
+	}
+	// per user configuration
+	if smr := smrFromConfig(userConfig); smr != nil {
+		return smr
+	}
+	// no smr configuration
+	return nil
 }

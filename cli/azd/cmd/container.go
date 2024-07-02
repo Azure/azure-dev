@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -566,7 +567,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(account.NewSubscriptionsManager)
 	container.MustRegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.MustRegisterSingleton(azcli.NewManagedClustersService)
-	container.MustRegisterSingleton(azcli.NewAdService)
+	container.MustRegisterSingleton(entraid.NewEntraIdService)
 	container.MustRegisterSingleton(azcli.NewContainerRegistryService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)

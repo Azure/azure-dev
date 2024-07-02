@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -21,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
@@ -635,7 +635,7 @@ type AzdoCiProvider struct {
 	envManager    environment.Manager
 	Env           *environment.Environment
 	AzdContext    *azdcontext.AzdContext
-	credentials   *azcli.AzureCredentials
+	credentials   *entraid.AzureCredentials
 	console       input.Console
 	commandRunner exec.CommandRunner
 }
@@ -702,7 +702,7 @@ func (p *AzdoCiProvider) credentialOptions(
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	authType PipelineAuthType,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) (*CredentialOptions, error) {
 	// Default auth type to client-credentials for terraform
 	if infraOptions.Provider == provisioning.Terraform && authType == "" {
@@ -764,7 +764,7 @@ func (p *AzdoCiProvider) configureConnection(
 	provisioningProvider provisioning.Options,
 	servicePrincipal *graphsdk.ServicePrincipal,
 	authType PipelineAuthType,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) error {
 	if authType == "" || authType == AuthTypeFederated {
 		// default and federated credentials are set up in credentialOptions

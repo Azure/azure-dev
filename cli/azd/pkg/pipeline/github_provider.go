@@ -16,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
@@ -25,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"golang.org/x/exp/slices"
@@ -314,7 +314,7 @@ const (
 type GitHubCiProvider struct {
 	env                *environment.Environment
 	credentialProvider account.SubscriptionCredentialProvider
-	adService          azcli.AdService
+	entraIdService     entraid.EntraIdService
 	ghCli              github.GitHubCli
 	gitCli             git.GitCli
 	console            input.Console
@@ -324,7 +324,7 @@ type GitHubCiProvider struct {
 func NewGitHubCiProvider(
 	env *environment.Environment,
 	credentialProvider account.SubscriptionCredentialProvider,
-	adService azcli.AdService,
+	entraIdService entraid.EntraIdService,
 	ghCli github.GitHubCli,
 	gitCli git.GitCli,
 	console input.Console,
@@ -332,7 +332,7 @@ func NewGitHubCiProvider(
 	return &GitHubCiProvider{
 		env:                env,
 		credentialProvider: credentialProvider,
-		adService:          adService,
+		entraIdService:     entraIdService,
 		ghCli:              ghCli,
 		gitCli:             gitCli,
 		console:            console,
@@ -397,7 +397,7 @@ func (p *GitHubCiProvider) credentialOptions(
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	authType PipelineAuthType,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) (*CredentialOptions, error) {
 	// Default auth type to client-credentials for terraform
 	if infraOptions.Provider == provisioning.Terraform && authType == "" {
@@ -466,7 +466,7 @@ func (p *GitHubCiProvider) configureConnection(
 	infraOptions provisioning.Options,
 	servicePrincipal *graphsdk.ServicePrincipal,
 	authType PipelineAuthType,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) error {
 	// Default auth type to client-credentials for terraform
 	if infraOptions.Provider == provisioning.Terraform && authType == "" {
@@ -563,7 +563,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	infraOptions provisioning.Options,
 	repoSlug string,
 	servicePrincipal *graphsdk.ServicePrincipal,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) error {
 	/* #nosec G101 - Potential hardcoded credentials - false positive */
 	secretName := "AZURE_CREDENTIALS"

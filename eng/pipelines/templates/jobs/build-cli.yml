@@ -31,18 +31,7 @@ jobs:
 
     timeoutInMinutes: 180
     steps:
-      - checkout: self
-      - task: AzureCLI@2
-        displayName: quick test
-        inputs:
-          azureSubscription: azure-sdk-tests
-          workingDirectory: cli/azd
-          scriptType: pscore
-          scriptLocation: inlineScript
-          inlineScript: |
-            echo "hereeeee"
-            ls
-            
+      - checkout: self            
       - template: /eng/pipelines/templates/steps/setup-go.yml
         parameters:
           Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

@@ -31,7 +31,7 @@ jobs:
 
     timeoutInMinutes: 180
     steps:
-      - checkout: self            
+      - checkout: self
       - template: /eng/pipelines/templates/steps/setup-go.yml
         parameters:
           Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

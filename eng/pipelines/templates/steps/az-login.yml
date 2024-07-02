@@ -4,6 +4,16 @@ parameters:
 
 steps:
   - pwsh: |
+      if (Test-Path ~/.azure) { 
+        Write-Host "~/.azure found, deleting"
+        Remove-Item ~/.azure -Recurse -Force
+        
+        if (Test-Path ~/.azure) { 
+          Write-Host "~/.azure still exists"
+          Get-ChildItem ~/.azure -Recurse | Select-Object -Property FullName
+          exit 1
+        }
+      }
       $subscriptionConfiguration = @'
         ${{ parameters.SubscriptionConfiguration }}
       '@ | ConvertFrom-Json -AsHashtable;

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -11,21 +12,18 @@ import (
 
 func Test_WithEnv(t *testing.T) {
 	ran := false
-	expectedEnvVars := []string{"TF_DATA_DIR=MYDIR"}
+	t.Setenv("TF_DATA_DIR", "MYDIR")
 
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "terraform"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
-		require.Len(t, expectedEnvVars, 1)
-		require.Equal(t, expectedEnvVars, args.Env)
-
+		require.Contains(t, args.Env, "TF_DATA_DIR=MYDIR")
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	cli := NewTerraformCli(mockContext.CommandRunner)
-	cli.SetEnv(expectedEnvVars)
+	cli := NewTerraformCli(mockContext.CommandRunner, &environment.Environment{})
 
 	_, err := cli.Init(*mockContext.Context, "path/to/module")
 

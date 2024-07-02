@@ -119,6 +119,32 @@ func ProjectPaths(manifest *Manifest) map[string]string {
 	return res
 }
 
+func ProjectV0s(manifest *Manifest) []string {
+	var res []string
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "project.v0":
+			res = append(res, name)
+		}
+	}
+
+	return res
+}
+
+func ProjectV1s(manifest *Manifest) []string {
+	var res []string
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "project.v1":
+			res = append(res, name)
+		}
+	}
+
+	return res
+}
+
 // Dockerfiles returns information about all dockerfile.v0 resources from a manifest.
 func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
 	res := make(map[string]genDockerfile)
@@ -587,7 +613,9 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "project.v0":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
 		case "project.v1":
-			b.addProjectV1(name, *comp.Path, comp.Bindings, comp.Deployment)
+			if err := b.addProjectV1(name, *comp.Path, comp.Bindings, comp.Deployment); err != nil {
+				return err
+			}
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts)
 		case "dapr.v0":
@@ -948,7 +976,8 @@ func (b *infraGenerator) addProjectV1(
 	b.requireContainerRegistry()
 
 	if deployment.Type != "azure.bicep.v0" {
-		return fmt.Errorf("resource %s has an unsupported deployment type %s, only azure.bicep.v0 is supported", name, deployment.Type)
+		return fmt.Errorf("resource %s has an unsupported deployment type %s, only azure.bicep.v0 is supported",
+			name, deployment.Type)
 	}
 
 	b.projectv1s[name] = genProjectV1{
@@ -1551,7 +1580,10 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	}
 
 	switch {
-	case targetType == "project.v0" || targetType == "project.v1" || targetType == "container.v0" || targetType == "dockerfile.v0":
+	case targetType == "project.v0" ||
+		targetType == "project.v1" ||
+		targetType == "container.v0" ||
+		targetType == "dockerfile.v0":
 		if !strings.HasPrefix(prop, "bindings.") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}

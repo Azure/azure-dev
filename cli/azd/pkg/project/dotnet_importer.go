@@ -536,8 +536,47 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
 	}
 
-	for name := range apphost.ProjectPaths(manifest) {
+	writeBicepForResource := func(name string) error {
+		bicepModule, moduleDir, err := apphost.BicepModuleForProject(manifest, name, apphost.AppHostOptions{})
+		if moduleDir != "" {
+			defer func() { _ = os.RemoveAll(moduleDir) }()
+		}
+		if err != nil {
+			return fmt.Errorf("generating bicep module for resource %s: %w", name, err)
+		}
+
+		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
+		if err != nil {
+			return err
+		}
+
+		projectRelPath, err := filepath.Rel(root, normalPath)
+		if err != nil {
+			return err
+		}
+
+		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "infra", filepath.Base(bicepModule))
+
+		bicepContents, err := os.ReadFile(bicepModule)
+		if err != nil {
+			return err
+		}
+
+		if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
+			return err
+		}
+
+		return generatedFS.WriteFile(manifestPath, []byte(bicepContents), osutil.PermissionFileOwnerOnly)
+	}
+
+	for _, name := range apphost.ProjectV0s(manifest) {
 		if err := writeManifestForResource(name); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, name := range apphost.ProjectV1s(manifest) {
+		if err := writeBicepForResource(name); err != nil {
 			return nil, err
 		}
 	}

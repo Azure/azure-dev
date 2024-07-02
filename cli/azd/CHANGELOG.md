@@ -1,6 +1,6 @@
 # Release History
 
-## 1.10.0 (2024-07-02)
+## 1.9.4 (2024-07-02)
 
 ### Features Added
 
@@ -13,6 +13,7 @@
 - [[4008]](https://github.com/Azure/azure-dev/pull/4008) Add support for container.v1 [Aspire].
 - [[4030]](https://github.com/Azure/azure-dev/pull/4030) Prompt to add pipeline definition file during azd pipeline config.
 - [[3790]](https://github.com/Azure/azure-dev/pull/3790) Adding `alpha` feature `azd.operations` to support .Net Aspire bind mounts.
+- [[4049]](https://github.com/Azure/azure-dev/pull/4049) Adding pipeline config `--applicationServiceManagementReference`.
 
 ### Bugs Fixed
 

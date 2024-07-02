@@ -233,10 +233,10 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	if err != nil {
 		return result, fmt.Errorf("loading user configuration: %w", err)
 	}
-	smf := resolveSmf(pm.args.ServiceManagementReference, pm.env.Config, userConfig)
-	if smf != nil {
-		if _, err := uuid.Parse(*smf); err != nil {
-			return result, fmt.Errorf("Invalid service management reference %s: %w", *smf, err)
+	smr := resolveSmr(pm.args.ServiceManagementReference, pm.env.Config, userConfig)
+	if smr != nil {
+		if _, err := uuid.Parse(*smr); err != nil {
+			return result, fmt.Errorf("Invalid service management reference %s: %w", *smr, err)
 		}
 	}
 
@@ -286,7 +286,7 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	options := entraid.CreateOrUpdateServicePrincipalOptions{
 		RolesToAssign:              pm.args.PipelineRoleNames,
 		Description:                &description,
-		ServiceManagementReference: smf,
+		ServiceManagementReference: smr,
 	}
 	servicePrincipal, err := pm.entraIdService.CreateOrUpdateServicePrincipal(
 		ctx,
@@ -992,28 +992,28 @@ func (pm *PipelineManager) promptForProvider(ctx context.Context) (string, error
 	return "", nil // This case should never occur with the current options.
 }
 
-// resolveSmf resolves the service management reference from the user, project, or environment configuration.
-func resolveSmf(smfArg string, projectConfig config.Config, userConfig config.Config) *string {
-	if smfArg != "" {
-		// If the user has provided a value for the --smf flag, use it
-		return &smfArg
+// resolveSmr resolves the service management reference from the user, project, or environment configuration.
+func resolveSmr(smrArg string, projectConfig config.Config, userConfig config.Config) *string {
+	if smrArg != "" {
+		// If the user has provided a value for the --applicationServiceManagementReference flag, use it
+		return &smrArg
 	}
 
-	smfFromConfig := func(config config.Config) *string {
-		if smf, ok := config.GetString("pipeline.config.smf"); ok {
-			return &smf
+	smrFromConfig := func(config config.Config) *string {
+		if smr, ok := config.GetString("pipeline.config.applicationServiceManagementReference"); ok {
+			return &smr
 		}
 		return nil
 	}
 
 	// per environment configuration
-	if smf := smfFromConfig(projectConfig); smf != nil {
-		return smf
+	if smr := smrFromConfig(projectConfig); smr != nil {
+		return smr
 	}
 	// per user configuration
-	if smf := smfFromConfig(userConfig); smf != nil {
-		return smf
+	if smr := smrFromConfig(userConfig); smr != nil {
+		return smr
 	}
-	// no smf configuration
+	// no smr configuration
 	return nil
 }

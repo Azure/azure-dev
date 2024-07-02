@@ -98,19 +98,7 @@ jobs:
         inputs:
           azureSubscription: azure-sdk-tests
           keepAzSessionActive: true
-          scriptType: PowerShell Core
-          scriptLocation: inlineScript
-          inlineScript: |
-            echo "Running go test"
-            ls
-        displayName: ttt
-
-      - task: AzureCLI@2
-        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-        inputs:
-          azureSubscription: azure-sdk-tests
-          keepAzSessionActive: true
-          scriptType: PowerShell Core
+          scriptType: bash
           scriptLocation: scriptPath
           scriptPath: cli/azd/ci-test.ps1
           scriptArguments: >-

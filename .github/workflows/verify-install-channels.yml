@@ -1,0 +1,55 @@
+name: Verify Install Channels
+
+on: 
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  VerifyInstallChannel:
+    name: Verify Install Channel ${{ matrix.name }}
+
+    strategy:
+      matrix:
+        include:
+          - name: WinGet
+            os: windows-latest
+            test-command: winget install Microsoft.Azd
+            setup-command: |
+              $progressPreference = 'silentlyContinue'
+              Write-Information "Downloading WinGet and its dependencies..."
+              Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle
+              Invoke-WebRequest -Uri https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx -OutFile Microsoft.VCLibs.x64.14.00.Desktop.appx
+              Invoke-WebRequest -Uri https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx -OutFile Microsoft.UI.Xaml.2.8.x64.appx
+              Invoke-WebRequest -Uri https://github.com/microsoft/winget-cli/releases/download/v1.8.1522/cdc44a3f51ec4512b990fb5516afe12d_License1.xml -OutFile  cdc44a3f51ec4512b990fb5516afe12d_License1.xml
+
+              Add-AppxPackage Microsoft.VCLibs.x64.14.00.Desktop.appx
+              Add-AppxPackage Microsoft.UI.Xaml.2.8.x64.appx
+              Add-AppxProvisionedPackage `
+                -Online `
+                -PackagePath Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle `
+                -LicensePath cdc44a3f51ec4512b990fb5516afe12d_License1.xml `
+                -Verbose
+
+          - name: Choco
+            os: windows-latest
+            test-command: choco install azd
+
+          - name: Brew
+            os: macOS-latest
+            test-command: brew tap azure/azd && brew install azd
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - run: ${{ matrix.setup-command }}
+        if: ne(matrix.setup-command, '')
+        name: Setup ${{ matrix.name }}
+        shell: pwsh
+
+      - run: ${{ matrix.test-command }}
+        name: Test install azd from ${{ matrix.name }}
+        shell: pwsh
+
+      - run: azd version
+        name: Verify azd version
+        shell: pwsh

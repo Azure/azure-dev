@@ -6,6 +6,7 @@ parameters:
         Pool: $(WINDOWSPOOL)
         Image: $(WINDOWSVMIMAGE)
         OS: windows
+        Shell: powershell
         SetupCommand: |
           Write-Host "Download WinGet and its dependencies..."
           $progressPreference = 'silentlyContinue'
@@ -31,11 +32,13 @@ parameters:
         Image: $(WINDOWSVMIMAGE)
         OS: windows
         TestCommand: choco install azd
+        Shell: pwsh
       Brew:
         Pool: Azure Pipelines
         Image: $(MACVMIMAGE)
         OS: macOS
         TestCommand: brew tap azure/azd && brew install azd
+        Shell: pwsh
 
 jobs:
   - ${{ each channel in parameters.matrix }}:
@@ -52,11 +55,11 @@ jobs:
         - checkout: none
 
         - ${{ if ne('', channel.value.SetupCommand) }}:
-          - powershell: ${{ channel.value.SetupCommand }}
+          - ${{ channel.value.Shell }}: ${{ channel.value.SetupCommand }}
             displayName: Setup ${{ channel.key }}
 
-        - pwsh: ${{ channel.value.TestCommand }}
+        - ${{ channel.value.Shell }}: ${{ channel.value.TestCommand }}
           displayName: Test install azd from ${{ channel.key }}
 
-        - pwsh: azd version
+        - ${{ channel.value.Shell }}: azd version
           displayName: Verify azd version

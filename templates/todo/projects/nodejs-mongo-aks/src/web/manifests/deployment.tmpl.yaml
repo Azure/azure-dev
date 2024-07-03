@@ -18,7 +18,7 @@ spec:
           ports:
             - containerPort: 3000
           env:
-            - name: VITE_APP_API_BASE_URL
+            - name: VITE_API_BASE_URL
               value: /api
             - name: VITE_APPLICATIONINSIGHTS_CONNECTION_STRING
               valueFrom:

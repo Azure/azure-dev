@@ -17,6 +17,21 @@ services:
     dist: dist
     language: js
     host: aks
+    hooks:
+      prebuild:
+        windows:
+          shell: pwsh
+          run: 'echo "VITE_API_BASE_URL=""$env:API_BASE_URL""" > .env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=""$env:APPLICATIONINSIGHTS_CONNECTION_STRING""" >> .env.local'
+        posix:
+          shell: sh
+          run: 'echo VITE_API_BASE_URL=\"$API_BASE_URL\" > .env.local && echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> .env.local'
+      postbuild:
+        windows:
+          shell: pwsh
+          run: "rm .env.local"
+        posix:
+          shell: sh
+          run: "rm .env.local"
   api:
     project: ../../api/js
     language: js
@@ -28,7 +43,7 @@ services:
       postdeploy:
         windows:
           shell: pwsh
-          run: azd env set REACT_APP_API_BASE_URL $env:SERVICE_API_ENDPOINT_URL
+          run: azd env set API_BASE_URL $env:SERVICE_API_ENDPOINT_URL
         posix:
           shell: sh
-          run: azd env set REACT_APP_API_BASE_URL ${SERVICE_API_ENDPOINT_URL}
+          run: azd env set API_BASE_URL ${SERVICE_API_ENDPOINT_URL}

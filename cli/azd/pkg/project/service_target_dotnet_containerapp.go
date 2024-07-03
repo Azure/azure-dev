@@ -248,11 +248,11 @@ func (at *dotnetContainerAppTarget) deployFromBicep(
 		appHostRoot = filepath.Dir(appHostRoot)
 	}
 
-	synthedPath := filepath.Join(
+	existingPath := filepath.Join(
 		appHostRoot, "infra", fmt.Sprintf("%s.bicep", serviceConfig.DotNetContainerApp.ProjectName))
-	if _, err := os.Stat(synthedPath); err == nil {
-		log.Printf("using bicep module from %s", synthedPath)
-		modulePath = synthedPath
+	if _, err := os.Stat(existingPath); err == nil {
+		log.Printf("using bicep module from %s", existingPath)
+		modulePath = existingPath
 	} else {
 		log.Printf(
 			"generating container app manifest from %s for project %s",
@@ -279,16 +279,103 @@ func (at *dotnetContainerAppTarget) deployFromBicep(
 	}
 
 	deploymentName := fmt.Sprintf("%s-%d", serviceConfig.DotNetContainerApp.ProjectName, at.clock.Now().Unix())
+	projectParams, err := apphost.BicepParamsForProject(
+		serviceConfig.DotNetContainerApp.Manifest,
+		serviceConfig.DotNetContainerApp.ProjectName,
+		apphost.AppHostOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("getting bicep parameters: %w", err)
+	}
 
-	// TODO(ellismg): Need to make this better and take the `params` value from the resource into account.
-	params := azure.ArmParameters{
-		"location":                  azure.ArmParameterValue{Value: at.env.Getenv("AZURE_LOCATION")},
-		"containerAppEnvironmentId": azure.ArmParameterValue{Value: at.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")},
-		"containerRegistryEndpoint": azure.ArmParameterValue{Value: at.env.Getenv("AZURE_CONTAINER_REGISTRY_ENDPOINT")},
-		"managedIdentityClientId":   azure.ArmParameterValue{Value: at.env.Getenv("MANAGED_IDENTITY_CLIENT_ID")},
-		"managedIdentityId":         azure.ArmParameterValue{Value: at.env.Getenv("AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID")},
-		"image":                     azure.ArmParameterValue{Value: remoteImageName},
-		"targetPort":                azure.ArmParameterValue{Value: portNumber},
+	knownParams := map[string]any{
+		"location":                  at.env.Getenv("AZURE_LOCATION"),
+		"containerAppEnvironmentId": at.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID"),
+		"containerRegistryEndpoint": at.env.Getenv("AZURE_CONTAINER_REGISTRY_ENDPOINT"),
+		"managedIdentityClientId":   at.env.Getenv("MANAGED_IDENTITY_CLIENT_ID"),
+		"managedIdentityId":         at.env.Getenv("AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID"),
+		"image":                     remoteImageName,
+		"targetPort":                portNumber,
+	}
+
+	deploymentParams := azure.ArmParameters{}
+
+	for k, v := range projectParams {
+		if v == "" {
+			if val, ok := knownParams[k]; ok {
+				deploymentParams[k] = azure.ArmParameterValue{Value: val}
+			} else {
+				return fmt.Errorf("missing value for parameter %s", k)
+			}
+		} else {
+			// TODO(ellismg): This is a bit of a hack, we use the yaml format of evalBindingRef (which yields a
+			// text/template style template) and then we eval it as we would if we were turning a
+			// `containerApp.tmpl.yaml` into a `containerApp.yaml`. That causes the correct value to be substituted
+			// as a parameter.
+			tmplExpr, err := apphost.EvalString(v, func(expr string) (string, error) {
+				return apphost.TemplateForRef(serviceConfig.DotNetContainerApp.Manifest, expr)
+			})
+			if err != nil {
+				return fmt.Errorf("evaluating parameter %s: %w", k, err)
+			}
+
+			fns := &containerAppTemplateManifestFuncs{
+				ctx:                 ctx,
+				manifest:            serviceConfig.DotNetContainerApp.Manifest,
+				targetResource:      targetResource,
+				containerAppService: at.containerAppService,
+				cosmosDbService:     at.cosmosDbService,
+				sqlDbService:        at.sqlDbService,
+				env:                 at.env,
+				keyvaultService:     at.keyvaultService,
+			}
+
+			tmpl, err := template.New("").
+				Option("missingkey=error").
+				Funcs(template.FuncMap{
+					"urlHost":          fns.UrlHost,
+					"connectionString": fns.ConnectionString,
+					"parameter":        fns.Parameter,
+					// securedParameter gets a parameter the same way as parameter, but supporting the securedParameter
+					// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
+					// stores the parameter value.
+					"securedParameter": fns.Parameter,
+					"secretOutput":     fns.kvSecret,
+					"targetPortOrDefault": func(targetPortFromManifest int) int {
+						// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
+						if portNumber == 0 {
+							return targetPortFromManifest
+						}
+						return portNumber
+					},
+				}).
+				Parse(tmplExpr)
+			if err != nil {
+				return fmt.Errorf("failing parsing expression: %w", err)
+			}
+
+			var inputs map[string]any
+			// inputs are auto-gen during provision and saved to env-config
+			if has, err := at.env.Config.GetSection("inputs", &inputs); err != nil {
+				return fmt.Errorf("failed to get inputs section: %w", err)
+			} else if !has {
+				inputs = make(map[string]any)
+			}
+
+			builder := strings.Builder{}
+			err = tmpl.Execute(&builder, struct {
+				Env    map[string]string
+				Inputs map[string]any
+			}{
+				Env:    at.env.Dotenv(),
+				Inputs: inputs,
+			})
+			if err != nil {
+				return fmt.Errorf("failed executing template file: %w", err)
+			}
+
+			deploymentParams[k] = azure.ArmParameterValue{Value: builder.String()}
+		}
 	}
 
 	//TODO(ellismg): What tags should we apply to these deployments?
@@ -297,7 +384,7 @@ func (at *dotnetContainerAppTarget) deployFromBicep(
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		deploymentName,
-		json.RawMessage(compiledModule.Compiled), params, nil)
+		json.RawMessage(compiledModule.Compiled), deploymentParams, nil)
 	if err != nil {
 		return fmt.Errorf("deploying bicep module: %w", err)
 	} else {

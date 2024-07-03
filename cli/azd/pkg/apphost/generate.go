@@ -281,6 +281,39 @@ func BicepModuleForProject(manifest *Manifest, projectName string, options AppHo
 	return destPath, dir, nil
 }
 
+func BicepParamsForProject(manifest *Manifest, projectName string, options AppHostOptions) (map[string]string, error) {
+	generator := newInfraGenerator()
+
+	if err := generator.LoadManifest(manifest); err != nil {
+		return nil, err
+	}
+
+	if err := generator.Compile(); err != nil {
+		return nil, err
+	}
+
+	proj, has := generator.projectv1s[projectName]
+	if !has {
+		return nil, fmt.Errorf("no project.v1 resource found with name %s", projectName)
+	}
+
+	return proj.DeploymentParams, nil
+}
+
+func TemplateForRef(manifest *Manifest, v string) (string, error) {
+	generator := newInfraGenerator()
+
+	if err := generator.LoadManifest(manifest); err != nil {
+		return "", err
+	}
+
+	if err := generator.Compile(); err != nil {
+		return "", err
+	}
+
+	return generator.evalBindingRef(v, inputEmitTypeYaml)
+}
+
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
 func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*memfs.FS, error) {

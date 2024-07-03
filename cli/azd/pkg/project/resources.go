@@ -8,6 +8,27 @@ const (
 	ResourceTypeDbMongo    ResourceType = "db.mongo"
 )
 
+func (r ResourceType) String() string {
+	switch r {
+	case ResourceTypeDbRedis:
+		return "[Database] Redis"
+	case ResourceTypeDbPostgres:
+		return "[Database] PostgreSQL"
+	case ResourceTypeDbMongo:
+		return "[Database] MongoDB"
+	}
+
+	return ""
+}
+
+func AllResources() []ResourceType {
+	return []ResourceType{
+		ResourceTypeDbRedis,
+		ResourceTypeDbPostgres,
+		ResourceTypeDbMongo,
+	}
+}
+
 type ResourceConfig struct {
 	// Reference to the parent project configuration
 	Project *ProjectConfig `yaml:"-"`

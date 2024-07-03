@@ -16,6 +16,7 @@ jobs:
             os: windows-latest
             test-command: winget install Microsoft.Azd
             setup-command: |
+              Import-Module Appx
               $progressPreference = 'silentlyContinue'
               Write-Information "Downloading WinGet and its dependencies..."
               Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle

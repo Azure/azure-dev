@@ -12,26 +12,25 @@ parameters:
           Invoke-WebRequest -Uri https://aka.ms/getwinget -OutFile Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle
           Invoke-WebRequest -Uri https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx -OutFile Microsoft.VCLibs.x64.14.00.Desktop.appx
           Invoke-WebRequest -Uri https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx -OutFile Microsoft.UI.Xaml.2.8.x64.appx
-          Invoke-WebRequest -Uri https://github.com/microsoft/winget-cli/releases/download/v1.8.1522/cdc44a3f51ec4512b990fb5516afe12d_License1.xml -OutFile  cdc44a3f51ec4512b990fb5516afe12d_License1.xml
 
           Add-AppxPackage Microsoft.VCLibs.x64.14.00.Desktop.appx
           Add-AppxPackage Microsoft.UI.Xaml.2.8.x64.appx
           Add-AppxProvisionedPackage `
             -Online `
             -PackagePath Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle `
-            -LicensePath cdc44a3f51ec4512b990fb5516afe12d_License1.xml `
+            -SkipLicense `
             -Verbose
-        TestCommand: winget install Microsoft.Azd
+        TestCommand: winget install Microsoft.Azd && azd version
       Choco:
         Pool: $(WINDOWSPOOL)
         Image: $(WINDOWSVMIMAGE)
         OS: windows
-        TestCommand: choco install azd
+        TestCommand: choco install azd && azd version
       Brew:
         Pool: Azure Pipelines
         Image: $(MACVMIMAGE)
         OS: macOS
-        TestCommand: brew tap azure/azd && brew install azd
+        TestCommand: brew tap azure/azd && brew install azd && azd version
 
 jobs:
   - ${{ each channel in parameters.matrix }}:

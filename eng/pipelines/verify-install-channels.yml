@@ -48,7 +48,7 @@ jobs:
 
         - ${{ if ne('', channel.value.SetupCommand) }}:
           - pwsh: ${{ channel.value.SetupCommand }}
-            default:isplayName: Setup ${{ channel.key }}
+            displayName: Setup ${{ channel.key }}
 
         - pwsh: ${{ channel.value.TestCommand }}
           displayName: Test install azd from ${{ channel.key }}

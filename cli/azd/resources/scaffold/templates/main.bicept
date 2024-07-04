@@ -76,6 +76,7 @@ module keyVault './shared/keyvault.bicep' = {
     tags: tags
     name: '${abbrs.keyVaultVaults}${resourceToken}'
     principalId: principalId
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
   scope: rg
 }

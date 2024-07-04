@@ -96,9 +96,10 @@ public class AcceptanceTests : TestBase
 
         var loadEnv = await esSvc.LoadEnvironmentAsync(context, e2.Name, observer, CancellationToken.None);
         loadEnv.Name.ShouldEqual(e2.Name);
-        loadEnv.Services.Length.ShouldEqual(2);
+        loadEnv.Services.Length.ShouldEqual(3);
         File.Exists(loadEnv.Services[0].Path).ShouldBeTrue();
         File.Exists(loadEnv.Services[1].Path).ShouldBeTrue();
+        File.Exists(loadEnv.Services[2].Path).ShouldBeTrue();
 
         // Delete environments
         var deleted1 = await esSvc.DeleteEnvironmentAsync(context, e.Name, EnvironmentDeleteMode.Local, observer, CancellationToken.None);

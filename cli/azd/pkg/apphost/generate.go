@@ -206,11 +206,15 @@ func ContainerAppManifestTemplateForProject(
 	tCtx := generator.containerAppTemplateContexts[projectName]
 	tmplCtx := yamlTemplateCtx{
 		genContainerAppManifestTemplateContext: tCtx,
-		TargetPortExpression:                   fmt.Sprintf("{{ targetPortOrDefault %d }}", tCtx.Ingress.TargetPort),
 	}
-	if tCtx.Ingress.TargetPort != 0 && !tCtx.Ingress.UsingDefaultPort {
-		// not using default port makes this to be a non-changing value
-		tmplCtx.TargetPortExpression = fmt.Sprintf("%d", tCtx.Ingress.TargetPort)
+
+	if tCtx.Ingress != nil {
+		if tCtx.Ingress.TargetPort != 0 && !tCtx.Ingress.UsingDefaultPort {
+			// not using default port makes this to be a non-changing value
+			tmplCtx.TargetPortExpression = fmt.Sprintf("%d", tCtx.Ingress.TargetPort)
+		} else {
+			tmplCtx.TargetPortExpression = fmt.Sprintf("{{ targetPortOrDefault %d }}", tCtx.Ingress.TargetPort)
+		}
 	}
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)

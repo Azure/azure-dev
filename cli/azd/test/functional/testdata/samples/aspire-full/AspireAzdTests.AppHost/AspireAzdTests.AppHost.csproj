@@ -11,6 +11,7 @@
 	<ItemGroup>
 		<ProjectReference Include="..\AspireAzdTests.ApiService\AspireAzdTests.ApiService.csproj" />
 		<ProjectReference Include="..\AspireAzdTests.Web\AspireAzdTests.Web.csproj" />
+		<ProjectReference Include="..\AspireAzdTests.Worker\AspireAzdTests.Worker.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -78,7 +78,7 @@ func TestAspireEscaping(t *testing.T) {
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
-	for _, name := range []string{"api"} {
+	for _, name := range []string{"api", "worker"} {
 		t.Run(name, func(t *testing.T) {
 			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
 			require.NoError(t, err)

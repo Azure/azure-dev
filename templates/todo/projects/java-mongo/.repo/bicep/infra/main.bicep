@@ -125,6 +125,7 @@ module keyVault '../../../../../../common/infra/bicep/core/security/keyvault.bic
     location: location
     tags: tags
     principalId: principalId
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 

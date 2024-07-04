@@ -3,7 +3,11 @@ param name string
 param location string = resourceGroup().location
 param tags object = {}
 
+@description('The ID of the principal to grant access to the key vault.')
 param principalId string = ''
+
+@description('The ID of the Log Analytics workspace to send audit logs to.')
+param logAnalyticsWorkspaceId string = ''
 
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   name: name
@@ -19,6 +23,21 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
         tenantId: subscription().tenantId
       }
     ] : []
+  }
+}
+
+// Keyvault audit logs
+resource logs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
+  name: '${name}-auditlogs'
+  scope: keyVault
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        category: 'AuditEvent'
+        enabled: true
+      }
+    ]
   }
 }
 

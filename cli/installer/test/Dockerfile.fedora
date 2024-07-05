@@ -1,5 +1,5 @@
 ARG prefix=''
-ARG base='fedora:37'
+ARG base='fedora:40'
 FROM ${prefix}${base}
 
 ARG shell='bash'

@@ -1,5 +1,5 @@
 ARG prefix=''
-ARG base='centos:7'
+ARG base='fedora:40'
 FROM ${prefix}${base}
 
 WORKDIR /work

@@ -99,6 +99,7 @@ func NewRootCmd(
 					"no-prompt",
 					false,
 					"Accepts the default value instead of prompting, or it fails if there is no default.")
+			rootCmd.PersistentFlags().StringVarP(&opts.Query, "query", "q", "", "Run jmespath query on results")
 
 			// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
 			// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we

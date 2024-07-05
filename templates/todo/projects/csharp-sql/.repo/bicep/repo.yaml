@@ -119,9 +119,6 @@ repo:
     - from: ../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep
       to: ./infra/app/applicationinsights-dashboard.bicep
 
-    - from: ../../../../common/infra/bicep/app/website-config.bicep
-      to: ./infra/app/website-config.bicep
-
     - from: ../../../../common/infra/bicep/app/sql-deployment-script.bicep
       to: ./infra/app/sql-deployment-script.bicep
 

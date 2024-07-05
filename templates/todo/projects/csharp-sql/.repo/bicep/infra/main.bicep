@@ -54,6 +54,7 @@ var actualDatabaseName = !empty(sqlDatabaseName) ? sqlDatabaseName : defaultData
 var webUri = 'https://${web.outputs.defaultHostname}'
 var apiUri = 'https://${api.outputs.defaultHostname}'
 var apimApiUri = 'https://${apim.outputs.name}.azure-api.net/todo'
+var apimServiceId = useAPIM ? apim.outputs.resourceId : ''
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -63,7 +64,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 }
 
 // The application frontend
-module web 'br/public:avm/res/web/site:0.3.2' = {
+module web 'br/public:avm/res/web/site:0.3.9' = {
   name: 'web'
   scope: rg
   params: {
@@ -78,11 +79,17 @@ module web 'br/public:avm/res/web/site:0.3.2' = {
       linuxFxVersion: 'node|20-lts'
       alwaysOn: true
     }
+    logsConfiguration: {
+      applicationLogs: { fileSystem: { level: 'Verbose' } }
+      detailedErrorMessages: { enabled: true }
+      failedRequestsTracing: { enabled: true }
+      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
+    }
   }
 }
 
 // The application backend
-module api 'br/public:avm/res/web/site:0.2.0' = {
+module api 'br/public:avm/res/web/site:0.3.9' = {
   name: 'api'
   scope: rg
   params: {
@@ -108,6 +115,12 @@ module api 'br/public:avm/res/web/site:0.2.0' = {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
       SCM_DO_BUILD_DURING_DEPLOYMENT: 'False'
       ENABLE_ORYX_BUILD: 'True'
+    }
+    logsConfiguration: {
+      applicationLogs: { fileSystem: { level: 'Verbose' } }
+      detailedErrorMessages: { enabled: true }
+      failedRequestsTracing: { enabled: true }
+      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
   }
 }
@@ -338,13 +351,19 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
 }
 
 //Configures the API settings for an api app within the Azure API Management (APIM) service.
-module apiConfig '../../../../../common/infra/bicep/app/website-config.bicep' = if (useAPIM) {
+module apiConfig 'br/public:avm/res/web/site:0.3.9' = if (useAPIM) {
   name: 'apiconfig'
   scope: rg
   params: {
-    apimServiceId: useAPIM ? apim.outputs.resourceId : ''
-    apiName: apimApiName
-    apiAppName: api.outputs.name
+    kind: 'app'
+    name: api.outputs.name
+    serverFarmResourceId: appServicePlan.outputs.resourceId
+    location: location
+    apiManagementConfiguration: {
+      apiManagementConfig: {
+        id: '${apimServiceId}/apis/${apimApiName}'
+      }
+    }
   }
 }
 

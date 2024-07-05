@@ -80,6 +80,7 @@ var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : defau
 var apiUri = 'https://${api.outputs.defaultHostname}'
 var webUri = 'https://${web.outputs.defaultHostname}'
 var apimApiUri = 'https://${apim.outputs.name}.azure-api.net/todo'
+var apimServiceId = useAPIM ? apim.outputs.resourceId : ''
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -101,7 +102,7 @@ module web 'br/public:avm/res/web/static-site:0.3.0' = {
 }
 
 // The application backend
-module api 'br/public:avm/res/web/site:0.3.5' = {
+module api 'br/public:avm/res/web/site:0.3.9' = {
   name: 'api'
   scope: rg
   params: {
@@ -132,6 +133,12 @@ module api 'br/public:avm/res/web/site:0.3.5' = {
       FUNCTIONS_WORKER_RUNTIME: 'node'
       SCM_DO_BUILD_DURING_DEPLOYMENT: 'True'
       ENABLE_ORYX_BUILD: 'True'
+    }
+    logsConfiguration: {
+      applicationLogs: { fileSystem: { level: 'Verbose' } }
+      detailedErrorMessages: { enabled: true }
+      failedRequestsTracing: { enabled: true }
+      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
     storageAccountResourceId: storage.outputs.resourceId
   }
@@ -354,12 +361,19 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
 }
 
 //Configures the API settings for an api app within the Azure API Management (APIM) service.
-module apiConfig '../../../../../common/infra/bicep/app/website-config.bicep' = if (useAPIM) {
+module apiConfig 'br/public:avm/res/web/site:0.3.9' = if (useAPIM) {
   name: 'apiconfig'
   scope: rg
   params: {
-    apimServiceId: useAPIM ? apim.outputs.resourceId : ''
-    apiName: apimApiName
+    kind: 'app'
+    name: api.outputs.name
+    serverFarmResourceId: appServicePlan.outputs.resourceId
+    location: location
+    apiManagementConfiguration: {
+      apiManagementConfig: {
+        id: '${apimServiceId}/apis/${apimApiName}'
+      }
+    }
   }
 }
 

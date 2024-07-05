@@ -418,16 +418,6 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
   }
 }
 
-//Configures the API settings for an api app within the Azure API Management (APIM) service.
-module apiConfig '../../../../../common/infra/bicep/app/website-config.bicep' = if (useAPIM) {
-  name: 'apiconfig'
-  scope: rg
-  params: {
-    apimServiceId: useAPIM ? apim.outputs.resourceId : ''
-    apiName: apimApiName
-  }
-}
-
 // Data outputs
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
 output AZURE_COSMOS_DATABASE_NAME string = actualDatabaseName

@@ -365,8 +365,16 @@ module apiConfig 'br/public:avm/res/web/site:0.3.9' = if (useAPIM) {
   name: 'apiconfig'
   scope: rg
   params: {
-    kind: 'app'
+    kind: 'functionapp'
     name: api.outputs.name
+    tags: union(tags, { 'azd-service-name': 'api' })
+    siteConfig: {
+      cors: {
+        allowedOrigins: [ 'https://portal.azure.com', 'https://ms.portal.azure.com' , webUri ]
+      }
+      linuxFxVersion: 'node|20'
+      use32BitWorkerProcess: false
+    }
     serverFarmResourceId: appServicePlan.outputs.resourceId
     location: location
     apiManagementConfiguration: {

@@ -363,6 +363,7 @@ module apiConfig 'br/public:avm/res/web/site:0.3.9' = if (useAPIM) {
   params: {
     kind: 'app'
     name: api.outputs.name
+    tags: union(tags, { 'azd-service-name': 'api' })
     serverFarmResourceId: appServicePlan.outputs.resourceId
     location: location
     apiManagementConfiguration: {

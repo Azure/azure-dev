@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -241,7 +240,7 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
 
 	// Create the infra spec
-	spec, err := i.infraSpecFromDetect(ctx, detect)
+	prjConfig, err := i.prjConfigFromDetect(ctx, azdCtx.ProjectDirectory(), detect)
 	if err != nil {
 		return err
 	}
@@ -255,54 +254,17 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
 	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
-	err = i.genProjectFile(ctx, azdCtx, detect)
+	err = i.genProjectFile(ctx, azdCtx, prjConfig)
 	if err != nil {
 		return err
 	}
 
-	// infra := filepath.Join(azdCtx.ProjectDirectory(), "infra")
-	// title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
-	// i.console.ShowSpinner(ctx, title, input.Step)
-	// defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
-
-	// staging, err := os.MkdirTemp("", "azd-infra")
-	// if err != nil {
-	// 	return fmt.Errorf("mkdir temp: %w", err)
-	// }
-
-	// defer func() { _ = os.RemoveAll(staging) }()
 	t, err := scaffold.Load()
 	if err != nil {
 		return fmt.Errorf("loading scaffold templates: %w", err)
 	}
 
-	// err = scaffold.ExecInfra(t, spec, staging)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// if err := os.MkdirAll(infra, osutil.PermissionDirectory); err != nil {
-	// 	return err
-	// }
-
-	// skipStagingFiles, err := i.promptForDuplicates(ctx, staging, infra)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// options := copy.Options{}
-	// if skipStagingFiles != nil {
-	// 	options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
-	// 		_, skip := skipStagingFiles[src]
-	// 		return skip, nil
-	// 	}
-	// }
-
-	// if err := copy.Copy(staging, infra, options); err != nil {
-	// 	return fmt.Errorf("copying contents from temp staging directory: %w", err)
-	// }
-
-	err = scaffold.Execute(t, "next-steps.md", spec, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
+	err = scaffold.Execute(t, "next-steps.md", prjConfig, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
 	if err != nil {
 		return err
 	}
@@ -317,20 +279,16 @@ func (i *Initializer) InitFromApp(
 func (i *Initializer) genProjectFile(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	detect detectConfirm) error {
+	prjConfig project.ProjectConfig) error {
 	title := "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
 
 	i.console.ShowSpinner(ctx, title, input.Step)
 	var err error
 	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 
-	config, err := prjConfigFromDetect(azdCtx.ProjectDirectory(), detect)
-	if err != nil {
-		return fmt.Errorf("converting config: %w", err)
-	}
 	err = project.Save(
 		ctx,
-		&config,
+		&prjConfig,
 		azdCtx.ProjectPath())
 	if err != nil {
 		return fmt.Errorf("generating %s: %w", azdcontext.ProjectFileName, err)
@@ -340,78 +298,3 @@ func (i *Initializer) genProjectFile(
 }
 
 const InitGenTemplateId = "azd-init"
-
-func prjConfigFromDetect(
-	root string,
-	detect detectConfirm) (project.ProjectConfig, error) {
-	config := project.ProjectConfig{
-		Name: filepath.Base(root),
-		Metadata: &project.ProjectMetadata{
-			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
-		},
-		Services: map[string]*project.ServiceConfig{},
-	}
-	for _, prj := range detect.Services {
-		rel, err := filepath.Rel(root, prj.Path)
-		if err != nil {
-			return project.ProjectConfig{}, err
-		}
-
-		svc := project.ServiceConfig{}
-		svc.Host = project.ContainerAppTarget
-		svc.RelativePath = rel
-
-		language, supported := languageMap[prj.Language]
-		if !supported {
-			continue
-		}
-		svc.Language = language
-
-		if prj.Docker != nil {
-			relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
-			if err != nil {
-				return project.ProjectConfig{}, err
-			}
-
-			svc.Docker = project.DockerProjectOptions{
-				Path: relDocker,
-			}
-		}
-
-		if prj.HasWebUIFramework() {
-			// By default, use 'dist'. This is common for frameworks such as:
-			// - TypeScript
-			// - Vite
-			svc.OutputPath = "dist"
-
-		loop:
-			for _, dep := range prj.Dependencies {
-				switch dep {
-				case appdetect.JsNext:
-					// next.js works as SSR with default node configuration without static build output
-					svc.OutputPath = ""
-					break loop
-				case appdetect.JsVite:
-					svc.OutputPath = "dist"
-					break loop
-				case appdetect.JsReact:
-					// react from create-react-app uses 'build' when used, but this can be overridden
-					// by choice of build tool, such as when using Vite.
-					svc.OutputPath = "build"
-				case appdetect.JsAngular:
-					// angular uses dist/<project name>
-					svc.OutputPath = "dist/" + filepath.Base(rel)
-					break loop
-				}
-			}
-		}
-
-		name := filepath.Base(rel)
-		if name == "." {
-			name = config.Name
-		}
-		config.Services[name] = &svc
-	}
-
-	return config, nil
-}

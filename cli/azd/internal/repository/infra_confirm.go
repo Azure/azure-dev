@@ -8,23 +8,40 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
 // A regex that matches against "likely" well-formed database names
 var wellFormedDbNameRegex = regexp.MustCompile(`^[a-zA-Z\-_0-9]*$`)
 
-// infraSpecFromDetect creates an InfraSpec from the results of app detection confirmation,
+// prjConfigFromDetect creates a project config from the results of app detection confirmation,
 // prompting for additional inputs if necessary.
-func (i *Initializer) infraSpecFromDetect(
+func (i *Initializer) prjConfigFromDetect(
 	ctx context.Context,
-	detect detectConfirm) (scaffold.InfraSpec, error) {
-	spec := scaffold.InfraSpec{}
+	root string,
+	detect detectConfirm) (project.ProjectConfig, error) {
+	prj := project.ProjectConfig{
+		Name: filepath.Base(root),
+		Metadata: &project.ProjectMetadata{
+			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
+		},
+		Services:  map[string]*project.ServiceConfig{},
+		Resources: map[string]*project.ResourceConfig{},
+	}
+
+	dbNames := map[appdetect.DatabaseDep]string{}
 	for database := range detect.Databases {
-		if database == appdetect.DbRedis { // no configuration needed for redis
+		if database == appdetect.DbRedis {
+			redis := project.ResourceConfig{
+				Type: project.ResourceTypeDbRedis,
+				Name: "redis",
+			}
+			prj.Resources[redis.Name] = &redis
+			dbNames[database] = redis.Name
 			continue
 		}
 
@@ -38,7 +55,12 @@ func (i *Initializer) infraSpecFromDetect(
 					"\nYou may be able to skip this step by hitting enter, in which case the database will not be created.",
 			})
 			if err != nil {
-				return scaffold.InfraSpec{}, err
+				return prj, err
+			}
+
+			if dbName == "" {
+				i.console.Message(ctx, "Database name is required.")
+				continue
 			}
 
 			if strings.ContainsAny(dbName, " ") {
@@ -49,7 +71,7 @@ func (i *Initializer) infraSpecFromDetect(
 					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
 				})
 				if err != nil {
-					return scaffold.InfraSpec{}, err
+					return prj, err
 				}
 
 				if !confirm {
@@ -64,7 +86,7 @@ func (i *Initializer) infraSpecFromDetect(
 					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
 				})
 				if err != nil {
-					return scaffold.InfraSpec{}, err
+					return prj, err
 				}
 
 				if !confirm {
@@ -72,84 +94,62 @@ func (i *Initializer) infraSpecFromDetect(
 				}
 			}
 
+			var dbType project.ResourceType
 			switch database {
 			case appdetect.DbMongo:
-				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
-					DatabaseName: dbName,
-				}
-
-				break dbPrompt
+				dbType = project.ResourceTypeDbMongo
 			case appdetect.DbPostgres:
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-
-				spec.DbPostgres = &scaffold.DatabasePostgres{
-					DatabaseName: dbName,
-				}
+				dbType = project.ResourceTypeDbRedis
 			}
+
+			db := project.ResourceConfig{
+				Type: dbType,
+				Name: dbName,
+			}
+			prj.Resources[db.Name] = &db
+			dbNames[database] = dbName
 			break dbPrompt
 		}
 	}
 
+	backends := []*project.ServiceConfig{}
+	frontends := []*project.ServiceConfig{}
 	for _, svc := range detect.Services {
 		name := filepath.Base(svc.Path)
-		serviceSpec := scaffold.ServiceSpec{
-			Name: name,
+		rel, err := filepath.Rel(root, svc.Path)
+		if err != nil {
+			return project.ProjectConfig{}, err
+		}
+
+		svcSpec := project.ServiceConfig{
 			Port: -1,
 		}
+		svcSpec.Host = project.ContainerAppTarget
+		svcSpec.RelativePath = rel
+
+		language, supported := languageMap[svc.Language]
+		if !supported {
+			continue
+		}
+		svcSpec.Language = language
 
 		if svc.Docker == nil || svc.Docker.Path == "" {
 			// default builder always specifies port 80
-			serviceSpec.Port = 80
+			svcSpec.Port = 80
 
 			if svc.Language == appdetect.Java {
-				serviceSpec.Port = 8080
+				svcSpec.Port = 8080
 			}
 		}
 
-		for _, framework := range svc.Dependencies {
-			if framework.IsWebUIFramework() {
-				serviceSpec.Frontend = &scaffold.Frontend{}
-			}
-		}
-
-		for _, db := range svc.DatabaseDeps {
-			// filter out databases that were removed
-			if _, ok := detect.Databases[db]; !ok {
-				continue
-			}
-
-			switch db {
-			case appdetect.DbMongo:
-				serviceSpec.DbCosmosMongo = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbCosmosMongo.DatabaseName,
-				}
-			case appdetect.DbPostgres:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
-				}
-			case appdetect.DbRedis:
-				serviceSpec.DbRedis = &scaffold.DatabaseReference{
-					DatabaseName: "redis",
-				}
-			}
-		}
-		spec.Services = append(spec.Services, serviceSpec)
-	}
-
-	backends := []scaffold.ServiceReference{}
-	frontends := []scaffold.ServiceReference{}
-	for idx := range spec.Services {
-		if spec.Services[idx].Port == -1 {
+		if svcSpec.Port == -1 {
 			var port int
 			for {
 				val, err := i.console.Prompt(ctx, input.ConsoleOptions{
-					Message: "What port does '" + spec.Services[idx].Name + "' listen on?",
+					Message: "What port does '" + name + "' listen on?",
 				})
 				if err != nil {
-					return scaffold.InfraSpec{}, err
+					return prj, err
 				}
 
 				port, err = strconv.Atoi(val)
@@ -165,32 +165,73 @@ func (i *Initializer) infraSpecFromDetect(
 
 				break
 			}
-			spec.Services[idx].Port = port
+			svcSpec.Port = port
 		}
 
-		if spec.Services[idx].Frontend == nil && spec.Services[idx].Port != 0 {
-			backends = append(backends, scaffold.ServiceReference{
-				Name: spec.Services[idx].Name,
-			})
+		if svc.Docker != nil {
+			relDocker, err := filepath.Rel(svc.Path, svc.Docker.Path)
+			if err != nil {
+				return project.ProjectConfig{}, err
+			}
 
-			spec.Services[idx].Backend = &scaffold.Backend{}
+			svcSpec.Docker = project.DockerProjectOptions{
+				Path: relDocker,
+			}
+		}
+
+		for _, db := range svc.DatabaseDeps {
+			// filter out databases that were removed
+			if _, ok := detect.Databases[db]; !ok {
+				continue
+			}
+
+			svcSpec.Uses = append(svcSpec.Uses, dbNames[db])
+		}
+
+		if svc.HasWebUIFramework() {
+			// By default, use 'dist'. This is common for frameworks such as:
+			// - TypeScript
+			// - Vite
+			svcSpec.OutputPath = "dist"
+
+		loop:
+			for _, dep := range svc.Dependencies {
+				switch dep {
+				case appdetect.JsNext:
+					// next.js works as SSR with default node configuration without static build output
+					svcSpec.OutputPath = ""
+					break loop
+				case appdetect.JsVite:
+					svcSpec.OutputPath = "dist"
+					break loop
+				case appdetect.JsReact:
+					// react from create-react-app uses 'build' when used, but this can be overridden
+					// by choice of build tool, such as when using Vite.
+					svcSpec.OutputPath = "build"
+				case appdetect.JsAngular:
+					// angular uses dist/<project name>
+					svcSpec.OutputPath = "dist/" + filepath.Base(rel)
+					break loop
+				}
+			}
+
+			frontends = append(frontends, &svcSpec)
 		} else {
-			frontends = append(frontends, scaffold.ServiceReference{
-				Name: spec.Services[idx].Name,
-			})
+			backends = append(backends, &svcSpec)
+		}
+
+		if name == "." {
+			name = prj.Name
+		}
+		svcSpec.Name = name
+		prj.Services[name] = &svcSpec
+	}
+
+	for _, frontend := range frontends {
+		for _, backend := range backends {
+			frontend.Uses = append(frontend.Uses, backend.Name)
 		}
 	}
 
-	// Link services together
-	for _, service := range spec.Services {
-		if service.Frontend != nil && len(backends) > 0 {
-			service.Frontend.Backends = backends
-		}
-
-		if service.Backend != nil && len(frontends) > 0 {
-			service.Backend.Frontends = frontends
-		}
-	}
-
-	return spec, nil
+	return prj, nil
 }

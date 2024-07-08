@@ -45,7 +45,7 @@ type ServiceConfig struct {
 	Config map[string]any `yaml:"config,omitempty"`
 	// The resources that this service depends on
 	Uses []string `yaml:"uses,omitempty"`
-	Port string   `yaml:"port,omitempty"`
+	Port int      `yaml:"port,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }

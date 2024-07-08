@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +20,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 		name         string
 		detect       detectConfirm
 		interactions []string
-		want         scaffold.InfraSpec
+		want         project.ProjectConfig
 	}{
 		{
 			name: "api",
@@ -31,12 +33,13 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				},
 			},
 			interactions: []string{},
-			want: scaffold.InfraSpec{
-				Services: []scaffold.ServiceSpec{
-					{
-						Name:    "dotnet",
-						Port:    80,
-						Backend: &scaffold.Backend{},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"dotnet": {
+						Language:     project.ServiceLanguageDotNet,
+						RelativePath: "dotnet",
+						Host:         project.ContainerAppTarget,
+						Port:         80,
 					},
 				},
 			},
@@ -55,12 +58,14 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				},
 			},
 			interactions: []string{},
-			want: scaffold.InfraSpec{
-				Services: []scaffold.ServiceSpec{
-					{
-						Name:     "js",
-						Port:     80,
-						Frontend: &scaffold.Frontend{},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"js": {
+						Language:     project.ServiceLanguageJavaScript,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "js",
+						OutputPath:   "build",
+						Port:         80,
 					},
 				},
 			},
@@ -83,12 +88,16 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				"65536",
 				"1234",
 			},
-			want: scaffold.InfraSpec{
-				Services: []scaffold.ServiceSpec{
-					{
-						Name:    "dotnet",
-						Port:    1234,
-						Backend: &scaffold.Backend{},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"dotnet": {
+						Port:         1234,
+						Language:     project.ServiceLanguageDotNet,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "dotnet",
+						Docker: project.DockerProjectOptions{
+							Path: "Dockerfile",
+						},
 					},
 				},
 			},
@@ -111,29 +120,21 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				},
 			},
 			interactions: []string{},
-			want: scaffold.InfraSpec{
-				Services: []scaffold.ServiceSpec{
-					{
-						Name: "py",
-						Port: 80,
-						Backend: &scaffold.Backend{
-							Frontends: []scaffold.ServiceReference{
-								{
-									Name: "js",
-								},
-							},
-						},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"py": {
+						Language:     project.ServiceLanguagePython,
+						Host:         project.ContainerAppTarget,
+						Port:         80,
+						RelativePath: "py",
 					},
-					{
-						Name: "js",
-						Port: 80,
-						Frontend: &scaffold.Frontend{
-							Backends: []scaffold.ServiceReference{
-								{
-									Name: "py",
-								},
-							},
-						},
+					"js": {
+						Language:     project.ServiceLanguageJavaScript,
+						Host:         project.ContainerAppTarget,
+						Port:         80,
+						RelativePath: "js",
+						OutputPath:   "build",
+						Uses:         []string{"py"},
 					},
 				},
 			},
@@ -164,35 +165,28 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			interactions: []string{
 				"myappdb", // fill in db name
 			},
-			want: scaffold.InfraSpec{
-				DbPostgres: &scaffold.DatabasePostgres{
-					DatabaseName: "myappdb",
-				},
-				Services: []scaffold.ServiceSpec{
-					{
-						Name: "py",
-						Port: 80,
-						Backend: &scaffold.Backend{
-							Frontends: []scaffold.ServiceReference{
-								{
-									Name: "js",
-								},
-							},
-						},
-						DbPostgres: &scaffold.DatabaseReference{
-							DatabaseName: "myappdb",
-						},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"py": {
+						Language:     project.ServiceLanguagePython,
+						Host:         project.ContainerAppTarget,
+						Port:         80,
+						RelativePath: "py",
+						Uses:         []string{"myappdb"},
 					},
-					{
-						Name: "js",
-						Port: 80,
-						Frontend: &scaffold.Frontend{
-							Backends: []scaffold.ServiceReference{
-								{
-									Name: "py",
-								},
-							},
-						},
+					"js": {
+						Language:     project.ServiceLanguageJavaScript,
+						Host:         project.ContainerAppTarget,
+						Port:         80,
+						RelativePath: "js",
+						OutputPath:   "build",
+						Uses:         []string{"py"},
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"myappdb": {
+						Type: project.ResourceTypeDbRedis,
+						Name: "myappdb",
 					},
 				},
 			},
@@ -214,7 +208,31 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 					nil),
 			}
 
-			spec, err := i.infraSpecFromDetect(context.Background(), tt.detect)
+			dir := t.TempDir()
+
+			prjName := dir
+			tt.want.Name = filepath.Base(prjName)
+			tt.want.Metadata = &project.ProjectMetadata{
+				Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
+			}
+
+			if tt.want.Resources == nil {
+				tt.want.Resources = map[string]*project.ResourceConfig{}
+			}
+
+			for k, svc := range tt.want.Services {
+				svc.Name = k
+			}
+
+			// Convert relative to absolute paths
+			for idx, svc := range tt.detect.Services {
+				tt.detect.Services[idx].Path = filepath.Join(dir, svc.Path)
+				if tt.detect.Services[idx].Docker != nil {
+					tt.detect.Services[idx].Docker.Path = filepath.Join(dir, svc.Path, svc.Docker.Path)
+				}
+			}
+
+			spec, err := i.prjConfigFromDetect(context.Background(), dir, tt.detect)
 
 			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
 			// which may result in incorrect `gotestsum` reporting

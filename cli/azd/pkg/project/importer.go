@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
@@ -328,14 +327,10 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			Port: -1,
 		}
 
-		if svc.Port != "" {
-			port, err := strconv.Atoi(svc.Port)
-			if err != nil {
-				return nil, fmt.Errorf("invalid port value %s for service %s", svc.Port, svc.Name)
-			}
-
+		if svc.Port != 0 {
+			port := svc.Port
 			if port < 1 || port > 65535 {
-				return nil, fmt.Errorf("port value %s for service %s must be between 1 and 65535", svc.Port, svc.Name)
+				return nil, fmt.Errorf("port value %d for service %s must be between 1 and 65535", svc.Port, svc.Name)
 			}
 
 			svcSpec.Port = port

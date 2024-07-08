@@ -125,6 +125,10 @@
                         "type": "string",
                         "title": "Relative path to service deployment artifacts"
                     },
+                    "port": {
+                        "type": "integer",
+                        "title": "Port that this service listens on (if applicable)"
+                    },
                     "docker": {
                         "$ref": "#/definitions/docker"
                     },

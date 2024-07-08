@@ -10,6 +10,7 @@ param enabledForDeployment bool = false
 @description('Allow the key vault to be used for template deployment.')
 param enabledForTemplateDeployment bool = false
 
+// This kv should not create kv with purge protection enabled
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   name: name
   location: location

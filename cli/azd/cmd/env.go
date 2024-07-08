@@ -79,6 +79,12 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		DefaultFormat:  output.EnvVarsFormat,
 	})
 
+	group.Add("get-value", &actions.ActionDescriptorOptions{
+		Command:        newEnvGetValueCmd(),
+		FlagsResolver:  newEnvGetValueFlags,
+		ActionResolver: newEnvGetValueAction,
+	})
+
 	return group
 }
 
@@ -590,6 +596,107 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	return nil, eg.formatter.Format(env.Dotenv(), eg.writer, nil)
+}
+
+func newEnvGetValueFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValueFlags {
+	flags := &envGetValueFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvGetValueCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "get-value <keyName>",
+		Short: "Get specific environment value.",
+	}
+	cmd.Args = cobra.MaximumNArgs(1)
+
+	return cmd
+}
+
+type envGetValueFlags struct {
+	internal.EnvFlag
+	global *internal.GlobalCommandOptions
+}
+
+func (eg *envGetValueFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	eg.EnvFlag.Bind(local, global)
+	eg.global = global
+}
+
+type envGetValueAction struct {
+	azdCtx     *azdcontext.AzdContext
+	console    input.Console
+	envManager environment.Manager
+	formatter  output.Formatter
+	writer     io.Writer
+	flags      *envGetValueFlags
+	args       []string
+}
+
+func newEnvGetValueAction(
+	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+	flags *envGetValueFlags,
+	args []string,
+
+) actions.Action {
+	return &envGetValueAction{
+		azdCtx:     azdCtx,
+		console:    console,
+		envManager: envManager,
+		formatter:  formatter,
+		writer:     writer,
+		flags:      flags,
+		args:       args,
+	}
+}
+
+func (eg *envGetValueAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(eg.args) < 1 {
+		return nil, fmt.Errorf("no key name provided")
+	}
+
+	keyName := eg.args[0]
+
+	name, err := eg.azdCtx.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+	// Note: if there is not an environment yet, GetDefaultEnvironmentName() returns empty string (not error)
+	// and later, when envManager.Get() is called with the empty string, azd returns an error.
+	// But if there is already an environment (default to be selected), azd must honor the --environment flag
+	// over the default environment.
+	if eg.flags.EnvironmentName != "" {
+		name = eg.flags.EnvironmentName
+	}
+	env, err := eg.envManager.Get(ctx, name)
+	if errors.Is(err, environment.ErrNotFound) {
+		return nil, fmt.Errorf(
+			`environment '%s' does not exist. You can create it with "azd env new %s"`,
+			name,
+			name,
+		)
+	} else if err != nil {
+		return nil, fmt.Errorf("ensuring environment exists: %w", err)
+	}
+
+	values := env.Dotenv()
+	keyValue, exists := values[keyName]
+	if !exists {
+		return nil, fmt.Errorf("key '%s' not found in the environment values", keyName)
+	}
+
+	// Directly write the key value to the writer
+	if _, err := fmt.Fprintln(eg.writer, keyValue); err != nil {
+		return nil, fmt.Errorf("writing key value: %w", err)
+	}
+
+	return nil, nil
 }
 
 func getCmdEnvHelpDescription(*cobra.Command) string {

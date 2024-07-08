@@ -6,6 +6,8 @@ package output
 import (
 	"fmt"
 	"io"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
 )
 
 type Format string
@@ -22,10 +24,10 @@ type Formatter interface {
 	Format(obj interface{}, writer io.Writer, opts interface{}) error
 }
 
-func NewFormatter(format string) (Formatter, error) {
+func NewFormatter(format string, globalOptions *internal.GlobalCommandOptions) (Formatter, error) {
 	switch format {
 	case string(JsonFormat):
-		return &JsonFormatter{}, nil
+		return NewJsonFormatter(globalOptions), nil
 	case string(EnvVarsFormat):
 		return &EnvVarsFormatter{}, nil
 	case string(TableFormat):

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
@@ -46,7 +47,17 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 	// We need to give it some time to paint.
 	const cSleep = 50 * time.Millisecond
 
-	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	// Create and initialize GlobalCommandOptions
+	globalOptions := &internal.GlobalCommandOptions{
+		Cwd:                "/path/to/dir",
+		EnableDebugLogging: false,
+		NoPrompt:           false,
+		EnableTelemetry:    true,
+		GenerateStaticHelp: false,
+		Query:              "",
+	}
+
+	formatter, err := output.NewFormatter(string(output.NoneFormat), globalOptions)
 	require.NoError(t, err)
 
 	lines := &lineCapturer{}

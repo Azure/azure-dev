@@ -337,7 +337,6 @@ func NewRootCmd(
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
 		})
-
 	// Register common dependencies for the IoC rootContainer
 	if rootContainer == nil {
 		rootContainer = ioc.NewNestedContainer(nil)

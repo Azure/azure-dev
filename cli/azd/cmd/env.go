@@ -10,7 +10,6 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -62,7 +61,7 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newEnvListAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
-	}).UseMiddleware("query", middleware.NewQueryMiddleware)
+	})
 
 	group.Add("refresh", &actions.ActionDescriptorOptions{
 		Command:        newEnvRefreshCmd(),

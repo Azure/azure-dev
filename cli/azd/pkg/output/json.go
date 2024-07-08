@@ -1,6 +1,3 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-
 package output
 
 import (
@@ -11,11 +8,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/jmespath/go-jmespath"
 	"github.com/mattn/go-colorable"
 )
 
 type JsonFormatter struct {
+	globalOptions *internal.GlobalCommandOptions
+}
+
+func NewJsonFormatter(globalOptions *internal.GlobalCommandOptions) *JsonFormatter {
+	return &JsonFormatter{globalOptions: globalOptions}
 }
 
 func (f *JsonFormatter) Kind() Format {
@@ -23,6 +27,15 @@ func (f *JsonFormatter) Kind() Format {
 }
 
 func (f *JsonFormatter) Format(obj interface{}, writer io.Writer, _ interface{}) error {
+	if f.globalOptions != nil && f.globalOptions.Query != "" {
+		// Apply the JMESPath query to the obj
+		filteredObj, err := jmespath.Search(f.globalOptions.Query, obj)
+		if err != nil {
+			return fmt.Errorf("applying JMESPath query: %w", err)
+		}
+		obj = filteredObj
+	}
+
 	b, err := json.MarshalIndent(obj, "", "  ")
 	if err != nil {
 		return err
@@ -43,8 +56,8 @@ func (f *JsonFormatter) Format(obj interface{}, writer io.Writer, _ interface{})
 
 var _ Formatter = (*JsonFormatter)(nil)
 
-// jsonObjectForMessage creates a json object representing a message. Any ANSI control sequences from the message are
-// removed. A trailing newline is added to the message.
+// jsonObjectForMessage creates a json object representing a message.
+// Any ANSI control sequences from the message are removed. A trailing newline is added to the message.
 func EventForMessage(message string) contracts.EventEnvelope {
 	// Strip any ANSI colors for the message.
 	var buf bytes.Buffer

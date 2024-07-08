@@ -629,7 +629,6 @@ type envGetValueAction struct {
 	azdCtx     *azdcontext.AzdContext
 	console    input.Console
 	envManager environment.Manager
-	formatter  output.Formatter
 	writer     io.Writer
 	flags      *envGetValueFlags
 	args       []string
@@ -639,7 +638,6 @@ func newEnvGetValueAction(
 	azdCtx *azdcontext.AzdContext,
 	envManager environment.Manager,
 	console input.Console,
-	formatter output.Formatter,
 	writer io.Writer,
 	flags *envGetValueFlags,
 	args []string,
@@ -649,7 +647,6 @@ func newEnvGetValueAction(
 		azdCtx:     azdCtx,
 		console:    console,
 		envManager: envManager,
-		formatter:  formatter,
 		writer:     writer,
 		flags:      flags,
 		args:       args,

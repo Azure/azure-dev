@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
@@ -103,12 +104,20 @@ func (cli *azCli) DeployAppServiceZip(
 	// Deployment Status API only support linux web app for now
 	if isLinuxWebApp(app) {
 		if err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
+			if strings.Contains(err.Error(), "empty deployment status id") {
+				progressLog("Deployment status id is empty. Failed to enable tracking runtime status." +
+					"Resuming deployment without tracking status.")
+			}
+			if strings.Contains(err.Error(), "response or its properties are empty") {
+				progressLog("Response or its properties are empty. Failed to enable tracking runtime status." +
+					"Resuming deployment without tracking status.")
+			}
 			return nil, err
+		} else {
+			// Deployment is successful
+			statusText := "OK"
+			return convert.RefOf(statusText), nil
 		}
-
-		// Deployment is successful
-		statusText := "OK"
-		return convert.RefOf(statusText), nil
 	}
 
 	response, err := client.Deploy(ctx, deployZipFile)

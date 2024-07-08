@@ -46,9 +46,8 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	slices.Sort(resourceTypesDisplay)
 
 	continueOption, err := a.console.Select(ctx, input.ConsoleOptions{
-		Message:      "What would you like to add?",
-		Options:      resourceTypesDisplay,
-		DefaultValue: resourceTypesDisplay[0],
+		Message: "What would you like to add?",
+		Options: resourceTypesDisplay,
 	})
 	if err != nil {
 		return nil, err
@@ -65,9 +64,8 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	slices.Sort(svc)
 
 	svcOptions, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
-		Message:      "Select the service(s) that uses this database",
-		Options:      svc,
-		DefaultValue: []string{svc[0]},
+		Message: "Select the service(s) that uses this database",
+		Options: svc,
 	})
 	if err != nil {
 		return nil, err
@@ -156,7 +154,6 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) er
 		Help: "Hint: App database name\n\n" +
 			"Name of the database that the app connects to. " +
 			"This database will be created after running azd provision or azd up.",
-		DefaultValue: "asd",
 	})
 	if err != nil {
 		return err

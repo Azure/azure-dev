@@ -6,6 +6,7 @@ package cmd
 import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
@@ -46,6 +47,12 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			ActionResolver: newInfraSynthAction,
 			OutputFormats:  []output.Format{output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+		})
+
+	group.
+		Add("add", &actions.ActionDescriptorOptions{
+			Command:        cmd.NewInfraAddCmd(),
+			ActionResolver: cmd.NewInfraAddAction,
 		})
 
 	return group

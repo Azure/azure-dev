@@ -18,29 +18,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func ScaffoldActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	group := root.Add("scaffold", &actions.ActionDescriptorOptions{
-		Command: &cobra.Command{
-			Use:   "scaffold",
-			Short: "Scaffold your app to run on Azure.",
-		},
-		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
-		},
-	})
-
-	group.Add("add", &actions.ActionDescriptorOptions{
-		Command:        newAddCmd(),
-		ActionResolver: newAddAction,
-	})
-
-	return group
-}
-
-func newAddCmd() *cobra.Command {
+func NewInfraAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add",
-		Short: "Add a resource to your app.",
+		Short: "Add a componennt to your app.",
 	}
 }
 
@@ -155,7 +136,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return nil, file.Close()
 }
 
-func newAddAction(
+func NewInfraAddAction(
 	azdCtx *azdcontext.AzdContext,
 	console input.Console) actions.Action {
 	return &AddAction{

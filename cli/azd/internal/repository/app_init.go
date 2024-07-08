@@ -260,47 +260,47 @@ func (i *Initializer) InitFromApp(
 		return err
 	}
 
-	infra := filepath.Join(azdCtx.ProjectDirectory(), "infra")
-	title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
-	i.console.ShowSpinner(ctx, title, input.Step)
-	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
+	// infra := filepath.Join(azdCtx.ProjectDirectory(), "infra")
+	// title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
+	// i.console.ShowSpinner(ctx, title, input.Step)
+	// defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 
-	staging, err := os.MkdirTemp("", "azd-infra")
-	if err != nil {
-		return fmt.Errorf("mkdir temp: %w", err)
-	}
+	// staging, err := os.MkdirTemp("", "azd-infra")
+	// if err != nil {
+	// 	return fmt.Errorf("mkdir temp: %w", err)
+	// }
 
-	defer func() { _ = os.RemoveAll(staging) }()
+	// defer func() { _ = os.RemoveAll(staging) }()
 	t, err := scaffold.Load()
 	if err != nil {
 		return fmt.Errorf("loading scaffold templates: %w", err)
 	}
 
-	err = scaffold.ExecInfra(t, spec, staging)
-	if err != nil {
-		return err
-	}
+	// err = scaffold.ExecInfra(t, spec, staging)
+	// if err != nil {
+	// 	return err
+	// }
 
-	if err := os.MkdirAll(infra, osutil.PermissionDirectory); err != nil {
-		return err
-	}
+	// if err := os.MkdirAll(infra, osutil.PermissionDirectory); err != nil {
+	// 	return err
+	// }
 
-	skipStagingFiles, err := i.promptForDuplicates(ctx, staging, infra)
-	if err != nil {
-		return err
-	}
+	// skipStagingFiles, err := i.promptForDuplicates(ctx, staging, infra)
+	// if err != nil {
+	// 	return err
+	// }
 
-	options := copy.Options{}
-	if skipStagingFiles != nil {
-		options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
-			_, skip := skipStagingFiles[src]
-			return skip, nil
-		}
-	}
+	// options := copy.Options{}
+	// if skipStagingFiles != nil {
+	// 	options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
+	// 		_, skip := skipStagingFiles[src]
+	// 		return skip, nil
+	// 	}
+	// }
 
-	if err := copy.Copy(staging, infra, options); err != nil {
-		return fmt.Errorf("copying contents from temp staging directory: %w", err)
-	}
+	// if err := copy.Copy(staging, infra, options); err != nil {
+	// 	return fmt.Errorf("copying contents from temp staging directory: %w", err)
+	// }
 
 	err = scaffold.Execute(t, "next-steps.md", spec, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
 	if err != nil {

@@ -125,7 +125,6 @@ func NewRootCmd(
 	templatesActions(root)
 	authActions(root)
 	hooksActions(root)
-	cmd.ScaffoldActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{

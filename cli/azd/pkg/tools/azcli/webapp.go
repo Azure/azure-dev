@@ -50,7 +50,7 @@ func (cli *azCli) appService(
 }
 
 func isLinuxWebApp(response *armappservice.WebAppsClientGetResponse) bool {
-	if response.Properties != nil && response.Properties.SiteConfig != nil &&
+	if *response.Kind == "app,linux" && response.Properties != nil && response.Properties.SiteConfig != nil &&
 		response.Properties.SiteConfig.LinuxFxVersion != nil &&
 		*response.Properties.SiteConfig.LinuxFxVersion != "" {
 		return true

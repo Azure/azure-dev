@@ -36,6 +36,18 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("reading project file: %w", err)
 	}
 
+	continueOption, err := a.console.Select(ctx, input.ConsoleOptions{
+		Message: "What would you like to add?",
+		Options: []string{"Database", "Storage", "AI Service"},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if continueOption != 0 {
+		return nil, fmt.Errorf("not implemented")
+	}
+
 	resourceTypes := project.AllResources()
 	resourceTypesDisplay := make([]string, 0, len(resourceTypes))
 	resourceTypesDisplayMap := make(map[string]project.ResourceType)
@@ -45,8 +57,8 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	slices.Sort(resourceTypesDisplay)
 
-	continueOption, err := a.console.Select(ctx, input.ConsoleOptions{
-		Message: "What would you like to add?",
+	dbOption, err := a.console.Select(ctx, input.ConsoleOptions{
+		Message: "Which type of database?",
 		Options: resourceTypesDisplay,
 	})
 	if err != nil {
@@ -54,7 +66,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	resourceToAdd := &project.ResourceConfig{
-		Type: resourceTypesDisplayMap[resourceTypesDisplay[continueOption]],
+		Type: resourceTypesDisplayMap[resourceTypesDisplay[dbOption]],
 	}
 
 	svc := make([]string, 0, len(prjConfig.Services))

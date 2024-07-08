@@ -11,11 +11,11 @@ const (
 func (r ResourceType) String() string {
 	switch r {
 	case ResourceTypeDbRedis:
-		return "[Database] Redis"
+		return "Redis"
 	case ResourceTypeDbPostgres:
-		return "[Database] PostgreSQL"
+		return "PostgreSQL"
 	case ResourceTypeDbMongo:
-		return "[Database] MongoDB"
+		return "MongoDB"
 	}
 
 	return ""

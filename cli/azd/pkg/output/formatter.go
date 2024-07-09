@@ -14,6 +14,7 @@ type Format string
 
 const (
 	EnvVarsFormat Format = "dotenv"
+	ExportFormat  Format = "export"
 	JsonFormat    Format = "json"
 	TableFormat   Format = "table"
 	NoneFormat    Format = "none"
@@ -30,6 +31,8 @@ func NewFormatter(format string, globalOptions *internal.GlobalCommandOptions) (
 		return NewJsonFormatter(globalOptions), nil
 	case string(EnvVarsFormat):
 		return &EnvVarsFormatter{}, nil
+	case string(ExportFormat):
+		return &ExportFormatter{}, nil
 	case string(TableFormat):
 		return &TableFormatter{}, nil
 	case string(NoneFormat):

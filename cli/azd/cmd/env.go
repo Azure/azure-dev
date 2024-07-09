@@ -75,15 +75,10 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Command:        newEnvGetValuesCmd(),
 		FlagsResolver:  newEnvGetValuesFlags,
 		ActionResolver: newEnvGetValuesAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.EnvVarsFormat},
+		OutputFormats:  []output.Format{output.JsonFormat, output.EnvVarsFormat, output.ExportFormat},
 		DefaultFormat:  output.EnvVarsFormat,
 	})
 
-	group.Add("set-shell-context", &actions.ActionDescriptorOptions{
-		Command:        newEnvSetShellContextCmd(),
-		FlagsResolver:  newEnvSetShellContextFlags,
-		ActionResolver: newEnvSetShellContextAction,
-	})
 	return group
 }
 
@@ -611,77 +606,4 @@ func getCmdEnvHelpDescription(*cobra.Command) string {
 				output.WithHighLightFormat("AZURE_ENV_NAME"),
 				output.WithLinkFormat(".azure/<environment-name>/.env"))),
 		})
-}
-
-func newEnvSetShellContextCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "set-shell-context",
-		Short: "Set the current environment variables to the shell context.",
-		Args:  cobra.NoArgs,
-	}
-}
-
-func newEnvSetShellContextFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetShellContextFlags {
-	flags := &envSetShellContextFlags{}
-	flags.Bind(cmd.Flags(), global)
-
-	return flags
-}
-
-type envSetShellContextFlags struct {
-	internal.EnvFlag
-	global *internal.GlobalCommandOptions
-}
-
-func (f *envSetShellContextFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.EnvFlag.Bind(local, global)
-	f.global = global
-}
-
-type envSetShellContextAction struct {
-	azdCtx     *azdcontext.AzdContext
-	envManager environment.Manager
-	console    input.Console
-	flags      *envSetShellContextFlags
-}
-
-func newEnvSetShellContextAction(
-	azdCtx *azdcontext.AzdContext,
-	envManager environment.Manager,
-	console input.Console,
-	flags *envSetShellContextFlags,
-) actions.Action {
-	return &envSetShellContextAction{
-		azdCtx:     azdCtx,
-		envManager: envManager,
-		console:    console,
-		flags:      flags,
-	}
-}
-
-func (e *envSetShellContextAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	envName, err := e.azdCtx.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, err
-	}
-	if envName == "" {
-		return nil, fmt.Errorf("no default environment set")
-	}
-
-	env, err := e.envManager.Get(ctx, envName)
-	if errors.Is(err, environment.ErrNotFound) {
-		return nil, fmt.Errorf(
-			"environment '%s' does not exist. You can create it with 'azd env new %s'",
-			envName, envName,
-		)
-	} else if err != nil {
-		return nil, fmt.Errorf("ensuring environment exists: %w", err)
-	}
-
-	envVars := env.Dotenv()
-	for key, value := range envVars {
-		fmt.Printf("export %s=%q\n", key, value)
-	}
-
-	return nil, nil
 }

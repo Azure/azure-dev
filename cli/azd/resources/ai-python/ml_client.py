@@ -3,8 +3,10 @@
 
 import argparse
 from typing import List
+
+from azure.ai.ml import MLClient, load_environment, load_model, load_online_deployment, load_online_endpoint
 from azure.identity import AzureDeveloperCliCredential
-from azure.ai.ml import MLClient, load_environment, load_model, load_online_endpoint, load_online_deployment
+
 
 def create_or_update_environment(client: MLClient, file_path: str, overrides: List[dict]):
     environment = load_environment(source=file_path, params_override=overrides)

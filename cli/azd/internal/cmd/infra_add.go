@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/braydonk/yaml"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +39,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	continueOption, err := a.console.Select(ctx, input.ConsoleOptions{
 		Message: "What would you like to add?",
-		Options: []string{"Database", "Storage", "AI Service"},
+		Options: []string{"Database", "Storage", "Messaging", "AI Service"},
 	})
 	if err != nil {
 		return nil, err
@@ -83,7 +84,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	err = a.Configure(ctx, resourceToAdd)
+	configureRes, err := a.Configure(ctx, resourceToAdd)
 	if err != nil {
 		return nil, err
 	}
@@ -107,13 +108,13 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("failed to decode: %w", err)
 	}
 
-	err = appendNodeByPath(&doc, "resources", resourceNode)
+	err = appendNodeByPath(&doc, "resources?", resourceNode)
 	if err != nil {
 		return nil, fmt.Errorf("updating resources: %w", err)
 	}
 
 	for _, svc := range svcOptions {
-		err = appendNodeByPath(&doc, fmt.Sprintf("services.%s.uses", svc), &yaml.Node{
+		err = appendNodeByPath(&doc, fmt.Sprintf("services.%s.uses[]?", svc), &yaml.Node{
 			Kind:  yaml.ScalarNode,
 			Value: resourceToAdd.Name,
 		})
@@ -136,14 +137,39 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	encoder := yaml.NewEncoder(file)
 	encoder.SetIndent(indentation)
 	encoder.SetAssumeBlockAsLiteral(true)
-	encoder.SetIndentlessBlockSequence(true)
+	// encoder.SetIndentlessBlockSequence(true)
 
 	err = encoder.Encode(&doc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode: %w", err)
 	}
 
-	return nil, file.Close()
+	err = file.Close()
+	if err != nil {
+		return nil, fmt.Errorf("closing file: %w", err)
+	}
+
+	var followUp string
+	defaultFollowUp := "You can run '" + color.BlueString("azd provision") + "' to provision these infrastructure changes."
+	if len(svcOptions) > 0 {
+		followUp = "The following environment variables will be set in " +
+			strings.Join(svcOptions, ", ") + ":\n\n"
+		for _, envVar := range configureRes.ConnectionEnvVars {
+			followUp += "  - " + envVar + "\n"
+		}
+		followUp += "\n" + defaultFollowUp + "\n" + "You may also run '" +
+			color.BlueString("azd show <service> env") +
+			"' to show environment variables of the currently provisioned instance."
+	} else {
+		followUp = defaultFollowUp
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   "azure.yaml has been updated to include the new resource.",
+			FollowUp: followUp,
+		},
+	}, err
 }
 
 func NewInfraAddAction(
@@ -155,10 +181,21 @@ func NewInfraAddAction(
 	}
 }
 
-func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) error {
+type configureResult struct {
+	ConnectionEnvVars []string
+}
+
+func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (configureResult, error) {
 	if r.Type == project.ResourceTypeDbRedis {
 		r.Name = "redis"
-		return nil
+		return configureResult{
+			ConnectionEnvVars: []string{
+				"REDIS_HOST",
+				"REDIS_PORT",
+				"REDIS_ENDPOINT",
+				"REDIS_PASSWORD",
+			},
+		}, nil
 	}
 
 	dbName, err := a.console.Prompt(ctx, input.ConsoleOptions{
@@ -168,11 +205,27 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) er
 			"This database will be created after running azd provision or azd up.",
 	})
 	if err != nil {
-		return err
+		return configureResult{}, err
 	}
 
 	r.Name = dbName
-	return nil
+
+	res := configureResult{}
+	switch r.Type {
+	case project.ResourceTypeDbPostgres:
+		res.ConnectionEnvVars = []string{
+			"POSTGRES_HOST",
+			"POSTGRES_USERNAME",
+			"POSTGRES_DATABASE",
+			"POSTGRES_PASSWORD",
+			"POSTGRES_PORT",
+		}
+	case project.ResourceTypeDbMongo:
+		res.ConnectionEnvVars = []string{
+			"AZURE_COSMOS_MONGODB_CONNECTION_STRING",
+		}
+	}
+	return res, nil
 }
 
 func encodeAsYamlNode(v interface{}) (*yaml.Node, error) {
@@ -197,23 +250,46 @@ func modifyNodeRecursive(current *yaml.Node, parts []string, node *yaml.Node) er
 		return appendNode(current, node)
 	}
 
+	optional := strings.HasSuffix(parts[0], "?")
+	seek := strings.TrimSuffix(parts[0], "?")
+
+	isArr := strings.HasSuffix(seek, "[]")
+	seek = strings.TrimSuffix(seek, "[]")
+
 	switch current.Kind {
 	case yaml.DocumentNode:
 		return modifyNodeRecursive(current.Content[0], parts, node)
 	case yaml.MappingNode:
 		for i := 0; i < len(current.Content); i += 2 {
-			if current.Content[i].Value == parts[0] {
+			if current.Content[i].Value == seek {
 				return modifyNodeRecursive(current.Content[i+1], parts[1:], node)
 			}
 		}
 	case yaml.SequenceNode:
-		index, err := strconv.Atoi(parts[0])
+		index, err := strconv.Atoi(seek)
 		if err != nil {
 			return err
 		}
 		if index >= 0 && index < len(current.Content) {
 			return modifyNodeRecursive(current.Content[index], parts[1:], node)
 		}
+	}
+
+	if optional {
+		current.Content = append(current.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: seek})
+		if isArr {
+			current.Content = append(current.Content, &yaml.Node{
+				Kind:    yaml.SequenceNode,
+				Content: []*yaml.Node{},
+			})
+		} else {
+			current.Content = append(current.Content, &yaml.Node{
+				Kind:    yaml.MappingNode,
+				Content: []*yaml.Node{},
+			})
+		}
+
+		return modifyNodeRecursive(current.Content[len(current.Content)-1], parts[1:], node)
 	}
 
 	return fmt.Errorf("path not found: %s", strings.Join(parts, "."))

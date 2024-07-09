@@ -151,6 +151,10 @@ module accessKeyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   params: {
     name: keyVault.outputs.name
     enableRbacAuthorization: false
+    enableVaultForDeployment: false
+    enableVaultForTemplateDeployment: false
+    enablePurgeProtection: false
+    sku: 'standard'
     accessPolicies: [
       {
         objectId: api.outputs.systemAssignedMIPrincipalId

@@ -284,6 +284,9 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
     location: location
     tags: tags
     enableRbacAuthorization: false
+    enableVaultForDeployment: false
+    enableVaultForTemplateDeployment: false
+    sku: 'standard'
     accessPolicies: [
       {
         objectId: principalId

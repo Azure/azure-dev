@@ -188,7 +188,15 @@ func (i *Initializer) prjConfigFromDetect(
 			svcSpec.Uses = append(svcSpec.Uses, dbNames[db])
 		}
 
-		if svc.HasWebUIFramework() {
+		frontend := svc.HasWebUIFramework()
+
+		if frontend {
+			frontends = append(frontends, &svcSpec)
+		} else {
+			backends = append(backends, &svcSpec)
+		}
+
+		if frontend && svc.Docker == nil {
 			// By default, use 'dist'. This is common for frameworks such as:
 			// - TypeScript
 			// - Vite
@@ -214,10 +222,6 @@ func (i *Initializer) prjConfigFromDetect(
 					break loop
 				}
 			}
-
-			frontends = append(frontends, &svcSpec)
-		} else {
-			backends = append(backends, &svcSpec)
 		}
 
 		if name == "." {

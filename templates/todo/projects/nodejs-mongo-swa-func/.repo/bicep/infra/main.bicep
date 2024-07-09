@@ -242,6 +242,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
     enableRbacAuthorization: false
     enableVaultForDeployment: false
     enableVaultForTemplateDeployment: false
+    enablePurgeProtection: false
     sku: 'standard'
   }
 }

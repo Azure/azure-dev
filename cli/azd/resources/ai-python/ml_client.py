@@ -2,22 +2,23 @@
 # coding: utf-8
 
 import argparse
+from typing import List
 from azure.identity import AzureDeveloperCliCredential
 from azure.ai.ml import MLClient, load_environment, load_model, load_online_endpoint, load_online_deployment
 
-def create_or_update_environment(client: MLClient, file_path: str, overrides: list[dict]):
+def create_or_update_environment(client: MLClient, file_path: str, overrides: List[dict]):
     environment = load_environment(source=file_path, params_override=overrides)
     client.environments.create_or_update(environment)
 
-def create_or_update_model(client: MLClient, file_path: str, overrides: list[dict]):
+def create_or_update_model(client: MLClient, file_path: str, overrides: List[dict]):
     model = load_model(source=file_path, params_override=overrides)
     client.models.create_or_update(model)
 
-def create_or_update_online_endpoint(client: MLClient, file_path: str, overrides: list[dict]):
+def create_or_update_online_endpoint(client: MLClient, file_path: str, overrides: List[dict]):
     online_endpoint = load_online_endpoint(source=file_path, params_override=overrides)
     client.online_endpoints.begin_create_or_update(online_endpoint)
 
-def create_or_update_online_deployment(client: MLClient, file_path: str, overrides: list[dict]):
+def create_or_update_online_deployment(client: MLClient, file_path: str, overrides: List[dict]):
     deployment = load_online_deployment(source=file_path, params_override=overrides)
     client.online_deployments.begin_create_or_update(deployment)
 

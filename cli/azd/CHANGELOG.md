@@ -1,14 +1,16 @@
 # Release History
 
-## 1.10.0-beta.1 (Unreleased)
+## 1.9.5 (2024-07-10)
 
 ### Features Added
 
-### Breaking Changes
+- [[4080]](https://github.com/Azure/azure-dev/pull/4080) Add `azd env get-value`.
 
 ### Bugs Fixed
 
-### Other Changes
+- [[4065]](https://github.com/Azure/azure-dev/pull/4065) Fix panic when a project has no endpoints.
+- [[4074]](https://github.com/Azure/azure-dev/pull/4074) Fix error in retrieving cross-rg service plan.
+- [[4073]](https://github.com/Azure/azure-dev/pull/4073) Fix bug where windows logic app passed isLinuxWebApp.
 
 ## 1.9.4 (2024-07-02)
 

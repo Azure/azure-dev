@@ -187,6 +187,11 @@ func logWebAppDeploymentStatus(
 	traceId string,
 	progressLog func(string),
 ) error {
+	if (res == armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{} ||
+		res.CsmDeploymentStatus == armappservice.CsmDeploymentStatus{} ||
+		res.CsmDeploymentStatus.Properties == nil) {
+		return fmt.Errorf("response or its properties are empty")
+	}
 	properties := res.CsmDeploymentStatus.Properties
 	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
 	successNumber := int(*properties.NumberOfInstancesSuccessful)

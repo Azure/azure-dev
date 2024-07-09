@@ -188,6 +188,7 @@ type configureResult struct {
 func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (configureResult, error) {
 	if r.Type == project.ResourceTypeDbRedis {
 		r.Name = "redis"
+		// this can be moved to central location for resource types
 		return configureResult{
 			ConnectionEnvVars: []string{
 				"REDIS_HOST",

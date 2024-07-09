@@ -4,9 +4,11 @@
 ## Table of Contents
 
 1. [Next Steps](#next-steps)
-2. [What was added](#what-was-added)
-3. [Billing](#billing)
-4. [Troubleshooting](#troubleshooting)
+   1. [Provision infrastructure](#provision-infrastructure-and-deploy-application-code)
+   2. [Modify infrastructure](#modify-infrastructure)
+   3. [Getting to production-ready](#getting-to-production-ready)
+2. [Billing](#billing)
+3. [Troubleshooting](#troubleshooting)
 
 ## Next Steps
 
@@ -16,11 +18,13 @@ Run `azd up` to provision your infrastructure and deploy to Azure in one step (o
 
 To troubleshoot any issues, see [troubleshooting](#troubleshooting).
 
-### Configure infrastructure
+### Modify infrastructure
 
 To describe the infrastructure and application, `azure.yaml` was added. This file contains all services and resources that describe your application.
 
 To add new services or resources, run `azd infra add`. You may also edit the `azure.yaml` file directly if needed.
+
+### Getting to production-ready
 
 When needed, `azd` generates the required infrastructure as code in memory and uses it. If you would like to see or modify the infrastructure that `azd` uses, run `azd infra synth` to persist it to disk.
 
@@ -36,13 +40,7 @@ If you do this, some additional directories will be created:
 
 *Note*: `azd infra synth` is currently an alpha feature and must be explicitly enabled by running `azd config set alpha.infraSynth on`. You only need to do this once.
 
-### Configure CI/CD pipeline
-
-1. Create a workflow pipeline file locally. The following starters are available:
-   - [Deploy with GitHub Actions](https://github.com/Azure-Samples/azd-starter-bicep/blob/main/.github/workflows/azure-dev.yml)
-   - [Deploy with Azure Pipelines](https://github.com/Azure-Samples/azd-starter-bicep/blob/main/.azdo/pipelines/azure-dev.yml)
-2. Run `azd pipeline config -e <environment name>` to configure the deployment pipeline to connect securely to Azure. An environment name is specified here to configure the pipeline with a different environment for isolation purposes. Run `azd env list` and `azd env set` to reselect the default environment after this step.
-
+Finally, run `azd pipeline config` to configure a CI/CD deployment pipeline.
 
 ## Billing
 

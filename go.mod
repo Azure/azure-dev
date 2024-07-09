@@ -33,6 +33,7 @@ require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/bmatcuk/doublestar/v4 v4.6.0
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
+	github.com/braydonk/yaml v0.7.0
 	github.com/buger/goterm v1.0.4
 	github.com/cli/browser v1.1.0
 	github.com/drone/envsubst v1.0.3

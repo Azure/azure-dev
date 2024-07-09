@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -41,6 +42,10 @@ type DockerProjectOptions struct {
 	Image     osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
 	Tag       osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
 	BuildArgs []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
+	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
+	BuildSecrets []string `yaml:"-" json:"-"`
+	BuildEnv     []string `yaml:"-" json:"-"`
 }
 
 type dockerBuildResult struct {
@@ -191,6 +196,29 @@ func (p *dockerProject) Build(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
+			resolveParameters := func(source []string) []string {
+				result := make([]string, len(source))
+				for i, arg := range source {
+					evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
+						path := match
+						value, has := p.env.Config.GetString(path)
+						if !has {
+							return "", fmt.Errorf("parameter %s not found", path)
+						}
+						return value, nil
+					})
+					if err != nil {
+						task.SetError(err)
+						return nil
+					}
+					result[i] = evaluatedString
+				}
+				return result
+			}
+			// resolve parameters for build args and secrets
+			dockerOptions.BuildArgs = resolveParameters(dockerOptions.BuildArgs)
+			dockerOptions.BuildEnv = resolveParameters(dockerOptions.BuildEnv)
+
 			// For services that do not specify a project path and have not specified a language then
 			// there is nothing to build and we can return an empty build result
 			// Ex) A container app project that uses an external image path
@@ -262,6 +290,8 @@ func (p *dockerProject) Build(
 				dockerOptions.Context,
 				imageName,
 				dockerOptions.BuildArgs,
+				dockerOptions.BuildSecrets,
+				dockerOptions.BuildEnv,
 				previewerWriter,
 			)
 			p.console.StopPreviewer(ctx, false)
@@ -346,8 +376,8 @@ func (p *dockerProject) Package(
 	)
 }
 
-// Default builder image to produce container images from source
-const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20231107.2"
+// Default builder image to produce container images from source, needn't java jdk storage
+const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:aca-debian-bullseye-20240424.1"
 
 func (p *dockerProject) packBuild(
 	ctx context.Context,

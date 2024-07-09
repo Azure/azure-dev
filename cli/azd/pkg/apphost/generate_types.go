@@ -31,7 +31,8 @@ type genKeyVault struct {
 }
 
 type genContainerApp struct {
-	Volumes []*Volume
+	Volumes    []*Volume
+	BindMounts []*BindMount
 }
 
 type genContainerAppIngressPort struct {
@@ -49,15 +50,17 @@ type genContainerAppIngress struct {
 	genContainerAppIngressPort
 	Transport              string
 	AllowInsecure          bool
+	UsingDefaultPort       bool
 	AdditionalPortMappings []genContainerAppIngressAdditionalPortMappings
 }
 
 type genContainer struct {
-	Image    string
-	Env      map[string]string
-	Bindings custommaps.WithOrder[Binding]
-	Inputs   map[string]Input
-	Volumes  []*Volume
+	Image      string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Inputs     map[string]Input
+	Volumes    []*Volume
+	BindMounts []*BindMount
 }
 
 type genDockerfile struct {
@@ -67,6 +70,23 @@ type genDockerfile struct {
 	Bindings  custommaps.WithOrder[Binding]
 	BuildArgs map[string]string
 	Args      []string
+}
+
+type genBuildContainer struct {
+	Image      string
+	Entrypoint string
+	Args       []string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Volumes    []*Volume
+	Build      *genBuildContainerDetails
+}
+
+type genBuildContainerDetails struct {
+	Context    string
+	Dockerfile string
+	Args       map[string]string
+	Secrets    map[string]ContainerV1BuildSecrets
 }
 
 type genProject struct {
@@ -126,6 +146,7 @@ type genBicepTemplateContext struct {
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
 	RequiresStorageVolume           bool
+	HasBindMounts                   bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount
@@ -153,6 +174,7 @@ type genContainerAppManifestTemplateContext struct {
 	Dapr            *genContainerAppManifestTemplateContextDapr
 	Args            []string
 	Volumes         []*Volume
+	BindMounts      []*BindMount
 }
 
 type genProjectFileContext struct {

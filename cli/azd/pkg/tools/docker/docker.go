@@ -30,6 +30,8 @@ type Docker interface {
 		buildContext string,
 		name string,
 		buildArgs []string,
+		buildSecrets []string,
+		buildEnv []string,
 		buildProgress io.Writer,
 	) (string, error)
 	Tag(ctx context.Context, cwd string, imageName string, tag string) error
@@ -76,6 +78,8 @@ func (d *docker) Build(
 	buildContext string,
 	tagName string,
 	buildArgs []string,
+	buildSecrets []string,
+	buildEnv []string,
 	buildProgress io.Writer,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
@@ -111,13 +115,17 @@ func (d *docker) Build(
 	for _, arg := range buildArgs {
 		args = append(args, "--build-arg", arg)
 	}
+
+	for _, arg := range buildSecrets {
+		args = append(args, "--secret", arg)
+	}
 	args = append(args, buildContext)
 
 	// create a file with the docker img id
 	args = append(args, "--iidfile", imgIdFile)
 
 	// Build and produce output
-	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd)
+	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd).WithEnv(buildEnv)
 
 	if buildProgress != nil {
 		// setting stderr and stdout both, as it's been noticed

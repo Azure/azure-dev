@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -129,16 +128,18 @@ func (at *dotnetContainerAppTarget) Deploy(
 			var remoteImageName string
 			var portNumber int
 
-			// This service target is shared across three different aspire resource types: "dockerfile.v0" (a reference to
+			// This service target is shared across four different aspire resource types: "dockerfile.v0" (a reference to
 			// an project backed by a dockerfile), "container.v0" (a reference to a project backed by an existing container
-			// image), and "project.v0" (a reference to a project backed by a .NET project). Depending on the type, we have
-			// different steps for pushing the container image.
+			// image), "project.v0" (a reference to a project backed by a .NET project), and "container.v1" (a reference
+			// to a project which might have an existing container image, or can provide a dockerfile).
+			// Depending on the type, we have different steps for pushing the container image.
 			//
-			// For the dockerfile.v0 type, [DotNetImporter] arranges things such that we can leverage the existing support
-			// in `azd` for services backed by a Dockerfile. This causes the image to be built and pushed to ACR.
+			// For the dockerfile.v0 and container.v1+dockerfile type, [DotNetImporter] arranges things such that we can
+			// leverage the existing support in `azd` for services backed by a Dockerfile.
+			// This causes the image to be built and pushed to ACR.
 			//
-			// For the container.v0 type, we assume the container image specified by the manifest is public and just use it
-			// directly.
+			// For the container.v0 or container.v1+image type, we assume the container image specified by the manifest is
+			// public and just use it directly.
 			//
 			// For the project.v0 type, we use the .NET CLI to publish the container image to ACR.
 			//
@@ -158,7 +159,9 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
 				remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 			} else {
-				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
+				imageName := fmt.Sprintf("%s:%s",
+					at.containerHelper.DefaultImageName(serviceConfig),
+					at.containerHelper.DefaultImageTag())
 
 				portNumber, err = at.dotNetCli.PublishContainer(
 					ctx,
@@ -378,8 +381,11 @@ func (_ *containerAppTemplateManifestFuncs) UrlHost(s string) (string, error) {
 	return u.Hostname(), nil
 }
 
+const infraParametersKey = "infra.parameters."
+
 func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, error) {
-	val, found := fns.env.Config.Get("infra.parameters." + name)
+	key := infraParametersKey + name
+	val, found := fns.env.Config.Get(key)
 	if !found {
 		return "", fmt.Errorf("parameter %s not found", name)
 	}

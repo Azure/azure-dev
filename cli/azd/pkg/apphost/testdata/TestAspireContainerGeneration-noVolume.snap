@@ -14,7 +14,7 @@ properties:
         autoConfigureDataProtection: true
     ingress:
       external: false
-      targetPort: {{ targetPortOrDefault 3306 }}
+      targetPort: 3306
       transport: tcp
       allowInsecure: false
     registries:
@@ -26,6 +26,13 @@ properties:
       - name: specialchar
         value: '{{ securedParameter "noVolume_pas_sw_ord" }}'
   template:
+    volumes:
+      - name: novolume-bm0
+        storageType: AzureFile
+        storageName: {{ .Env.SERVICE_NOVOLUME_VOLUME_BM0_NAME }} 
+      - name: novolume-bm1
+        storageType: AzureFile
+        storageName: {{ .Env.SERVICE_NOVOLUME_VOLUME_BM1_NAME }} 
     containers:
       - image: {{ .Image }}
         name: noVolume
@@ -36,6 +43,11 @@ properties:
             secretRef: mysql-root-password
           - name: SpecialChar
             secretRef: specialchar
+        volumeMounts:
+          - volumeName: novolume-bm0
+            mountPath: /docker-entrypoint-initdb.d
+          - volumeName: novolume-bm1
+            mountPath: /docker-entrypoint-initdb.d/two
     scale:
       minReplicas: 1
 tags:

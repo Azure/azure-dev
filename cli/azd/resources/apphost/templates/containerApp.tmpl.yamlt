@@ -46,7 +46,7 @@ properties:
 {{- end}}
 {{- end}}
       external: {{ .Ingress.External }}
-      targetPort: {{ "{{ targetPortOrDefault " }}{{ .Ingress.TargetPort }}{{ " }}" }}
+      targetPort: {{ .TargetPortExpression }}
 {{- if gt .Ingress.ExposedPort 0 }}
       exposedPort: {{ .Ingress.ExposedPort }}
 {{- end}}
@@ -69,12 +69,17 @@ properties:
         identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
 {{- end}}
   template:
-{{- if .Volumes }}
+{{- if or (.Volumes) (.BindMounts) }}
     volumes:
 {{- range $volume := .Volumes }}
       - name: {{ toLower $.Name}}-{{ removeDot $volume.Name | toLower }}
         storageType: AzureFile
         storageName: {{ "{{ .Env.SERVICE_" }}{{ alphaSnakeUpper $.Name}}_VOLUME_{{ removeDot $volume.Name | alphaSnakeUpper }}{{ "_NAME }} "}}
+{{- end}}
+{{- range $bMount := .BindMounts}}
+      - name: {{ toLower $.Name}}-{{ removeDot $bMount.Name | toLower }}
+        storageType: AzureFile
+        storageName: {{ "{{ .Env.SERVICE_" }}{{ alphaSnakeUpper $.Name}}_VOLUME_{{ removeDot $bMount.Name | alphaSnakeUpper }}{{ "_NAME }} "}}
 {{- end}}
 {{- end}}
     containers:
@@ -101,11 +106,15 @@ properties:
           - name: {{$name}}
             secretRef: {{containerAppSecretName $name}}
 {{- end}}
-{{- if .Volumes }}
+{{- if or (.Volumes) (.BindMounts) }}
         volumeMounts:
 {{- range $volume := .Volumes }}
           - volumeName: {{ toLower $.Name}}-{{ removeDot $volume.Name | toLower }}
             mountPath: {{ $volume.Target }}
+{{- end}}
+{{- range $bMount := .BindMounts }}
+          - volumeName: {{ toLower $.Name}}-{{ removeDot $bMount.Name | toLower }}
+            mountPath: {{ $bMount.Target }}
 {{- end}}
 {{- end}}
     scale:

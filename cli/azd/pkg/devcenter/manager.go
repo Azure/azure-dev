@@ -2,7 +2,6 @@ package devcenter
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -364,21 +363,6 @@ func createOutputParameters(
 		paramType, err := mapDevCenterTypeToParamType(devCenterParam.Type)
 		if err != nil {
 			return nil, err
-		}
-
-		requiresJsonMarshalling := slices.Contains(
-			[]devcentersdk.OutputParameterType{
-				devcentersdk.OutputParameterTypeObject,
-				devcentersdk.OutputParameterTypeArray,
-			}, devCenterParam.Type)
-
-		if requiresJsonMarshalling {
-			jsonBytes, err := json.Marshal(devCenterParam.Value)
-			if err != nil {
-				return nil, fmt.Errorf("failed marshalling output value: %w", err)
-			}
-
-			value = string(jsonBytes)
 		}
 
 		outputParams[paramName] = provisioning.OutputParameter{

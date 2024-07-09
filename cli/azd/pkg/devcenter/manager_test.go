@@ -57,10 +57,10 @@ func Test_Map_Outputs(t *testing.T) {
 	}, outputs["TEST_NUMBER"])
 	require.Equal(t, provisioning.OutputParameter{
 		Type:  provisioning.ParameterTypeArray,
-		Value: "[\"test1\",\"test2\"]",
+		Value: []interface{}{"test1", "test2"},
 	}, outputs["TEST_ARRAY"])
 	require.Equal(t, provisioning.OutputParameter{
 		Type:  provisioning.ParameterTypeObject,
-		Value: "{\"key1\":\"value1\",\"key2\":\"value2\"}",
+		Value: map[string]interface{}{"key1": "value1", "key2": "value2"},
 	}, outputs["TEST_OBJECT"])
 }

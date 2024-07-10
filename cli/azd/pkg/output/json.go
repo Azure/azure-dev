@@ -33,6 +33,9 @@ func (f *JsonFormatter) Format(obj interface{}, writer io.Writer, _ interface{})
 		if err != nil {
 			return fmt.Errorf("applying JMESPath query: %w", err)
 		}
+		if filteredObj == nil {
+			filteredObj = ""
+		}
 		obj = filteredObj
 	}
 

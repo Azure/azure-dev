@@ -8,10 +8,10 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/google/uuid"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
@@ -99,7 +99,7 @@ func CreateServiceConnection(
 	projectId string,
 	projectName string,
 	azdEnvironment environment.Environment,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 	console input.Console) (*serviceendpoint.ServiceEndpoint, error) {
 
 	client, err := serviceendpoint.NewClient(ctx, connection)
@@ -168,7 +168,7 @@ func ListTypes(
 func createAzureRMServiceEndPointArgs(
 	projectId *string,
 	projectName *string,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) (serviceendpoint.CreateServiceEndpointArgs, error) {
 	endpointScheme := "WorkloadIdentityFederation"
 	endpointAuthorizationParameters := map[string]string{

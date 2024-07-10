@@ -1,10 +1,14 @@
 ARG prefix=''
-ARG base='centos:7'
+ARG base='centos:8'
 FROM ${prefix}${base}
 
 ARG shell='bash'
 ARG baseUrl='must set baseUrl'
 ARG version='must set version'
+
+# fix for https://github.com/Azure/azure-dev/issues/4076
+RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+RUN sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
 
 RUN yum install -y which
 

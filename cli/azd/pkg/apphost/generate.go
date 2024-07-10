@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
@@ -147,11 +148,12 @@ func Containers(manifest *Manifest) map[string]genContainer {
 		switch comp.Type {
 		case "container.v0":
 			res[name] = genContainer{
-				Image:    *comp.Image,
-				Env:      comp.Env,
-				Bindings: comp.Bindings,
-				Inputs:   comp.Inputs,
-				Volumes:  comp.Volumes,
+				Image:      *comp.Image,
+				Env:        comp.Env,
+				Bindings:   comp.Bindings,
+				Inputs:     comp.Inputs,
+				Volumes:    comp.Volumes,
+				BindMounts: comp.BindMounts,
 			}
 		}
 	}
@@ -159,7 +161,26 @@ func Containers(manifest *Manifest) map[string]genContainer {
 	return res
 }
 
+// BuildContainers returns information about all container.v1 resources from a manifest.
+func BuildContainers(manifest *Manifest) (map[string]genBuildContainer, error) {
+	res := make(map[string]genBuildContainer)
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "container.v1":
+			bc, err := buildContainerFromResource(comp)
+			if err != nil {
+				return nil, fmt.Errorf("building container from resource %s: %w", name, err)
+			}
+			res[name] = *bc
+		}
+	}
+
+	return res, nil
+}
+
 type AppHostOptions struct {
+	AzdOperations bool
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
@@ -178,7 +199,23 @@ func ContainerAppManifestTemplateForProject(
 
 	var buf bytes.Buffer
 
-	tmplCtx := generator.containerAppTemplateContexts[projectName]
+	type yamlTemplateCtx struct {
+		genContainerAppManifestTemplateContext
+		TargetPortExpression string
+	}
+	tCtx := generator.containerAppTemplateContexts[projectName]
+	tmplCtx := yamlTemplateCtx{
+		genContainerAppManifestTemplateContext: tCtx,
+	}
+
+	if tCtx.Ingress != nil {
+		if tCtx.Ingress.TargetPort != 0 && !tCtx.Ingress.UsingDefaultPort {
+			// not using default port makes this to be a non-changing value
+			tmplCtx.TargetPortExpression = fmt.Sprintf("%d", tCtx.Ingress.TargetPort)
+		} else {
+			tmplCtx.TargetPortExpression = fmt.Sprintf("{{ targetPortOrDefault %d }}", tCtx.Ingress.TargetPort)
+		}
+	}
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {
@@ -270,6 +307,20 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	if err := executeToFS(
 		fs, genTemplates, "main.parameters.json", name+".parameters.json", generator.bicepContext); err != nil {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
+	}
+
+	// azd operations
+	if generator.bicepContext.HasBindMounts {
+		if options.AzdOperations {
+			if err := executeToFS(
+				fs, genTemplates, "azd.operations.yaml", "azd.operations.yaml", generator.bicepContext); err != nil {
+				return nil, fmt.Errorf("generating infra/azd.operations.yaml: %w", err)
+			}
+		} else {
+			// returning fs because this error can be handled by the caller as expected
+			return fs, provisioning.ErrBindMountOperationDisabled
+		}
+
 	}
 
 	return fs, nil
@@ -392,6 +443,7 @@ type infraGenerator struct {
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
 	allServicesIngress           map[string]ingressDetails
+	buildContainers              map[string]genBuildContainer
 }
 
 func newInfraGenerator() *infraGenerator {
@@ -419,6 +471,7 @@ func newInfraGenerator() *infraGenerator {
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
+		buildContainers:              make(map[string]genBuildContainer),
 	}
 }
 
@@ -502,7 +555,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "project.v0":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
 		case "container.v0":
-			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
+			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts)
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
 			if err != nil {
@@ -510,6 +563,11 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			}
 		case "dapr.component.v0":
 			err := b.addDaprComponent(name, comp.DaprComponent)
+			if err != nil {
+				return err
+			}
+		case "container.v1":
+			err := b.addBuildContainer(name, comp)
 			if err != nil {
 				return err
 			}
@@ -620,6 +678,10 @@ func (b *infraGenerator) requireStorageVolume() {
 	b.bicepContext.RequiresStorageVolume = true
 }
 
+func (b *infraGenerator) hasBindMounts() {
+	b.bicepContext.HasBindMounts = true
+}
+
 func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
 	if queues == nil {
 		queues = &[]string{}
@@ -632,20 +694,34 @@ func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
 }
 
 func (b *infraGenerator) addInputParameter(name string, comp *Resource) error {
-	pValue := comp.Value
-
-	if !hasInputs(pValue) {
-		// no inputs in the value, nothing to do
-		return nil
-	}
-
-	input, err := resolveResourceInput(name, comp)
+	input, err := InputParameter(name, comp)
 	if err != nil {
 		return fmt.Errorf("resolving input for parameter %s: %w", name, err)
 	}
 
-	b.bicepContext.InputParameters[name] = input
+	if input == nil {
+		// no inputs in the value, nothing to do
+		return nil
+	}
+
+	b.bicepContext.InputParameters[name] = *input
 	return nil
+}
+
+// InputParameter gets the Input from a parameter. If the parameter does not have an input, it returns nil.
+func InputParameter(name string, comp *Resource) (*Input, error) {
+	pValue := comp.Value
+
+	if !hasInputs(pValue) {
+		// no inputs in the value, nothing to do
+		return nil, nil
+	}
+
+	input, err := resolveResourceInput(name, comp)
+	if err != nil {
+		return nil, fmt.Errorf("resolving input for parameter %s: %w", name, err)
+	}
+	return &input, nil
 }
 
 func hasInputs(value string) bool {
@@ -883,20 +959,107 @@ func (b *infraGenerator) addContainer(
 	env map[string]string,
 	bindings custommaps.WithOrder[Binding],
 	inputs map[string]Input,
-	volumes []*Volume) {
+	volumes []*Volume,
+	bindMounts []*BindMount) {
 	b.requireCluster()
 
 	if len(volumes) > 0 {
 		b.requireStorageVolume()
 	}
 
-	b.containers[name] = genContainer{
-		Image:    image,
-		Env:      env,
-		Bindings: bindings,
-		Inputs:   inputs,
-		Volumes:  volumes,
+	if len(bindMounts) > 0 {
+		b.requireStorageVolume()
+		b.hasBindMounts()
 	}
+
+	b.containers[name] = genContainer{
+		Image:      image,
+		Env:        env,
+		Bindings:   bindings,
+		Inputs:     inputs,
+		Volumes:    volumes,
+		BindMounts: bindMounts,
+	}
+}
+
+// buildContainer represents a container defined with a pre-build image or a build context.
+// container.v0 resources are used to define containers with pre-built images.
+//   - uses image field
+//
+// dockerfile.v0 resources are used to define containers with build context.
+//   - uses path and context fields
+//
+// container.v1 resources are used to define containers with either build context or pre-built images.
+//   - uses image field or build field
+func (b *infraGenerator) addBuildContainer(
+	name string,
+	r *Resource) error {
+	if r.Image != nil && r.Build != nil {
+		return fmt.Errorf("Resource '%s' cannot have both an image and a build", name)
+	}
+
+	b.requireCluster()
+	if len(r.Volumes) > 0 {
+		b.requireStorageVolume()
+	}
+
+	bc, err := buildContainerFromResource(r)
+	if err != nil {
+		return fmt.Errorf("container resource '%s': %w", name, err)
+	}
+	if bc.Build != nil {
+		b.requireContainerRegistry()
+	}
+	b.buildContainers[name] = *bc
+	return nil
+}
+
+func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
+	// common fields for all build containers
+	bc := &genBuildContainer{
+		Entrypoint: r.Entrypoint,
+		Args:       r.Args,
+		Env:        r.Env,
+		Bindings:   r.Bindings,
+		Volumes:    r.Volumes,
+	}
+
+	// container.v0 and container.v1+pre-build image
+	if r.Image != nil {
+		bc.Image = *r.Image
+		return bc, nil
+	}
+
+	// details to build container, either from dockerfile.v0 or container.v1
+	var build *genBuildContainerDetails
+
+	// dockerfile.v0
+	if r.Context != nil {
+		build = &genBuildContainerDetails{
+			Context: *r.Context,
+			Args:    nil, // dockerfile.v0 does not support build args, it only has top level args []string
+		}
+		if r.Path != nil {
+			build.Dockerfile = *r.Path
+		}
+	} else
+
+	// container.v1+build
+	if r.Build != nil {
+		build = &genBuildContainerDetails{
+			Context:    r.Build.Context,
+			Dockerfile: r.Build.Dockerfile,
+			Args:       r.Build.Args,
+			Secrets:    r.Build.Secrets,
+		}
+	}
+
+	if build == nil {
+		return nil, fmt.Errorf("container resource must have either an image, context or a build")
+	}
+
+	bc.Build = build
+	return bc, nil
 }
 
 func (b *infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) error {
@@ -1055,6 +1218,16 @@ func (b *infraGenerator) compileIngress() error {
 			ingressBindings: bindingsFromIngress,
 		}
 	}
+	for name, bc := range b.buildContainers {
+		ingress, bindingsFromIngress, err := buildAcaIngress(bc.Bindings, 8080)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
 	b.allServicesIngress = result
 	return nil
 }
@@ -1070,8 +1243,26 @@ func (b *infraGenerator) Compile() error {
 	}
 
 	for resourceName, container := range b.containers {
+		var bMounts []*BindMount
+		if len(container.BindMounts) > 0 {
+			// must grant write role to the Storage File Share to upload data
+			b.bicepContext.RequiresPrincipalId = true
+		}
+		for count, bm := range container.BindMounts {
+			bMounts = append(bMounts, &BindMount{
+				// adding a name using the index. This name is used for naming the resource in bicep.
+				Name: fmt.Sprintf("bm%d", count),
+				// mount bind is not supported across devices, as it depends on a local path which might be missing in
+				// another device.
+				Source:   bm.Source,
+				Target:   bm.Target,
+				ReadOnly: bm.ReadOnly,
+			})
+		}
+
 		cs := genContainerApp{
-			Volumes: container.Volumes,
+			Volumes:    container.Volumes,
+			BindMounts: bMounts,
 		}
 
 		b.bicepContext.ContainerApps[resourceName] = cs
@@ -1083,9 +1274,33 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 			Ingress:         b.allServicesIngress[resourceName].ingress,
 			Volumes:         container.Volumes,
+			BindMounts:      bMounts,
 		}
 
 		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
+			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
+	}
+
+	for resourceName, bc := range b.buildContainers {
+		cs := genContainerApp{
+			Volumes: bc.Volumes,
+		}
+
+		b.bicepContext.ContainerApps[resourceName] = cs
+
+		projectTemplateCtx := genContainerAppManifestTemplateContext{
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Volumes:         bc.Volumes,
+		}
+
+		if err := b.buildEnvBlock(bc.Env, &projectTemplateCtx); err != nil {
 			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
 		}
 

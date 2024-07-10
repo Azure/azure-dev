@@ -91,7 +91,7 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
-	isEmpty, err := isEmptyDir(target)
+	isEmpty, err := osutil.IsDirEmpty(target)
 	if err != nil {
 		return err
 	}
@@ -322,7 +322,7 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 		fmt.Sprintf("Created minimal project files at: %s", projectFormatted)+"\n",
 		input.GetStepResultFormat(err))
 
-	isEmpty, err := isEmptyDir(projectDir)
+	isEmpty, err := osutil.IsDirEmpty(projectDir)
 	if err != nil {
 		return err
 	}
@@ -519,7 +519,7 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Az
 // Returns error if an error occurred while prompting, or if the user declines confirmation.
 func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	dir := azdCtx.ProjectDirectory()
-	isEmpty, err := isEmptyDir(dir)
+	isEmpty, err := osutil.IsDirEmpty(dir)
 	if err != nil {
 		return err
 	}
@@ -585,13 +585,4 @@ func determineDuplicates(source string, target string) ([]string, error) {
 		return nil, fmt.Errorf("enumerating template files: %w", err)
 	}
 	return duplicateFiles, nil
-}
-
-func isEmptyDir(dir string) (bool, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false, fmt.Errorf("determining empty directory: %w", err)
-	}
-
-	return len(entries) == 0, nil
 }

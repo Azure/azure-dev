@@ -81,14 +81,27 @@ func appServiceRepositoryHost(
 }
 
 func resumeDeployment(err error, progressLog func(msg string)) bool {
-	if strings.Contains(err.Error(), "empty deployment status id") {
+	errorMessage := err.Error()
+	if strings.Contains(errorMessage, "empty deployment status id") {
 		progressLog("Deployment status id is empty. Failed to enable tracking runtime status." +
 			"Resuming deployment without tracking status.")
 		return true
 	}
 
-	if strings.Contains(err.Error(), "response or its properties are empty") {
+	if strings.Contains(errorMessage, "response or its properties are empty") {
 		progressLog("Response or its properties are empty. Failed to enable tracking runtime status." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+
+	if strings.Contains(errorMessage, "failed to start within the allotted time") {
+		progressLog("Deployment with tracking status failed to start within the allotted time." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+
+	if strings.Contains(errorMessage, "the build process failed") && !strings.Contains(errorMessage, "logs for more info") {
+		progressLog("Failed to enable tracking runtime status." +
 			"Resuming deployment without tracking status.")
 		return true
 	}

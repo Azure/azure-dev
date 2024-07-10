@@ -37,7 +37,7 @@ func servicesFromManifest(manifest *apphost.Manifest) []*Service {
 	var services []*Service
 
 	for name, res := range manifest.Resources {
-		if res.Type == "project.v0" {
+		if res.Type == "project.v0" || res.Type == "project.v1" {
 			services = append(services, &Service{
 				Name: name,
 				Path: *res.Path,

@@ -111,8 +111,34 @@ func ProjectPaths(manifest *Manifest) map[string]string {
 
 	for name, comp := range manifest.Resources {
 		switch comp.Type {
-		case "project.v0":
+		case "project.v0", "project.v1":
 			res[name] = *comp.Path
+		}
+	}
+
+	return res
+}
+
+func ProjectV0s(manifest *Manifest) []string {
+	var res []string
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "project.v0":
+			res = append(res, name)
+		}
+	}
+
+	return res
+}
+
+func ProjectV1s(manifest *Manifest) []string {
+	var res []string
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "project.v1":
+			res = append(res, name)
 		}
 	}
 
@@ -223,6 +249,73 @@ func ContainerAppManifestTemplateForProject(
 	}
 
 	return buf.String(), nil
+}
+
+func BicepModuleForProject(manifest *Manifest, projectName string, options AppHostOptions) (string, string, error) {
+	generator := newInfraGenerator()
+
+	if err := generator.LoadManifest(manifest); err != nil {
+		return "", "", err
+	}
+
+	if err := generator.Compile(); err != nil {
+		return "", "", err
+	}
+
+	proj, has := generator.projectv1s[projectName]
+	if !has {
+		return "", "", fmt.Errorf("no project.v1 resource found with name %s", projectName)
+	}
+
+	dir, err := os.MkdirTemp("", "azd-infra")
+	if err != nil {
+		return "", dir, err
+	}
+
+	bicepContents, err := os.ReadFile(proj.DeploymentPath)
+	if err != nil {
+		return "", dir, fmt.Errorf("reading deployment file: %w", err)
+	}
+
+	destPath := filepath.Join(dir, filepath.Base(proj.DeploymentPath))
+	if err := os.WriteFile(destPath, bicepContents, osutil.PermissionFile); err != nil {
+		return "", dir, fmt.Errorf("writing deployment file: %w", err)
+	}
+
+	return destPath, dir, nil
+}
+
+func BicepParamsForProject(manifest *Manifest, projectName string, options AppHostOptions) (map[string]string, error) {
+	generator := newInfraGenerator()
+
+	if err := generator.LoadManifest(manifest); err != nil {
+		return nil, err
+	}
+
+	if err := generator.Compile(); err != nil {
+		return nil, err
+	}
+
+	proj, has := generator.projectv1s[projectName]
+	if !has {
+		return nil, fmt.Errorf("no project.v1 resource found with name %s", projectName)
+	}
+
+	return proj.DeploymentParams, nil
+}
+
+func TemplateForRef(manifest *Manifest, v string) (string, error) {
+	generator := newInfraGenerator()
+
+	if err := generator.LoadManifest(manifest); err != nil {
+		return "", err
+	}
+
+	if err := generator.Compile(); err != nil {
+		return "", err
+	}
+
+	return generator.evalBindingRef(v, inputEmitTypeYaml)
 }
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
@@ -435,6 +528,7 @@ type infraGenerator struct {
 	dapr              map[string]genDapr
 	dockerfiles       map[string]genDockerfile
 	projects          map[string]genProject
+	projectv1s        map[string]genProjectV1
 	connectionStrings map[string]string
 	// keeps the value from value.v0 resources if provided.
 	valueStrings  map[string]string
@@ -468,6 +562,7 @@ func newInfraGenerator() *infraGenerator {
 		dapr:                         make(map[string]genDapr),
 		dockerfiles:                  make(map[string]genDockerfile),
 		projects:                     make(map[string]genProject),
+		projectv1s:                   make(map[string]genProjectV1),
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
@@ -554,6 +649,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addAppInsights(name)
 		case "project.v0":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
+		case "project.v1":
+			if err := b.addProjectV1(name, *comp.Path, comp.Bindings, comp.Deployment); err != nil {
+				return err
+			}
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts)
 		case "dapr.v0":
@@ -907,6 +1006,28 @@ func (b *infraGenerator) addProject(
 	}
 }
 
+func (b *infraGenerator) addProjectV1(
+	name string, path string, bindings custommaps.WithOrder[Binding], deployment *ProjectV1Deployment,
+) error {
+	b.requireCluster()
+	b.requireContainerRegistry()
+
+	if deployment.Type != "azure.bicep.v0" {
+		return fmt.Errorf("resource %s has an unsupported deployment type %s, only azure.bicep.v0 is supported",
+			name, deployment.Type)
+	}
+
+	b.projectv1s[name] = genProjectV1{
+		Path:             path,
+		Bindings:         bindings,
+		DeploymentPath:   deployment.Path,
+		DeploymentParams: deployment.Params,
+	}
+
+	// TODO(ellismg): Should we be calling `addBicep` here in some fashion?
+	return nil
+}
+
 func (b *infraGenerator) addContainerAppService(name string, serviceType string) {
 	b.requireCluster()
 
@@ -1218,6 +1339,16 @@ func (b *infraGenerator) compileIngress() error {
 			ingressBindings: bindingsFromIngress,
 		}
 	}
+	for name, project := range b.projectv1s {
+		ingress, bindingsFromIngress, err := buildAcaIngress(project.Bindings, 8080)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
 	for name, bc := range b.buildContainers {
 		ingress, bindingsFromIngress, err := buildAcaIngress(bc.Bindings, 8080)
 		if err != nil {
@@ -1486,7 +1617,10 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	}
 
 	switch {
-	case targetType == "project.v0" || targetType == "container.v0" || targetType == "dockerfile.v0":
+	case targetType == "project.v0" ||
+		targetType == "project.v1" ||
+		targetType == "container.v0" ||
+		targetType == "dockerfile.v0":
 		if !strings.HasPrefix(prop, "bindings.") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
@@ -1505,6 +1639,9 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 
 		if targetType == "project.v0" {
 			bindings := b.projects[resource].Bindings
+			binding, has = bindings.Get(bindingName)
+		} else if targetType == "project.v1" {
+			bindings := b.projectv1s[resource].Bindings
 			binding, has = bindings.Get(bindingName)
 		} else if targetType == "container.v0" {
 			bindings := b.containers[resource].Bindings

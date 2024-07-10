@@ -7,7 +7,6 @@ param tags object = {}
 param collections array = []
 param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 param keyVaultName string
-param disableLocalAuth bool = false
 
 module cosmos 'cosmos-mongo-account.bicep' = {
   name: 'cosmos-mongo-account'
@@ -17,7 +16,6 @@ module cosmos 'cosmos-mongo-account.bicep' = {
     keyVaultName: keyVaultName
     tags: tags
     connectionStringKey: connectionStringKey
-    disableLocalAuth: disableLocalAuth
   }
 }
 

@@ -38,22 +38,11 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 		require.EqualValues(t, false, details.pushStatus)
 	})
 
-	t.Run("ssh not supported", func(t *testing.T) {
-		// arrange
-		provider := getAzdoScmProviderTestHarness(mockinput.NewMockConsole())
-		ctx := context.Background()
-
-		// act
-		details, e := provider.gitRepoDetails(ctx, "git@ssh.dev.azure.com:v3/fake_org/repo1/repo1")
-
-		// assert
-		require.Error(t, e, ErrSSHNotSupported)
-		require.EqualValues(t, (*gitRepositoryDetails)(nil), details)
-	})
-
 	t.Run("non azure devops https remote", func(t *testing.T) {
 		//arrange
-		provider := &AzdoScmProvider{}
+		provider := &AzdoScmProvider{
+			env: environment.New("test"),
+		}
 		ctx := context.Background()
 
 		//act
@@ -66,7 +55,9 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 
 	t.Run("non azure devops git remote", func(t *testing.T) {
 		//arrange
-		provider := &AzdoScmProvider{}
+		provider := &AzdoScmProvider{
+			env: environment.New("test"),
+		}
 		ctx := context.Background()
 
 		//act

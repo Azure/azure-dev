@@ -154,7 +154,7 @@ module api 'br/public:avm/res/web/site:0.3.9' = {
 }
 
 // Give the API access to KeyVault
-module accessKeyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
+module accessKeyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   name: 'accesskeyvault'
   scope: rg
   params: {
@@ -227,7 +227,7 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.1.0' = {
 }
 
 // Create a keyvault to store secrets
-module keyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
+module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   name: 'keyvault'
   scope: rg
   params: {

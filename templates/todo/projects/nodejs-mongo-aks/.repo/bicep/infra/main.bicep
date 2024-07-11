@@ -274,7 +274,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.5.1' = {
 }
 
 // Create a keyvault to store secrets
-module keyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
+module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   name: 'keyvault'
   scope: rg
   params: {

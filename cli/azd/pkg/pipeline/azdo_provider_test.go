@@ -221,3 +221,116 @@ func getAzdoCiProviderTestHarness(console input.Console) *AzdoCiProvider {
 		console: console,
 	}
 }
+
+func Test_parseAzDoRemote(t *testing.T) {
+
+	// the url can be in the form of:
+	//   - https://dev.azure.com/[org|user]/[project]/_git/[repo]
+	t.Run("valid HTTPS remote", func(t *testing.T) {
+		remoteUrl := "https://dev.azure.com/org/project/_git/repo"
+		expected := &azdoRemote{
+			Project:        "project",
+			RepositoryName: "repo",
+		}
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	// the url can be in the form of:
+	//   - https://[user]@dev.azure.com/[org|user]/[project]/_git/[repo]
+	t.Run("valid user HTTPS remote", func(t *testing.T) {
+		remoteUrl := "https://user@visualstudio.com/org/project/_git/repo"
+		expected := &azdoRemote{
+			Project:        "project",
+			RepositoryName: "repo",
+		}
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	// the url can be in the form of:
+	//   - https://[org].visualstudio.com/[project]/_git/[repo]
+	t.Run("valid legacy HTTPS remote", func(t *testing.T) {
+		remoteUrl := "https://visualstudio.com/org/project/_git/repo"
+		expected := &azdoRemote{
+			Project:        "project",
+			RepositoryName: "repo",
+		}
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	t.Run("valid legacy HTTPS remote with org", func(t *testing.T) {
+		remoteUrl := "https://org.visualstudio.com/org/project/_git/repo"
+		expected := &azdoRemote{
+			Project:        "project",
+			RepositoryName: "repo",
+		}
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	// the url can be in the form of:
+	//   - git@ssh.dev.azure.com:v[1-3]/[user|org]/[project]/[repo]
+	//   - git@vs-ssh.visualstudio.com:v[1-3]/[user|org]/[project]/[repo]
+	//   - git@ssh.visualstudio.com:v[1-3]/[user|org]/[project]/[repo]
+	t.Run("valid SSH remote", func(t *testing.T) {
+		remoteUrl := "git@ssh.dev.azure.com:v3/org/project/repo"
+		expected := &azdoRemote{
+			Project:        "project",
+			RepositoryName: "repo",
+		}
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	t.Run("valid legacy SSH remote", func(t *testing.T) {
+		remoteUrl := "git@vs-ssh.visualstudio.com:v3/org/project/repo"
+		expected := &azdoRemote{
+			Project:        "project",
+			RepositoryName: "repo",
+		}
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	t.Run("valid legacy SSH remote", func(t *testing.T) {
+		remoteUrl := "git@ssh.visualstudio.com:v3/org/project/repo"
+		expected := &azdoRemote{
+			Project:        "project",
+			RepositoryName: "repo",
+		}
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	t.Run("invalid remote", func(t *testing.T) {
+		remoteUrl := "https://github.com/user/repo"
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.Error(t, err)
+		require.Nil(t, result)
+	})
+}

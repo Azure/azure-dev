@@ -81,9 +81,11 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
 }
 
 {{- if .DbCosmosMongo}}
-
-// The application database
+{{- if .DbCosmosMongo.Module }}
+module cosmos '{{ .DbCosmosMongo.Module }}' = {
+{{- else }}
 module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
+{{- end }}
   name: 'cosmos'
   params: {
     locations: [
@@ -113,7 +115,11 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
 {{- if .DbPostgres}}
 var databaseName = '{{ .DbPostgres.DatabaseName }}'
 var databaseUser = '{{ .DbPostgres.DatabaseUser }}'
+{{- if .DbPostgres.Module }}
+module postgreServer '{{ .DbPostgres.Module }}' = {
+{{- else }}
 module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.6' = {
+{{- end }}
   name: 'postgreServer'
   params: {
     // Required parameters
@@ -183,6 +189,10 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.2.0' = {
           name: 'db-pass'
           value: databasePassword
         }
+        {
+          name: 'db-url'
+          value: 'postgresql://${databaseUser}:${databasePassword}@${postgreServer.outputs.fqdn}:5432/${databaseName}'
+        }
         {{- end}}
         {{- if .DbRedis}}
         {
@@ -228,6 +238,10 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.2.0' = {
           {
             name: 'POSTGRES_PASSWORD'
             secretRef: 'db-pass'
+          }
+          {
+            name: 'POSTGRES_URL'
+            secretRef: 'db-url'
           }
           {
             name: 'POSTGRES_PORT'
@@ -293,8 +307,11 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.2.0' = {
 {{- end}}
 
 {{- if .DbRedis}}
-
+{{- if .DbRedis.Module }}
+module redis '{{ .DbRedis.Module }}' = {
+{{- else }}
 module redis 'br/public:avm/res/cache/redis:0.3.2' = {
+{{- end }}
   name: 'redisDeployment'
   params: {
     // Required parameters

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -17,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/braydonk/yaml"
 	"github.com/otiai10/copy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -44,11 +47,13 @@ func (f *infraSynthFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComm
 }
 
 func newInfraSynthCmd() *cobra.Command {
-	return &cobra.Command{
-		Use: "synth",
+	cmd := &cobra.Command{
+		Use: "synth [resource]",
 		Short: fmt.Sprintf(
 			"Write IaC for your project to disk, allowing you to manage it by hand. %s", output.WithWarningFormat("(Beta)")),
 	}
+	cmd.Args = cobra.MaximumNArgs(1)
+	return cmd
 }
 
 type infraSynthAction struct {
@@ -58,6 +63,7 @@ type infraSynthAction struct {
 	azdCtx        *azdcontext.AzdContext
 	flags         *infraSynthFlags
 	alphaManager  *alpha.FeatureManager
+	args          []string
 }
 
 func newInfraSynthAction(
@@ -67,6 +73,7 @@ func newInfraSynthAction(
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
 	alphaManager *alpha.FeatureManager,
+	args []string,
 ) actions.Action {
 	return &infraSynthAction{
 		projectConfig: projectConfig,
@@ -75,6 +82,7 @@ func newInfraSynthAction(
 		console:       console,
 		azdCtx:        azdCtx,
 		alphaManager:  alphaManager,
+		args:          args,
 	}
 }
 
@@ -93,6 +101,96 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	spinnerMessage := "Synthesizing infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	if len(a.args) > 0 {
+		res, has := a.projectConfig.Resources[a.args[0]]
+		if !has {
+			a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+			return nil, fmt.Errorf("resource %s not found", a.args[0])
+		}
+
+		if res.Module != "" {
+			confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Resource %s is already linked to a module. Resynthesize module?", res.Name),
+			})
+			if err != nil {
+				a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+				return nil, err
+			}
+
+			if !confirm {
+				a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+				return nil, nil
+			}
+		}
+
+		result, err := a.importManager.SynthResource(ctx, a.projectConfig, *res, a.console)
+		if err != nil {
+			a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+			return nil, err
+		}
+
+		if res.Module != "" {
+			return nil, nil
+		}
+		file, err := os.OpenFile(a.azdCtx.ProjectPath(), os.O_RDWR, osutil.PermissionFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading project file: %w", err)
+		}
+		defer file.Close()
+
+		decoder := yaml.NewDecoder(file)
+
+		var doc yaml.Node
+		err = decoder.Decode(&doc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode: %w", err)
+		}
+
+		err = cmd.AppendNode(&doc, fmt.Sprintf("resources.%s", res.Name), &yaml.Node{
+			Kind: yaml.MappingNode,
+			Content: []*yaml.Node{
+				&yaml.Node{
+					Kind:  yaml.ScalarNode,
+					Value: "module",
+				},
+				&yaml.Node{
+					Kind:  yaml.ScalarNode,
+					Value: result.Module,
+				},
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("updating resources: %w", err)
+		}
+
+		// Write modified YAML back to file
+		err = file.Truncate(0)
+		if err != nil {
+			return nil, fmt.Errorf("truncating file: %w", err)
+		}
+		_, err = file.Seek(0, io.SeekStart)
+		if err != nil {
+			return nil, fmt.Errorf("seeking to start of file: %w", err)
+		}
+
+		indentation := cmd.CalcIndentation(&doc)
+		encoder := yaml.NewEncoder(file)
+		encoder.SetIndent(indentation)
+		encoder.SetAssumeBlockAsLiteral(true)
+		// encoder.SetIndentlessBlockSequence(true)
+
+		err = encoder.Encode(&doc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode: %w", err)
+		}
+
+		err = file.Close()
+		if err != nil {
+			return nil, fmt.Errorf("closing file: %w", err)
+		}
+		return nil, nil
+	}
+
 	synthFS, err := a.importManager.SynthAllInfrastructure(ctx, a.projectConfig)
 	if err != nil {
 		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)

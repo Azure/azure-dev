@@ -89,7 +89,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	resourceNode, err := encodeAsYamlNode(map[string]*project.ResourceConfig{resourceToAdd.Name: resourceToAdd})
+	resourceNode, err := EncodeAsYamlNode(map[string]*project.ResourceConfig{resourceToAdd.Name: resourceToAdd})
 	if err != nil {
 		panic(fmt.Sprintf("encoding yaml node: %v", err))
 	}
@@ -108,13 +108,13 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("failed to decode: %w", err)
 	}
 
-	err = appendNodeByPath(&doc, "resources?", resourceNode)
+	err = AppendNode(&doc, "resources?", resourceNode)
 	if err != nil {
 		return nil, fmt.Errorf("updating resources: %w", err)
 	}
 
 	for _, svc := range svcOptions {
-		err = appendNodeByPath(&doc, fmt.Sprintf("services.%s.uses[]?", svc), &yaml.Node{
+		err = AppendNode(&doc, fmt.Sprintf("services.%s.uses[]?", svc), &yaml.Node{
 			Kind:  yaml.ScalarNode,
 			Value: resourceToAdd.Name,
 		})
@@ -133,7 +133,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("seeking to start of file: %w", err)
 	}
 
-	indentation := calcIndentation(&doc)
+	indentation := CalcIndentation(&doc)
 	encoder := yaml.NewEncoder(file)
 	encoder.SetIndent(indentation)
 	encoder.SetAssumeBlockAsLiteral(true)
@@ -229,7 +229,7 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 	return res, nil
 }
 
-func encodeAsYamlNode(v interface{}) (*yaml.Node, error) {
+func EncodeAsYamlNode(v interface{}) (*yaml.Node, error) {
 	var node yaml.Node
 	err := node.Encode(v)
 	if err != nil {
@@ -241,7 +241,7 @@ func encodeAsYamlNode(v interface{}) (*yaml.Node, error) {
 	return &node, nil
 }
 
-func appendNodeByPath(root *yaml.Node, path string, node *yaml.Node) error {
+func AppendNode(root *yaml.Node, path string, node *yaml.Node) error {
 	parts := strings.Split(path, ".")
 	return modifyNodeRecursive(root, parts, node)
 }
@@ -319,9 +319,9 @@ func appendNode(current *yaml.Node, node *yaml.Node) error {
 	return nil
 }
 
-// calcIndentation calculates the indentation level of the first mapping node in the document.
+// CalcIndentation calculates the indentation level of the first mapping node in the document.
 // If the document does not contain a mapping node that is indented, it returns 2.
-func calcIndentation(doc *yaml.Node) int {
+func CalcIndentation(doc *yaml.Node) int {
 	var curr *yaml.Node
 	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
 		curr = doc.Content[0]

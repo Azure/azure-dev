@@ -127,7 +127,24 @@
                     },
                     "port": {
                         "type": "integer",
-                        "title": "Port that this service listens on (if applicable)"
+                        "title": "Port that this service listens on"
+                    },
+                    "env": {
+                        "type": "array",
+                        "title": "Environment variables to set for the service",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "title": "Name of the environment variable"
+                                },
+                                "value": {
+                                    "type": "string",
+                                    "title": "Value of the environment variable. Supports environment variable substitution."
+                                }
+                            }
+                        }
                     },
                     "docker": {
                         "$ref": "#/definitions/docker"
@@ -348,6 +365,10 @@
                             "db.redis",
                             "db.mongo"
                         ]
+                    },
+                    "module": {
+                        "type": "string",
+                        "title": "Path of the infrastructure module used to deploy the resource"
                     }
                 }
             }

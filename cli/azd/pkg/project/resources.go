@@ -36,4 +36,6 @@ type ResourceConfig struct {
 	Type ResourceType `yaml:"type"`
 	// The friendly name/key of the project from the azure.yaml file
 	Name string `yaml:"-"`
+	// The optional bicep module override for the resource
+	Module string `yaml:"module,omitempty"`
 }

@@ -25,13 +25,18 @@ type Parameter struct {
 type DatabasePostgres struct {
 	DatabaseUser string
 	DatabaseName string
+
+	Module string
 }
 
 type DatabaseCosmosMongo struct {
 	DatabaseName string
+
+	Module string
 }
 
 type DatabaseRedis struct {
+	Module string
 }
 
 type ServiceSpec struct {

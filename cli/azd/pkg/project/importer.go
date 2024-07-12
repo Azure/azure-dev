@@ -5,10 +5,14 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/psanford/memfs"
 )
@@ -224,6 +229,90 @@ func pathHasModule(path, module string) (bool, error) {
 
 }
 
+func (im *ImportManager) SynthResource(
+	ctx context.Context,
+	projectConfig *ProjectConfig,
+	res ResourceConfig,
+	console input.Console) (ResourceConfig, error) {
+	// example
+	// "https://github.com/Azure/bicep-registry-modules/blob/avm/res/app/container-app/0.4.1/avm/res/cache/redis/main.bicep"
+	bicepFileUrl := "https://raw.githubusercontent.com/Azure/bicep-registry-modules"
+	bicepModule := ""
+	switch res.Type {
+	case ResourceTypeDbMongo:
+		bicepModule = "avm/res/document-db/database-account/0.4.0"
+	case ResourceTypeDbPostgres:
+		bicepModule = "avm/res/db-for-postgre-sql/flexible-server/0.4.0"
+	case ResourceTypeDbRedis:
+		bicepModule = "avm/res/cache/redis/0.3.2"
+	default:
+		return ResourceConfig{}, fmt.Errorf("unsupported resource type %s", res.Type)
+	}
+
+	bicepFileUrl = fmt.Sprintf(
+		"%s/%s/%s/main.bicep",
+		bicepFileUrl,
+		bicepModule,
+		path.Dir(bicepModule))
+
+	resp, err := http.Get(bicepFileUrl)
+	if err != nil {
+		return ResourceConfig{}, fmt.Errorf("downloading bicep file: %w", err)
+	}
+
+	infraPathPrefix := DefaultPath
+	if projectConfig.Infra.Path != "" {
+		infraPathPrefix = projectConfig.Infra.Path
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ResourceConfig{}, fmt.Errorf("downloading bicep file: %w", err)
+	}
+
+	err = os.MkdirAll(filepath.Join(infraPathPrefix, "db"), osutil.PermissionDirectoryOwnerOnly)
+	if err != nil {
+		return ResourceConfig{}, fmt.Errorf("creating directory: %w", err)
+	}
+
+	infraPath := filepath.Join(infraPathPrefix, "db", res.Name+".bicep")
+	if f, err := os.Stat(infraPath); err == nil && !f.IsDir() {
+		confirm, err := console.Confirm(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("File %s already exists. Overwrite?", infraPath),
+		})
+		if err != nil {
+			return ResourceConfig{}, err
+		}
+
+		if !confirm {
+			return ResourceConfig{}, errors.New("cancellation")
+		}
+	}
+
+	lineCount := 0
+	wordCount := 0
+	// trim metadata headers
+	for i, b := range body {
+		if b == '\n' {
+			lineCount++
+		}
+
+		if lineCount == 4 {
+			wordCount = i + 1
+			break
+		}
+	}
+
+	// trim 4 lines of metadata
+	err = os.WriteFile(infraPath, body[wordCount:], osutil.PermissionFileOwnerOnly)
+	if err != nil {
+		return ResourceConfig{}, fmt.Errorf("writing bicep file: %w", err)
+	}
+
+	res.Module = path.Join("db", res.Name+".bicep")
+	return res, nil
+}
+
 func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
@@ -310,16 +399,20 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 	for _, res := range projectConfig.Resources {
 		switch res.Type {
 		case ResourceTypeDbRedis:
-			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
+			infraSpec.DbRedis = &scaffold.DatabaseRedis{
+				Module: res.Module,
+			}
 		case ResourceTypeDbMongo:
 			// todo: support servers and databases
 			infraSpec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
 				DatabaseName: res.Name,
+				Module:       res.Module,
 			}
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
 				DatabaseName: res.Name,
 				DatabaseUser: "pgadmin",
+				Module:       res.Module,
 			}
 		}
 	}

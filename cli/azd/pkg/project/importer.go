@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/psanford/memfs"
@@ -21,11 +22,13 @@ import (
 
 type ImportManager struct {
 	dotNetImporter *DotNetImporter
+	env            *environment.Environment
 }
 
-func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
+func NewImportManager(dotNetImporter *DotNetImporter, env *environment.Environment) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,
+		env:            env,
 	}
 }
 
@@ -151,7 +154,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
-	infraSpec, err := infraSpec(projectConfig)
+	infraSpec, err := infraSpec(projectConfig, im.env)
 	if err != nil {
 		return nil, fmt.Errorf("parsing infrastructure: %w", err)
 	}
@@ -232,7 +235,7 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 		}
 	}
 
-	infraSpec, err := infraSpec(projectConfig)
+	infraSpec, err := infraSpec(projectConfig, im.env)
 	if err != nil {
 		return nil, fmt.Errorf("parsing infrastructure: %w", err)
 	}
@@ -300,7 +303,7 @@ func (i *Infra) Cleanup() error {
 	return nil
 }
 
-func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
+func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*scaffold.InfraSpec, error) {
 	infraSpec := scaffold.InfraSpec{}
 	backendMapping := map[string]string{}
 
@@ -326,6 +329,18 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			Name: svc.Name,
 			Port: -1,
 		}
+
+		processedEnv := map[string]string{}
+		for _, envVar := range svc.Env {
+			val, err := envVar.Value.Envsubst(env.Getenv)
+			if err != nil {
+				return nil, fmt.Errorf("evaluating environment variable %s for service %s: %w", envVar.Name, svc.Name, err)
+			}
+
+			processedEnv[envVar.Name] = val
+		}
+
+		svcSpec.Env = processedEnv
 
 		if svc.Port != 0 {
 			port := svc.Port

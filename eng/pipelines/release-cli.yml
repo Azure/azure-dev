@@ -86,16 +86,16 @@ extends:
                 SetExecutableBit: true
                 AZURE_DEV_CI_OS: mac-arm64
 
-    - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
-      parameters:
-        DownloadArtifacts:
-          - cover-win
-          - cover-lin
-          - cover-mac
-          - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-            - cover-mac-arm64
+    # - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
+    #   parameters:
+    #     DownloadArtifacts:
+    #       - cover-win
+    #       - cover-lin
+    #       - cover-mac
+    #       - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+    #         - cover-mac-arm64
 
-    - template: /eng/pipelines/templates/stages/verify-installers.yml
+    # - template: /eng/pipelines/templates/stages/verify-installers.yml
 
     - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
 

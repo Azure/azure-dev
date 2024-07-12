@@ -12,7 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -22,7 +22,7 @@ type TestProvider struct {
 	envManager  environment.Manager
 	env         *environment.Environment
 	projectPath string
-	options     Options
+	options     provisioning.Options
 	console     input.Console
 	prompters   prompt.Prompter
 }
@@ -36,7 +36,7 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (p *TestProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
+func (p *TestProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
 	p.projectPath = projectPath
 	p.options = options
 
@@ -49,7 +49,7 @@ func (p *TestProvider) Initialize(ctx context.Context, projectPath string, optio
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TestProvider) EnsureEnv(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(
+	return provisioning.EnsureSubscriptionAndLocation(
 		ctx,
 		t.envManager,
 		t.env,
@@ -58,60 +58,63 @@ func (t *TestProvider) EnsureEnv(ctx context.Context) error {
 	)
 }
 
-func (p *TestProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
+func (p *TestProvider) State(ctx context.Context, options *provisioning.StateOptions) (*provisioning.StateResult, error) {
 	// TODO: progress, "Looking up deployment"
 
-	state := State{
-		Outputs:   make(map[string]OutputParameter),
-		Resources: make([]Resource, 0),
+	state := provisioning.State{
+		Outputs:   make(map[string]provisioning.OutputParameter),
+		Resources: make([]provisioning.Resource, 0),
 	}
 
-	return &StateResult{
+	return &provisioning.StateResult{
 		State: &state,
 	}, nil
 }
 
-func (p *TestProvider) GetDeployment(ctx context.Context) (*DeployResult, error) {
+func (p *TestProvider) GetDeployment(ctx context.Context) (*provisioning.DeployResult, error) {
 	// TODO: progress, "Looking up deployment"
 
-	deployment := Deployment{
-		Parameters: make(map[string]InputParameter),
-		Outputs:    make(map[string]OutputParameter),
+	deployment := provisioning.Deployment{
+		Parameters: make(map[string]provisioning.InputParameter),
+		Outputs:    make(map[string]provisioning.OutputParameter),
 	}
 
-	return &DeployResult{
+	return &provisioning.DeployResult{
 		Deployment: &deployment,
 	}, nil
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *TestProvider) Deploy(ctx context.Context) (*DeployResult, error) {
+func (p *TestProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
 	// TODO: progress, "Deploying azure resources"
 
-	deployment := Deployment{
-		Parameters: make(map[string]InputParameter),
-		Outputs:    make(map[string]OutputParameter),
+	deployment := provisioning.Deployment{
+		Parameters: make(map[string]provisioning.InputParameter),
+		Outputs:    make(map[string]provisioning.OutputParameter),
 	}
 
-	return &DeployResult{
+	return &provisioning.DeployResult{
 		Deployment: &deployment,
 	}, nil
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *TestProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
-	return &DeployPreviewResult{
-		Preview: &DeploymentPreview{
+func (p *TestProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
+	return &provisioning.DeployPreviewResult{
+		Preview: &provisioning.DeploymentPreview{
 			Status:     "Completed",
-			Properties: &DeploymentPreviewProperties{},
+			Properties: &provisioning.DeploymentPreviewProperties{},
 		},
 	}, nil
 }
 
-func (p *TestProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
+func (p *TestProvider) Destroy(
+	ctx context.Context,
+	options provisioning.DestroyOptions,
+) (*provisioning.DestroyResult, error) {
 	// TODO: progress, "Starting destroy"
 
-	destroyResult := DestroyResult{
+	destroyResult := provisioning.DestroyResult{
 		InvalidatedEnvKeys: []string{},
 	}
 
@@ -134,7 +137,7 @@ func NewTestProvider(
 	env *environment.Environment,
 	console input.Console,
 	prompters prompt.Prompter,
-) Provider {
+) provisioning.Provider {
 	return &TestProvider{
 		envManager: envManager,
 		env:        env,

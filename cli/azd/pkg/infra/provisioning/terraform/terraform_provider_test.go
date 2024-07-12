@@ -15,7 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	terraformTools "github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -66,7 +66,7 @@ func TestTerraformDestroy(t *testing.T) {
 	prepareDestroyMocks(mockContext.CommandRunner)
 
 	infraProvider := createTerraformProvider(t, mockContext)
-	destroyOptions := NewDestroyOptions(false, false)
+	destroyOptions := provisioning.NewDestroyOptions(false, false)
 	destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 	require.Nil(t, err)
@@ -99,7 +99,7 @@ func TestTerraformState(t *testing.T) {
 
 func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *TerraformProvider {
 	projectDir := "../../../../test/functional/testdata/samples/resourcegroupterraform"
-	options := Options{
+	options := provisioning.Options{
 		Module: "main",
 	}
 

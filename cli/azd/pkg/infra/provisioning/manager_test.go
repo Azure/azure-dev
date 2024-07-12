@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -45,7 +44,7 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(
+	mgr := provisioning.NewManager(
 		mockContext.Container,
 		defaultProvider,
 		envManager,
@@ -55,7 +54,7 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
 	require.NoError(t, err)
 
 	require.Equal(t, "00000000-0000-0000-0000-000000000000", env.GetSubscriptionId())
@@ -72,7 +71,7 @@ func TestManagerPreview(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(
+	mgr := provisioning.NewManager(
 		mockContext.Container,
 		defaultProvider,
 		envManager,
@@ -82,7 +81,7 @@ func TestManagerPreview(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
 	require.NoError(t, err)
 
 	deploymentPlan, err := mgr.Preview(*mockContext.Context)
@@ -101,7 +100,7 @@ func TestManagerGetState(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(
+	mgr := provisioning.NewManager(
 		mockContext.Container,
 		defaultProvider,
 		envManager,
@@ -111,7 +110,7 @@ func TestManagerGetState(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
 	require.NoError(t, err)
 
 	getResult, err := mgr.State(*mockContext.Context, nil)
@@ -130,7 +129,7 @@ func TestManagerDeploy(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(
+	mgr := provisioning.NewManager(
 		mockContext.Container,
 		defaultProvider,
 		envManager,
@@ -140,7 +139,7 @@ func TestManagerDeploy(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
 	require.NoError(t, err)
 
 	deployResult, err := mgr.Deploy(*mockContext.Context)
@@ -165,7 +164,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
-	mgr := NewManager(
+	mgr := provisioning.NewManager(
 		mockContext.Container,
 		defaultProvider,
 		envManager,
@@ -175,10 +174,10 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
 	require.NoError(t, err)
 
-	destroyOptions := NewDestroyOptions(false, false)
+	destroyOptions := provisioning.NewDestroyOptions(false, false)
 	destroyResult, err := mgr.Destroy(*mockContext.Context, destroyOptions)
 
 	require.NotNil(t, destroyResult)
@@ -201,7 +200,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(
+	mgr := provisioning.NewManager(
 		mockContext.Container,
 		defaultProvider,
 		envManager,
@@ -211,10 +210,10 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
 	require.NoError(t, err)
 
-	destroyOptions := NewDestroyOptions(false, false)
+	destroyOptions := provisioning.NewDestroyOptions(false, false)
 	destroyResult, err := mgr.Destroy(*mockContext.Context, destroyOptions)
 
 	require.Nil(t, destroyResult)
@@ -268,6 +267,6 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	})
 }
 
-func defaultProvider() (ProviderKind, error) {
-	return Bicep, nil
+func defaultProvider() (provisioning.ProviderKind, error) {
+	return provisioning.Bicep, nil
 }

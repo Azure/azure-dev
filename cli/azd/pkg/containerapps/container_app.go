@@ -106,13 +106,6 @@ func (cas *containerAppService) GetEnviron(ctx context.Context,
 		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
 	}
 
-	secretsRes, err := appClient.ListSecrets(ctx, resourceGroup, appName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("listing secrets: %w", err)
-	}
-
-	secrets := secretsRes.Value
-
 	res := map[string]string{}
 	envVar := containerApp.Properties.Template.Containers[0].Env
 	for _, env := range envVar {
@@ -123,12 +116,7 @@ func (cas *containerAppService) GetEnviron(ctx context.Context,
 		key := *env.Name
 		val := env.Value
 		if env.SecretRef != nil {
-			for _, secret := range secrets {
-				if *env.SecretRef == *secret.Name {
-					val = secret.Value
-					break
-				}
-			}
+			val = convert.RefOf("*******")
 		}
 
 		res[key] = *val
@@ -312,6 +300,10 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	// Update the container app
+	//!HACK: prototype ONLY
+	containerApp.Properties.Configuration.Ingress.CorsPolicy = &armappcontainers.CorsPolicy{
+		AllowedOrigins: []*string{convert.RefOf("*")},
+	}
 	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp)
 	if err != nil {
 		return fmt.Errorf("updating container app revision: %w", err)

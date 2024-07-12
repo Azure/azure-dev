@@ -23,7 +23,10 @@ type appServiceTarget struct {
 }
 
 // Environ implements ServiceTarget.
-func (st *appServiceTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+func (st *appServiceTarget) Environ(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource) (map[string]string, error) {
 	panic("unimplemented")
 }
 

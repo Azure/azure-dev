@@ -20,7 +20,10 @@ type aiEndpointTarget struct {
 }
 
 // Environ implements ServiceTarget.
-func (m *aiEndpointTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+func (m *aiEndpointTarget) Environ(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource) (map[string]string, error) {
 	panic("unimplemented")
 }
 

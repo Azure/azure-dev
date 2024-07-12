@@ -95,6 +95,8 @@ type serviceDefSettings struct {
 	CommentValue string `json:"_comment_value,omitempty"`
 }
 
+var _ = serviceDefPlaceholder("")
+
 func serviceDefPlaceholder(serviceName string) Parameter {
 	return Parameter{
 		Name: BicepName(serviceName) + "Definition",

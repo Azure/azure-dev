@@ -25,7 +25,10 @@ type containerAppTarget struct {
 }
 
 // Environ implements ServiceTarget.
-func (at *containerAppTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+func (at *containerAppTarget) Environ(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource) (map[string]string, error) {
 	return at.containerAppService.GetEnviron(
 		ctx,
 		targetResource.SubscriptionId(),

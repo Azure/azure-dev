@@ -41,7 +41,10 @@ type dotnetContainerAppTarget struct {
 }
 
 // Environ implements ServiceTarget.
-func (at *dotnetContainerAppTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+func (at *dotnetContainerAppTarget) Environ(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource) (map[string]string, error) {
 	panic("unimplemented")
 }
 

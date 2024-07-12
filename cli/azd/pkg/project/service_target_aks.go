@@ -92,7 +92,10 @@ type aksTarget struct {
 }
 
 // Environ implements ServiceTarget.
-func (t *aksTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+func (t *aksTarget) Environ(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource) (map[string]string, error) {
 	panic("unimplemented")
 }
 

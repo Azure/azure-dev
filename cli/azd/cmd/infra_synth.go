@@ -149,11 +149,11 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		err = cmd.AppendNode(&doc, fmt.Sprintf("resources.%s", res.Name), &yaml.Node{
 			Kind: yaml.MappingNode,
 			Content: []*yaml.Node{
-				&yaml.Node{
+				{
 					Kind:  yaml.ScalarNode,
 					Value: "module",
 				},
-				&yaml.Node{
+				{
 					Kind:  yaml.ScalarNode,
 					Value: result.Module,
 				},

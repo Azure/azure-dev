@@ -574,6 +574,10 @@ func newFakeServiceTarget(commandRunner exec.CommandRunner) ServiceTarget {
 	return &fakeServiceTarget{
 		commandRunner: commandRunner,
 	}
+
+}
+func (st *fakeServiceTarget) Environ(ctx context.Context, serviceConfig *ServiceConfig, targetResource *environment.TargetResource) (map[string]string, error) {
+	return map[string]string{}, nil
 }
 
 func (st *fakeServiceTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {

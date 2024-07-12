@@ -118,6 +118,58 @@ func (cas *containerAppService) GetIngressConfiguration(
 const apiVersionKey = "api-version"
 
 var persistCustomDomainsFeature = alpha.MustFeatureKey("aca.persistDomains")
+var persistIngressSessionAffinity = alpha.MustFeatureKey("aca.persistIngressSessionAffinity")
+
+func (cas *containerAppService) persistSettings(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+	obj map[string]any) (map[string]any, error) {
+	shouldPersistDomains := cas.alphaFeatureManager.IsEnabled(persistCustomDomainsFeature)
+	shouldPersistIngressSessionAffinity := cas.alphaFeatureManager.IsEnabled(persistIngressSessionAffinity)
+
+	if !shouldPersistDomains && !shouldPersistIngressSessionAffinity {
+		return obj, nil
+	}
+
+	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
+	if err != nil {
+		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
+	}
+
+	if aca == nil ||
+		aca.Properties == nil ||
+		aca.Properties.Configuration == nil ||
+		aca.Properties.Configuration.Ingress == nil {
+		// no settings to persist
+		return obj, nil
+	}
+
+	if shouldPersistDomains &&
+		aca.Properties.Configuration.Ingress.CustomDomains != nil {
+		acaAsConfig := config.NewConfig(obj)
+		err := acaAsConfig.Set(
+			"properties.configuration.ingress.customDomains", aca.Properties.Configuration.Ingress.CustomDomains)
+		if err != nil {
+			return nil, fmt.Errorf("failed to persist custom domains: %w", err)
+		}
+		obj = acaAsConfig.Raw()
+	}
+
+	if shouldPersistIngressSessionAffinity &&
+		aca.Properties.Configuration.Ingress.StickySessions != nil {
+		acaAsConfig := config.NewConfig(obj)
+		err := acaAsConfig.Set(
+			"properties.configuration.ingress.stickySessions", aca.Properties.Configuration.Ingress.StickySessions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to persist session affinity: %w", err)
+		}
+		obj = acaAsConfig.Raw()
+	}
+
+	return obj, nil
+}
 
 func (cas *containerAppService) DeployYaml(
 	ctx context.Context,
@@ -131,19 +183,9 @@ func (cas *containerAppService) DeployYaml(
 		return fmt.Errorf("decoding yaml: %w", err)
 	}
 
-	if shouldPersist := cas.alphaFeatureManager.IsEnabled(persistCustomDomainsFeature); shouldPersist {
-		aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
-		if err == nil {
-			acaAsConfig := config.NewConfig(obj)
-			err := acaAsConfig.Set(
-				"properties.configuration.ingress.customDomains", aca.Properties.Configuration.Ingress.CustomDomains)
-
-			if err == nil {
-				obj = acaAsConfig.Raw()
-			} else {
-				log.Printf("failed to set custom domains: %v. Domains will be ignored.", err)
-			}
-		}
+	obj, err := cas.persistSettings(ctx, subscriptionId, resourceGroupName, appName, obj)
+	if err != nil {
+		return fmt.Errorf("persisting aca settings: %w", err)
 	}
 
 	var poller *runtime.Poller[armappcontainers.ContainerAppsClientCreateOrUpdateResponse]
@@ -215,7 +257,7 @@ func (cas *containerAppService) DeployYaml(
 		poller = p
 	}
 
-	_, err := poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("polling for container app update completion: %w", err)
 	}

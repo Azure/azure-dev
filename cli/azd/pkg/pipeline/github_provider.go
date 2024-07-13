@@ -37,13 +37,13 @@ type GitHubScmProvider struct {
 	newGitHubRepoCreated bool
 	console              input.Console
 	ghCli                github.GitHubCli
-	gitCli               git.GitCli
+	gitCli               *git.Cli
 }
 
 func NewGitHubScmProvider(
 	console input.Console,
 	ghCli github.GitHubCli,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 ) ScmProvider {
 	return &GitHubScmProvider{
 		console: console,
@@ -316,7 +316,7 @@ type GitHubCiProvider struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	entraIdService     entraid.EntraIdService
 	ghCli              github.GitHubCli
-	gitCli             git.GitCli
+	gitCli             *git.Cli
 	console            input.Console
 	httpClient         httputil.HttpClient
 }
@@ -326,7 +326,7 @@ func NewGitHubCiProvider(
 	credentialProvider account.SubscriptionCredentialProvider,
 	entraIdService entraid.EntraIdService,
 	ghCli github.GitHubCli,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 	console input.Console,
 	httpClient httputil.HttpClient) CiProvider {
 	return &GitHubCiProvider{
@@ -737,7 +737,7 @@ func ensureGitHubLogin(
 	ctx context.Context,
 	projectPath string,
 	ghCli github.GitHubCli,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 	hostname string,
 	console input.Console) (bool, error) {
 	authResult, err := ghCli.GetAuthStatus(ctx, hostname)

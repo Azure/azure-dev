@@ -127,7 +127,7 @@ func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProv
 			mockContext.CoreClientOptions,
 		),
 		ghCli,
-		git.NewGitCli(mockContext.CommandRunner),
+		git.NewCli(mockContext.CommandRunner),
 		mockContext.Console,
 		mockContext.HttpClient,
 	)

@@ -30,14 +30,14 @@ import (
 // Initializer handles the initialization of a local repository.
 type Initializer struct {
 	console        input.Console
-	gitCli         git.GitCli
+	gitCli         *git.Cli
 	dotnetCli      *dotnet.Cli
 	lazyEnvManager *lazy.Lazy[environment.Manager]
 }
 
 func NewInitializer(
 	console input.Console,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 	dotnetCli *dotnet.Cli,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 ) *Initializer {

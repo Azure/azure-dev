@@ -36,7 +36,7 @@ func (s *aspireService) GetAspireHostAsync(
 	}
 
 	var c struct {
-		dotnetCli dotnet.DotNetCli `container:"type"`
+		dotnetCli *dotnet.Cli `container:"type"`
 	}
 
 	container, err := session.newContainer(rc)

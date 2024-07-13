@@ -33,7 +33,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 
 	var c struct {
 		azdContext *azdcontext.AzdContext `container:"type"`
-		dotnetCli  dotnet.DotNetCli       `container:"type"`
+		dotnetCli  *dotnet.Cli            `container:"type"`
 		envManager environment.Manager    `container:"type"`
 	}
 

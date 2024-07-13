@@ -31,14 +31,14 @@ import (
 type Initializer struct {
 	console        input.Console
 	gitCli         git.GitCli
-	dotnetCli      dotnet.DotNetCli
+	dotnetCli      *dotnet.Cli
 	lazyEnvManager *lazy.Lazy[environment.Manager]
 }
 
 func NewInitializer(
 	console input.Console,
 	gitCli git.GitCli,
-	dotnetCli dotnet.DotNetCli,
+	dotnetCli *dotnet.Cli,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 ) *Initializer {
 	return &Initializer{

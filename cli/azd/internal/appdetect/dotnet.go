@@ -12,7 +12,7 @@ import (
 )
 
 type dotNetDetector struct {
-	dotnetCli dotnet.DotNetCli
+	dotnetCli *dotnet.Cli
 }
 
 func (dd *dotNetDetector) Language() Language {

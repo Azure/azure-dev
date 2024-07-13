@@ -58,7 +58,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 			i := NewInitializer(
 				mockContext.Console,
 				git.NewGitCli(mockContext.CommandRunner),
-				dotnet.NewDotNetCli(mockContext.CommandRunner),
+				dotnet.NewCli(mockContext.CommandRunner),
 				lazy.From[environment.Manager](mockEnv),
 			)
 			err := i.Initialize(*mockContext.Context, azdCtx, &templates.Template{RepositoryPath: "local"}, "")
@@ -102,7 +102,7 @@ func Test_Initializer_DevCenter(t *testing.T) {
 	i := NewInitializer(
 		mockContext.Console,
 		git.NewGitCli(mockContext.CommandRunner),
-		dotnet.NewDotNetCli(mockContext.CommandRunner),
+		dotnet.NewCli(mockContext.CommandRunner),
 		lazy.From[environment.Manager](mockEnv),
 	)
 	err := i.Initialize(*mockContext.Context, azdCtx, template, "")
@@ -172,7 +172,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 			i := NewInitializer(
 				console,
 				git.NewGitCli(mockRunner),
-				dotnet.NewDotNetCli(mockRunner),
+				dotnet.NewCli(mockRunner),
 				lazy.From[environment.Manager](mockEnv),
 			)
 			err = i.Initialize(context.Background(), azdCtx, &templates.Template{RepositoryPath: "local"}, "")

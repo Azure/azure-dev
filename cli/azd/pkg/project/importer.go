@@ -260,6 +260,10 @@ func (im *ImportManager) SynthResource(
 		return ResourceConfig{}, fmt.Errorf("downloading bicep file: %w", err)
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return ResourceConfig{}, fmt.Errorf("downloading bicep file: %w", err)
+	}
+
 	infraPathPrefix := DefaultPath
 	if projectConfig.Infra.Path != "" {
 		infraPathPrefix = projectConfig.Infra.Path

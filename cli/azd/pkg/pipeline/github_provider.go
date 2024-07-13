@@ -36,13 +36,13 @@ import (
 type GitHubScmProvider struct {
 	newGitHubRepoCreated bool
 	console              input.Console
-	ghCli                github.GitHubCli
+	ghCli                *github.Cli
 	gitCli               *git.Cli
 }
 
 func NewGitHubScmProvider(
 	console input.Console,
-	ghCli github.GitHubCli,
+	ghCli *github.Cli,
 	gitCli *git.Cli,
 ) ScmProvider {
 	return &GitHubScmProvider{
@@ -315,7 +315,7 @@ type GitHubCiProvider struct {
 	env                *environment.Environment
 	credentialProvider account.SubscriptionCredentialProvider
 	entraIdService     entraid.EntraIdService
-	ghCli              github.GitHubCli
+	ghCli              *github.Cli
 	gitCli             *git.Cli
 	console            input.Console
 	httpClient         httputil.HttpClient
@@ -325,7 +325,7 @@ func NewGitHubCiProvider(
 	env *environment.Environment,
 	credentialProvider account.SubscriptionCredentialProvider,
 	entraIdService entraid.EntraIdService,
-	ghCli github.GitHubCli,
+	ghCli *github.Cli,
 	gitCli *git.Cli,
 	console input.Console,
 	httpClient httputil.HttpClient) CiProvider {
@@ -736,7 +736,7 @@ func (w *workflow) url() string {
 func ensureGitHubLogin(
 	ctx context.Context,
 	projectPath string,
-	ghCli github.GitHubCli,
+	ghCli *github.Cli,
 	gitCli *git.Cli,
 	hostname string,
 	console input.Console) (bool, error) {
@@ -787,7 +787,7 @@ func ensureGitHubLogin(
 
 // getRemoteUrlFromExisting let user to select an existing repository from his/her account and
 // returns the remote url for that repository.
-func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, console input.Console) (string, error) {
+func getRemoteUrlFromExisting(ctx context.Context, ghCli *github.Cli, console input.Console) (string, error) {
 	repos, err := ghCli.ListRepositories(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listing existing repositories: %w", err)
@@ -816,7 +816,7 @@ func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, conso
 
 // selectRemoteUrl let user to type and enter the url from an existing GitHub repo.
 // If the url is valid, the remote url is returned. Otherwise an error is returned.
-func selectRemoteUrl(ctx context.Context, ghCli github.GitHubCli, repo github.GhCliRepository) (string, error) {
+func selectRemoteUrl(ctx context.Context, ghCli *github.Cli, repo github.GhCliRepository) (string, error) {
 	protocolType, err := ghCli.GetGitProtocolType(ctx)
 	if err != nil {
 		return "", fmt.Errorf("detecting default protocol: %w", err)
@@ -835,7 +835,7 @@ func selectRemoteUrl(ctx context.Context, ghCli github.GitHubCli, repo github.Gh
 // getRemoteUrlFromNewRepository creates a new repository on GitHub and returns its remote url
 func getRemoteUrlFromNewRepository(
 	ctx context.Context,
-	ghCli github.GitHubCli,
+	ghCli *github.Cli,
 	currentPathName string,
 	console input.Console,
 ) (string, error) {

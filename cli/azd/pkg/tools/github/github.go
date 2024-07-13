@@ -31,31 +31,15 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-type GitHubCli interface {
-	tools.ExternalTool
-	GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error)
-	ListSecrets(ctx context.Context, repo string) ([]string, error)
-	ListVariables(ctx context.Context, repo string) ([]string, error)
-	SetSecret(ctx context.Context, repo string, name string, value string) error
-	DeleteSecret(ctx context.Context, repo string, name string) error
-	SetVariable(ctx context.Context, repoSlug string, name string, value string) error
-	DeleteVariable(ctx context.Context, repoSlug string, name string) error
-	Login(ctx context.Context, hostname string) error
-	ListRepositories(ctx context.Context) ([]GhCliRepository, error)
-	ViewRepository(ctx context.Context, name string) (GhCliRepository, error)
-	CreatePrivateRepository(ctx context.Context, name string) error
-	GetGitProtocolType(ctx context.Context) (string, error)
-	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
-	BinaryPath() string
-}
+var _ tools.ExternalTool = (*Cli)(nil)
 
-func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (GitHubCli, error) {
+func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (*Cli, error) {
 	return newGitHubCliImplementation(ctx, console, commandRunner, http.DefaultClient, downloadGh, extractGhCli)
 }
 
-// GitHubCliVersion is the minimum version of GitHub cli that we require (and the one we fetch when we fetch bicep on
+// Version is the minimum version of GitHub cli that we require (and the one we fetch when we fetch gh on
 // behalf of a user).
-var GitHubCliVersion semver.Version = semver.MustParse("2.28.0")
+var Version semver.Version = semver.MustParse("2.28.0")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.
@@ -66,10 +50,10 @@ func newGitHubCliImplementation(
 	transporter policy.Transporter,
 	acquireGitHubCliImpl getGitHubCliImplementation,
 	extractImplementation extractGitHubCliFromFileImplementation,
-) (GitHubCli, error) {
+) (*Cli, error) {
 	if override := os.Getenv("AZD_GH_CLI_TOOL_PATH"); override != "" {
 		log.Printf("using external github cli tool: %s", override)
-		cli := &ghCli{
+		cli := &Cli{
 			path:          override,
 			commandRunner: commandRunner,
 		}
@@ -97,14 +81,14 @@ func newGitHubCliImplementation(
 
 		msg := "setting up github connection"
 		console.ShowSpinner(ctx, msg, input.Step)
-		err = acquireGitHubCliImpl(ctx, transporter, GitHubCliVersion, extractImplementation, githubCliPath)
+		err = acquireGitHubCliImpl(ctx, transporter, Version, extractImplementation, githubCliPath)
 		console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
 			return nil, fmt.Errorf("setting up github connection: %w", err)
 		}
 	}
 
-	cli := &ghCli{
+	cli := &Cli{
 		path:          githubCliPath,
 		commandRunner: commandRunner,
 	}
@@ -141,12 +125,12 @@ var (
 	TokenEnvVars = []string{"GITHUB_TOKEN", "GH_TOKEN"}
 )
 
-type ghCli struct {
+type Cli struct {
 	commandRunner exec.CommandRunner
 	path          string
 }
 
-func (cli *ghCli) CheckInstalled(ctx context.Context) error {
+func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
@@ -161,8 +145,8 @@ func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRun
 		log.Printf("converting to semver version fails: %s", err.Error())
 		return false
 	}
-	if ghSemver.LT(GitHubCliVersion) {
-		log.Printf("Found gh cli version %s. Expected version: %s.", ghSemver.String(), GitHubCliVersion.String())
+	if ghSemver.LT(Version) {
+		log.Printf("Found gh cli version %s. Expected version: %s.", ghSemver.String(), Version.String())
 		return false
 	}
 	return true
@@ -170,15 +154,15 @@ func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRun
 
 const cGhToolName = "GitHub CLI"
 
-func (cli *ghCli) Name() string {
+func (cli *Cli) Name() string {
 	return cGhToolName
 }
 
-func (cli *ghCli) BinaryPath() string {
+func (cli *Cli) BinaryPath() string {
 	return cli.path
 }
 
-func (cli *ghCli) InstallUrl() string {
+func (cli *Cli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/github-cli-install"
 }
 
@@ -187,7 +171,7 @@ type AuthStatus struct {
 	LoggedIn bool
 }
 
-func (cli *ghCli) GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error) {
+func (cli *Cli) GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error) {
 	runArgs := cli.newRunArgs("auth", "status", "--hostname", hostname)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err == nil {
@@ -204,7 +188,7 @@ func (cli *ghCli) GetAuthStatus(ctx context.Context, hostname string) (AuthStatu
 	return AuthStatus{}, fmt.Errorf("failed running gh auth status: %w", err)
 }
 
-func (cli *ghCli) Login(ctx context.Context, hostname string) error {
+func (cli *Cli) Login(ctx context.Context, hostname string) error {
 	runArgs := cli.newRunArgs("auth", "login", "--hostname", hostname, "--scopes", "repo,workflow").
 		WithInteractive(true)
 
@@ -230,7 +214,7 @@ func ghOutputToList(output string) []string {
 	return result
 }
 
-func (cli *ghCli) ListSecrets(ctx context.Context, repoSlug string) ([]string, error) {
+func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, error) {
 	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "list")
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -239,7 +223,7 @@ func (cli *ghCli) ListSecrets(ctx context.Context, repoSlug string) ([]string, e
 	return ghOutputToList(output.Stdout), nil
 }
 
-func (cli *ghCli) ListVariables(ctx context.Context, repoSlug string) ([]string, error) {
+func (cli *Cli) ListVariables(ctx context.Context, repoSlug string) ([]string, error) {
 	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "list")
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -248,7 +232,7 @@ func (cli *ghCli) ListVariables(ctx context.Context, repoSlug string) ([]string,
 	return ghOutputToList(output.Stdout), nil
 }
 
-func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
+func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
 	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "set", name).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -257,7 +241,7 @@ func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, v
 	return nil
 }
 
-func (cli *ghCli) SetVariable(ctx context.Context, repoSlug string, name string, value string) error {
+func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string) error {
 	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -266,7 +250,7 @@ func (cli *ghCli) SetVariable(ctx context.Context, repoSlug string, name string,
 	return nil
 }
 
-func (cli *ghCli) DeleteSecret(ctx context.Context, repoSlug string, name string) error {
+func (cli *Cli) DeleteSecret(ctx context.Context, repoSlug string, name string) error {
 	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "delete", name)
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -275,7 +259,7 @@ func (cli *ghCli) DeleteSecret(ctx context.Context, repoSlug string, name string
 	return nil
 }
 
-func (cli *ghCli) DeleteVariable(ctx context.Context, repoSlug string, name string) error {
+func (cli *Cli) DeleteVariable(ctx context.Context, repoSlug string, name string) error {
 	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "delete", name)
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -292,7 +276,7 @@ var cGhCliVersionRegexp = regexp.MustCompile(`gh version ([0-9]+\.[0-9]+\.[0-9]+
 
 // logVersion writes the version of the GitHub CLI to the debug log for diagnostics purposes, or an error if
 // it could not be determined
-func (cli *ghCli) logVersion(ctx context.Context) {
+func (cli *Cli) logVersion(ctx context.Context) {
 	if ver, err := cli.extractVersion(ctx); err == nil {
 		log.Printf("github cli version: %s", ver)
 	} else {
@@ -301,7 +285,7 @@ func (cli *ghCli) logVersion(ctx context.Context) {
 }
 
 // extractVersion gets the version of the GitHub CLI, from the output of `gh --version`
-func (cli *ghCli) extractVersion(ctx context.Context) (string, error) {
+func (cli *Cli) extractVersion(ctx context.Context) (string, error) {
 	runArgs := cli.newRunArgs("--version")
 	res, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -324,7 +308,7 @@ type GhCliRepository struct {
 	SshUrl string
 }
 
-func (cli *ghCli) ListRepositories(ctx context.Context) ([]GhCliRepository, error) {
+func (cli *Cli) ListRepositories(ctx context.Context) ([]GhCliRepository, error) {
 	runArgs := cli.newRunArgs("repo", "list", "--no-archived", "--json", "nameWithOwner,url,sshUrl")
 	res, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -340,7 +324,7 @@ func (cli *ghCli) ListRepositories(ctx context.Context) ([]GhCliRepository, erro
 	return repos, nil
 }
 
-func (cli *ghCli) ViewRepository(ctx context.Context, name string) (GhCliRepository, error) {
+func (cli *Cli) ViewRepository(ctx context.Context, name string) (GhCliRepository, error) {
 	runArgs := cli.newRunArgs("repo", "view", name, "--json", "nameWithOwner,url,sshUrl")
 	res, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -357,7 +341,7 @@ func (cli *ghCli) ViewRepository(ctx context.Context, name string) (GhCliReposit
 	return repo, nil
 }
 
-func (cli *ghCli) CreatePrivateRepository(ctx context.Context, name string) error {
+func (cli *Cli) CreatePrivateRepository(ctx context.Context, name string) error {
 	runArgs := cli.newRunArgs("repo", "create", name, "--private")
 	res, err := cli.run(ctx, runArgs)
 	if repositoryNameInUseRegex.MatchString(res.Stderr) {
@@ -374,7 +358,7 @@ const (
 	GitHttpsProtocolType = "https"
 )
 
-func (cli *ghCli) GetGitProtocolType(ctx context.Context) (string, error) {
+func (cli *Cli) GetGitProtocolType(ctx context.Context) (string, error) {
 	runArgs := cli.newRunArgs("config", "get", "git_protocol")
 	res, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -390,7 +374,7 @@ type GitHubActionsResponse struct {
 
 // GitHubActionsExists gets the information from upstream about the workflows and
 // return true if there is at least one workflow in the repo.
-func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error) {
+func (cli *Cli) GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error) {
 	runArgs := cli.newRunArgs("api", "/repos/"+repoSlug+"/actions/workflows")
 	res, err := cli.run(ctx, runArgs)
 	if err != nil {
@@ -406,7 +390,7 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 	return true, nil
 }
 
-func (cli *ghCli) newRunArgs(args ...string) exec.RunArgs {
+func (cli *Cli) newRunArgs(args ...string) exec.RunArgs {
 
 	runArgs := exec.NewRunArgs(cli.path, args...)
 	if RunningOnCodespaces() {
@@ -416,7 +400,7 @@ func (cli *ghCli) newRunArgs(args ...string) exec.RunArgs {
 	return runArgs
 }
 
-func (cli *ghCli) run(ctx context.Context, runArgs exec.RunArgs) (exec.RunResult, error) {
+func (cli *Cli) run(ctx context.Context, runArgs exec.RunArgs) (exec.RunResult, error) {
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
 		return res, ErrGitHubCliNotLoggedIn

@@ -143,6 +143,6 @@ func setupGithubCliMocks(mockContext *mocks.MockContext) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "--version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, fmt.Sprintf("gh version %s", github.GitHubCliVersion), ""), nil
+		return exec.NewRunResult(0, fmt.Sprintf("gh version %s", github.Version), ""), nil
 	})
 }

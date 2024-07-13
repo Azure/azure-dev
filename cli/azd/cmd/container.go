@@ -603,7 +603,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(git.NewCli)
 	container.MustRegisterSingleton(github.NewGitHubCli)
 	container.MustRegisterSingleton(javac.NewCli)
-	container.MustRegisterSingleton(kubectl.NewKubectl)
+	container.MustRegisterSingleton(kubectl.NewCli)
 	container.MustRegisterSingleton(maven.NewMavenCli)
 	container.MustRegisterSingleton(kubelogin.NewCli)
 	container.MustRegisterSingleton(helm.NewCli)

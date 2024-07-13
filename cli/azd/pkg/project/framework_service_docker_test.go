@@ -99,7 +99,7 @@ services:
 	require.NoError(t, err)
 
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner)
+	docker := docker.NewCli(mockContext.CommandRunner)
 
 	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
@@ -193,7 +193,7 @@ services:
 	})
 
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner)
+	docker := docker.NewCli(mockContext.CommandRunner)
 
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
@@ -388,7 +388,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			temp := t.TempDir()
 
 			env := environment.New("test")
-			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, tt.language)
 			serviceConfig.Project.Path = temp
 			serviceConfig.Docker = tt.dockerOptions
@@ -520,7 +520,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			envManager := &mockenv.MockEnvManager{}
 
 			env := environment.NewWithValues("test", map[string]string{})
-			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 			dockerProject := NewDockerProject(

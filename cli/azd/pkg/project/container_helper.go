@@ -24,7 +24,7 @@ type ContainerHelper struct {
 	env                      *environment.Environment
 	envManager               environment.Manager
 	containerRegistryService azcli.ContainerRegistryService
-	docker                   docker.Docker
+	docker                   *docker.Cli
 	clock                    clock.Clock
 	cloud                    *cloud.Cloud
 }
@@ -34,7 +34,7 @@ func NewContainerHelper(
 	envManager environment.Manager,
 	clock clock.Clock,
 	containerRegistryService azcli.ContainerRegistryService,
-	docker docker.Docker,
+	docker *docker.Cli,
 	cloud *cloud.Cloud,
 ) *ContainerHelper {
 	return &ContainerHelper{

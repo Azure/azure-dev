@@ -22,7 +22,7 @@ import (
 func NewInfraAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add",
-		Short: "Add a componennt to your app.",
+		Short: "Add a component to your app.",
 	}
 }
 

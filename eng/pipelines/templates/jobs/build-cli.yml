@@ -189,11 +189,11 @@ jobs:
 
     templateContext:
       outputs:
-      - output: pipelineArtifact
-        path: cli/azd/cover-$(AZURE_DEV_CI_OS)
-        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-        artifact: cover-$(AZURE_DEV_CI_OS)
-        displayName: Upload code coverage
+      # - output: pipelineArtifact
+      #   path: cli/azd/cover-$(AZURE_DEV_CI_OS)
+      #   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+      #   artifact: cover-$(AZURE_DEV_CI_OS)
+      #   displayName: Upload code coverage
 
       - output: pipelineArtifact
         path: $(Build.ArtifactStagingDirectory)/shield

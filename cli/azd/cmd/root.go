@@ -321,6 +321,12 @@ func NewRootCmd(
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
+	root.
+		Add("add", &actions.ActionDescriptorOptions{
+			Command:        cmd.NewInfraAddCmd(),
+			ActionResolver: cmd.NewInfraAddAction,
+		})
+
 	// Register any global middleware defined by the caller
 	if len(middlewareChain) > 0 {
 		for _, registration := range middlewareChain {

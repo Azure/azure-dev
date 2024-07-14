@@ -378,7 +378,7 @@ func (p *dockerProject) packBuild(
 	svc *ServiceConfig,
 	dockerOptions DockerProjectOptions,
 	imageName string) (*ServiceBuildResult, error) {
-	packCli, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
+	packCli, err := pack.NewCli(ctx, p.console, p.commandRunner)
 	if err != nil {
 		return nil, err
 	}

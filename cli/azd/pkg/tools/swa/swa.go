@@ -19,27 +19,12 @@ import (
 // cSwaCliPackage is the npm package (including the version version) we execute with npx to run the SWA CLI.
 const cSwaCliPackage = "@azure/static-web-apps-cli@1.1.8"
 
-func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
-	return &swaCli{
+var _ tools.ExternalTool = (*Cli)(nil)
+
+func NewCli(commandRunner exec.CommandRunner) *Cli {
+	return &Cli{
 		commandRunner: commandRunner,
 	}
-}
-
-type SwaCli interface {
-	tools.ExternalTool
-
-	Build(ctx context.Context, cwd string, buildProgress io.Writer) error
-	Deploy(
-		ctx context.Context,
-		cwd string,
-		tenantId string,
-		subscriptionId string,
-		resourceGroup string,
-		appName string,
-		environment string,
-		deploymentToken string,
-		options DeployOptions,
-	) (string, error)
 }
 
 type DeployOptions struct {
@@ -47,12 +32,12 @@ type DeployOptions struct {
 	OutputRelativeFolderPath string
 }
 
-type swaCli struct {
+type Cli struct {
 	// commandRunner allows us to stub out the CommandRunner, for testing.
 	commandRunner exec.CommandRunner
 }
 
-func (cli *swaCli) Build(ctx context.Context, cwd string, buildProgress io.Writer) error {
+func (cli *Cli) Build(ctx context.Context, cwd string, buildProgress io.Writer) error {
 	fullAppFolderPath := filepath.Join(cwd)
 	result, err := cli.run(ctx, fullAppFolderPath, buildProgress, "build", "-V")
 
@@ -73,7 +58,7 @@ func (cli *swaCli) Build(ctx context.Context, cwd string, buildProgress io.Write
 	return nil
 }
 
-func (cli *swaCli) Deploy(
+func (cli *Cli) Deploy(
 	ctx context.Context,
 	cwd string,
 	tenantId string,
@@ -117,24 +102,24 @@ func (cli *swaCli) Deploy(
 	return res.Stdout + res.Stderr, nil
 }
 
-func (cli *swaCli) CheckInstalled(_ context.Context) error {
+func (cli *Cli) CheckInstalled(_ context.Context) error {
 
 	return tools.ToolInPath("npx")
 }
 
-func (cli *swaCli) Name() string {
+func (cli *Cli) Name() string {
 	return "SWA CLI"
 }
 
-func (cli *swaCli) InstallUrl() string {
+func (cli *Cli) InstallUrl() string {
 	return "https://azure.github.io/static-web-apps-cli/docs/use/install"
 }
 
-func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
+func (cli *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	return cli.run(ctx, cwd, nil, args...)
 }
 
-func (cli *swaCli) run(ctx context.Context, cwd string, buildProgress io.Writer, args ...string) (exec.RunResult, error) {
+func (cli *Cli) run(ctx context.Context, cwd string, buildProgress io.Writer, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("npx", "-y", cSwaCliPackage).
 		AppendParams(args...).

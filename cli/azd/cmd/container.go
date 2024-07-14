@@ -610,7 +610,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(kustomize.NewCli)
 	container.MustRegisterSingleton(npm.NewCli)
 	container.MustRegisterSingleton(python.NewCli)
-	container.MustRegisterSingleton(swa.NewSwaCli)
+	container.MustRegisterSingleton(swa.NewCli)
 	container.MustRegisterScoped(ai.NewPythonBridge)
 	container.MustRegisterScoped(project.NewAiHelper)
 

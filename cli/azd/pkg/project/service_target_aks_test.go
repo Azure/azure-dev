@@ -910,6 +910,23 @@ func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
 	}
 }
 
+// runTaskLogProgress runs a function to produce a task and then awaits its completion. Progress events that are produced
+// during the lifetime of the task are written to the test log.
+func runTaskLogProgress[T comparable, P comparable](
+	t *testing.T,
+	fn func(progess *async.Progress[P]) *async.Task[T],
+) (T, error) {
+	progress := async.NewProgress[P]()
+	defer progress.Done()
+
+	go func() {
+		for value := range progress.Progress() {
+			t.Log(value)
+		}
+	}()
+	return fn(progress).Await()
+}
+
 func logProgress[T comparable, P comparable](task *async.TaskWithProgress[T, P]) {
 	go func() {
 		for value := range task.Progress() {

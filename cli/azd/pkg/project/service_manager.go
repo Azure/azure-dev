@@ -56,7 +56,8 @@ type ServiceManager interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) *async.Task[*ServiceRestoreResult]
 
 	// Builds the code for the specified service config
 	// Will call the language compile for compiled languages or
@@ -186,8 +187,9 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 func (sm *serviceManager) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServiceRestoreResult] {
+	return async.RunTask(func(task *async.TaskContext[*ServiceRestoreResult]) {
 		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventRestore))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceRestoreResult))
@@ -202,11 +204,10 @@ func (sm *serviceManager) Restore(
 
 		restoreResult, err := runCommand(
 			ctx,
-			task,
 			ServiceEventRestore,
 			serviceConfig,
-			func() *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-				return frameworkService.Restore(ctx, serviceConfig)
+			func() *async.Task[*ServiceRestoreResult] {
+				return frameworkService.Restore(ctx, serviceConfig, progress)
 			},
 		)
 
@@ -247,7 +248,7 @@ func (sm *serviceManager) Build(
 			return
 		}
 
-		buildResult, err := runCommand(
+		buildResult, err := runCommandWithProgress(
 			ctx,
 			task,
 			ServiceEventBuild,
@@ -320,9 +321,11 @@ func (sm *serviceManager) Package(
 		// When a previous restore result was not provided, and we require it
 		// Then we need to restore the dependencies
 		if frameworkRequirements.Package.RequireRestore && (!hasBuildOutput || buildOutput.Restore == nil) {
-			restoreTask := sm.Restore(ctx, serviceConfig)
-			syncProgress(task, restoreTask.Progress())
+			progress := async.NewProgress[ServiceProgress]()
+			defer progress.Done()
+			go syncProgress(task, progress.Progress())
 
+			restoreTask := sm.Restore(ctx, serviceConfig, progress)
 			restoreTaskResult, err := restoreTask.Await()
 			if err != nil {
 				task.SetError(err)
@@ -507,7 +510,7 @@ func (sm *serviceManager) Deploy(
 			}
 		}
 
-		deployResult, err := runCommand(
+		deployResult, err := runCommandWithProgress(
 			ctx,
 			task,
 			ServiceEventDeploy,
@@ -668,7 +671,39 @@ func (sm *serviceManager) isComponentInitialized(serviceConfig *ServiceConfig, c
 	return false
 }
 
-func runCommand[T comparable, P comparable](
+func runCommand[T comparable](
+	ctx context.Context,
+	eventName ext.Event,
+	serviceConfig *ServiceConfig,
+	taskFunc func() *async.Task[T],
+) (T, error) {
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: serviceConfig.Project,
+		Service: serviceConfig,
+	}
+
+	var result T
+
+	err := serviceConfig.Invoke(ctx, eventName, eventArgs, func() error {
+		serviceTask := taskFunc()
+
+		taskResult, err := serviceTask.Await()
+		if err != nil {
+			return err
+		}
+
+		result = taskResult
+		return nil
+	})
+
+	if err != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
+func runCommandWithProgress[T comparable, P comparable](
 	ctx context.Context,
 	task *async.TaskContextWithProgress[T, P],
 	eventName ext.Event,

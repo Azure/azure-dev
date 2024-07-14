@@ -79,7 +79,8 @@ type FrameworkService interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) *async.Task[*ServiceRestoreResult]
 
 	// Builds the source for the framework service
 	Build(

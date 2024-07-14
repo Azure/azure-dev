@@ -100,11 +100,10 @@ func Test_ServiceManager_Restore(t *testing.T) {
 
 	restoreCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
+	result, err := runTaskLogProgress(t, func(progess *async.Progress[ServiceProgress]) *async.Task[*ServiceRestoreResult] {
+		return sm.Restore(ctx, serviceConfig, progess)
+	})
 
-	restoreTask := sm.Restore(ctx, serviceConfig)
-	logProgress(restoreTask)
-
-	result, err := restoreTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, *restoreCalled)
@@ -343,9 +342,10 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "restore",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				restoreTask := serviceManager.Restore(ctx, serviceConfig)
-				logProgress(restoreTask)
-				return restoreTask.Await()
+				return runTaskLogProgress(
+					t, func(progess *async.Progress[ServiceProgress]) *async.Task[*ServiceRestoreResult] {
+						return serviceManager.Restore(ctx, serviceConfig, progess)
+					})
 			},
 		},
 		{
@@ -495,13 +495,14 @@ func (f *fakeFramework) Initialize(ctx context.Context, serviceConfig *ServiceCo
 func (f *fakeFramework) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+	_ *async.Progress[ServiceProgress],
+) *async.Task[*ServiceRestoreResult] {
 	restoreCalled, ok := ctx.Value(frameworkRestoreCalled).(*bool)
 	if ok {
 		*restoreCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+	return async.RunTask(func(task *async.TaskContext[*ServiceRestoreResult]) {
 		runArgs := exec.NewRunArgs("fake-framework", "restore")
 		result, err := f.commandRunner.Run(ctx, runArgs)
 		if err != nil {

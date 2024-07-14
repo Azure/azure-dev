@@ -52,10 +52,11 @@ func (np *npmProject) Initialize(ctx context.Context, serviceConfig *ServiceConf
 func (np *npmProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Installing NPM dependencies"))
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServiceRestoreResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServiceRestoreResult]) {
+			progress.SetProgress(NewServiceProgress("Installing NPM dependencies"))
 			if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
 				task.SetError(err)
 				return

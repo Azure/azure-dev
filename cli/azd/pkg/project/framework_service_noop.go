@@ -34,9 +34,10 @@ func (n *noOpProject) Initialize(ctx context.Context, serviceConfig *ServiceConf
 func (n *noOpProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+	_ *async.Progress[ServiceProgress],
+) *async.Task[*ServiceRestoreResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServiceRestoreResult]) {
 			task.SetResult(&ServiceRestoreResult{})
 		},
 	)

@@ -81,10 +81,11 @@ func (p *swaProject) SetSource(inner FrameworkService) {
 func (p *swaProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServiceRestoreResult] {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.Restore(ctx, serviceConfig)
+	return p.framework.Restore(ctx, serviceConfig, progress)
 }
 
 // Builds the swa project based on the swa-cli.config.json options specified within the Service path

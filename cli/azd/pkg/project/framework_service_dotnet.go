@@ -85,10 +85,11 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (dp *dotnetProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServiceRestoreResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServiceRestoreResult]) {
+			progress.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
 			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
 				task.SetError(err)

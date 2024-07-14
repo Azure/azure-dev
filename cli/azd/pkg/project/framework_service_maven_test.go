@@ -86,10 +86,12 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		buildTask := mavenProject.Build(*mockContext.Context, serviceConfig, nil)
-		logProgress(buildTask)
+		result, err := runTaskLogProgress(
+			t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+				return mavenProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+			},
+		)
 
-		result, err := buildTask.Await()
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())

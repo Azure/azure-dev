@@ -194,10 +194,12 @@ func Test_DotNetProject_Build(t *testing.T) {
 	require.NoError(t, err)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	buildTask := dotnetProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
+	result, err := runTaskLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+			return dotnetProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+		},
+	)
 
-	result, err := buildTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)

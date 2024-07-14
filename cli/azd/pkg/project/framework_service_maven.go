@@ -81,10 +81,11 @@ func (m *mavenProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Compiling maven project"))
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServiceBuildResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServiceBuildResult]) {
+			progress.SetProgress(NewServiceProgress("Compiling maven project"))
 			if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
 				task.SetError(err)
 				return

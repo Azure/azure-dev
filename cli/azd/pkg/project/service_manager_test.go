@@ -134,10 +134,12 @@ func Test_ServiceManager_Build(t *testing.T) {
 	buildCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
-	buildTask := sm.Build(ctx, serviceConfig, nil)
-	logProgress(buildTask)
+	result, err := runTaskLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+			return sm.Build(ctx, serviceConfig, nil, progress)
+		},
+	)
 
-	result, err := buildTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, *buildCalled)
@@ -285,18 +287,20 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	buildCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
-	buildTask1 := sm.Build(ctx, serviceConfig, nil)
-	logProgress(buildTask1)
-
-	buildResult1, _ := buildTask1.Await()
+	buildResult1, _ := runTaskLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+			return sm.Build(ctx, serviceConfig, nil, progress)
+		},
+	)
 
 	require.True(t, *buildCalled)
 	*buildCalled = false
 
-	buildTask2 := sm.Build(ctx, serviceConfig, nil)
-	logProgress(buildTask1)
-
-	buildResult2, _ := buildTask2.Await()
+	buildResult2, _ := runTaskLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+			return sm.Build(ctx, serviceConfig, nil, progress)
+		},
+	)
 
 	require.False(t, *buildCalled)
 	require.Same(t, buildResult1, buildResult2)
@@ -351,9 +355,10 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "build",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				buildTask := serviceManager.Build(ctx, serviceConfig, nil)
-				logProgress(buildTask)
-				return buildTask.Await()
+				return runTaskLogProgress(
+					t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+						return serviceManager.Build(ctx, serviceConfig, nil, progress)
+					})
 			},
 		},
 		{
@@ -520,13 +525,14 @@ func (f *fakeFramework) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
+	_ *async.Progress[ServiceProgress],
+) *async.Task[*ServiceBuildResult] {
 	buildCalled, ok := ctx.Value(frameworkBuildCalled).(*bool)
 	if ok {
 		*buildCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+	return async.RunTask(func(task *async.TaskContext[*ServiceBuildResult]) {
 		runArgs := exec.NewRunArgs("fake-framework", "build")
 		result, err := f.commandRunner.Run(ctx, runArgs)
 		if err != nil {

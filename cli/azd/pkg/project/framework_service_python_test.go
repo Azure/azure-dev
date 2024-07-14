@@ -81,10 +81,12 @@ func Test_PythonProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	buildTask := pythonProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
+	result, err := runTaskLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+			return pythonProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+		},
+	)
 
-	result, err := buildTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }

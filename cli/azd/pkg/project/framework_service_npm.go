@@ -72,12 +72,13 @@ func (np *npmProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServiceBuildResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServiceBuildResult]) {
 			// Exec custom `build` script if available
 			// If `build`` script is not defined in the package.json the NPM script will NOT fail
-			task.SetProgress(NewServiceProgress("Running NPM build script"))
+			progress.SetProgress(NewServiceProgress("Running NPM build script"))
 			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
 				task.SetError(err)
 				return

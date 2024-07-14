@@ -66,7 +66,8 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
-	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) *async.Task[*ServiceBuildResult]
 
 	// Packages the code for the specified service config
 	// Depending on the service configuration this will generate an artifact
@@ -202,7 +203,7 @@ func (sm *serviceManager) Restore(
 			return
 		}
 
-		restoreResult, err := runCommand(
+		restoreResult, err := runCommandNoProgress(
 			ctx,
 			ServiceEventRestore,
 			serviceConfig,
@@ -227,8 +228,9 @@ func (sm *serviceManager) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServiceBuildResult] {
+	return async.RunTask(func(task *async.TaskContext[*ServiceBuildResult]) {
 		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventBuild))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceBuildResult))
@@ -248,13 +250,12 @@ func (sm *serviceManager) Build(
 			return
 		}
 
-		buildResult, err := runCommandWithProgress(
+		buildResult, err := runCommandNoProgress(
 			ctx,
-			task,
 			ServiceEventBuild,
 			serviceConfig,
-			func() *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-				return frameworkService.Build(ctx, serviceConfig, restoreOutput)
+			func() *async.Task[*ServiceBuildResult] {
+				return frameworkService.Build(ctx, serviceConfig, restoreOutput, progress)
 			},
 		)
 
@@ -340,8 +341,11 @@ func (sm *serviceManager) Package(
 		// When a previous build result was not provided, and we require it
 		// Then we need to build the project
 		if frameworkRequirements.Package.RequireBuild && !hasBuildOutput {
-			buildTask := sm.Build(ctx, serviceConfig, restoreResult)
-			syncProgress(task, buildTask.Progress())
+			progress := async.NewProgress[ServiceProgress]()
+			defer progress.Done()
+			go syncProgress(task, progress.Progress())
+
+			buildTask := sm.Build(ctx, serviceConfig, restoreResult, progress)
 
 			buildTaskResult, err := buildTask.Await()
 			if err != nil {
@@ -510,7 +514,7 @@ func (sm *serviceManager) Deploy(
 			}
 		}
 
-		deployResult, err := runCommandWithProgress(
+		deployResult, err := runCommand(
 			ctx,
 			task,
 			ServiceEventDeploy,
@@ -671,7 +675,7 @@ func (sm *serviceManager) isComponentInitialized(serviceConfig *ServiceConfig, c
 	return false
 }
 
-func runCommand[T comparable](
+func runCommandNoProgress[T comparable](
 	ctx context.Context,
 	eventName ext.Event,
 	serviceConfig *ServiceConfig,
@@ -703,7 +707,7 @@ func runCommand[T comparable](
 	return result, nil
 }
 
-func runCommandWithProgress[T comparable, P comparable](
+func runCommand[T comparable, P comparable](
 	ctx context.Context,
 	task *async.TaskContextWithProgress[T, P],
 	eventName ext.Event,

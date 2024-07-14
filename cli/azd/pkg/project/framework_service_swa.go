@@ -93,9 +93,10 @@ func (p *swaProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+	_ *async.Progress[ServiceProgress],
+) *async.Task[*ServiceBuildResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServiceBuildResult]) {
 
 			previewerWriter := p.console.ShowPreviewer(ctx,
 				&input.ShowPreviewerOptions{

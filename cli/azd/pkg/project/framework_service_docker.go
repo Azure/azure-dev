@@ -192,9 +192,10 @@ func (p *dockerProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServiceBuildResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServiceBuildResult]) {
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
 			resolveParameters := func(source []string) []string {
@@ -262,7 +263,7 @@ func (p *dockerProject) Build(
 
 			if errors.Is(err, os.ErrNotExist) {
 				// Build the container from source
-				task.SetProgress(NewServiceProgress("Building Docker image from source"))
+				progress.SetProgress(NewServiceProgress("Building Docker image from source"))
 				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
 				if err != nil {
 					task.SetError(err)
@@ -275,7 +276,7 @@ func (p *dockerProject) Build(
 			}
 
 			// Build the container
-			task.SetProgress(NewServiceProgress("Building Docker image"))
+			progress.SetProgress(NewServiceProgress("Building Docker image"))
 			previewerWriter := p.console.ShowPreviewer(ctx,
 				&input.ShowPreviewerOptions{
 					Prefix:       "  ",

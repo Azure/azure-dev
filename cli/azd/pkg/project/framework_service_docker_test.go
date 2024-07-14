@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -113,16 +114,18 @@ services:
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
-
-	buildTask := framework.Build(*mockContext.Context, service, nil)
+	progress := async.NewProgress[ServiceProgress]()
 	go func() {
-		for value := range buildTask.Progress() {
+		for value := range progress.Progress() {
 			progressMessages = append(progressMessages, value.Message)
 		}
 		done <- true
 	}()
 
+	buildTask := framework.Build(*mockContext.Context, service, nil, progress)
 	buildResult, err := buildTask.Await()
+
+	progress.Done()
 	<-done
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
@@ -222,15 +225,17 @@ services:
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
+	progress := async.NewProgress[ServiceProgress]()
 	go func() {
-		for value := range buildTask.Progress() {
+		for value := range progress.Progress() {
 			status = value.Message
 		}
 		done <- true
 	}()
 
+	buildTask := framework.Build(*mockContext.Context, service, nil, progress)
 	buildResult, err := buildTask.Await()
+	progress.Done()
 	<-done
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
@@ -428,9 +433,11 @@ func Test_DockerProject_Build(t *testing.T) {
 				dockerProject.SetSource(npmProject)
 			}
 
-			buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
-			logProgress(buildTask)
-			result, err := buildTask.Await()
+			result, err := runTaskLogProgress(
+				t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+					return dockerProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+				},
+			)
 
 			require.NoError(t, err)
 			require.NotNil(t, result)

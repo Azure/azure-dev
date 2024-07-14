@@ -87,7 +87,8 @@ type FrameworkService interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
-	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) *async.Task[*ServiceBuildResult]
 
 	// Packages the source suitable for deployment
 	// This may optionally perform a rebuild internally depending on the language/framework requirements

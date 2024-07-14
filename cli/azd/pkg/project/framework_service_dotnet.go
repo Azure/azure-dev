@@ -110,10 +110,11 @@ func (dp *dotnetProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Building .NET project"))
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServiceBuildResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServiceBuildResult]) {
+			progress.SetProgress(NewServiceProgress("Building .NET project"))
 			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
 				task.SetError(err)

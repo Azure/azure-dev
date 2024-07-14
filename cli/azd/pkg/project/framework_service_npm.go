@@ -17,11 +17,11 @@ import (
 
 type npmProject struct {
 	env *environment.Environment
-	cli npm.NpmCli
+	cli *npm.Cli
 }
 
 // NewNpmProject creates a new instance of a NPM project
-func NewNpmProject(cli npm.NpmCli, env *environment.Environment) FrameworkService {
+func NewNpmProject(cli *npm.Cli, env *environment.Environment) FrameworkService {
 	return &npmProject{
 		env: env,
 		cli: cli,

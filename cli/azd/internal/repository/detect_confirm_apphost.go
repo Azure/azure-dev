@@ -85,7 +85,7 @@ func (d *detectConfirmAppHost) render(ctx context.Context) error {
 	d.console.Message(
 		ctx,
 		"azd will generate the files necessary to host your app on Azure using "+color.MagentaString(
-			"Azure Kubernetes Service",
+			"Azure Container Apps",
 		)+".\n",
 	)
 

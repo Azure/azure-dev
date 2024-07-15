@@ -72,7 +72,7 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
-func (p *BicepProvider) promptForParameter(
+func (p *BicepProvider) PromptForParameter(
 	ctx context.Context,
 	key string,
 	param azure.ArmTemplateParameterDefinition,

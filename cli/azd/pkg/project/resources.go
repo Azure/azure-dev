@@ -1,5 +1,7 @@
 package project
 
+import "fmt"
+
 type ResourceType string
 
 const (
@@ -38,4 +40,21 @@ type ResourceConfig struct {
 	Name string `yaml:"-"`
 	// The optional bicep module override for the resource
 	Module string `yaml:"module,omitempty"`
+}
+
+func (r *ResourceConfig) DefaultModule() (bicepModule string, bicepVersion string) {
+	switch r.Type {
+	case ResourceTypeDbMongo:
+		bicepModule = "avm/res/document-db/database-account"
+		bicepVersion = "0.4.0"
+	case ResourceTypeDbPostgres:
+		bicepModule = "avm/res/db-for-postgre-sql/flexible-server"
+		bicepVersion = "0.1.6"
+	case ResourceTypeDbRedis:
+		bicepModule = "avm/res/cache/redis"
+		bicepVersion = "0.3.2"
+	default:
+		panic(fmt.Sprintf("unsupported resource type %s", r.Type))
+	}
+	return
 }

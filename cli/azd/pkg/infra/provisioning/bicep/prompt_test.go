@@ -63,7 +63,7 @@ func TestPromptForParameter(t *testing.T) {
 				return true
 			}).Respond(tc.provided)
 
-			value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+			value, err := p.PromptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 				Type: tc.paramType,
 			})
 
@@ -189,7 +189,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 				return ret, nil
 			})
 
-			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param)
+			value, err := p.PromptForParameter(*mockContext.Context, "testParam", tc.param)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, value)
 
@@ -222,7 +222,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 		return 1, nil
 	})
 
-	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+	value, err := p.PromptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
 		AllowedValues: convert.RefOf([]any{"three", "good", "choices"}),
 	})
@@ -230,7 +230,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "good", value)
 
-	value, err = p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+	value, err = p.PromptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "int",
 		AllowedValues: convert.RefOf([]any{10, 20, 30}),
 	})
@@ -289,7 +289,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		return 1, nil
 	})
 
-	value, err := p.promptForParameter(*mockContext.Context, "unfilteredLocation", azure.ArmTemplateParameterDefinition{
+	value, err := p.PromptForParameter(*mockContext.Context, "unfilteredLocation", azure.ArmTemplateParameterDefinition{
 		Type: "string",
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"type": "location"}`),
@@ -306,7 +306,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		return 0, nil
 	})
 
-	value, err = p.promptForParameter(*mockContext.Context, "filteredLocation", azure.ArmTemplateParameterDefinition{
+	value, err = p.PromptForParameter(*mockContext.Context, "filteredLocation", azure.ArmTemplateParameterDefinition{
 		Type: "string",
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"type": "location"}`),

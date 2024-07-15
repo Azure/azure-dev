@@ -237,25 +237,6 @@ func (im *ImportManager) SynthResource(
 	projectConfig *ProjectConfig,
 	res ResourceConfig,
 	console input.Console) (ResourceConfig, error) {
-	// example
-	// "https://github.com/Azure/bicep-registry-modules/blob/avm/res/app/container-app/0.4.1/avm/res/cache/redis/main.bicep"
-	// bicepFileUrl := "https://raw.githubusercontent.com/Azure/bicep-registry-modules"
-	bicepModule := ""
-	bicepVersion := ""
-	switch res.Type {
-	case ResourceTypeDbMongo:
-		bicepModule = "avm/res/document-db/database-account"
-		bicepVersion = "0.4.0"
-	case ResourceTypeDbPostgres:
-		bicepModule = "avm/res/db-for-postgre-sql/flexible-server"
-		bicepVersion = "0.1.6"
-	case ResourceTypeDbRedis:
-		bicepModule = "avm/res/cache/redis"
-		bicepVersion = "0.3.2"
-	default:
-		return ResourceConfig{}, fmt.Errorf("unsupported resource type %s", res.Type)
-	}
-
 	infraPathPrefix := DefaultPath
 	if projectConfig.Infra.Path != "" {
 		infraPathPrefix = projectConfig.Infra.Path
@@ -302,6 +283,7 @@ func (im *ImportManager) SynthResource(
 		return ResourceConfig{}, fmt.Errorf("restoring bicep: %w", err)
 	}
 
+	bicepModule, bicepVersion := res.DefaultModule()
 	restorePath, err := bicep.ModuleRestoredPath("mcr.microsoft.com", bicepModule, bicepVersion)
 	if err != nil {
 		return ResourceConfig{}, fmt.Errorf("getting module restored path: %w", err)

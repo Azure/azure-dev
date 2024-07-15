@@ -327,6 +327,12 @@ func NewRootCmd(
 			ActionResolver: cmd.NewInfraAddAction,
 		})
 
+	root.
+		Add("mod", &actions.ActionDescriptorOptions{
+			Command:        cmd.NewInfraModCmd(),
+			ActionResolver: cmd.NewInfraModAction,
+		})
+
 	// Register any global middleware defined by the caller
 	if len(middlewareChain) > 0 {
 		for _, registration := range middlewareChain {

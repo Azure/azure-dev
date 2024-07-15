@@ -2064,7 +2064,7 @@ func (p *BicepProvider) ensureParameters(
 				key := prompt.key
 
 				// Otherwise, prompt for the value.
-				value, err := p.promptForParameter(ctx, key, prompt.param)
+				value, err := p.PromptForParameter(ctx, key, prompt.param)
 				if err != nil {
 					return nil, fmt.Errorf("prompting for value: %w", err)
 				}

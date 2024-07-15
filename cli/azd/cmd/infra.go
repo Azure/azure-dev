@@ -55,5 +55,11 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			ActionResolver: cmd.NewInfraAddAction,
 		})
 
+	group.
+		Add("mod", &actions.ActionDescriptorOptions{
+			Command:        cmd.NewInfraModCmd(),
+			ActionResolver: cmd.NewInfraModAction,
+		})
+
 	return group
 }

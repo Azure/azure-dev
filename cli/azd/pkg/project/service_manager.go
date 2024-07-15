@@ -80,7 +80,7 @@ type ServiceManager interface {
 		buildOutput *ServiceBuildResult,
 		progress *async.Progress[ServiceProgress],
 		options *PackageOptions,
-	) *async.Task[*ServicePackageResult]
+	) (*ServicePackageResult, error)
 
 	// Deploys the generated artifacts to the Azure resource that will
 	// host the service application
@@ -283,149 +283,138 @@ func (sm *serviceManager) Package(
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
 	options *PackageOptions,
-) *async.Task[*ServicePackageResult] {
-	return async.RunTask(func(task *async.TaskContext[*ServicePackageResult]) {
-		if options == nil {
-			options = &PackageOptions{}
-		}
+) (*ServicePackageResult, error) {
+	if options == nil {
+		options = &PackageOptions{}
+	}
 
-		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
+	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
+	if ok && cachedResult != nil {
+		return cachedResult.(*ServicePackageResult), nil
+	}
+
+	if buildOutput == nil {
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventBuild))
 		if ok && cachedResult != nil {
-			task.SetResult(cachedResult.(*ServicePackageResult))
-			return
+			buildOutput = cachedResult.(*ServiceBuildResult)
 		}
+	}
 
-		if buildOutput == nil {
-			cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventBuild))
-			if ok && cachedResult != nil {
-				buildOutput = cachedResult.(*ServiceBuildResult)
-			}
-		}
+	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting framework service: %w", err)
+	}
 
-		frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting service target: %w", err)
+	}
+
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: serviceConfig.Project,
+		Service: serviceConfig,
+	}
+
+	hasBuildOutput := buildOutput != nil
+	restoreResult := &ServiceRestoreResult{}
+
+	// Get the language / framework requirements
+	frameworkRequirements := frameworkService.Requirements()
+
+	// When a previous restore result was not provided, and we require it
+	// Then we need to restore the dependencies
+	if frameworkRequirements.Package.RequireRestore && (!hasBuildOutput || buildOutput.Restore == nil) {
+		restoreTaskResult, err := sm.Restore(ctx, serviceConfig, progress)
 		if err != nil {
-			task.SetError(fmt.Errorf("getting framework service: %w", err))
-			return
+			return nil, err
 		}
 
-		serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+		restoreResult = restoreTaskResult
+	}
+
+	buildResult := &ServiceBuildResult{}
+
+	// When a previous build result was not provided, and we require it
+	// Then we need to build the project
+	if frameworkRequirements.Package.RequireBuild && !hasBuildOutput {
+		buildTaskResult, err := sm.Build(ctx, serviceConfig, restoreResult, progress)
 		if err != nil {
-			task.SetError(fmt.Errorf("getting service target: %w", err))
-			return
+			return nil, err
 		}
 
-		eventArgs := ServiceLifecycleEventArgs{
-			Project: serviceConfig.Project,
-			Service: serviceConfig,
-		}
+		buildResult = buildTaskResult
+	}
 
-		hasBuildOutput := buildOutput != nil
-		restoreResult := &ServiceRestoreResult{}
+	if !hasBuildOutput {
+		buildOutput = buildResult
+		buildOutput.Restore = restoreResult
+	}
 
-		// Get the language / framework requirements
-		frameworkRequirements := frameworkService.Requirements()
+	var packageResult *ServicePackageResult
 
-		// When a previous restore result was not provided, and we require it
-		// Then we need to restore the dependencies
-		if frameworkRequirements.Package.RequireRestore && (!hasBuildOutput || buildOutput.Restore == nil) {
-			restoreTaskResult, err := sm.Restore(ctx, serviceConfig, progress)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			restoreResult = restoreTaskResult
-		}
-
-		buildResult := &ServiceBuildResult{}
-
-		// When a previous build result was not provided, and we require it
-		// Then we need to build the project
-		if frameworkRequirements.Package.RequireBuild && !hasBuildOutput {
-			buildTaskResult, err := sm.Build(ctx, serviceConfig, restoreResult, progress)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			buildResult = buildTaskResult
-		}
-
-		if !hasBuildOutput {
-			buildOutput = buildResult
-			buildOutput.Restore = restoreResult
-		}
-
-		var packageResult *ServicePackageResult
-
-		err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
-			frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, buildOutput, progress)
-			if err != nil {
-				return err
-			}
-
-			serviceTargetPackageTask := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
-			for p := range serviceTargetPackageTask.Progress() {
-				progress.SetProgress(p)
-			}
-
-			serviceTargetPackageResult, err := serviceTargetPackageTask.Await()
-			if err != nil {
-				return err
-			}
-
-			packageResult = serviceTargetPackageResult
-			sm.setOperationResult(serviceConfig, string(ServiceEventPackage), packageResult)
-
-			return nil
-		})
-
+	err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
+		frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, buildOutput, progress)
 		if err != nil {
-			task.SetError(fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err))
-			return
+			return err
 		}
 
-		// Package path can be a file path or a container image name
-		// We only move to desired output path for file based packages
-		_, err = os.Stat(packageResult.PackagePath)
-		hasPackageFile := err == nil
-
-		if hasPackageFile && options.OutputPath != "" {
-			var destFilePath string
-			var destDirectory string
-
-			isFilePath := filepath.Ext(options.OutputPath) != ""
-			if isFilePath {
-				destFilePath = options.OutputPath
-				destDirectory = filepath.Dir(options.OutputPath)
-			} else {
-				destFilePath = filepath.Join(options.OutputPath, filepath.Base(packageResult.PackagePath))
-				destDirectory = options.OutputPath
-			}
-
-			_, err := os.Stat(destDirectory)
-			if errors.Is(err, os.ErrNotExist) {
-				// Create the desired output directory if it does not already exist
-				if err := os.MkdirAll(destDirectory, osutil.PermissionDirectory); err != nil {
-					task.SetError(fmt.Errorf("failed creating output directory '%s': %w", destDirectory, err))
-					return
-				}
-			}
-
-			// Move the package file to the desired path
-			// We can't use os.Rename here since that does not work across disks
-			if err := moveFile(packageResult.PackagePath, destFilePath); err != nil {
-				task.SetError(
-					fmt.Errorf("failed moving package file '%s' to '%s': %w", packageResult.PackagePath, destFilePath, err),
-				)
-				return
-			}
-
-			packageResult.PackagePath = destFilePath
+		serviceTargetPackageTask := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
+		for p := range serviceTargetPackageTask.Progress() {
+			progress.SetProgress(p)
 		}
 
-		task.SetResult(packageResult)
+		serviceTargetPackageResult, err := serviceTargetPackageTask.Await()
+		if err != nil {
+			return err
+		}
+
+		packageResult = serviceTargetPackageResult
+		sm.setOperationResult(serviceConfig, string(ServiceEventPackage), packageResult)
+
+		return nil
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err)
+	}
+
+	// Package path can be a file path or a container image name
+	// We only move to desired output path for file based packages
+	_, err = os.Stat(packageResult.PackagePath)
+	hasPackageFile := err == nil
+
+	if hasPackageFile && options.OutputPath != "" {
+		var destFilePath string
+		var destDirectory string
+
+		isFilePath := filepath.Ext(options.OutputPath) != ""
+		if isFilePath {
+			destFilePath = options.OutputPath
+			destDirectory = filepath.Dir(options.OutputPath)
+		} else {
+			destFilePath = filepath.Join(options.OutputPath, filepath.Base(packageResult.PackagePath))
+			destDirectory = options.OutputPath
+		}
+
+		_, err := os.Stat(destDirectory)
+		if errors.Is(err, os.ErrNotExist) {
+			// Create the desired output directory if it does not already exist
+			if err := os.MkdirAll(destDirectory, osutil.PermissionDirectory); err != nil {
+				return nil, fmt.Errorf("failed creating output directory '%s': %w", destDirectory, err)
+			}
+		}
+
+		// Move the package file to the desired path
+		// We can't use os.Rename here since that does not work across disks
+		if err := moveFile(packageResult.PackagePath, destFilePath); err != nil {
+			return nil, fmt.Errorf(
+				"failed moving package file '%s' to '%s': %w", packageResult.PackagePath, destFilePath, err)
+		}
+
+		packageResult.PackagePath = destFilePath
+	}
+
+	return packageResult, nil
 }
 
 // Deploys the generated artifacts to the Azure resource that will host the service application

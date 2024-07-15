@@ -170,7 +170,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 	ctx := context.WithValue(*mockContext.Context, frameworkPackageCalled, fakeFrameworkPackageCalled)
 	ctx = context.WithValue(ctx, serviceTargetPackageCalled, fakeServiceTargetPackageCalled)
 
-	result, err := runTaskLogProgress(t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+	result, err := runFuncLogProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 		return sm.Package(ctx, serviceConfig, nil, progress, nil)
 	})
 
@@ -317,8 +317,8 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 	packageCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPackageCalled, packageCalled)
 
-	packageResult1, _ := runTaskLogProgress(
-		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+	packageResult1, _ := runFuncLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 			return sm1.Package(ctx, serviceConfig, nil, progress, nil)
 		},
 	)
@@ -327,8 +327,8 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 	*packageCalled = false
 
 	sm2 := createServiceManager(mockContext, env, operationCache)
-	packageResult2, _ := runTaskLogProgress(
-		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+	packageResult2, _ := runFuncLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 			return sm2.Package(ctx, serviceConfig, nil, progress, nil)
 		},
 	)
@@ -364,8 +364,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "package",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				return runTaskLogProgress(
-					t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+				return runFuncLogProgress(
+					t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 						return serviceManager.Package(ctx, serviceConfig, nil, progress, nil)
 					})
 			},

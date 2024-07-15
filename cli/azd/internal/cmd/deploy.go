@@ -266,8 +266,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				close(done)
 			}()
 
-			packageTask := da.serviceManager.Package(ctx, svc, nil, progress, nil)
-			packageResult, err = packageTask.Await()
+			packageResult, err = da.serviceManager.Package(ctx, svc, nil, progress, nil)
 			progress.Done()
 			// wait for console updates to complete
 			<-done

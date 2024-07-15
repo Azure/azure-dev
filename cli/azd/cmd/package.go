@@ -206,8 +206,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			close(done)
 		}()
 
-		packageTask := pa.serviceManager.Package(ctx, svc, nil, progress, options)
-		packageResult, err := packageTask.Await()
+		packageResult, err := pa.serviceManager.Package(ctx, svc, nil, progress, options)
 		progress.Done()
 		// adding a few seconds to wait for all async ops to be flush
 		<-done

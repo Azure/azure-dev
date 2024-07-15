@@ -5,12 +5,9 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -22,18 +19,24 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/otiai10/copy"
 	"github.com/psanford/memfs"
 )
 
 type ImportManager struct {
 	dotNetImporter *DotNetImporter
 	env            *environment.Environment
+	bicep          bicep.BicepCli
 }
 
-func NewImportManager(dotNetImporter *DotNetImporter, env *environment.Environment) *ImportManager {
+func NewImportManager(dotNetImporter *DotNetImporter, env *environment.Environment, bicep bicep.BicepCli) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,
 		env:            env,
+		bicep:          bicep,
 	}
 }
 
@@ -236,32 +239,21 @@ func (im *ImportManager) SynthResource(
 	console input.Console) (ResourceConfig, error) {
 	// example
 	// "https://github.com/Azure/bicep-registry-modules/blob/avm/res/app/container-app/0.4.1/avm/res/cache/redis/main.bicep"
-	bicepFileUrl := "https://raw.githubusercontent.com/Azure/bicep-registry-modules"
+	// bicepFileUrl := "https://raw.githubusercontent.com/Azure/bicep-registry-modules"
 	bicepModule := ""
+	bicepVersion := ""
 	switch res.Type {
 	case ResourceTypeDbMongo:
-		bicepModule = "avm/res/document-db/database-account/0.4.0"
+		bicepModule = "avm/res/document-db/database-account"
+		bicepVersion = "0.4.0"
 	case ResourceTypeDbPostgres:
-		bicepModule = "avm/res/db-for-postgre-sql/flexible-server/0.4.0"
+		bicepModule = "avm/res/db-for-postgre-sql/flexible-server"
+		bicepVersion = "0.1.6"
 	case ResourceTypeDbRedis:
-		bicepModule = "avm/res/cache/redis/0.3.2"
+		bicepModule = "avm/res/cache/redis"
+		bicepVersion = "0.3.2"
 	default:
 		return ResourceConfig{}, fmt.Errorf("unsupported resource type %s", res.Type)
-	}
-
-	bicepFileUrl = fmt.Sprintf(
-		"%s/%s/%s/main.bicep",
-		bicepFileUrl,
-		bicepModule,
-		path.Dir(bicepModule))
-
-	resp, err := http.Get(bicepFileUrl)
-	if err != nil {
-		return ResourceConfig{}, fmt.Errorf("downloading bicep file: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return ResourceConfig{}, fmt.Errorf("downloading bicep file: %w", err)
 	}
 
 	infraPathPrefix := DefaultPath
@@ -269,33 +261,107 @@ func (im *ImportManager) SynthResource(
 		infraPathPrefix = projectConfig.Infra.Path
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	synthFS, err := im.SynthAllInfrastructure(ctx, projectConfig)
 	if err != nil {
-		return ResourceConfig{}, fmt.Errorf("downloading bicep file: %w", err)
+		return ResourceConfig{}, err
 	}
 
-	err = os.MkdirAll(filepath.Join(infraPathPrefix, "db"), osutil.PermissionDirectoryOwnerOnly)
+	staging, err := os.MkdirTemp("", "infra-synth")
+	if err != nil {
+		return ResourceConfig{}, err
+	}
+	defer os.RemoveAll(staging)
+
+	err = fs.WalkDir(synthFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		contents, err := fs.ReadFile(synthFS, path)
+		if err != nil {
+			return err
+		}
+
+		err = os.MkdirAll(filepath.Join(staging, filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(filepath.Join(staging, path), contents, d.Type().Perm())
+	})
+	if err != nil {
+		return ResourceConfig{}, err
+	}
+
+	err = im.bicep.Restore(ctx, filepath.Join(staging, infraPathPrefix, "main.bicep"))
+	if err != nil {
+		return ResourceConfig{}, fmt.Errorf("restoring bicep: %w", err)
+	}
+
+	restorePath, err := bicep.ModuleRestoredPath("mcr.microsoft.com", bicepModule, bicepVersion)
+	if err != nil {
+		return ResourceConfig{}, fmt.Errorf("getting module restored path: %w", err)
+	}
+
+	stagingSource := filepath.Join(staging, "source")
+	err = os.MkdirAll(stagingSource, osutil.PermissionDirectoryOwnerOnly)
 	if err != nil {
 		return ResourceConfig{}, fmt.Errorf("creating directory: %w", err)
 	}
 
-	infraPath := filepath.Join(infraPathPrefix, "db", res.Name+".bicep")
-	if f, err := os.Stat(infraPath); err == nil && !f.IsDir() {
-		confirm, err := console.Confirm(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("File %s already exists. Overwrite?", infraPath),
-		})
-		if err != nil {
-			return ResourceConfig{}, err
+	// extract files from source.tgz
+	moduleZipped := filepath.Join(restorePath, "source.tgz")
+	err = rzip.UnzipTarGz(moduleZipped, stagingSource)
+	if err != nil {
+		return ResourceConfig{}, fmt.Errorf("unzipping source.tgz: %w", err)
+	}
+
+	stagingSourceFiles := filepath.Join(stagingSource, "files")
+
+	// copy files from source.tgz to staging
+	infraPath := filepath.Join(infraPathPrefix, "db", res.Name)
+
+	skipStagingFiles, err := im.promptForDuplicates(ctx, console, stagingSourceFiles, infraPath)
+	if err != nil {
+		return ResourceConfig{}, err
+	}
+
+	options := copy.Options{}
+	options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
+		var skip bool
+		if skipStagingFiles != nil {
+			_, skip = skipStagingFiles[src]
 		}
 
-		if !confirm {
-			return ResourceConfig{}, errors.New("cancellation")
+		rel, err := filepath.Rel(stagingSourceFiles, src)
+		if err != nil {
+			return false, fmt.Errorf("computing relative path: %w", err)
 		}
+
+		// bicep restore has _cache_ directory for bicep registry linked modules
+		if strings.HasPrefix(rel, "_cache_") {
+			skip = true
+		}
+
+		return skip, nil
+	}
+
+	if err := copy.Copy(stagingSourceFiles, infraPath, options); err != nil {
+		return ResourceConfig{}, fmt.Errorf("copying contents from temp staging directory: %w", err)
+	}
+
+	body, err := os.ReadFile(filepath.Join(infraPath, "main.bicep"))
+	if err != nil {
+		return ResourceConfig{}, fmt.Errorf("reading bicep file: %w", err)
 	}
 
 	lineCount := 0
 	wordCount := 0
-	// trim metadata headers
+	// trim metadata headers (four lines)
 	for i, b := range body {
 		if b == '\n' {
 			lineCount++
@@ -308,13 +374,93 @@ func (im *ImportManager) SynthResource(
 	}
 
 	// trim 4 lines of metadata
-	err = os.WriteFile(infraPath, body[wordCount:], osutil.PermissionFileOwnerOnly)
+	err = os.WriteFile(filepath.Join(infraPath, "main.bicep"), body[wordCount:], osutil.PermissionFile)
 	if err != nil {
 		return ResourceConfig{}, fmt.Errorf("writing bicep file: %w", err)
 	}
 
-	res.Module = path.Join("db", res.Name+".bicep")
+	res.Module = path.Join("db", res.Name, "main.bicep")
 	return res, nil
+}
+
+func (im *ImportManager) promptForDuplicates(
+	ctx context.Context, console input.Console, staging string, target string) (skipSourceFiles map[string]struct{}, err error) {
+	log.Printf(
+		"synth checking for duplicates. source: %s target: %s",
+		staging,
+		target,
+	)
+
+	duplicateFiles, err := determineDuplicates(staging, target)
+	if err != nil {
+		return nil, fmt.Errorf("checking for overwrites: %w", err)
+	}
+
+	if len(duplicateFiles) > 0 {
+		console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: "The following files would be overwritten:",
+		})
+
+		for _, file := range duplicateFiles {
+			console.Message(ctx, fmt.Sprintf(" * %s", file))
+		}
+
+		selection, err := console.Select(ctx, input.ConsoleOptions{
+			Message: "What would you like to do with these files?",
+			Options: []string{
+				"Overwrite files",
+				"Keep my existing files unchanged",
+			},
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("prompting to overwrite: %w", err)
+		}
+
+		switch selection {
+		case 0: // overwrite
+			return nil, nil
+		case 1: // keep
+			skipSourceFiles = make(map[string]struct{}, len(duplicateFiles))
+			for _, file := range duplicateFiles {
+				// this also cleans the result, which is important for matching
+				sourceFile := filepath.Join(staging, file)
+				skipSourceFiles[sourceFile] = struct{}{}
+			}
+			return skipSourceFiles, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// Returns files that are both present in source and target.
+// The files returned are expressed in their relative paths to source/target.
+func determineDuplicates(source string, target string) ([]string, error) {
+	var duplicateFiles []string
+	if err := filepath.WalkDir(source, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		partial, err := filepath.Rel(source, path)
+		if err != nil {
+			return fmt.Errorf("computing relative path: %w", err)
+		}
+
+		if _, err := os.Stat(filepath.Join(target, partial)); err == nil {
+			duplicateFiles = append(duplicateFiles, partial)
+		}
+
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("enumerating template files: %w", err)
+	}
+	return duplicateFiles, nil
 }
 
 func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {

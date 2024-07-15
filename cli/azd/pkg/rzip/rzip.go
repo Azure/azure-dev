@@ -4,7 +4,9 @@
 package rzip
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"io"
 	"io/fs"
 	"os"
@@ -55,4 +57,58 @@ func CreateFromDirectory(source string, buf *os.File) error {
 	}
 
 	return w.Close()
+}
+
+// UnzipTarGz extracts the source tar-gz file to the destination directory.
+// It does not preserve the file permissions.
+func UnzipTarGz(srcFile string, destDir string) error {
+	file, err := os.Open(srcFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	gzr, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF { // end of archive
+			break
+		}
+
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(destDir, header.Name)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			// ensure the directory exists
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, header.FileInfo().Mode())
+			if err != nil {
+				return err
+			}
+
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return err
+			}
+			f.Close()
+		}
+	}
+
+	return nil
 }

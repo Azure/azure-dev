@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -31,6 +32,7 @@ var BicepVersion semver.Version = semver.MustParse("0.28.1")
 
 type BicepCli interface {
 	Build(ctx context.Context, file string) (BuildResult, error)
+	Restore(ctx context.Context, file string) error
 	BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error)
 }
 
@@ -285,6 +287,21 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (BuildResult, error
 	}, nil
 }
 
+func (cli *bicepCli) Restore(ctx context.Context, file string) error {
+	args := []string{"restore", file}
+	_, err := cli.runCommand(ctx, nil, args...)
+
+	if err != nil {
+		return fmt.Errorf(
+			"failed running bicep restore: %w",
+			err,
+		)
+	}
+
+	return nil
+
+}
+
 func (cli *bicepCli) BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error) {
 	args := []string{"build-params", file, "--stdout"}
 	buildRes, err := cli.runCommand(ctx, env, args...)
@@ -308,4 +325,26 @@ func (cli *bicepCli) runCommand(ctx context.Context, env []string, args ...strin
 		runArgs = runArgs.WithEnv(env)
 	}
 	return cli.runner.Run(ctx, runArgs)
+}
+
+// ModuleRestoredPath returns the directory path of where the module would be restored to locally by bicep.
+//
+// For example:
+//   - Windows: %USERPROFILE%\.bicep\br\mcr.microsoft.com\bicep$avm$res$document-db$database-account\0.4.0$
+//   - Linux: $HOME/.bicep/br/mcr.microsoft.com/bicep$avm$res$document-db$database-account$0.4.0$
+//
+// See https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/bicep-cli#restore for more details.
+func ModuleRestoredPath(registryName string, modulePath string, versionTag string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("getting user home directory: %w", err)
+	}
+
+	bicepModulePath := "bicep$" + strings.ReplaceAll(modulePath, "/", "$")
+	bicepVersionPath := versionTag + "$"
+	return filepath.Join(
+		homeDir, ".bicep", "br",
+		registryName,
+		bicepModulePath,
+		bicepVersionPath), nil
 }

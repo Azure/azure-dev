@@ -105,16 +105,21 @@ func Test_PythonProject_Package(t *testing.T) {
 	require.NoError(t, err)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	packageTask := pythonProject.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServiceBuildResult{
-			BuildOutputPath: serviceConfig.Path(),
+
+	result, err := runTaskLogProgress(
+		t,
+		func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+			return pythonProject.Package(
+				*mockContext.Context,
+				serviceConfig,
+				&ServiceBuildResult{
+					BuildOutputPath: serviceConfig.Path(),
+				},
+				progress,
+			)
 		},
 	)
-	logProgress(packageTask)
 
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

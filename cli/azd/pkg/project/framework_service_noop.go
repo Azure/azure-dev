@@ -60,9 +60,10 @@ func (n *noOpProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServicePackageResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServicePackageResult]) {
 			task.SetResult(&ServicePackageResult{})
 		},
 	)

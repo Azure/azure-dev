@@ -155,9 +155,10 @@ func (dp *dotnetProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServicePackageResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServicePackageResult]) {
 			if serviceConfig.Host == DotNetContainerAppTarget {
 				// TODO(weilim): For containerized projects, we publish the produced container image in a single call
 				// via `dotnet publish /p:PublishProfile=DefaultContainer`, thus the default `dotnet publish` command
@@ -177,7 +178,7 @@ func (dp *dotnetProject) Package(
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Publishing .NET project"))
+			progress.SetProgress(NewServiceProgress("Publishing .NET project"))
 			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
 				task.SetError(err)

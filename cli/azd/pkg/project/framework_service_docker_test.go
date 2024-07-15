@@ -559,16 +559,20 @@ func Test_DockerProject_Package(t *testing.T) {
 				buildOutputPath = "IMAGE_ID"
 			}
 
-			packageTask := dockerProject.Package(
-				*mockContext.Context,
-				serviceConfig,
-				&ServiceBuildResult{
-					BuildOutputPath: buildOutputPath,
+			result, err := runTaskLogProgress(
+				t,
+				func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+					return dockerProject.Package(
+						*mockContext.Context,
+						serviceConfig,
+						&ServiceBuildResult{
+							BuildOutputPath: buildOutputPath,
+						},
+						progress,
+					)
 				},
 			)
-			logProgress(packageTask)
 
-			result, err := packageTask.Await()
 			require.NoError(t, err)
 			dockerDetails, ok := result.Details.(*dockerPackageResult)
 			require.True(t, ok)

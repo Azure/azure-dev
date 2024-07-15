@@ -319,9 +319,10 @@ func (p *dockerProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServicePackageResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServicePackageResult]) {
 			var imageId string
 
 			if buildOutput != nil {
@@ -342,7 +343,7 @@ func (p *dockerProject) Package(
 
 				remoteImageUrl := sourceImage.Remote()
 
-				task.SetProgress(NewServiceProgress("Pulling container source image"))
+				progress.SetProgress(NewServiceProgress("Pulling container source image"))
 				if err := p.docker.Pull(ctx, remoteImageUrl); err != nil {
 					task.SetError(fmt.Errorf("pulling source container image: %w", err))
 					return
@@ -361,7 +362,7 @@ func (p *dockerProject) Package(
 
 			// Tag image.
 			log.Printf("tagging image %s as %s", imageId, imageWithTag)
-			task.SetProgress(NewServiceProgress("Tagging container image"))
+			progress.SetProgress(NewServiceProgress("Tagging container image"))
 			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
 				task.SetError(fmt.Errorf("tagging image: %w", err))
 				return

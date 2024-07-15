@@ -130,16 +130,20 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		packageTask := mavenProject.Package(
-			*mockContext.Context,
-			serviceConfig,
-			&ServiceBuildResult{
-				BuildOutputPath: serviceConfig.Path(),
+		result, err := runTaskLogProgress(
+			t,
+			func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+				return mavenProject.Package(
+					*mockContext.Context,
+					serviceConfig,
+					&ServiceBuildResult{
+						BuildOutputPath: serviceConfig.Path(),
+					},
+					progress,
+				)
 			},
 		)
-		logProgress(packageTask)
 
-		result, err := packageTask.Await()
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotEmpty(t, result.PackagePath)
@@ -291,14 +295,18 @@ func Test_MavenProject_Package(t *testing.T) {
 			err = mavenProject.Initialize(*mockContext.Context, tt.args.svc)
 			require.NoError(t, err)
 
-			packageTask := mavenProject.Package(
-				*mockContext.Context,
-				tt.args.svc,
-				&ServiceBuildResult{},
+			result, err := runTaskLogProgress(
+				t,
+				func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+					return mavenProject.Package(
+						*mockContext.Context,
+						tt.args.svc,
+						&ServiceBuildResult{},
+						progress,
+					)
+				},
 			)
-			logProgress(packageTask)
 
-			result, err := packageTask.Await()
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {

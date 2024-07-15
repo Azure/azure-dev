@@ -103,16 +103,17 @@ func (m *mavenProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServicePackageResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServicePackageResult]) {
 			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating staging directory: %w", err))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Packaging maven project"))
+			progress.SetProgress(NewServiceProgress("Packaging maven project"))
 			if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
 				task.SetError(err)
 				return
@@ -158,7 +159,7 @@ func (m *mavenProject) Package(
 				}
 			}
 
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
+			progress.SetProgress(NewServiceProgress("Copying deployment package"))
 			ext := strings.ToLower(filepath.Ext(archive))
 			err = copy.Copy(archive, filepath.Join(packageDest, AppServiceJavaPackageName+ext))
 			if err != nil {

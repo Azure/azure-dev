@@ -250,16 +250,20 @@ func Test_DotNetProject_Package(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api/test3.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	packageTask := dotnetProject.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServiceBuildResult{
-			BuildOutputPath: serviceConfig.Path(),
+	result, err := runTaskLogProgress(
+		t,
+		func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+			return dotnetProject.Package(
+				*mockContext.Context,
+				serviceConfig,
+				&ServiceBuildResult{
+					BuildOutputPath: serviceConfig.Path(),
+				},
+				progress,
+			)
 		},
 	)
-	logProgress(packageTask)
 
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

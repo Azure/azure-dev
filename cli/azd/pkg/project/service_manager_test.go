@@ -551,13 +551,14 @@ func (f *fakeFramework) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	_ *async.Progress[ServiceProgress],
+) *async.Task[*ServicePackageResult] {
 	packageCalled, ok := ctx.Value(frameworkPackageCalled).(*bool)
 	if ok {
 		*packageCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+	return async.RunTask(func(task *async.TaskContext[*ServicePackageResult]) {
 		runArgs := exec.NewRunArgs("fake-framework", "package")
 		result, err := f.commandRunner.Run(ctx, runArgs)
 		if err != nil {

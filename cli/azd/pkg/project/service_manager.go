@@ -364,8 +364,11 @@ func (sm *serviceManager) Package(
 		var packageResult *ServicePackageResult
 
 		err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
-			frameworkPackageTask := frameworkService.Package(ctx, serviceConfig, buildOutput)
-			syncProgress(task, frameworkPackageTask.Progress())
+			progress := async.NewProgress[ServiceProgress]()
+			defer progress.Done()
+			go syncProgress(task, progress.Progress())
+
+			frameworkPackageTask := frameworkService.Package(ctx, serviceConfig, buildOutput, progress)
 
 			frameworkPackageResult, err := frameworkPackageTask.Await()
 			if err != nil {

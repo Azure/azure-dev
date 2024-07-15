@@ -124,9 +124,10 @@ func (pp *pythonProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServicePackageResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServicePackageResult]) {
 			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
@@ -143,7 +144,7 @@ func (pp *pythonProject) Package(
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
+			progress.SetProgress(NewServiceProgress("Copying deployment package"))
 			if err := buildForZip(
 				packageSource,
 				packageDest,

@@ -102,16 +102,17 @@ func (np *npmProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+	progress *async.Progress[ServiceProgress],
+) *async.Task[*ServicePackageResult] {
+	return async.RunTask(
+		func(task *async.TaskContext[*ServicePackageResult]) {
 			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Running NPM package script"))
+			progress.SetProgress(NewServiceProgress("Running NPM package script"))
 
 			// Long term this script we call should better align with our inner-loop scenarios
 			// Keeping this defaulted to `build` will create confusion for users when we start to support
@@ -139,7 +140,7 @@ func (np *npmProject) Package(
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
+			progress.SetProgress(NewServiceProgress("Copying deployment package"))
 
 			if err := buildForZip(
 				packageSource,

@@ -35,7 +35,7 @@ func Test_NpmProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
-	result, err := runFuncLogProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		return npmProject.Restore(*mockContext.Context, serviceConfig, progess)
 	})
 
@@ -67,7 +67,7 @@ func Test_NpmProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
-	result, err := runFuncLogProgress(
+	result, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return npmProject.Build(*mockContext.Context, serviceConfig, nil, progress)
 		},
@@ -107,7 +107,7 @@ func Test_NpmProject_Package(t *testing.T) {
 	require.NoError(t, err)
 
 	npmProject := NewNpmProject(npmCli, env)
-	result, err := runFuncLogProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 		return npmProject.Package(
 			*mockContext.Context,
 			serviceConfig,

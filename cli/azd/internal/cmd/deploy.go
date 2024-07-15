@@ -277,17 +277,18 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		}
 
-		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
+		progress := async.NewProgress[project.ServiceProgress]()
 		done := make(chan struct{})
 		go func() {
-			for deployProgress := range deployTask.Progress() {
+			for deployProgress := range progress.Progress() {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
 			close(done)
 		}()
 
-		deployResult, err := deployTask.Await()
+		deployResult, err := da.serviceManager.Deploy(ctx, svc, packageResult, progress)
+		progress.Done()
 		// wait for console updates to complete
 		<-done
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))

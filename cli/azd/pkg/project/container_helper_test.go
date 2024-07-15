@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -358,9 +359,12 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				PackagePath: tt.packagePath,
 			}
 
-			deployTask := containerHelper.Deploy(*mockContext.Context, serviceConfig, packageOutput, targetResource, true)
-			logProgress(deployTask)
-			deployResult, err := deployTask.Await()
+			deployResult, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+					return containerHelper.Deploy(
+						*mockContext.Context, serviceConfig, packageOutput, targetResource, true, progress)
+				},
+			)
 
 			if tt.expectError {
 				require.Error(t, err)

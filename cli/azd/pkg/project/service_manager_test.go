@@ -100,7 +100,7 @@ func Test_ServiceManager_Restore(t *testing.T) {
 
 	restoreCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
-	result, err := runFuncLogProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		return sm.Restore(ctx, serviceConfig, progess)
 	})
 
@@ -134,7 +134,7 @@ func Test_ServiceManager_Build(t *testing.T) {
 	buildCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
-	result, err := runFuncLogProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 		return sm.Build(ctx, serviceConfig, nil, progress)
 	})
 
@@ -170,7 +170,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 	ctx := context.WithValue(*mockContext.Context, frameworkPackageCalled, fakeFrameworkPackageCalled)
 	ctx = context.WithValue(ctx, serviceTargetPackageCalled, fakeServiceTargetPackageCalled)
 
-	result, err := runFuncLogProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 		return sm.Package(ctx, serviceConfig, nil, progress, nil)
 	})
 
@@ -207,10 +207,10 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 	deployCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
 
-	deployTask := sm.Deploy(ctx, serviceConfig, nil)
-	logProgress(deployTask)
+	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+		return sm.Deploy(ctx, serviceConfig, nil, progess)
+	})
 
-	result, err := deployTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, *deployCalled)
@@ -285,7 +285,7 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	buildCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
-	buildResult1, _ := runFuncLogProgress(
+	buildResult1, _ := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return sm.Build(ctx, serviceConfig, nil, progress)
 		},
@@ -294,7 +294,7 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	require.True(t, *buildCalled)
 	*buildCalled = false
 
-	buildResult2, _ := runFuncLogProgress(
+	buildResult2, _ := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return sm.Build(ctx, serviceConfig, nil, progress)
 		},
@@ -317,7 +317,7 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 	packageCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPackageCalled, packageCalled)
 
-	packageResult1, _ := runFuncLogProgress(
+	packageResult1, _ := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 			return sm1.Package(ctx, serviceConfig, nil, progress, nil)
 		},
@@ -327,7 +327,7 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 	*packageCalled = false
 
 	sm2 := createServiceManager(mockContext, env, operationCache)
-	packageResult2, _ := runFuncLogProgress(
+	packageResult2, _ := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 			return sm2.Package(ctx, serviceConfig, nil, progress, nil)
 		},
@@ -346,7 +346,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "restore",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				return runFuncLogProgress(
+				return logProgress(
 					t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 						return serviceManager.Restore(ctx, serviceConfig, progess)
 					})
@@ -355,7 +355,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "build",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				return runFuncLogProgress(
+				return logProgress(
 					t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 						return serviceManager.Build(ctx, serviceConfig, nil, progress)
 					})
@@ -364,7 +364,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "package",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				return runFuncLogProgress(
+				return logProgress(
 					t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 						return serviceManager.Package(ctx, serviceConfig, nil, progress, nil)
 					})
@@ -373,9 +373,10 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "deploy",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				deployTask := serviceManager.Deploy(ctx, serviceConfig, nil)
-				logProgress(deployTask)
-				return deployTask.Await()
+				return logProgress(
+					t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+						return serviceManager.Deploy(ctx, serviceConfig, nil, progress)
+					})
 			},
 		},
 	}
@@ -588,25 +589,23 @@ func (st *fakeServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(serviceTargetPackageCalled).(*bool)
 	if ok {
 		*packageCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-service-target", "package")
-		result, err := st.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-service-target", "package")
+	result, err := st.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return nil, err
+	}
 
-		task.SetResult(&ServicePackageResult{
-			Build:   packageOutput.Build,
-			Details: result,
-		})
-	})
+	return &ServicePackageResult{
+		Build:   packageOutput.Build,
+		Details: result,
+	}, nil
 }
 
 func (st *fakeServiceTarget) Deploy(
@@ -614,25 +613,23 @@ func (st *fakeServiceTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
 	deployCalled, ok := ctx.Value(serviceTargetDeployCalled).(*bool)
 	if ok {
 		*deployCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-service-target", "deploy")
-		result, err := st.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-service-target", "deploy")
+	result, err := st.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return nil, err
+	}
 
-		task.SetResult(&ServiceDeployResult{
-			Package: packageOutput,
-			Details: result,
-		})
-	})
+	return &ServiceDeployResult{
+		Package: packageOutput,
+		Details: result,
+	}, nil
 }
 
 func (st *fakeServiceTarget) Endpoints(

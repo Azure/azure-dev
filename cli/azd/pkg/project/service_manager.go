@@ -90,7 +90,8 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		packageOutput *ServicePackageResult,
-	) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) (*ServiceDeployResult, error)
 
 	// Gets the framework service for the specified service config
 	// The framework service performs the restoration and building of the service app code
@@ -344,12 +345,7 @@ func (sm *serviceManager) Package(
 			return err
 		}
 
-		serviceTargetPackageTask := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
-		for p := range serviceTargetPackageTask.Progress() {
-			progress.SetProgress(p)
-		}
-
-		serviceTargetPackageResult, err := serviceTargetPackageTask.Await()
+		serviceTargetPackageResult, err := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult, progress)
 		if err != nil {
 			return err
 		}
@@ -410,104 +406,95 @@ func (sm *serviceManager) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageResult *ServicePackageResult,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventDeploy))
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventDeploy))
+	if ok && cachedResult != nil {
+		return cachedResult.(*ServiceDeployResult), nil
+	}
+
+	if packageResult == nil {
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
 		if ok && cachedResult != nil {
-			task.SetResult(cachedResult.(*ServiceDeployResult))
-			return
+			packageResult = cachedResult.(*ServicePackageResult)
 		}
+	}
 
-		if packageResult == nil {
-			cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
-			if ok && cachedResult != nil {
-				packageResult = cachedResult.(*ServicePackageResult)
-			}
-		}
+	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting service target: %w", err)
+	}
 
-		serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting service target: %w", err))
-			return
-		}
+	var targetResource *environment.TargetResource
 
-		var targetResource *environment.TargetResource
-
-		if serviceConfig.Host == DotNetContainerAppTarget {
-			containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
+	if serviceConfig.Host == DotNetContainerAppTarget {
+		containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
+		if containerEnvName == "" {
+			containerEnvName = sm.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")
 			if containerEnvName == "" {
-				containerEnvName = sm.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")
-				if containerEnvName == "" {
-					task.SetError(fmt.Errorf(
-						"could not determine container app environment for service %s, "+
-							"have you set AZURE_CONTAINER_ENVIRONMENT_NAME or "+
-							"SERVICE_%s_CONTAINER_ENVIRONMENT_NAME as an output of your "+
-							"infrastructure?", serviceConfig.Name, strings.ToUpper(serviceConfig.Name)))
-
-					return
-				}
-
-				parts := strings.Split(containerEnvName, "/")
-				containerEnvName = parts[len(parts)-1]
+				return nil, fmt.Errorf(
+					"could not determine container app environment for service %s, "+
+						"have you set AZURE_CONTAINER_ENVIRONMENT_NAME or "+
+						"SERVICE_%s_CONTAINER_ENVIRONMENT_NAME as an output of your "+
+						"infrastructure?", serviceConfig.Name, strings.ToUpper(serviceConfig.Name))
 			}
 
-			// Get any explicitly configured resource group name
-			// 1. Service level override
-			// 2. Project level override
-			resourceGroupNameTemplate := serviceConfig.ResourceGroupName
-			if resourceGroupNameTemplate.Empty() {
-				resourceGroupNameTemplate = serviceConfig.Project.ResourceGroupName
-			}
-
-			resourceGroupName, err := sm.resourceManager.GetResourceGroupName(
-				ctx,
-				sm.env.GetSubscriptionId(),
-				resourceGroupNameTemplate,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("getting resource group name: %w", err))
-				return
-			}
-
-			targetResource = environment.NewTargetResource(
-				sm.env.GetSubscriptionId(),
-				resourceGroupName,
-				containerEnvName,
-				string(infra.AzureResourceTypeContainerAppEnvironment),
-			)
-		} else {
-			targetResource, err = sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("getting target resource: %w", err))
-				return
-			}
+			parts := strings.Split(containerEnvName, "/")
+			containerEnvName = parts[len(parts)-1]
 		}
 
-		deployResult, err := runCommand(
+		// Get any explicitly configured resource group name
+		// 1. Service level override
+		// 2. Project level override
+		resourceGroupNameTemplate := serviceConfig.ResourceGroupName
+		if resourceGroupNameTemplate.Empty() {
+			resourceGroupNameTemplate = serviceConfig.Project.ResourceGroupName
+		}
+
+		resourceGroupName, err := sm.resourceManager.GetResourceGroupName(
 			ctx,
-			task,
-			ServiceEventDeploy,
-			serviceConfig,
-			func() *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-				return serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource)
-			},
+			sm.env.GetSubscriptionId(),
+			resourceGroupNameTemplate,
 		)
-
 		if err != nil {
-			task.SetError(fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err))
-			return
+			return nil, fmt.Errorf("getting resource group name: %w", err)
 		}
 
-		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
-		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
-		overriddenEndpoints := OverriddenEndpoints(ctx, serviceConfig, sm.env)
-		if len(overriddenEndpoints) > 0 {
-			deployResult.Endpoints = overriddenEndpoints
+		targetResource = environment.NewTargetResource(
+			sm.env.GetSubscriptionId(),
+			resourceGroupName,
+			containerEnvName,
+			string(infra.AzureResourceTypeContainerAppEnvironment),
+		)
+	} else {
+		targetResource, err = sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+		if err != nil {
+			return nil, fmt.Errorf("getting target resource: %w", err)
 		}
+	}
 
-		task.SetResult(deployResult)
-		sm.setOperationResult(serviceConfig, string(ServiceEventDeploy), deployResult)
-	})
+	deployResult, err := runCommandNoProgress(
+		ctx,
+		ServiceEventDeploy,
+		serviceConfig,
+		func() (*ServiceDeployResult, error) {
+			return serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource, progress)
+		},
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err)
+	}
+
+	// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
+	// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
+	overriddenEndpoints := OverriddenEndpoints(ctx, serviceConfig, sm.env)
+	if len(overriddenEndpoints) > 0 {
+		deployResult.Endpoints = overriddenEndpoints
+	}
+
+	sm.setOperationResult(serviceConfig, string(ServiceEventDeploy), deployResult)
+	return deployResult, nil
 }
 
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
@@ -664,46 +651,6 @@ func runCommandNoProgress[T comparable](
 	})
 
 	return result, err
-}
-
-func runCommand[T comparable, P comparable](
-	ctx context.Context,
-	task *async.TaskContextWithProgress[T, P],
-	eventName ext.Event,
-	serviceConfig *ServiceConfig,
-	taskFunc func() *async.TaskWithProgress[T, P],
-) (T, error) {
-	eventArgs := ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
-	}
-
-	var result T
-
-	err := serviceConfig.Invoke(ctx, eventName, eventArgs, func() error {
-		serviceTask := taskFunc()
-		go syncProgress(task, serviceTask.Progress())
-
-		taskResult, err := serviceTask.Await()
-		if err != nil {
-			return err
-		}
-
-		result = taskResult
-		return nil
-	})
-
-	if err != nil {
-		return result, err
-	}
-
-	return result, nil
-}
-
-func syncProgress[T comparable, P comparable](task *async.TaskContextWithProgress[T, P], progressChannel <-chan P) {
-	for progress := range progressChannel {
-		task.SetProgress(progress)
-	}
 }
 
 // Copies a file from the source path to the destination path

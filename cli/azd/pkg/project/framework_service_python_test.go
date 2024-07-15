@@ -49,7 +49,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	result, err := runFuncLogProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		return pythonProject.Restore(*mockContext.Context, serviceConfig, progess)
 	})
 
@@ -81,7 +81,7 @@ func Test_PythonProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	result, err := runFuncLogProgress(
+	result, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return pythonProject.Build(*mockContext.Context, serviceConfig, nil, progress)
 		},
@@ -106,7 +106,7 @@ func Test_PythonProject_Package(t *testing.T) {
 
 	pythonProject := NewPythonProject(pythonCli, env)
 
-	result, err := runFuncLogProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 		return pythonProject.Package(
 			*mockContext.Context,
 			serviceConfig,

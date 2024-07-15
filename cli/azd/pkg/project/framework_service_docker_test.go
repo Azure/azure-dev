@@ -431,7 +431,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				dockerProject.SetSource(npmProject)
 			}
 
-			result, err := runFuncLogProgress(
+			result, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 					return dockerProject.Build(*mockContext.Context, serviceConfig, nil, progress)
 				},
@@ -557,7 +557,7 @@ func Test_DockerProject_Package(t *testing.T) {
 				buildOutputPath = "IMAGE_ID"
 			}
 
-			result, err := runFuncLogProgress(
+			result, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 					return dockerProject.Package(
 						*mockContext.Context,

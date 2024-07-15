@@ -50,7 +50,7 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		result, err := runFuncLogProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+		result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 			return mavenProject.Restore(*mockContext.Context, serviceConfig, progess)
 		})
 
@@ -86,7 +86,7 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		result, err := runFuncLogProgress(
+		result, err := logProgress(
 			t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 				return mavenProject.Build(*mockContext.Context, serviceConfig, nil, progress)
 			},
@@ -130,7 +130,7 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		result, err := runFuncLogProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 			return mavenProject.Package(
 				*mockContext.Context,
 				serviceConfig,
@@ -292,7 +292,7 @@ func Test_MavenProject_Package(t *testing.T) {
 			err = mavenProject.Initialize(*mockContext.Context, tt.args.svc)
 			require.NoError(t, err)
 
-			result, err := runFuncLogProgress(
+			result, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 					return mavenProject.Package(
 						*mockContext.Context,

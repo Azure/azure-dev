@@ -205,15 +205,8 @@ func (sm *serviceManager) Restore(
 		ctx,
 		ServiceEventRestore,
 		serviceConfig,
-		func() *async.Task[*ServiceRestoreResult] {
-			return async.RunTask(func(task *async.TaskContext[*ServiceRestoreResult]) {
-				res, err := frameworkService.Restore(ctx, serviceConfig, progress)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-				task.SetResult(res)
-			})
+		func() (*ServiceRestoreResult, error) {
+			return frameworkService.Restore(ctx, serviceConfig, progress)
 		},
 	)
 
@@ -254,15 +247,8 @@ func (sm *serviceManager) Build(
 		ctx,
 		ServiceEventBuild,
 		serviceConfig,
-		func() *async.Task[*ServiceBuildResult] {
-			return async.RunTask(func(task *async.TaskContext[*ServiceBuildResult]) {
-				res, err := frameworkService.Build(ctx, serviceConfig, restoreOutput, progress)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-				task.SetResult(res)
-			})
+		func() (*ServiceBuildResult, error) {
+			return frameworkService.Build(ctx, serviceConfig, restoreOutput, progress)
 		},
 	)
 
@@ -662,7 +648,7 @@ func runCommandNoProgress[T comparable](
 	ctx context.Context,
 	eventName ext.Event,
 	serviceConfig *ServiceConfig,
-	taskFunc func() *async.Task[T],
+	taskFunc func() (T, error),
 ) (T, error) {
 	eventArgs := ServiceLifecycleEventArgs{
 		Project: serviceConfig.Project,
@@ -672,22 +658,12 @@ func runCommandNoProgress[T comparable](
 	var result T
 
 	err := serviceConfig.Invoke(ctx, eventName, eventArgs, func() error {
-		serviceTask := taskFunc()
-
-		taskResult, err := serviceTask.Await()
-		if err != nil {
-			return err
-		}
-
-		result = taskResult
-		return nil
+		res, err := taskFunc()
+		result = res
+		return err
 	})
 
-	if err != nil {
-		return result, err
-	}
-
-	return result, nil
+	return result, err
 }
 
 func runCommand[T comparable, P comparable](

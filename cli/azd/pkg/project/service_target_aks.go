@@ -176,12 +176,9 @@ func (t *aksTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(packageOutput)
-		},
-	)
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	return packageOutput, nil
 }
 
 // Deploys service container images to ACR and AKS resources to the AKS cluster
@@ -190,120 +187,106 @@ func (t *aksTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
+
+	if packageOutput == nil {
+		return nil, errors.New("missing package output")
+	}
+
+	// Only deploy the container image if a package output has been defined
+	// Empty package details is a valid scenario for any AKS deployment that does not build any containers
+	// Ex) Helm charts, or other manifests that reference external images
+	if packageOutput.Details != nil || packageOutput.PackagePath != "" {
+		// Login, tag & push container image to ACR
+		_, err := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true, progress)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Sync environment
+	t.kubectl.SetEnv(t.env.Dotenv())
+
+	// Deploy k8s resources in the following order:
+	// 1. Helm
+	// 2. Kustomize
+	// 3. Manifests
+	//
+	// Users may install a helm chart to setup their cluster with custom resource definitions that their
+	// custom manifests depend on.
+	// Users are more likely to either deploy with kustomize or vanilla manifests but they could do both.
+
+	deployed := false
+
+	// Helm Support
+	helmDeployed, err := t.deployHelmCharts(ctx, serviceConfig, progress)
+	if err != nil {
+		return nil, fmt.Errorf("helm deployment failed: %w", err)
+	}
+
+	deployed = deployed || helmDeployed
+
+	// Kustomize Support
+	kustomizeDeployed, err := t.deployKustomize(ctx, serviceConfig, progress)
+	if err != nil {
+		return nil, fmt.Errorf("kustomize deployment failed: %w", err)
+	}
+
+	deployed = deployed || kustomizeDeployed
+
+	// Vanilla k8s manifests with minimal templating support
+	manifestsDeployed, deployment, err := t.deployManifests(ctx, serviceConfig, progress)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	deployed = deployed || manifestsDeployed
+
+	if !deployed {
+		return nil, errors.New("no deployment manifests found")
+	}
+
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for AKS service"))
+	endpoints, err := t.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(endpoints) > 0 {
+		// The AKS endpoints contain some additional identifying information
+		// Regex is used to pull the URL ignoring the additional metadata
+		// The last endpoint in the array will be the most publicly exposed
+		matches := endpointRegex.FindStringSubmatch(endpoints[len(endpoints)-1])
+		if len(matches) > 1 {
+			t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", matches[1])
+			if err := t.envManager.Save(ctx, t.env); err != nil {
+				return nil, fmt.Errorf("failed updating environment with endpoint url, %w", err)
 			}
+		}
+	}
 
-			if packageOutput == nil {
-				task.SetError(errors.New("missing package output"))
-				return
-			}
-
-			// Only deploy the container image if a package output has been defined
-			// Empty package details is a valid scenario for any AKS deployment that does not build any containers
-			// Ex) Helm charts, or other manifests that reference external images
-			if packageOutput.Details != nil || packageOutput.PackagePath != "" {
-				// Login, tag & push container image to ACR
-				containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-				syncProgress(task, containerDeployTask.Progress())
-
-				_, err := containerDeployTask.Await()
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-			}
-
-			// Sync environment
-			t.kubectl.SetEnv(t.env.Dotenv())
-
-			// Deploy k8s resources in the following order:
-			// 1. Helm
-			// 2. Kustomize
-			// 3. Manifests
-			//
-			// Users may install a helm chart to setup their cluster with custom resource definitions that their
-			// custom manifests depend on.
-			// Users are more likely to either deploy with kustomize or vanilla manifests but they could do both.
-
-			deployed := false
-
-			// Helm Support
-			helmDeployed, err := t.deployHelmCharts(ctx, serviceConfig, task)
-			if err != nil {
-				task.SetError(fmt.Errorf("helm deployment failed: %w", err))
-				return
-			}
-
-			deployed = deployed || helmDeployed
-
-			// Kustomize Support
-			kustomizeDeployed, err := t.deployKustomize(ctx, serviceConfig, task)
-			if err != nil {
-				task.SetError(fmt.Errorf("kustomize deployment failed: %w", err))
-				return
-			}
-
-			deployed = deployed || kustomizeDeployed
-
-			// Vanilla k8s manifests with minimal templating support
-			manifestsDeployed, deployment, err := t.deployManifests(ctx, serviceConfig, task)
-			if err != nil && !os.IsNotExist(err) {
-				task.SetError(err)
-				return
-			}
-
-			deployed = deployed || manifestsDeployed
-
-			if !deployed {
-				task.SetError(errors.New("no deployment manifests found"))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Fetching endpoints for AKS service"))
-			endpoints, err := t.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			if len(endpoints) > 0 {
-				// The AKS endpoints contain some additional identifying information
-				// Regex is used to pull the URL ignoring the additional metadata
-				// The last endpoint in the array will be the most publicly exposed
-				matches := endpointRegex.FindStringSubmatch(endpoints[len(endpoints)-1])
-				if len(matches) > 1 {
-					t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", matches[1])
-					if err := t.envManager.Save(ctx, t.env); err != nil {
-						task.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
-						return
-					}
-				}
-			}
-
-			task.SetResult(&ServiceDeployResult{
-				Package: packageOutput,
-				TargetResourceId: azure.KubernetesServiceRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				Kind:      AksTarget,
-				Details:   deployment,
-				Endpoints: endpoints,
-			})
-		})
+	return &ServiceDeployResult{
+		Package: packageOutput,
+		TargetResourceId: azure.KubernetesServiceRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		Kind:      AksTarget,
+		Details:   deployment,
+		Endpoints: endpoints,
+	}, nil
 }
 
 // deployManifests deploys raw or templated yaml manifests to the k8s cluster
 func (t *aksTarget) deployManifests(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+	task *async.Progress[ServiceProgress],
 ) (bool, *kubectl.Deployment, error) {
 	deploymentPath := serviceConfig.K8s.DeploymentPath
 	if deploymentPath == "" {
@@ -349,7 +332,7 @@ func (t *aksTarget) deployManifests(
 func (t *aksTarget) deployKustomize(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+	task *async.Progress[ServiceProgress],
 ) (bool, error) {
 	if serviceConfig.K8s.Kustomize == nil {
 		return false, nil
@@ -427,7 +410,7 @@ func (t *aksTarget) deployKustomize(
 // deployHelmCharts deploys helm charts to the k8s cluster
 func (t *aksTarget) deployHelmCharts(
 	ctx context.Context, serviceConfig *ServiceConfig,
-	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+	task *async.Progress[ServiceProgress],
 ) (bool, error) {
 	if serviceConfig.K8s.Helm == nil {
 		return false, nil

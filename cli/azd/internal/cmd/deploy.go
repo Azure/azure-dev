@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -255,17 +256,19 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		} else {
 			//  --from-package not set, package the application
-			packageTask := da.serviceManager.Package(ctx, svc, nil, nil)
+			progress := async.NewProgress[project.ServiceProgress]()
 			done := make(chan struct{})
 			go func() {
-				for packageProgress := range packageTask.Progress() {
+				for packageProgress := range progress.Progress() {
 					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
 				}
 				close(done)
 			}()
 
+			packageTask := da.serviceManager.Package(ctx, svc, nil, progress, nil)
 			packageResult, err = packageTask.Await()
+			progress.Done()
 			// wait for console updates to complete
 			<-done
 			// do not stop progress here as next step is to deploy

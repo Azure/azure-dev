@@ -78,8 +78,9 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
+		progress *async.Progress[ServiceProgress],
 		options *PackageOptions,
-	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+	) *async.Task[*ServicePackageResult]
 
 	// Deploys the generated artifacts to the Azure resource that will
 	// host the service application
@@ -280,9 +281,10 @@ func (sm *serviceManager) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
+	progress *async.Progress[ServiceProgress],
 	options *PackageOptions,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+) *async.Task[*ServicePackageResult] {
+	return async.RunTask(func(task *async.TaskContext[*ServicePackageResult]) {
 		if options == nil {
 			options = &PackageOptions{}
 		}
@@ -326,10 +328,6 @@ func (sm *serviceManager) Package(
 		// When a previous restore result was not provided, and we require it
 		// Then we need to restore the dependencies
 		if frameworkRequirements.Package.RequireRestore && (!hasBuildOutput || buildOutput.Restore == nil) {
-			progress := async.NewProgress[ServiceProgress]()
-			defer progress.Done()
-			go syncProgress(task, progress.Progress())
-
 			restoreTaskResult, err := sm.Restore(ctx, serviceConfig, progress)
 			if err != nil {
 				task.SetError(err)
@@ -344,10 +342,6 @@ func (sm *serviceManager) Package(
 		// When a previous build result was not provided, and we require it
 		// Then we need to build the project
 		if frameworkRequirements.Package.RequireBuild && !hasBuildOutput {
-			progress := async.NewProgress[ServiceProgress]()
-			defer progress.Done()
-			go syncProgress(task, progress.Progress())
-
 			buildTaskResult, err := sm.Build(ctx, serviceConfig, restoreResult, progress)
 			if err != nil {
 				task.SetError(err)
@@ -365,17 +359,15 @@ func (sm *serviceManager) Package(
 		var packageResult *ServicePackageResult
 
 		err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
-			progress := async.NewProgress[ServiceProgress]()
-			defer progress.Done()
-			go syncProgress(task, progress.Progress())
-
 			frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, buildOutput, progress)
 			if err != nil {
 				return err
 			}
 
 			serviceTargetPackageTask := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
-			syncProgress(task, serviceTargetPackageTask.Progress())
+			for p := range serviceTargetPackageTask.Progress() {
+				progress.SetProgress(p)
+			}
 
 			serviceTargetPackageResult, err := serviceTargetPackageTask.Await()
 			if err != nil {

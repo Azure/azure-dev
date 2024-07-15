@@ -170,10 +170,10 @@ func Test_ServiceManager_Package(t *testing.T) {
 	ctx := context.WithValue(*mockContext.Context, frameworkPackageCalled, fakeFrameworkPackageCalled)
 	ctx = context.WithValue(ctx, serviceTargetPackageCalled, fakeServiceTargetPackageCalled)
 
-	packageTask := sm.Package(ctx, serviceConfig, nil, nil)
-	logProgress(packageTask)
+	result, err := runTaskLogProgress(t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+		return sm.Package(ctx, serviceConfig, nil, progress, nil)
+	})
 
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, *fakeFrameworkPackageCalled)
@@ -317,19 +317,21 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 	packageCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPackageCalled, packageCalled)
 
-	packageTask1 := sm1.Package(ctx, serviceConfig, nil, nil)
-	logProgress(packageTask1)
-
-	packageResult1, _ := packageTask1.Await()
+	packageResult1, _ := runTaskLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+			return sm1.Package(ctx, serviceConfig, nil, progress, nil)
+		},
+	)
 
 	require.True(t, *packageCalled)
 	*packageCalled = false
 
 	sm2 := createServiceManager(mockContext, env, operationCache)
-	packageTask2 := sm2.Package(ctx, serviceConfig, nil, nil)
-	logProgress(packageTask2)
-
-	packageResult2, _ := packageTask2.Await()
+	packageResult2, _ := runTaskLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+			return sm2.Package(ctx, serviceConfig, nil, progress, nil)
+		},
+	)
 
 	require.False(t, *packageCalled)
 	require.Same(t, packageResult1, packageResult2)
@@ -362,9 +364,10 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "package",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				packageTask := serviceManager.Package(ctx, serviceConfig, nil, nil)
-				logProgress(packageTask)
-				return packageTask.Await()
+				return runTaskLogProgress(
+					t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+						return serviceManager.Package(ctx, serviceConfig, nil, progress, nil)
+					})
 			},
 		},
 		{

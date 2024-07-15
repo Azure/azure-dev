@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -195,17 +196,19 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		options := &project.PackageOptions{OutputPath: pa.flags.outputPath}
-		packageTask := pa.serviceManager.Package(ctx, svc, nil, options)
+		progress := async.NewProgress[project.ServiceProgress]()
 		done := make(chan struct{})
 		go func() {
-			for packageProgress := range packageTask.Progress() {
+			for packageProgress := range progress.Progress() {
 				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
 			close(done)
 		}()
 
+		packageTask := pa.serviceManager.Package(ctx, svc, nil, progress, options)
 		packageResult, err := packageTask.Await()
+		progress.Done()
 		// adding a few seconds to wait for all async ops to be flush
 		<-done
 		pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))

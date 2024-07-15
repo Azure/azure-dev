@@ -182,9 +182,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			}
 		}()
 
-		restoreTask := ra.serviceManager.Restore(ctx, svc, progress)
-		restoreResult, err := restoreTask.Await()
-
+		restoreResult, err := ra.serviceManager.Restore(ctx, svc, progress)
 		if err != nil {
 			ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

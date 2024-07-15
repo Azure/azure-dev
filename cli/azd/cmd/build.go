@@ -186,9 +186,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}()
 
-		buildTask := ba.serviceManager.Build(ctx, svc, nil, progress)
-
-		buildResult, err := buildTask.Await()
+		buildResult, err := ba.serviceManager.Build(ctx, svc, nil, progress)
 		if err != nil {
 			ba.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

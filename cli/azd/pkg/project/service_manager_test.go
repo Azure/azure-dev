@@ -100,7 +100,7 @@ func Test_ServiceManager_Restore(t *testing.T) {
 
 	restoreCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
-	result, err := runTaskLogProgress(t, func(progess *async.Progress[ServiceProgress]) *async.Task[*ServiceRestoreResult] {
+	result, err := runFuncLogProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		return sm.Restore(ctx, serviceConfig, progess)
 	})
 
@@ -134,11 +134,9 @@ func Test_ServiceManager_Build(t *testing.T) {
 	buildCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
-	result, err := runTaskLogProgress(
-		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
-			return sm.Build(ctx, serviceConfig, nil, progress)
-		},
-	)
+	result, err := runFuncLogProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+		return sm.Build(ctx, serviceConfig, nil, progress)
+	})
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -287,8 +285,8 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	buildCalled := convert.RefOf(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
-	buildResult1, _ := runTaskLogProgress(
-		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+	buildResult1, _ := runFuncLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return sm.Build(ctx, serviceConfig, nil, progress)
 		},
 	)
@@ -296,8 +294,8 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	require.True(t, *buildCalled)
 	*buildCalled = false
 
-	buildResult2, _ := runTaskLogProgress(
-		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+	buildResult2, _ := runFuncLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return sm.Build(ctx, serviceConfig, nil, progress)
 		},
 	)
@@ -346,8 +344,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "restore",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				return runTaskLogProgress(
-					t, func(progess *async.Progress[ServiceProgress]) *async.Task[*ServiceRestoreResult] {
+				return runFuncLogProgress(
+					t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 						return serviceManager.Restore(ctx, serviceConfig, progess)
 					})
 			},
@@ -355,8 +353,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "build",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				return runTaskLogProgress(
-					t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+				return runFuncLogProgress(
+					t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 						return serviceManager.Build(ctx, serviceConfig, nil, progress)
 					})
 			},

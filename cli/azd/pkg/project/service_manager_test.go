@@ -501,24 +501,21 @@ func (f *fakeFramework) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	_ *async.Progress[ServiceProgress],
-) *async.Task[*ServiceRestoreResult] {
+) (*ServiceRestoreResult, error) {
 	restoreCalled, ok := ctx.Value(frameworkRestoreCalled).(*bool)
 	if ok {
 		*restoreCalled = true
 	}
 
-	return async.RunTask(func(task *async.TaskContext[*ServiceRestoreResult]) {
-		runArgs := exec.NewRunArgs("fake-framework", "restore")
-		result, err := f.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-framework", "restore")
+	result, err := f.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return nil, err
+	}
 
-		task.SetResult(&ServiceRestoreResult{
-			Details: result,
-		})
-	})
+	return &ServiceRestoreResult{
+		Details: result,
+	}, nil
 }
 
 func (f *fakeFramework) Build(

@@ -53,18 +53,13 @@ func (np *npmProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceRestoreResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceRestoreResult]) {
-			progress.SetProgress(NewServiceProgress("Installing NPM dependencies"))
-			if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServiceRestoreResult, error) {
+	progress.SetProgress(NewServiceProgress("Installing NPM dependencies"))
+	if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	return &ServiceRestoreResult{}, nil
 }
 
 // Builds the project executing the npm `build` script defined within the project package.json

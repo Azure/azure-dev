@@ -927,6 +927,23 @@ func runTaskLogProgress[T comparable, P comparable](
 	return fn(progress).Await()
 }
 
+// runFuncLogProgress runs a function with a new progress. Progress events that are produced during the lifetime of the
+// function are written to the test log.
+func runFuncLogProgress[T comparable, P comparable](
+	t *testing.T,
+	fn func(progess *async.Progress[P]) (T, error),
+) (T, error) {
+	progress := async.NewProgress[P]()
+	defer progress.Done()
+
+	go func() {
+		for value := range progress.Progress() {
+			t.Log(value)
+		}
+	}()
+	return fn(progress)
+}
+
 func logProgress[T comparable, P comparable](task *async.TaskWithProgress[T, P]) {
 	go func() {
 		for value := range task.Progress() {

@@ -80,7 +80,7 @@ type FrameworkService interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		progress *async.Progress[ServiceProgress],
-	) *async.Task[*ServiceRestoreResult]
+	) (*ServiceRestoreResult, error)
 
 	// Builds the source for the framework service
 	Build(

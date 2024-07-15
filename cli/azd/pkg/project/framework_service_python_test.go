@@ -49,7 +49,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	result, err := runTaskLogProgress(t, func(progess *async.Progress[ServiceProgress]) *async.Task[*ServiceRestoreResult] {
+	result, err := runFuncLogProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		return pythonProject.Restore(*mockContext.Context, serviceConfig, progess)
 	})
 

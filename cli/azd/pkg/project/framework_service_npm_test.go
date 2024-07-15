@@ -35,7 +35,7 @@ func Test_NpmProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
-	result, err := runTaskLogProgress(t, func(progess *async.Progress[ServiceProgress]) *async.Task[*ServiceRestoreResult] {
+	result, err := runFuncLogProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		return npmProject.Restore(*mockContext.Context, serviceConfig, progess)
 	})
 

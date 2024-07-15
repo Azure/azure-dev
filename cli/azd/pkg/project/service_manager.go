@@ -208,7 +208,14 @@ func (sm *serviceManager) Restore(
 			ServiceEventRestore,
 			serviceConfig,
 			func() *async.Task[*ServiceRestoreResult] {
-				return frameworkService.Restore(ctx, serviceConfig, progress)
+				return async.RunTask(func(task *async.TaskContext[*ServiceRestoreResult]) {
+					res, err := frameworkService.Restore(ctx, serviceConfig, progress)
+					if err != nil {
+						task.SetError(err)
+						return
+					}
+					task.SetResult(res)
+				})
 			},
 		)
 

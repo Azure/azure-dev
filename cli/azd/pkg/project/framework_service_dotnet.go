@@ -86,23 +86,18 @@ func (dp *dotnetProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceRestoreResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceRestoreResult]) {
-			progress.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-			if err := dp.dotnetCli.Restore(ctx, projFile); err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServiceRestoreResult, error) {
+	progress.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	if err := dp.dotnetCli.Restore(ctx, projFile); err != nil {
+		return nil, err
+	}
+
+	return &ServiceRestoreResult{}, nil
 }
 
 // Builds the dotnet project using the dotnet CLI

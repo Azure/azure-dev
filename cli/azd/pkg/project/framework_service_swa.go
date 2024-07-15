@@ -82,7 +82,7 @@ func (p *swaProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceRestoreResult] {
+) (*ServiceRestoreResult, error) {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
 	return p.framework.Restore(ctx, serviceConfig, progress)

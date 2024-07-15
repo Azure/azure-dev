@@ -50,7 +50,7 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		result, err := runTaskLogProgress(t, func(progess *async.Progress[ServiceProgress]) *async.Task[*ServiceRestoreResult] {
+		result, err := runFuncLogProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 			return mavenProject.Restore(*mockContext.Context, serviceConfig, progess)
 		})
 

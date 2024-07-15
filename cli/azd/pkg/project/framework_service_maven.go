@@ -62,18 +62,13 @@ func (m *mavenProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceRestoreResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceRestoreResult]) {
-			progress.SetProgress(NewServiceProgress("Resolving maven dependencies"))
-			if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(fmt.Errorf("resolving maven dependencies: %w", err))
-				return
-			}
+) (*ServiceRestoreResult, error) {
+	progress.SetProgress(NewServiceProgress("Resolving maven dependencies"))
+	if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
+		return nil, fmt.Errorf("resolving maven dependencies: %w", err)
+	}
 
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	return &ServiceRestoreResult{}, nil
 }
 
 // Builds the maven project

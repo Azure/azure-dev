@@ -93,68 +93,59 @@ func (np *npmProject) Package(
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServicePackageResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServicePackageResult]) {
-			packageDest, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
+) (*ServicePackageResult, error) {
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
+	}
 
-			progress.SetProgress(NewServiceProgress("Running NPM package script"))
+	progress.SetProgress(NewServiceProgress("Running NPM package script"))
 
-			// Long term this script we call should better align with our inner-loop scenarios
-			// Keeping this defaulted to `build` will create confusion for users when we start to support
-			// both local dev / debug builds and production bundled builds
-			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
-				task.SetError(err)
-				return
-			}
+	// Long term this script we call should better align with our inner-loop scenarios
+	// Keeping this defaulted to `build` will create confusion for users when we start to support
+	// both local dev / debug builds and production bundled builds
+	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+		return nil, err
+	}
 
-			// Copy directory rooted by dist to package root.
-			packageSource := buildOutput.BuildOutputPath
-			if packageSource == "" {
-				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
-			}
+	// Copy directory rooted by dist to package root.
+	packageSource := buildOutput.BuildOutputPath
+	if packageSource == "" {
+		packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+	}
 
-			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
-				task.SetError(
-					fmt.Errorf(
-						//nolint:lll
-						"package source '%s' is empty or does not exist. If your service has custom packaging requirements create an NPM script named 'build' within your package.json and ensure your package artifacts are written to the '%s' directory",
-						packageSource,
-						packageSource,
-					),
-				)
-				return
-			}
+	if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
+		return nil, fmt.Errorf(
+			//nolint:lll
+			"package source '%s' is empty or does not exist. If your service has custom packaging requirements create "+
+				"an NPM script named 'build' within your package.json and ensure your package artifacts are written to "+
+				"the '%s' directory",
+			packageSource,
+			packageSource,
+		)
+	}
 
-			progress.SetProgress(NewServiceProgress("Copying deployment package"))
+	progress.SetProgress(NewServiceProgress("Copying deployment package"))
 
-			if err := buildForZip(
-				packageSource,
-				packageDest,
-				buildForZipOptions{
-					excludeConditions: []excludeDirEntryCondition{
-						excludeNodeModules,
-					},
-				}); err != nil {
-				task.SetError(fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err))
-				return
-			}
+	if err := buildForZip(
+		packageSource,
+		packageDest,
+		buildForZipOptions{
+			excludeConditions: []excludeDirEntryCondition{
+				excludeNodeModules,
+			},
+		}); err != nil {
+		return nil, fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err)
+	}
 
-			if err := validatePackageOutput(packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
+	if err := validatePackageOutput(packageDest); err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDest,
-			})
-		},
-	)
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
 }
 
 const cNodeModulesName = "node_modules"

@@ -53,12 +53,8 @@ func (n *noOpProject) Package(
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServicePackageResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServicePackageResult]) {
-			task.SetResult(&ServicePackageResult{})
-		},
-	)
+) (*ServicePackageResult, error) {
+	return &ServicePackageResult{}, nil
 }
 
 type noOpProject struct{}

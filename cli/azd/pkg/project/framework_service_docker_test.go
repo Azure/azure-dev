@@ -557,9 +557,8 @@ func Test_DockerProject_Package(t *testing.T) {
 				buildOutputPath = "IMAGE_ID"
 			}
 
-			result, err := runTaskLogProgress(
-				t,
-				func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+			result, err := runFuncLogProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 					return dockerProject.Package(
 						*mockContext.Context,
 						serviceConfig,

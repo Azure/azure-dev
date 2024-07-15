@@ -546,25 +546,22 @@ func (f *fakeFramework) Package(
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
 	_ *async.Progress[ServiceProgress],
-) *async.Task[*ServicePackageResult] {
+) (*ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(frameworkPackageCalled).(*bool)
 	if ok {
 		*packageCalled = true
 	}
 
-	return async.RunTask(func(task *async.TaskContext[*ServicePackageResult]) {
-		runArgs := exec.NewRunArgs("fake-framework", "package")
-		result, err := f.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-framework", "package")
+	result, err := f.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return nil, err
+	}
 
-		task.SetResult(&ServicePackageResult{
-			Build:   buildOutput,
-			Details: result,
-		})
-	})
+	return &ServicePackageResult{
+		Build:   buildOutput,
+		Details: result,
+	}, nil
 }
 
 // Fake implementation of a service target

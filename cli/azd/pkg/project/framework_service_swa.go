@@ -122,12 +122,8 @@ func (p *swaProject) Package(
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
 	_ *async.Progress[ServiceProgress],
-) *async.Task[*ServicePackageResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServicePackageResult]) {
-			task.SetResult(&ServicePackageResult{
-				Build: buildOutput,
-			})
-		},
-	)
+) (*ServicePackageResult, error) {
+	return &ServicePackageResult{
+		Build: buildOutput,
+	}, nil
 }

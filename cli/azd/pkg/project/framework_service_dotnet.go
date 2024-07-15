@@ -145,54 +145,45 @@ func (dp *dotnetProject) Package(
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServicePackageResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServicePackageResult]) {
-			if serviceConfig.Host == DotNetContainerAppTarget {
-				// TODO(weilim): For containerized projects, we publish the produced container image in a single call
-				// via `dotnet publish /p:PublishProfile=DefaultContainer`, thus the default `dotnet publish` command
-				// executed here is not useful.
-				//
-				// It's probably right for us to think about "package" for a containerized application as meaning
-				// "produce the tgz" of the image, as would be done by `docker save`, but this is currently not supported.
-				//
-				// See related comment in cmd/package.go.
-				task.SetResult(&ServicePackageResult{})
-				return
-			}
+) (*ServicePackageResult, error) {
+	if serviceConfig.Host == DotNetContainerAppTarget {
+		// TODO(weilim): For containerized projects, we publish the produced container image in a single call
+		// via `dotnet publish /p:PublishProfile=DefaultContainer`, thus the default `dotnet publish` command
+		// executed here is not useful.
+		//
+		// It's probably right for us to think about "package" for a containerized application as meaning
+		// "produce the tgz" of the image, as would be done by `docker save`, but this is currently not supported.
+		//
+		// See related comment in cmd/package.go.
+		return &ServicePackageResult{}, nil
+	}
 
-			packageDest, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
+	}
 
-			progress.SetProgress(NewServiceProgress("Publishing .NET project"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-			if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
+	progress.SetProgress(NewServiceProgress("Publishing .NET project"))
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return nil, err
+	}
+	if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
+		return nil, err
+	}
 
-			if serviceConfig.OutputPath != "" {
-				packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
-			}
+	if serviceConfig.OutputPath != "" {
+		packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
+	}
 
-			if err := validatePackageOutput(packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
+	if err := validatePackageOutput(packageDest); err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDest,
-			})
-		},
-	)
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
 }
 
 func (dp *dotnetProject) setUserSecretsFromOutputs(

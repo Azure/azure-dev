@@ -382,9 +382,7 @@ func (sm *serviceManager) Package(
 			defer progress.Done()
 			go syncProgress(task, progress.Progress())
 
-			frameworkPackageTask := frameworkService.Package(ctx, serviceConfig, buildOutput, progress)
-
-			frameworkPackageResult, err := frameworkPackageTask.Await()
+			frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, buildOutput, progress)
 			if err != nil {
 				return err
 			}

@@ -130,19 +130,16 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		result, err := runTaskLogProgress(
-			t,
-			func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
-				return mavenProject.Package(
-					*mockContext.Context,
-					serviceConfig,
-					&ServiceBuildResult{
-						BuildOutputPath: serviceConfig.Path(),
-					},
-					progress,
-				)
-			},
-		)
+		result, err := runFuncLogProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			return mavenProject.Package(
+				*mockContext.Context,
+				serviceConfig,
+				&ServiceBuildResult{
+					BuildOutputPath: serviceConfig.Path(),
+				},
+				progress,
+			)
+		})
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -295,9 +292,8 @@ func Test_MavenProject_Package(t *testing.T) {
 			err = mavenProject.Initialize(*mockContext.Context, tt.args.svc)
 			require.NoError(t, err)
 
-			result, err := runTaskLogProgress(
-				t,
-				func(progress *async.Progress[ServiceProgress]) *async.Task[*ServicePackageResult] {
+			result, err := runFuncLogProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 					return mavenProject.Package(
 						*mockContext.Context,
 						tt.args.svc,

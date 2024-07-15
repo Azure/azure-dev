@@ -321,63 +321,55 @@ func (p *dockerProject) Package(
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServicePackageResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServicePackageResult]) {
-			var imageId string
+) (*ServicePackageResult, error) {
+	var imageId string
 
-			if buildOutput != nil {
-				imageId = buildOutput.BuildOutputPath
-			}
+	if buildOutput != nil {
+		imageId = buildOutput.BuildOutputPath
+	}
 
-			packageDetails := &dockerPackageResult{
-				ImageHash: imageId,
-			}
+	packageDetails := &dockerPackageResult{
+		ImageHash: imageId,
+	}
 
-			// If we don't have an image ID from a docker build then an external source image is being used
-			if imageId == "" {
-				sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
-				if err != nil {
-					task.SetError(fmt.Errorf("parsing source container image: %w", err))
-					return
-				}
+	// If we don't have an image ID from a docker build then an external source image is being used
+	if imageId == "" {
+		sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
+		if err != nil {
+			return nil, fmt.Errorf("parsing source container image: %w", err)
+		}
 
-				remoteImageUrl := sourceImage.Remote()
+		remoteImageUrl := sourceImage.Remote()
 
-				progress.SetProgress(NewServiceProgress("Pulling container source image"))
-				if err := p.docker.Pull(ctx, remoteImageUrl); err != nil {
-					task.SetError(fmt.Errorf("pulling source container image: %w", err))
-					return
-				}
+		progress.SetProgress(NewServiceProgress("Pulling container source image"))
+		if err := p.docker.Pull(ctx, remoteImageUrl); err != nil {
+			return nil, fmt.Errorf("pulling source container image: %w", err)
+		}
 
-				imageId = remoteImageUrl
-				packageDetails.SourceImage = remoteImageUrl
-			}
+		imageId = remoteImageUrl
+		packageDetails.SourceImage = remoteImageUrl
+	}
 
-			// Generate a local tag from the 'docker' configuration section of the service
-			imageWithTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("generating local image tag: %w", err))
-				return
-			}
+	// Generate a local tag from the 'docker' configuration section of the service
+	imageWithTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("generating local image tag: %w", err)
+	}
 
-			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, imageWithTag)
-			progress.SetProgress(NewServiceProgress("Tagging container image"))
-			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
-				return
-			}
+	// Tag image.
+	log.Printf("tagging image %s as %s", imageId, imageWithTag)
+	progress.SetProgress(NewServiceProgress("Tagging container image"))
+	if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
+		return nil, fmt.Errorf("tagging image: %w", err)
+	}
 
-			packageDetails.TargetImage = imageWithTag
+	packageDetails.TargetImage = imageWithTag
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDetails.SourceImage,
-				Details:     packageDetails,
-			})
-		},
-	)
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDetails.SourceImage,
+		Details:     packageDetails,
+	}, nil
 }
 
 // Default builder image to produce container images from source, needn't java jdk storage, use the standard bp

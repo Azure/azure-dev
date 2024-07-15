@@ -101,8 +101,6 @@ services:
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
 
@@ -114,18 +112,15 @@ services:
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
-	progress := async.NewProgress[ServiceProgress]()
-	go func() {
-		for value := range progress.Progress() {
+
+	buildResult, err := async.RunWithProgress(
+		func(value ServiceProgress) {
 			progressMessages = append(progressMessages, value.Message)
-		}
-		done <- true
-	}()
-
-	buildResult, err := framework.Build(*mockContext.Context, service, nil, progress)
-
-	progress.Done()
-	<-done
+		},
+		func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+			return framework.Build(*mockContext.Context, service, nil, progress)
+		},
+	)
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
@@ -210,8 +205,6 @@ services:
 	err = os.WriteFile(filepath.Join(temp, "Dockerfile.dev"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env)
 	status := ""
 
@@ -224,17 +217,13 @@ services:
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	progress := async.NewProgress[ServiceProgress]()
-	go func() {
-		for value := range progress.Progress() {
+	buildResult, err := async.RunWithProgress(
+		func(value ServiceProgress) {
 			status = value.Message
-		}
-		done <- true
-	}()
-
-	buildResult, err := framework.Build(*mockContext.Context, service, nil, progress)
-	progress.Done()
-	<-done
+		}, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+			return framework.Build(*mockContext.Context, service, nil, progress)
+		},
+	)
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)

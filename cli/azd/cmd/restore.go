@@ -172,17 +172,16 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		progress := async.NewProgress[project.ServiceProgress]()
-		defer progress.Done()
-
-		go func() {
-			for restoreProgress := range progress.Progress() {
-				progressMessage := fmt.Sprintf("Restoring service %s (%s)", svc.Name, restoreProgress.Message)
+		restoreResult, err := async.RunWithProgress(
+			func(buildProgress project.ServiceProgress) {
+				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
 				ra.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceRestoreResult, error) {
+				return ra.serviceManager.Restore(ctx, svc, progress)
+			},
+		)
 
-		restoreResult, err := ra.serviceManager.Restore(ctx, svc, progress)
 		if err != nil {
 			ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

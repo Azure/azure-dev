@@ -177,16 +177,16 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			continue
 		}
 
-		progress := async.NewProgress[project.ServiceProgress]()
-		defer progress.Done()
-		go func() {
-			for buildProgress := range progress.Progress() {
+		buildResult, err := async.RunWithProgress(
+			func(buildProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
 				ba.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceBuildResult, error) {
+				return ba.serviceManager.Build(ctx, svc, nil, progress)
+			},
+		)
 
-		buildResult, err := ba.serviceManager.Build(ctx, svc, nil, progress)
 		if err != nil {
 			ba.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

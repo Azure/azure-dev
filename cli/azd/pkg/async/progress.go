@@ -29,3 +29,22 @@ func (p *Progress[T]) Done() {
 func (p *Progress[T]) SetProgress(progress T) {
 	p.progressChannel <- progress
 }
+
+// RunWithProgress runs a function with a background goroutine reporting and progress to an observer.
+func RunWithProgress[T comparable, R any](
+	observer func(T),
+	f func(*Progress[T]) (R, error),
+) (R, error) {
+	progress := NewProgress[T]()
+	done := make(chan struct{})
+	go func() {
+		for p := range progress.Progress() {
+			observer(p)
+		}
+		close(done)
+	}()
+	res, err := f(progress)
+	progress.Done()
+	<-done
+	return res, err
+}

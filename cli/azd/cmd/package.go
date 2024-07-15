@@ -196,20 +196,15 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		options := &project.PackageOptions{OutputPath: pa.flags.outputPath}
-		progress := async.NewProgress[project.ServiceProgress]()
-		done := make(chan struct{})
-		go func() {
-			for packageProgress := range progress.Progress() {
+		packageResult, err := async.RunWithProgress(
+			func(packageProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-			close(done)
-		}()
-
-		packageResult, err := pa.serviceManager.Package(ctx, svc, nil, progress, options)
-		progress.Done()
-		// adding a few seconds to wait for all async ops to be flush
-		<-done
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
+				return pa.serviceManager.Package(ctx, svc, nil, progress, options)
+			},
+		)
 		pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 		if err != nil {

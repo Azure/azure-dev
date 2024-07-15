@@ -256,20 +256,16 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		} else {
 			//  --from-package not set, package the application
-			progress := async.NewProgress[project.ServiceProgress]()
-			done := make(chan struct{})
-			go func() {
-				for packageProgress := range progress.Progress() {
+			packageResult, err = async.RunWithProgress(
+				func(packageProgress project.ServiceProgress) {
 					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
-				}
-				close(done)
-			}()
+				},
+				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
+					return da.serviceManager.Package(ctx, svc, nil, progress, nil)
+				},
+			)
 
-			packageResult, err = da.serviceManager.Package(ctx, svc, nil, progress, nil)
-			progress.Done()
-			// wait for console updates to complete
-			<-done
 			// do not stop progress here as next step is to deploy
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -277,20 +273,16 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		}
 
-		progress := async.NewProgress[project.ServiceProgress]()
-		done := make(chan struct{})
-		go func() {
-			for deployProgress := range progress.Progress() {
+		deployResult, err := async.RunWithProgress(
+			func(deployProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-			close(done)
-		}()
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
+				return da.serviceManager.Deploy(ctx, svc, packageResult, progress)
+			},
+		)
 
-		deployResult, err := da.serviceManager.Deploy(ctx, svc, packageResult, progress)
-		progress.Done()
-		// wait for console updates to complete
-		<-done
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {
 			return nil, err

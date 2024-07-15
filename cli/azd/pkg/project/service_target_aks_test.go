@@ -916,21 +916,13 @@ func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
 	}
 }
 
-// logProgress runs a function with a new progress. Progress events that are produced during the lifetime of the
-// function are written to the test log.
+// logProgress is shorthand for calling async.RunWithProgress a function that calls t.Log with the progress value
+// as the observer.
 func logProgress[T comparable, P comparable](
 	t *testing.T,
 	fn func(progess *async.Progress[P]) (T, error),
 ) (T, error) {
-	progress := async.NewProgress[P]()
-	defer progress.Done()
-
-	go func() {
-		for value := range progress.Progress() {
-			t.Log(value)
-		}
-	}()
-	return fn(progress)
+	return async.RunWithProgress(func(p P) { t.Log(p) }, fn)
 }
 
 type MockResourceManager struct {

@@ -254,13 +254,10 @@ func (p *dockerProject) Build(
 			}
 
 			_, err := os.Stat(path)
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
-				return
-			}
-
-			if errors.Is(err, os.ErrNotExist) {
-				// Build the container from source
+			if errors.Is(err, os.ErrNotExist) && serviceConfig.Docker.Path == "" {
+				// Build the container from source when:
+				// 1. No Dockerfile path is specified, and
+				// 2. <service directory>/Dockerfile doesn't exist
 				task.SetProgress(NewServiceProgress("Building Docker image from source"))
 				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
 				if err != nil {
@@ -270,6 +267,9 @@ func (p *dockerProject) Build(
 
 				res.Restore = restoreOutput
 				task.SetResult(res)
+				return
+			} else if err != nil {
+				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
 				return
 			}
 

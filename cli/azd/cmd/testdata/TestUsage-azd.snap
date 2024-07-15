@@ -7,6 +7,7 @@ Usage
 Commands
   Configure and develop your app
     auth     	: Authenticate with Azure.
+    build    	: Builds the application's code. (Beta)
     config   	: Manage azd configurations (ex: default Azure subscription, location).
     hooks    	: Develop, test and run hooks for an application. (Beta)
     init     	: Initialize a new application.

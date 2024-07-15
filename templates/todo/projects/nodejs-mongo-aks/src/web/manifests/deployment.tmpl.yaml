@@ -17,12 +17,4 @@ spec:
           image: {{.Env.SERVICE_WEB_IMAGE_NAME}}
           ports:
             - containerPort: 3000
-          env:
-            - name: VITE_API_BASE_URL
-              value: /api
-            - name: VITE_APPLICATIONINSIGHTS_CONNECTION_STRING
-              valueFrom:
-                configMapKeyRef:
-                  name: todo-web-config
-                  key: VITE_APPLICATIONINSIGHTS_CONNECTION_STRING
-                  optional: false
+

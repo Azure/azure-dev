@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: todo-web-config
-data:
-  VITE_APPLICATIONINSIGHTS_CONNECTION_STRING: {{.Env.APPLICATIONINSIGHTS_CONNECTION_STRING}}

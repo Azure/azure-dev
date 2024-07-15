@@ -12,7 +12,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 @description('Kubernetes Version')
-param kubernetesVersion string
+param kubernetesVersion string = '1.28'
 
 @description('The DNS prefix to associate with the AKS cluster')
 param dnsPrefix string = ''

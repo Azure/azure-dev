@@ -5,7 +5,7 @@ Usage
   azd build <service> [flags]
 
 Flags
-        --all                	: Deploys all services that are listed in azure.yaml
+        --all                	: Builds all services that are listed in azure.yaml
         --docs               	: Opens the documentation for azd build in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for build.

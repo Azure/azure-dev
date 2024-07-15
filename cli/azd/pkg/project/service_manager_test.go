@@ -523,25 +523,22 @@ func (f *fakeFramework) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 	_ *async.Progress[ServiceProgress],
-) *async.Task[*ServiceBuildResult] {
+) (*ServiceBuildResult, error) {
 	buildCalled, ok := ctx.Value(frameworkBuildCalled).(*bool)
 	if ok {
 		*buildCalled = true
 	}
 
-	return async.RunTask(func(task *async.TaskContext[*ServiceBuildResult]) {
-		runArgs := exec.NewRunArgs("fake-framework", "build")
-		result, err := f.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-framework", "build")
+	result, err := f.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return nil, err
+	}
 
-		task.SetResult(&ServiceBuildResult{
-			Restore: restoreOutput,
-			Details: result,
-		})
-	})
+	return &ServiceBuildResult{
+		Restore: restoreOutput,
+		Details: result,
+	}, nil
 }
 
 func (f *fakeFramework) Package(

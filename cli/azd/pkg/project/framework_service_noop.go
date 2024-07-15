@@ -44,12 +44,8 @@ func (n *noOpProject) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceBuildResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceBuildResult]) {
-			task.SetResult(&ServiceBuildResult{})
-		},
-	)
+) (*ServiceBuildResult, error) {
+	return &ServiceBuildResult{}, nil
 }
 
 func (n *noOpProject) Package(

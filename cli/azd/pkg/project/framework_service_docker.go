@@ -193,126 +193,127 @@ func (p *dockerProject) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceBuildResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceBuildResult]) {
-			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+) (*ServiceBuildResult, error) {
+	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
-			resolveParameters := func(source []string) []string {
-				result := make([]string, len(source))
-				for i, arg := range source {
-					evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
-						path := match
-						value, has := p.env.Config.GetString(path)
-						if !has {
-							return "", fmt.Errorf("parameter %s not found", path)
-						}
-						return value, nil
-					})
-					if err != nil {
-						task.SetError(err)
-						return nil
-					}
-					result[i] = evaluatedString
+	resolveParameters := func(source []string) ([]string, error) {
+		result := make([]string, len(source))
+		for i, arg := range source {
+			evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
+				path := match
+				value, has := p.env.Config.GetString(path)
+				if !has {
+					return "", fmt.Errorf("parameter %s not found", path)
 				}
-				return result
-			}
-			// resolve parameters for build args and secrets
-			dockerOptions.BuildArgs = resolveParameters(dockerOptions.BuildArgs)
-			dockerOptions.BuildEnv = resolveParameters(dockerOptions.BuildEnv)
-
-			// For services that do not specify a project path and have not specified a language then
-			// there is nothing to build and we can return an empty build result
-			// Ex) A container app project that uses an external image path
-			if serviceConfig.RelativePath == "" &&
-				(serviceConfig.Language == ServiceLanguageNone || serviceConfig.Language == ServiceLanguageDocker) {
-				task.SetResult(&ServiceBuildResult{})
-				return
-			}
-
-			buildArgs := []string{}
-			for _, arg := range dockerOptions.BuildArgs {
-				buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
-			}
-
-			log.Printf(
-				"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
-				serviceConfig.Name,
-				serviceConfig.Path(),
-				dockerOptions.Path,
-				dockerOptions.Context,
-				buildArgs,
-			)
-
-			imageName := fmt.Sprintf(
-				"%s-%s",
-				strings.ToLower(serviceConfig.Project.Name),
-				strings.ToLower(serviceConfig.Name),
-			)
-
-			path := dockerOptions.Path
-			if !filepath.IsAbs(path) {
-				path = filepath.Join(serviceConfig.Path(), path)
-			}
-
-			_, err := os.Stat(path)
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
-				return
-			}
-
-			if errors.Is(err, os.ErrNotExist) {
-				// Build the container from source
-				progress.SetProgress(NewServiceProgress("Building Docker image from source"))
-				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-
-				res.Restore = restoreOutput
-				task.SetResult(res)
-				return
-			}
-
-			// Build the container
-			progress.SetProgress(NewServiceProgress("Building Docker image"))
-			previewerWriter := p.console.ShowPreviewer(ctx,
-				&input.ShowPreviewerOptions{
-					Prefix:       "  ",
-					MaxLineCount: 8,
-					Title:        "Docker Output",
-				})
-			imageId, err := p.docker.Build(
-				ctx,
-				serviceConfig.Path(),
-				dockerOptions.Path,
-				dockerOptions.Platform,
-				dockerOptions.Target,
-				dockerOptions.Context,
-				imageName,
-				dockerOptions.BuildArgs,
-				dockerOptions.BuildSecrets,
-				dockerOptions.BuildEnv,
-				previewerWriter,
-			)
-			p.console.StopPreviewer(ctx, false)
-			if err != nil {
-				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
-				return
-			}
-
-			log.Printf("built image %s for %s", imageId, serviceConfig.Name)
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: imageId,
-				Details: &dockerBuildResult{
-					ImageId:   imageId,
-					ImageName: imageName,
-				},
+				return value, nil
 			})
-		},
+			if err != nil {
+				return nil, err
+			}
+			result[i] = evaluatedString
+		}
+		return result, nil
+	}
+	// resolve parameters for build args and secrets
+	resolvedBuildArgs, err := resolveParameters(dockerOptions.BuildArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	dockerOptions.BuildArgs = resolvedBuildArgs
+
+	resolvedBuildEnv, err := resolveParameters(dockerOptions.BuildEnv)
+	if err != nil {
+		return nil, err
+	}
+
+	dockerOptions.BuildEnv = resolvedBuildEnv
+
+	// For services that do not specify a project path and have not specified a language then
+	// there is nothing to build and we can return an empty build result
+	// Ex) A container app project that uses an external image path
+	if serviceConfig.RelativePath == "" &&
+		(serviceConfig.Language == ServiceLanguageNone || serviceConfig.Language == ServiceLanguageDocker) {
+		return &ServiceBuildResult{}, nil
+	}
+
+	buildArgs := []string{}
+	for _, arg := range dockerOptions.BuildArgs {
+		buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
+	}
+
+	log.Printf(
+		"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
+		serviceConfig.Name,
+		serviceConfig.Path(),
+		dockerOptions.Path,
+		dockerOptions.Context,
+		buildArgs,
 	)
+
+	imageName := fmt.Sprintf(
+		"%s-%s",
+		strings.ToLower(serviceConfig.Project.Name),
+		strings.ToLower(serviceConfig.Name),
+	)
+
+	path := dockerOptions.Path
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(serviceConfig.Path(), path)
+	}
+
+	_, err = os.Stat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("reading dockerfile: %w", err)
+	}
+
+	if errors.Is(err, os.ErrNotExist) {
+		// Build the container from source
+		progress.SetProgress(NewServiceProgress("Building Docker image from source"))
+		res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
+		if err != nil {
+			return nil, err
+		}
+
+		res.Restore = restoreOutput
+		return res, nil
+	}
+
+	// Build the container
+	progress.SetProgress(NewServiceProgress("Building Docker image"))
+	previewerWriter := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Docker Output",
+		})
+	imageId, err := p.docker.Build(
+		ctx,
+		serviceConfig.Path(),
+		dockerOptions.Path,
+		dockerOptions.Platform,
+		dockerOptions.Target,
+		dockerOptions.Context,
+		imageName,
+		dockerOptions.BuildArgs,
+		dockerOptions.BuildSecrets,
+		dockerOptions.BuildEnv,
+		previewerWriter,
+	)
+	p.console.StopPreviewer(ctx, false)
+	if err != nil {
+		return nil, fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err)
+	}
+
+	log.Printf("built image %s for %s", imageId, serviceConfig.Name)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: imageId,
+		Details: &dockerBuildResult{
+			ImageId:   imageId,
+			ImageName: imageName,
+		},
+	}, nil
 }
 
 func (p *dockerProject) Package(

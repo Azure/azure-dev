@@ -81,8 +81,8 @@ func Test_PythonProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	result, err := runTaskLogProgress(
-		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+	result, err := runFuncLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return pythonProject.Build(*mockContext.Context, serviceConfig, nil, progress)
 		},
 	)

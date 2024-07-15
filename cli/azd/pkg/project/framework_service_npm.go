@@ -68,29 +68,24 @@ func (np *npmProject) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceBuildResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceBuildResult]) {
-			// Exec custom `build` script if available
-			// If `build`` script is not defined in the package.json the NPM script will NOT fail
-			progress.SetProgress(NewServiceProgress("Running NPM build script"))
-			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServiceBuildResult, error) {
+	// Exec custom `build` script if available
+	// If `build`` script is not defined in the package.json the NPM script will NOT fail
+	progress.SetProgress(NewServiceProgress("Running NPM build script"))
+	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+		return nil, err
+	}
 
-			buildSource := serviceConfig.Path()
+	buildSource := serviceConfig.Path()
 
-			if serviceConfig.OutputPath != "" {
-				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
-			}
+	if serviceConfig.OutputPath != "" {
+		buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: buildSource,
-			})
-		},
-	)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: buildSource,
+	}, nil
 }
 
 func (np *npmProject) Package(

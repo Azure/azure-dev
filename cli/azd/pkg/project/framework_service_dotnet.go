@@ -106,44 +106,38 @@ func (dp *dotnetProject) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceBuildResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceBuildResult]) {
-			progress.SetProgress(NewServiceProgress("Building .NET project"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-			if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, ""); err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServiceBuildResult, error) {
+	progress.SetProgress(NewServiceProgress("Building .NET project"))
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return nil, err
+	}
+	if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, ""); err != nil {
+		return nil, err
+	}
 
-			defaultOutputDir := filepath.Join("./bin", defaultDotNetBuildConfiguration)
+	defaultOutputDir := filepath.Join("./bin", defaultDotNetBuildConfiguration)
 
-			// Attempt to find the default build output location
-			buildOutputDir := serviceConfig.Path()
-			_, err = os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
-			if err == nil {
-				buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
-			}
+	// Attempt to find the default build output location
+	buildOutputDir := serviceConfig.Path()
+	_, err = os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
+	if err == nil {
+		buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
+	}
 
-			// By default dotnet build will create a sub folder for the project framework version, etc. net8.0
-			// If we have a single folder under build configuration assume this location as build output result
-			subDirs, err := os.ReadDir(buildOutputDir)
-			if err == nil {
-				if len(subDirs) == 1 {
-					buildOutputDir = filepath.Join(buildOutputDir, subDirs[0].Name())
-				}
-			}
+	// By default dotnet build will create a sub folder for the project framework version, etc. net8.0
+	// If we have a single folder under build configuration assume this location as build output result
+	subDirs, err := os.ReadDir(buildOutputDir)
+	if err == nil {
+		if len(subDirs) == 1 {
+			buildOutputDir = filepath.Join(buildOutputDir, subDirs[0].Name())
+		}
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: buildOutputDir,
-			})
-		},
-	)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: buildOutputDir,
+	}, nil
 }
 
 func (dp *dotnetProject) Package(

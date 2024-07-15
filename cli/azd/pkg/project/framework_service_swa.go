@@ -94,33 +94,27 @@ func (p *swaProject) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 	_ *async.Progress[ServiceProgress],
-) *async.Task[*ServiceBuildResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceBuildResult]) {
-
-			previewerWriter := p.console.ShowPreviewer(ctx,
-				&input.ShowPreviewerOptions{
-					Prefix:       "  ",
-					MaxLineCount: 8,
-					Title:        "Build SWA Project",
-				})
-			err := p.swa.Build(
-				ctx,
-				serviceConfig.Path(),
-				previewerWriter,
-			)
-			p.console.StopPreviewer(ctx, false)
-
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetResult(&ServiceBuildResult{
-				Restore: restoreOutput,
-			})
-		},
+) (*ServiceBuildResult, error) {
+	previewerWriter := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Build SWA Project",
+		})
+	err := p.swa.Build(
+		ctx,
+		serviceConfig.Path(),
+		previewerWriter,
 	)
+	p.console.StopPreviewer(ctx, false)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ServiceBuildResult{
+		Restore: restoreOutput,
+	}, nil
 }
 
 func (p *swaProject) Package(

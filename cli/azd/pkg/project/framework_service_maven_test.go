@@ -86,8 +86,8 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		result, err := runTaskLogProgress(
-			t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+		result, err := runFuncLogProgress(
+			t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 				return mavenProject.Build(*mockContext.Context, serviceConfig, nil, progress)
 			},
 		)

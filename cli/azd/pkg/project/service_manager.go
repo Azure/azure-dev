@@ -262,7 +262,14 @@ func (sm *serviceManager) Build(
 			ServiceEventBuild,
 			serviceConfig,
 			func() *async.Task[*ServiceBuildResult] {
-				return frameworkService.Build(ctx, serviceConfig, restoreOutput, progress)
+				return async.RunTask(func(task *async.TaskContext[*ServiceBuildResult]) {
+					res, err := frameworkService.Build(ctx, serviceConfig, restoreOutput, progress)
+					if err != nil {
+						task.SetError(err)
+						return
+					}
+					task.SetResult(res)
+				})
 			},
 		)
 

@@ -67,8 +67,8 @@ func Test_NpmProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
-	result, err := runTaskLogProgress(
-		t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+	result, err := runFuncLogProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return npmProject.Build(*mockContext.Context, serviceConfig, nil, progress)
 		},
 	)

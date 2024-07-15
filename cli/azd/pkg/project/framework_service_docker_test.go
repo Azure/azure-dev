@@ -122,8 +122,7 @@ services:
 		done <- true
 	}()
 
-	buildTask := framework.Build(*mockContext.Context, service, nil, progress)
-	buildResult, err := buildTask.Await()
+	buildResult, err := framework.Build(*mockContext.Context, service, nil, progress)
 
 	progress.Done()
 	<-done
@@ -233,8 +232,7 @@ services:
 		done <- true
 	}()
 
-	buildTask := framework.Build(*mockContext.Context, service, nil, progress)
-	buildResult, err := buildTask.Await()
+	buildResult, err := framework.Build(*mockContext.Context, service, nil, progress)
 	progress.Done()
 	<-done
 
@@ -433,8 +431,8 @@ func Test_DockerProject_Build(t *testing.T) {
 				dockerProject.SetSource(npmProject)
 			}
 
-			result, err := runTaskLogProgress(
-				t, func(progress *async.Progress[ServiceProgress]) *async.Task[*ServiceBuildResult] {
+			result, err := runFuncLogProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 					return dockerProject.Build(*mockContext.Context, serviceConfig, nil, progress)
 				},
 			)

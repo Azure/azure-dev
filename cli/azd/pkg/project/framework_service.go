@@ -88,7 +88,7 @@ type FrameworkService interface {
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
 		progress *async.Progress[ServiceProgress],
-	) *async.Task[*ServiceBuildResult]
+	) (*ServiceBuildResult, error)
 
 	// Packages the source suitable for deployment
 	// This may optionally perform a rebuild internally depending on the language/framework requirements

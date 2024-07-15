@@ -77,21 +77,16 @@ func (m *mavenProject) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceBuildResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceBuildResult]) {
-			progress.SetProgress(NewServiceProgress("Compiling maven project"))
-			if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServiceBuildResult, error) {
+	progress.SetProgress(NewServiceProgress("Compiling maven project"))
+	if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: serviceConfig.Path(),
-			})
-		},
-	)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: serviceConfig.Path(),
+	}, nil
 }
 
 func (m *mavenProject) Package(

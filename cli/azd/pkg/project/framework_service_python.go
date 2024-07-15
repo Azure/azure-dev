@@ -93,21 +93,17 @@ func (pp *pythonProject) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 	progress *async.Progress[ServiceProgress],
-) *async.Task[*ServiceBuildResult] {
-	return async.RunTask(
-		func(task *async.TaskContext[*ServiceBuildResult]) {
-			buildSource := serviceConfig.Path()
+) (*ServiceBuildResult, error) {
+	buildSource := serviceConfig.Path()
 
-			if serviceConfig.OutputPath != "" {
-				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
-			}
+	if serviceConfig.OutputPath != "" {
+		buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: buildSource,
-			})
-		},
-	)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: buildSource,
+	}, nil
 }
 
 func (pp *pythonProject) Package(

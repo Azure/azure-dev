@@ -202,7 +202,7 @@ func (sm *serviceManager) Restore(
 		return nil, fmt.Errorf("getting framework services: %w", err)
 	}
 
-	restoreResult, err := runCommandNoProgress(
+	restoreResult, err := runCommand(
 		ctx,
 		ServiceEventRestore,
 		serviceConfig,
@@ -244,7 +244,7 @@ func (sm *serviceManager) Build(
 		return nil, fmt.Errorf("getting framework services: %w", err)
 	}
 
-	buildResult, err := runCommandNoProgress(
+	buildResult, err := runCommand(
 		ctx,
 		ServiceEventBuild,
 		serviceConfig,
@@ -473,7 +473,7 @@ func (sm *serviceManager) Deploy(
 		}
 	}
 
-	deployResult, err := runCommandNoProgress(
+	deployResult, err := runCommand(
 		ctx,
 		ServiceEventDeploy,
 		serviceConfig,
@@ -631,11 +631,11 @@ func (sm *serviceManager) isComponentInitialized(serviceConfig *ServiceConfig, c
 	return false
 }
 
-func runCommandNoProgress[T comparable](
+func runCommand[T any](
 	ctx context.Context,
 	eventName ext.Event,
 	serviceConfig *ServiceConfig,
-	taskFunc func() (T, error),
+	fn func() (T, error),
 ) (T, error) {
 	eventArgs := ServiceLifecycleEventArgs{
 		Project: serviceConfig.Project,
@@ -645,7 +645,7 @@ func runCommandNoProgress[T comparable](
 	var result T
 
 	err := serviceConfig.Invoke(ctx, eventName, eventArgs, func() error {
-		res, err := taskFunc()
+		res, err := fn()
 		result = res
 		return err
 	})

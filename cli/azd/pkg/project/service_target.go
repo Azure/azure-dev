@@ -74,7 +74,8 @@ type ServiceTarget interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		frameworkPackageOutput *ServicePackageResult,
-	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) (*ServicePackageResult, error)
 
 	// Deploys the given deployment artifact to the target resource
 	Deploy(
@@ -82,7 +83,8 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		servicePackage *ServicePackageResult,
 		targetResource *environment.TargetResource,
-	) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) (*ServiceDeployResult, error)
 
 	// Endpoints gets the endpoints a service exposes.
 	Endpoints(

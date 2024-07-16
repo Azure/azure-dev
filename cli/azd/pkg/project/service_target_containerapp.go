@@ -75,12 +75,9 @@ func (at *containerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(packageOutput)
-		},
-	)
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	return packageOutput, nil
 }
 
 // Deploys service container images to ACR and provisions the container app service.
@@ -89,57 +86,47 @@ func (at *containerAppTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
-			}
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
 
-			// Login, tag & push container image to ACR
-			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-			syncProgress(task, containerDeployTask.Progress())
+	// Login, tag & push container image to ACR
+	_, err := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true, progress)
+	if err != nil {
+		return nil, err
+	}
 
-			_, err := containerDeployTask.Await()
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
-			task.SetProgress(NewServiceProgress("Updating container app revision"))
-			err = at.containerAppService.AddRevision(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				imageName,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("updating container app service: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
-			endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetResult(&ServiceDeployResult{
-				Package: packageOutput,
-				TargetResourceId: azure.ContainerAppRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				Kind:      ContainerAppTarget,
-				Endpoints: endpoints,
-			})
-		},
+	imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
+	progress.SetProgress(NewServiceProgress("Updating container app revision"))
+	err = at.containerAppService.AddRevision(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		imageName,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("updating container app service: %w", err)
+	}
+
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+	endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ServiceDeployResult{
+		Package: packageOutput,
+		TargetResourceId: azure.ContainerAppRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		Kind:      ContainerAppTarget,
+		Endpoints: endpoints,
+	}, nil
 }
 
 // Gets endpoint for the container app service

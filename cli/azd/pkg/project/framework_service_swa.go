@@ -81,10 +81,11 @@ func (p *swaProject) SetSource(inner FrameworkService) {
 func (p *swaProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+	progress *async.Progress[ServiceProgress],
+) (*ServiceRestoreResult, error) {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.Restore(ctx, serviceConfig)
+	return p.framework.Restore(ctx, serviceConfig, progress)
 }
 
 // Builds the swa project based on the swa-cli.config.json options specified within the Service path
@@ -92,45 +93,37 @@ func (p *swaProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-
-			previewerWriter := p.console.ShowPreviewer(ctx,
-				&input.ShowPreviewerOptions{
-					Prefix:       "  ",
-					MaxLineCount: 8,
-					Title:        "Build SWA Project",
-				})
-			err := p.swa.Build(
-				ctx,
-				serviceConfig.Path(),
-				previewerWriter,
-			)
-			p.console.StopPreviewer(ctx, false)
-
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetResult(&ServiceBuildResult{
-				Restore: restoreOutput,
-			})
-		},
+	_ *async.Progress[ServiceProgress],
+) (*ServiceBuildResult, error) {
+	previewerWriter := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Build SWA Project",
+		})
+	err := p.swa.Build(
+		ctx,
+		serviceConfig.Path(),
+		previewerWriter,
 	)
+	p.console.StopPreviewer(ctx, false)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ServiceBuildResult{
+		Restore: restoreOutput,
+	}, nil
 }
 
 func (p *swaProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(&ServicePackageResult{
-				Build: buildOutput,
-			})
-		},
-	)
+	_ *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	return &ServicePackageResult{
+		Build: buildOutput,
+	}, nil
 }

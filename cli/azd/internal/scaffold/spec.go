@@ -22,21 +22,30 @@ type Parameter struct {
 	Secret bool
 }
 
+type ParameterValue struct {
+	Name  string
+	Value string
+}
+
 type DatabasePostgres struct {
 	DatabaseUser string
 	DatabaseName string
 
-	Module string
+	Module     string
+	Parameters []ParameterValue
 }
 
 type DatabaseCosmosMongo struct {
 	DatabaseName string
 
-	Module string
+	Module     string
+	Parameters []ParameterValue
 }
 
 type DatabaseRedis struct {
 	Module string
+
+	Parameters []ParameterValue
 }
 
 type ServiceSpec struct {

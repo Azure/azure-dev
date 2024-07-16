@@ -153,6 +153,24 @@ func (a *ModifyAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	parameters := []string{}
 	for key := range template.Parameters {
+		// prototype code to skip parameters based on resource type.
+		// we can't do this yet since we're not doing an in-memory merge
+		switch res.Type {
+		case project.ResourceTypeDbMongo:
+			if key == "mongodbDatabases" || key == "secretsKeyVault" || key == "locations" || key == "location" {
+				continue
+			}
+		case project.ResourceTypeDbRedis:
+			if key == "location" {
+				continue
+			}
+		case project.ResourceTypeDbPostgres:
+			if key == "databases" || key == "firewallRules" || key == "skuName" || key == "tier" || key == "passwordAuth" ||
+				key == "administratorLogin" || key == "administratorLoginPassword" ||
+				key == "geoRedundantBackup" || key == "location" {
+				continue
+			}
+		}
 		parameters = append(parameters, key)
 	}
 

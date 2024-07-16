@@ -529,22 +529,42 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 	backendMapping := map[string]string{}
 
 	for _, res := range projectConfig.Resources {
+		parameters := []scaffold.ParameterValue{}
+		var inputs map[string]any
+		ok, _ := env.Config.GetSection("infra.synthParameters."+res.Name, &inputs)
+		if ok {
+			for key, value := range inputs {
+				val := convertToBicep(value, 2)
+
+				parameters = append(parameters, scaffold.ParameterValue{
+					Name:  key,
+					Value: string(val),
+				})
+			}
+		}
+
 		switch res.Type {
 		case ResourceTypeDbRedis:
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{
 				Module: res.Module,
+
+				Parameters: parameters,
 			}
 		case ResourceTypeDbMongo:
 			// todo: support servers and databases
 			infraSpec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
 				DatabaseName: res.Name,
 				Module:       res.Module,
+
+				Parameters: parameters,
 			}
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
 				DatabaseName: res.Name,
 				DatabaseUser: "pgadmin",
 				Module:       res.Module,
+
+				Parameters: parameters,
 			}
 		}
 	}
@@ -631,4 +651,48 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 	})
 
 	return &infraSpec, nil
+}
+func convertToBicep(data interface{}, indent int) string {
+	var builder strings.Builder
+
+	switch v := data.(type) {
+	case map[string]interface{}:
+		builder.WriteString("{\n")
+		for key, value := range v {
+			builder.WriteString(strings.Repeat("  ", indent+1))
+			builder.WriteString(key)
+			builder.WriteString(": ")
+			builder.WriteString(convertToBicep(value, indent+1))
+			builder.WriteString("\n")
+		}
+		builder.WriteString(strings.Repeat("  ", indent))
+		builder.WriteString("}")
+
+	case []interface{}:
+		builder.WriteString("[\n")
+		for _, item := range v {
+			builder.WriteString(strings.Repeat("  ", indent+1))
+			builder.WriteString(convertToBicep(item, indent+1))
+			builder.WriteString("\n")
+		}
+		builder.WriteString(strings.Repeat("  ", indent))
+		builder.WriteString("]")
+
+	case string:
+		builder.WriteString(fmt.Sprintf("'%s'", v))
+
+	case float64:
+		builder.WriteString(fmt.Sprintf("%g", v))
+
+	case bool:
+		builder.WriteString(fmt.Sprintf("%t", v))
+
+	case nil:
+		builder.WriteString("null")
+
+	default:
+		builder.WriteString(fmt.Sprintf("'%v'", v))
+	}
+
+	return builder.String()
 }

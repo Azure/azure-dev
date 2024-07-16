@@ -78,7 +78,7 @@
                         "type": "string",
                         "title": "Path to the service source code directory"
                     },
-"image": {
+                    "image": {
                         "type": "string",
                         "title": "Optional. The source image to be used for the container image instead of building from source.",
                         "description": "If omitted, container image will be built from source specified in the 'project' property. Setting both 'project' and 'image' is invalid."
@@ -180,7 +180,7 @@
                     }
                 },
                 "allOf": [
-{
+                    {
                         "if": {
                             "properties": {
                                 "host": {
@@ -353,6 +353,14 @@
                     }
                 }
             }
+        },
+        "scripts": {
+            "type": "object",
+            "additionalProperties": {
+                "$ref": "#/definitions/hook"
+            },
+            "title": "Scripts for various events",
+            "description": "Users can define multiple hooks for different events. Each key represents a script name, and the value should follow the hook definition."
         },
         "hooks": {
             "type": "object",
@@ -569,7 +577,13 @@
             "description": "Optional. Provides additional configuration for deploying to sovereign clouds such as Azure Government. The default cloud is AzureCloud.",
             "additionalProperties": false,
             "properties": {
-                "name": { "enum": [ "AzureCloud", "AzureChinaCloud", "AzureUSGovernment" ] }
+                "name": {
+                    "enum": [
+                        "AzureCloud",
+                        "AzureChinaCloud",
+                        "AzureUSGovernment"
+                    ]
+                }
             }
         }
     },
@@ -743,7 +757,7 @@
                             "description": "When set will be appended to the root of your ingress resource path."
                         }
                     }
-},
+                },
                 "helm": {
                     "type": "object",
                     "title": "Optional. The helm configuration",
@@ -1002,7 +1016,9 @@
         },
         "aiDeploymentConfig": {
             "allOf": [
-                { "$ref": "#/definitions/aiComponentConfig" },
+                {
+                    "$ref": "#/definitions/aiComponentConfig"
+                },
                 {
                     "type": "object",
                     "properties": {
@@ -1010,7 +1026,7 @@
                             "type": "object",
                             "title": "A map of key/value pairs to set as environment variables for the deployment.",
                             "description": "Optional. Values support OS & AZD environment variable substitution.",
-                            "additionalProperties":{
+                            "additionalProperties": {
                                 "type": "string"
                             }
                         }

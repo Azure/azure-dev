@@ -11,6 +11,7 @@ Commands
     hooks    	: Develop, test and run hooks for an application. (Beta)
     init     	: Initialize a new application.
     restore  	: Restores the application's dependencies. (Beta)
+    script   	: Develop, test and run scripts for an application. (Beta)
     template 	: Find and view template details. (Beta)
 
   Manage Azure resources and app deployments

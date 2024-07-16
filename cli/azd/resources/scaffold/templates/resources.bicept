@@ -108,6 +108,9 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
       keyVaultName: keyVault.outputs.name
       primaryWriteConnectionStringSecretName: 'AZURE-COSMOS-CONNECTION-STRING'
     }
+    {{- range .DbCosmosMongo.Parameters }}
+    {{ .Name }}: {{.Value}}
+    {{- end}}
   }
 }
 {{- end}}
@@ -144,6 +147,9 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.6
       }
     ]
     location: location
+    {{- range .DbPostgres.Parameters }}
+    {{ .Name }}: {{.Value}}
+    {{- end}}
   }
 }
 {{- end}}
@@ -318,6 +324,9 @@ module redis 'br/public:avm/res/cache/redis:0.3.2' = {
     name: '${abbrs.cacheRedis}${resourceToken}'
     // Non-required parameters
     location: location
+    {{- range .DbRedis.Parameters }}
+    {{ .Name }}: {{.Value}}
+    {{- end}}
   }
 }
 

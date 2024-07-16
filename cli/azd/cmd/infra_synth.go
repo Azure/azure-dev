@@ -100,13 +100,13 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 	spinnerMessage := "Synthesizing infrastructure"
 
-	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	if len(a.args) > 0 {
 		res, has := a.projectConfig.Resources[a.args[0]]
 		if !has {
-			a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 			return nil, fmt.Errorf("resource %s not found", a.args[0])
 		}
+
+		a.console.ShowSpinner(ctx, spinnerMessage+" for "+res.Name, input.Step)
 
 		if res.Module != "" {
 			confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
@@ -188,9 +188,16 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		if err != nil {
 			return nil, fmt.Errorf("closing file: %w", err)
 		}
-		return nil, nil
+
+		a.console.StopSpinner(ctx, spinnerMessage+" for "+res.Name, input.StepDone)
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: fmt.Sprintf("Synthesized infrastructure for %s", res.Name),
+			},
+		}, nil
 	}
 
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	synthFS, err := a.importManager.SynthAllInfrastructure(ctx, a.projectConfig)
 	if err != nil {
 		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)

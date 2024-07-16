@@ -283,8 +283,20 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 	description := fmt.Sprintf("Created by Azure Developer CLI for project: %s", projectName)
+
+	// Filter out any empty roles, this allows using `--principal-role=""` on the command line to prevent any roles
+	// from being assigned (which is useful when using `pipeline configure` to configure a new repository with an existing
+	// SP that has already had roles assigned (and the runner of `pipeline config`) does not have role assignment
+	// permissions).
+	var roles []string
+	for _, role := range pm.args.PipelineRoleNames {
+		if role != "" {
+			roles = append(roles, role)
+		}
+	}
+
 	options := entraid.CreateOrUpdateServicePrincipalOptions{
-		RolesToAssign:              pm.args.PipelineRoleNames,
+		RolesToAssign:              roles,
 		Description:                &description,
 		ServiceManagementReference: smr,
 	}

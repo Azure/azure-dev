@@ -77,7 +77,7 @@ func (p *defaultProvider) IsEnabled() bool {
 	return true
 }
 
-func (p *defaultProvider) ConfigureContainer(container *ioc.NestedContainer) error {
+func (p *defaultProvider) ConfigureContainer(container *ioc.Container) error {
 	return nil
 }
 
@@ -96,6 +96,6 @@ func (p *testProvider) IsEnabled() bool {
 	return true
 }
 
-func (p *testProvider) ConfigureContainer(container *ioc.NestedContainer) error {
+func (p *testProvider) ConfigureContainer(container *ioc.Container) error {
 	return nil
 }

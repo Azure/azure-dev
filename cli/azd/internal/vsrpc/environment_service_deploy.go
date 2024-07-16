@@ -9,7 +9,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/wbreza/container/v4"
 )
 
 // DeployAsync is the server implementation of:
@@ -47,12 +47,12 @@ func (s *environmentService) DeployAsync(
 		},
 	}
 
-	container, err := session.newContainer(rc)
+	serverContainer, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}
-	container.outWriter.AddWriter(outputWriter)
-	container.spinnerWriter.AddWriter(spinnerWriter)
+	serverContainer.outWriter.AddWriter(outputWriter)
+	serverContainer.spinnerWriter.AddWriter(spinnerWriter)
 
 	provisionFlags := cmd.NewProvisionFlagsFromEnvAndOptions(
 		&internal.EnvFlag{
@@ -75,25 +75,33 @@ func (s *environmentService) DeployAsync(
 	)
 	deployFlags.All = true
 
-	container.MustRegisterScoped(func() internal.EnvFlag {
+	container.MustRegisterScoped(serverContainer.Container, func() internal.EnvFlag {
 		return internal.EnvFlag{
 			EnvironmentName: name,
 		}
 	})
 
-	ioc.RegisterInstance[*cmd.ProvisionFlags](container.NestedContainer, provisionFlags)
-	ioc.RegisterInstance[*cmd.DeployFlags](container.NestedContainer, deployFlags)
-	ioc.RegisterInstance[[]string](container.NestedContainer, []string{})
+	serverContainer.RegisterSingleton(func() *cmd.ProvisionFlags {
+		return provisionFlags
+	})
 
-	container.MustRegisterNamedTransient("provisionAction", cmd.NewProvisionAction)
-	container.MustRegisterNamedTransient("deployAction", cmd.NewDeployAction)
+	serverContainer.RegisterSingleton(func() *cmd.DeployFlags {
+		return deployFlags
+	})
+
+	serverContainer.RegisterSingleton(func() []string {
+		return []string{}
+	})
+
+	container.MustRegisterNamedTransient(serverContainer.Container, "provisionAction", cmd.NewProvisionAction)
+	container.MustRegisterNamedTransient(serverContainer.Container, "deployAction", cmd.NewDeployAction)
 
 	var c struct {
 		deployAction    actions.Action `container:"name"`
 		provisionAction actions.Action `container:"name"`
 	}
 
-	if err := container.Fill(&c); err != nil {
+	if err := serverContainer.Fill(ctx, &c); err != nil {
 		return nil, err
 	}
 
@@ -113,5 +121,5 @@ func (s *environmentService) DeployAsync(
 		return nil, err
 	}
 
-	return s.refreshEnvironmentAsync(ctx, container, name, observer)
+	return s.refreshEnvironmentAsync(ctx, serverContainer, name, observer)
 }

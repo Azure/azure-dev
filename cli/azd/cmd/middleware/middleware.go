@@ -8,8 +8,8 @@ import (
 	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/spf13/pflag"
+	"github.com/wbreza/container/v4"
 )
 
 // Registration function that returns a constructed middleware
@@ -26,7 +26,7 @@ var childActionKey childActionKeyType = "child-action"
 
 // Middleware Run options
 type Options struct {
-	container *ioc.NestedContainer
+	container *container.Container
 
 	CommandPath string
 	Name        string
@@ -41,7 +41,7 @@ func (o *Options) IsChildAction(ctx context.Context) bool {
 }
 
 // Sets the container to be used for resolving middleware components
-func (o *Options) WithContainer(container *ioc.NestedContainer) {
+func (o *Options) WithContainer(container *container.Container) {
 	o.container = container
 }
 
@@ -52,11 +52,11 @@ type NextFn func(ctx context.Context) (*actions.ActionResult, error)
 // invocation of middleware components and actions.
 type MiddlewareRunner struct {
 	chain     []string
-	container *ioc.NestedContainer
+	container *container.Container
 }
 
 // Creates a new middleware runner
-func NewMiddlewareRunner(container *ioc.NestedContainer) *MiddlewareRunner {
+func NewMiddlewareRunner(container *container.Container) *MiddlewareRunner {
 	return &MiddlewareRunner{
 		chain:     []string{},
 		container: container,
@@ -81,7 +81,7 @@ func (r *MiddlewareRunner) RunAction(
 	}
 
 	// Create a new context with the child container which will be leveraged on any child command/actions
-	ioc.RegisterInstance(actionContainer, runOptions)
+	actionContainer.RegisterInstance(runOptions)
 
 	// This recursive function executes the middleware chain in the order that
 	// the middlewares were registered. nextFn is passed into the middleware run
@@ -94,7 +94,7 @@ func (r *MiddlewareRunner) RunAction(
 			index++
 
 			var middleware Middleware
-			if err := actionContainer.ResolveNamed(middlewareName, &middleware); err != nil {
+			if err := actionContainer.ResolveNamed(ctx, middlewareName, &middleware); err != nil {
 				log.Printf("failed resolving middleware '%s' : %s\n", middlewareName, err.Error())
 			}
 
@@ -110,8 +110,8 @@ func (r *MiddlewareRunner) RunAction(
 		} else {
 			var action actions.Action
 
-			if err := actionContainer.ResolveNamed(actionName, &action); err != nil {
-				if errors.Is(err, ioc.ErrResolveInstance) {
+			if err := actionContainer.ResolveNamed(ctx, actionName, &action); err != nil {
+				if errors.Is(err, container.ErrResolutionFailed) {
 					return nil, fmt.Errorf(
 						//nolint:lll
 						"failed resolving action '%s'. Ensure the ActionResolver is a valid go function that returns an `actions.Action` interface, %w",

@@ -41,7 +41,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 	if err != nil {
 		return false, err
 	}
-	if err := container.Fill(&c); err != nil {
+	if err := container.Fill(ctx, &c); err != nil {
 		return false, err
 	}
 

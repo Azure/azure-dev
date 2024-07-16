@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -12,11 +13,11 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/wbreza/container/v4"
 
 	// Importing for infrastructure provider plugin registrations
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -34,7 +35,7 @@ import (
 func NewRootCmd(
 	staticHelp bool,
 	middlewareChain []*actions.MiddlewareRegistration,
-	rootContainer *ioc.NestedContainer,
+	rootContainer *container.Container,
 ) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
@@ -339,9 +340,9 @@ func NewRootCmd(
 
 	// Register common dependencies for the IoC rootContainer
 	if rootContainer == nil {
-		rootContainer = ioc.NewNestedContainer(nil)
+		rootContainer = container.New()
 	}
-	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
+	rootContainer.RegisterNamedInstance("root-cmd", rootCmd)
 	registerCommonDependencies(rootContainer)
 
 	// Initialize the platform specific components for the IoC container
@@ -353,7 +354,7 @@ func NewRootCmd(
 
 	// Compose the hierarchy of action descriptions into cobra commands
 	var cobraBuilder *CobraBuilder
-	if err := rootContainer.Resolve(&cobraBuilder); err != nil {
+	if err := rootContainer.Resolve(context.TODO(), &cobraBuilder); err != nil {
 		panic(err)
 	}
 

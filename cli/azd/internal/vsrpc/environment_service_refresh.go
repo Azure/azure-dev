@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/wbreza/container/v4"
 )
 
 // RefreshEnvironmentAsync is the server implementation of:
@@ -42,9 +43,9 @@ func (s *environmentService) RefreshEnvironmentAsync(
 }
 
 func (s *environmentService) refreshEnvironmentAsync(
-	ctx context.Context, container *container, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, serverContainer *serverContainer, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	env, err := s.loadEnvironmentAsync(ctx, container, name, true)
+	env, err := s.loadEnvironmentAsync(ctx, serverContainer, name, true)
 	if err != nil {
 		return nil, err
 	}
@@ -61,13 +62,13 @@ func (s *environmentService) refreshEnvironmentAsync(
 		envManager           environment.Manager         `container:"type"`
 	}
 
-	container.MustRegisterScoped(func() internal.EnvFlag {
+	container.MustRegisterScoped(serverContainer.Container, func() internal.EnvFlag {
 		return internal.EnvFlag{
 			EnvironmentName: name,
 		}
 	})
 
-	if err := container.Fill(&c); err != nil {
+	if err := container.Fill(ctx, &c); err != nil {
 		return nil, err
 	}
 

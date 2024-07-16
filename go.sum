@@ -501,6 +501,10 @@ github.com/tedsuo/ifrit v0.0.0-20180802180643-bea94bb476cc/go.mod h1:eyZnKCc955u
 github.com/theckman/yacspin v0.13.12 h1:CdZ57+n0U6JMuh2xqjnjRq5Haj6v1ner2djtLQRzJr4=
 github.com/theckman/yacspin v0.13.12/go.mod h1:Rd2+oG2LmQi5f3zC3yeZAOl245z8QOvrH4OPOJNZxLg=
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
+github.com/wbreza/container/v4 v4.0.0-20240716203220-f56ba0132e2f h1:N9PrWQFEEw+a8wccZLDlmKar0SSGfcA4duLGJXZ5dqM=
+github.com/wbreza/container/v4 v4.0.0-20240716203220-f56ba0132e2f/go.mod h1:UmlgHkczd55CJpqdxcez4Ds0SwnMI/A8MtFWCDnF7zg=
+github.com/wbreza/container/v4 v4.0.1 h1:BpCO4Mteef3H7dhf87l+4DTF+SnbD5T31Wz8WNyYuDQ=
+github.com/wbreza/container/v4 v4.0.1/go.mod h1:UmlgHkczd55CJpqdxcez4Ds0SwnMI/A8MtFWCDnF7zg=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

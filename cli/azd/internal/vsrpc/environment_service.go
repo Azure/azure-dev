@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/wbreza/container/v4"
 )
 
 // environmentService is the RPC server for the '/EnvironmentService/v1.0' endpoint.
@@ -46,7 +47,7 @@ func (s *environmentService) GetEnvironmentsAsync(
 	if err != nil {
 		return nil, err
 	}
-	if err := container.Fill(&c); err != nil {
+	if err := container.Fill(ctx, &c); err != nil {
 		return nil, err
 	}
 
@@ -85,7 +86,7 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 	if err != nil {
 		return false, err
 	}
-	if err := container.Fill(&c); err != nil {
+	if err := container.Fill(ctx, &c); err != nil {
 		return false, err
 	}
 
@@ -135,12 +136,12 @@ func (s *environmentService) DeleteEnvironmentAsync(
 		},
 	}
 
-	container, err := session.newContainer(rc)
+	serverContainer, err := session.newContainer(rc)
 	if err != nil {
 		return false, err
 	}
-	container.outWriter.AddWriter(outputWriter)
-	container.spinnerWriter.AddWriter(spinnerWriter)
+	serverContainer.outWriter.AddWriter(outputWriter)
+	serverContainer.spinnerWriter.AddWriter(spinnerWriter)
 
 	var c struct {
 		provisionManager *provisioning.Manager  `container:"type"`
@@ -148,13 +149,13 @@ func (s *environmentService) DeleteEnvironmentAsync(
 		importManager    *project.ImportManager `container:"type"`
 		projectConfig    *project.ProjectConfig `container:"type"`
 	}
-	container.MustRegisterScoped(func() internal.EnvFlag {
+	container.MustRegisterScoped(serverContainer.Container, func() internal.EnvFlag {
 		return internal.EnvFlag{
 			EnvironmentName: name,
 		}
 	})
 
-	if err := container.Fill(&c); err != nil {
+	if err := container.Fill(ctx, &c); err != nil {
 		return false, err
 	}
 

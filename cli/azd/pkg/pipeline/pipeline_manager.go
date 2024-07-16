@@ -747,12 +747,12 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	log.Printf("Using pipeline provider: %s", output.WithHighLightFormat(displayName))
 
 	var scmProvider ScmProvider
-	if err := pm.serviceLocator.ResolveNamed(scmProviderName+"-scm", &scmProvider); err != nil {
+	if err := pm.serviceLocator.ResolveNamed(ctx, scmProviderName+"-scm", &scmProvider); err != nil {
 		return fmt.Errorf("resolving scm provider: %w", err)
 	}
 
 	var ciProvider CiProvider
-	if err := pm.serviceLocator.ResolveNamed(ciProviderName+"-ci", &ciProvider); err != nil {
+	if err := pm.serviceLocator.ResolveNamed(ctx, ciProviderName+"-ci", &ciProvider); err != nil {
 		return fmt.Errorf("resolving ci provider: %w", err)
 	}
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"slices"
@@ -14,17 +15,18 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
+	"github.com/wbreza/container/v4"
 )
 
 const cDocsFlagName = "docs"
 
 // CobraBuilder manages the construction of the cobra command tree from nested ActionDescriptors
 type CobraBuilder struct {
-	container *ioc.NestedContainer
+	container *container.Container
 }
 
 // Creates a new instance of the Cobra builder
-func NewCobraBuilder(container *ioc.NestedContainer) *CobraBuilder {
+func NewCobraBuilder(container *container.Container) *CobraBuilder {
 	return &CobraBuilder{
 		container: container,
 	}
@@ -95,7 +97,6 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		// Register root go context that will be used for resolving singleton dependencies
 		ctx := tools.WithInstalledCheckCache(cmd.Context())
-		ioc.RegisterInstance(cb.container, ctx)
 
 		// Create new container scope for the current command
 		cmdContainer, err := cb.container.NewScope()
@@ -104,11 +105,12 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		}
 
 		// Registers the following to enable injection into actions that require them
-		ioc.RegisterInstance(cmdContainer, ctx)
-		ioc.RegisterInstance(cmdContainer, cmd)
-		ioc.RegisterInstance(cmdContainer, args)
-		ioc.RegisterInstance(cmdContainer, cmdContainer)
-		ioc.RegisterInstance[ioc.ServiceLocator](cmdContainer, cmdContainer)
+		cmdContainer.RegisterInstance(cmd)
+		cmdContainer.RegisterInstance(args)
+		cmdContainer.RegisterInstance(cmdContainer)
+		cmdContainer.RegisterSingleton(func() ioc.ServiceLocator {
+			return cmdContainer
+		})
 
 		// Register any required middleware registered for the current action descriptor
 		middlewareRunner := middleware.NewMiddlewareRunner(cmdContainer)
@@ -214,7 +216,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		command: cmd,
 		consoleFn: func() input.Console {
 			var console input.Console
-			if err := cb.container.Resolve(&console); err != nil {
+			if err := cb.container.Resolve(context.Background(), &console); err != nil {
 				log.Panic("creating docs flag: %w", err)
 			}
 			return console
@@ -231,11 +233,11 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 
 	// Create, register and bind flags when required
 	if descriptor.Options.FlagsResolver != nil {
-		ioc.RegisterInstance(cb.container, cmd)
+		cb.container.RegisterInstance(cmd)
 
 		// The flags resolver is constructed and bound to the cobra command via dependency injection
 		// This allows flags to be options and support any set of required dependencies
-		if err := cb.container.RegisterSingletonAndInvoke(descriptor.Options.FlagsResolver); err != nil {
+		if err := cb.container.RegisterSingleton(descriptor.Options.FlagsResolver); err != nil {
 			return fmt.Errorf(
 				//nolint:lll
 				"failed registering FlagsResolver for action '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
@@ -243,6 +245,15 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 				err,
 			)
 		}
+
+		// if err := cb.container.RegisterSingletonAndInvoke(descriptor.Options.FlagsResolver); err != nil {
+		// 	return fmt.Errorf(
+		// 		//nolint:lll
+		// 		"failed registering FlagsResolver for action '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
+		// 		actionName,
+		// 		err,
+		// 	)
+		// }
 	}
 
 	// Registers and bind action resolves when required

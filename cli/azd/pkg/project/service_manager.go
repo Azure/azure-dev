@@ -513,7 +513,7 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 		}
 	}
 
-	if err := sm.serviceLocator.ResolveNamed(host, &target); err != nil {
+	if err := sm.serviceLocator.ResolveNamed(ctx, host, &target); err != nil {
 		return nil, fmt.Errorf(
 			"failed to resolve service host '%s' for service '%s', %w",
 			serviceConfig.Host,
@@ -534,7 +534,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		serviceConfig.Language = ServiceLanguageDocker
 	}
 
-	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Language), &frameworkService); err != nil {
+	if err := sm.serviceLocator.ResolveNamed(ctx, string(serviceConfig.Language), &frameworkService); err != nil {
 		return nil, fmt.Errorf(
 			"failed to resolve language '%s' for service '%s', %w",
 			serviceConfig.Language,
@@ -548,7 +548,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	// project that handles the containerization.
 	requiresLanguage := serviceConfig.Language != ServiceLanguageDocker && serviceConfig.Language != ServiceLanguageNone
 	if serviceConfig.Host.RequiresContainer() && requiresLanguage {
-		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
+		if err := sm.serviceLocator.ResolveNamed(ctx, string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			return nil, fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",
 				serviceConfig.Name,
@@ -562,7 +562,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 			return nil, fmt.Errorf("checking for swa-cli.config.json: %w", err)
 		}
 		if withSwaConfig {
-			if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageSwa), &compositeFramework); err != nil {
+			if err := sm.serviceLocator.ResolveNamed(ctx, string(ServiceLanguageSwa), &compositeFramework); err != nil {
 				return nil, fmt.Errorf(
 					"failed resolving composite framework service for '%s', language '%s': %w",
 					serviceConfig.Name,

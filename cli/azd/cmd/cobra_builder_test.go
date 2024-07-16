@@ -286,7 +286,7 @@ func Test_RunDocsAndHelpFlow(t *testing.T) {
 	require.Equal(t, "", calledUrl)
 }
 
-func setup(container *ioc.NestedContainer) {
+func setup(container *ioc.Container) {
 	registerCommonDependencies(container)
 	globalOptions := &internal.GlobalCommandOptions{
 		EnableTelemetry:    false,

@@ -47,16 +47,20 @@ func newScriptsRunFlags(cmd *cobra.Command, global *internal.GlobalCommandOption
 
 func newScriptsRunCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "run <name>",
+		Use:   "run [name]",
 		Short: "Runs the specified script for the project",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 	}
 }
 
 type scriptsRunFlags struct {
 	internal.EnvFlag
-	global   *internal.GlobalCommandOptions
-	platform string
+	global          *internal.GlobalCommandOptions
+	platform        string
+	run             string
+	shell           string
+	continueOnError bool
+	interactive     bool
 }
 
 func (f *scriptsRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -64,6 +68,10 @@ func (f *scriptsRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComm
 	f.global = global
 
 	local.StringVar(&f.platform, "platform", "", "Forces scripts to run for the specified platform.")
+	local.StringVar(&f.run, "run", "", "Inline script to run.")
+	local.StringVar(&f.shell, "shell", "sh", "Shell to use for the script.")
+	local.BoolVar(&f.continueOnError, "continueOnError", true, "Continue on error.")
+	local.BoolVar(&f.interactive, "interactive", true, "Run in interactive mode.")
 }
 
 type scriptsRunAction struct {
@@ -99,28 +107,50 @@ func newScriptsRunAction(
 const noScriptFoundMessage = " (No script found)"
 
 func (sra *scriptsRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	scriptName := sra.args[0]
+	var scriptName string
+	if len(sra.args) > 0 {
+		scriptName = sra.args[0]
+	}
+
+	if scriptName == "" && sra.flags.run == "" {
+		return nil, fmt.Errorf("either a script name or --run must be specified")
+	}
 
 	// Command title
 	sra.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Running scripts (azd scripts run)",
 		TitleNote: fmt.Sprintf(
-			"Finding and executing %s scripts for environment %s",
+			"Finding and executing %s scripts",
 			output.WithHighLightFormat(scriptName),
-			output.WithHighLightFormat(sra.env.Name()),
 		),
 	})
 
-	// Project level scripts
-	if err := sra.processScripts(
-		ctx,
-		sra.projectConfig.Path,
-		scriptName,
-		fmt.Sprintf("Running %s command script for project", scriptName),
-		fmt.Sprintf("Project: %s Script Output", scriptName),
-		sra.projectConfig.Scripts, // Use projectConfig.Scripts directly
-	); err != nil {
-		return nil, err
+	if scriptName != "" {
+		// Named script from azure.yaml
+		if err := sra.processScripts(
+			ctx,
+			sra.projectConfig.Path,
+			scriptName,
+			fmt.Sprintf("Running %s command script for project", scriptName),
+			fmt.Sprintf("Project: %s Script Output", scriptName),
+			sra.projectConfig.Scripts,
+		); err != nil {
+			return nil, err
+		}
+	} else {
+		// Inline script from command-line parameters
+		script := &ext.HookConfig{
+			Run:             sra.flags.run,
+			Shell:           ext.ShellType(sra.flags.shell),
+			ContinueOnError: sra.flags.continueOnError,
+			Interactive:     sra.flags.interactive,
+		}
+		if err := sra.prepareScript("inline-script", script); err != nil {
+			return nil, err
+		}
+		if err := sra.execScript(ctx, "Running inline script", sra.projectConfig.Path, script); err != nil {
+			return nil, err
+		}
 	}
 
 	return &actions.ActionResult{
@@ -212,18 +242,5 @@ func (sra *scriptsRunAction) prepareScript(name string, script *ext.HookConfig) 
 	}
 
 	script.Name = name
-	script.Interactive = true
-
-	sra.configureScriptFlags(script.Windows)
-	sra.configureScriptFlags(script.Posix)
-
 	return nil
-}
-
-func (sra *scriptsRunAction) configureScriptFlags(script *ext.HookConfig) {
-	if script == nil {
-		return
-	}
-
-	script.Interactive = true
 }

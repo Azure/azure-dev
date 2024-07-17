@@ -2,13 +2,17 @@
 Runs the specified script for the project
 
 Usage
-  azd script run <name> [flags]
+  azd script run [name] [flags]
 
 Flags
+        --continueOnError    	: Continue on error.
         --docs               	: Opens the documentation for azd script run in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for run.
+        --interactive        	: Run in interactive mode.
         --platform string    	: Forces scripts to run for the specified platform.
+        --run string         	: Inline script to run.
+        --shell string       	: Shell to use for the script.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

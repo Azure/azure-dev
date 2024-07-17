@@ -205,7 +205,30 @@ func (a *ModifyAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	param := parameterDefinition[selection]
-	val, err := bicepProvider.PromptForParameter(ctx, param.key, param.param)
+
+	var currentVal string
+	var configuredVal json.RawMessage
+	if ok, _ := a.env.Config.GetSection(configInfraParametersKey+res.Name+"."+param.key, &configuredVal); ok {
+		currentValBytes, err := configuredVal.MarshalJSON()
+		if err != nil {
+			return nil, fmt.Errorf("marshalling current value: %w", err)
+		}
+
+		currentVal = string(currentValBytes)
+	} else if param.param.DefaultValue != nil {
+		currentValBytes, err := json.Marshal(param.param.DefaultValue)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling default value: %w", err)
+		}
+
+		currentVal = string(currentValBytes)
+	}
+
+	if len(currentVal) > 0 {
+		currentVal = fmt.Sprintf("(Current value: %s)", currentVal)
+	}
+
+	val, err := bicepProvider.PromptForParameter(ctx, param.key, param.param, currentVal)
 	if err != nil {
 		return nil, fmt.Errorf("prompting for parameter: %w", err)
 	}

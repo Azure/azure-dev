@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -76,13 +77,14 @@ func (p *BicepProvider) PromptForParameter(
 	ctx context.Context,
 	key string,
 	param azure.ArmTemplateParameterDefinition,
+	suffixes ...string,
 ) (any, error) {
 	securedParam := "parameter"
 	isSecuredParam := param.Secure()
 	if isSecuredParam {
 		securedParam = "secured parameter"
 	}
-	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure %s:", key, securedParam)
+	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure %s %s:", key, securedParam, strings.Join(suffixes, " "))
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
 	paramType := p.mapBicepTypeToInterfaceType(param.Type)

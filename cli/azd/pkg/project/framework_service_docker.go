@@ -44,8 +44,8 @@ type DockerProjectOptions struct {
 	BuildArgs []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
 	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
-	BuildSecrets []string `yaml:"-" json:"-"`
-	BuildEnv     []string `yaml:"-" json:"-"`
+	BuildSecrets []string `yaml:"-"                   json:"-"`
+	BuildEnv     []string `yaml:"-"                   json:"-"`
 }
 
 type dockerBuildResult struct {

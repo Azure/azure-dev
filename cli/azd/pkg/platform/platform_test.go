@@ -3,22 +3,22 @@ package platform
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/stretchr/testify/require"
+	"github.com/wbreza/container/v4"
 )
 
 func Test_Platform_Initialize(t *testing.T) {
 	t.Run("ExplicitConfig", func(t *testing.T) {
-		container := ioc.NewNestedContainer(nil)
-		container.MustRegisterNamedSingleton("default-platform", newDefaultProvider)
-		container.MustRegisterNamedSingleton("test-platform", newTestProvider)
+		rootContainer := container.New()
+		container.MustRegisterNamedSingleton(rootContainer, "default-platform", newDefaultProvider)
+		container.MustRegisterNamedSingleton(rootContainer, "test-platform", newTestProvider)
 
 		config := &Config{
 			Type: PlatformKind("test"),
 		}
-		ioc.RegisterInstance(container, config)
+		container.MustRegisterInstance(rootContainer, config)
 
-		provider, err := Initialize(container, PlatformKind("default"))
+		provider, err := Initialize(rootContainer, PlatformKind("default"))
 		require.NoError(t, err)
 		require.NotNil(t, provider)
 		require.IsType(t, new(testProvider), provider)
@@ -26,15 +26,15 @@ func Test_Platform_Initialize(t *testing.T) {
 	})
 
 	t.Run("ImplicitConfig", func(t *testing.T) {
-		container := ioc.NewNestedContainer(nil)
-		container.MustRegisterNamedSingleton("default-platform", newDefaultProvider)
-		container.MustRegisterNamedSingleton("test-platform", newTestProvider)
+		rootContainer := container.New()
+		container.MustRegisterNamedSingleton(rootContainer, "default-platform", newDefaultProvider)
+		container.MustRegisterNamedSingleton(rootContainer, "test-platform", newTestProvider)
 
-		container.MustRegisterSingleton(func() (*Config, error) {
+		container.MustRegisterSingleton(rootContainer, func() (*Config, error) {
 			return nil, ErrPlatformConfigNotFound
 		})
 
-		provider, err := Initialize(container, PlatformKind("default"))
+		provider, err := Initialize(rootContainer, PlatformKind("default"))
 		require.NoError(t, err)
 		require.NotNil(t, provider)
 		require.IsType(t, new(defaultProvider), provider)
@@ -44,15 +44,15 @@ func Test_Platform_Initialize(t *testing.T) {
 	})
 
 	t.Run("Unsupported", func(t *testing.T) {
-		container := ioc.NewNestedContainer(nil)
-		container.MustRegisterNamedSingleton("default-platform", newDefaultProvider)
-		container.MustRegisterNamedSingleton("test-platform", newTestProvider)
+		rootContainer := container.New()
+		container.MustRegisterNamedSingleton(rootContainer, "default-platform", newDefaultProvider)
+		container.MustRegisterNamedSingleton(rootContainer, "test-platform", newTestProvider)
 
-		container.MustRegisterSingleton(func() (*Config, error) {
+		container.MustRegisterSingleton(rootContainer, func() (*Config, error) {
 			return nil, ErrPlatformNotSupported
 		})
 
-		provider, err := Initialize(container, PlatformKind("default"))
+		provider, err := Initialize(rootContainer, PlatformKind("default"))
 		require.NoError(t, err)
 		require.NotNil(t, provider)
 		require.IsType(t, new(defaultProvider), provider)
@@ -77,7 +77,7 @@ func (p *defaultProvider) IsEnabled() bool {
 	return true
 }
 
-func (p *defaultProvider) ConfigureContainer(container *ioc.Container) error {
+func (p *defaultProvider) ConfigureContainer(container *container.Container) error {
 	return nil
 }
 
@@ -96,6 +96,6 @@ func (p *testProvider) IsEnabled() bool {
 	return true
 }
 
-func (p *testProvider) ConfigureContainer(container *ioc.Container) error {
+func (p *testProvider) ConfigureContainer(container *container.Container) error {
 	return nil
 }

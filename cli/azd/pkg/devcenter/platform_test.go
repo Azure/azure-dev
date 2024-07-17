@@ -1,12 +1,13 @@
 package devcenter
 
 import (
+	"context"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/stretchr/testify/require"
+	"github.com/wbreza/container/v4"
 )
 
 func Test_Platform_IsEnabled(t *testing.T) {
@@ -35,12 +36,12 @@ func Test_Platform_ConfigureContainer(t *testing.T) {
 		}
 
 		devCenterPlatform := NewPlatform(config)
-		container := ioc.NewNestedContainer(nil)
-		err := devCenterPlatform.ConfigureContainer(container)
+		rootContainer := container.New()
+		err := devCenterPlatform.ConfigureContainer(rootContainer)
 		require.NoError(t, err)
 
 		var provisionResolver provisioning.DefaultProviderResolver
-		err = container.Resolve(&provisionResolver)
+		err = rootContainer.Resolve(context.Background(), &provisionResolver)
 		require.NoError(t, err)
 		require.NotNil(t, provisionResolver)
 

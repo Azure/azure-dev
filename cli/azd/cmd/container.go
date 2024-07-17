@@ -98,17 +98,17 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 }
 
 // Registers common Azd dependencies
-func registerCommonDependencies(c *container.Container) {
+func registerCommonDependencies(rootContainer *container.Container) {
 	// Core bootstrapping registrations
-	c.RegisterSingleton(func() *container.Container {
-		return c
+	container.MustRegisterSingleton(rootContainer, func() *container.Container {
+		return rootContainer
 	})
-	container.MustRegisterSingleton(c, NewCobraBuilder)
+	container.MustRegisterSingleton(rootContainer, NewCobraBuilder)
 
 	// Standard Registrations
-	container.MustRegisterTransient(c, output.GetCommandFormatter)
+	container.MustRegisterTransient(rootContainer, output.GetCommandFormatter)
 
-	container.MustRegisterScoped(c, func(
+	container.MustRegisterScoped(rootContainer, func(
 		rootOptions *internal.GlobalCommandOptions,
 		formatter output.Formatter,
 		cmd *cobra.Command) input.Console {
@@ -132,7 +132,7 @@ func registerCommonDependencies(c *container.Container) {
 		}, formatter, nil)
 	})
 
-	container.MustRegisterSingleton(c,
+	container.MustRegisterSingleton(rootContainer,
 		func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
 			return exec.NewCommandRunner(
 				&exec.RunnerOptions{
@@ -145,24 +145,24 @@ func registerCommonDependencies(c *container.Container) {
 	)
 
 	client := createHttpClient()
-	c.RegisterSingleton(func() httputil.HttpClient {
+	container.MustRegisterSingleton(rootContainer, func() httputil.HttpClient {
 		return client
 	})
-	c.RegisterSingleton(func() auth.HttpClient {
+	container.MustRegisterSingleton(rootContainer, func() auth.HttpClient {
 		return client
 	})
-	container.MustRegisterSingleton(c, func() httputil.UserAgent {
+	container.MustRegisterSingleton(rootContainer, func() httputil.UserAgent {
 		return httputil.UserAgent(internal.UserAgent())
 	})
 
 	// Auth
-	container.MustRegisterSingleton(c, auth.NewLoggedInGuard)
-	container.MustRegisterSingleton(c, auth.NewMultiTenantCredentialProvider)
-	container.MustRegisterSingleton(c, func(mgr *auth.Manager) CredentialProviderFn {
+	container.MustRegisterSingleton(rootContainer, auth.NewLoggedInGuard)
+	container.MustRegisterSingleton(rootContainer, auth.NewMultiTenantCredentialProvider)
+	container.MustRegisterSingleton(rootContainer, func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
 	})
 
-	container.MustRegisterSingleton(c, func(console input.Console) io.Writer {
+	container.MustRegisterSingleton(rootContainer, func(console input.Console) io.Writer {
 		writer := console.Handles().Stdout
 
 		if os.Getenv("NO_COLOR") != "" {
@@ -172,7 +172,7 @@ func registerCommonDependencies(c *container.Container) {
 		return writer
 	})
 
-	container.MustRegisterScoped(c, func(cmd *cobra.Command) internal.EnvFlag {
+	container.MustRegisterScoped(rootContainer, func(cmd *cobra.Command) internal.EnvFlag {
 		// The env flag `-e, --environment` is available on most azd commands but not all
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
@@ -187,24 +187,27 @@ func registerCommonDependencies(c *container.Container) {
 		return internal.EnvFlag{EnvironmentName: envValue}
 	})
 
-	container.MustRegisterSingleton(c, func(cmd *cobra.Command) CmdAnnotations {
+	container.MustRegisterSingleton(rootContainer, func(cmd *cobra.Command) CmdAnnotations {
 		return cmd.Annotations
 	})
 
 	// Azd Context
-	container.MustRegisterSingleton(c, func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
-		return lazyAzdContext.GetValue()
-	})
+	container.MustRegisterSingleton(
+		rootContainer,
+		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+			return lazyAzdContext.GetValue()
+		},
+	)
 
 	// Lazy loads the Azd context after the azure.yaml file becomes available
-	container.MustRegisterSingleton(c, func() *lazy.Lazy[*azdcontext.AzdContext] {
+	container.MustRegisterSingleton(rootContainer, func() *lazy.Lazy[*azdcontext.AzdContext] {
 		return lazy.NewLazy(azdcontext.NewAzdContext)
 	})
 
 	// Register an initialized environment based on the specified environment flag, or the default environment.
 	// Note that referencing an *environment.Environment in a command automatically triggers a UI prompt if the
 	// environment is uninitialized or a default environment doesn't yet exist.
-	container.MustRegisterScoped(c,
+	container.MustRegisterScoped(rootContainer,
 		func(ctx context.Context,
 			azdContext *azdcontext.AzdContext,
 			envManager environment.Manager,
@@ -230,44 +233,50 @@ func registerCommonDependencies(c *container.Container) {
 			return env, nil
 		},
 	)
-	container.MustRegisterScoped(c, func(lazyEnvManager *lazy.Lazy[environment.Manager]) environment.EnvironmentResolver {
-		return func(ctx context.Context) (*environment.Environment, error) {
-			azdCtx, err := azdcontext.NewAzdContext()
-			if err != nil {
-				return nil, err
+	container.MustRegisterScoped(
+		rootContainer,
+		func(lazyEnvManager *lazy.Lazy[environment.Manager]) environment.EnvironmentResolver {
+			return func(ctx context.Context) (*environment.Environment, error) {
+				azdCtx, err := azdcontext.NewAzdContext()
+				if err != nil {
+					return nil, err
+				}
+				defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+				if err != nil {
+					return nil, err
+				}
+
+				// We need to lazy load the environment manager since it depends on azd context
+				envManager, err := lazyEnvManager.GetValue()
+				if err != nil {
+					return nil, err
+				}
+
+				return envManager.Get(ctx, defaultEnv)
 			}
-			defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
-			if err != nil {
-				return nil, err
-			}
-
-			// We need to lazy load the environment manager since it depends on azd context
-			envManager, err := lazyEnvManager.GetValue()
-			if err != nil {
-				return nil, err
-			}
-
-			return envManager.Get(ctx, defaultEnv)
-		}
-	})
-
-	container.MustRegisterSingleton(c, environment.NewLocalFileDataStore)
-	container.MustRegisterSingleton(c, environment.NewManager)
-
-	container.MustRegisterSingleton(c, func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[environment.LocalDataStore] {
-		return lazy.NewLazy(func() (environment.LocalDataStore, error) {
-			var localDataStore environment.LocalDataStore
-			err := serviceLocator.Resolve(context.TODO(), &localDataStore)
-			if err != nil {
-				return nil, err
-			}
-
-			return localDataStore, nil
 		})
-	})
+
+	container.MustRegisterSingleton(rootContainer, environment.NewLocalFileDataStore)
+	container.MustRegisterSingleton(rootContainer, environment.NewManager)
+
+	container.MustRegisterSingleton(
+		rootContainer,
+		func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[environment.LocalDataStore] {
+			return lazy.NewLazy(func() (environment.LocalDataStore, error) {
+				var localDataStore environment.LocalDataStore
+				err := serviceLocator.Resolve(context.TODO(), &localDataStore)
+				if err != nil {
+					return nil, err
+				}
+
+				return localDataStore, nil
+			})
+		},
+	)
 
 	// Environment manager depends on azd context
-	container.MustRegisterSingleton(c,
+	container.MustRegisterSingleton(
+		rootContainer,
 		func(serviceLocator ioc.ServiceLocator, azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
 				azdCtx, err := azdContext.GetValue()
@@ -276,7 +285,9 @@ func registerCommonDependencies(c *container.Container) {
 				}
 
 				// Register the Azd context instance as a singleton in the container if now available
-				container.RegisterInstance(azdCtx)
+				if err := rootContainer.RegisterInstance(azdCtx); err != nil {
+					return nil, err
+				}
 
 				var envManager environment.Manager
 				err = serviceLocator.Resolve(context.TODO(), &envManager)
@@ -289,7 +300,7 @@ func registerCommonDependencies(c *container.Container) {
 		},
 	)
 
-	container.MustRegisterSingleton(c, func(
+	container.MustRegisterSingleton(rootContainer, func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
 	) (*state.RemoteConfig, error) {
@@ -320,7 +331,7 @@ func registerCommonDependencies(c *container.Container) {
 
 	// Lazy loads an existing environment, erroring out if not available
 	// One can repeatedly call GetValue to wait until the environment is available.
-	container.MustRegisterScoped(c,
+	container.MustRegisterScoped(rootContainer,
 		func(
 			ctx context.Context,
 			lazyEnvManager *lazy.Lazy[environment.Manager],
@@ -357,14 +368,14 @@ func registerCommonDependencies(c *container.Container) {
 	)
 
 	// Project Config
-	container.MustRegisterScoped(c,
+	container.MustRegisterScoped(rootContainer,
 		func(lazyConfig *lazy.Lazy[*project.ProjectConfig]) (*project.ProjectConfig, error) {
 			return lazyConfig.GetValue()
 		},
 	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
-	container.MustRegisterScoped(c,
+	container.MustRegisterScoped(rootContainer,
 		func(
 			ctx context.Context,
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
@@ -385,7 +396,7 @@ func registerCommonDependencies(c *container.Container) {
 		},
 	)
 
-	container.MustRegisterSingleton(c, func(
+	container.MustRegisterSingleton(rootContainer, func(
 		ctx context.Context,
 		userConfigManager config.UserConfigManager,
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
@@ -471,11 +482,11 @@ func registerCommonDependencies(c *container.Container) {
 		return cloud.NewCloud(&cloud.Config{Name: cloud.AzurePublicName})
 	})
 
-	container.MustRegisterSingleton(c, func(cloud *cloud.Cloud) cloud.PortalUrlBase {
+	container.MustRegisterSingleton(rootContainer, func(cloud *cloud.Cloud) cloud.PortalUrlBase {
 		return cloud.PortalUrlBase
 	})
 
-	container.MustRegisterSingleton(c, func(
+	container.MustRegisterSingleton(rootContainer, func(
 		httpClient httputil.HttpClient,
 		userAgent httputil.UserAgent,
 		cloud *cloud.Cloud,
@@ -483,7 +494,7 @@ func registerCommonDependencies(c *container.Container) {
 		return azsdk.NewClientOptionsBuilderFactory(httpClient, string(userAgent), cloud)
 	})
 
-	container.MustRegisterSingleton(c, func(
+	container.MustRegisterSingleton(rootContainer, func(
 		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
 	) *azcore.ClientOptions {
 		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
@@ -491,7 +502,7 @@ func registerCommonDependencies(c *container.Container) {
 			BuildCoreClientOptions()
 	})
 
-	container.MustRegisterSingleton(c, func(
+	container.MustRegisterSingleton(rootContainer, func(
 		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
 	) *arm.ClientOptions {
 		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
@@ -499,10 +510,10 @@ func registerCommonDependencies(c *container.Container) {
 			BuildArmClientOptions()
 	})
 
-	container.MustRegisterSingleton(c, templates.NewTemplateManager)
-	container.MustRegisterSingleton(c, templates.NewSourceManager)
-	container.MustRegisterScoped(c, project.NewResourceManager)
-	container.MustRegisterScoped(c, func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ResourceManager] {
+	container.MustRegisterSingleton(rootContainer, templates.NewTemplateManager)
+	container.MustRegisterSingleton(rootContainer, templates.NewSourceManager)
+	container.MustRegisterScoped(rootContainer, project.NewResourceManager)
+	container.MustRegisterScoped(rootContainer, func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ResourceManager] {
 		return lazy.NewLazy(func() (project.ResourceManager, error) {
 			var resourceManager project.ResourceManager
 			err := serviceLocator.Resolve(context.TODO(), &resourceManager)
@@ -510,19 +521,19 @@ func registerCommonDependencies(c *container.Container) {
 			return resourceManager, err
 		})
 	})
-	container.MustRegisterScoped(c, project.NewProjectManager)
+	container.MustRegisterScoped(rootContainer, project.NewProjectManager)
 	// Currently caches manifest across command executions
-	container.MustRegisterSingleton(c, project.NewDotNetImporter)
-	container.MustRegisterScoped(c, project.NewImportManager)
-	container.MustRegisterScoped(c, project.NewServiceManager)
+	container.MustRegisterSingleton(rootContainer, project.NewDotNetImporter)
+	container.MustRegisterScoped(rootContainer, project.NewImportManager)
+	container.MustRegisterScoped(rootContainer, project.NewServiceManager)
 
 	// Even though the service manager is scoped based on its use of environment we can still
 	// register its internal cache as a singleton to ensure operation caching is consistent across all instances
-	container.MustRegisterSingleton(c, func() project.ServiceOperationCache {
+	container.MustRegisterSingleton(rootContainer, func() project.ServiceOperationCache {
 		return project.ServiceOperationCache{}
 	})
 
-	container.MustRegisterScoped(c, func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ServiceManager] {
+	container.MustRegisterScoped(rootContainer, func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ServiceManager] {
 		return lazy.NewLazy(func() (project.ServiceManager, error) {
 			var serviceManager project.ServiceManager
 			err := serviceLocator.Resolve(context.TODO(), &serviceManager)
@@ -530,12 +541,12 @@ func registerCommonDependencies(c *container.Container) {
 			return serviceManager, err
 		})
 	})
-	container.MustRegisterSingleton(c, repository.NewInitializer)
-	container.MustRegisterSingleton(c, alpha.NewFeaturesManager)
-	container.MustRegisterSingleton(c, config.NewUserConfigManager)
-	container.MustRegisterSingleton(c, config.NewManager)
-	container.MustRegisterSingleton(c, config.NewFileConfigManager)
-	container.MustRegisterScoped(c, func() (auth.ExternalAuthConfiguration, error) {
+	container.MustRegisterSingleton(rootContainer, repository.NewInitializer)
+	container.MustRegisterSingleton(rootContainer, alpha.NewFeaturesManager)
+	container.MustRegisterSingleton(rootContainer, config.NewUserConfigManager)
+	container.MustRegisterSingleton(rootContainer, config.NewManager)
+	container.MustRegisterSingleton(rootContainer, config.NewFileConfigManager)
+	container.MustRegisterScoped(rootContainer, func() (auth.ExternalAuthConfiguration, error) {
 		cert := os.Getenv("AZD_AUTH_CERT")
 		endpoint := os.Getenv("AZD_AUTH_ENDPOINT")
 		key := os.Getenv("AZD_AUTH_KEY")
@@ -567,27 +578,30 @@ func registerCommonDependencies(c *container.Container) {
 			Key:      key,
 		}, nil
 	})
-	container.MustRegisterScoped(c, auth.NewManager)
-	container.MustRegisterSingleton(c, azcli.NewUserProfileService)
-	container.MustRegisterSingleton(c, account.NewSubscriptionsService)
-	container.MustRegisterSingleton(c, account.NewManager)
-	container.MustRegisterSingleton(c, account.NewSubscriptionsManager)
-	container.MustRegisterSingleton(c, account.NewSubscriptionCredentialProvider)
-	container.MustRegisterSingleton(c, azcli.NewManagedClustersService)
-	container.MustRegisterSingleton(c, entraid.NewEntraIdService)
-	container.MustRegisterSingleton(c, azcli.NewContainerRegistryService)
-	container.MustRegisterSingleton(c, containerapps.NewContainerAppService)
-	container.MustRegisterSingleton(c, keyvault.NewKeyVaultService)
-	container.MustRegisterSingleton(c, storage.NewFileShareService)
-	container.MustRegisterScoped(c, project.NewContainerHelper)
-	container.MustRegisterSingleton(c, azcli.NewSpringService)
+	container.MustRegisterScoped(rootContainer, auth.NewManager)
+	container.MustRegisterSingleton(rootContainer, azcli.NewUserProfileService)
+	container.MustRegisterSingleton(rootContainer, account.NewSubscriptionsService)
+	container.MustRegisterSingleton(rootContainer, account.NewManager)
+	container.MustRegisterSingleton(rootContainer, account.NewSubscriptionsManager)
+	container.MustRegisterSingleton(rootContainer, account.NewSubscriptionCredentialProvider)
+	container.MustRegisterSingleton(rootContainer, azcli.NewManagedClustersService)
+	container.MustRegisterSingleton(rootContainer, entraid.NewEntraIdService)
+	container.MustRegisterSingleton(rootContainer, azcli.NewContainerRegistryService)
+	container.MustRegisterSingleton(rootContainer, containerapps.NewContainerAppService)
+	container.MustRegisterSingleton(rootContainer, keyvault.NewKeyVaultService)
+	container.MustRegisterSingleton(rootContainer, storage.NewFileShareService)
+	container.MustRegisterScoped(rootContainer, project.NewContainerHelper)
+	container.MustRegisterSingleton(rootContainer, azcli.NewSpringService)
 
-	container.MustRegisterSingleton(c, func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
-		return subManager
-	})
+	container.MustRegisterSingleton(
+		rootContainer,
+		func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
+			return subManager
+		},
+	)
 
 	// Tools
-	container.MustRegisterSingleton(c, func(
+	container.MustRegisterSingleton(rootContainer, func(
 		rootOptions *internal.GlobalCommandOptions,
 		credentialProvider account.SubscriptionCredentialProvider,
 		httpClient httputil.HttpClient,
@@ -603,32 +617,32 @@ func registerCommonDependencies(c *container.Container) {
 			armClientOptions,
 		)
 	})
-	container.MustRegisterSingleton(c, azapi.NewDeployments)
-	container.MustRegisterSingleton(c, azapi.NewDeploymentOperations)
-	container.MustRegisterSingleton(c, docker.NewDocker)
-	container.MustRegisterSingleton(c, dotnet.NewDotNetCli)
-	container.MustRegisterSingleton(c, git.NewGitCli)
-	container.MustRegisterSingleton(c, github.NewGitHubCli)
-	container.MustRegisterSingleton(c, javac.NewCli)
-	container.MustRegisterSingleton(c, kubectl.NewKubectl)
-	container.MustRegisterSingleton(c, maven.NewMavenCli)
-	container.MustRegisterSingleton(c, kubelogin.NewCli)
-	container.MustRegisterSingleton(c, helm.NewCli)
-	container.MustRegisterSingleton(c, kustomize.NewCli)
-	container.MustRegisterSingleton(c, npm.NewNpmCli)
-	container.MustRegisterSingleton(c, python.NewPythonCli)
-	container.MustRegisterSingleton(c, swa.NewSwaCli)
-	container.MustRegisterScoped(c, ai.NewPythonBridge)
-	container.MustRegisterScoped(c, project.NewAiHelper)
+	container.MustRegisterSingleton(rootContainer, azapi.NewDeployments)
+	container.MustRegisterSingleton(rootContainer, azapi.NewDeploymentOperations)
+	container.MustRegisterSingleton(rootContainer, docker.NewDocker)
+	container.MustRegisterSingleton(rootContainer, dotnet.NewDotNetCli)
+	container.MustRegisterSingleton(rootContainer, git.NewGitCli)
+	container.MustRegisterSingleton(rootContainer, github.NewGitHubCli)
+	container.MustRegisterSingleton(rootContainer, javac.NewCli)
+	container.MustRegisterSingleton(rootContainer, kubectl.NewKubectl)
+	container.MustRegisterSingleton(rootContainer, maven.NewMavenCli)
+	container.MustRegisterSingleton(rootContainer, kubelogin.NewCli)
+	container.MustRegisterSingleton(rootContainer, helm.NewCli)
+	container.MustRegisterSingleton(rootContainer, kustomize.NewCli)
+	container.MustRegisterSingleton(rootContainer, npm.NewNpmCli)
+	container.MustRegisterSingleton(rootContainer, python.NewPythonCli)
+	container.MustRegisterSingleton(rootContainer, swa.NewSwaCli)
+	container.MustRegisterScoped(rootContainer, ai.NewPythonBridge)
+	container.MustRegisterScoped(rootContainer, project.NewAiHelper)
 
 	// Provisioning
-	container.MustRegisterSingleton(c, infra.NewAzureResourceManager)
-	container.MustRegisterScoped(c, provisioning.NewManager)
-	container.MustRegisterScoped(c, provisioning.NewPrincipalIdProvider)
-	container.MustRegisterScoped(c, prompt.NewDefaultPrompter)
+	container.MustRegisterSingleton(rootContainer, infra.NewAzureResourceManager)
+	container.MustRegisterScoped(rootContainer, provisioning.NewManager)
+	container.MustRegisterScoped(rootContainer, provisioning.NewPrincipalIdProvider)
+	container.MustRegisterScoped(rootContainer, prompt.NewDefaultPrompter)
 
 	// Other
-	container.MustRegisterSingleton(c, createClock)
+	container.MustRegisterSingleton(rootContainer, createClock)
 
 	// Service Targets
 	serviceTargetMap := map[project.ServiceTargetKind]any{
@@ -644,7 +658,7 @@ func registerCommonDependencies(c *container.Container) {
 	}
 
 	for target, constructor := range serviceTargetMap {
-		container.MustRegisterNamedScoped(c, string(target), constructor)
+		container.MustRegisterNamedScoped(rootContainer, string(target), constructor)
 	}
 
 	// Languages
@@ -662,14 +676,18 @@ func registerCommonDependencies(c *container.Container) {
 	}
 
 	for language, constructor := range frameworkServiceMap {
-		container.MustRegisterNamedScoped(c, string(language), constructor)
+		container.MustRegisterNamedScoped(rootContainer, string(language), constructor)
 	}
 
-	container.MustRegisterNamedScoped(c, string(project.ServiceLanguageDocker), project.NewDockerProjectAsFrameworkService)
+	container.MustRegisterNamedScoped(
+		rootContainer,
+		string(project.ServiceLanguageDocker),
+		project.NewDockerProjectAsFrameworkService,
+	)
 
 	// Pipelines
-	container.MustRegisterScoped(c, pipeline.NewPipelineManager)
-	container.MustRegisterSingleton(c, func(flags *pipelineConfigFlags) *pipeline.PipelineManagerArgs {
+	container.MustRegisterScoped(rootContainer, pipeline.NewPipelineManager)
+	container.MustRegisterSingleton(rootContainer, func(flags *pipelineConfigFlags) *pipeline.PipelineManagerArgs {
 		return &flags.PipelineManagerArgs
 	})
 
@@ -681,15 +699,15 @@ func registerCommonDependencies(c *container.Container) {
 	}
 
 	for provider, constructor := range pipelineProviderMap {
-		container.MustRegisterNamedScoped(c, string(provider), constructor)
+		container.MustRegisterNamedScoped(rootContainer, string(provider), constructor)
 	}
 
 	// Platform configuration
-	container.MustRegisterSingleton(c, func(lazyConfig *lazy.Lazy[*platform.Config]) (*platform.Config, error) {
+	container.MustRegisterSingleton(rootContainer, func(lazyConfig *lazy.Lazy[*platform.Config]) (*platform.Config, error) {
 		return lazyConfig.GetValue()
 	})
 
-	container.MustRegisterSingleton(c, func(
+	container.MustRegisterSingleton(rootContainer, func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
 	) *lazy.Lazy[*platform.Config] {
@@ -756,10 +774,10 @@ func registerCommonDependencies(c *container.Container) {
 
 	for provider, constructor := range platformProviderMap {
 		platformName := fmt.Sprintf("%s-platform", provider)
-		container.MustRegisterNamedSingleton(c, platformName, constructor)
+		container.MustRegisterNamedSingleton(rootContainer, platformName, constructor)
 	}
 
-	container.MustRegisterSingleton(c, func(s ioc.ServiceLocator) (workflow.AzdCommandRunner, error) {
+	container.MustRegisterSingleton(rootContainer, func(s ioc.ServiceLocator) (workflow.AzdCommandRunner, error) {
 		var rootCmd *cobra.Command
 		if err := s.ResolveNamed(context.TODO(), "root-cmd", &rootCmd); err != nil {
 			return nil, err
@@ -767,12 +785,12 @@ func registerCommonDependencies(c *container.Container) {
 		return &workflowCmdAdapter{cmd: rootCmd}, nil
 
 	})
-	container.MustRegisterSingleton(c, workflow.NewRunner)
+	container.MustRegisterSingleton(rootContainer, workflow.NewRunner)
 
 	// Required for nested actions called from composite actions like 'up'
-	registerAction[*cmd.ProvisionAction](c, "azd-provision-action")
-	registerAction[*downAction](c, "azd-down-action")
-	registerAction[*configShowAction](c, "azd-config-show-action")
+	registerAction[*cmd.ProvisionAction](rootContainer, "azd-provision-action")
+	registerAction[*downAction](rootContainer, "azd-down-action")
+	registerAction[*configShowAction](rootContainer, "azd-config-show-action")
 }
 
 // workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface

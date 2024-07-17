@@ -342,7 +342,7 @@ func NewRootCmd(
 	if rootContainer == nil {
 		rootContainer = container.New()
 	}
-	rootContainer.RegisterNamedInstance("root-cmd", rootCmd)
+	container.MustRegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 	registerCommonDependencies(rootContainer)
 
 	// Initialize the platform specific components for the IoC container

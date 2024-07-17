@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
+	"github.com/wbreza/container/v4"
 )
 
 type contextKey string
@@ -234,7 +235,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 
 	t.Run("No project path and has docker tag", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.Container.MustRegisterNamedTransient("docker", newFakeFramework)
+		container.MustRegisterNamedTransient(mockContext.Container, "docker", newFakeFramework)
 
 		setupMocksForServiceManager(mockContext)
 		env := environment.New("test")
@@ -250,7 +251,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 
 	t.Run("No project path or docker tag", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.Container.MustRegisterNamedTransient("docker", newFakeFramework)
+		container.MustRegisterNamedTransient(mockContext.Container, "docker", newFakeFramework)
 
 		setupMocksForServiceManager(mockContext)
 		env := environment.New("test")
@@ -412,8 +413,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 }
 
 func setupMocksForServiceManager(mockContext *mocks.MockContext) {
-	mockContext.Container.MustRegisterNamedSingleton(string(ServiceLanguageFake), newFakeFramework)
-	mockContext.Container.MustRegisterNamedSingleton(string(ServiceTargetFake), newFakeServiceTarget)
+	container.MustRegisterNamedSingleton(mockContext.Container, string(ServiceLanguageFake), newFakeFramework)
+	container.MustRegisterNamedSingleton(mockContext.Container, string(ServiceTargetFake), newFakeServiceTarget)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "fake-framework restore")

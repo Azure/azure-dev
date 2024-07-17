@@ -81,15 +81,15 @@ func (s *environmentService) DeployAsync(
 		}
 	})
 
-	serverContainer.RegisterSingleton(func() *cmd.ProvisionFlags {
+	container.MustRegisterSingleton(serverContainer.Container, func() *cmd.ProvisionFlags {
 		return provisionFlags
 	})
 
-	serverContainer.RegisterSingleton(func() *cmd.DeployFlags {
+	container.MustRegisterSingleton(serverContainer.Container, func() *cmd.DeployFlags {
 		return deployFlags
 	})
 
-	serverContainer.RegisterSingleton(func() []string {
+	container.MustRegisterSingleton(serverContainer.Container, func() []string {
 		return []string{}
 	})
 

@@ -105,10 +105,10 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		}
 
 		// Registers the following to enable injection into actions that require them
-		cmdContainer.RegisterInstance(cmd)
-		cmdContainer.RegisterInstance(args)
-		cmdContainer.RegisterInstance(cmdContainer)
-		cmdContainer.RegisterSingleton(func() ioc.ServiceLocator {
+		container.MustRegisterInstance(cmdContainer, cmd)
+		container.MustRegisterInstance(cmdContainer, args)
+		container.MustRegisterInstance(cmdContainer, cmdContainer)
+		container.MustRegisterSingleton(cmdContainer, func() ioc.ServiceLocator {
 			return cmdContainer
 		})
 
@@ -233,7 +233,9 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 
 	// Create, register and bind flags when required
 	if descriptor.Options.FlagsResolver != nil {
-		cb.container.RegisterInstance(cmd)
+		if err := cb.container.RegisterInstance(cmd); err != nil {
+			return err
+		}
 
 		// The flags resolver is constructed and bound to the cobra command via dependency injection
 		// This allows flags to be options and support any set of required dependencies
@@ -249,7 +251,8 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		// if err := cb.container.RegisterSingletonAndInvoke(descriptor.Options.FlagsResolver); err != nil {
 		// 	return fmt.Errorf(
 		// 		//nolint:lll
-		// 		"failed registering FlagsResolver for action '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
+		// 		"failed registering FlagsResolver for action '%s'.
+		// 		Ensure the resolver is a valid go function and resolves without error. %w",
 		// 		actionName,
 		// 		err,
 		// 	)

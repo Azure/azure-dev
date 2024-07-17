@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -27,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/wbreza/container/v4"
 )
 
 func Test_PipelineManager_Initialize(t *testing.T) {
@@ -92,8 +92,12 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files and try again.",
-			azdoDisplayName, azdoPipelinesDirectory))
+		assert.EqualError(
+			t,
+			err,
+			fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files and try again.",
+				azdoDisplayName, azdoPipelinesDirectory),
+		)
 	})
 	t.Run("no files - azdo selected", func(t *testing.T) {
 
@@ -129,8 +133,12 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files and try again.",
-			azdoDisplayName, azdoPipelinesDirectory))
+		assert.EqualError(
+			t,
+			err,
+			fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files and try again.",
+				azdoDisplayName, azdoPipelinesDirectory),
+		)
 	})
 	t.Run("from persisted data azdo", func(t *testing.T) {
 		// User has azdo persisted in env and they have the files
@@ -435,17 +443,17 @@ func createPipelineManager(
 	)
 
 	// Singletons
-	ioc.RegisterInstance(mockContext.Container, *mockContext.Context)
-	ioc.RegisterInstance(mockContext.Container, azdContext)
-	ioc.RegisterInstance[environment.Manager](mockContext.Container, envManager)
-	ioc.RegisterInstance(mockContext.Container, env)
-	ioc.RegisterInstance(mockContext.Container, entraIdService)
-	ioc.RegisterInstance[account.SubscriptionCredentialProvider](
-		mockContext.Container,
-		mockContext.SubscriptionCredentialProvider,
-	)
-	mockContext.Container.MustRegisterSingleton(github.NewGitHubCli)
-	mockContext.Container.MustRegisterSingleton(git.NewGitCli)
+	container.MustRegisterInstance(mockContext.Container, azdContext)
+	container.MustRegisterSingleton(mockContext.Container, func() environment.Manager {
+		return envManager
+	})
+	container.MustRegisterInstance(mockContext.Container, env)
+	container.MustRegisterInstance(mockContext.Container, entraIdService)
+	container.MustRegisterSingleton(mockContext.Container, func() account.SubscriptionCredentialProvider {
+		return mockContext.SubscriptionCredentialProvider
+	})
+	container.MustRegisterSingleton(mockContext.Container, github.NewGitHubCli)
+	container.MustRegisterSingleton(mockContext.Container, git.NewGitCli)
 
 	// Pipeline providers
 	pipelineProviderMap := map[string]any{
@@ -456,7 +464,7 @@ func createPipelineManager(
 	}
 
 	for provider, constructor := range pipelineProviderMap {
-		mockContext.Container.MustRegisterNamedSingleton(string(provider), constructor)
+		container.MustRegisterNamedSingleton(mockContext.Container, string(provider), constructor)
 	}
 
 	return NewPipelineManager(

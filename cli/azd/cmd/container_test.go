@@ -5,21 +5,19 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
+	"github.com/wbreza/container/v4"
 )
 
 func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 	ctx := context.Background()
-	container := ioc.NewNestedContainer(nil)
-	ioc.RegisterInstance(container, ctx)
-
-	registerCommonDependencies(container)
+	rootContainer := container.New()
+	registerCommonDependencies(rootContainer)
 
 	// Register the testing lazy component
-	container.MustRegisterTransient(
+	container.MustRegisterTransient(rootContainer,
 		func(lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]) *testLazyComponent[*project.ProjectConfig] {
 			return &testLazyComponent[*project.ProjectConfig]{
 				lazy: lazyProjectConfig,
@@ -28,7 +26,7 @@ func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 	)
 
 	// Register the testing concrete component
-	container.MustRegisterTransient(
+	container.MustRegisterTransient(rootContainer,
 		func(projectConfig *project.ProjectConfig) *testConcreteComponent[*project.ProjectConfig] {
 			return &testConcreteComponent[*project.ProjectConfig]{
 				concrete: projectConfig,
@@ -39,13 +37,13 @@ func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 	// The lazy components depends on the lazy project config.
 	// The lazy instance itself should never be nil
 	var lazyComponent *testLazyComponent[*project.ProjectConfig]
-	err := container.Resolve(&lazyComponent)
+	err := rootContainer.Resolve(ctx, &lazyComponent)
 	require.NoError(t, err)
 	require.NotNil(t, lazyComponent.lazy)
 
 	// Get the lazy project config instance itself to use for comparison
 	var lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
-	err = container.Resolve(&lazyProjectConfig)
+	err = rootContainer.Resolve(ctx, &lazyProjectConfig)
 	require.NoError(t, err)
 	require.NotNil(t, lazyProjectConfig)
 
@@ -64,7 +62,7 @@ func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 	// Now lets resolve a type that depends on a concrete project config
 	// The project config should be be available not that the lazy has been set above
 	var staticComponent *testConcreteComponent[*project.ProjectConfig]
-	err = container.Resolve(&staticComponent)
+	err = rootContainer.Resolve(ctx, &staticComponent)
 	require.NoError(t, err)
 	require.NotNil(t, staticComponent.concrete)
 
@@ -82,13 +80,12 @@ func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 
 func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 	ctx := context.Background()
-	container := ioc.NewNestedContainer(nil)
-	ioc.RegisterInstance(container, ctx)
+	rootContainer := container.New()
 
-	registerCommonDependencies(container)
+	registerCommonDependencies(rootContainer)
 
 	// Register the testing lazy component
-	container.MustRegisterTransient(
+	container.MustRegisterTransient(rootContainer,
 		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) *testLazyComponent[*azdcontext.AzdContext] {
 			return &testLazyComponent[*azdcontext.AzdContext]{
 				lazy: lazyAzdContext,
@@ -97,7 +94,7 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 	)
 
 	// Register the testing concrete component
-	container.MustRegisterTransient(
+	container.MustRegisterTransient(rootContainer,
 		func(azdContext *azdcontext.AzdContext) *testConcreteComponent[*azdcontext.AzdContext] {
 			return &testConcreteComponent[*azdcontext.AzdContext]{
 				concrete: azdContext,
@@ -108,13 +105,13 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 	// The lazy components depends on the lazy project config.
 	// The lazy instance itself should never be nil
 	var lazyComponent *testLazyComponent[*azdcontext.AzdContext]
-	err := container.Resolve(&lazyComponent)
+	err := rootContainer.Resolve(ctx, &lazyComponent)
 	require.NoError(t, err)
 	require.NotNil(t, lazyComponent.lazy)
 
 	// Get the lazy project config instance itself to use for comparison
 	var lazyInstance *lazy.Lazy[*azdcontext.AzdContext]
-	err = container.Resolve(&lazyInstance)
+	err = rootContainer.Resolve(ctx, &lazyInstance)
 	require.NoError(t, err)
 	require.NotNil(t, lazyInstance)
 
@@ -131,7 +128,7 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 	// Now lets resolve a type that depends on a concrete project config
 	// The project config should be be available not that the lazy has been set above
 	var staticComponent *testConcreteComponent[*azdcontext.AzdContext]
-	err = container.Resolve(&staticComponent)
+	err = rootContainer.Resolve(ctx, &staticComponent)
 	require.NoError(t, err)
 	require.NotNil(t, staticComponent.concrete)
 

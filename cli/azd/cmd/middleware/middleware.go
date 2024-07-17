@@ -81,7 +81,9 @@ func (r *MiddlewareRunner) RunAction(
 	}
 
 	// Create a new context with the child container which will be leveraged on any child command/actions
-	actionContainer.RegisterInstance(runOptions)
+	if err := actionContainer.RegisterInstance(runOptions); err != nil {
+		return nil, err
+	}
 
 	// This recursive function executes the middleware chain in the order that
 	// the middlewares were registered. nextFn is passed into the middleware run

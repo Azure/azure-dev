@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	bicepCli "github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/fatih/color"
 
 	"github.com/spf13/cobra"
 )
@@ -89,6 +90,11 @@ func (a *ModifyAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	infraPathPrefix := project.DefaultPath
 	if prjConfig.Infra.Path != "" {
 		infraPathPrefix = prjConfig.Infra.Path
+	}
+
+	infraDirExists := false
+	if _, err := os.Stat(filepath.Join(a.azdCtx.ProjectDirectory(), infraPathPrefix, "main.bicep")); err == nil {
+		infraDirExists = true
 	}
 
 	synthFS, err := a.im.SynthAllInfrastructure(ctx, prjConfig)
@@ -239,9 +245,18 @@ func (a *ModifyAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("saving parameter value: %w", err)
 	}
 
+	followUp := ""
+	if infraDirExists {
+		followUp = fmt.Sprintf(
+			"The value for '%s' has been updated. You can now run '"+
+				color.BlueString("azd infra synth")+"' to re-synthesize the infrastructure.",
+			param.key)
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Saved infrastructure configuration.",
+			Header:   "Saved infrastructure configuration.",
+			FollowUp: followUp,
 		},
 	}, err
 }

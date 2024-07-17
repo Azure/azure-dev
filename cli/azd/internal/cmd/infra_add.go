@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,6 +36,16 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
 	if err != nil {
 		return nil, fmt.Errorf("reading project file: %w", err)
+	}
+
+	infraPathPrefix := project.DefaultPath
+	if prjConfig.Infra.Path != "" {
+		infraPathPrefix = prjConfig.Infra.Path
+	}
+
+	infraDirExists := false
+	if _, err := os.Stat(filepath.Join(a.azdCtx.ProjectDirectory(), infraPathPrefix, "main.bicep")); err == nil {
+		infraDirExists = true
 	}
 
 	continueOption, err := a.console.Select(ctx, input.ConsoleOptions{
@@ -151,6 +162,11 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	var followUp string
 	defaultFollowUp := "You can run '" + color.BlueString("azd provision") + "' to provision these infrastructure changes."
+	if infraDirExists {
+		defaultFollowUp = "You can run '" + color.BlueString("azd infra synth") + "' to re-synthesize the infrastructure, "
+		defaultFollowUp += "and then '" + color.BlueString("azd provision") + "' to provision these changes."
+	}
+
 	if len(svcOptions) > 0 {
 		followUp = "The following environment variables will be set in " +
 			strings.Join(svcOptions, ", ") + ":\n\n"

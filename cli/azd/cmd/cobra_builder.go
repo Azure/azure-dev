@@ -239,7 +239,10 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 
 		// The flags resolver is constructed and bound to the cobra command via dependency injection
 		// This allows flags to be options and support any set of required dependencies
-		if err := cb.container.RegisterSingleton(descriptor.Options.FlagsResolver); err != nil {
+		if err := cb.container.InvokeAndRegister(context.TODO(), container.RegisterOptions{
+			Resolver: descriptor.Options.FlagsResolver,
+			Lifetime: container.Singleton,
+		}); err != nil {
 			return fmt.Errorf(
 				//nolint:lll
 				"failed registering FlagsResolver for action '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
@@ -247,16 +250,6 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 				err,
 			)
 		}
-
-		// if err := cb.container.RegisterSingletonAndInvoke(descriptor.Options.FlagsResolver); err != nil {
-		// 	return fmt.Errorf(
-		// 		//nolint:lll
-		// 		"failed registering FlagsResolver for action '%s'.
-		// 		Ensure the resolver is a valid go function and resolves without error. %w",
-		// 		actionName,
-		// 		err,
-		// 	)
-		// }
 	}
 
 	// Registers and bind action resolves when required

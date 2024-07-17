@@ -448,7 +448,9 @@ func createPipelineManager(
 		return envManager
 	})
 	container.MustRegisterInstance(mockContext.Container, env)
-	container.MustRegisterInstance(mockContext.Container, entraIdService)
+	container.MustRegisterSingleton(mockContext.Container, func() entraid.EntraIdService {
+		return entraIdService
+	})
 	container.MustRegisterSingleton(mockContext.Container, func() account.SubscriptionCredentialProvider {
 		return mockContext.SubscriptionCredentialProvider
 	})

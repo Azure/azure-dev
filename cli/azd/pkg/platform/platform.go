@@ -22,13 +22,13 @@ type Config struct {
 }
 
 // Initialize configures the IoC container with the platform specific components
-func Initialize(container *container.Container, defaultPlatform PlatformKind) (Provider, error) {
+func Initialize(rootContainer *container.Container, defaultPlatform PlatformKind) (Provider, error) {
 	// Enable the platform provider if it is configured
 	var platformConfig *Config
 	platformType := defaultPlatform
 
 	// Override platform type when specified
-	if err := container.Resolve(context.TODO(), &platformConfig); err != nil {
+	if err := rootContainer.Resolve(context.TODO(), &platformConfig); err != nil {
 		Error = err
 	}
 
@@ -40,13 +40,13 @@ func Initialize(container *container.Container, defaultPlatform PlatformKind) (P
 	platformKey := fmt.Sprintf("%s-platform", platformType)
 
 	// Resolve the platform provider
-	if err := container.ResolveNamed(context.TODO(), platformKey, &provider); err != nil {
+	if err := rootContainer.ResolveNamed(context.TODO(), platformKey, &provider); err != nil {
 		return nil, fmt.Errorf("failed to resolve platform provider '%s': %w", platformType, err)
 	}
 
 	if provider.IsEnabled() {
 		// Configure the container for the platform provider
-		if err := provider.ConfigureContainer(container); err != nil {
+		if err := provider.ConfigureContainer(rootContainer); err != nil {
 			return nil, fmt.Errorf("failed to configure platform provider '%s': %w", platformType, err)
 		}
 	}

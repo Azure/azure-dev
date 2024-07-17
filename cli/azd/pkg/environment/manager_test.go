@@ -329,7 +329,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		})
 
 		var envManager Manager
-		err := container.Resolve(*mockContext.Context, &envManager)
+		err := mockContext.Container.Resolve(*mockContext.Context, &envManager)
 		require.NoError(t, err)
 
 		manager := envManager.(*manager)
@@ -347,7 +347,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		})
 
 		var envManager Manager
-		err := container.Resolve(*mockContext.Context, &envManager)
+		err := mockContext.Container.Resolve(*mockContext.Context, &envManager)
 		require.NoError(t, err)
 
 		manager := envManager.(*manager)

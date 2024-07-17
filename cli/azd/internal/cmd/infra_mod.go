@@ -220,14 +220,14 @@ func (a *ModifyAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, fmt.Errorf("marshalling current value: %w", err)
 		}
 
-		currentVal = string(currentValBytes)
+		currentVal = strings.ReplaceAll(string(currentValBytes), "\n", "")
 	} else if param.param.DefaultValue != nil {
 		currentValBytes, err := json.Marshal(param.param.DefaultValue)
 		if err != nil {
 			return nil, fmt.Errorf("marshalling default value: %w", err)
 		}
 
-		currentVal = string(currentValBytes)
+		currentVal = strings.ReplaceAll(string(currentValBytes), "\n", "")
 	}
 
 	if len(currentVal) > 0 {

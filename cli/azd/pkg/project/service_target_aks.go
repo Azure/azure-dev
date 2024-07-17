@@ -95,7 +95,9 @@ type aksTarget struct {
 func (t *aksTarget) Environ(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource) (map[string]string, error) {
+	targetResource *environment.TargetResource,
+	environOptions EnvironOptions,
+) (map[string]string, error) {
 	panic("unimplemented")
 }
 

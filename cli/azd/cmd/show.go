@@ -31,12 +31,14 @@ import (
 )
 
 type showFlags struct {
-	global *internal.GlobalCommandOptions
+	global  *internal.GlobalCommandOptions
+	secrets bool
 	internal.EnvFlag
 }
 
 func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	s.EnvFlag.Bind(local, global)
+	local.BoolVar(&s.secrets, "secrets", false, "Display secrets.")
 	s.global = global
 }
 
@@ -204,7 +206,9 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 							ResourceIds: resourceIds,
 						}
 						resSvc.IngresUrl = s.serviceEndpoint(ctx, subId, serviceConfig, env)
-						resSvc.RemoteEnviron = s.serviceEnviron(ctx, subId, serviceConfig)
+						resSvc.RemoteEnviron = s.serviceEnviron(ctx, subId, serviceConfig, project.EnvironOptions{
+							Secrets: s.flags.secrets,
+						})
 						res.Services[svcName] = resSvc
 					} else {
 						log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
@@ -297,7 +301,8 @@ func tabWrite(selections []string, padding int) ([]string, error) {
 }
 
 func (s *showAction) serviceEnviron(
-	ctx context.Context, subId string, serviceConfig *project.ServiceConfig) map[string]string {
+	ctx context.Context, subId string, serviceConfig *project.ServiceConfig,
+	environOptions project.EnvironOptions) map[string]string {
 	resourceManager, err := s.lazyResourceManager.GetValue()
 	if err != nil {
 		log.Printf("error: getting lazy target-resource. Environ will be empty: %v", err)
@@ -320,7 +325,7 @@ func (s *showAction) serviceEnviron(
 		return map[string]string{}
 	}
 
-	environ, err := st.Environ(ctx, serviceConfig, targetResource)
+	environ, err := st.Environ(ctx, serviceConfig, targetResource, environOptions)
 	if err != nil {
 		log.Printf("error: getting service target. Environ will be empty: %v", err)
 		return map[string]string{}

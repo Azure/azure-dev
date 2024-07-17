@@ -28,12 +28,15 @@ type containerAppTarget struct {
 func (at *containerAppTarget) Environ(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource) (map[string]string, error) {
+	targetResource *environment.TargetResource,
+	environOptions EnvironOptions,
+) (map[string]string, error) {
 	return at.containerAppService.GetEnviron(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
-		targetResource.ResourceName())
+		targetResource.ResourceName(),
+		environOptions.Secrets)
 }
 
 // NewContainerAppTarget creates the container app service target.

@@ -98,7 +98,12 @@ type ServiceTarget interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		targetResource *environment.TargetResource,
+		environOptions EnvironOptions,
 	) (map[string]string, error)
+}
+
+type EnvironOptions struct {
+	Secrets bool
 }
 
 // NewServiceDeployResult is a helper function to create a new ServiceDeployResult

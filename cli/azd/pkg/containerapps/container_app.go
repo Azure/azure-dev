@@ -57,6 +57,7 @@ type ContainerAppService interface {
 		subscriptionId string,
 		resourceGroup string,
 		appName string,
+		showSecrets bool,
 	) (map[string]string, error)
 }
 
@@ -95,6 +96,7 @@ func (cas *containerAppService) GetEnviron(ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
+	showSecrets bool,
 ) (map[string]string, error) {
 	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
 	if err != nil {
@@ -104,6 +106,16 @@ func (cas *containerAppService) GetEnviron(ctx context.Context,
 	containerApp, err := appClient.Get(ctx, resourceGroup, appName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
+	}
+
+	// secrets is empty if showSecrets is false
+	var secrets []*armappcontainers.ContainerAppSecret
+	if showSecrets {
+		secretsRes, err := appClient.ListSecrets(ctx, resourceGroup, appName, nil)
+		if err != nil {
+			return nil, fmt.Errorf("listing secrets: %w", err)
+		}
+		secrets = secretsRes.Value
 	}
 
 	res := map[string]string{}
@@ -117,6 +129,13 @@ func (cas *containerAppService) GetEnviron(ctx context.Context,
 		val := env.Value
 		if env.SecretRef != nil {
 			val = convert.RefOf("*******")
+
+			for _, secret := range secrets {
+				if *env.SecretRef == *secret.Name {
+					val = secret.Value
+					break
+				}
+			}
 		}
 
 		res[key] = *val

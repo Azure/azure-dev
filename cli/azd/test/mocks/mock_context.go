@@ -72,22 +72,10 @@ func NewMockContext(ctx context.Context) *MockContext {
 }
 
 func registerCommonMocks(mockContext *MockContext) {
-	container.MustRegisterSingleton(mockContext.Container, func() ioc.ServiceLocator {
-		return mockContext.Container
-	})
-	container.MustRegisterSingleton(mockContext.Container, func() httputil.HttpClient {
-		return mockContext.HttpClient
-	})
-	container.MustRegisterSingleton(mockContext.Container, func() exec.CommandRunner {
-		return mockContext.CommandRunner
-	})
-	container.MustRegisterSingleton(mockContext.Container, func() input.Console {
-		return mockContext.Console
-	})
-	container.MustRegisterSingleton(mockContext.Container, func() config.FileConfigManager {
-		return mockContext.ConfigManager
-	})
-	container.MustRegisterSingleton(mockContext.Container, func() *alpha.FeatureManager {
-		return mockContext.AlphaFeaturesManager
-	})
+	container.MustRegisterInstanceAs[ioc.ServiceLocator](mockContext.Container, mockContext.Container)
+	container.MustRegisterInstanceAs[httputil.HttpClient](mockContext.Container, mockContext.HttpClient)
+	container.MustRegisterInstanceAs[exec.CommandRunner](mockContext.Container, mockContext.CommandRunner)
+	container.MustRegisterInstanceAs[input.Console](mockContext.Container, mockContext.Console)
+	container.MustRegisterInstanceAs[config.FileConfigManager](mockContext.Container, mockContext.ConfigManager)
+	container.MustRegisterInstance(mockContext.Container, mockContext.AlphaFeaturesManager)
 }

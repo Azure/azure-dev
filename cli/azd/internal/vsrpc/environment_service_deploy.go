@@ -81,18 +81,9 @@ func (s *environmentService) DeployAsync(
 		}
 	})
 
-	container.MustRegisterSingleton(serverContainer.Container, func() *cmd.ProvisionFlags {
-		return provisionFlags
-	})
-
-	container.MustRegisterSingleton(serverContainer.Container, func() *cmd.DeployFlags {
-		return deployFlags
-	})
-
-	container.MustRegisterSingleton(serverContainer.Container, func() []string {
-		return []string{}
-	})
-
+	container.MustRegisterInstance(serverContainer.Container, provisionFlags)
+	container.MustRegisterInstance(serverContainer.Container, deployFlags)
+	container.MustRegisterInstance(serverContainer.Container, []string{})
 	container.MustRegisterNamedTransient(serverContainer.Container, "provisionAction", cmd.NewProvisionAction)
 	container.MustRegisterNamedTransient(serverContainer.Container, "deployAction", cmd.NewDeployAction)
 

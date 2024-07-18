@@ -220,9 +220,7 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 func Test_RunDocsFlow(t *testing.T) {
 	rootContainer := container.New()
 	testCtx := mocks.NewMockContext(context.Background())
-	container.MustRegisterSingleton(rootContainer, func() input.Console {
-		return testCtx.Console
-	})
+	container.MustRegisterInstanceAs[input.Console](rootContainer, testCtx.Console)
 
 	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
 		OutputFormats: []output.Format{output.JsonFormat, output.TableFormat},
@@ -254,9 +252,7 @@ func Test_RunDocsFlow(t *testing.T) {
 func Test_RunDocsAndHelpFlow(t *testing.T) {
 	rootContainer := container.New()
 	testCtx := mocks.NewMockContext(context.Background())
-	container.MustRegisterSingleton(rootContainer, func() input.Console {
-		return testCtx.Console
-	})
+	container.MustRegisterInstanceAs[input.Console](rootContainer, testCtx.Console)
 
 	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
 		OutputFormats: []output.Format{output.JsonFormat, output.TableFormat},

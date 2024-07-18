@@ -108,9 +108,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		container.MustRegisterInstance(cmdContainer, cmd)
 		container.MustRegisterInstance(cmdContainer, args)
 		container.MustRegisterInstance(cmdContainer, cmdContainer)
-		container.MustRegisterSingleton(cmdContainer, func() ioc.ServiceLocator {
-			return cmdContainer
-		})
+		container.MustRegisterInstanceAs[ioc.ServiceLocator](cmdContainer, cmdContainer)
 
 		// Register any required middleware registered for the current action descriptor
 		middlewareRunner := middleware.NewMiddlewareRunner(cmdContainer)

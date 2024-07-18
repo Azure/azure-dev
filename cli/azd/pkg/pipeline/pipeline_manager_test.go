@@ -444,16 +444,13 @@ func createPipelineManager(
 
 	// Singletons
 	container.MustRegisterInstance(mockContext.Container, azdContext)
-	container.MustRegisterSingleton(mockContext.Container, func() environment.Manager {
-		return envManager
-	})
+	container.MustRegisterInstanceAs[environment.Manager](mockContext.Container, envManager)
 	container.MustRegisterInstance(mockContext.Container, env)
-	container.MustRegisterSingleton(mockContext.Container, func() entraid.EntraIdService {
-		return entraIdService
-	})
-	container.MustRegisterSingleton(mockContext.Container, func() account.SubscriptionCredentialProvider {
-		return mockContext.SubscriptionCredentialProvider
-	})
+	container.MustRegisterInstance(mockContext.Container, entraIdService)
+	container.MustRegisterInstanceAs[account.SubscriptionCredentialProvider](
+		mockContext.Container,
+		mockContext.SubscriptionCredentialProvider,
+	)
 	container.MustRegisterSingleton(mockContext.Container, github.NewGitHubCli)
 	container.MustRegisterSingleton(mockContext.Container, git.NewGitCli)
 

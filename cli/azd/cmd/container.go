@@ -100,9 +100,7 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 // Registers common Azd dependencies
 func registerCommonDependencies(rootContainer *container.Container) {
 	// Core bootstrapping registrations
-	container.MustRegisterSingleton(rootContainer, func() *container.Container {
-		return rootContainer
-	})
+	container.MustRegisterInstance(rootContainer, rootContainer)
 	container.MustRegisterSingleton(rootContainer, NewCobraBuilder)
 
 	// Standard Registrations
@@ -145,12 +143,8 @@ func registerCommonDependencies(rootContainer *container.Container) {
 	)
 
 	client := createHttpClient()
-	container.MustRegisterSingleton(rootContainer, func() httputil.HttpClient {
-		return client
-	})
-	container.MustRegisterSingleton(rootContainer, func() auth.HttpClient {
-		return client
-	})
+	container.MustRegisterInstanceAs[httputil.HttpClient](rootContainer, client)
+	container.MustRegisterInstanceAs[auth.HttpClient](rootContainer, client)
 	container.MustRegisterSingleton(rootContainer, func() httputil.UserAgent {
 		return httputil.UserAgent(internal.UserAgent())
 	})

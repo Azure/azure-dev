@@ -227,10 +227,7 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
-	container.MustRegisterSingleton(mockContext.Container, func() environment.Manager {
-		return envManager
-	})
-
+	container.MustRegisterInstanceAs[environment.Manager](mockContext.Container, envManager)
 	container.MustRegisterSingleton(mockContext.Container, prompt.NewDefaultPrompter)
 	container.MustRegisterNamedTransient(mockContext.Container, string(provisioning.Test), test.NewTestProvider)
 	container.MustRegisterSingleton(mockContext.Container, func() account.Manager {
@@ -250,20 +247,14 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 			},
 		}
 	})
-	container.MustRegisterSingleton(mockContext.Container, func() *environment.Environment {
-		return env
-	})
+	container.MustRegisterInstance(mockContext.Container, env)
 	container.MustRegisterSingleton(mockContext.Container, func() azcli.AzCli {
 		return mockazcli.NewAzCliFromMockContext(mockContext)
 	})
 
-	container.MustRegisterSingleton(mockContext.Container, func() clock.Clock {
-		return clock.NewMock()
-	})
+	container.MustRegisterInstanceAs[clock.Clock](mockContext.Container, clock.NewMock())
 
-	container.MustRegisterSingleton(mockContext.Container, func() *cloud.Cloud {
-		return cloud.AzurePublic()
-	})
+	container.MustRegisterInstance(mockContext.Container, cloud.AzurePublic())
 	container.MustRegisterSingleton(mockContext.Container, func(cloud *cloud.Cloud) cloud.PortalUrlBase {
 		return cloud.PortalUrlBase
 	})

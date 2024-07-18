@@ -202,9 +202,12 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		cli.WorkingDirectory = dir
 		cli.Env = append(cli.Env, os.Environ()...)
 		//nolint:lll
-		cli.Env = append(cli.Env, "AZD_ALPHA_ENABLE_INFRASYNTH=true")
+		cli.Env = append(cli.Env,
+			fmt.Sprintf("AZURE_ENV_NAME=%s", envName),
+			"AZD_ALPHA_ENABLE_INFRASYNTH=true",
+		)
 
-		_, err = cli.RunCommand(ctx, "infra", "synth")
+		_, err = cli.RunCommand(ctx, "infra", "synth", "--no-prompt")
 		require.NoError(t, err)
 
 		bicepCli, err := bicep.NewBicepCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))

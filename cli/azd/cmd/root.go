@@ -157,6 +157,9 @@ func NewRootCmd(
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupMonitor,
 		},
+		Environment: actions.EnvironmentOptions{
+			Optional: true,
+		},
 	})
 
 	//deprecate:cmd hide login
@@ -188,6 +191,9 @@ func NewRootCmd(
 		},
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupConfig,
+		},
+		Environment: actions.EnvironmentOptions{
+			Optional: true,
 		},
 	})
 
@@ -335,6 +341,13 @@ func NewRootCmd(
 		UseMiddleware("experimentation", middleware.NewExperimentationMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
+		}).
+		UseMiddlewareWhen("environment", middleware.NewEnvironmentMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			// The environment middleware will only be applied to commands that have the environment flag
+			// AND
+			// on commands where an environment is always required
+			_, err := descriptor.Options.Command.Flags().GetString(internal.EnvironmentNameFlagName)
+			return err == nil && !descriptor.Options.Environment.Optional
 		})
 
 	// Register common dependencies for the IoC rootContainer

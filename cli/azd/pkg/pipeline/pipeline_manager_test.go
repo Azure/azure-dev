@@ -446,7 +446,7 @@ func createPipelineManager(
 	container.MustRegisterInstance(mockContext.Container, azdContext)
 	container.MustRegisterInstanceAs[environment.Manager](mockContext.Container, envManager)
 	container.MustRegisterInstance(mockContext.Container, env)
-	container.MustRegisterInstance(mockContext.Container, entraIdService)
+	container.MustRegisterInstanceAs[entraid.EntraIdService](mockContext.Container, entraIdService)
 	container.MustRegisterInstanceAs[account.SubscriptionCredentialProvider](
 		mockContext.Container,
 		mockContext.SubscriptionCredentialProvider,

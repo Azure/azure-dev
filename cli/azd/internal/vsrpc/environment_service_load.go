@@ -50,16 +50,16 @@ func (s *environmentService) LoadEnvironmentAsync(
 		return nil, err
 	}
 
-	container, err := session.newContainer(rc)
+	serverContainer, err := session.newContainer(rc)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.loadEnvironmentAsync(ctx, container, name, true)
+	return s.loadEnvironmentAsync(ctx, serverContainer, name, true)
 }
 
 func (s *environmentService) loadEnvironmentAsync(
-	ctx context.Context, container *serverContainer, name string, mustLoadServices bool,
+	ctx context.Context, serverContainer *serverContainer, name string, mustLoadServices bool,
 ) (*Environment, error) {
 	var c struct {
 		azdCtx         *azdcontext.AzdContext  `container:"type"`
@@ -69,7 +69,7 @@ func (s *environmentService) loadEnvironmentAsync(
 		dotnetImporter *project.DotNetImporter `container:"type"`
 	}
 
-	if err := container.Fill(ctx, &c); err != nil {
+	if err := serverContainer.Fill(ctx, &c); err != nil {
 		return nil, err
 	}
 

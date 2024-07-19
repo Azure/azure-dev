@@ -37,11 +37,11 @@ func (s *environmentService) CreateEnvironmentAsync(
 		envManager environment.Manager    `container:"type"`
 	}
 
-	container, err := session.newContainer(rc)
+	serverContainer, err := session.newContainer(rc)
 	if err != nil {
 		return false, err
 	}
-	if err := container.Fill(ctx, &c); err != nil {
+	if err := serverContainer.Fill(ctx, &c); err != nil {
 		return false, err
 	}
 

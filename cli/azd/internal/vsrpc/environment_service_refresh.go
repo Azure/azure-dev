@@ -68,7 +68,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 		}
 	})
 
-	if err := container.Fill(ctx, &c); err != nil {
+	if err := serverContainer.Fill(ctx, &c); err != nil {
 		return nil, err
 	}
 

@@ -255,10 +255,10 @@ func registerCommonDependencies(rootContainer *container.Container) {
 
 	container.MustRegisterSingleton(
 		rootContainer,
-		func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[environment.LocalDataStore] {
+		func(ctx context.Context, serviceLocator ioc.ServiceLocator) *lazy.Lazy[environment.LocalDataStore] {
 			return lazy.NewLazy(func() (environment.LocalDataStore, error) {
 				var localDataStore environment.LocalDataStore
-				err := serviceLocator.Resolve(context.TODO(), &localDataStore)
+				err := serviceLocator.Resolve(ctx, &localDataStore)
 				if err != nil {
 					return nil, err
 				}
@@ -271,7 +271,11 @@ func registerCommonDependencies(rootContainer *container.Container) {
 	// Environment manager depends on azd context
 	container.MustRegisterSingleton(
 		rootContainer,
-		func(serviceLocator ioc.ServiceLocator, azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
+		func(
+			ctx context.Context,
+			serviceLocator ioc.ServiceLocator,
+			azdContext *lazy.Lazy[*azdcontext.AzdContext],
+		) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
 				azdCtx, err := azdContext.GetValue()
 				if err != nil {
@@ -284,7 +288,7 @@ func registerCommonDependencies(rootContainer *container.Container) {
 				}
 
 				var envManager environment.Manager
-				err = serviceLocator.Resolve(context.TODO(), &envManager)
+				err = serviceLocator.Resolve(ctx, &envManager)
 				if err != nil {
 					return nil, err
 				}
@@ -507,14 +511,17 @@ func registerCommonDependencies(rootContainer *container.Container) {
 	container.MustRegisterSingleton(rootContainer, templates.NewTemplateManager)
 	container.MustRegisterSingleton(rootContainer, templates.NewSourceManager)
 	container.MustRegisterScoped(rootContainer, project.NewResourceManager)
-	container.MustRegisterScoped(rootContainer, func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ResourceManager] {
-		return lazy.NewLazy(func() (project.ResourceManager, error) {
-			var resourceManager project.ResourceManager
-			err := serviceLocator.Resolve(context.TODO(), &resourceManager)
+	container.MustRegisterScoped(
+		rootContainer,
+		func(ctx context.Context, serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ResourceManager] {
+			return lazy.NewLazy(func() (project.ResourceManager, error) {
+				var resourceManager project.ResourceManager
+				err := serviceLocator.Resolve(ctx, &resourceManager)
 
-			return resourceManager, err
-		})
-	})
+				return resourceManager, err
+			})
+		},
+	)
 	container.MustRegisterScoped(rootContainer, project.NewProjectManager)
 	// Currently caches manifest across command executions
 	container.MustRegisterSingleton(rootContainer, project.NewDotNetImporter)
@@ -527,14 +534,17 @@ func registerCommonDependencies(rootContainer *container.Container) {
 		return project.ServiceOperationCache{}
 	})
 
-	container.MustRegisterScoped(rootContainer, func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ServiceManager] {
-		return lazy.NewLazy(func() (project.ServiceManager, error) {
-			var serviceManager project.ServiceManager
-			err := serviceLocator.Resolve(context.TODO(), &serviceManager)
+	container.MustRegisterScoped(
+		rootContainer,
+		func(ctx context.Context, serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ServiceManager] {
+			return lazy.NewLazy(func() (project.ServiceManager, error) {
+				var serviceManager project.ServiceManager
+				err := serviceLocator.Resolve(ctx, &serviceManager)
 
-			return serviceManager, err
-		})
-	})
+				return serviceManager, err
+			})
+		},
+	)
 	container.MustRegisterSingleton(rootContainer, repository.NewInitializer)
 	container.MustRegisterSingleton(rootContainer, alpha.NewFeaturesManager)
 	container.MustRegisterSingleton(rootContainer, config.NewUserConfigManager)
@@ -771,14 +781,17 @@ func registerCommonDependencies(rootContainer *container.Container) {
 		container.MustRegisterNamedSingleton(rootContainer, platformName, constructor)
 	}
 
-	container.MustRegisterSingleton(rootContainer, func(s ioc.ServiceLocator) (workflow.AzdCommandRunner, error) {
-		var rootCmd *cobra.Command
-		if err := s.ResolveNamed(context.TODO(), "root-cmd", &rootCmd); err != nil {
-			return nil, err
-		}
-		return &workflowCmdAdapter{cmd: rootCmd}, nil
+	container.MustRegisterSingleton(
+		rootContainer,
+		func(ctx context.Context, s ioc.ServiceLocator) (workflow.AzdCommandRunner, error) {
+			var rootCmd *cobra.Command
+			if err := s.ResolveNamed(ctx, "root-cmd", &rootCmd); err != nil {
+				return nil, err
+			}
+			return &workflowCmdAdapter{cmd: rootCmd}, nil
 
-	})
+		},
+	)
 	container.MustRegisterSingleton(rootContainer, workflow.NewRunner)
 
 	// Required for nested actions called from composite actions like 'up'

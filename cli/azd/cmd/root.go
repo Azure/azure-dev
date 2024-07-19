@@ -33,6 +33,7 @@ import (
 // rootContainer - The IoC container to use for registering and resolving dependencies. If nil is provided, a new
 // container empty will be created.
 func NewRootCmd(
+	ctx context.Context,
 	staticHelp bool,
 	middlewareChain []*actions.MiddlewareRegistration,
 	rootContainer *container.Container,
@@ -348,17 +349,17 @@ func NewRootCmd(
 	// Initialize the platform specific components for the IoC container
 	// Only container resolution errors will return an error
 	// Invalid configurations will fall back to default platform
-	if _, err := platform.Initialize(rootContainer, azd.PlatformKindDefault); err != nil {
+	if _, err := platform.Initialize(ctx, rootContainer, azd.PlatformKindDefault); err != nil {
 		panic(err)
 	}
 
 	// Compose the hierarchy of action descriptions into cobra commands
 	var cobraBuilder *CobraBuilder
-	if err := rootContainer.Resolve(context.TODO(), &cobraBuilder); err != nil {
+	if err := rootContainer.Resolve(ctx, &cobraBuilder); err != nil {
 		panic(err)
 	}
 
-	cmd, err := cobraBuilder.BuildCommand(root)
+	cmd, err := cobraBuilder.BuildCommand(ctx, root)
 
 	if err != nil {
 		// If their is a container registration issue or similar we'll get an error at this point

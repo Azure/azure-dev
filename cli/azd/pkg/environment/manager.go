@@ -86,6 +86,7 @@ type manager struct {
 
 // NewManager creates a new Manager instance
 func NewManager(
+	ctx context.Context,
 	serviceLocator ioc.ServiceLocator,
 	azdContext *azdcontext.AzdContext,
 	console input.Console,
@@ -98,7 +99,7 @@ func NewManager(
 	// via the container but we can't do that because the remote data store is optional and the IoC
 	// container doesn't support optional interface based dependencies.
 	if remoteConfig != nil {
-		err := serviceLocator.ResolveNamed(context.TODO(), remoteConfig.Backend, &remote)
+		err := serviceLocator.ResolveNamed(ctx, remoteConfig.Backend, &remote)
 		if err != nil {
 			if errors.Is(err, container.ErrResolutionFailed) {
 				return nil, fmt.Errorf(

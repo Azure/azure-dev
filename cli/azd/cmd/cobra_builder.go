@@ -33,7 +33,7 @@ func NewCobraBuilder(container *container.Container) *CobraBuilder {
 }
 
 // Builds a cobra Command for the specified action descriptor
-func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cobra.Command, error) {
+func (cb *CobraBuilder) BuildCommand(ctx context.Context, descriptor *actions.ActionDescriptor) (*cobra.Command, error) {
 	cmd := descriptor.Options.Command
 	if cmd.Use == "" {
 		cmd.Use = descriptor.Name
@@ -41,7 +41,7 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 
 	// Build the full command tree
 	for _, childDescriptor := range descriptor.Children() {
-		childCmd, err := cb.BuildCommand(childDescriptor)
+		childCmd, err := cb.BuildCommand(ctx, childDescriptor)
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +52,7 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 	// Bind root command after command tree has been established
 	// This ensures the command path is ready and consistent across all nested commands
 	if descriptor.Parent() == nil {
-		if err := cb.bindCommand(cmd, descriptor); err != nil {
+		if err := cb.bindCommand(ctx, cmd, descriptor); err != nil {
 			return nil, err
 		}
 	}
@@ -204,7 +204,7 @@ func (df *docsFlag) Set(value string) error {
 }
 
 // Binds the intersection of cobra command options and action descriptor options
-func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
+func (cb *CobraBuilder) bindCommand(ctx context.Context, cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
 	actionName := createActionName(cmd)
 
 	// Automatically adds a consistent help flag
@@ -237,7 +237,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 
 		// The flags resolver is constructed and bound to the cobra command via dependency injection
 		// This allows flags to be options and support any set of required dependencies
-		if err := cb.container.InvokeAndRegister(context.TODO(), container.RegisterOptions{
+		if err := cb.container.InvokeAndRegister(ctx, container.RegisterOptions{
 			Resolver: descriptor.Options.FlagsResolver,
 			Lifetime: container.Singleton,
 		}); err != nil {
@@ -277,7 +277,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// Bind the child commands for the current descriptor
 	for _, childDescriptor := range descriptor.Children() {
 		childCmd := childDescriptor.Options.Command
-		if err := cb.bindCommand(childCmd, childDescriptor); err != nil {
+		if err := cb.bindCommand(ctx, childCmd, childDescriptor); err != nil {
 			return err
 		}
 	}

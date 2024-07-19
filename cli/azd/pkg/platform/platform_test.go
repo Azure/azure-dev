@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,7 +19,7 @@ func Test_Platform_Initialize(t *testing.T) {
 		}
 		container.MustRegisterInstance(rootContainer, config)
 
-		provider, err := Initialize(rootContainer, PlatformKind("default"))
+		provider, err := Initialize(context.Background(), rootContainer, PlatformKind("default"))
 		require.NoError(t, err)
 		require.NotNil(t, provider)
 		require.IsType(t, new(testProvider), provider)
@@ -34,7 +35,7 @@ func Test_Platform_Initialize(t *testing.T) {
 			return nil, ErrPlatformConfigNotFound
 		})
 
-		provider, err := Initialize(rootContainer, PlatformKind("default"))
+		provider, err := Initialize(context.Background(), rootContainer, PlatformKind("default"))
 		require.NoError(t, err)
 		require.NotNil(t, provider)
 		require.IsType(t, new(defaultProvider), provider)
@@ -52,7 +53,7 @@ func Test_Platform_Initialize(t *testing.T) {
 			return nil, ErrPlatformNotSupported
 		})
 
-		provider, err := Initialize(rootContainer, PlatformKind("default"))
+		provider, err := Initialize(context.Background(), rootContainer, PlatformKind("default"))
 		require.NoError(t, err)
 		require.NotNil(t, provider)
 		require.IsType(t, new(defaultProvider), provider)

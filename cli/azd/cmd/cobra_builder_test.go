@@ -35,15 +35,16 @@ func Test_BuildAndRunSimpleCommand(t *testing.T) {
 		},
 	})
 
+	ctx := context.Background()
 	builder := NewCobraBuilder(container)
-	cmd, err := builder.BuildCommand(root)
+	cmd, err := builder.BuildCommand(ctx, root)
 
 	require.NotNil(t, cmd)
 	require.NoError(t, err)
 
 	// Disable args processing from os:args
 	cmd.SetArgs([]string{})
-	err = cmd.ExecuteContext(context.Background())
+	err = cmd.ExecuteContext(ctx)
 
 	require.NoError(t, err)
 	require.True(t, ran)
@@ -58,14 +59,15 @@ func Test_BuildAndRunSimpleAction(t *testing.T) {
 		FlagsResolver:  newTestFlags,
 	})
 
+	ctx := context.Background()
 	builder := NewCobraBuilder(rootContainer)
-	cmd, err := builder.BuildCommand(root)
+	cmd, err := builder.BuildCommand(ctx, root)
 
 	require.NotNil(t, cmd)
 	require.NoError(t, err)
 
 	cmd.SetArgs([]string{"-r"})
-	err = cmd.ExecuteContext(context.Background())
+	err = cmd.ExecuteContext(ctx)
 
 	require.NoError(t, err)
 }
@@ -79,8 +81,9 @@ func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
 		FlagsResolver:  newTestFlags,
 	}).UseMiddleware("A", newTestMiddlewareA)
 
+	ctx := context.Background()
 	builder := NewCobraBuilder(rootContainer)
-	cmd, err := builder.BuildCommand(root)
+	cmd, err := builder.BuildCommand(ctx, root)
 
 	require.NotNil(t, cmd)
 	require.NoError(t, err)
@@ -88,7 +91,6 @@ func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
 	actionRan := false
 	middlewareRan := false
 
-	ctx := context.Background()
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareRan)
 
@@ -112,8 +114,9 @@ func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
 		FlagsResolver:  newTestFlags,
 	}).UseMiddleware("B", newTestMiddlewareB)
 
+	ctx := context.Background()
 	builder := NewCobraBuilder(rootContainer)
-	cmd, err := builder.BuildCommand(root)
+	cmd, err := builder.BuildCommand(ctx, root)
 
 	require.NotNil(t, cmd)
 	require.NoError(t, err)
@@ -122,7 +125,6 @@ func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
 	middlewareARan := false
 	middlewareBRan := false
 
-	ctx := context.Background()
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareARan)
 	ctx = context.WithValue(ctx, middlewareBName, &middlewareBRan)
@@ -154,8 +156,9 @@ func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
 			return false
 		})
 
+	ctx := context.Background()
 	builder := NewCobraBuilder(rootContainer)
-	cmd, err := builder.BuildCommand(root)
+	cmd, err := builder.BuildCommand(ctx, root)
 
 	require.NotNil(t, cmd)
 	require.NoError(t, err)
@@ -164,7 +167,6 @@ func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
 	middlewareARan := false
 	middlewareBRan := false
 
-	ctx := context.Background()
 	ctx = context.WithValue(ctx, actionName, &actionRan)
 	ctx = context.WithValue(ctx, middlewareAName, &middlewareARan)
 	ctx = context.WithValue(ctx, middlewareBName, &middlewareBRan)
@@ -191,8 +193,9 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 		},
 	})
 
+	ctx := context.Background()
 	cobraBuilder := NewCobraBuilder(rootContainer)
-	cmd, err := cobraBuilder.BuildCommand(root)
+	cmd, err := cobraBuilder.BuildCommand(ctx, root)
 
 	require.NoError(t, err)
 	require.NotNil(t, cmd)
@@ -238,7 +241,7 @@ func Test_RunDocsFlow(t *testing.T) {
 	}
 
 	cobraBuilder := NewCobraBuilder(rootContainer)
-	cmd, err := cobraBuilder.BuildCommand(root)
+	cmd, err := cobraBuilder.BuildCommand(*testCtx.Context, root)
 
 	require.NoError(t, err)
 	require.NotNil(t, cmd)
@@ -270,7 +273,7 @@ func Test_RunDocsAndHelpFlow(t *testing.T) {
 	}
 
 	cobraBuilder := NewCobraBuilder(rootContainer)
-	cmd, err := cobraBuilder.BuildCommand(root)
+	cmd, err := cobraBuilder.BuildCommand(*testCtx.Context, root)
 
 	require.NoError(t, err)
 	require.NotNil(t, cmd)

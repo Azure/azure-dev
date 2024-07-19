@@ -61,7 +61,9 @@ func main() {
 	go fetchLatestVersion(latest)
 
 	rootContainer := container.New()
-	cmdErr := cmd.NewRootCmd(false, nil, rootContainer).ExecuteContext(ctx)
+	cmdErr := cmd.
+		NewRootCmd(ctx, false, nil, rootContainer).
+		ExecuteContext(ctx)
 
 	oneauth.Shutdown()
 

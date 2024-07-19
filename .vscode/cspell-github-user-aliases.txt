@@ -4,6 +4,7 @@ AlecAivazis
 alexandair
 benbjohnson
 blang
+bmatcuk
 bradleyjkemp
 briandowns
 buger
@@ -18,13 +19,16 @@ isatty
 joho
 karolz
 mattn
+mikekistler
 multierr
 nicksnyder
 otiai10
+pamelafox
 pbnj
+sebastianmattar
 sethvargo
 stretchr
 theckman
-bmatcuk
+TheEskhaton
 tonybaloney
 weilim

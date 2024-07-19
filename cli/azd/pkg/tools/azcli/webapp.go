@@ -2,10 +2,13 @@ package azcli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
@@ -49,19 +52,21 @@ func (cli *azCli) appService(
 	return &webApp, nil
 }
 
-func (cli *azCli) appServiceRepositoryHost(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroup string,
+func isLinuxWebApp(response *armappservice.WebAppsClientGetResponse) bool {
+	if *response.Kind == "app,linux" && response.Properties != nil && response.Properties.SiteConfig != nil &&
+		response.Properties.SiteConfig.LinuxFxVersion != nil &&
+		*response.Properties.SiteConfig.LinuxFxVersion != "" {
+		return true
+	}
+	return false
+}
+
+func appServiceRepositoryHost(
+	response *armappservice.WebAppsClientGetResponse,
 	appName string,
 ) (string, error) {
-	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
-	if err != nil {
-		return "", err
-	}
-
 	hostName := ""
-	for _, item := range app.Properties.HostNameSSLStates {
+	for _, item := range response.Properties.HostNameSSLStates {
 		if *item.HostType == armappservice.HostTypeRepository {
 			hostName = *item.Name
 			break
@@ -75,14 +80,55 @@ func (cli *azCli) appServiceRepositoryHost(
 	return hostName, nil
 }
 
+func resumeDeployment(err error, progressLog func(msg string)) bool {
+	errorMessage := err.Error()
+	if strings.Contains(errorMessage, "empty deployment status id") {
+		progressLog("Deployment status id is empty. Failed to enable tracking runtime status." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+
+	if strings.Contains(errorMessage, "response or its properties are empty") {
+		progressLog("Response or its properties are empty. Failed to enable tracking runtime status." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+
+	if strings.Contains(errorMessage, "failed to start within the allotted time") {
+		progressLog("Deployment with tracking status failed to start within the allotted time." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+
+	if strings.Contains(errorMessage, "the build process failed") && !strings.Contains(errorMessage, "logs for more info") {
+		progressLog("Failed to enable tracking runtime status." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+
+	var httpErr *azcore.ResponseError
+	if errors.As(err, &httpErr) && httpErr.StatusCode == 404 {
+		progressLog("Resource not found. Failed to enable tracking runtime status." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+	return false
+}
+
 func (cli *azCli) DeployAppServiceZip(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
 	appName string,
-	deployZipFile io.Reader,
+	deployZipFile io.ReadSeeker,
+	progressLog func(string),
 ) (*string, error) {
-	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
+	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
+	if err != nil {
+		return nil, err
+	}
+
+	hostName, err := appServiceRepositoryHost(app, appName)
 	if err != nil {
 		return nil, err
 	}
@@ -90,6 +136,19 @@ func (cli *azCli) DeployAppServiceZip(
 	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
 	if err != nil {
 		return nil, err
+	}
+
+	// Deployment Status API only support linux web app for now
+	if isLinuxWebApp(app) {
+		if err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
+			if !resumeDeployment(err, progressLog) {
+				return nil, err
+			}
+		} else {
+			// Deployment is successful
+			statusText := "OK"
+			return convert.RefOf(statusText), nil
+		}
 	}
 
 	response, err := client.Deploy(ctx, deployZipFile)

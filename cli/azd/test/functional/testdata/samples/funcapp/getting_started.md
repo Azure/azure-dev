@@ -17,7 +17,7 @@ Each function has its own code file and binding configuration file ([**function.
 
 #### Developing your first Python function using VS Code
 
-If you have not already, please checkout our [quickstart](https://aka.ms/azure-functions/python/quickstart) to get you started with Azure Functions developments in Python. 
+If you have not already, please checkout our [quick start](https://aka.ms/azure-functions/python/quickstart) to get you started with Azure Functions developments in Python. 
 
 #### Publishing your function app to Azure 
 

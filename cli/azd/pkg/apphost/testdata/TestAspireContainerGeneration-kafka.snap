@@ -14,7 +14,7 @@ properties:
         autoConfigureDataProtection: true
     ingress:
       external: false
-      targetPort: {{ targetPortOrDefault 9092 }}
+      targetPort: 9092
       exposedPort: 6000
       transport: tcp
       allowInsecure: false

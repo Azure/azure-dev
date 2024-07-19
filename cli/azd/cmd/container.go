@@ -25,10 +25,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -565,10 +567,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(account.NewSubscriptionsManager)
 	container.MustRegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.MustRegisterSingleton(azcli.NewManagedClustersService)
-	container.MustRegisterSingleton(azcli.NewAdService)
+	container.MustRegisterSingleton(entraid.NewEntraIdService)
 	container.MustRegisterSingleton(azcli.NewContainerRegistryService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
+	container.MustRegisterSingleton(storage.NewFileShareService)
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterSingleton(azcli.NewSpringService)
 
@@ -648,6 +651,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ServiceLanguageTypeScript: project.NewNpmProject,
 		project.ServiceLanguageJava:       project.NewMavenProject,
 		project.ServiceLanguageDocker:     project.NewDockerProject,
+		project.ServiceLanguageSwa:        project.NewSwaProject,
 	}
 
 	for language, constructor := range frameworkServiceMap {

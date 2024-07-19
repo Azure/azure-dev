@@ -8,6 +8,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -126,11 +127,10 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		Return(onlineEndpoint, nil)
 
 	serviceTarget := createMlEndpointTarget(mockContext, env, aiHelper)
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, servicePackage, targetResource)
-	require.NotNil(t, deployTask)
-	logProgress(deployTask)
+	deployResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+		return serviceTarget.Deploy(*mockContext.Context, serviceConfig, servicePackage, targetResource, progess)
 
-	deployResult, err := deployTask.Await()
+	})
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)

@@ -16,6 +16,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
@@ -59,22 +61,25 @@ func NewContainerAppService(
 	httpClient httputil.HttpClient,
 	clock clock.Clock,
 	armClientOptions *arm.ClientOptions,
+	alphaFeatureManager *alpha.FeatureManager,
 ) ContainerAppService {
 	return &containerAppService{
-		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
-		clock:              clock,
-		armClientOptions:   armClientOptions,
+		credentialProvider:  credentialProvider,
+		httpClient:          httpClient,
+		userAgent:           azdinternal.UserAgent(),
+		clock:               clock,
+		armClientOptions:    armClientOptions,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
 type containerAppService struct {
-	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
-	clock              clock.Clock
-	armClientOptions   *arm.ClientOptions
+	credentialProvider  account.SubscriptionCredentialProvider
+	httpClient          httputil.HttpClient
+	userAgent           string
+	clock               clock.Clock
+	armClientOptions    *arm.ClientOptions
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 type ContainerAppIngressConfiguration struct {
@@ -112,6 +117,60 @@ func (cas *containerAppService) GetIngressConfiguration(
 // or updating the container app. When unset, we use the default API version of the armappcontainers.ContainerAppsClient.
 const apiVersionKey = "api-version"
 
+var persistCustomDomainsFeature = alpha.MustFeatureKey("aca.persistDomains")
+var persistIngressSessionAffinity = alpha.MustFeatureKey("aca.persistIngressSessionAffinity")
+
+func (cas *containerAppService) persistSettings(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+	obj map[string]any) (map[string]any, error) {
+	shouldPersistDomains := cas.alphaFeatureManager.IsEnabled(persistCustomDomainsFeature)
+	shouldPersistIngressSessionAffinity := cas.alphaFeatureManager.IsEnabled(persistIngressSessionAffinity)
+
+	if !shouldPersistDomains && !shouldPersistIngressSessionAffinity {
+		return obj, nil
+	}
+
+	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
+	if err != nil {
+		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
+	}
+
+	if aca == nil ||
+		aca.Properties == nil ||
+		aca.Properties.Configuration == nil ||
+		aca.Properties.Configuration.Ingress == nil {
+		// no settings to persist
+		return obj, nil
+	}
+
+	if shouldPersistDomains &&
+		aca.Properties.Configuration.Ingress.CustomDomains != nil {
+		acaAsConfig := config.NewConfig(obj)
+		err := acaAsConfig.Set(
+			"properties.configuration.ingress.customDomains", aca.Properties.Configuration.Ingress.CustomDomains)
+		if err != nil {
+			return nil, fmt.Errorf("failed to persist custom domains: %w", err)
+		}
+		obj = acaAsConfig.Raw()
+	}
+
+	if shouldPersistIngressSessionAffinity &&
+		aca.Properties.Configuration.Ingress.StickySessions != nil {
+		acaAsConfig := config.NewConfig(obj)
+		err := acaAsConfig.Set(
+			"properties.configuration.ingress.stickySessions", aca.Properties.Configuration.Ingress.StickySessions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to persist session affinity: %w", err)
+		}
+		obj = acaAsConfig.Raw()
+	}
+
+	return obj, nil
+}
+
 func (cas *containerAppService) DeployYaml(
 	ctx context.Context,
 	subscriptionId string,
@@ -122,6 +181,11 @@ func (cas *containerAppService) DeployYaml(
 	var obj map[string]any
 	if err := yaml.Unmarshal(containerAppYaml, &obj); err != nil {
 		return fmt.Errorf("decoding yaml: %w", err)
+	}
+
+	obj, err := cas.persistSettings(ctx, subscriptionId, resourceGroupName, appName, obj)
+	if err != nil {
+		return fmt.Errorf("persisting aca settings: %w", err)
 	}
 
 	var poller *runtime.Poller[armappcontainers.ContainerAppsClientCreateOrUpdateResponse]
@@ -193,7 +257,7 @@ func (cas *containerAppService) DeployYaml(
 		poller = p
 	}
 
-	_, err := poller.PollUntilDone(ctx, nil)
+	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("polling for container app update completion: %w", err)
 	}

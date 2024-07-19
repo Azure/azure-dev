@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -100,8 +101,6 @@ services:
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
 
@@ -114,16 +113,14 @@ services:
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
-	go func() {
-		for value := range buildTask.Progress() {
+	buildResult, err := async.RunWithProgress(
+		func(value ServiceProgress) {
 			progressMessages = append(progressMessages, value.Message)
-		}
-		done <- true
-	}()
-
-	buildResult, err := buildTask.Await()
-	<-done
+		},
+		func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+			return framework.Build(*mockContext.Context, service, nil, progress)
+		},
+	)
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
@@ -208,8 +205,6 @@ services:
 	err = os.WriteFile(filepath.Join(temp, "Dockerfile.dev"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env)
 	status := ""
 
@@ -222,16 +217,13 @@ services:
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
-	go func() {
-		for value := range buildTask.Progress() {
+	buildResult, err := async.RunWithProgress(
+		func(value ServiceProgress) {
 			status = value.Message
-		}
-		done <- true
-	}()
-
-	buildResult, err := buildTask.Await()
-	<-done
+		}, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+			return framework.Build(*mockContext.Context, service, nil, progress)
+		},
+	)
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
@@ -428,9 +420,11 @@ func Test_DockerProject_Build(t *testing.T) {
 				dockerProject.SetSource(npmProject)
 			}
 
-			buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
-			logProgress(buildTask)
-			result, err := buildTask.Await()
+			result, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+					return dockerProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+				},
+			)
 
 			require.NoError(t, err)
 			require.NotNil(t, result)
@@ -552,16 +546,19 @@ func Test_DockerProject_Package(t *testing.T) {
 				buildOutputPath = "IMAGE_ID"
 			}
 
-			packageTask := dockerProject.Package(
-				*mockContext.Context,
-				serviceConfig,
-				&ServiceBuildResult{
-					BuildOutputPath: buildOutputPath,
+			result, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+					return dockerProject.Package(
+						*mockContext.Context,
+						serviceConfig,
+						&ServiceBuildResult{
+							BuildOutputPath: buildOutputPath,
+						},
+						progress,
+					)
 				},
 			)
-			logProgress(packageTask)
 
-			result, err := packageTask.Await()
 			require.NoError(t, err)
 			dockerDetails, ok := result.Details.(*dockerPackageResult)
 			require.True(t, ok)

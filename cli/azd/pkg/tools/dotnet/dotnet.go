@@ -181,17 +181,24 @@ func (cli *dotNetCli) PublishAppHostManifest(
 }
 
 // PublishContainer runs a `dotnet publish“ with `/t:PublishContainer`to build and publish the container.
-// It also gets port number by using `--getProperty:GeneratedContainerConfiguration`
+// It also gets port number by using `--getProperty:GeneratedContainerConfiguration`.
 func (cli *dotNetCli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
 ) (int, error) {
+	if !strings.Contains(imageName, ":") {
+		imageName = fmt.Sprintf("%s:latest", imageName)
+	}
+
+	imageParts := strings.Split(imageName, ":")
+
 	runArgs := newDotNetRunArgs("publish", project)
 
 	runArgs = runArgs.AppendParams(
 		"-r", "linux-x64",
 		"-c", configuration,
 		"/t:PublishContainer",
-		fmt.Sprintf("-p:ContainerImageName=%s", imageName),
+		fmt.Sprintf("-p:ContainerRepository=%s", imageParts[0]),
+		fmt.Sprintf("-p:ContainerImageTag=%s", imageParts[1]),
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
 		"--getProperty:GeneratedContainerConfiguration",
 	)

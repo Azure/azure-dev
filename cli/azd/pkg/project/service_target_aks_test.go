@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -116,28 +115,31 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
-	packageTask := serviceTarget.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServicePackageResult{
-			PackagePath: "test-app/api-test:azd-deploy-0",
-			Details: &dockerPackageResult{
-				ImageHash:   "IMAGE_HASH",
-				TargetImage: "test-app/api-test:azd-deploy-0",
+	packageResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+		return serviceTarget.Package(
+			*mockContext.Context,
+			serviceConfig,
+			&ServicePackageResult{
+				PackagePath: "test-app/api-test:azd-deploy-0",
+				Details: &dockerPackageResult{
+					ImageHash:   "IMAGE_HASH",
+					TargetImage: "test-app/api-test:azd-deploy-0",
+				},
 			},
-		},
-	)
-	logProgress(packageTask)
-	packageResult, err := packageTask.Await()
+			progess,
+		)
+	})
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
 	require.IsType(t, new(dockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+	deployResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope, progress)
+		},
+	)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
@@ -288,9 +290,11 @@ func Test_Deploy_Helm(t *testing.T) {
 	}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
-	deployTask := serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+	deployResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope, progress)
+		},
+	)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
@@ -350,9 +354,11 @@ func Test_Deploy_Kustomize(t *testing.T) {
 	}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
-	deployTask := serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+	deployResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope, progress)
+		},
+	)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
@@ -910,12 +916,13 @@ func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
 	}
 }
 
-func logProgress[T comparable, P comparable](task *async.TaskWithProgress[T, P]) {
-	go func() {
-		for value := range task.Progress() {
-			log.Println(value)
-		}
-	}()
+// logProgress is shorthand for calling async.RunWithProgress a function that calls t.Log with the progress value
+// as the observer.
+func logProgress[T comparable, P comparable](
+	t *testing.T,
+	fn func(progess *async.Progress[P]) (T, error),
+) (T, error) {
+	return async.RunWithProgress(func(p P) { t.Log(p) }, fn)
 }
 
 type MockResourceManager struct {

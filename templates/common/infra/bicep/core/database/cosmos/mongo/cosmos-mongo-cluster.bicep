@@ -30,7 +30,7 @@ param sku string
 @description('Disk storage size for the node group in GB')
 param storage int
 
-resource mognoCluster 'Microsoft.DocumentDB/mongoClusters@2023-03-01-preview' = {
+resource mognoCluster 'Microsoft.DocumentDB/mongoClusters@2024-02-15-preview' = {
   name: name
   tags: tags
   location: location
@@ -42,7 +42,7 @@ resource mognoCluster 'Microsoft.DocumentDB/mongoClusters@2023-03-01-preview' = 
         {
             diskSizeGB: storage
             enableHa: highAvailabilityMode
-            kind: 'Shard'
+            kind: nodeType
             nodeCount: nodeCount
             sku: sku
         }

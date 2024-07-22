@@ -104,6 +104,9 @@ type AzdMetadataType string
 
 const AzdMetadataTypeLocation AzdMetadataType = "location"
 const AzdMetadataTypeGenerate AzdMetadataType = "generate"
+const AzdMetadataTypePrincipalLogin AzdMetadataType = "principalLogin"
+const AzdMetadataTypePrincipalId AzdMetadataType = "principalId"
+const AzdMetadataTypePrincipalType AzdMetadataType = "principalType"
 const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
 
 type AzdMetadata struct {

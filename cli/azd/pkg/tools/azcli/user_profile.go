@@ -18,12 +18,14 @@ type UserProfileService struct {
 	credentialProvider auth.MultiTenantCredentialProvider
 	coreClientOptions  *azcore.ClientOptions
 	cloud              *cloud.Cloud
+	authManager        *auth.Manager
 }
 
 func NewUserProfileService(
 	credentialProvider auth.MultiTenantCredentialProvider,
 	clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
 	cloud *cloud.Cloud,
+	authManager *auth.Manager,
 ) *UserProfileService {
 	coreClientOptions := clientOptionsBuilderFactory.NewClientOptionsBuilder().
 		WithCloud(cloud.Configuration).
@@ -34,6 +36,7 @@ func NewUserProfileService(
 		credentialProvider: credentialProvider,
 		coreClientOptions:  coreClientOptions,
 		cloud:              cloud,
+		authManager:        authManager,
 	}
 }
 
@@ -52,17 +55,46 @@ func (u *UserProfileService) createGraphClient(ctx context.Context, tenantId str
 }
 
 func (user *UserProfileService) GetSignedInUserId(ctx context.Context, tenantId string) (string, error) {
-	client, err := user.createGraphClient(ctx, tenantId)
+	userProfile, err := user.SignedProfile(ctx, tenantId)
 	if err != nil {
 		return "", err
 	}
 
-	userProfile, err := client.Me().Get(ctx)
+	return userProfile.Id, nil
+}
+
+func (user *UserProfileService) SignedProfile(ctx context.Context, tenantId string) (*graphsdk.UserProfile, error) {
+	client, err := user.createGraphClient(ctx, tenantId)
 	if err != nil {
-		return "", fmt.Errorf("failed retrieving current user profile: %w", err)
+		return nil, err
 	}
 
-	return userProfile.Id, nil
+	userProfile, err := client.Me().Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving current user profile: %w", err)
+	}
+
+	return userProfile, nil
+}
+
+func (user *UserProfileService) AppProfile(
+	ctx context.Context, tenantId string) (*graphsdk.Application, error) {
+	client, err := user.createGraphClient(ctx, tenantId)
+	if err != nil {
+		return nil, err
+	}
+
+	appId, err := user.authManager.GetLoggedInServicePrincipalID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting logged in service principal ID: %w", err)
+	}
+
+	appProfile, err := client.ApplicationById(*appId).GetByAppId(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving current user profile: %w", err)
+	}
+
+	return appProfile, nil
 }
 
 func (u *UserProfileService) GetAccessToken(ctx context.Context, tenantId string) (*AzCliAccessToken, error) {

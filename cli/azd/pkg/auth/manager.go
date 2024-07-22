@@ -456,6 +456,35 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 	return currentUser.TenantID, nil
 }
 
+func (m *Manager) GetLoggedInServicePrincipalID(ctx context.Context) (*string, error) {
+	if m.UseExternalAuth() {
+		// When delegating to an external system, we have no way to determine what principal was used
+		return nil, nil
+	}
+
+	cfg, err := m.userConfigManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("fetching current user: %w", err)
+	}
+
+	if shouldUseLegacyAuth(cfg) {
+		// When delegating to az, we have no way to determine what principal was used
+		return nil, nil
+	}
+
+	authCfg, err := m.readAuthConfig()
+	if err != nil {
+		return nil, fmt.Errorf("fetching auth config: %w", err)
+	}
+
+	currentUser, err := readUserProperties(authCfg)
+	if err != nil {
+		return nil, ErrNoCurrentUser
+	}
+
+	return currentUser.ClientID, nil
+}
+
 func (m *Manager) newCredentialFromManagedIdentity(clientID string) (azcore.TokenCredential, error) {
 	options := &azidentity.ManagedIdentityCredentialOptions{}
 	if clientID != "" {

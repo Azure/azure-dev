@@ -8,7 +8,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -43,7 +42,7 @@ func TestNewSqlCmdHubCli(t *testing.T) {
 		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(
 		0,
-		fmt.Sprintf("%s", sqlCmdCliVersion.String()),
+		sqlCmdCliVersion.String(),
 		"",
 	))
 

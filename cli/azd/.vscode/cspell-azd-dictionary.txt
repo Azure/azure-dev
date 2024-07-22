@@ -179,6 +179,7 @@ servicebus
 setenvs
 snapshotter
 springapp
+sqlcmd
 sqlserver
 sstore
 staticcheck

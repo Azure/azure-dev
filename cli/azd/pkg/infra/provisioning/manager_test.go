@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
@@ -42,6 +43,9 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		// Select the first from the list
 		return 0, nil
 	})
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "sqlcmd --version")
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	registerContainerDependencies(mockContext, env)
 	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
@@ -73,6 +77,10 @@ func TestManagerPreview(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "sqlcmd --version")
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
+
 	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 
@@ -105,6 +113,10 @@ func TestManagerGetState(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "sqlcmd --version")
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
+
 	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	envManager := &mockenv.MockEnvManager{}
@@ -136,6 +148,10 @@ func TestManagerDeploy(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "sqlcmd --version")
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
+
 	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	envManager := &mockenv.MockEnvManager{}
@@ -171,6 +187,9 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	}).Respond(true)
 
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "sqlcmd --version")
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
@@ -212,6 +231,10 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	}).Respond(false)
 
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "sqlcmd --version")
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
+
 	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	envManager := &mockenv.MockEnvManager{}

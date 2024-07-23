@@ -44,7 +44,7 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		return 0, nil
 	})
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "sqlcmd --version")
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	registerContainerDependencies(mockContext, env)
@@ -78,7 +78,7 @@ func TestManagerPreview(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "sqlcmd --version")
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
@@ -114,7 +114,7 @@ func TestManagerGetState(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "sqlcmd --version")
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
@@ -149,7 +149,7 @@ func TestManagerDeploy(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "sqlcmd --version")
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
@@ -188,7 +188,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 
 	registerContainerDependencies(mockContext, env)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "sqlcmd --version")
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	envManager := &mockenv.MockEnvManager{}
@@ -232,7 +232,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 
 	registerContainerDependencies(mockContext, env)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "sqlcmd --version")
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)

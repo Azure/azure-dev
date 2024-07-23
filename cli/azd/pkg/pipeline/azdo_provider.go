@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
@@ -430,14 +429,6 @@ type azdoRemote struct {
 	RepositoryName string
 }
 
-var httpsRegex = regexp.MustCompile(
-	//nolint:lll
-	`^https:\/\/(?:.*)?(dev\.azure\.com|visualstudio\.com)\/([a-zA-Z0-9]+)\/([a-zA-Z0-9]+)\/_git\/([a-zA-Z0-9]+)$`)
-
-var sshRegex = regexp.MustCompile(
-	//nolint:lll
-	`^git@(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com|ssh\.visualstudio\.com):(v[1-3])?\/([a-zA-Z0-9]+)\/([a-zA-Z0-9]+)\/([a-zA-Z0-9]+)$`)
-
 // parseAzDoRemote extracts the organization, project and repository name from an Azure DevOps remote url
 // the url can be in the form of:
 //   - https://dev.azure.com/[org|user]/[project]/_git/[repo]
@@ -450,24 +441,39 @@ func parseAzDoRemote(remoteUrl string) (*azdoRemote, error) {
 	// Initialize the azdoRemote struct
 	azdoRemote := &azdoRemote{}
 
-	// Check if the remoteUrl matches the HTTPS format
-	httpsMatches := httpsRegex.FindStringSubmatch(remoteUrl)
-	if len(httpsMatches) == 5 {
-		azdoRemote.Project = httpsMatches[3]
-		azdoRemote.RepositoryName = httpsMatches[4]
+	if !strings.Contains(remoteUrl, "visualstudio.com") && !strings.Contains(remoteUrl, "dev.azure.com") {
+		return nil, fmt.Errorf("%w: %s", ErrRemoteHostIsNotAzDo, remoteUrl)
+	}
+
+	if strings.Contains(remoteUrl, "/_git/") {
+		// applies to http or https
+		parts := strings.Split(remoteUrl, "/_git/")
+		projectNameStart := strings.LastIndex(parts[0], "/")
+		projectPartLen := len(parts[0])
+
+		if len(parts) != 2 || // remoteUrl must have exactly one "/_git/" substring
+			!strings.Contains(parts[0], "/") || // part 0 (the project) must have more than one "/"
+			projectPartLen <= 1 || // part 0 must be greater than 1 character
+			projectNameStart == projectPartLen-1 { // part 0 must not end with "/"
+			return nil, fmt.Errorf("%w: %s", ErrRemoteHostIsNotAzDo, remoteUrl)
+		}
+
+		azdoRemote.Project = parts[0][projectNameStart+1:]
+		azdoRemote.RepositoryName = parts[1]
 		return azdoRemote, nil
 	}
 
-	// Check if the remoteUrl matches the SSH format
-	sshMatches := sshRegex.FindStringSubmatch(remoteUrl)
-	if len(sshMatches) == 5 {
-		azdoRemote.Project = sshMatches[3]
-		azdoRemote.RepositoryName = sshMatches[4]
+	if strings.Contains(remoteUrl, "git@") {
+		// applies to git@ -> project and repo always in the last two parts
+		parts := strings.Split(remoteUrl, "/")
+		partsLen := len(parts)
+		azdoRemote.Project = parts[partsLen-2]
+		azdoRemote.RepositoryName = parts[partsLen-1]
 		return azdoRemote, nil
 	}
 
 	// If the remoteUrl does not match any of the supported formats, return an error
-	return nil, fmt.Errorf("invalid Azure DevOps remote url")
+	return nil, fmt.Errorf("%w: %s", ErrRemoteHostIsNotAzDo, remoteUrl)
 }
 
 // gitRepoDetails extracts the information from an Azure DevOps remote url into general scm concepts

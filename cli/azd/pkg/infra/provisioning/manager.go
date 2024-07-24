@@ -45,6 +45,10 @@ const (
 	defaultPath   = "infra"
 )
 
+// Operations checks if a file azd.operations.yaml exists in the infraPath and returns the list of operations
+// defined in the file. Operations are grouped by type and wrapped in a function that can be executed.
+// The result is a list of functions where each function represents an operations group type.
+// The operations can be registered as project lifecycle events, for example, as post-provisioning operations.
 func (m *Manager) Operations(ctx context.Context) ([]func(ctx context.Context) error, error) {
 	//Get a list of operations
 	result := []func(ctx context.Context) error{}

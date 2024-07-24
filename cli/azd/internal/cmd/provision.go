@@ -191,6 +191,21 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
+	// register operations
+	operations, err := p.provisionManager.Operations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("registering operations: %w", err)
+	}
+	for _, operation := range operations {
+		err := p.projectConfig.AddHandler(
+			"postprovision", func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
+				return operation(ctx)
+			})
+		if err != nil {
+			return nil, fmt.Errorf("registering operation: %w", err)
+		}
+	}
+
 	// Get Subscription to Display in Command Title Note
 	// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
 	// is not displayed.

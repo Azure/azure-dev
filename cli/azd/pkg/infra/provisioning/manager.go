@@ -6,9 +6,7 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -16,14 +14,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/operations"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/sqlcmd"
-	"gopkg.in/yaml.v3"
 )
 
 type DefaultProviderResolver func() (ProviderKind, error)
@@ -50,6 +45,48 @@ const (
 	defaultPath   = "infra"
 )
 
+func (m *Manager) Operations(ctx context.Context) ([]func(ctx context.Context) error, error) {
+	//Get a list of operations
+	result := []func(ctx context.Context) error{}
+	infraRoot := m.options.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(m.projectPath, m.options.Path)
+	}
+	model, err := operations.AzdOperations(infraRoot, *m.env)
+	if err != nil {
+		return result, err
+	}
+	bindMountOperations, err := operations.FileShareUploads(model)
+	azdOperationsEnabled := m.alphaFeatureManager.IsEnabled(operations.AzdOperationsFeatureKey)
+	if !azdOperationsEnabled && len(bindMountOperations) > 0 {
+		m.console.Message(ctx, operations.ErrBindMountOperationDisabled.Error())
+	}
+	if azdOperationsEnabled && len(bindMountOperations) > 0 {
+		if err != nil {
+			return result, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
+		}
+		result = append(result, func(context context.Context) error {
+			return operations.DoBindMount(
+				context, bindMountOperations, m.env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix)
+		})
+	}
+
+	sqlServerOperations, err := operations.SqlScripts(model, filepath.Join(m.projectPath, m.options.Path))
+	if !azdOperationsEnabled && len(sqlServerOperations) > 0 {
+		m.console.Message(ctx, operations.ErrSqlScriptOperationDisabled.Error())
+	}
+	if azdOperationsEnabled {
+		if err != nil {
+			return result, fmt.Errorf("looking for azd sql scripts operations: %w", err)
+		}
+		result = append(result, func(context context.Context) error {
+			return operations.DoSqlScript(
+				context, sqlServerOperations, m.console, *m.env, m.sqlCmdCli)
+		})
+	}
+	return result, nil
+}
+
 func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
 	// applied defaults if missing
 	if options.Module == "" {
@@ -61,7 +98,6 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 
 	m.projectPath = projectPath
 	m.options = &options
-
 	provider, err := m.newProvider(ctx)
 	if err != nil {
 		return fmt.Errorf("initializing infrastructure provider: %w", err)
@@ -81,8 +117,6 @@ func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResul
 	return result, nil
 }
 
-var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
-
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	// Apply the infrastructure deployment
@@ -101,268 +135,10 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
-	infraRoot := m.options.Path
-	if !filepath.IsAbs(infraRoot) {
-		infraRoot = filepath.Join(m.projectPath, m.options.Path)
-	}
-	model, err := azdOperations(infraRoot, *m.env)
-	if err != nil {
-		return nil, err
-	}
-	bindMountOperations, err := azdFileShareUploadOperations(model)
-	azdOperationsEnabled := m.alphaFeatureManager.IsEnabled(AzdOperationsFeatureKey)
-	if !azdOperationsEnabled && len(bindMountOperations) > 0 {
-		m.console.Message(ctx, ErrBindMountOperationDisabled.Error())
-	}
-	if azdOperationsEnabled && len(bindMountOperations) > 0 {
-		if err != nil {
-			return nil, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
-		}
-		if err := doBindMountOperation(
-			ctx, bindMountOperations, *m.env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix); err != nil {
-			return nil, fmt.Errorf("error running bind mount operation: %w", err)
-		}
-	}
-
-	sqlServerOperations, err := azdSqlServerOperations(model, filepath.Join(m.projectPath, m.options.Path))
-	if !azdOperationsEnabled && len(sqlServerOperations) > 0 {
-		m.console.Message(ctx, ErrSqlScriptOperationDisabled.Error())
-	}
-	if azdOperationsEnabled {
-		if err != nil {
-			return nil, fmt.Errorf("looking for azd sql scripts operations: %w", err)
-		}
-		if err := doSqlScriptOperation(
-			ctx, sqlServerOperations, m.console, *m.env, m.sqlCmdCli); err != nil {
-			return nil, err
-		}
-	}
-
 	// make sure any spinner is stopped
 	m.console.StopSpinner(ctx, "", input.StepDone)
 
 	return deployResult, nil
-}
-
-const (
-	fileShareUploadOperation string = "FileShareUpload"
-	sqlServerOperation       string = "SqlScript"
-	azdOperationsFileName    string = "azd.operations.yaml"
-)
-
-type azdOperation struct {
-	Type        string
-	Description string
-	Config      any
-}
-
-type azdOperationFileShareUpload struct {
-	Description    string
-	StorageAccount string
-	FileShareName  string
-	Path           string
-}
-
-type azdOperationSqlServer struct {
-	Description string
-	Server      string
-	Database    string
-	Path        string
-	Env         map[string]string
-}
-
-type azdOperationsModel struct {
-	Operations []azdOperation
-}
-
-func azdOperations(infraPath string, env environment.Environment) (azdOperationsModel, error) {
-	path := filepath.Join(infraPath, azdOperationsFileName)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// file not found is not an error, there's just nothing to do
-			return azdOperationsModel{}, nil
-		}
-		return azdOperationsModel{}, err
-	}
-
-	// resolve environment variables
-	expString := osutil.NewExpandableString(string(data))
-	evaluated, err := expString.Envsubst(env.Getenv)
-	if err != nil {
-		return azdOperationsModel{}, err
-	}
-	data = []byte(evaluated)
-
-	// Unmarshal the file into azdOperationsModel
-	var operations azdOperationsModel
-	err = yaml.Unmarshal(data, &operations)
-	if err != nil {
-		return azdOperationsModel{}, err
-	}
-
-	return operations, nil
-}
-
-func azdFileShareUploadOperations(model azdOperationsModel) ([]azdOperationFileShareUpload, error) {
-	var fileShareUploadOperations []azdOperationFileShareUpload
-	for _, operation := range model.Operations {
-		if operation.Type == fileShareUploadOperation {
-			var fileShareUpload azdOperationFileShareUpload
-			bytes, err := json.Marshal(operation.Config)
-			if err != nil {
-				return nil, err
-			}
-			err = json.Unmarshal(bytes, &fileShareUpload)
-			if err != nil {
-				return nil, err
-			}
-			fileShareUpload.Description = operation.Description
-			fileShareUploadOperations = append(fileShareUploadOperations, fileShareUpload)
-		}
-	}
-	return fileShareUploadOperations, nil
-}
-
-func azdSqlServerOperations(model azdOperationsModel, infraPath string) ([]azdOperationSqlServer, error) {
-	var sqlServerOperations []azdOperationSqlServer
-	for _, operation := range model.Operations {
-		if operation.Type == sqlServerOperation {
-			var sqlServerScript azdOperationSqlServer
-			bytes, err := json.Marshal(operation.Config)
-			if err != nil {
-				return nil, err
-			}
-			err = json.Unmarshal(bytes, &sqlServerScript)
-			if err != nil {
-				return nil, err
-			}
-			sqlServerScript.Description = operation.Description
-			if !filepath.IsAbs(sqlServerScript.Path) {
-				sqlServerScript.Path = filepath.Join(infraPath, sqlServerScript.Path)
-			}
-			sqlServerOperations = append(sqlServerOperations, sqlServerScript)
-		}
-	}
-	return sqlServerOperations, nil
-}
-
-var ErrAzdOperationsNotEnabled = fmt.Errorf(fmt.Sprintf(
-	"azd operations (alpha feature) is required but disabled. You can enable azd operations by running: %s",
-	output.WithGrayFormat(alpha.GetEnableCommand(AzdOperationsFeatureKey))))
-
-var ErrBindMountOperationDisabled = fmt.Errorf(
-	"%sYour project has bind mounts.\n  - %w\n%s\n",
-	output.WithWarningFormat("*Note: "),
-	ErrAzdOperationsNotEnabled,
-	output.WithWarningFormat("Ignoring bind mounts."),
-)
-
-var ErrSqlScriptOperationDisabled = fmt.Errorf(
-	"%sYour project has sql server scripts.\n  - %w\n%s\n",
-	output.WithWarningFormat("*Note: "),
-	ErrAzdOperationsNotEnabled,
-	output.WithWarningFormat("Ignoring scripts."),
-)
-
-func doBindMountOperation(
-	ctx context.Context,
-	fileShareUploadOperations []azdOperationFileShareUpload,
-	env environment.Environment,
-	console input.Console,
-	fileShareService storage.FileShareService,
-	cloudStorageEndpointSuffix string,
-) error {
-	if len(fileShareUploadOperations) > 0 {
-		console.ShowSpinner(ctx, "uploading files to fileShare", input.StepFailed)
-	}
-	for _, op := range fileShareUploadOperations {
-		if err := bindMountOperation(
-			ctx,
-			fileShareService,
-			cloudStorageEndpointSuffix,
-			env.GetSubscriptionId(),
-			op.StorageAccount,
-			op.FileShareName,
-			op.Path); err != nil {
-			return fmt.Errorf("error binding mount: %w", err)
-		}
-		console.MessageUxItem(ctx, &ux.DisplayedResource{
-			Type:  fileShareUploadOperation,
-			Name:  op.Description,
-			State: ux.SucceededState,
-		})
-	}
-	return nil
-}
-
-func bindMountOperation(
-	ctx context.Context,
-	fileShareService storage.FileShareService,
-	cloud, subId, storageAccount, fileShareName, source string) error {
-
-	shareUrl := fmt.Sprintf("https://%s.file.%s/%s", storageAccount, cloud, fileShareName)
-	return fileShareService.UploadPath(ctx, subId, shareUrl, source)
-}
-
-func doSqlScriptOperation(
-	ctx context.Context,
-	SqlScriptsOperations []azdOperationSqlServer,
-	console input.Console,
-	env environment.Environment,
-	sqlCmdCli *sqlcmd.SqlCmdCli,
-) error {
-	if len(SqlScriptsOperations) > 0 {
-		console.ShowSpinner(ctx, "execute sql scripts", input.StepFailed)
-	}
-	for _, op := range SqlScriptsOperations {
-		filePath := op.Path
-		if op.Env != nil {
-			fileEnv := environment.NewWithValues("fileEnv", op.Env)
-			tmpDir, err := os.MkdirTemp("", "azd-sql-scripts")
-			if err != nil {
-				return err
-			}
-			defer os.RemoveAll(tmpDir)
-			data, err := os.ReadFile(filePath)
-			if err != nil {
-				return err
-			}
-			expString := osutil.NewExpandableString(string(data))
-			evaluated, err := expString.Envsubst(fileEnv.Getenv)
-			if err != nil {
-				return err
-			}
-			filePath = filepath.Join(tmpDir, filepath.Base(filePath))
-			err = os.WriteFile(filePath, []byte(evaluated), osutil.PermissionDirectory)
-			if err != nil {
-				return err
-			}
-		}
-
-		if _, err := sqlCmdCli.ExecuteScript(
-			ctx,
-			op.Server,
-			op.Database,
-			filePath,
-			// sqlCmd cli uses DAC to connect to the server, but it doesn't know how to handle multi-tenant accounts.
-			// sqlCmd cli asks az or azd for a token w/o passing a tenant-id arg.
-			// sqlCmd cli runs from ~/.azd/bin:
-			//  - azd doesn't know the tenant-id to use and defaults to get a token for home tenant.
-			// By setting the AZURE_SUBSCRIPTION_ID as env var to run sqlCmd cli, azd will use it to get tenant-id.
-			[]string{
-				fmt.Sprintf("%s=%s", environment.SubscriptionIdEnvVarName, env.GetSubscriptionId()),
-			},
-		); err != nil {
-			return fmt.Errorf("error run sqlcmd: %w", err)
-		}
-		console.MessageUxItem(ctx, &ux.DisplayedResource{
-			Type:  sqlServerOperation,
-			Name:  op.Description,
-			State: ux.SucceededState,
-		})
-	}
-	return nil
 }
 
 // Preview generates the list of changes to be applied as part of the provisioning.

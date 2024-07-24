@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/operations"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -107,12 +108,12 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
+	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(operations.AzdOperationsFeatureKey)
 	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
 		AzdOperations: azdOperationsEnabled,
 	})
 	if err != nil {
-		if errors.Is(err, provisioning.ErrAzdOperationsNotEnabled) {
+		if errors.Is(err, operations.ErrAzdOperationsNotEnabled) {
 			// Use a warning for this error about azd operations is required for the current project to fully work
 			ai.console.Message(ctx, err.Error())
 		} else {
@@ -457,12 +458,12 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		rootModuleName = p.Infra.Module
 	}
 
-	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
+	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(operations.AzdOperationsFeatureKey)
 	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{
 		AzdOperations: azdOperationsEnabled,
 	})
 	if err != nil {
-		if errors.Is(err, provisioning.ErrAzdOperationsNotEnabled) {
+		if errors.Is(err, operations.ErrAzdOperationsNotEnabled) {
 			// Use a warning for this error about azd operations is required for the current project to fully work
 			ai.console.Message(ctx, err.Error())
 		} else {

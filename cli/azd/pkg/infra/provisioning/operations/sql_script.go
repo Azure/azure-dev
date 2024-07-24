@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/sqlcmd"
 )
 
+// SqlScript defines the configuration for a sql script operation.
 type SqlScript struct {
 	Description string
 	Server      string
@@ -26,6 +27,7 @@ type SqlScript struct {
 	Env         map[string]string
 }
 
+// ErrSqlScriptOperationDisabled is returned when sql script operations are disabled.
 var ErrSqlScriptOperationDisabled = fmt.Errorf(
 	"%sYour project has sql server scripts.\n  - %w\n%s\n",
 	output.WithWarningFormat("*Note: "),
@@ -33,6 +35,7 @@ var ErrSqlScriptOperationDisabled = fmt.Errorf(
 	output.WithWarningFormat("Ignoring scripts."),
 )
 
+// SqlScripts returns the sql script operations (if any) from the azd operations model.
 func SqlScripts(model AzdOperationsModel, infraPath string) ([]SqlScript, error) {
 	var sqlServerOperations []SqlScript
 	for _, operation := range model.Operations {
@@ -56,6 +59,7 @@ func SqlScripts(model AzdOperationsModel, infraPath string) ([]SqlScript, error)
 	return sqlServerOperations, nil
 }
 
+// DoSqlScript performs the sql script operations.
 func DoSqlScript(
 	ctx context.Context,
 	SqlScriptsOperations []SqlScript,

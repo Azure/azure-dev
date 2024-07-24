@@ -15,6 +15,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
+// FileShareUpload defines the configuration for a file share upload operation.
+// When the operation is executed, the files in the specified path are uploaded to the specified file share.
 type FileShareUpload struct {
 	Description    string
 	StorageAccount string
@@ -22,6 +24,7 @@ type FileShareUpload struct {
 	Path           string
 }
 
+// ErrBindMountOperationDisabled is returned when bind mount operations are disabled.
 var ErrBindMountOperationDisabled = fmt.Errorf(
 	"%sYour project has bind mounts.\n  - %w\n%s\n",
 	output.WithWarningFormat("*Note: "),
@@ -29,6 +32,7 @@ var ErrBindMountOperationDisabled = fmt.Errorf(
 	output.WithWarningFormat("Ignoring bind mounts."),
 )
 
+// FileShareUploads returns the file share upload operations (if any) from the azd operations model.
 func FileShareUploads(model AzdOperationsModel) ([]FileShareUpload, error) {
 	var fileShareUploadOperations []FileShareUpload
 	for _, operation := range model.Operations {
@@ -49,7 +53,9 @@ func FileShareUploads(model AzdOperationsModel) ([]FileShareUpload, error) {
 	return fileShareUploadOperations, nil
 }
 
-func DoBindMount(
+// DoFileShareUpload performs the bind mount operations.
+// It uploads the files in the specified path to the specified file share.
+func DoFileShareUpload(
 	ctx context.Context,
 	fileShareUploadOperations []FileShareUpload,
 	env *environment.Environment,
@@ -61,14 +67,8 @@ func DoBindMount(
 		console.ShowSpinner(ctx, "uploading files to fileShare", input.StepFailed)
 	}
 	for _, op := range fileShareUploadOperations {
-		if err := bindMountOperation(
-			ctx,
-			fileShareService,
-			cloudStorageEndpointSuffix,
-			env.GetSubscriptionId(),
-			op.StorageAccount,
-			op.FileShareName,
-			op.Path); err != nil {
+		shareUrl := fmt.Sprintf("https://%s.file.%s/%s", op.StorageAccount, cloudStorageEndpointSuffix, op.FileShareName)
+		if err := fileShareService.UploadPath(ctx, env.GetSubscriptionId(), shareUrl, op.Path); err != nil {
 			return fmt.Errorf("error binding mount: %w", err)
 		}
 		console.MessageUxItem(ctx, &ux.DisplayedResource{
@@ -78,13 +78,4 @@ func DoBindMount(
 		})
 	}
 	return nil
-}
-
-func bindMountOperation(
-	ctx context.Context,
-	fileShareService storage.FileShareService,
-	cloud, subId, storageAccount, fileShareName, source string) error {
-
-	shareUrl := fmt.Sprintf("https://%s.file.%s/%s", storageAccount, cloud, fileShareName)
-	return fileShareService.UploadPath(ctx, subId, shareUrl, source)
 }

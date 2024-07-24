@@ -16,12 +16,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// azdOperation represents an operation that can be performed by the azd.
 type azdOperation struct {
 	Type        string
 	Description string
 	Config      any
 }
 
+// AzdOperationsModel is the abstraction of azd.operations.yaml file. It is used to unmarshal the yaml file into a struct.
 type AzdOperationsModel struct {
 	Operations []azdOperation
 }
@@ -32,12 +34,15 @@ const (
 	azdOperationsFileName    string = "azd.operations.yaml"
 )
 
+// AzdOperationsFeatureKey is the alpha feature key for azd operations.
 var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
 
+// ErrAzdOperationsNotEnabled is returned when azd operations are not enabled.
 var ErrAzdOperationsNotEnabled = fmt.Errorf(fmt.Sprintf(
 	"azd operations (alpha feature) is required but disabled. You can enable azd operations by running: %s",
 	output.WithGrayFormat(alpha.GetEnableCommand(AzdOperationsFeatureKey))))
 
+// AzdOperations returns the azd operations from the azd.operations.yaml file.
 func AzdOperations(infraPath string, env environment.Environment) (AzdOperationsModel, error) {
 	path := filepath.Join(infraPath, azdOperationsFileName)
 	data, err := os.ReadFile(path)

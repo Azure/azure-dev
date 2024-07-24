@@ -66,7 +66,7 @@ func (m *Manager) Operations(ctx context.Context) ([]func(ctx context.Context) e
 			return result, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
 		}
 		result = append(result, func(context context.Context) error {
-			return operations.DoBindMount(
+			return operations.DoFileShareUpload(
 				context, bindMountOperations, m.env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix)
 		})
 	}

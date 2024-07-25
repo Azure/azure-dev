@@ -119,3 +119,19 @@ func RetryAfter(resp *http.Response) time.Duration {
 
 	return 0
 }
+
+// GetIpAddress returns the public IP address of the caller.
+func GetIpAddress() (string, error) {
+	resp, err := http.Get("https://api.ipify.org")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}

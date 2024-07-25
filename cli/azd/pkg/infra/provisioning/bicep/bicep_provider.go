@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -2052,6 +2053,16 @@ func (p *BicepProvider) ensureParameters(
 				}
 				mustSetParamAsConfig(key, pLogin, p.env.Config, param.Secure())
 				configModified = true
+				continue
+			case azure.AzdMetadataTypeIpAddress:
+				ipAddress, err := httputil.GetIpAddress()
+				if err != nil {
+					return nil, fmt.Errorf("getting IP address for bicep parameter: %w", err)
+				}
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: ipAddress,
+				}
+				// this metadata type is not saved to config as the IP can be dynamic.
 				continue
 			default:
 				// Do nothing

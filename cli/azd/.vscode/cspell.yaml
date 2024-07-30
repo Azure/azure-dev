@@ -12,6 +12,7 @@ words:
   - azcloud
   - usgovcloudapi
   - chinacloudapi
+  - wbreza
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -109,6 +110,9 @@ overrides:
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
+  - filename: internal/vsrpc/handler.go
+    words:
+      - arity
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

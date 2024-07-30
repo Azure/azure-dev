@@ -25,9 +25,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/vsrpc"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/wbreza/container/v4"
 )
 
 type vsServerFlags struct {
@@ -60,11 +60,11 @@ func newVsServerCmd() *cobra.Command {
 }
 
 type vsServerAction struct {
-	rootContainer *ioc.NestedContainer
+	rootContainer *container.Container
 	flags         *vsServerFlags
 }
 
-func newVsServerAction(rootContainer *ioc.NestedContainer, flags *vsServerFlags) actions.Action {
+func newVsServerAction(rootContainer *container.Container, flags *vsServerFlags) actions.Action {
 	return &vsServerAction{
 		rootContainer: rootContainer,
 		flags:         flags,

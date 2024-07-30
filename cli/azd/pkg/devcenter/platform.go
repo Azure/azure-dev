@@ -14,12 +14,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/wbreza/container/v4"
 )
 
 // Platform manages the Azd configuration of the devcenter platform
@@ -44,9 +44,9 @@ func (p *Platform) IsEnabled() bool {
 }
 
 // ConfigureContainer configures the IoC container for the devcenter platform components
-func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
+func (p *Platform) ConfigureContainer(rootContainer *container.Container) error {
 	// DevCenter Config
-	container.MustRegisterTransient(func(
+	container.MustRegisterTransient(rootContainer, func(
 		ctx context.Context,
 		lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
 		userConfigManager config.UserConfigManager,
@@ -131,14 +131,14 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	})
 
 	// Override default provision provider
-	container.MustRegisterSingleton(func() provisioning.DefaultProviderResolver {
+	container.MustRegisterSingleton(rootContainer, func() provisioning.DefaultProviderResolver {
 		return func() (provisioning.ProviderKind, error) {
 			return ProvisionKindDevCenter, nil
 		}
 	})
 
 	// Override default template sources
-	container.MustRegisterSingleton(func() *templates.SourceOptions {
+	container.MustRegisterSingleton(rootContainer, func() *templates.SourceOptions {
 		return &templates.SourceOptions{
 			DefaultSources:        []*templates.SourceConfig{SourceDevCenter},
 			LoadConfiguredSources: false,
@@ -146,26 +146,26 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	})
 
 	// Configure remote environment storage
-	container.MustRegisterSingleton(func() *state.RemoteConfig {
+	container.MustRegisterSingleton(rootContainer, func() *state.RemoteConfig {
 		return &state.RemoteConfig{
 			Backend: string(RemoteKindDevCenter),
 		}
 	})
 
 	// Provision Provider
-	container.MustRegisterNamedTransient(string(ProvisionKindDevCenter), NewProvisionProvider)
+	container.MustRegisterNamedTransient(rootContainer, string(ProvisionKindDevCenter), NewProvisionProvider)
 
 	// Remote Environment Storage
-	container.MustRegisterNamedTransient(string(RemoteKindDevCenter), NewEnvironmentStore)
+	container.MustRegisterNamedTransient(rootContainer, string(RemoteKindDevCenter), NewEnvironmentStore)
 
 	// Template Sources
-	container.MustRegisterNamedTransient(string(SourceKindDevCenter), NewTemplateSource)
+	container.MustRegisterNamedTransient(rootContainer, string(SourceKindDevCenter), NewTemplateSource)
 
-	container.MustRegisterSingleton(NewManager)
-	container.MustRegisterSingleton(NewPrompter)
+	container.MustRegisterSingleton(rootContainer, NewManager)
+	container.MustRegisterSingleton(rootContainer, NewPrompter)
 
 	// Other devcenter components
-	container.MustRegisterSingleton(func(
+	container.MustRegisterSingleton(rootContainer, func(
 		credentialProvider auth.MultiTenantCredentialProvider,
 		policyClientOptions *azcore.ClientOptions,
 		armClientOptions *arm.ClientOptions,

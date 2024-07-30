@@ -83,14 +83,14 @@ func (s *debugService) FetchTokenAsync(ctx context.Context, sessionId Session) (
 		credProvider auth.MultiTenantCredentialProvider `container:"type"`
 	}
 
-	container, err := session.newContainer(RequestContext{
+	serverContainer, err := session.newContainer(RequestContext{
 		HostProjectPath: session.rootPath,
 	})
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}
 
-	if err := container.Fill(&c); err != nil {
+	if err := serverContainer.Fill(ctx, &c); err != nil {
 		return azcore.AccessToken{}, err
 	}
 

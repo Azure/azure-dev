@@ -229,7 +229,7 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	case SourceKindResource:
 		source, err = NewJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
 	default:
-		err = sm.serviceLocator.ResolveNamed(string(config.Type), &source)
+		err = sm.serviceLocator.ResolveNamed(ctx, string(config.Type), &source)
 		if err != nil {
 			err = fmt.Errorf("%w, '%s', %w", ErrSourceTypeInvalid, config.Type, err)
 		}

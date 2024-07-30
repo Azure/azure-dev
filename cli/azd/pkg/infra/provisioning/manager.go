@@ -431,7 +431,7 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 	}
 
 	var provider Provider
-	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
+	err = m.serviceLocator.ResolveNamed(ctx, string(providerKey), &provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
 	}

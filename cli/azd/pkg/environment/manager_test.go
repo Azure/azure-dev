@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -21,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/wbreza/container/v4"
 )
 
 var (
@@ -320,7 +320,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerContainerComponents(t, mockContext)
 
-		mockContext.Container.MustRegisterSingleton(func() *state.RemoteConfig {
+		container.MustRegisterSingleton(mockContext.Container, func() *state.RemoteConfig {
 			return &state.RemoteConfig{
 				Backend: string(RemoteKindAzureBlobStorage),
 				Config:  map[string]interface{}{},
@@ -328,7 +328,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		})
 
 		var envManager Manager
-		err := mockContext.Container.Resolve(&envManager)
+		err := mockContext.Container.Resolve(*mockContext.Context, &envManager)
 		require.NoError(t, err)
 
 		manager := envManager.(*manager)
@@ -341,12 +341,12 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerContainerComponents(t, mockContext)
 
-		mockContext.Container.MustRegisterSingleton(func() *state.RemoteConfig {
+		container.MustRegisterSingleton(mockContext.Container, func() *state.RemoteConfig {
 			return nil
 		})
 
 		var envManager Manager
-		err := mockContext.Container.Resolve(&envManager)
+		err := mockContext.Container.Resolve(*mockContext.Context, &envManager)
 		require.NoError(t, err)
 
 		manager := envManager.(*manager)
@@ -356,46 +356,32 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 }
 
 func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
-	mockContext.Container.MustRegisterSingleton(func() context.Context {
-		return *mockContext.Context
-	})
-	mockContext.Container.MustRegisterSingleton(func() httputil.UserAgent {
+	container.MustRegisterSingleton(mockContext.Container, func() httputil.UserAgent {
 		return httputil.UserAgent(internal.UserAgent())
 	})
-	mockContext.Container.MustRegisterSingleton(func() auth.MultiTenantCredentialProvider {
+	container.MustRegisterSingleton(mockContext.Container, func() auth.MultiTenantCredentialProvider {
 		return mockContext.MultiTenantCredentialProvider
 	})
 
-	mockContext.Container.MustRegisterSingleton(NewManager)
-	mockContext.Container.MustRegisterSingleton(NewLocalFileDataStore)
-	mockContext.Container.MustRegisterNamedSingleton(string(RemoteKindAzureBlobStorage), NewStorageBlobDataStore)
+	container.MustRegisterSingleton(mockContext.Container, NewManager)
+	container.MustRegisterSingleton(mockContext.Container, NewLocalFileDataStore)
+	container.MustRegisterNamedSingleton(mockContext.Container, string(RemoteKindAzureBlobStorage), NewStorageBlobDataStore)
 
-	mockContext.Container.MustRegisterSingleton(func() *azcore.ClientOptions {
-		return mockContext.CoreClientOptions
-	})
-	mockContext.Container.MustRegisterSingleton(storage.NewBlobSdkClient)
-	mockContext.Container.MustRegisterSingleton(config.NewManager)
-	mockContext.Container.MustRegisterSingleton(storage.NewBlobClient)
+	container.MustRegisterInstance(mockContext.Container, mockContext.CoreClientOptions)
+	container.MustRegisterSingleton(mockContext.Container, storage.NewBlobSdkClient)
+	container.MustRegisterSingleton(mockContext.Container, config.NewManager)
+	container.MustRegisterSingleton(mockContext.Container, storage.NewBlobClient)
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
-	mockContext.Container.MustRegisterSingleton(func() *azdcontext.AzdContext {
-		return azdContext
-	})
-	mockContext.Container.MustRegisterSingleton(func() auth.HttpClient {
-		return mockContext.HttpClient
-	})
+	container.MustRegisterInstance(mockContext.Container, azdContext)
+	container.MustRegisterInstanceAs[auth.HttpClient](mockContext.Container, mockContext.HttpClient)
 
 	storageAccountConfig := &storage.AccountConfig{
 		AccountName:   "test",
 		ContainerName: "test",
 	}
-	mockContext.Container.MustRegisterSingleton(func() *storage.AccountConfig {
-		return storageAccountConfig
-	})
-
-	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
-		return cloud.AzurePublic()
-	})
+	container.MustRegisterInstance(mockContext.Container, storageAccountConfig)
+	container.MustRegisterInstance(mockContext.Container, cloud.AzurePublic())
 }
 
 type MockDataStore struct {

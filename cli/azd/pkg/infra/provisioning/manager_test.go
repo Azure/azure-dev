@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
+	"github.com/wbreza/container/v4"
 )
 
 func TestProvisionInitializesEnvironment(t *testing.T) {
@@ -226,13 +227,10 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
-	mockContext.Container.MustRegisterSingleton(func() environment.Manager {
-		return envManager
-	})
-
-	mockContext.Container.MustRegisterSingleton(prompt.NewDefaultPrompter)
-	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test), test.NewTestProvider)
-	mockContext.Container.MustRegisterSingleton(func() account.Manager {
+	container.MustRegisterInstanceAs[environment.Manager](mockContext.Container, envManager)
+	container.MustRegisterSingleton(mockContext.Container, prompt.NewDefaultPrompter)
+	container.MustRegisterNamedTransient(mockContext.Container, string(provisioning.Test), test.NewTestProvider)
+	container.MustRegisterSingleton(mockContext.Container, func() account.Manager {
 		return &mockaccount.MockAccountManager{
 			Subscriptions: []account.Subscription{
 				{
@@ -249,21 +247,15 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 			},
 		}
 	})
-	mockContext.Container.MustRegisterSingleton(func() *environment.Environment {
-		return env
-	})
-	mockContext.Container.MustRegisterSingleton(func() azcli.AzCli {
+	container.MustRegisterInstance(mockContext.Container, env)
+	container.MustRegisterSingleton(mockContext.Container, func() azcli.AzCli {
 		return mockazcli.NewAzCliFromMockContext(mockContext)
 	})
 
-	mockContext.Container.MustRegisterSingleton(func() clock.Clock {
-		return clock.NewMock()
-	})
+	container.MustRegisterInstanceAs[clock.Clock](mockContext.Container, clock.NewMock())
 
-	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
-		return cloud.AzurePublic()
-	})
-	mockContext.Container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {
+	container.MustRegisterInstance(mockContext.Container, cloud.AzurePublic())
+	container.MustRegisterSingleton(mockContext.Container, func(cloud *cloud.Cloud) cloud.PortalUrlBase {
 		return cloud.PortalUrlBase
 	})
 }

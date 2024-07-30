@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -12,11 +13,11 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/wbreza/container/v4"
 
 	// Importing for infrastructure provider plugin registrations
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -32,9 +33,10 @@ import (
 // rootContainer - The IoC container to use for registering and resolving dependencies. If nil is provided, a new
 // container empty will be created.
 func NewRootCmd(
+	ctx context.Context,
 	staticHelp bool,
 	middlewareChain []*actions.MiddlewareRegistration,
-	rootContainer *ioc.NestedContainer,
+	rootContainer *container.Container,
 ) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
@@ -339,25 +341,25 @@ func NewRootCmd(
 
 	// Register common dependencies for the IoC rootContainer
 	if rootContainer == nil {
-		rootContainer = ioc.NewNestedContainer(nil)
+		rootContainer = container.New()
 	}
-	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
+	container.MustRegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 	registerCommonDependencies(rootContainer)
 
 	// Initialize the platform specific components for the IoC container
 	// Only container resolution errors will return an error
 	// Invalid configurations will fall back to default platform
-	if _, err := platform.Initialize(rootContainer, azd.PlatformKindDefault); err != nil {
+	if _, err := platform.Initialize(ctx, rootContainer, azd.PlatformKindDefault); err != nil {
 		panic(err)
 	}
 
 	// Compose the hierarchy of action descriptions into cobra commands
 	var cobraBuilder *CobraBuilder
-	if err := rootContainer.Resolve(&cobraBuilder); err != nil {
+	if err := rootContainer.Resolve(ctx, &cobraBuilder); err != nil {
 		panic(err)
 	}
 
-	cmd, err := cobraBuilder.BuildCommand(root)
+	cmd, err := cobraBuilder.BuildCommand(ctx, root)
 
 	if err != nil {
 		// If their is a container registration issue or similar we'll get an error at this point

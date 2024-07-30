@@ -21,8 +21,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/gorilla/websocket"
+	"github.com/wbreza/container/v4"
 	"go.lsp.dev/jsonrpc2"
 )
 
@@ -33,12 +33,12 @@ type Server struct {
 	sessionsMu sync.Mutex
 	// rootContainer contains all the core registrations for the azd components.
 	// It is not expected to be modified throughout the lifetime of the server.
-	rootContainer *ioc.NestedContainer
+	rootContainer *container.Container
 	// cancelTelemetryUpload is a function that cancels the background telemetry upload goroutine.
 	cancelTelemetryUpload func()
 }
 
-func NewServer(rootContainer *ioc.NestedContainer) *Server {
+func NewServer(rootContainer *container.Container) *Server {
 	return &Server{
 		sessions:      make(map[string]*serverSession),
 		rootContainer: rootContainer,

@@ -14,10 +14,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/mattn/go-colorable"
+	"github.com/wbreza/container/v4"
 	"go.lsp.dev/jsonrpc2"
 )
 
@@ -30,7 +30,7 @@ type serverSession struct {
 	// rootPath is the path to the root of the solution.
 	rootPath string
 	// root container points to server.rootContainer
-	rootContainer            *ioc.NestedContainer
+	rootContainer            *container.Container
 	externalServicesEndpoint string
 	externalServicesKey      string
 	externalServicesClient   *http.Client
@@ -80,16 +80,16 @@ func (s *Server) validateSession(ctx context.Context, session Session) (*serverS
 	return serverSession, nil
 }
 
-type container struct {
-	*ioc.NestedContainer
+type serverContainer struct {
+	*container.Container
 	outWriter     *writerMultiplexer
 	errWriter     *writerMultiplexer
 	spinnerWriter *writerMultiplexer
 }
 
 // newContainer creates a new container for the session.
-func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
-	c, err := s.rootContainer.NewScopeRegistrationsOnly()
+func (s *serverSession) newContainer(rc RequestContext) (*serverContainer, error) {
+	c, err := s.rootContainer.NewScope()
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 		}),
 	})
 
-	c.MustRegisterScoped(func() input.Console {
+	container.MustRegisterScoped(c, func() input.Console {
 		stdout := outWriter
 		stderr := errWriter
 		stdin := strings.NewReader("")
@@ -147,25 +147,25 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 			})
 	})
 
-	c.MustRegisterScoped(func(console input.Console) io.Writer {
+	container.MustRegisterScoped(c, func(console input.Console) io.Writer {
 		return colorable.NewNonColorable(console.Handles().Stdout)
 	})
 
-	c.MustRegisterScoped(func() *internal.GlobalCommandOptions {
+	container.MustRegisterScoped(c, func() *internal.GlobalCommandOptions {
 		return &internal.GlobalCommandOptions{
 			NoPrompt: true,
 		}
 	})
 
-	c.MustRegisterScoped(func() *azdcontext.AzdContext {
+	container.MustRegisterScoped(c, func() *azdcontext.AzdContext {
 		return azdCtx
 	})
 
-	c.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
+	container.MustRegisterScoped(c, func() *lazy.Lazy[*azdcontext.AzdContext] {
 		return lazy.From(azdCtx)
 	})
 
-	c.MustRegisterScoped(func() auth.ExternalAuthConfiguration {
+	container.MustRegisterScoped(c, func() auth.ExternalAuthConfiguration {
 		return auth.ExternalAuthConfiguration{
 			Endpoint: s.externalServicesEndpoint,
 			Key:      s.externalServicesKey,
@@ -173,10 +173,10 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 		}
 	})
 
-	return &container{
-		NestedContainer: c,
-		outWriter:       outWriter,
-		errWriter:       errWriter,
-		spinnerWriter:   spinnerWriter,
+	return &serverContainer{
+		Container:     c,
+		outWriter:     outWriter,
+		errWriter:     errWriter,
+		spinnerWriter: spinnerWriter,
 	}, nil
 }

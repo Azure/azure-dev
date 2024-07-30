@@ -747,12 +747,12 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	log.Printf("Using pipeline provider: %s", output.WithHighLightFormat(displayName))
 
 	var scmProvider ScmProvider
-	if err := pm.serviceLocator.ResolveNamed(scmProviderName+"-scm", &scmProvider); err != nil {
+	if err := pm.serviceLocator.ResolveNamed(ctx, scmProviderName+"-scm", &scmProvider); err != nil {
 		return fmt.Errorf("resolving scm provider: %w", err)
 	}
 
 	var ciProvider CiProvider
-	if err := pm.serviceLocator.ResolveNamed(ciProviderName+"-ci", &ciProvider); err != nil {
+	if err := pm.serviceLocator.ResolveNamed(ctx, ciProviderName+"-ci", &ciProvider); err != nil {
 		return fmt.Errorf("resolving ci provider: %w", err)
 	}
 
@@ -880,9 +880,13 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 
 	// Confirm with the user before adding the file
 	pm.console.Message(ctx, "")
-	pm.console.Message(ctx,
-		fmt.Sprintf("The default %s file, which contains a basic workflow to help you get started, is missing from your project.",
-			output.WithHighLightFormat("azure-dev.yml")))
+	pm.console.Message(
+		ctx,
+		fmt.Sprintf(
+			"The default %s file, which contains a basic workflow to help you get started, is missing from your project.",
+			output.WithHighLightFormat("azure-dev.yml"),
+		),
+	)
 	pm.console.Message(ctx, "")
 
 	// Prompt the user for confirmation

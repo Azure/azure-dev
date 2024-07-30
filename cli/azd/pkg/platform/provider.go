@@ -1,6 +1,6 @@
 package platform
 
-import "github.com/azure/azure-dev/cli/azd/pkg/ioc"
+import "github.com/wbreza/container/v4"
 
 // Provider is an interface for a platform provider
 type Provider interface {
@@ -11,5 +11,5 @@ type Provider interface {
 	IsEnabled() bool
 
 	// ConfigureContainer configures the IoC container for the platform
-	ConfigureContainer(container *ioc.NestedContainer) error
+	ConfigureContainer(container *container.Container) error
 }

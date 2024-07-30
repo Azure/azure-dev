@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/benbjohnson/clock"
+	"github.com/wbreza/container/v4"
 )
 
 type MockContext struct {
@@ -29,7 +30,7 @@ type MockContext struct {
 	ArmClientOptions               *arm.ClientOptions
 	CommandRunner                  *mockexec.MockCommandRunner
 	ConfigManager                  *mockconfig.MockConfigManager
-	Container                      *ioc.NestedContainer
+	Container                      *container.Container
 	AlphaFeaturesManager           *alpha.FeatureManager
 	SubscriptionCredentialProvider *MockSubscriptionCredentialProvider
 	MultiTenantCredentialProvider  *MockMultiTenantCredentialProvider
@@ -59,7 +60,7 @@ func NewMockContext(ctx context.Context) *MockContext {
 		ConfigManager:                  configManager,
 		SubscriptionCredentialProvider: &MockSubscriptionCredentialProvider{},
 		MultiTenantCredentialProvider:  &MockMultiTenantCredentialProvider{},
-		Container:                      ioc.NewNestedContainer(nil),
+		Container:                      container.New(),
 		Config:                         config,
 		AlphaFeaturesManager:           alpha.NewFeaturesManagerWithConfig(config),
 		Clock:                          clock.NewMock(),
@@ -71,22 +72,10 @@ func NewMockContext(ctx context.Context) *MockContext {
 }
 
 func registerCommonMocks(mockContext *MockContext) {
-	mockContext.Container.MustRegisterSingleton(func() ioc.ServiceLocator {
-		return mockContext.Container
-	})
-	mockContext.Container.MustRegisterSingleton(func() httputil.HttpClient {
-		return mockContext.HttpClient
-	})
-	mockContext.Container.MustRegisterSingleton(func() exec.CommandRunner {
-		return mockContext.CommandRunner
-	})
-	mockContext.Container.MustRegisterSingleton(func() input.Console {
-		return mockContext.Console
-	})
-	mockContext.Container.MustRegisterSingleton(func() config.FileConfigManager {
-		return mockContext.ConfigManager
-	})
-	mockContext.Container.MustRegisterSingleton(func() *alpha.FeatureManager {
-		return mockContext.AlphaFeaturesManager
-	})
+	container.MustRegisterInstanceAs[ioc.ServiceLocator](mockContext.Container, mockContext.Container)
+	container.MustRegisterInstanceAs[httputil.HttpClient](mockContext.Container, mockContext.HttpClient)
+	container.MustRegisterInstanceAs[exec.CommandRunner](mockContext.Container, mockContext.CommandRunner)
+	container.MustRegisterInstanceAs[input.Console](mockContext.Container, mockContext.Console)
+	container.MustRegisterInstanceAs[config.FileConfigManager](mockContext.Container, mockContext.ConfigManager)
+	container.MustRegisterInstance(mockContext.Container, mockContext.AlphaFeaturesManager)
 }

@@ -492,6 +492,11 @@ func setupGitCliMocks(mockContext *mocks.MockContext, repoPath string) {
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, repoPath, ""), nil
 	})
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "branch --show-current")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "main", ""), nil
+	})
 }
 
 func resetAzureYaml(t *testing.T, projectFilePath string) {

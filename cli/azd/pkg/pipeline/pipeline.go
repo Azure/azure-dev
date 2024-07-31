@@ -210,4 +210,7 @@ type projectProperties struct {
 	CiProvider    ciProviderType
 	InfraProvider infraProviderType
 	RepoRoot      string
+	HasAppHost    bool
+	BranchName    string
+	authType      PipelineAuthType
 }

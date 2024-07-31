@@ -732,16 +732,39 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	defer func() { _ = infra.Cleanup() }()
 	pm.infra = infra
 
+	hasAppHost := pm.importManager.HasAppHost(ctx, prjConfig)
+
 	infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
 	if err != nil {
 		return err
 	}
+
+	// There are 2 possible options, for the git branch name, when running azd pipeline config:
+	// - There is not a git repo, so the branch name is empty. In this case, we default to "main".
+	// - There is a git repo and we can get the name of the current branch.
+	branchName := "main"
+	customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
+	// It is fine if we can't get the branch name, we will default to "main"
+	if err == nil {
+		branchName = customBranchName
+	}
+
+	// default auth type for all providers
+	authType := AuthTypeFederated
+	if pm.args.PipelineAuthTypeName == "" && infraProvider == infraProviderTerraform {
+		// empty arg for auth and terraform forces client credentials, otherwise, it will be federated
+		authType = AuthTypeClientCredentials
+	}
+
 	// Check and prompt for missing CI/CD files
 	if err := pm.checkAndPromptForProviderFiles(
 		ctx, projectProperties{
 			CiProvider:    pipelineProvider,
 			RepoRoot:      repoRoot,
 			InfraProvider: infraProvider,
+			HasAppHost:    hasAppHost,
+			BranchName:    branchName,
+			authType:      authType,
 		}); err != nil {
 		return err
 	}
@@ -937,10 +960,10 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 				InstallDotNetAspire bool
 				ClientSecretLogIn   bool
 			}{
-				BranchName:          "main",
-				FedCredLogIn:        true,
-				InstallDotNetAspire: false,
-				ClientSecretLogIn:   false,
+				BranchName:          props.BranchName,
+				FedCredLogIn:        props.authType == AuthTypeFederated,
+				InstallDotNetAspire: props.HasAppHost,
+				ClientSecretLogIn:   props.authType == AuthTypeClientCredentials,
 			})
 			if err != nil {
 				return fmt.Errorf("executing template: %w", err)

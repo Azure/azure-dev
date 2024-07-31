@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -94,9 +94,9 @@ func (s *environmentService) refreshEnvironmentAsync(
 		log.Printf("failed to get latest deployment result: %v", err)
 	} else {
 		env.LastDeployment = &DeploymentResult{
-			DeploymentId: *deployment.ID,
-			Success:      *deployment.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded,
-			Time:         *deployment.Properties.Timestamp,
+			DeploymentId: deployment.Id,
+			Success:      deployment.ProvisioningState == azapi.DeploymentProvisioningStateSucceeded,
+			Time:         deployment.Timestamp,
 		}
 	}
 

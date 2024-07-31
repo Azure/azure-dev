@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -168,13 +167,11 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := NewSubscriptionDeployment(
-		depService,
-		depOpService,
+	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	deployment := NewSubscriptionDeployment(
+		scope,
 		"eastus2",
-		"SUBSCRIPTION_ID",
 		"DEPLOYMENT_NAME",
-		cloud.AzurePublic().PortalUrlBase,
 	)
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -212,7 +209,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(azCli, depOpService)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, deployment, &qStart)
 	require.NotNil(t, operations)
 	require.Nil(t, err)
 
@@ -229,13 +226,11 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := NewSubscriptionDeployment(
-		depService,
-		depOpService,
+	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	deployment := NewSubscriptionDeployment(
+		scope,
 		"eastus2",
-		"SUBSCRIPTION_ID",
 		"DEPLOYMENT_NAME",
-		cloud.AzurePublic().PortalUrlBase,
 	)
 
 	/*NOTE: Mocking first response as an `StatusForbidden` error which is not retried by the sdk client.
@@ -278,7 +273,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(azCli, depOpService)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, deployment, &qStart)
 
 	require.Nil(t, operations)
 	require.NotNil(t, err)
@@ -295,13 +290,11 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := NewSubscriptionDeployment(
-		depService,
-		depOpService,
+	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	deployment := NewSubscriptionDeployment(
+		scope,
 		"eastus2",
-		"SUBSCRIPTION_ID",
 		"DEPLOYMENT_NAME",
-		cloud.AzurePublic().PortalUrlBase,
 	)
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -338,7 +331,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(azCli, depOpService)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, deployment, &qStart)
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
@@ -355,13 +348,11 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := NewSubscriptionDeployment(
-		depService,
-		depOpService,
+	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	deployment := NewSubscriptionDeployment(
+		scope,
 		"eastus2",
-		"SUBSCRIPTION_ID",
 		"DEPLOYMENT_NAME",
-		cloud.AzurePublic().PortalUrlBase,
 	)
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -415,7 +406,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	})
 
 	arm := NewAzureResourceManager(azCli, depOpService)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, deployment, &qStart)
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)

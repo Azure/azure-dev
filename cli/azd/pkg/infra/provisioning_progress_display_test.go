@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package infra
 
 import (
 	"bytes"
@@ -16,8 +16,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +28,7 @@ type mockResourceManager struct {
 
 func (mock *mockResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
-	target infra.Deployment,
+	target Deployment,
 	startTime *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
 	return mock.operations, nil
@@ -40,7 +38,7 @@ func (mock *mockResourceManager) GetResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
-	resourceType infra.AzureResourceType,
+	resourceType AzureResourceType,
 ) (string, error) {
 	return string(resourceType), nil
 }
@@ -51,7 +49,7 @@ func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
 		Properties: &armresources.DeploymentOperationProperties{
 			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
 			TargetResource: &armresources.TargetResource{
-				ResourceType: to.Ptr(string(infra.AzureResourceTypeWebSite) + "/config"),
+				ResourceType: to.Ptr(string(AzureResourceTypeWebSite) + "/config"),
 				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},
@@ -66,7 +64,7 @@ func (mock *mockResourceManager) AddInProgressOperation() {
 		Properties: &armresources.DeploymentOperationProperties{
 			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
 			TargetResource: &armresources.TargetResource{
-				ResourceType: to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				ResourceType: to.Ptr(string(AzureResourceTypeWebSite)),
 				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},
@@ -105,20 +103,18 @@ func TestReportProgress(t *testing.T) {
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
-	scope := infra.NewSubscriptionDeployment(
-		depService,
-		depOpService,
+	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	deployment := NewSubscriptionDeployment(
+		scope,
 		"eastus2",
-		"SUBSCRIPTION_ID",
 		"DEPLOYMENT_NAME",
-		cloud.AzurePublic().PortalUrlBase,
 	)
 	mockAzDeploymentShow(t, *mockContext)
 
 	startTime := time.Now()
 	outputLength := 0
 	mockResourceManager := mockResourceManager{}
-	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, scope)
+	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, deployment)
 	err := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
 	require.NoError(t, err)
 

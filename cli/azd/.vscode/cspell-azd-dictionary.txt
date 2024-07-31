@@ -21,6 +21,7 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 armcosmos
+armdeploymentstacks
 armmachinelearning
 armresourcegraph
 armsql

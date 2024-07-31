@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package infra
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -26,17 +25,17 @@ type ProvisioningProgressDisplay struct {
 	deploymentStarted bool
 	// Keeps track of created resources
 	displayedResources map[string]bool
-	resourceManager    infra.ResourceManager
+	resourceManager    ResourceManager
 	console            input.Console
-	target             infra.Deployment
+	target             Deployment
 }
 
 func NewProvisioningProgressDisplay(
-	rm infra.ResourceManager,
+	rm ResourceManager,
 	console input.Console,
-	target infra.Deployment,
-) ProvisioningProgressDisplay {
-	return ProvisioningProgressDisplay{
+	target Deployment,
+) *ProvisioningProgressDisplay {
+	return &ProvisioningProgressDisplay{
 		displayedResources: map[string]bool{},
 		target:             target,
 		resourceManager:    rm,
@@ -57,7 +56,12 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		}
 
 		display.deploymentStarted = true
-		deploymentUrl := fmt.Sprintf(output.WithLinkFormat("%s\n"), display.target.PortalUrl())
+		portalUrl, err := display.target.PortalUrl(ctx)
+		if err != nil {
+			return err
+		}
+
+		deploymentUrl := fmt.Sprintf(output.WithLinkFormat("%s\n"), portalUrl)
 
 		display.console.EnsureBlankLine(ctx)
 
@@ -96,8 +100,8 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 			resourceId := *operations[i].Properties.TargetResource.ResourceName
 
 			if !display.displayedResources[resourceId] &&
-				infra.IsTopLevelResourceType(
-					infra.AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
+				IsTopLevelResourceType(
+					AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
 
 				switch *operations[i].Properties.ProvisioningState {
 				case string(armresources.ProvisioningStateSucceeded):
@@ -134,12 +138,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			ctx,
 			display.target.SubscriptionId(),
 			*resource.Properties.TargetResource.ID,
-			infra.AzureResourceType(resourceTypeName),
+			AzureResourceType(resourceTypeName),
 		)
 
 		if err != nil {
 			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceTypeName))
+			resourceTypeDisplayName = GetResourceTypeDisplayName(AzureResourceType(resourceTypeName))
 		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
@@ -173,12 +177,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			ctx,
 			display.target.SubscriptionId(),
 			*inProgResource.Properties.TargetResource.ID,
-			infra.AzureResourceType(resourceTypeName),
+			AzureResourceType(resourceTypeName),
 		)
 
 		if err != nil {
 			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceTypeName))
+			resourceTypeDisplayName = GetResourceTypeDisplayName(AzureResourceType(resourceTypeName))
 		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.

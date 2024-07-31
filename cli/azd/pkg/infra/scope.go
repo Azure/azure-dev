@@ -5,36 +5,44 @@ package infra
 
 import (
 	"context"
-	"fmt"
-	"net/url"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
 
+type ScopeType string
+
+const (
+	ScopeTypeSubscription  ScopeType = "subscription"
+	ScopeTypeResourceGroup ScopeType = "resourcegroup"
+)
+
 type Scope interface {
+	Type() ScopeType
 	// SubscriptionId is the id of the subscription which this deployment targets.
 	SubscriptionId() string
 	// ListDeployments returns all the deployments at this scope.
-	ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error)
+	ListDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error)
 }
 
 type Deployment interface {
 	Scope
 	// Name is the name of this deployment.
 	Name() string
-	// PortalUrl is the URL that may be used to view this deployment in the Azure Portal.
-	PortalUrl() string
+	// PortalUrl is the URL that may be used to view this deployment resource in the Azure Portal.
+	PortalUrl(ctx context.Context) (string, error)
 	// OutputsUrl is the URL that may be used to view this deployment outputs the in Azure Portal.
-	OutputsUrl() string
+	OutputsUrl(ctx context.Context) (string, error)
+	// DeploymentUrl is the URL that may be used to view this deployment progress in the Azure Portal.
+	DeploymentUrl(ctx context.Context) (string, error)
 	// Deploy a given template with a set of parameters.
 	Deploy(
 		ctx context.Context,
 		template azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
-	) (*armresources.DeploymentExtended, error)
+	) (*azapi.ResourceDeployment, error)
 	// Deploy a given template with a set of parameters.
 	DeployPreview(
 		ctx context.Context,
@@ -42,15 +50,15 @@ type Deployment interface {
 		parameters azure.ArmParameters,
 	) (*armresources.WhatIfOperationResult, error)
 	// Deployment fetches information about this deployment.
-	Deployment(ctx context.Context) (*armresources.DeploymentExtended, error)
+	Deployment(ctx context.Context) (*azapi.ResourceDeployment, error)
 	// Operations returns all the operations for this deployment.
 	Operations(ctx context.Context) ([]*armresources.DeploymentOperation, error)
 }
 
 type ResourceGroupDeployment struct {
 	*ResourceGroupScope
-	name          string
-	portalUrlBase string
+	name       string
+	deployment *azapi.ResourceDeployment
 }
 
 func (s *ResourceGroupDeployment) Name() string {
@@ -69,7 +77,7 @@ func (s *ResourceGroupDeployment) ResourceGroupName() string {
 
 func (s *ResourceGroupDeployment) Deploy(
 	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
-) (*armresources.DeploymentExtended, error) {
+) (*azapi.ResourceDeployment, error) {
 	return s.deployments.DeployToResourceGroup(
 		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags)
 }
@@ -83,7 +91,7 @@ func (s *ResourceGroupDeployment) DeployPreview(
 }
 
 // GetDeployment fetches the result of the most recent deployment.
-func (s *ResourceGroupDeployment) Deployment(ctx context.Context) (*armresources.DeploymentExtended, error) {
+func (s *ResourceGroupDeployment) Deployment(ctx context.Context) (*azapi.ResourceDeployment, error) {
 	return s.deployments.GetResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroupName, s.name)
 }
 
@@ -93,38 +101,52 @@ func (s *ResourceGroupDeployment) Operations(ctx context.Context) ([]*armresourc
 		ctx, s.subscriptionId, s.resourceGroupName, s.name)
 }
 
-// Gets the url to check deployment progress
-func (s *ResourceGroupDeployment) PortalUrl() string {
-	return fmt.Sprintf("%s/%s/%s",
-		s.portalUrlBase,
-		cPortalUrlFragment,
-		url.PathEscape(azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroupName, s.name)))
+// Gets the url to check deployment resource
+func (s *ResourceGroupDeployment) PortalUrl(ctx context.Context) (string, error) {
+	if s.deployment == nil {
+		deployment, err := s.Deployment(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		s.deployment = deployment
+	}
+
+	return s.deployment.PortalUrl, nil
 }
 
 // Gets the url to view deployment outputs
-func (s *ResourceGroupDeployment) OutputsUrl() string {
-	return fmt.Sprintf("%s/%s/%s",
-		s.portalUrlBase,
-		cOutputsUrlFragment,
-		url.PathEscape(azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroupName, s.name)))
+func (s *ResourceGroupDeployment) OutputsUrl(ctx context.Context) (string, error) {
+	if s.deployment == nil {
+		deployment, err := s.Deployment(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		s.deployment = deployment
+	}
+
+	return s.deployment.OutputsUrl, nil
 }
 
-func NewResourceGroupDeployment(
-	deploymentsService azapi.Deployments,
-	deploymentOperations azapi.DeploymentOperations,
-	subscriptionId string,
-	resourceGroupName string,
-	deploymentName string,
-	portalUrlBase string,
-) Deployment {
+// Gets the url to view deployment
+func (s *ResourceGroupDeployment) DeploymentUrl(ctx context.Context) (string, error) {
+	if s.deployment == nil {
+		deployment, err := s.Deployment(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		s.deployment = deployment
+	}
+
+	return s.deployment.DeploymentUrl, nil
+}
+
+func NewResourceGroupDeployment(scope *ResourceGroupScope, deploymentName string) *ResourceGroupDeployment {
 	return &ResourceGroupDeployment{
-		ResourceGroupScope: NewResourceGroupScope(
-			deploymentsService,
-			deploymentOperations,
-			subscriptionId,
-			resourceGroupName),
-		name:          deploymentName,
-		portalUrlBase: portalUrlBase,
+		ResourceGroupScope: scope,
+		name:               deploymentName,
 	}
 }
 
@@ -135,7 +157,7 @@ type ResourceGroupScope struct {
 	resourceGroupName    string
 }
 
-func NewResourceGroupScope(
+func newResourceGroupScope(
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
 	subscriptionId string, resourceGroupName string) *ResourceGroupScope {
@@ -147,6 +169,10 @@ func NewResourceGroupScope(
 	}
 }
 
+func (s *ResourceGroupScope) Type() ScopeType {
+	return ScopeTypeResourceGroup
+}
+
 func (s *ResourceGroupScope) SubscriptionId() string {
 	return s.subscriptionId
 }
@@ -156,7 +182,7 @@ func (s *ResourceGroupScope) ResourceGroupName() string {
 }
 
 // ListDeployments returns all the deployments in this resource group.
-func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
+func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error) {
 	return s.deployments.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
 }
 
@@ -165,9 +191,9 @@ const cOutputsUrlFragment = "#view/HubsExtension/DeploymentDetailsBlade/~/output
 
 type SubscriptionDeployment struct {
 	*SubscriptionScope
-	name          string
-	location      string
-	portalUrlBase string
+	name       string
+	location   string
+	deployment *azapi.ResourceDeployment
 }
 
 func (s *SubscriptionDeployment) Name() string {
@@ -179,20 +205,46 @@ func (s *SubscriptionDeployment) SubscriptionId() string {
 	return s.subscriptionId
 }
 
-// Gets the url to check deployment progress
-func (s *SubscriptionDeployment) PortalUrl() string {
-	return fmt.Sprintf("%s/%s/%s",
-		s.portalUrlBase,
-		cPortalUrlFragment,
-		url.PathEscape(azure.SubscriptionDeploymentRID(s.subscriptionId, s.name)))
+// Gets the url to check deployment resource
+func (s *SubscriptionDeployment) PortalUrl(ctx context.Context) (string, error) {
+	if s.deployment == nil {
+		deployment, err := s.Deployment(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		s.deployment = deployment
+	}
+
+	return s.deployment.PortalUrl, nil
 }
 
 // Gets the url to view deployment outputs
-func (s *SubscriptionDeployment) OutputsUrl() string {
-	return fmt.Sprintf("%s/%s/%s",
-		s.portalUrlBase,
-		cOutputsUrlFragment,
-		url.PathEscape(azure.SubscriptionDeploymentRID(s.subscriptionId, s.name)))
+func (s *SubscriptionDeployment) OutputsUrl(ctx context.Context) (string, error) {
+	if s.deployment == nil {
+		deployment, err := s.Deployment(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		s.deployment = deployment
+	}
+
+	return s.deployment.OutputsUrl, nil
+}
+
+// Gets the url to view deployment
+func (s *SubscriptionDeployment) DeploymentUrl(ctx context.Context) (string, error) {
+	if s.deployment == nil {
+		deployment, err := s.Deployment(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		s.deployment = deployment
+	}
+
+	return s.deployment.DeploymentUrl, nil
 }
 
 // Gets the Azure location for the subscription deployment
@@ -202,8 +254,11 @@ func (s *SubscriptionDeployment) Location() string {
 
 // Deploy a given template with a set of parameters.
 func (s *SubscriptionDeployment) Deploy(
-	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
-) (*armresources.DeploymentExtended, error) {
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+) (*azapi.ResourceDeployment, error) {
 	return s.deploymentsService.DeployToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters, tags)
 }
 
@@ -217,7 +272,7 @@ func (s *SubscriptionDeployment) DeployPreview(
 }
 
 // GetDeployment fetches the result of the most recent deployment.
-func (s *SubscriptionDeployment) Deployment(ctx context.Context) (*armresources.DeploymentExtended, error) {
+func (s *SubscriptionDeployment) Deployment(ctx context.Context) (*azapi.ResourceDeployment, error) {
 	return s.deploymentsService.GetSubscriptionDeployment(ctx, s.subscriptionId, s.name)
 }
 
@@ -227,21 +282,14 @@ func (s *SubscriptionDeployment) Operations(ctx context.Context) ([]*armresource
 }
 
 func NewSubscriptionDeployment(
-	deploymentsService azapi.Deployments,
-	deploymentOperations azapi.DeploymentOperations,
+	scope *SubscriptionScope,
 	location string,
-	subscriptionId string,
 	deploymentName string,
-	portalUrlBase string,
 ) *SubscriptionDeployment {
 	return &SubscriptionDeployment{
-		SubscriptionScope: NewSubscriptionScope(
-			deploymentsService,
-			deploymentOperations,
-			subscriptionId),
-		name:          deploymentName,
-		location:      location,
-		portalUrlBase: string(portalUrlBase),
+		SubscriptionScope: scope,
+		name:              deploymentName,
+		location:          location,
 	}
 }
 
@@ -251,17 +299,21 @@ type SubscriptionScope struct {
 	subscriptionId       string
 }
 
+func (s *SubscriptionScope) Type() ScopeType {
+	return ScopeTypeSubscription
+}
+
 // Gets the Azure subscription id
 func (s *SubscriptionScope) SubscriptionId() string {
 	return s.subscriptionId
 }
 
 // ListDeployments returns all the deployments at subscription scope.
-func (s *SubscriptionScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
+func (s *SubscriptionScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error) {
 	return s.deploymentsService.ListSubscriptionDeployments(ctx, s.subscriptionId)
 }
 
-func NewSubscriptionScope(
+func newSubscriptionScope(
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
 	subscriptionId string,

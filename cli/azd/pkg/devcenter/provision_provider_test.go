@@ -469,9 +469,17 @@ func newProvisionProviderForTest(
 		azcli.NewAzCliArgs{},
 		mockContext.ArmClientOptions,
 	)
+
 	resourceManager := infra.NewAzureResourceManager(
 		azCli,
 		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
+	)
+
+	deploymentManager := infra.NewDeploymentManager(
+		azapi.NewDeployments(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions, mockContext.Clock),
+		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
+		resourceManager,
+		mockContext.Console,
 	)
 
 	if manager == nil {
@@ -489,7 +497,7 @@ func newProvisionProviderForTest(
 		envManager,
 		config,
 		devCenterClient,
-		resourceManager,
+		deploymentManager,
 		manager,
 		prompter,
 	)

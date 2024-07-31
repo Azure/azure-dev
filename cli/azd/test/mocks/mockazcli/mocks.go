@@ -8,6 +8,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/benbjohnson/clock"
 )
 
 // NewAzCliFromMockContext creates a new instance of AzCli, configured to use the credential and pipeline from the
@@ -40,5 +41,6 @@ func NewDeploymentsServiceFromMockContext(
 			return mockContext.Credentials, nil
 		}),
 		mockContext.ArmClientOptions,
+		clock.NewMock(),
 	)
 }

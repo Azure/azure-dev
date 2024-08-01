@@ -45,8 +45,8 @@ func NewContainerAppTarget(
 }
 
 // Gets the required external tools
-func (at *containerAppTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
-	return at.containerHelper.RequiredExternalTools(ctx)
+func (at *containerAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	return at.containerHelper.RequiredExternalTools(ctx, serviceConfig)
 }
 
 // Initializes the Container App target

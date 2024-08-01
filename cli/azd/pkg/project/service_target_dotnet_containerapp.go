@@ -72,7 +72,7 @@ func NewDotNetContainerAppTarget(
 }
 
 // Gets the required external tools
-func (at *dotnetContainerAppTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (at *dotnetContainerAppTarget) RequiredExternalTools(ctx context.Context, svc *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{at.dotNetCli}
 }
 

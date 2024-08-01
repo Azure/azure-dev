@@ -43,7 +43,7 @@ func NewStaticWebAppTarget(
 }
 
 // Gets the required external tools for the Static Web App target
-func (at *staticWebAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (at *staticWebAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{at.swa}
 }
 

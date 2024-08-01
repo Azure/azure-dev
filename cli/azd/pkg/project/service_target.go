@@ -67,7 +67,7 @@ type ServiceTarget interface {
 
 	// RequiredExternalTools are the tools needed to run the deploy operation for this
 	// target.
-	RequiredExternalTools(ctx context.Context) []tools.ExternalTool
+	RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool
 
 	// Package prepares artifacts for deployment
 	Package(

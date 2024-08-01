@@ -39,7 +39,7 @@ func (np *npmProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (np *npmProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (np *npmProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{np.cli}
 }
 

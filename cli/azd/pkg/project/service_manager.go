@@ -148,7 +148,7 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 	}
 
 	requiredTools := []tools.ExternalTool{}
-	requiredTools = append(requiredTools, frameworkService.RequiredExternalTools(ctx)...)
+	requiredTools = append(requiredTools, frameworkService.RequiredExternalTools(ctx, serviceConfig)...)
 	requiredTools = append(requiredTools, serviceTarget.RequiredExternalTools(ctx)...)
 
 	return tools.Unique(requiredTools), nil

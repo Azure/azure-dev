@@ -491,7 +491,7 @@ func (f *fakeFramework) Requirements() FrameworkRequirements {
 	}
 }
 
-func (f *fakeFramework) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (f *fakeFramework) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{&fakeTool{}}
 }
 

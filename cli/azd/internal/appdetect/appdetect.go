@@ -176,10 +176,10 @@ var allDetectors = []projectDetector{
 	&javaDetector{},
 	&dotNetAppHostDetector{
 		// TODO(ellismg): Remove ambient authority.
-		dotnetCli: dotnet.NewDotNetCli(exec.NewCommandRunner(nil)),
+		dotnetCli: dotnet.NewCli(exec.NewCommandRunner(nil)),
 	},
 	&dotNetDetector{
-		dotnetCli: dotnet.NewDotNetCli(exec.NewCommandRunner(nil)),
+		dotnetCli: dotnet.NewCli(exec.NewCommandRunner(nil)),
 	},
 	&pythonDetector{},
 	&javaScriptDetector{},

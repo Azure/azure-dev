@@ -43,7 +43,7 @@ func Test_MavenProject(t *testing.T) {
 
 		env := environment.New("test")
 		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
-		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+		mavenCli := maven.NewCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
@@ -79,7 +79,7 @@ func Test_MavenProject(t *testing.T) {
 
 		env := environment.New("test")
 		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
-		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+		mavenCli := maven.NewCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
@@ -116,7 +116,7 @@ func Test_MavenProject(t *testing.T) {
 
 		env := environment.New("test")
 		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
-		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+		mavenCli := maven.NewCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		// Simulate a build output with a jar file
@@ -286,7 +286,7 @@ func Test_MavenProject_Package(t *testing.T) {
 				})
 
 			env := environment.New("test")
-			mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+			mavenCli := maven.NewCli(mockContext.CommandRunner)
 			javaCli := javac.NewCli(mockContext.CommandRunner)
 			mavenProject := NewMavenProject(env, mavenCli, javaCli)
 			err = mavenProject.Initialize(*mockContext.Context, tt.args.svc)

@@ -95,7 +95,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		err = copySample(dir, "aspire-full")
 		require.NoError(t, err, "failed expanding sample")
 
-		dotnetCli := dotnet.NewDotNetCli(exec.NewCommandRunner(nil))
+		dotnetCli := dotnet.NewCli(exec.NewCommandRunner(nil))
 		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
 		manifestPath := filepath.Join(appHostProject, "manifest.json")
 
@@ -207,7 +207,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		_, err = cli.RunCommand(ctx, "infra", "synth")
 		require.NoError(t, err)
 
-		bicepCli, err := bicep.NewBicepCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
+		bicepCli, err := bicep.NewCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
 		require.NoError(t, err)
 
 		// Validate bicep builds without errors

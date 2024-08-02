@@ -193,7 +193,8 @@ func (u *TelemetryUploader) transmit(ctx context.Context, item *StoredItem) {
 		u.enqueueRetry(ctx, item.fileName, payload, defaultTransmitRetryDelay, attempts)
 	} else if result.CanRetry() {
 		if attempts > maxRetryCount {
-			log.Printf("failed to send %v after %d attempts, statusCode: %d\n", item.fileName, maxRetryCount, result.StatusCode)
+			log.Printf(
+				"failed to send %v after %d attempts, statusCode: %d\n", item.fileName, maxRetryCount, result.StatusCode)
 			return
 		}
 

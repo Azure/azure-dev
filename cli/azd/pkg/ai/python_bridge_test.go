@@ -18,7 +18,7 @@ import (
 func Test_PythonBridge_Init(t *testing.T) {
 	tempDir := t.TempDir()
 	mockContext := mocks.NewMockContext(context.Background())
-	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
+	pythonCli := python.NewCli(mockContext.CommandRunner)
 	azdCtx := azdcontext.NewAzdContextWithDirectory(tempDir)
 
 	azdConfigDir := filepath.Join(tempDir, ".azd")
@@ -56,7 +56,7 @@ func Test_PythonBridge_Init(t *testing.T) {
 
 func Test_PythonBridge_Run(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
+	pythonCli := python.NewCli(mockContext.CommandRunner)
 	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 
 	ran := false

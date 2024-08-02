@@ -83,7 +83,7 @@ type aksTarget struct {
 	console                input.Console
 	managedClustersService azcli.ManagedClustersService
 	resourceManager        ResourceManager
-	kubectl                kubectl.KubectlCli
+	kubectl                *kubectl.Cli
 	kubeLoginCli           *kubelogin.Cli
 	helmCli                *helm.Cli
 	kustomizeCli           *kustomize.Cli
@@ -98,7 +98,7 @@ func NewAksTarget(
 	console input.Console,
 	managedClustersService azcli.ManagedClustersService,
 	resourceManager ResourceManager,
-	kubectlCli kubectl.KubectlCli,
+	kubectlCli *kubectl.Cli,
 	kubeLoginCli *kubelogin.Cli,
 	helmCli *helm.Cli,
 	kustomizeCli *kustomize.Cli,

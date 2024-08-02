@@ -92,7 +92,8 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files and try again.",
+		assert.EqualError(t, err, fmt.Sprintf(
+			"%s provider selected, but %s is empty. Please add pipeline files and try again.",
 			azdoDisplayName, azdoPipelinesDirectory))
 	})
 	t.Run("no files - azdo selected", func(t *testing.T) {
@@ -129,7 +130,8 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files and try again.",
+		assert.EqualError(t, err, fmt.Sprintf(
+			"%s provider selected, but %s is empty. Please add pipeline files and try again.",
 			azdoDisplayName, azdoPipelinesDirectory))
 	})
 	t.Run("from persisted data azdo", func(t *testing.T) {
@@ -445,7 +447,7 @@ func createPipelineManager(
 		mockContext.SubscriptionCredentialProvider,
 	)
 	mockContext.Container.MustRegisterSingleton(github.NewGitHubCli)
-	mockContext.Container.MustRegisterSingleton(git.NewGitCli)
+	mockContext.Container.MustRegisterSingleton(git.NewCli)
 
 	// Pipeline providers
 	pipelineProviderMap := map[string]any{
@@ -463,7 +465,7 @@ func createPipelineManager(
 		*mockContext.Context,
 		envManager,
 		entraIdService,
-		git.NewGitCli(mockContext.CommandRunner),
+		git.NewCli(mockContext.CommandRunner),
 		azdContext,
 		env,
 		mockContext.Console,

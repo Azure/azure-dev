@@ -45,7 +45,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
+	pythonCli := python.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
@@ -77,7 +77,7 @@ func Test_PythonProject_Build(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	env := environment.New("test")
-	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
+	pythonCli := python.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
@@ -97,7 +97,7 @@ func Test_PythonProject_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	env := environment.New("test")
-	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
+	pythonCli := python.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
 	require.NoError(t, err)

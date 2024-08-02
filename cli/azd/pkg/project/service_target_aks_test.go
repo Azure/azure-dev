@@ -69,8 +69,8 @@ func Test_Required_Tools(t *testing.T) {
 
 	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context)
 	require.Len(t, requiredTools, 2)
-	require.Implements(t, new(docker.Docker), requiredTools[0])
-	require.Implements(t, new(kubectl.KubectlCli), requiredTools[1])
+	require.IsType(t, &docker.Cli{}, requiredTools[0])
+	require.IsType(t, &kubectl.Cli{}, requiredTools[1])
 }
 
 func Test_Required_Tools_WithAlpha(t *testing.T) {
@@ -91,8 +91,8 @@ func Test_Required_Tools_WithAlpha(t *testing.T) {
 
 	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context)
 	require.Len(t, requiredTools, 4)
-	require.Implements(t, new(docker.Docker), requiredTools[0])
-	require.Implements(t, new(kubectl.KubectlCli), requiredTools[1])
+	require.IsType(t, &docker.Cli{}, requiredTools[0])
+	require.IsType(t, &kubectl.Cli{}, requiredTools[1])
 	require.IsType(t, &helm.Cli{}, requiredTools[2])
 	require.IsType(t, &kustomize.Cli{}, requiredTools[3])
 }
@@ -806,10 +806,10 @@ func createAksServiceTarget(
 	env *environment.Environment,
 	userConfig config.Config,
 ) ServiceTarget {
-	kubeCtl := kubectl.NewKubectl(mockContext.CommandRunner)
+	kubeCtl := kubectl.NewCli(mockContext.CommandRunner)
 	helmCli := helm.NewCli(mockContext.CommandRunner)
 	kustomizeCli := kustomize.NewCli(mockContext.CommandRunner)
-	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	dockerCli := docker.NewCli(mockContext.CommandRunner)
 	kubeLoginCli := kubelogin.NewCli(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {

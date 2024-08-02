@@ -333,7 +333,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
 			mockResults := setupDockerMocks(mockContext)
 			env := environment.NewWithValues("dev", map[string]string{})
-			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			envManager := &mockenv.MockEnvManager{}
 			envManager.On("Save", *mockContext.Context, env).Return(nil)
 

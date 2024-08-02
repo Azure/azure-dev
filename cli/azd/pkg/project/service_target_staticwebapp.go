@@ -26,14 +26,14 @@ const DefaultStaticWebAppEnvironmentName = "default"
 type staticWebAppTarget struct {
 	env *environment.Environment
 	cli azcli.AzCli
-	swa swa.SwaCli
+	swa *swa.Cli
 }
 
 // NewStaticWebAppTarget creates a new instance of the Static Web App target
 func NewStaticWebAppTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
-	swaCli swa.SwaCli,
+	swaCli *swa.Cli,
 ) ServiceTarget {
 	return &staticWebAppTarget{
 		env: env,

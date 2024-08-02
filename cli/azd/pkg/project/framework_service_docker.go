@@ -108,7 +108,7 @@ func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
 
 type dockerProject struct {
 	env                 *environment.Environment
-	docker              docker.Docker
+	docker              *docker.Cli
 	framework           FrameworkService
 	containerHelper     *ContainerHelper
 	console             input.Console
@@ -120,7 +120,7 @@ type dockerProject struct {
 // leverages docker for building
 func NewDockerProject(
 	env *environment.Environment,
-	docker docker.Docker,
+	docker *docker.Cli,
 	containerHelper *ContainerHelper,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
@@ -142,7 +142,7 @@ func NewDockerProject(
 // of a CompositeFrameworkService as [NewDockerProject] does.
 func NewDockerProjectAsFrameworkService(
 	env *environment.Environment,
-	docker docker.Docker,
+	docker *docker.Cli,
 	containerHelper *ContainerHelper,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
@@ -378,7 +378,7 @@ func (p *dockerProject) packBuild(
 	svc *ServiceConfig,
 	dockerOptions DockerProjectOptions,
 	imageName string) (*ServiceBuildResult, error) {
-	packCli, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
+	packCli, err := pack.NewCli(ctx, p.console, p.commandRunner)
 	if err != nil {
 		return nil, err
 	}

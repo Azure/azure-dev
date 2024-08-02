@@ -280,21 +280,12 @@ type walkDirFunc func(path string, entries []fs.DirEntry) error
 // walkDirectories walks the file tree rooted at root, calling fn for each directory in the tree, including root.
 // The directories are walked in lexical order.
 func walkDirectories(root string, fn walkDirFunc) error {
-	info, err := os.Lstat(root)
-	if err != nil {
-		return err
-	}
-
-	return walkDirRecursive(root, fs.FileInfoToDirEntry(info), fn)
-}
-
-func walkDirRecursive(path string, d fs.DirEntry, fn walkDirFunc) error {
-	entries, err := os.ReadDir(path)
+	entries, err := os.ReadDir(root)
 	if err != nil {
 		return fmt.Errorf("reading directory: %w", err)
 	}
 
-	err = fn(path, entries)
+	err = fn(root, entries)
 	if errors.Is(err, filepath.SkipDir) {
 		// skip the directory
 		return nil
@@ -305,8 +296,8 @@ func walkDirRecursive(path string, d fs.DirEntry, fn walkDirFunc) error {
 
 	for _, entry := range entries {
 		if entry.IsDir() {
-			dir := filepath.Join(path, entry.Name())
-			err = walkDirRecursive(dir, entry, fn)
+			dir := filepath.Join(root, entry.Name())
+			err = walkDirectories(dir, fn)
 			if err != nil {
 				return err
 			}

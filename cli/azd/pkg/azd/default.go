@@ -45,7 +45,7 @@ func (p *DefaultPlatform) IsEnabled() bool {
 // ConfigureContainer configures the IoC container for the default platform components
 func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// Tools
-	container.MustRegisterSingleton(terraform.NewTerraformCli)
+	container.MustRegisterSingleton(terraform.NewCli)
 	container.MustRegisterSingleton(bicep.NewCli)
 
 	// Provisioning Providers

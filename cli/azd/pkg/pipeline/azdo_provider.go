@@ -38,7 +38,7 @@ type AzdoScmProvider struct {
 	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
 	console        input.Console
-	gitCli         git.GitCli
+	gitCli         *git.Cli
 }
 
 func NewAzdoScmProvider(
@@ -47,7 +47,7 @@ func NewAzdoScmProvider(
 	azdContext *azdcontext.AzdContext,
 	commandRunner exec.CommandRunner,
 	console input.Console,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 ) ScmProvider {
 	return &AzdoScmProvider{
 		envManager:    envManager,

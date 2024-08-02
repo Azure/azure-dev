@@ -447,7 +447,7 @@ func createPipelineManager(
 		mockContext.SubscriptionCredentialProvider,
 	)
 	mockContext.Container.MustRegisterSingleton(github.NewGitHubCli)
-	mockContext.Container.MustRegisterSingleton(git.NewGitCli)
+	mockContext.Container.MustRegisterSingleton(git.NewCli)
 
 	// Pipeline providers
 	pipelineProviderMap := map[string]any{
@@ -465,7 +465,7 @@ func createPipelineManager(
 		*mockContext.Context,
 		envManager,
 		entraIdService,
-		git.NewGitCli(mockContext.CommandRunner),
+		git.NewCli(mockContext.CommandRunner),
 		azdContext,
 		env,
 		mockContext.Console,

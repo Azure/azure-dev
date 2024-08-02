@@ -86,7 +86,7 @@ type PipelineManager struct {
 	azdCtx            *azdcontext.AzdContext
 	env               *environment.Environment
 	entraIdService    entraid.EntraIdService
-	gitCli            git.GitCli
+	gitCli            *git.Cli
 	console           input.Console
 	serviceLocator    ioc.ServiceLocator
 	importManager     *project.ImportManager
@@ -99,7 +99,7 @@ func NewPipelineManager(
 	ctx context.Context,
 	envManager environment.Manager,
 	entraIdService entraid.EntraIdService,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	console input.Console,

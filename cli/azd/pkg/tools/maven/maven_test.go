@@ -121,7 +121,7 @@ func Test_extractVersion(t *testing.T) {
 			`), ""), nil
 		})
 
-	mvn := NewMavenCli(execMock).(*mavenCli)
+	mvn := NewCli(execMock)
 	placeExecutable(t, mvnwWithExt(), mvn.projectPath)
 	ver, err := mvn.extractVersion(context.Background())
 	require.NoError(t, err)

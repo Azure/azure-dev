@@ -18,7 +18,7 @@ type swaProject struct {
 	env           *environment.Environment
 	console       input.Console
 	commandRunner exec.CommandRunner
-	swa           swa.SwaCli
+	swa           *swa.Cli
 	framework     FrameworkService
 }
 
@@ -28,7 +28,7 @@ func NewSwaProject(
 	env *environment.Environment,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-	swa swa.SwaCli,
+	swa *swa.Cli,
 	framework FrameworkService,
 ) CompositeFrameworkService {
 	return &swaProject{
@@ -47,7 +47,7 @@ func NewSwaProjectAsFrameworkService(
 	env *environment.Environment,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-	swa swa.SwaCli,
+	swa *swa.Cli,
 	framework FrameworkService,
 ) FrameworkService {
 	return NewSwaProject(env, console, commandRunner, swa, framework)

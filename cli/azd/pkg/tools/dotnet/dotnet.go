@@ -20,24 +20,9 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-type DotNetCli interface {
-	tools.ExternalTool
-	Restore(ctx context.Context, project string) error
-	Build(ctx context.Context, project string, configuration string, output string) error
-	Publish(ctx context.Context, project string, configuration string, output string) error
-	PublishContainer(
-		ctx context.Context, project, configuration, imageName, server, username, password string,
-	) (int, error)
-	InitializeSecret(ctx context.Context, project string) error
-	// PublishAppHostManifest runs the app host program with the correct configuration to generate an manifest. If dotnetEnv
-	// is non-empty, it will be passed as environment variables (named `DOTNET_ENVIRONMENT`) when running the app host
-	// program.
-	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string, dotnetEnv string) error
-	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
-	GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error)
-}
+var _ tools.ExternalTool = (*Cli)(nil)
 
-type dotNetCli struct {
+type Cli struct {
 	commandRunner exec.CommandRunner
 }
 
@@ -54,15 +39,15 @@ type targetPort struct {
 	protocol string
 }
 
-func (cli *dotNetCli) Name() string {
+func (cli *Cli) Name() string {
 	return ".NET CLI"
 }
 
-func (cli *dotNetCli) InstallUrl() string {
+func (cli *Cli) InstallUrl() string {
 	return "https://dotnet.microsoft.com/download"
 }
 
-func (cli *dotNetCli) versionInfo() tools.VersionInfo {
+func (cli *Cli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 6,
@@ -72,7 +57,7 @@ func (cli *dotNetCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
+func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	err := tools.ToolInPath("dotnet")
 	if err != nil {
 		return err
@@ -93,7 +78,7 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
+func (cli *Cli) Restore(ctx context.Context, project string) error {
 	runArgs := newDotNetRunArgs("restore", project)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -102,7 +87,7 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	return nil
 }
 
-func (cli *dotNetCli) Build(ctx context.Context, project string, configuration string, output string) error {
+func (cli *Cli) Build(ctx context.Context, project string, configuration string, output string) error {
 	runArgs := newDotNetRunArgs("build", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
@@ -119,7 +104,7 @@ func (cli *dotNetCli) Build(ctx context.Context, project string, configuration s
 	return nil
 }
 
-func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration string, output string) error {
+func (cli *Cli) Publish(ctx context.Context, project string, configuration string, output string) error {
 	runArgs := newDotNetRunArgs("publish", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
@@ -136,7 +121,7 @@ func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration
 	return nil
 }
 
-func (cli *dotNetCli) PublishAppHostManifest(
+func (cli *Cli) PublishAppHostManifest(
 	ctx context.Context, hostProject string, manifestPath string, dotnetEnv string,
 ) error {
 	// TODO(ellismg): Before we GA manifest support, we should remove this debug tool, but being able to control what
@@ -182,7 +167,7 @@ func (cli *dotNetCli) PublishAppHostManifest(
 
 // PublishContainer runs a `dotnet publish“ with `/t:PublishContainer`to build and publish the container.
 // It also gets port number by using `--getProperty:GeneratedContainerConfiguration`.
-func (cli *dotNetCli) PublishContainer(
+func (cli *Cli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
 ) (int, error) {
 	if !strings.Contains(imageName, ":") {
@@ -222,7 +207,7 @@ func (cli *dotNetCli) PublishContainer(
 }
 
 // getTargetPort parses the output of `dotnet publish` with `/t:PublishContainer` to get the port the container exposes.
-func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
+func (cli *Cli) getTargetPort(result, project string) (int, error) {
 	// Ensure the output is a JSON object and it has a property named "config". If not, the project needs to be configured
 	// to produce a container.
 	//
@@ -275,7 +260,7 @@ func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
 	return port, nil
 }
 
-func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
+func (cli *Cli) InitializeSecret(ctx context.Context, project string) error {
 	runArgs := newDotNetRunArgs("user-secrets", "init", "--project", project)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -284,7 +269,7 @@ func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) erro
 	return nil
 }
 
-func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string, project string) error {
+func (cli *Cli) SetSecrets(ctx context.Context, secrets map[string]string, project string) error {
 	secretsJson, err := json.Marshal(secrets)
 	if err != nil {
 		return fmt.Errorf("failed to marshal secrets: %w", err)
@@ -306,7 +291,7 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 //
 // This only works for versions dotnet >= 8, MSBuild >= 17.8.
 // On older tool versions, this will return an error.
-func (cli *dotNetCli) GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error) {
+func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error) {
 	runArgs := newDotNetRunArgs("msbuild", project, fmt.Sprintf("--getProperty:%s", propertyName))
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -315,8 +300,8 @@ func (cli *dotNetCli) GetMsBuildProperty(ctx context.Context, project string, pr
 	return res.Stdout, nil
 }
 
-func NewDotNetCli(commandRunner exec.CommandRunner) DotNetCli {
-	return &dotNetCli{
+func NewCli(commandRunner exec.CommandRunner) *Cli {
+	return &Cli{
 		commandRunner: commandRunner,
 	}
 }

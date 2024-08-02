@@ -4,33 +4,47 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
 )
 
 // cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
-const cArmDeploymentNameLengthMax = 64
+const (
+	cArmDeploymentNameLengthMax = 64
+	cPortalUrlFragment          = "#view/HubsExtension/DeploymentDetailsBlade/~/overview/id"
+	cOutputsUrlFragment         = "#view/HubsExtension/DeploymentDetailsBlade/~/outputs/id"
+)
 
 type deployments struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
+	resourceService    *ResourceService
+	cloud              *cloud.Cloud
 	clock              clock.Clock
 }
 
 func NewDeployments(
 	credentialProvider account.SubscriptionCredentialProvider,
 	armClientOptions *arm.ClientOptions,
+	resourceService *ResourceService,
+	cloud *cloud.Cloud,
 	clock clock.Clock,
-) Deployments {
+) DeploymentService {
 	return &deployments{
 		credentialProvider: credentialProvider,
 		armClientOptions:   armClientOptions,
+		resourceService:    resourceService,
+		cloud:              cloud,
 		clock:              clock,
 	}
 }
@@ -50,13 +64,19 @@ func (ds *deployments) GenerateDeploymentName(baseName string) string {
 func (ds *deployments) CalculateTemplateHash(
 	ctx context.Context,
 	subscriptionId string,
-	template azure.RawArmTemplate) (result armresources.DeploymentsClientCalculateTemplateHashResponse, err error) {
+	template azure.RawArmTemplate,
+) (string, error) {
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
-		return result, fmt.Errorf("creating deployments client: %w", err)
+		return "", fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	return deploymentClient.CalculateTemplateHash(ctx, template, nil)
+	response, err := deploymentClient.CalculateTemplateHash(ctx, template, nil)
+	if err != nil {
+		return "", fmt.Errorf("calculating template hash: %w", err)
+	}
+
+	return *response.TemplateHashResult.TemplateHash, nil
 }
 
 func (ds *deployments) ListSubscriptionDeployments(
@@ -78,7 +98,7 @@ func (ds *deployments) ListSubscriptionDeployments(
 		}
 
 		for _, deployment := range page.Value {
-			results = append(results, convertFromArmDeployment(deployment))
+			results = append(results, ds.convertFromArmDeployment(deployment))
 		}
 	}
 
@@ -104,7 +124,7 @@ func (ds *deployments) GetSubscriptionDeployment(
 		return nil, fmt.Errorf("getting deployment from subscription: %w", err)
 	}
 
-	return convertFromArmDeployment(&deployment.DeploymentExtended), nil
+	return ds.convertFromArmDeployment(&deployment.DeploymentExtended), nil
 }
 
 func (ds *deployments) ListResourceGroupDeployments(
@@ -127,7 +147,7 @@ func (ds *deployments) ListResourceGroupDeployments(
 		}
 
 		for _, deployment := range page.Value {
-			results = append(results, convertFromArmDeployment(deployment))
+			results = append(results, ds.convertFromArmDeployment(deployment))
 		}
 	}
 
@@ -154,7 +174,7 @@ func (ds *deployments) GetResourceGroupDeployment(
 		return nil, fmt.Errorf("getting deployment from resource group: %w", err)
 	}
 
-	return convertFromArmDeployment(&deployment.DeploymentExtended), nil
+	return ds.convertFromArmDeployment(&deployment.DeploymentExtended), nil
 }
 
 func (ds *deployments) createDeploymentsClient(
@@ -213,7 +233,7 @@ func (ds *deployments) DeployToSubscription(
 		)
 	}
 
-	return convertFromArmDeployment(&deployResult.DeploymentExtended), nil
+	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
 }
 
 func (ds *deployments) DeployToResourceGroup(
@@ -252,7 +272,213 @@ func (ds *deployments) DeployToResourceGroup(
 		)
 	}
 
-	return convertFromArmDeployment(&deployResult.DeploymentExtended), nil
+	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
+}
+
+func (ds *deployments) ListSubscriptionDeploymentOperations(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+) ([]*armresources.DeploymentOperation, error) {
+	result := []*armresources.DeploymentOperation{}
+	deploymentOperationsClient, err := ds.createDeploymentsOperationsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	// Get all without any filter
+	getDeploymentsPager := deploymentOperationsClient.NewListAtSubscriptionScopePager(deploymentName, nil)
+
+	for getDeploymentsPager.More() {
+		page, err := getDeploymentsPager.NextPage(ctx)
+		var errDetails *azcore.ResponseError
+		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+			return nil, ErrDeploymentNotFound
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed getting list of deployment operations: %w", err)
+		}
+		result = append(result, page.Value...)
+	}
+
+	return result, nil
+}
+
+func (ds *deployments) ListResourceGroupDeploymentOperations(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+) ([]*armresources.DeploymentOperation, error) {
+	result := []*armresources.DeploymentOperation{}
+	deploymentOperationsClient, err := ds.createDeploymentsOperationsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	// Get all without any filter
+	getDeploymentsPager := deploymentOperationsClient.NewListPager(resourceGroupName, deploymentName, nil)
+
+	for getDeploymentsPager.More() {
+		page, err := getDeploymentsPager.NextPage(ctx)
+		var errDetails *azcore.ResponseError
+		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+			return nil, ErrDeploymentNotFound
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed getting list of deployment operations from resource group: %w", err)
+		}
+		result = append(result, page.Value...)
+	}
+
+	return result, nil
+}
+
+func (ds *deployments) ListSubscriptionDeploymentResources(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+) ([]*armresources.ResourceReference, error) {
+	client, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	response, err := client.GetAtSubscriptionScope(ctx, deploymentName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting deployment from subscription: %w", err)
+	}
+
+	return ds.getResourcesFromDeployment(ctx, &response.DeploymentExtended, subscriptionId)
+}
+func (ds *deployments) ListResourceGroupDeploymentResources(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+) ([]*armresources.ResourceReference, error) {
+	client, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	response, err := client.Get(ctx, resourceGroupName, deploymentName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting deployment from subscription: %w", err)
+	}
+
+	return ds.getResourcesFromDeployment(ctx, &response.DeploymentExtended, subscriptionId)
+}
+
+func (ds *deployments) DeleteSubscriptionDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+	progress *async.Progress[DeleteDeploymentProgress],
+) error {
+	resources, err := ds.ListSubscriptionDeploymentResources(ctx, subscriptionId, deploymentName)
+	if err != nil {
+		return err
+	}
+
+	resourceGroups := map[string]struct{}{}
+	for _, resource := range resources {
+		resourceId, err := arm.ParseResourceID(*resource.ID)
+		if err != nil {
+			return fmt.Errorf("parsing resource ID: %w", err)
+		}
+
+		resourceGroups[resourceId.ResourceGroupName] = struct{}{}
+	}
+
+	for resourceGroup := range resourceGroups {
+		progress.SetProgress(DeleteDeploymentProgress{
+			Name:    resourceGroup,
+			Message: fmt.Sprintf("Deleting resource group %s", output.WithHighLightFormat(resourceGroup)),
+			State:   DeleteResourceStateInProgress,
+		})
+
+		if err := ds.resourceService.DeleteResourceGroup(ctx, subscriptionId, resourceGroup); err != nil {
+			progress.SetProgress(DeleteDeploymentProgress{
+				Name:    resourceGroup,
+				Message: fmt.Sprintf("Failed deleting resource group %s", output.WithHighLightFormat(resourceGroup)),
+				State:   DeleteResourceStateFailed,
+			})
+
+			return err
+		}
+
+		progress.SetProgress(DeleteDeploymentProgress{
+			Name:    resourceGroup,
+			Message: fmt.Sprintf("Deleted resource group %s", output.WithHighLightFormat(resourceGroup)),
+			State:   DeleteResourceStateSucceeded,
+		})
+	}
+
+	return nil
+}
+
+func (ds *deployments) DeleteResourceGroupDeployment(
+	ctx context.Context,
+	subscriptionId,
+	resourceGroupName string,
+	deploymentName string,
+	progress *async.Progress[DeleteDeploymentProgress],
+) error {
+	progress.SetProgress(DeleteDeploymentProgress{
+		Name:    resourceGroupName,
+		Message: fmt.Sprintf("Deleting resource group %s", output.WithHighLightFormat(resourceGroupName)),
+		State:   DeleteResourceStateInProgress,
+	})
+
+	if err := ds.resourceService.DeleteResourceGroup(ctx, subscriptionId, resourceGroupName); err != nil {
+		progress.SetProgress(DeleteDeploymentProgress{
+			Name:    resourceGroupName,
+			Message: fmt.Sprintf("Failed resource group %s", output.WithHighLightFormat(resourceGroupName)),
+			State:   DeleteResourceStateInProgress,
+		})
+
+		return err
+	}
+
+	progress.SetProgress(DeleteDeploymentProgress{
+		Name:    resourceGroupName,
+		Message: fmt.Sprintf("Deleted resource group %s", output.WithHighLightFormat(resourceGroupName)),
+		State:   DeleteResourceStateInProgress,
+	})
+
+	return nil
+}
+
+func (ds *deployments) getResourcesFromDeployment(
+	ctx context.Context,
+	deployment *armresources.DeploymentExtended,
+	subscriptionId string,
+) ([]*armresources.ResourceReference, error) {
+	allResources := []*armresources.ResourceReference{}
+	allResources = append(allResources, deployment.Properties.OutputResources...)
+
+	for _, dependency := range deployment.Properties.Dependencies {
+		if *dependency.ResourceType == string(AzureResourceTypeDeployment) {
+			for _, dependentResource := range dependency.DependsOn {
+				if *dependentResource.ResourceType == string(AzureResourceTypeResourceGroup) {
+					deploymentResources, err := ds.ListResourceGroupDeploymentResources(
+						ctx,
+						subscriptionId,
+						*dependentResource.ResourceName,
+						*dependency.ResourceName,
+					)
+					if err != nil {
+						return nil, fmt.Errorf("getting deployment resources: %w", err)
+					}
+
+					allResources = append(allResources, deploymentResources...)
+				}
+			}
+		}
+	}
+
+	return allResources, nil
 }
 
 func (ds *deployments) WhatIfDeployToSubscription(
@@ -333,8 +559,25 @@ func (ds *deployments) WhatIfDeployToResourceGroup(
 	return &deployResult.WhatIfOperationResult, nil
 }
 
+func (ds *deployments) createDeploymentsOperationsClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armresources.DeploymentOperationsClient, error) {
+	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := armresources.NewDeploymentOperationsClient(subscriptionId, credential, ds.armClientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	return client, nil
+}
+
 // Converts from an ARM Extended Deployment to Azd Generic deployment
-func convertFromArmDeployment(deployment *armresources.DeploymentExtended) *ResourceDeployment {
+func (ds *deployments) convertFromArmDeployment(deployment *armresources.DeploymentExtended) *ResourceDeployment {
 	return &ResourceDeployment{
 		Id:                *deployment.ID,
 		DeploymentId:      *deployment.ID,
@@ -346,6 +589,24 @@ func convertFromArmDeployment(deployment *armresources.DeploymentExtended) *Reso
 		TemplateHash:      deployment.Properties.TemplateHash,
 		Outputs:           deployment.Properties.Outputs,
 		Resources:         deployment.Properties.OutputResources,
-		Dependencies:      []*armresources.Dependency{}, // deployment.Properties.Dependencies,
+		Dependencies:      deployment.Properties.Dependencies,
+
+		PortalUrl: fmt.Sprintf("%s/%s/%s",
+			ds.cloud.PortalUrlBase,
+			cPortalUrlFragment,
+			url.PathEscape(*deployment.ID),
+		),
+
+		OutputsUrl: fmt.Sprintf("%s/%s/%s",
+			ds.cloud.PortalUrlBase,
+			cOutputsUrlFragment,
+			url.PathEscape(*deployment.ID),
+		),
+
+		DeploymentUrl: fmt.Sprintf("%s/%s/%s",
+			ds.cloud.PortalUrlBase,
+			cPortalUrlFragment,
+			url.PathEscape(*deployment.ID),
+		),
 	}
 }

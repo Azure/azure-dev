@@ -16,6 +16,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
@@ -38,9 +39,25 @@ func (mock *mockResourceManager) GetResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
-	resourceType AzureResourceType,
+	resourceType azapi.AzureResourceType,
 ) (string, error) {
 	return string(resourceType), nil
+}
+
+func (mock *mockResourceManager) GetResourceGroupsForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) ([]azapi.AzCliResource, error) {
+	return []azapi.AzCliResource{}, nil
+}
+
+func (mock *mockResourceManager) FindResourceGroupForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) (string, error) {
+	return fmt.Sprintf("rg-%s", envName), nil
 }
 
 func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
@@ -49,7 +66,7 @@ func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
 		Properties: &armresources.DeploymentOperationProperties{
 			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
 			TargetResource: &armresources.TargetResource{
-				ResourceType: to.Ptr(string(AzureResourceTypeWebSite) + "/config"),
+				ResourceType: to.Ptr(string(azapi.AzureResourceTypeWebSite) + "/config"),
 				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},
@@ -64,7 +81,7 @@ func (mock *mockResourceManager) AddInProgressOperation() {
 		Properties: &armresources.DeploymentOperationProperties{
 			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
 			TargetResource: &armresources.TargetResource{
-				ResourceType: to.Ptr(string(AzureResourceTypeWebSite)),
+				ResourceType: to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},
@@ -100,13 +117,11 @@ func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
 
 func TestReportProgress(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
-	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(
 		scope,
-		"eastus2",
 		"DEPLOYMENT_NAME",
 	)
 	mockAzDeploymentShow(t, *mockContext)

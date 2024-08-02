@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 )
@@ -16,6 +17,8 @@ func Test_StandardDeployments_GenerateDeploymentName(t *testing.T) {
 	deploymentService := NewDeployments(
 		mockContext.SubscriptionCredentialProvider,
 		mockContext.ArmClientOptions,
+		NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
+		cloud.AzurePublic(),
 		mockContext.Clock,
 	)
 

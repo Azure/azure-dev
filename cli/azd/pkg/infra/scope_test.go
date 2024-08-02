@@ -43,8 +43,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-		depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
 		deploymentName := "DEPLOYMENT_NAME"
@@ -66,14 +65,13 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		scope := newSubscriptionScope(depService, depOpService, subscriptionId)
+		scope := newSubscriptionScope(deploymentService, subscriptionId, "eastus2")
 		target := NewSubscriptionDeployment(
 			scope,
-			"eastus2",
 			deploymentName,
 		)
 
-		deployment, err := target.Deployment(*mockContext.Context)
+		deployment, err := target.Get(*mockContext.Context)
 		require.NoError(t, err)
 		responseOutputs := deployment.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
 		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
@@ -82,8 +80,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-		depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
 		deploymentName := "DEPLOYMENT_NAME"
@@ -107,13 +104,13 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		scope := newResourceGroupScope(depService, depOpService, subscriptionId, resourceGroupName)
+		scope := newResourceGroupScope(deploymentService, subscriptionId, resourceGroupName)
 		target := NewResourceGroupDeployment(
 			scope,
 			deploymentName,
 		)
 
-		deployment, err := target.Deployment(*mockContext.Context)
+		deployment, err := target.Get(*mockContext.Context)
 		require.NoError(t, err)
 		responseOutputs := deployment.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
 		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
@@ -125,8 +122,7 @@ func TestScopeDeploy(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-		depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodPut && strings.Contains(
@@ -143,10 +139,9 @@ func TestScopeDeploy(t *testing.T) {
 			}, nil
 		})
 
-		scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+		scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 		target := NewSubscriptionDeployment(
 			scope,
-			"eastus2",
 			"DEPLOYMENT_NAME",
 		)
 
@@ -157,8 +152,7 @@ func TestScopeDeploy(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-		depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodPut && strings.Contains(
@@ -176,7 +170,7 @@ func TestScopeDeploy(t *testing.T) {
 			}, nil
 		})
 
-		scope := newResourceGroupScope(depService, depOpService, "SUBSCRIPTION_ID", "RESOURCE_GROUP")
+		scope := newResourceGroupScope(deploymentService, "SUBSCRIPTION_ID", "RESOURCE_GROUP")
 		target := NewResourceGroupDeployment(
 			scope,
 			"DEPLOYMENT_NAME",
@@ -191,8 +185,7 @@ func TestScopeDeploy(t *testing.T) {
 func TestScopeGetResourceOperations(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-		depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet && strings.Contains(
@@ -209,10 +202,9 @@ func TestScopeGetResourceOperations(t *testing.T) {
 			}, nil
 		})
 
-		scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+		scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 		target := NewSubscriptionDeployment(
 			scope,
-			"eastus2",
 			"DEPLOYMENT_NAME",
 		)
 
@@ -223,8 +215,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-		depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet && strings.Contains(
@@ -241,7 +232,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 			}, nil
 		})
 
-		scope := newResourceGroupScope(depService, depOpService, "SUBSCRIPTION_ID", "RESOURCE_GROUP")
+		scope := newResourceGroupScope(deploymentService, "SUBSCRIPTION_ID", "RESOURCE_GROUP")
 		target := NewResourceGroupDeployment(
 			scope,
 			"DEPLOYMENT_NAME",

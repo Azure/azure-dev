@@ -5,6 +5,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -24,23 +25,15 @@ func NewAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
 	)
 }
 
-func NewDeploymentOperationsServiceFromMockContext(
-	mockContext *mocks.MockContext) azapi.DeploymentOperations {
-	return azapi.NewDeploymentOperations(
-		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
-			return mockContext.Credentials, nil
-		}),
-		mockContext.ArmClientOptions,
-	)
-}
-
 func NewDeploymentsServiceFromMockContext(
-	mockContext *mocks.MockContext) azapi.Deployments {
+	mockContext *mocks.MockContext) azapi.DeploymentService {
 	return azapi.NewDeployments(
 		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
 		}),
 		mockContext.ArmClientOptions,
+		azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
+		cloud.AzurePublic(),
 		clock.NewMock(),
 	)
 }

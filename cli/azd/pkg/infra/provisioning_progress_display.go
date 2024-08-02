@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -27,17 +29,17 @@ type ProvisioningProgressDisplay struct {
 	displayedResources map[string]bool
 	resourceManager    ResourceManager
 	console            input.Console
-	target             Deployment
+	deployment         Deployment
 }
 
 func NewProvisioningProgressDisplay(
 	rm ResourceManager,
 	console input.Console,
-	target Deployment,
+	deployment Deployment,
 ) *ProvisioningProgressDisplay {
 	return &ProvisioningProgressDisplay{
 		displayedResources: map[string]bool{},
-		target:             target,
+		deployment:         deployment,
 		resourceManager:    rm,
 		console:            console,
 	}
@@ -48,7 +50,7 @@ func NewProvisioningProgressDisplay(
 func (display *ProvisioningProgressDisplay) ReportProgress(
 	ctx context.Context, queryStart *time.Time) error {
 	if !display.deploymentStarted {
-		_, err := display.target.Deployment(ctx)
+		_, err := display.deployment.Get(ctx)
 		if err != nil {
 			// Return default progress
 			log.Printf("error while reporting progress: %s", err.Error())
@@ -56,18 +58,18 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		}
 
 		display.deploymentStarted = true
-		portalUrl, err := display.target.PortalUrl(ctx)
+		deploymentUrl, err := display.deployment.DeploymentUrl(ctx)
 		if err != nil {
 			return err
 		}
 
-		deploymentUrl := fmt.Sprintf(output.WithLinkFormat("%s\n"), portalUrl)
+		deploymentLink := fmt.Sprintf(output.WithLinkFormat("%s\n"), deploymentUrl)
 
 		display.console.EnsureBlankLine(ctx)
 
 		lines := []string{
 			"You can view detailed progress in the Azure Portal:",
-			deploymentUrl,
+			deploymentLink,
 		}
 
 		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
@@ -85,7 +87,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		)
 	}
 
-	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.target, queryStart)
+	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.deployment, queryStart)
 	if err != nil {
 		// Status display is best-effort activity.
 		return err
@@ -100,9 +102,9 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 			resourceId := *operations[i].Properties.TargetResource.ResourceName
 
 			if !display.displayedResources[resourceId] &&
-				IsTopLevelResourceType(
-					AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
-
+				azapi.IsTopLevelResourceType(
+					azapi.AzureResourceType(*operations[i].Properties.TargetResource.ResourceType),
+				) {
 				switch *operations[i].Properties.ProvisioningState {
 				case string(armresources.ProvisioningStateSucceeded):
 					newlyDeployedResources = append(newlyDeployedResources, operations[i])
@@ -136,25 +138,31 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		resourceTypeName := *resource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
 			ctx,
-			display.target.SubscriptionId(),
+			display.deployment.SubscriptionId(),
 			*resource.Properties.TargetResource.ID,
-			AzureResourceType(resourceTypeName),
+			azapi.AzureResourceType(resourceTypeName),
 		)
 
 		if err != nil {
 			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = GetResourceTypeDisplayName(AzureResourceType(resourceTypeName))
+			resourceTypeDisplayName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resourceTypeName))
 		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.
 		if resourceTypeDisplayName != "" {
+			duration, err := convert.ParseDuration(*resource.Properties.Duration)
+			if err != nil {
+				duration = 0
+			}
+
 			display.console.MessageUxItem(
 				ctx,
 				&ux.DisplayedResource{
-					Type:  resourceTypeDisplayName,
-					Name:  *resource.Properties.TargetResource.ResourceName,
-					State: ux.DisplayedResourceState(*resource.Properties.ProvisioningState),
+					Type:     resourceTypeDisplayName,
+					Name:     *resource.Properties.TargetResource.ResourceName,
+					State:    ux.DisplayedResourceState(*resource.Properties.ProvisioningState),
+					Duration: duration.Truncate(time.Millisecond),
 				},
 			)
 			resourceTypeName = resourceTypeDisplayName
@@ -175,14 +183,14 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		resourceTypeName := *inProgResource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
 			ctx,
-			display.target.SubscriptionId(),
+			display.deployment.SubscriptionId(),
 			*inProgResource.Properties.TargetResource.ID,
-			AzureResourceType(resourceTypeName),
+			azapi.AzureResourceType(resourceTypeName),
 		)
 
 		if err != nil {
 			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = GetResourceTypeDisplayName(AzureResourceType(resourceTypeName))
+			resourceTypeDisplayName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resourceTypeName))
 		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.

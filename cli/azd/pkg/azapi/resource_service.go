@@ -1,15 +1,65 @@
-package azcli
+package azapi
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
-func (cli *azCli) GetResource(
+type AzCliResource struct {
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Location string `json:"location"`
+}
+
+type AzCliResourceExtended struct {
+	AzCliResource
+	Kind string `json:"kind"`
+}
+
+// Optional parameters for resource group listing.
+type ListResourceGroupOptions struct {
+	// An optional tag filter
+	TagFilter *Filter
+	// An optional filter expression to filter the resource group results
+	// https://learn.microsoft.com/en-us/rest/api/resources/resource-groups/list
+	Filter *string
+}
+
+type Filter struct {
+	Key   string
+	Value string
+}
+
+// Optional parameters for resource group resources listing.
+type ListResourceGroupResourcesOptions struct {
+	// An optional filter expression to filter the resource list result
+	// https://learn.microsoft.com/en-us/rest/api/resources/resources/list-by-resource-group#uri-parameters
+	Filter *string
+}
+
+type ResourceService struct {
+	credentialProvider account.SubscriptionCredentialProvider
+	armClientOptions   *arm.ClientOptions
+}
+
+func NewResourceService(
+	credentialProvider account.SubscriptionCredentialProvider,
+	armClientOptions *arm.ClientOptions,
+) *ResourceService {
+	return &ResourceService{
+		credentialProvider: credentialProvider,
+		armClientOptions:   armClientOptions,
+	}
+}
+
+func (rs *ResourceService) GetResource(
 	ctx context.Context, subscriptionId string, resourceId string, apiVersion string) (AzCliResourceExtended, error) {
-	client, err := cli.createResourcesClient(ctx, subscriptionId)
+	client, err := rs.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliResourceExtended{}, err
 	}
@@ -30,13 +80,13 @@ func (cli *azCli) GetResource(
 	}, nil
 }
 
-func (cli *azCli) ListResourceGroupResources(
+func (rs *ResourceService) ListResourceGroupResources(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	listOptions *ListResourceGroupResourcesOptions,
 ) ([]AzCliResource, error) {
-	client, err := cli.createResourcesClient(ctx, subscriptionId)
+	client, err := rs.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -69,12 +119,12 @@ func (cli *azCli) ListResourceGroupResources(
 	return resources, nil
 }
 
-func (cli *azCli) ListResourceGroup(
+func (rs *ResourceService) ListResourceGroup(
 	ctx context.Context,
 	subscriptionId string,
 	listOptions *ListResourceGroupOptions,
 ) ([]AzCliResource, error) {
-	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
+	client, err := rs.createResourceGroupClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -117,14 +167,14 @@ func (cli *azCli) ListResourceGroup(
 	return groups, nil
 }
 
-func (cli *azCli) CreateOrUpdateResourceGroup(
+func (rs *ResourceService) CreateOrUpdateResourceGroup(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	location string,
 	tags map[string]*string,
 ) error {
-	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
+	client, err := rs.createResourceGroupClient(ctx, subscriptionId)
 	if err != nil {
 		return err
 	}
@@ -137,8 +187,8 @@ func (cli *azCli) CreateOrUpdateResourceGroup(
 	return err
 }
 
-func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error {
-	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
+func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error {
+	client, err := rs.createResourceGroupClient(ctx, subscriptionId)
 	if err != nil {
 		return err
 	}
@@ -156,13 +206,13 @@ func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string
 	return nil
 }
 
-func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId string) (*armresources.Client, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+func (rs *ResourceService) createResourcesClient(ctx context.Context, subscriptionId string) (*armresources.Client, error) {
+	credential, err := rs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := armresources.NewClient(subscriptionId, credential, cli.armClientOptions)
+	client, err := armresources.NewClient(subscriptionId, credential, rs.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}
@@ -170,19 +220,50 @@ func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId stri
 	return client, nil
 }
 
-func (cli *azCli) createResourceGroupClient(
+func (rs *ResourceService) createResourceGroupClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.ResourceGroupsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	credential, err := rs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := armresources.NewResourceGroupsClient(subscriptionId, credential, cli.armClientOptions)
+	client, err := armresources.NewResourceGroupsClient(subscriptionId, credential, rs.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
 	}
 
 	return client, nil
+}
+
+func (rs *ResourceService) MapResources(resources []*armresources.ResourceReference) (map[string][]*AzCliResource, error) {
+	resourceMap := map[string][]*AzCliResource{}
+
+	for _, resource := range resources {
+		resourceId, err := arm.ParseResourceID(*resource.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		if resourceId.ResourceGroupName == "" {
+			continue
+		}
+
+		groupResources, exists := resourceMap[resourceId.ResourceGroupName]
+		if !exists {
+			groupResources = []*AzCliResource{}
+		}
+
+		groupResources = append(groupResources, &AzCliResource{
+			Id:       *resource.ID,
+			Name:     resourceId.Name,
+			Type:     resourceId.ResourceType.Type,
+			Location: resourceId.Location,
+		})
+
+		resourceMap[resourceId.ResourceGroupName] = groupResources
+	}
+
+	return resourceMap, nil
 }

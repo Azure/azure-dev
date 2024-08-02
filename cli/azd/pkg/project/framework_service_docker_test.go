@@ -12,11 +12,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
@@ -56,7 +56,7 @@ services:
 			{
 				ID:       convert.RefOf("app-api-abc123"),
 				Name:     convert.RefOf("test-containerapp-web"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
+				Type:     convert.RefOf(string(azapi.AzureResourceTypeContainerApp)),
 				Location: convert.RefOf("eastus2"),
 			},
 		})
@@ -158,7 +158,7 @@ services:
 			{
 				ID:       convert.RefOf("app-api-abc123"),
 				Name:     convert.RefOf("test-containerapp-web"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
+				Type:     convert.RefOf(string(azapi.AzureResourceTypeContainerApp)),
 				Location: convert.RefOf("eastus2"),
 			},
 		})

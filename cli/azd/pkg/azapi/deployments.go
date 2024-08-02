@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
 
@@ -79,7 +80,23 @@ const (
 	DeploymentProvisioningStateWaiting                 DeploymentProvisioningState = "waiting"
 )
 
-type Deployments interface {
+type DeploymentService interface {
+	GenerateDeploymentName(baseName string) string
+	CalculateTemplateHash(
+		ctx context.Context,
+		subscriptionId string,
+		template azure.RawArmTemplate) (string, error)
+	ListSubscriptionDeploymentResources(
+		ctx context.Context,
+		subscriptionId string,
+		deploymentName string,
+	) ([]*armresources.ResourceReference, error)
+	ListResourceGroupDeploymentResources(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		deploymentName string,
+	) ([]*armresources.ResourceReference, error)
 	ListSubscriptionDeployments(
 		ctx context.Context,
 		subscriptionId string,
@@ -118,6 +135,17 @@ type Deployments interface {
 		parameters azure.ArmParameters,
 		tags map[string]*string,
 	) (*ResourceDeployment, error)
+	ListSubscriptionDeploymentOperations(
+		ctx context.Context,
+		subscriptionId string,
+		deploymentName string,
+	) ([]*armresources.DeploymentOperation, error)
+	ListResourceGroupDeploymentOperations(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		deploymentName string,
+	) ([]*armresources.DeploymentOperation, error)
 	WhatIfDeployToSubscription(
 		ctx context.Context,
 		subscriptionId string,
@@ -134,12 +162,36 @@ type Deployments interface {
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 	) (*armresources.WhatIfOperationResult, error)
-	GenerateDeploymentName(baseName string) string
-	CalculateTemplateHash(
+	DeleteSubscriptionDeployment(
 		ctx context.Context,
 		subscriptionId string,
-		template azure.RawArmTemplate) (armresources.DeploymentsClientCalculateTemplateHashResponse, error)
+		deploymentName string,
+		progress *async.Progress[DeleteDeploymentProgress],
+	) error
+	DeleteResourceGroupDeployment(
+		ctx context.Context,
+		subscriptionId,
+		resourceGroupName string,
+		deploymentName string,
+		progress *async.Progress[DeleteDeploymentProgress],
+	) error
 }
+
+type DeleteResourceState string
+
+const (
+	DeleteResourceStateInProgress DeleteResourceState = "InProgress"
+	DeleteResourceStateSucceeded  DeleteResourceState = "Succeeded"
+	DeleteResourceStateFailed     DeleteResourceState = "Failed"
+)
+
+type DeleteDeploymentProgress struct {
+	Name    string
+	Message string
+	State   DeleteResourceState
+}
+
+type ReportDeleteProgress func(progress *DeleteDeploymentProgress)
 
 var (
 	ErrDeploymentNotFound = errors.New("deployment not found")

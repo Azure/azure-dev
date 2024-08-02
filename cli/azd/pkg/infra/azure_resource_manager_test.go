@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -164,13 +165,11 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(
 		scope,
-		"eastus2",
 		"DEPLOYMENT_NAME",
 	)
 
@@ -208,7 +207,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(azCli, depOpService)
+	arm := NewAzureResourceManager(resourceService, deploymentService)
 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, deployment, &qStart)
 	require.NotNil(t, operations)
 	require.Nil(t, err)
@@ -223,13 +222,11 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(
 		scope,
-		"eastus2",
 		"DEPLOYMENT_NAME",
 	)
 
@@ -272,7 +269,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(azCli, depOpService)
+	arm := NewAzureResourceManager(resourceService, deploymentService)
 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, deployment, &qStart)
 
 	require.Nil(t, operations)
@@ -287,13 +284,11 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(
 		scope,
-		"eastus2",
 		"DEPLOYMENT_NAME",
 	)
 
@@ -330,7 +325,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(azCli, depOpService)
+	arm := NewAzureResourceManager(resourceService, deploymentService)
 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, deployment, &qStart)
 
 	require.NotNil(t, operations)
@@ -345,13 +340,11 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-	scope := newSubscriptionScope(depService, depOpService, "SUBSCRIPTION_ID")
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(
 		scope,
-		"eastus2",
 		"DEPLOYMENT_NAME",
 	)
 
@@ -405,7 +398,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(azCli, depOpService)
+	arm := NewAzureResourceManager(resourceService, deploymentService)
 	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, deployment, &qStart)
 
 	require.NotNil(t, operations)
@@ -476,8 +469,11 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-			depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
 			mockContext.HttpClient.When(func(request *http.Request) bool {
 				return request.Method == "GET" && strings.Contains(request.URL.Path, "/resourcegroups") &&
@@ -499,7 +495,7 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 				"AZURE_SUBSCRIPTION_ID": SUBSCRIPTION_ID,
 			})
 
-			arm := NewAzureResourceManager(azCli, depOpService)
+			arm := NewAzureResourceManager(resourceService, deploymentService)
 			rgName, err := arm.FindResourceGroupForEnvironment(
 				*mockContext.Context, env.GetSubscriptionId(), env.Name())
 

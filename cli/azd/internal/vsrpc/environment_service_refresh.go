@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // RefreshEnvironmentAsync is the server implementation of:
@@ -55,7 +54,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 		importManager        *project.ImportManager      `container:"type"`
 		bicep                provisioning.Provider       `container:"name"`
 		azureResourceManager *infra.AzureResourceManager `container:"type"`
-		azcli                azcli.AzCli                 `container:"type"`
+		resourceService      *azapi.ResourceService      `container:"type"`
 		resourceManager      project.ResourceManager     `container:"type"`
 		serviceManager       project.ServiceManager      `container:"type"`
 		envManager           environment.Manager         `container:"type"`
@@ -147,7 +146,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 			}
 		}
 
-		resources, err := c.azcli.ListResourceGroupResources(ctx, subId, rgName, nil)
+		resources, err := c.resourceService.ListResourceGroupResources(ctx, subId, rgName, nil)
 		if err == nil {
 			for _, res := range resources {
 				env.Resources = append(env.Resources, &Resource{

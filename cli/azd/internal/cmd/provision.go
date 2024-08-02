@@ -34,8 +34,9 @@ type ProvisionFlags struct {
 }
 
 const (
-	AINotValid                      = "is not valid according to the validation procedure"
-	openAIsubscriptionNoQuotaId     = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
+	AINotValid                  = "is not valid according to the validation procedure"
+	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' " +
+		"from kind 'OpenAI'"
 	responsibleAITerms              = "until you agree to Responsible AI terms for this resource"
 	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
 )

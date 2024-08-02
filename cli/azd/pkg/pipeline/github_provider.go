@@ -652,7 +652,8 @@ func (p *GitHubCiProvider) configurePipeline(
 			p.console.MessageUxItem(ctx, &ux.MultilineMessage{
 				Lines: []string{
 					"",
-					"GitHub Action secrets are now configured. You can view GitHub action secrets that were created at this link:",
+					"GitHub Action secrets are now configured. You can view GitHub action secrets that were " +
+						"created at this link:",
 					output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
 					""},
 			})

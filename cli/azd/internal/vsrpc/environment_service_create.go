@@ -47,8 +47,8 @@ func (s *environmentService) CreateEnvironmentAsync(
 
 	// We had thought at one point that we would introduce `ASPIRE_ENVIRONMENT` as a sibling to `ASPNETCORE_ENVIRONMENT` and
 	// `DOTNET_ENVIRONMENT` and was aspire specific. We no longer intend to do this (because having both DOTNET and
-	// ASPNETCORE versions is already confusing enough). For now, we'll use `ASPIRE_ENVIRONMENT` to seed the initial values of
-	// `DOTNET_ENVIRONMENT`, but allow them to be overriden at environment construction time.
+	// ASPNETCORE versions is already confusing enough). For now, we'll use `ASPIRE_ENVIRONMENT` to seed the initial values
+	// of `DOTNET_ENVIRONMENT`, but allow them to be overriden at environment construction time.
 	//
 	// We only retain `DOTNET_ENVIRONMENT` in the .env file.
 	dotnetEnv := newEnv.Properties["ASPIRE_ENVIRONMENT"]

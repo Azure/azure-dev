@@ -141,8 +141,8 @@ func (cli *dotNetCli) PublishAppHostManifest(
 ) error {
 	// TODO(ellismg): Before we GA manifest support, we should remove this debug tool, but being able to control what
 	// manifest is used is helpful, while the manifest/generator is still being built.  So if
-	// `AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST` is set, then we will expect to find apphost-manifest.json SxS with the host
-	// project, and we just use that instead.
+	// `AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST` is set, then we will expect to find apphost-manifest.json SxS with the
+	// host project, and we just use that instead.
 	if enabled, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST")); err == nil && enabled {
 		m, err := os.ReadFile(filepath.Join(filepath.Dir(hostProject), "apphost-manifest.json"))
 		if err != nil {
@@ -291,7 +291,7 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 	}
 
 	// dotnet user-secrets now support setting multiple values at once
-	//https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-7.0&tabs=windows#set-multiple-secrets
+	// learn.microsoft.com/aspnet/core/security/app-secrets?view=aspnetcore-7.0&tabs=windows#set-multiple-secrets
 	runArgs := newDotNetRunArgs("user-secrets", "set", "--project", project).
 		WithStdIn(strings.NewReader(string(secretsJson)))
 

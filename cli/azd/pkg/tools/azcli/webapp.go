@@ -140,7 +140,8 @@ func (cli *azCli) DeployAppServiceZip(
 
 	// Deployment Status API only support linux web app for now
 	if isLinuxWebApp(app) {
-		if err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
+		if err := client.DeployTrackStatus(
+			ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
 			if !resumeDeployment(err, progressLog) {
 				return nil, err
 			}

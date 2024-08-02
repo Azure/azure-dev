@@ -261,7 +261,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Environment manager depends on azd context
 	container.MustRegisterSingleton(
-		func(serviceLocator ioc.ServiceLocator, azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
+		func(serviceLocator ioc.ServiceLocator,
+			azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
 				azdCtx, err := azdContext.GetValue()
 				if err != nil {
@@ -415,7 +416,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 								return nil, &internal.ErrorWithSuggestion{
 									Err: err,
 									Suggestion: fmt.Sprintf(
-										"Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment\n%s",
+										"Set the cloud configuration by editing the 'cloud' node in the config.json "+
+											"file for the %s environment\n%s",
 										defaultEnvName,
 										validClouds,
 									),
@@ -453,8 +455,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 						return cloud, nil
 					} else {
 						return nil, &internal.ErrorWithSuggestion{
-							Err:        err,
-							Suggestion: fmt.Sprintf("Set the cloud configuration using 'azd config set cloud.name <name>'.\n%s", validClouds),
+							Err: err,
+							Suggestion: fmt.Sprintf(
+								"Set the cloud configuration using 'azd config set cloud.name <name>'.\n%s", validClouds),
 						}
 					}
 				}

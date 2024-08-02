@@ -12,3 +12,4 @@ linters-settings:
   lll:
     # GitHub recommended for code review
     line-length: 125
+    tab-width: 4

@@ -103,7 +103,8 @@ func RegisterListOnlineDeployment(
 		}
 
 		response := armmachinelearning.OnlineDeploymentsClientListResponse{
-			OnlineDeploymentTrackedResourceArmPaginatedResult: armmachinelearning.OnlineDeploymentTrackedResourceArmPaginatedResult{
+			OnlineDeploymentTrackedResourceArmPaginatedResult: armmachinelearning.
+				OnlineDeploymentTrackedResourceArmPaginatedResult{
 				Value: deployments,
 			},
 		}

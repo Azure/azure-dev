@@ -20,6 +20,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npm install -g cspell
+      - run: npm install -g cspell@8.12.1
       - name: Spell check for general files
         run: cspell lint '**/*' --config ./.vscode/cspell.misc.yaml --relative --no-progress

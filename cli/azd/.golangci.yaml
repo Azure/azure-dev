@@ -4,6 +4,7 @@ linters:
     - gofmt
     - lll
     - gosec
+    - revive
 linters-settings:
   errorlint:
     errorf: true
@@ -13,3 +14,7 @@ linters-settings:
     # GitHub recommended for code review
     line-length: 125
     tab-width: 4
+  revive:
+    rules:
+      - name: unused-parameter
+      

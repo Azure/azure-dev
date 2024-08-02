@@ -115,7 +115,7 @@ func validatePackageOutput(packagePath string) error {
 		return fmt.Errorf("package output '%s' does not exist, %w", packagePath, err)
 	} else if err != nil {
 		return fmt.Errorf("failed to read package output '%s', %w", packagePath, err)
-	} else if err == nil && len(entries) == 0 {
+	} else if len(entries) == 0 {
 		return fmt.Errorf("package output '%s' is empty", packagePath)
 	}
 

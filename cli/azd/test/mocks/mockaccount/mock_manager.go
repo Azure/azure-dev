@@ -43,6 +43,7 @@ func (a *MockAccountManager) GetAccountDefaults(ctx context.Context) (*account.A
 }
 func (a *MockAccountManager) GetSubscriptionsWithDefaultSet(ctx context.Context) ([]account.Subscription, error) {
 	subscriptions := a.Subscriptions
+
 	for _, sub := range subscriptions {
 		if sub.Id == a.DefaultSubscription {
 			sub.IsDefault = true

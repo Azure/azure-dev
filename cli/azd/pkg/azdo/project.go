@@ -34,7 +34,6 @@ func createProject(
 	connection *azuredevops.Connection,
 	name string,
 	description string,
-	console input.Console,
 ) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
@@ -124,7 +123,7 @@ func GetProjectFromNew(
 			return "", "", fmt.Errorf("asking for new project name: %w", err)
 		}
 		var message string = ""
-		newProject, err := createProject(ctx, connection, name, projectDescription, console)
+		newProject, err := createProject(ctx, connection, name, projectDescription)
 		if err != nil {
 			message = err.Error()
 		}

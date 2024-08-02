@@ -332,7 +332,7 @@ func (p *AzdoScmProvider) configureGitRemote(
 			return "", err
 		}
 	} else {
-		remoteUrl, err = p.getDefaultRepoRemote(ctx, projectName, projectId, p.console)
+		remoteUrl, err = p.getDefaultRepoRemote(ctx, projectName)
 		if err != nil {
 			return "", err
 		}
@@ -359,8 +359,6 @@ func (p *AzdoScmProvider) getCurrentGitBranch(ctx context.Context, repoPath stri
 func (p *AzdoScmProvider) getDefaultRepoRemote(
 	ctx context.Context,
 	projectName string,
-	projectId string,
-	console input.Console,
 ) (string, error) {
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {

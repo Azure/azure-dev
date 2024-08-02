@@ -138,7 +138,7 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 	} else {
 		// In the use case where template sources have never been configured,
 		// add Awesome-Azd as the default template source.
-		if err := sm.addInternal(ctx, SourceAwesomeAzd.Key, SourceAwesomeAzd); err != nil {
+		if err := sm.addInternal(SourceAwesomeAzd); err != nil {
 			return nil, fmt.Errorf("unable to default template source '%s': %w", SourceAwesomeAzd.Key, err)
 		}
 		allSourceConfigs = append(allSourceConfigs, SourceAwesomeAzd)
@@ -178,7 +178,7 @@ func (sm *sourceManager) Add(ctx context.Context, key string, source *SourceConf
 
 	source.Key = newKey
 
-	return sm.addInternal(ctx, source.Key, source)
+	return sm.addInternal(source)
 }
 
 // Remove removes a template source by the specified key.
@@ -242,7 +242,7 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	return source, nil
 }
 
-func (sm *sourceManager) addInternal(ctx context.Context, key string, source *SourceConfig) error {
+func (sm *sourceManager) addInternal(source *SourceConfig) error {
 	config, err := sm.configManager.Load()
 	if err != nil {
 		return fmt.Errorf("unable to load user configuration: %w", err)

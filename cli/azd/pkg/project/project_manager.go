@@ -201,9 +201,6 @@ func (pm *projectManager) EnsureFrameworkTools(
 		}
 
 		frameworkTools := frameworkService.RequiredExternalTools(ctx)
-		if err != nil {
-			return fmt.Errorf("getting service required tools: %w", err)
-		}
 
 		requiredTools = append(requiredTools, frameworkTools...)
 	}
@@ -238,9 +235,6 @@ func (pm *projectManager) EnsureServiceTargetTools(
 		}
 
 		serviceTargetTools := serviceTarget.RequiredExternalTools(ctx)
-		if err != nil {
-			return fmt.Errorf("getting service required tools: %w", err)
-		}
 
 		requiredTools = append(requiredTools, serviceTargetTools...)
 	}

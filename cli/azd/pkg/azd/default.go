@@ -46,7 +46,7 @@ func (p *DefaultPlatform) IsEnabled() bool {
 func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// Tools
 	container.MustRegisterSingleton(terraform.NewTerraformCli)
-	container.MustRegisterSingleton(bicep.NewBicepCli)
+	container.MustRegisterSingleton(bicep.NewCli)
 
 	// Provisioning Providers
 	provisionProviderMap := map[provisioning.ProviderKind]any{

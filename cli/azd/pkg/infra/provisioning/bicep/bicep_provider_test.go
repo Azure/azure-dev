@@ -86,7 +86,7 @@ func TestBicepPlanPrompt(t *testing.T) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
-		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.Version.String()),
 		Stderr: "",
 	})
 
@@ -201,7 +201,7 @@ func TestPlanForResourceGroup(t *testing.T) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion), ""), nil
+		return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.Version), ""), nil
 	})
 
 	// Have `bicep build` return a ARM template that targets a resource group.
@@ -355,7 +355,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 
-	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
@@ -425,7 +425,7 @@ func prepareBicepMocks(
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
-		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.Version.String()),
 		Stderr: "",
 	})
 
@@ -809,7 +809,7 @@ func TestFindCompletedDeployments(t *testing.T) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion), ""), nil
+		return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.Version), ""), nil
 	})
 	// Have `bicep build` return a ARM template that targets a resource group.
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -907,11 +907,11 @@ func TestUserDefinedTypes(t *testing.T) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
-		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.Version.String()),
 		Stderr: "",
 	})
 
-	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	env := environment.NewWithValues("test-env", map[string]string{})
 

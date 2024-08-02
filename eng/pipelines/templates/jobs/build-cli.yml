@@ -1,0 +1,221 @@
+parameters:
+  - name: NameSuffix
+    type: string
+  - name: Pool
+    type: string
+  - name: ImageKey
+    type: string  
+    default: image
+  - name: OSVmImage
+    type: string
+  - name: OS
+    type: string
+  - name: Variables
+    type: object
+    default: {}
+  - name: UploadArtifact
+    type: boolean
+    default: true
+
+jobs: 
+  - job: BuildCLI_${{ parameters.NameSuffix }}
+    displayName: BuildCLI ${{ parameters.NameSuffix }}
+
+    variables: 
+      ${{ insert }}: ${{ parameters.Variables }}
+
+    pool:
+        name: ${{ parameters.Pool }}
+        ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
+        os: ${{ parameters.OS }}
+
+    timeoutInMinutes: 180
+    steps:
+      - checkout: self
+      - template: /eng/pipelines/templates/steps/setup-go.yml
+        parameters:
+          Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+
+      - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Set-CliVersionVariable.ps1
+        displayName: Set CLI_VERSION
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Set-CliBuildVariables.ps1
+          arguments: -BuildReason $(Build.Reason)
+        displayName: Set CLI build run variables
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: cli/azd/ci-build.ps1
+          arguments: >-
+            -Version $(CLI_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+            -CodeCoverageEnabled
+            -BuildRecordMode
+          workingDirectory: cli/azd
+        displayName: Build Go Binary (For tests)
+
+      - template: /eng/pipelines/templates/steps/build-msi.yml
+        parameters:
+          Title: Build Test MSI
+          Condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+          # Build the test MSI with the same configuration as the
+          # release MSI (no special upgrade behavior)
+          ShouldBuildForRelease: true
+
+      - template: /eng/pipelines/templates/steps/install-terraform.yml
+
+      - template: /eng/pipelines/templates/steps/install-kubectl.yml
+
+      - template: /eng/pipelines/templates/steps/install-docker.yml
+
+      # Live testing uses dotnet 8.0.x in the WebApp project deployment
+      - task: UseDotNet@2
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        inputs:
+          version: 8.0.x
+
+      - bash: dotnet nuget add source --name dotnet8 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8/nuget/v3/index.json
+        displayName: Add internal dotnet nuget feed
+
+      - template: /eng/pipelines/templates/steps/azd-login.yml
+        parameters:
+          AzdDirectory: cli/azd
+
+      - task: AzureCLI@2
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        inputs:
+          azureSubscription: azure-sdk-tests
+          # keepAzSessionActive is required when the service connection uses Workload Identity Federation authentication scheme
+          # and the script will run for more than 10 minutes.
+          # the ci-test.ps1 script runs for a long time and the service connection `azure-sdk-tests` use Workload Identity Federation.
+          # This setting will fail if the service connection is updated to use a different authentication scheme.
+          keepAzSessionActive: true
+          # hiding log in output because keepAzSessionActive will keep displaying the output constantly.
+          visibleAzLogin: false
+          scriptType: pscore
+          scriptLocation: scriptPath
+          scriptPath: cli/azd/ci-test.ps1
+          workingDirectory: cli/azd
+          scriptArguments: >-
+            -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
+            -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
+        displayName: Test Go Binary
+        env:
+          # AZD live test setup variables
+          CI: true
+          AZD_TEST_CLI_VERSION: $(CLI_VERSION)
+          AZD_TEST_CLIENT_ID: $(arm-client-id)
+          AZD_TEST_CLIENT_SECRET: $(arm-client-secret)
+          AZD_TEST_TENANT_ID: $(arm-tenant-id)
+          AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
+          AZD_TEST_AZURE_LOCATION: eastus2
+          AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
+          # AZD Live Test: Terraform service principal authentication
+          ARM_CLIENT_ID: $(arm-client-id)
+          ARM_CLIENT_SECRET: $(arm-client-secret)
+          ARM_TENANT_ID: $(arm-tenant-id)
+          # Code Coverage: Generate junit report to publish results
+          GOTESTSUM_JUNITFILE: junitTestReport.xml
+
+      - task: PublishTestResults@2
+        inputs:
+          testResultsFormat: JUnit
+          testResultsFiles: '**/junitTestReport.xml'
+          testRunTitle: $(Agent.JobName)
+          searchFolder: cli/azd
+          publishRunAttachments: true
+        displayName: Publish test results
+        condition: succeededOrFailed()
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: cli/azd/ci-build.ps1
+          arguments: >-
+            -Version $(CLI_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+          workingDirectory: cli/azd
+        displayName: Build Go Binary
+
+      - pwsh: | 
+          Write-Host "Move-Item $(BuildOutputName) $(BuildTarget)"
+          Move-Item $(BuildOutputName) $(BuildTarget)
+        workingDirectory: cli/azd
+        displayName: Rename binaries
+
+      - bash: chmod +x $(BuildTarget)
+        condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+        workingDirectory: cli/azd
+        displayName: Set executable bit for non-Windows binaries
+
+      - pwsh: |
+          New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/build-output -Force
+          Copy-Item $(BuildTarget) $(Build.ArtifactStagingDirectory)/build-output
+        workingDirectory: cli/azd
+        displayName: Copy binary to artifact staging directory
+
+      - template: /eng/pipelines/templates/steps/build-linux-packages.yml
+        parameters:
+          Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+
+      - pwsh: New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/shield -Force
+        condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
+        displayName: Create shield artifact directory
+
+      - task: PowerShell@2
+        condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Set-ShieldInfo.ps1
+          arguments: >-
+            -TemplatePath eng/shields/standalone.json
+            -OutputPath $(Build.ArtifactStagingDirectory)/shield/standalone.json
+            -Version "$(CLI_VERSION)"
+        displayName: Set shield info
+
+    templateContext:
+      outputs:
+      - output: pipelineArtifact
+        path: cli/azd/cover-$(AZURE_DEV_CI_OS)
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        artifact: cover-$(AZURE_DEV_CI_OS)
+        displayName: Upload code coverage
+
+      - output: pipelineArtifact
+        path: $(Build.ArtifactStagingDirectory)/shield
+        condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
+        artifact: shield-standalone
+        displayName: Upload standalone shield json
+
+      - ${{ if eq(parameters.UploadArtifact, true) }}:
+        - output: pipelineArtifact
+          path: $(Build.ArtifactStagingDirectory)/build-output
+          artifact: $(BuildTarget)
+          condition: succeeded()
+          displayName: Upload azd binary to artifact store
+
+      - output: pipelineArtifact
+        path: cli/installer/windows/bin/Release
+        artifact: test-msi
+        condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+        displayName: Upload test MSI
+
+      - output: pipelineArtifact
+        path: cli/installer/fpm/artifact
+        artifact: linux-packages-amd64
+        condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+        displayName: Upload linux packages to artifact store

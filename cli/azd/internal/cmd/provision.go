@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -33,9 +34,10 @@ type ProvisionFlags struct {
 }
 
 const (
-	AINotValid                  = "is not valid according to the validation procedure"
-	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
-	responsibleAITerms          = "until you agree to Responsible AI terms for this resource"
+	AINotValid                      = "is not valid according to the validation procedure"
+	openAIsubscriptionNoQuotaId     = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
+	responsibleAITerms              = "until you agree to Responsible AI terms for this resource"
+	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
 )
 
 func (i *ProvisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -204,10 +206,17 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			locationDisplay = location.DisplayName
 		}
 
+		var subscriptionDisplay string
+		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+			subscriptionDisplay = subscription.Name
+		} else {
+			subscriptionDisplay = fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id)
+		}
+
 		p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
-			Subscription: fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id),
-			Location:     locationDisplay},
-		)
+			Subscription: subscriptionDisplay,
+			Location:     locationDisplay,
+		})
 
 	} else {
 		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
@@ -254,9 +263,19 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 		//if user don't have access to openai
 		errorMsg := err.Error()
+		if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
+			requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
+			return nil, &internal.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: fmt.Sprintf("\nSuggested Action: The selected subscription does not have access to" +
+					" Azure OpenAI Services. Please visit " + output.WithLinkFormat(requestAccessLink) +
+					" to request access."),
+			}
+		}
+
 		if strings.Contains(errorMsg, AINotValid) &&
 			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
-			return nil, &azcli.ErrorWithSuggestion{
+			return nil, &internal.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
 					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
 					"any pricing tiers. Please visit " + output.WithLinkFormat(p.portalUrlBase) +
@@ -267,7 +286,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 		//if user haven't agree to Responsible AI terms
 		if strings.Contains(errorMsg, responsibleAITerms) {
-			return nil, &azcli.ErrorWithSuggestion{
+			return nil, &internal.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
 					output.WithLinkFormat(p.portalUrlBase) + ". Create the resource in azure portal " +
 					"to go through Responsible AI terms, and then delete it. " +

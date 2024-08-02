@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops/policy"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/policy"
 	"github.com/stretchr/testify/require"
 )
 

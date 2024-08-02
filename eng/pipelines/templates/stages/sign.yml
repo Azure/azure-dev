@@ -1,0 +1,222 @@
+
+stages: 
+  - stage: Sign
+    dependsOn: BuildAndTest
+
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
+    jobs:
+    - job: SignMac
+      pool:
+        name: $(WINDOWSPOOL)
+        image: $(WINDOWSVMIMAGE)
+        os: windows
+
+      steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-darwin-amd64
+            path: mac-artifacts
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-darwin-arm64
+            path: mac-artifacts
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path mac
+            
+            Compress-Archive `
+            -Path mac-artifacts/azd-darwin-amd64 `
+            -DestinationPath mac/azd-darwin-amd64.zip
+
+            Compress-Archive `
+            -Path mac-artifacts/azd-darwin-arm64 `
+            -DestinationPath mac/azd-darwin-arm64.zip
+          displayName: Package mac binary for signing
+
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
+            parameters:
+              MacPath: mac
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
+            Expand-Archive -Path mac/azd-darwin-arm64.zip -DestinationPath mac/
+
+            Remove-Item mac/azd-darwin-amd64.zip
+            Remove-Item mac/azd-darwin-arm64.zip
+          displayName: Extract azd-darwin-amd64 from zip and remove zip
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-mac
+            Copy-Item mac/* signed-mac/ -Recurse
+          displayName: Copy signing outputs
+          condition: always()
+
+        # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
+        # when the common engsys is imported.
+        # https://github.com/Azure/azure-dev/issues/956
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-mac
+            path: signed-mac/
+
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-mac-FailedAttempt$(System.JobAttempt)
+            path: signed-mac/
+
+    - job: SignWindows
+      pool:
+        name: $(WINDOWSPOOL)
+        image: $(WINDOWSVMIMAGE)
+        os: windows
+
+      steps:
+        # Checkout required to build MSI
+        - checkout: self
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-windows-amd64.exe
+            path: win-x86_64
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-windows-arm64.exe
+            path: win-arm64
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path win
+
+            Copy-Item win-x86_64/azd-windows-amd64.exe win/
+            Copy-Item win-arm64/azd-windows-arm64.exe win/
+          displayName: Package windows binary for signing
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: install-pwsh
+            path: installer
+
+        - pwsh: |
+            if (Test-Path win/_manifest) {
+              Remove-Item -Recurse -Force win/_manifest
+            }
+            Copy-Item installer/*.ps1 win
+
+            Get-Childitem -Recurse win/ | Select-Object -Property Length,FullName
+          displayName: Prepare assets for signing
+
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+            parameters:
+              WinPath:  win
+              WinPattern: '**'
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-win
+            Copy-Item win/* signed-win/ -Recurse
+            Copy-Item win/azd-windows-amd64.exe cli/azd/azd.exe
+          displayName: Copy signing outputs for publishing and MSI build
+          condition: always()
+
+        - task: PowerShell@2
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: eng/scripts/Set-CliVersionVariable.ps1
+          displayName: Set CLI_VERSION for MSI build
+
+        - template: /eng/pipelines/templates/steps/build-msi.yml
+          parameters:
+            Title: Build Release MSI
+            # Only build for release in a manual (releasing) build. Otherwise
+            # the package version will be 0.1.0 with upgrade logic that allows
+            # it to be installed over any previously installed version.
+            ShouldBuildForRelease: ${{ eq(variables['Build.Reason'], 'Manual') }}
+
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+            parameters:
+              WinPath:  cli/installer/windows/bin/Release
+              WinPattern: '*.msi'
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: Copy-Item cli/installer/windows/bin/Release/* signed-win/
+          displayName: Copy MSI for publishing
+
+        # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
+        # when the common engsys is imported.
+        # https://github.com/Azure/azure-dev/issues/956
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-win
+            path: signed-win/
+
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-win-FailedAttempt$(System.JobAttempt)
+            path: signed-win/
+
+    - job: SignLinux
+      pool:
+        name: $(WINDOWSPOOL)
+        image: $(WINDOWSVMIMAGE)
+        os: windows
+
+      steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: linux-packages
+            path: linux
+
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
+            parameters:
+              LinuxPath: linux
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-linux
+            Copy-Item linux/* signed-linux/ -Recurse
+          displayName: Copy signing outputs
+          condition: always()
+
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-linux
+            path: signed-linux/
+
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-linux-FailedAttempt$(System.JobAttempt)
+            path: signed-linux/

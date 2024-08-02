@@ -26,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -50,9 +49,11 @@ func newInitCmd() *cobra.Command {
 type initFlags struct {
 	templatePath   string
 	templateBranch string
+	templateTags   []string
 	subscription   string
 	location       string
 	global         *internal.GlobalCommandOptions
+	fromCode       bool
 	internal.EnvFlag
 }
 
@@ -63,7 +64,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"t",
 		"",
 		//nolint:lll
-		"The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
+		"Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
 	)
 	local.StringVarP(
 		&i.templateBranch,
@@ -71,12 +72,26 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"b",
 		"",
 		"The template branch to initialize from. Must be used with a template argument (--template or -t).")
+	local.StringSliceVarP(
+		&i.templateTags,
+		"filter",
+		"f",
+		[]string{},
+		"The tag(s) used to filter template results. Supports comma-separated values.",
+	)
 	local.StringVarP(
 		&i.subscription,
 		"subscription",
 		"s",
 		"",
 		"Name or ID of an Azure subscription to use for the new environment",
+	)
+	local.BoolVarP(
+		&i.fromCode,
+		"from-code",
+		"",
+		false,
+		"Initializes a new application from your existing code.",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 	i.EnvFlag.Bind(local, global)
@@ -154,13 +169,20 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	var initTypeSelect initType
-	if i.flags.templatePath != "" {
+	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
 		// an explicit --template passed, always initialize from app template
 		initTypeSelect = initAppTemplate
 	}
 
-	if i.flags.templatePath == "" && existingProject {
-		// no explicit --template, and azure.yaml exists, only initialize environment
+	if i.flags.fromCode {
+		if i.flags.templatePath != "" {
+			return nil, errors.New("only one of init modes: --template, or --from-code should be set")
+		}
+		initTypeSelect = initFromApp
+	}
+
+	if i.flags.templatePath == "" && !i.flags.fromCode && existingProject {
+		// only initialize environment when no mode is set explicitly
 		initTypeSelect = initEnvironment
 	}
 
@@ -207,7 +229,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		if len(entries) == 0 {
-			return nil, &azcli.ErrorWithSuggestion{
+			return nil, &internal.ErrorWithSuggestion{
 				Err: errors.New("no files found in the current directory"),
 				Suggestion: "Ensure you're in the directory where your app code is located and try again." +
 					" If you do not have code and would like to start with an app template, run '" +
@@ -281,7 +303,16 @@ func (i *initAction) initializeTemplate(
 	var template *templates.Template
 
 	if i.flags.templatePath == "" {
-		template, err = templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
+		templateListOptions := &templates.ListOptions{
+			Tags: i.flags.templateTags,
+		}
+		template, err = templates.PromptTemplate(
+			ctx,
+			"Select a project template:",
+			i.templateManager,
+			i.console,
+			templateListOptions,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -356,7 +387,7 @@ func (i *initAction) initializeEnv(
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
+	if err := azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
@@ -384,8 +415,8 @@ func getCmdInitHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Initialize a new application in your current directory.",
 		[]string{
 			formatHelpNote(
-				fmt.Sprintf("Running %s without a template will prompt "+
-					"you to start with a minimal template or select from a curated list of presets.",
+				fmt.Sprintf("Running %s without flags specified will prompt "+
+					"you to initialize using your existing code, or from a template.",
 					output.WithHighLightFormat("init"),
 				)),
 			formatHelpNote(

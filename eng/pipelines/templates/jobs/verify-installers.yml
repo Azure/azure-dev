@@ -1,0 +1,170 @@
+parameters:
+  - name: NameSuffix
+    type: string
+  - name: Pool
+    type: string
+  - name: ImageKey
+    type: string  
+    default: image
+  - name: OSVmImage
+    type: string
+  - name: OS
+    type: string
+  - name: Variables
+    type: object
+    default: {}
+
+jobs: 
+  - job: Verify_Installers_${{ parameters.NameSuffix }} 
+    displayName: Verify_Installers ${{ parameters.NameSuffix }}
+
+    dependsOn: Compress_For_Hosting
+    
+    pool:
+      name: ${{ parameters.Pool }}
+      ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
+      os: ${{ parameters.OS }}
+
+    variables: 
+      ${{ insert }}: ${{ parameters.Variables }}
+      BaseUrl: http://127.0.0.1:8080
+
+    timeoutInMinutes: 15
+
+    steps:
+      - checkout: self
+
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          artifact: test-hosting
+          path: hosting
+
+      - bash: ls
+        workingDirectory: hosting
+
+      - bash: |
+          unzip ./azd-darwin-amd64.zip -d ./tmp
+
+          # Ad-hoc signing with "-" identity
+          codesign -s - tmp/azd-darwin-amd64
+
+          zip azd-darwin-amd64.zip -j tmp/azd-darwin-amd64
+        displayName: Self-sign (Darwin)
+        condition: and(succeeded(), contains(variables['Agent.OS'], 'Darwin'))
+        workingDirectory: hosting
+
+      - pwsh: |
+          $ErrorActionPreference = 'Stop'
+
+          # Generate self-sign cert
+          $cert = New-SelfSignedCertificate -CertStoreLocation Cert:\LocalMachine\My -Type CodeSigningCert -Subject "azd installer tests code signing"
+          
+          # Add as temporary trusted root CA
+          try {
+            Export-Certificate -Cert $cert -FilePath code_signing.crt
+            Import-Certificate -FilePath .\code_signing.crt -Cert Cert:\LocalMachine\Root
+          }
+          finally {
+            Remove-Item -Force .\code_signing.crt -ErrorAction SilentlyContinue
+          }
+
+          # Sign the windows binary
+          Set-AuthenticodeSignature .\azd-windows-amd64.msi -Certificate $cert
+        displayName: Self-sign (Windows)
+        condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
+        workingDirectory: hosting
+
+      - bash: nohup npx -y http-server &
+        displayName: Start server in hosting/ (bash)
+        condition: and(succeeded(), not(contains(variables['Agent.OS'], 'Windows')))
+        workingDirectory: hosting
+
+      - pwsh: |
+          Start-Process npx.cmd `
+            -ArgumentList @('-y', 'http-server') `
+            -NoNewWindow `
+            -PassThru `
+            -RedirectStandardOutput ../server.log
+          Write-Host "Server started, waiting for server to initialize"
+          Start-Sleep -Seconds 15
+        displayName: Start server in hosting/ (pwsh)
+        condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
+        workingDirectory: hosting
+
+      - pwsh: |
+          $tmpFile = New-TemporaryFile
+          $timer = [Diagnostics.Stopwatch]::StartNew()
+          $MAX_ELAPSED_SECONDS = 120
+          $TIMEOUT_SECONDS = 12
+          $SLEEP_SECONDS = 1
+
+          while ($timer.Elapsed.TotalSeconds -lt $MAX_ELAPSED_SECONDS) {
+            try {
+              Write-Host "Downloading file..."
+              Invoke-WebRequest `
+                $(BaseUrl)/azd-windows-amd64.zip `
+                -OutFile $tmpFile `
+                -TimeoutSec $TIMEOUT_SECONDS
+
+              if ($LASTEXITCODE) {
+                throw "Failed downloading file"
+              }
+            } catch {
+              Write-Host "Error downloading file."
+              Write-Host $_
+              Start-Sleep -Seconds $SLEEP_SECONDS
+              continue
+            }
+
+            # Exit if the downloaded file size is less than a small threshold
+            # this could mean an error in how the files are being served.
+            if ((Get-Item $tmpFile).Length -le 100000) {
+              Get-Content $tmpFile
+              exit 1
+            }
+
+            break
+          }
+
+          Get-Item $tmpFile | Select-Object -Property Name,Length
+        displayName: Verify installer hosting
+
+      - pwsh: $(TestInstallCommand)
+        condition: and(succeeded(), eq('pwsh', variables['TestShell']))
+        workingDirectory: cli/installer/
+        displayName: Test install script (pwsh)
+
+      - powershell: $(TestInstallCommand)
+        condition: and(succeeded(), eq('powershell', variables['TestShell']))
+        workingDirectory: cli/installer/
+        displayName: Test install script (PowerShell)
+
+      - bash: $(TestInstallCommand)
+        condition: and(succeeded(), eq('bash', variables['TestShell']))
+        workingDirectory: cli/installer/
+        displayName: Test install script (bash)
+
+      - task: CmdLine@2
+        condition: and(succeeded(), eq('cmd', variables['TestShell']))
+        inputs:
+          script: $(TestInstallCommand)
+          workingDirectory: cli/installer/
+        displayName: Test install script (cmd)
+
+      - pwsh: |
+          Get-ChildItem Cert:\LocalMachine\My | ForEach-Object {
+            if ($_.Subject -match "azd installer tests code signing") {
+              Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
+              Remove-Item -Force $_.PSPath
+            }
+          }
+
+          Get-ChildItem Cert:\LocalMachine\Root | ForEach-Object {
+            if ($_.Subject -match "azd installer tests code signing") {
+              Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
+              Remove-Item -Force $_.PSPath
+            }
+          }
+        displayName: Clean up self-signed certificates (Windows)
+        condition: contains(variables['Agent.OS'], 'Windows')
+        workingDirectory: hosting

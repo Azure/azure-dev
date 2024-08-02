@@ -41,6 +41,14 @@ The following prerequisites are required to use this application. Please ensure 
 - [Node.js with npm (18.17.1+)](https://nodejs.org/) - for API backend and Web frontend
 - [Kubernetes CLI (kubectl)](https://kubernetes.io/docs/tasks/tools/)
 
+#### Optional Tools
+
+The following list of tools is optional based on your AKS cluster configuration or your application requirements
+
+- [Helm CLI](https://aka.ms/azure-dev/helm-install) (Required if deploying Helm Charts)
+- [Kustomize CLI](https://aka.ms/azure-dev/kustomize-install) (Required if using Kustomize)
+- [Kubelogin CLI](https://aka.ms/azure-dev/kubelogin-install) (Required for Azure RBAC enabled clusters)
+
 ### Quickstart
 To learn how to get started with any template, follow the steps in [this quickstart](https://learn.microsoft.com/azure/developer/azure-developer-cli/get-started?tabs=localinstall&pivots=programming-language-nodejs) with this template(`Azure-Samples/todo-nodejs-mongo-aks`)
 
@@ -56,6 +64,20 @@ azd init --template Azure-Samples/todo-nodejs-mongo-aks
 # Provision and deploy to Azure
 azd up
 ```
+#### Optional Configuration
+
+To take advantage of `azd` alpha features for **[Helm](https://helm.sh)** or **[Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/)** run the following commands prior to deploying the application.
+
+**Enable support for helm charts**
+```bash
+azd config set alpha.aks.helm on
+```
+
+**Enable support for Kustomize**
+```bash
+azd config set alpha.aks.kustomize on
+```
+
 
 ### Application Architecture
 
@@ -111,7 +133,7 @@ If you are deploying via CI/CD and are using `azd pipeline config` ensure you se
 
 ### Roles
 
-This template creates a [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) for your app inside your Azure Active Directory tenant, and it is used to authenticate your app with Azure and other services that support Azure AD authentication like Key Vault via access policies. You will see principalId referenced in the infrastructure as code files, that refers to the id of the currently logged in Azure CLI user, which will be granted access policies and permissions to run the application locally. To view your managed identity in the Azure Portal, follow these [steps](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-view-managed-identity-service-principal-portal).
+This template creates a [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) for your app inside your Azure Active Directory tenant, and it is used to authenticate your app with Azure and other services that support Azure AD authentication like Key Vault via access policies. You will see principalId referenced in the infrastructure as code files, that refers to the id of the currently logged in Azure Developer CLI user, which will be granted access policies and permissions to run the application locally. To view your managed identity in the Azure Portal, follow these [steps](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-view-managed-identity-service-principal-portal).
 
 ### Key Vault
 

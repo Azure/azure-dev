@@ -10,7 +10,8 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -84,19 +85,22 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	serviceTarget := createContainerAppServiceTarget(mockContext, serviceConfig, env)
 
-	packageTask := serviceTarget.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServicePackageResult{
-			PackagePath: "test-app/api-test:azd-deploy-0",
-			Details: &dockerPackageResult{
-				ImageHash:   "IMAGE_HASH",
-				TargetImage: "test-app/api-test:azd-deploy-0",
-			},
+	packageResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			return serviceTarget.Package(
+				*mockContext.Context,
+				serviceConfig,
+				&ServicePackageResult{
+					PackagePath: "test-app/api-test:azd-deploy-0",
+					Details: &dockerPackageResult{
+						ImageHash:   "IMAGE_HASH",
+						TargetImage: "test-app/api-test:azd-deploy-0",
+					},
+				},
+				progress,
+			)
 		},
 	)
-	logProgress(packageTask)
-	packageResult, err := packageTask.Await()
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
@@ -108,9 +112,12 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 		"CONTAINER_APP",
 		string(infra.AzureResourceTypeContainerApp),
 	)
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+
+	deployResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope, progress)
+		},
+	)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
@@ -139,6 +146,7 @@ func createContainerAppServiceTarget(
 		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
 	)
 	containerRegistryService := azcli.NewContainerRegistryService(
 		credentialProvider,

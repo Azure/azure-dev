@@ -24,6 +24,7 @@ const (
 	ServiceLanguagePython     ServiceLanguageKind = "python"
 	ServiceLanguageJava       ServiceLanguageKind = "java"
 	ServiceLanguageDocker     ServiceLanguageKind = "docker"
+	ServiceLanguageSwa        ServiceLanguageKind = "swa"
 )
 
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
@@ -41,7 +42,8 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		ServiceLanguageTypeScript,
 		ServiceLanguagePython,
 		ServiceLanguageJava:
-		// Excluding ServiceLanguageDocker since it is implicitly derived currently, and not an actual language
+		// Excluding ServiceLanguageDocker and ServiceLanguageSwa since it is implicitly derived currently,
+		// and not an actual language
 		return kind, nil
 	}
 
@@ -77,14 +79,16 @@ type FrameworkService interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) (*ServiceRestoreResult, error)
 
 	// Builds the source for the framework service
 	Build(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
-	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) (*ServiceBuildResult, error)
 
 	// Packages the source suitable for deployment
 	// This may optionally perform a rebuild internally depending on the language/framework requirements
@@ -92,7 +96,8 @@ type FrameworkService interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
-	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+		progress *async.Progress[ServiceProgress],
+	) (*ServicePackageResult, error)
 }
 
 // CompositeFrameworkService is a framework service that requires a nested

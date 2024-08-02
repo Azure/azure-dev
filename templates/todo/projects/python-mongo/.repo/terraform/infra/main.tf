@@ -85,6 +85,7 @@ module "appserviceplan" {
   rg_name        = azurerm_resource_group.rg.name
   tags           = azurerm_resource_group.rg.tags
   resource_token = local.resource_token
+  sku_name       = "B3"
 }
 
 # ------------------------------------------------------------------------------------------------------
@@ -101,12 +102,10 @@ module "web" {
   appservice_plan_id = module.appserviceplan.APPSERVICE_PLAN_ID
 
   app_settings = {
-    "SCM_DO_BUILD_DURING_DEPLOYMENT"                  = "false"
-    "REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING" = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
-    "REACT_APP_API_BASE_URL"                          = module.api.URI
+    "SCM_DO_BUILD_DURING_DEPLOYMENT" = "false"
   }
 
-  app_command_line = "./entrypoint.sh -o ./env-config.js && pm2 serve /home/site/wwwroot --no-daemon --spa"
+  app_command_line = "pm2 serve /home/site/wwwroot --no-daemon --spa"
 }
 
 # ------------------------------------------------------------------------------------------------------

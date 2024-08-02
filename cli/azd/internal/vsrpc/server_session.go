@@ -6,10 +6,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -28,7 +30,10 @@ type serverSession struct {
 	// rootPath is the path to the root of the solution.
 	rootPath string
 	// root container points to server.rootContainer
-	rootContainer *ioc.NestedContainer
+	rootContainer            *ioc.NestedContainer
+	externalServicesEndpoint string
+	externalServicesKey      string
+	externalServicesClient   *http.Client
 }
 
 // newSession creates a new session and returns the session ID and session. newSession is safe to call by multiple
@@ -83,14 +88,17 @@ type container struct {
 }
 
 // newContainer creates a new container for the session.
-func (s *serverSession) newContainer() (*container, error) {
+func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 	c, err := s.rootContainer.NewScopeRegistrationsOnly()
 	if err != nil {
 		return nil, err
 	}
 
 	id := s.id
-	azdCtx := azdcontext.NewAzdContextWithDirectory(s.rootPath)
+	azdCtx, err := azdContext(rc.HostProjectPath)
+	if err != nil {
+		return nil, err
+	}
 
 	outWriter := newWriter(fmt.Sprintf("[%s stdout] ", id))
 	errWriter := newWriter(fmt.Sprintf("[%s stderr] ", id))
@@ -130,7 +138,13 @@ func (s *serverSession) newContainer() (*container, error) {
 				Stdin:  stdin,
 				Stdout: stdout,
 				Stderr: stderr,
-			}, &output.NoneFormatter{})
+			},
+			&output.NoneFormatter{},
+			&input.ExternalPromptConfiguration{
+				Endpoint: s.externalServicesEndpoint,
+				Key:      s.externalServicesKey,
+				Client:   s.externalServicesClient,
+			})
 	})
 
 	c.MustRegisterScoped(func(console input.Console) io.Writer {
@@ -149,6 +163,14 @@ func (s *serverSession) newContainer() (*container, error) {
 
 	c.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
 		return lazy.From(azdCtx)
+	})
+
+	c.MustRegisterScoped(func() auth.ExternalAuthConfiguration {
+		return auth.ExternalAuthConfiguration{
+			Endpoint: s.externalServicesEndpoint,
+			Key:      s.externalServicesKey,
+			Client:   s.externalServicesClient,
+		}
 	})
 
 	return &container{

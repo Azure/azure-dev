@@ -1,0 +1,198 @@
+parameters: 
+  - name: BuildMatrix
+    type: object
+  - name: CrossBuildMatrix
+    type: object
+    default:
+      # Compliant image name required
+      LinuxARM64: 
+        Pool: $(LINUXPOOL)
+        OSVmImage: $(LINUXVMIMAGE)
+        OS: linux
+        ImageKey: image
+        ValidateCrossCompile: true
+        ValidateVm:
+          PoolName: $(LINUXARMPOOL)
+          ImageName: $(LINUXARMVMIMAGE)
+          Os: linux
+        ValidationTask: bash
+        ValidationScript: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
+        Variables: 
+          BuildTarget: azd-linux-arm64
+          BuildOutputName: azd
+          SetExecutableBit: true
+          GOOS: linux
+          GOARCH: arm64
+          BuildLinuxPackages: true
+      MacARM64:
+        Pool: Azure Pipelines
+        OSVmImage: $(MACVMIMAGE)
+        OS: macOS
+        ImageKey: vmImage
+        Variables: 
+          BuildTarget: azd-darwin-arm64
+          BuildOutputName: azd
+          SetExecutableBit: true
+          GOOS: darwin
+          GOARCH: arm64
+          # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
+          CGO_ENABLED: 1
+      WindowsARM64:
+        Pool: $(WINDOWSPOOL)
+        OSVmImage: $(WINDOWSVMIMAGE)
+        OS: windows
+        ImageKey: image
+        ValidateCrossCompile: true
+        ValidateVm:
+          PoolName: $(ARMPOOL)
+          ImageName: $(WINDOWSARMVMIMAGE)
+          Os: windows
+        ValidationTask: script
+        ValidationScript: |
+          dir
+          azd-windows-arm64.exe version
+        Variables:
+          BuildTarget: azd-windows-arm64.exe
+          BuildOutputName: azd.exe
+          GOOS: windows
+          GOARCH: arm64
+
+stages: 
+  - stage: BuildAndTest
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+    jobs: 
+      - ${{ each build in parameters.BuildMatrix }}:
+        - template: /eng/pipelines/templates/jobs/build-cli.yml
+          parameters:
+            NameSuffix: ${{ build.key}}
+            Pool: ${{ build.value.Pool }}
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }} 
+            OS: ${{ build.value.OS }}
+            UploadArtifact: ${{ build.value.UploadArtifact}}
+            Variables: ${{ build.value.Variables }}
+
+      # This is separated today because Skip.LiveTest is a queue-time variable
+      # and cannot be set in a matrix entry.       
+      - ${{ each build in parameters.CrossBuildMatrix }}: 
+        - template: /eng/pipelines/templates/jobs/cross-build-cli.yml
+          parameters:
+            NameSuffix: ${{ build.key }}
+            Pool: ${{ build.value.Pool }}
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }} 
+            OS: ${{ build.value.OS }}
+            Variables: ${{ build.value.Variables }}
+
+      - job: MergeLinuxPackages
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+        dependsOn:
+          - ${{ each build in parameters.CrossBuildMatrix }}: 
+            - CrossBuildCLI_${{ build.key }}
+          - ${{ each build in parameters.BuildMatrix }}: 
+            - BuildCLI_${{ build.key }}
+        steps:
+          - download: current
+            artifact: linux-packages-amd64
+            displayName: Download linux-packages-amd64
+
+          - download: current
+            artifact: linux-packages-arm64
+            displayName: Download linux-packages-arm64
+
+          # Merge the folders
+          - pwsh: |
+              New-Item -ItemType Directory -Path linux-packages
+              Get-ChildItem $(Pipeline.Workspace)/linux-packages-amd64 -Exclude '_manifest' | ForEach-Object { Copy-Item $_ linux-packages }
+              Get-ChildItem $(Pipeline.Workspace)/linux-packages-arm64 -Exclude '_manifest' | ForEach-Object { Copy-Item $_ linux-packages }
+            displayName: Merge linux packages
+        templateContext: 
+          outputs: 
+            - output: pipelineArtifact
+              path: linux-packages
+              artifact: linux-packages
+              displayName: Publish merged linux packages
+
+      - ${{ each validationBuild in parameters.CrossBuildMatrix }}:
+        - ${{ if validationBuild.value.ValidateCrossCompile }}:
+          - job: ValidateCrossCompile${{ validationBuild.key }}
+            dependsOn:
+              - ${{ each build in parameters.CrossBuildMatrix }}:
+                - CrossBuildCLI_${{ build.key }}
+            pool:
+              name: ${{ validationBuild.value.ValidateVm.PoolName }}
+              image: ${{ validationBuild.value.ValidateVm.ImageName }}
+              os: ${{ validationBuild.value.ValidateVm.Os }}
+            timeoutInMinutes: 5
+            steps:
+              - checkout: none
+
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  artifact: ${{ validationBuild.value.Variables.BuildTarget}}
+                  targetPath: $(Build.SourcesDirectory)
+
+              - ${{ validationBuild.value.ValidationTask }}: ${{ validationBuild.value.ValidationScript }}
+                displayName: Validate cross-compiled binary
+
+      - job: GenerateReleaseArtifacts
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - template: /eng/pipelines/templates/steps/setup-go.yml
+
+          # Install scripts
+          - pwsh: |
+              New-Item -ItemType Directory -Path installer
+              Copy-Item cli/installer/*install-azd.ps1 installer/
+            displayName: Copy installer scripts (*.ps1) for artifact upload
+
+          # CLI ref docs
+          - pwsh: New-Item -ItemType Directory -Path docs
+            workingDirectory: $(Pipeline.Workspace)
+            displayName: Create docs artifact folder
+
+          - pwsh: go run docgen.go
+            workingDirectory: cli/azd/docs
+            displayName: Generate CLI documentation
+
+          - pwsh: Copy-Item $(Build.SourcesDirectory)/cli/azd/docs/md/* docs/ -Recurse
+            workingDirectory: $(Pipeline.Workspace)
+            displayName: Copy CLI docs for pipeline artifact staging
+
+          # azure.yaml.json schema docs
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: 3.x
+
+          - pwsh: pip install jsonschema2md
+            displayName: Install jsonschema2md
+
+          - pwsh: jsonschema2md schemas/v1.0/azure.yaml.json $(Pipeline.Workspace)/docs/azure.yaml.schema.md
+            displayName: Generate azure.yaml schema
+
+          # Upload docs for CLI ref and azure.yaml schema
+          - pwsh: Get-ChildItem .
+            workingDirectory: $(Pipeline.Workspace)/docs
+            displayName: Show doc artifacts to publish
+
+        templateContext: 
+          outputs: 
+            - output: pipelineArtifact
+              path: installer
+              artifact: install-pwsh
+
+            - output: pipelineArtifact
+              path: $(Pipeline.Workspace)/docs/
+              artifact: docs
+              displayName: Upload generated documentation

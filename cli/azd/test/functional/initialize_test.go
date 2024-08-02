@@ -57,13 +57,13 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
 
 	require.NoError(t, err)
-	err = azdCtx.SetDefaultEnvironmentName(envName)
+	err = azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: envName})
 	require.NoError(t, err)
 
 	env := environment.New(envName)
 	env.SetSubscriptionId(cfg.SubscriptionID)
 	env.SetLocation(cfg.Location)
-	err = localDataStore.Save(ctx, env)
+	err = localDataStore.Save(ctx, env, nil)
 	require.NoError(t, err)
 
 	// Also requires that the user is logged in. This is automatically done in CI. Locally, `azd auth login` is required.

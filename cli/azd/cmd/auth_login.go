@@ -47,6 +47,7 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 type loginFlags struct {
 	onlyCheckStatus        bool
 	browser                bool
+	managedIdentity        bool
 	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
@@ -120,6 +121,12 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	)
 	// ensure the flag behaves as a common boolean flag which is set to true when used without any other arg
 	f.NoOptDefVal = "true"
+	local.BoolVar(
+		&lf.managedIdentity,
+		"managed-identity",
+		false,
+		"Use a managed identity to authenticate.",
+	)
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.Var(
 		&lf.clientSecret,
@@ -178,6 +185,10 @@ func newLoginCmd(parent string) *cobra.Command {
 
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret,
 		--client-certificate, or --federated-credential-provider.
+
+		To log in using a managed identity, pass --managed-identity, which will use the system assigned managed identity.
+		To use a user assigned managed identity, pass --client-id in addition to --managed-identity with the client id of
+		the user assigned managed identity you wish to use.
 		`),
 		Annotations: map[string]string{
 			loginCmdParentAnnotation: parent,
@@ -301,10 +312,6 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-		log.Printf("failed clearing subscriptions: %v", err)
-	}
-
 	if err := la.login(ctx); err != nil {
 		return nil, err
 	}
@@ -313,30 +320,14 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	// Rehydrate or clear the account's subscriptions cache.
-	// The caching is done here to increase responsiveness of listing subscriptions (during azd init).
-	// It also allows an implicit command for the user to refresh cached subscriptions.
 	if la.flags.clientID == "" {
-		// Deleting subscriptions on file is very unlikely to fail, unless there are serious filesystem issues.
-		// If this does fail, we want the user to be aware of this. Like other stored azd account data,
-		// stored subscriptions are currently tied to the OS user, and not the individual account being logged in,
-		// this means cross-contamination is possible.
-		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-			return nil, err
-		}
-
-		err := la.accountSubManager.RefreshSubscriptions(ctx)
-		if err != nil {
+		// Update the subscriptions cache for regular users (i.e. non-service-principals).
+		// The caching is done here to increase responsiveness of listing subscriptions in the application.
+		// It also allows an implicit command for the user to refresh cached subscriptions.
+		if err := la.accountSubManager.RefreshSubscriptions(ctx); err != nil {
 			// If this fails, the subscriptions will still be loaded on-demand.
 			// erroring out when the user interacts with subscriptions is much more user-friendly.
 			log.Printf("failed retrieving subscriptions: %v", err)
-		}
-	} else {
-		// Service principals do not typically require subscription caching (running in CI scenarios)
-		// We simply clear the cache, which is much faster than rehydrating.
-		err := la.accountSubManager.ClearSubscriptions(ctx)
-		if err != nil {
-			log.Printf("failed clearing subscriptions: %v", err)
 		}
 	}
 
@@ -399,7 +390,17 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 }
 
 func (la *loginAction) login(ctx context.Context) error {
-	if la.flags.clientID != "" {
+	if la.flags.managedIdentity {
+		if _, err := la.authManager.LoginWithManagedIdentity(
+			ctx, la.flags.clientID,
+		); err != nil {
+			return fmt.Errorf("logging in: %w", err)
+		}
+
+		return nil
+	}
+
+	if !la.flags.managedIdentity && la.flags.clientID != "" {
 		if la.flags.tenantID == "" {
 			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
 		}

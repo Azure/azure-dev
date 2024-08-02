@@ -158,6 +158,25 @@ WrappedAuthResult *Authenticate(const char *authority, const char *scope, const 
     return wrapAuthResult(&res);
 }
 
+WrappedAuthResult *SignInSilently()
+{
+    std::promise<AuthResult> promise;
+    auto callback = [&promise](const AuthResult &result)
+    {
+        promise.set_value(result);
+    };
+    OneAuth::GetAuthenticator()->SignInSilently(std::nullopt, TelemetryParameters(UUID::Generate()), callback);
+    auto future = promise.get_future();
+    if (future.wait_for(std::chrono::seconds(timeoutSeconds)) != std::future_status::ready)
+    {
+        auto ar = new WrappedAuthResult();
+        ar->errorDescription = strdup("timed out signing in with system account");
+        return ar;
+    }
+    auto res = future.get();
+    return wrapAuthResult(&res);
+}
+
 void Logout()
 {
     auto telemetryParams = TelemetryParameters(UUID::Generate());

@@ -96,8 +96,12 @@ param agentPoolConfig object = {}
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
+@description('The type of principal to assign application roles')
+@allowed(['Device','ForeignGroup','Group','ServicePrincipal','User'])
+param principalType string = 'User'
+
 @description('Kubernetes Version')
-param kubernetesVersion string = '1.27.7'
+param kubernetesVersion string = '1.27'
 
 @description('The Tenant ID associated to the Azure Active Directory')
 param aadTenantId string = tenant().tenantId
@@ -204,11 +208,12 @@ module containerRegistryAccess '../security/registry-access.bicep' = {
 }
 
 // Give AKS cluster access to the specified principal
-module clusterAccess '../security/aks-managed-cluster-access.bicep' = if (enableAzureRbac || disableLocalAccounts) {
+module clusterAccess '../security/aks-managed-cluster-access.bicep' = if (!empty(principalId) && (enableAzureRbac || disableLocalAccounts)) {
   name: 'cluster-access'
   params: {
     clusterName: managedCluster.outputs.clusterName
     principalId: principalId
+    principalType: principalType
   }
 }
 

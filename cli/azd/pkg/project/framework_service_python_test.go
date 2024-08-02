@@ -5,13 +5,13 @@ package project
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -28,7 +28,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, fmt.Sprintf("%s -m venv", pythonExe()))
+			return strings.Contains(command, "-m venv")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			venvArgs = args
@@ -37,17 +37,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, fmt.Sprintf("%s -m pip install", pythonExe()))
-		}).
-		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			pipArgs = args
-			return exec.NewRunResult(0, "", ""), nil
-		})
-
-		// Linux & mac run a command list
-	mockContext.CommandRunner.
-		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "activate && python3 -m pip install")
+			return strings.Contains(command, "-m pip install")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			pipArgs = args
@@ -59,10 +49,10 @@ func Test_PythonProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	restoreTask := pythonProject.Restore(*mockContext.Context, serviceConfig)
-	logProgress(restoreTask)
+	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+		return pythonProject.Restore(*mockContext.Context, serviceConfig, progess)
+	})
 
-	result, err := restoreTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -72,14 +62,12 @@ func Test_PythonProject_Restore(t *testing.T) {
 		venvArgs.Args,
 	)
 
+	require.Len(t, pipArgs.Args, 2)
+
 	if runtime.GOOS == "windows" {
-		require.Equal(t, pythonExe(), pipArgs.Cmd)
-		require.Equal(t,
-			[]string{"-m", "pip", "install", "-r", "requirements.txt"},
-			pipArgs.Args,
-		)
+		require.Equal(t, "api_env\\Scripts\\activate", pipArgs.Args[0])
+		require.Equal(t, "py -m pip install -r requirements.txt", pipArgs.Args[1])
 	} else {
-		require.Len(t, pipArgs.Args, 2)
 		require.Equal(t, ". api_env/bin/activate", pipArgs.Args[0])
 		require.Equal(t, "python3 -m pip install -r requirements.txt", pipArgs.Args[1])
 	}
@@ -93,10 +81,12 @@ func Test_PythonProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	buildTask := pythonProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
+	result, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+			return pythonProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+		},
+	)
 
-	result, err := buildTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -115,16 +105,18 @@ func Test_PythonProject_Package(t *testing.T) {
 	require.NoError(t, err)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	packageTask := pythonProject.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServiceBuildResult{
-			BuildOutputPath: serviceConfig.Path(),
-		},
-	)
-	logProgress(packageTask)
 
-	result, err := packageTask.Await()
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+		return pythonProject.Package(
+			*mockContext.Context,
+			serviceConfig,
+			&ServiceBuildResult{
+				BuildOutputPath: serviceConfig.Path(),
+			},
+			progress,
+		)
+	})
+
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

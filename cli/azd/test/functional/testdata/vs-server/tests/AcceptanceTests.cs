@@ -15,9 +15,10 @@ public class AcceptanceTests : TestBase
     public async Task ManageEnvironments()
     {
         IObserver<ProgressMessage> observer = new WriterObserver<ProgressMessage>();
-        var session = await svrSvc.InitializeAsync(_rootDir, CancellationToken.None);
-        var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);
-        var environments = (await esSvc.GetEnvironmentsAsync(session, observer, CancellationToken.None)).ToList();
+        var session = await svrSvc.InitializeAsync(_rootDir, new InitializeServerOptions(), CancellationToken.None);
+        var context = new Context{ Session = session, HostProjectPath = _projects[0] };
+        var result = await asSvc.GetAspireHostAsync(context, "Production", observer, CancellationToken.None);
+        var environments = (await esSvc.GetEnvironmentsAsync(context, observer, CancellationToken.None)).ToList();
         environments.ShouldBeEmpty();
 
         Environment e = new Environment("env1") {
@@ -43,9 +44,9 @@ public class AcceptanceTests : TestBase
             },
         };
 
-        await esSvc.CreateEnvironmentAsync(session, e, observer, CancellationToken.None);
+        await esSvc.CreateEnvironmentAsync(context, e, observer, CancellationToken.None);
 
-        environments = (await esSvc.GetEnvironmentsAsync(session, observer, CancellationToken.None)).ToList();
+        environments = (await esSvc.GetEnvironmentsAsync(context, observer, CancellationToken.None)).ToList();
         environments.ShouldNotBeEmpty();
         environments.Count.ShouldEqual(1);
         environments[0].Name.ShouldEqual(e.Name);
@@ -66,13 +67,13 @@ public class AcceptanceTests : TestBase
             },
         };
 
-        await esSvc.CreateEnvironmentAsync(session, e2, observer, CancellationToken.None);
+        await esSvc.CreateEnvironmentAsync(context, e2, observer, CancellationToken.None);
 
-        environments = (await esSvc.GetEnvironmentsAsync(session, observer, CancellationToken.None)).ToList();
+        environments = (await esSvc.GetEnvironmentsAsync(context, observer, CancellationToken.None)).ToList();
         environments.ShouldNotBeEmpty();
         environments.Count.ShouldEqual(2);
 
-        var openEnv = await esSvc.OpenEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
+        var openEnv = await esSvc.OpenEnvironmentAsync(context, e.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e.Name);
         openEnv.IsCurrent.ShouldBeFalse();
         foreach (var kvp in e.Values)
@@ -80,7 +81,7 @@ public class AcceptanceTests : TestBase
             openEnv.Values[kvp.Key].ShouldEqual(kvp.Value);
         }
 
-        openEnv = await esSvc.OpenEnvironmentAsync(session, e2.Name, observer, CancellationToken.None);
+        openEnv = await esSvc.OpenEnvironmentAsync(context, e2.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e2.Name);
         openEnv.IsCurrent.ShouldBeTrue();
         foreach (var kvp in e2.Values)
@@ -88,16 +89,27 @@ public class AcceptanceTests : TestBase
             openEnv.Values[kvp.Key].ShouldEqual(kvp.Value);
         }
 
-        await esSvc.SetCurrentEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
-        openEnv = await esSvc.OpenEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
+        await esSvc.SetCurrentEnvironmentAsync(context, e.Name, observer, CancellationToken.None);
+        openEnv = await esSvc.OpenEnvironmentAsync(context, e.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e.Name);
         openEnv.IsCurrent.ShouldBeTrue();
 
-        var loadEnv = await esSvc.LoadEnvironmentAsync(session, e2.Name, observer, CancellationToken.None);
+        var loadEnv = await esSvc.LoadEnvironmentAsync(context, e2.Name, observer, CancellationToken.None);
         loadEnv.Name.ShouldEqual(e2.Name);
-        loadEnv.Services.Length.ShouldEqual(2);
+        loadEnv.Services.Length.ShouldEqual(3);
         File.Exists(loadEnv.Services[0].Path).ShouldBeTrue();
         File.Exists(loadEnv.Services[1].Path).ShouldBeTrue();
+        File.Exists(loadEnv.Services[2].Path).ShouldBeTrue();
+
+        // Delete environments
+        var deleted1 = await esSvc.DeleteEnvironmentAsync(context, e.Name, EnvironmentDeleteMode.Local, observer, CancellationToken.None);
+        deleted1.ShouldBeTrue();
+
+        var deleted2 = await esSvc.DeleteEnvironmentAsync(context, e2.Name, EnvironmentDeleteMode.All, observer, CancellationToken.None);
+        deleted2.ShouldBeTrue();
+
+        environments = (await esSvc.GetEnvironmentsAsync(context, observer, CancellationToken.None)).ToList();
+        environments.ShouldBeEmpty();
 
         await svrSvc.StopAsync(CancellationToken.None);
     }
@@ -105,8 +117,9 @@ public class AcceptanceTests : TestBase
     [Test]
     public async Task LiveDeployRefresh() {
         IObserver<ProgressMessage> observer = new WriterObserver<ProgressMessage>();
-        var session = await svrSvc.InitializeAsync(_rootDir, CancellationToken.None);
-        var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);
+        var session = await svrSvc.InitializeAsync(_rootDir, new InitializeServerOptions(), CancellationToken.None);
+        var context = new Context{ Session = session, HostProjectPath = _projects[0] };
+        var result = await asSvc.GetAspireHostAsync(context, "Production", observer, CancellationToken.None);
 
         Environment e = new Environment(_envName) {
             Properties = new Dictionary<string, string>() {
@@ -126,10 +139,10 @@ public class AcceptanceTests : TestBase
             ],
         };
 
-        await esSvc.CreateEnvironmentAsync(session, e, observer, CancellationToken.None);
+        await esSvc.CreateEnvironmentAsync(context, e, observer, CancellationToken.None);
 
         var recorder = new Recorder<ProgressMessage>();
-        var envResult = await esSvc.DeployAsync(session, e.Name, recorder, CancellationToken.None);
+        var envResult = await esSvc.DeployAsync(context, e.Name, recorder, CancellationToken.None);
         recorder.Values.ShouldNotBeEmpty();
         bool importantMessagesLogged = false;
         foreach (var msg in recorder.Values)
@@ -145,10 +158,13 @@ public class AcceptanceTests : TestBase
         envResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
         envResult.Resources.ShouldNotBeEmpty();
 
-        var refreshResult = await esSvc.RefreshEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
+        var refreshResult = await esSvc.RefreshEnvironmentAsync(context, e.Name, observer, CancellationToken.None);
         refreshResult.LastDeployment.ShouldNotBeNull();
         refreshResult.LastDeployment.DeploymentId.ShouldNotBeEmpty();
         refreshResult.Resources.ShouldNotBeEmpty();
+
+        var deleted = await esSvc.DeleteEnvironmentAsync(context, e.Name, EnvironmentDeleteMode.All, observer, CancellationToken.None);
+        deleted.ShouldBeTrue();
 
         await svrSvc.StopAsync(CancellationToken.None);
     }

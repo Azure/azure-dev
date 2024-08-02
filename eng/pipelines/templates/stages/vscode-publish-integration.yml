@@ -1,0 +1,106 @@
+stages:
+  - stage: PublishIntegration
+    dependsOn: Sign
+
+    variables: 
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
+    jobs:
+      - job: Publish_Continuous_Deployment
+        condition: >-
+          and(
+            succeeded(),
+            ne(variables['Skip.Release'], 'true'),
+            or(
+              in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+              )
+            )
+          )
+
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - template: /eng/pipelines/templates/steps/set-vscode-version.yml
+
+          - template: /eng/pipelines/templates/steps/publish-vscode.yml
+            parameters:
+              PublishLocations: vscode/release/daily;vscode/daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
+
+      - job: Publish_For_PR
+        condition: >-
+          and(
+            succeeded(),
+            ne(variables['Skip.Release'], 'true'),
+            or(
+              eq('PullRequest', variables['BuildReasonOverride']),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - pwsh: |
+              $PRNumber = '$(System.PullRequest.PullRequestNumber)'
+              if ($env:PRNUMBEROVERRIDE) {
+                Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                $PRNumber = $env:PRNUMBEROVERRIDE
+              }
+              Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+            displayName: Set PR Number Variable
+
+          - template: /eng/pipelines/templates/steps/set-vscode-version.yml
+
+          - template: /eng/pipelines/templates/steps/publish-vscode.yml
+            parameters:
+              PublishLocations: vscode/pr/$(PRNumber)
+
+          - pwsh: |
+              $downloadUrl = "https://$(azdev-storage-account-name).blob.core.windows.net/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"
+
+              $content = @"
+              <!-- #comment-vscode-pr -->
+              ## VSCode Extension Installation Instructions
+
+              1. Download the extension at $downloadUrl
+              2. Extract the extension from the compressed file
+              3. In vscode
+                a. Open "Extensions" (Ctrl+Shift+X)
+                b. Click the \`...\` menu at top of Extensions sidebar
+                c. Click "Install from VSIX"
+                d. Select location of downloaded file
+              "@
+              $file = New-TemporaryFile
+              Set-Content -Path $file -Value $content
+              Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+            displayName: Write body content to temporary file
+
+          - task: PowerShell@2
+            displayName: Add PR comment
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: ./eng/scripts/Update-PRComment.ps1
+              arguments: >-
+                -Repo "azure/azure-dev"
+                -PrNumber $(PRNumber)
+                -Tag "<!-- #comment-vscode-pr -->"
+                -BodyFile $(CommentBodyFile)
+            env:
+              GH_TOKEN: $(azuresdk-github-pat)

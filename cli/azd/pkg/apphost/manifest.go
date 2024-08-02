@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/psanford/memfs"
@@ -32,6 +33,12 @@ type Resource struct {
 	// Context is present on a dockerfile.v0 resource and is the path to the context directory.
 	Context *string `json:"context,omitempty"`
 
+	// BuildArgs is present on a dockerfile.v0 resource and is the --build-arg for building the docker image.
+	BuildArgs map[string]string `json:"buildArgs,omitempty"`
+
+	// Args is optionally present on project.v0 and dockerfile.v0 resources and are the arguments to pass to the container.
+	Args []string `json:"args,omitempty"`
+
 	// Parent is present on a resource which is a child of another. It is the name of the parent resource. For example, a
 	// postgres.database.v0 is a child of a postgres.server.v0, and so it would have a parent of which is the name of
 	// the server resource.
@@ -42,7 +49,7 @@ type Resource struct {
 
 	// Bindings is present on container.v0, project.v0 and dockerfile.v0 resources, and is a map of binding names to
 	// binding details.
-	Bindings map[string]*Binding `json:"bindings,omitempty"`
+	Bindings custommaps.WithOrder[Binding] `json:"bindings,omitempty"`
 
 	// Env is present on project.v0, container.v0 and dockerfile.v0 resources, and is a map of environment variable
 	// names to value  expressions. The value expressions are simple expressions like "{redis.connectionString}" or
@@ -75,6 +82,42 @@ type Resource struct {
 
 	// parameter.v0 uses value field to define the value of the parameter.
 	Value string
+
+	// container.v0 uses volumes field to define the volumes of the container.
+	Volumes []*Volume `json:"volumes,omitempty"`
+
+	// The entrypoint to use for the container image when executed.
+	Entrypoint string `json:"entrypoint,omitempty"`
+
+	// An object that captures properties that control the building of a container image.
+	Build *ContainerV1Build `json:"build,omitempty"`
+
+	// container.v0 uses bind mounts field to define the volumes with initial data of the container.
+	BindMounts []*BindMount `json:"bindMounts,omitempty"`
+}
+
+type ContainerV1Build struct {
+	// The path to the context directory for the container build.
+	// Can be relative of absolute. If relative it is relative to the location of the manifest file.
+	Context string `json:"context"`
+
+	// The path to the Dockerfile. Can be relative or absolute. If relative it is relative to the manifest file.
+	Dockerfile string `json:"dockerfile"`
+
+	// Args is optionally present on project.v0 and dockerfile.v0 resources and are the arguments to pass to the container.
+	Args map[string]string `json:"args,omitempty"`
+
+	// A list of build arguments which are used during container build."
+	Secrets map[string]ContainerV1BuildSecrets `json:"secrets,omitempty"`
+}
+
+type ContainerV1BuildSecrets struct {
+	// "env" (will come with value) or "file" (will come with source).
+	Type string `json:"type"`
+	// If provided use as the value for the environment variable when docker build is run.
+	Value *string `json:"value,omitempty"`
+	// Path to secret file. If relative, the path is relative to the manifest file.
+	Source *string `json:"source,omitempty"`
 }
 
 type DaprResourceMetadata struct {
@@ -97,11 +140,25 @@ type Reference struct {
 }
 
 type Binding struct {
-	ContainerPort *int   `json:"containerPort,omitempty"`
-	Scheme        string `json:"scheme"`
-	Protocol      string `json:"protocol"`
-	Transport     string `json:"transport"`
-	External      bool   `json:"external"`
+	TargetPort *int   `json:"targetPort,omitempty"`
+	Port       *int   `json:"port,omitempty"`
+	Scheme     string `json:"scheme"`
+	Protocol   string `json:"protocol"`
+	Transport  string `json:"transport"`
+	External   bool   `json:"external"`
+}
+
+type Volume struct {
+	Name     string `json:"name,omitempty"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"readOnly"`
+}
+
+type BindMount struct {
+	Name     string `json:"-"`
+	Source   string `json:"source,omitempty"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"readOnly"`
 }
 
 type Input struct {
@@ -110,12 +167,20 @@ type Input struct {
 	Default *InputDefault `json:"default,omitempty"`
 }
 
-type InputDefault struct {
-	Generate *InputDefaultGenerate `json:"generate,omitempty"`
+type InputDefaultGenerate struct {
+	MinLength  *uint `json:"minLength,omitempty"`
+	Lower      *bool `json:"lower,omitempty"`
+	Upper      *bool `json:"upper,omitempty"`
+	Numeric    *bool `json:"numeric,omitempty"`
+	Special    *bool `json:"special,omitempty"`
+	MinLower   *uint `json:"minLower,omitempty"`
+	MinUpper   *uint `json:"minUpper,omitempty"`
+	MinNumeric *uint `json:"minNumeric,omitempty"`
+	MinSpecial *uint `json:"minSpecial,omitempty"`
 }
 
-type InputDefaultGenerate struct {
-	MinLength *int `json:"minLength,omitempty"`
+type InputDefault struct {
+	Generate *InputDefaultGenerate `json:"generate,omitempty"`
 }
 
 // ManifestFromAppHost returns the Manifest from the given app host.
@@ -190,6 +255,26 @@ func ManifestFromAppHost(
 		if res.Type == "dockerfile.v0" {
 			if !filepath.IsAbs(*res.Context) {
 				*res.Context = filepath.Join(manifestDir, *res.Context)
+			}
+		}
+		if res.BindMounts != nil {
+			for _, bindMount := range res.BindMounts {
+				bindMount.Source = filepath.Join(manifestDir, bindMount.Source)
+			}
+		}
+		if res.Type == "container.v1" {
+			if res.Build != nil {
+				if !filepath.IsAbs(res.Build.Dockerfile) {
+					res.Build.Dockerfile = filepath.Join(manifestDir, res.Build.Dockerfile)
+				}
+				if !filepath.IsAbs(res.Build.Context) {
+					res.Build.Context = filepath.Join(manifestDir, res.Build.Context)
+				}
+				for _, secret := range res.Build.Secrets {
+					if secret.Source != nil && !filepath.IsAbs(*secret.Source) {
+						*secret.Source = filepath.Join(manifestDir, *secret.Source)
+					}
+				}
 			}
 		}
 	}

@@ -46,6 +46,9 @@ var (
 
 	// Error returned when an environment with a specified name cannot be found
 	ErrNotFound = errors.New("environment not found")
+
+	// Error returned when an environment name is not specified
+	ErrNameNotSpecified = errors.New("environment not specified")
 )
 
 // Manager is the interface used for managing instances of environments
@@ -57,9 +60,18 @@ type Manager interface {
 	// If the environment does not exist, the user is prompted to create it.
 	LoadOrInitInteractive(ctx context.Context, name string) (*Environment, error)
 	List(ctx context.Context) ([]*Description, error)
+
+	// Get returns the existing environment with the given name.
+	// If the environment specified by the given name does not exist, ErrNotFound is returned.
 	Get(ctx context.Context, name string) (*Environment, error)
+
 	Save(ctx context.Context, env *Environment) error
+	SaveWithOptions(ctx context.Context, env *Environment, options *SaveOptions) error
 	Reload(ctx context.Context, env *Environment) error
+
+	// Delete deletes the environment from local storage.
+	Delete(ctx context.Context, name string) error
+
 	EnvPath(env *Environment) string
 	ConfigPath(env *Environment) string
 }
@@ -138,7 +150,7 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 		env.SetLocation(spec.Location)
 	}
 
-	if err := m.Save(ctx, env); err != nil {
+	if err := m.SaveWithOptions(ctx, env, &SaveOptions{IsNew: true}); err != nil {
 		return nil, err
 	}
 
@@ -155,11 +167,11 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 	}
 
 	if isNew {
-		if err := m.Save(ctx, env); err != nil {
+		if err := m.SaveWithOptions(ctx, env, &SaveOptions{IsNew: isNew}); err != nil {
 			return nil, err
 		}
 
-		if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
+		if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 			return nil, fmt.Errorf("saving default environment: %w", err)
 		}
 	}
@@ -245,7 +257,7 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 			if err != nil {
 				return nil, false, err
 			}
-			if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
+			if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 				return nil, false, fmt.Errorf("saving default environment: %w", err)
 			}
 
@@ -332,6 +344,10 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 
 // Get returns the environment instance for the specified environment name
 func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
+	if name == "" {
+		return nil, ErrNameNotSpecified
+	}
+
 	localEnv, err := m.local.Get(ctx, name)
 	if err != nil {
 		if m.remote == nil {
@@ -343,7 +359,7 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 			return nil, err
 		}
 
-		if err := m.local.Save(ctx, remoteEnv); err != nil {
+		if err := m.local.Save(ctx, remoteEnv, nil); err != nil {
 			return nil, err
 		}
 
@@ -364,7 +380,16 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 
 // Save saves the environment to the persistent data store
 func (m *manager) Save(ctx context.Context, env *Environment) error {
-	if err := m.local.Save(ctx, env); err != nil {
+	return m.SaveWithOptions(ctx, env, nil)
+}
+
+// Save saves the environment to the persistent data store with the specified options
+func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options *SaveOptions) error {
+	if options == nil {
+		options = &SaveOptions{}
+	}
+
+	if err := m.local.Save(ctx, env, options); err != nil {
 		return fmt.Errorf("saving local environment, %w", err)
 	}
 
@@ -372,7 +397,7 @@ func (m *manager) Save(ctx context.Context, env *Environment) error {
 		return nil
 	}
 
-	if err := m.remote.Save(ctx, env); err != nil {
+	if err := m.remote.Save(ctx, env, options); err != nil {
 		return fmt.Errorf("saving remote environment, %w", err)
 	}
 
@@ -382,6 +407,31 @@ func (m *manager) Save(ctx context.Context, env *Environment) error {
 // Reload reloads the environment from the persistent data store
 func (m *manager) Reload(ctx context.Context, env *Environment) error {
 	return m.local.Reload(ctx, env)
+}
+
+func (m *manager) Delete(ctx context.Context, name string) error {
+	if name == "" {
+		return ErrNameNotSpecified
+	}
+
+	err := m.local.Delete(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	defaultEnvName, err := m.azdContext.GetDefaultEnvironmentName()
+	if err != nil {
+		return fmt.Errorf("getting default environment: %w", err)
+	}
+
+	if defaultEnvName == name {
+		err = m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: ""})
+		if err != nil {
+			return fmt.Errorf("clearing default environment: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed

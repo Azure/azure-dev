@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -355,9 +359,12 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				PackagePath: tt.packagePath,
 			}
 
-			deployTask := containerHelper.Deploy(*mockContext.Context, serviceConfig, packageOutput, targetResource, true)
-			logProgress(deployTask)
-			deployResult, err := deployTask.Await()
+			deployResult, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+					return containerHelper.Deploy(
+						*mockContext.Context, serviceConfig, packageOutput, targetResource, true, progress)
+				},
+			)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -536,6 +543,69 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockContainerRegistryServiceForRetry struct {
+	MaxRetry   int
+	retryCount int
+	mock.Mock
+}
+
+func (m *mockContainerRegistryServiceForRetry) totalRetries() int {
+	return m.retryCount
+}
+
+func (m *mockContainerRegistryServiceForRetry) Login(ctx context.Context, subscriptionId string, loginServer string) error {
+	args := m.Called(ctx, subscriptionId, loginServer)
+	return args.Error(0)
+}
+
+func (m *mockContainerRegistryServiceForRetry) Credentials(
+	ctx context.Context,
+	subscriptionId string,
+	loginServer string,
+) (*azcli.DockerCredentials, error) {
+	if m.retryCount < m.MaxRetry {
+		m.retryCount++
+		return nil, &azcore.ResponseError{
+			StatusCode: http.StatusNotFound,
+		}
+	}
+	return &azcli.DockerCredentials{}, nil
+}
+
+func (m *mockContainerRegistryServiceForRetry) GetContainerRegistries(
+	ctx context.Context,
+	subscriptionId string,
+) ([]*armcontainerregistry.Registry, error) {
+	args := m.Called(ctx, subscriptionId)
+	return args.Get(0).([]*armcontainerregistry.Registry), args.Error(1)
+}
+
+func Test_ContainerHelper_Credential_Retry(t *testing.T) {
+	t.Run("Retry on 404 on time", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		env := environment.New("dev")
+		envManager := &mockenv.MockEnvManager{}
+
+		mockContainerService := &mockContainerRegistryServiceForRetry{
+			MaxRetry: 1,
+		}
+		// no need to delay in tests
+		defaultCredentialsRetryDelay = 1 * time.Millisecond
+
+		containerHelper := NewContainerHelper(
+			env, envManager, clock.NewMock(), mockContainerService, nil, cloud.AzurePublic())
+
+		serviceConfig := createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageDotNet)
+		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
+		targetResource := environment.NewTargetResource("sub", "rg", "name", "rType")
+
+		credential, err := containerHelper.Credentials(*mockContext.Context, serviceConfig, targetResource)
+		require.NoError(t, err)
+		require.NotNil(t, credential)
+		require.Equal(t, 1, mockContainerService.totalRetries())
+	})
 }
 
 func setupContainerRegistryMocks(mockContext *mocks.MockContext, mockContainerRegistryService *mock.Mock) {

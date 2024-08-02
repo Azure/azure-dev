@@ -1,21 +1,6 @@
 package apphost
 
-type genAppInsight struct{}
-
-type genStorageAccount struct {
-	Blobs  []string
-	Tables []string
-	Queues []string
-}
-
-type genCosmosAccount struct {
-	Databases []string
-}
-
-type genServiceBus struct {
-	Queues []string
-	Topics []string
-}
+import "github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 
 type genContainerAppEnvironmentServices struct {
 	Type string
@@ -29,41 +14,70 @@ type genKeyVault struct {
 }
 
 type genContainerApp struct {
-	Image   string
-	Dapr    *genContainerAppManifestTemplateContextDapr
-	Env     map[string]string
-	Secrets map[string]string
-	Ingress *genContainerAppIngress
+	Volumes    []*Volume
+	BindMounts []*BindMount
+}
+
+type genContainerAppIngressPort struct {
+	External    bool
+	TargetPort  int
+	ExposedPort int
+}
+
+type genContainerAppIngressAdditionalPortMappings struct {
+	genContainerAppIngressPort
+	ExposedPort int
 }
 
 type genContainerAppIngress struct {
-	External      bool
-	TargetPort    int
-	Transport     string
-	AllowInsecure bool
+	genContainerAppIngressPort
+	Transport              string
+	AllowInsecure          bool
+	UsingDefaultPort       bool
+	AdditionalPortMappings []genContainerAppIngressAdditionalPortMappings
 }
 
 type genContainer struct {
-	Image    string
-	Env      map[string]string
-	Bindings map[string]*Binding
-	Inputs   map[string]Input
+	Image      string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Inputs     map[string]Input
+	Volumes    []*Volume
+	BindMounts []*BindMount
 }
 
 type genDockerfile struct {
-	Path     string
-	Context  string
-	Env      map[string]string
-	Bindings map[string]*Binding
+	Path      string
+	Context   string
+	Env       map[string]string
+	Bindings  custommaps.WithOrder[Binding]
+	BuildArgs map[string]string
+	Args      []string
+}
+
+type genBuildContainer struct {
+	Image      string
+	Entrypoint string
+	Args       []string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Volumes    []*Volume
+	Build      *genBuildContainerDetails
+}
+
+type genBuildContainerDetails struct {
+	Context    string
+	Dockerfile string
+	Args       map[string]string
+	Secrets    map[string]ContainerV1BuildSecrets
 }
 
 type genProject struct {
 	Path     string
 	Env      map[string]string
-	Bindings map[string]*Binding
+	Args     []string
+	Bindings custommaps.WithOrder[Binding]
 }
-
-type genAppConfig struct{}
 
 type genDapr struct {
 	AppId                  string
@@ -92,15 +106,6 @@ type genDaprComponent struct {
 	Version  string
 }
 
-type genInput struct {
-	Secret           bool
-	DefaultMinLength int
-}
-
-type genSqlServer struct {
-	Databases []string
-}
-
 type genOutputParameter struct {
 	Type  string
 	Value string
@@ -117,20 +122,18 @@ type genBicepTemplateContext struct {
 	HasDaprStore                    bool
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
-	AppInsights                     map[string]genAppInsight
-	ServiceBuses                    map[string]genServiceBus
-	StorageAccounts                 map[string]genStorageAccount
+	RequiresStorageVolume           bool
+	HasBindMounts                   bool
 	KeyVaults                       map[string]genKeyVault
 	ContainerAppEnvironmentServices map[string]genContainerAppEnvironmentServices
 	ContainerApps                   map[string]genContainerApp
-	AppConfigs                      map[string]genAppConfig
 	DaprComponents                  map[string]genDaprComponent
-	CosmosDbAccounts                map[string]genCosmosAccount
-	SqlServers                      map[string]genSqlServer
 	InputParameters                 map[string]Input
 	OutputParameters                map[string]genOutputParameter
 	OutputSecretParameters          map[string]genOutputParameter
 	BicepModules                    map[string]genBicepModules
+	// parameters to be passed from main.bicep to resources.bicep
+	mappedParameters []string
 }
 
 type genContainerAppManifestTemplateContext struct {
@@ -140,6 +143,9 @@ type genContainerAppManifestTemplateContext struct {
 	Secrets         map[string]string
 	KeyVaultSecrets map[string]string
 	Dapr            *genContainerAppManifestTemplateContextDapr
+	Args            []string
+	Volumes         []*Volume
+	BindMounts      []*BindMount
 }
 
 type genProjectFileContext struct {

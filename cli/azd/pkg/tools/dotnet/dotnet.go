@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -26,7 +27,7 @@ type DotNetCli interface {
 	Publish(ctx context.Context, project string, configuration string, output string) error
 	PublishContainer(
 		ctx context.Context, project, configuration, imageName, server, username, password string,
-	) error
+	) (int, error)
 	InitializeSecret(ctx context.Context, project string) error
 	// PublishAppHostManifest runs the app host program with the correct configuration to generate an manifest. If dotnetEnv
 	// is non-empty, it will be passed as environment variables (named `DOTNET_ENVIRONMENT`) when running the app host
@@ -38,6 +39,19 @@ type DotNetCli interface {
 
 type dotNetCli struct {
 	commandRunner exec.CommandRunner
+}
+
+type responseContainerConfiguration struct {
+	Config responseContainerConfigurationExpPorts `json:"config"`
+}
+
+type responseContainerConfigurationExpPorts struct {
+	ExposedPorts map[string]interface{} `json:"ExposedPorts"`
+}
+
+type targetPort struct {
+	port     string
+	protocol string
 }
 
 func (cli *dotNetCli) Name() string {
@@ -166,18 +180,27 @@ func (cli *dotNetCli) PublishAppHostManifest(
 	return nil
 }
 
-// PublishContainer runs a `dotnet publish“ with `PublishProfile=DefaultContainer` to build and publish the container.
+// PublishContainer runs a `dotnet publish“ with `/t:PublishContainer`to build and publish the container.
+// It also gets port number by using `--getProperty:GeneratedContainerConfiguration`.
 func (cli *dotNetCli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
-) error {
+) (int, error) {
+	if !strings.Contains(imageName, ":") {
+		imageName = fmt.Sprintf("%s:latest", imageName)
+	}
+
+	imageParts := strings.Split(imageName, ":")
+
 	runArgs := newDotNetRunArgs("publish", project)
 
 	runArgs = runArgs.AppendParams(
 		"-r", "linux-x64",
 		"-c", configuration,
 		"/t:PublishContainer",
-		fmt.Sprintf("-p:ContainerImageName=%s", imageName),
+		fmt.Sprintf("-p:ContainerRepository=%s", imageParts[0]),
+		fmt.Sprintf("-p:ContainerImageTag=%s", imageParts[1]),
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
+		"--getProperty:GeneratedContainerConfiguration",
 	)
 
 	runArgs = runArgs.WithEnv([]string{
@@ -185,11 +208,71 @@ func (cli *dotNetCli) PublishContainer(
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_PWORD=%s", password),
 	})
 
-	_, err := cli.commandRunner.Run(ctx, runArgs)
+	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
+		return 0, fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
 	}
-	return nil
+
+	port, err := cli.getTargetPort(result.Stdout, project)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get dotnet target port: %w with dotnet publish output '%s'", err, result.Stdout)
+	}
+
+	return port, nil
+}
+
+// getTargetPort parses the output of `dotnet publish` with `/t:PublishContainer` to get the port the container exposes.
+func (cli *dotNetCli) getTargetPort(result, project string) (int, error) {
+	// Ensure the output is a JSON object and it has a property named "config". If not, the project needs to be configured
+	// to produce a container.
+	//
+	// We use json.NewDecoder instead of json.Unmarshal because sometimes the `dotnet` tool will put "helpful" messages like
+	// a workload being out of date at the end of stdout, which would confuse us if we tried to Unmarshal all of result.
+	var obj map[string]json.RawMessage
+	_ = json.NewDecoder(strings.NewReader(result)).Decode(&obj)
+
+	// if empty string or there's no config output
+	if result == "" || obj["config"] == nil {
+		return 0, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("empty dotnet configuration output"),
+			Suggestion: fmt.Sprintf("Ensure project '%s' is enabled for container support and try again. To enable SDK "+
+				"container support, set the 'EnableSdkContainerSupport' property to true in your project file",
+				project,
+			),
+		}
+	}
+
+	var targetPorts []targetPort
+	var configOutput responseContainerConfiguration
+
+	if err := json.NewDecoder(strings.NewReader(result)).Decode(&configOutput); err != nil {
+		return 0, fmt.Errorf("unmarshal dotnet configuration output: %w", err)
+	}
+	var exposedPortOutput []string
+	for key := range configOutput.Config.ExposedPorts {
+		exposedPortOutput = append(exposedPortOutput, key)
+	}
+
+	// exposedPortOutput format is <PORT_NUM>[/PORT_TYPE>]
+	for _, value := range exposedPortOutput {
+		split := strings.Split(value, "/")
+		if len(split) > 1 {
+			targetPorts = append(targetPorts, targetPort{port: split[0], protocol: split[1]})
+		} else {
+			// Provide a default tcp protocol if none is specified
+			targetPorts = append(targetPorts, targetPort{port: split[0], protocol: "tcp"})
+		}
+	}
+
+	if len(exposedPortOutput) < 1 {
+		return 0, fmt.Errorf("multiple dotnet port %s detected", targetPorts)
+	}
+
+	port, err := strconv.Atoi(targetPorts[0].port)
+	if err != nil {
+		return 0, fmt.Errorf("convert port %s to integer: %w", targetPorts[0].port, err)
+	}
+	return port, nil
 }
 
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {

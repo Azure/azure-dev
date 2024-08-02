@@ -1,0 +1,56 @@
+api-version: 2024-02-02-preview
+location: {{ .Env.AZURE_LOCATION }}
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    ? "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}"
+    : {}
+properties:
+  environmentId: {{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}
+  configuration:
+    activeRevisionsMode: single
+    runtime:
+      dotnet:
+        autoConfigureDataProtection: true
+    ingress:
+      external: false
+      targetPort: 3306
+      transport: tcp
+      allowInsecure: false
+    registries:
+      - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+        identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+    secrets:
+      - name: mysql-root-password
+        value: '{{ securedParameter "noVolume_password" }}'
+      - name: specialchar
+        value: '{{ securedParameter "noVolume_pas_sw_ord" }}'
+  template:
+    volumes:
+      - name: novolume-bm0
+        storageType: AzureFile
+        storageName: {{ .Env.SERVICE_NOVOLUME_VOLUME_BM0_NAME }} 
+      - name: novolume-bm1
+        storageType: AzureFile
+        storageName: {{ .Env.SERVICE_NOVOLUME_VOLUME_BM1_NAME }} 
+    containers:
+      - image: {{ .Image }}
+        name: noVolume
+        env:
+          - name: AZURE_CLIENT_ID
+            value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
+          - name: MYSQL_ROOT_PASSWORD
+            secretRef: mysql-root-password
+          - name: SpecialChar
+            secretRef: specialchar
+        volumeMounts:
+          - volumeName: novolume-bm0
+            mountPath: /docker-entrypoint-initdb.d
+          - volumeName: novolume-bm1
+            mountPath: /docker-entrypoint-initdb.d/two
+    scale:
+      minReplicas: 1
+tags:
+  azd-service-name: noVolume
+  aspire-resource-name: noVolume
+

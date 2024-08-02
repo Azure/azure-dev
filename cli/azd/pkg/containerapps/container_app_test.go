@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
@@ -42,6 +42,7 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
 	)
 	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, subscriptionId, resourceGroup, appName)
 	require.NoError(t, err)
@@ -137,6 +138,7 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
 	)
 	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName)
 	require.NoError(t, err)

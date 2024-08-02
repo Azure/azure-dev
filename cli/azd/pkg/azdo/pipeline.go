@@ -8,14 +8,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/taskagent"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/taskagent"
 )
 
 // Creates a variable to be associated with a Pipeline
@@ -89,7 +89,7 @@ func CreatePipeline(
 	name string,
 	repoName string,
 	connection *azuredevops.Connection,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 	env *environment.Environment,
 	console input.Console,
 	provisioningProvider provisioning.Options,
@@ -150,7 +150,7 @@ func CreatePipeline(
 
 func getDefinitionVariables(
 	env *environment.Environment,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 	provisioningProvider provisioning.Options,
 	additionalSecrets map[string]string,
 	additionalVariables map[string]string) (*map[string]build.BuildDefinitionVariable, error) {
@@ -202,7 +202,7 @@ func createAzureDevPipelineArgs(
 	projectId string,
 	name string,
 	repoName string,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 	env *environment.Environment,
 	queue *taskagent.TaskAgentQueue,
 	provisioningProvider provisioning.Options,
@@ -272,7 +272,8 @@ func QueueBuild(
 	ctx context.Context,
 	connection *azuredevops.Connection,
 	projectId string,
-	buildDefinition *build.BuildDefinition) error {
+	buildDefinition *build.BuildDefinition,
+	branchName string) error {
 	client, err := build.NewClient(ctx, connection)
 	if err != nil {
 		return err
@@ -282,7 +283,8 @@ func QueueBuild(
 	}
 
 	newBuild := &build.Build{
-		Definition: definitionReference,
+		Definition:   definitionReference,
+		SourceBranch: &branchName,
 	}
 	queueBuildArgs := build.QueueBuildArgs{
 		Project: &projectId,

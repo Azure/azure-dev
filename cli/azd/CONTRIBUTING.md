@@ -16,7 +16,7 @@ and logged in.
 
 We have some additional linting tools that we run in CI, and you will want to be able to run locally:
 
-- [golangci-lint](https://golangci-lint.run/usage/install/#local-installation)
+- [golangci-lint](https://golangci-lint.run/welcome/install/#local-installation)
 
 In order to run end-to-end tests and develop templates, you'll need the following dependencies:
 
@@ -53,7 +53,7 @@ behalf.
 
 ## Debugging
 
-In VS Code you can add a configuration to launch.json that runs the tool with a specified set of arguments and in a specific 
+In VS Code you can add a configuration to launch.json that runs the tool with a specified set of arguments and in a specific
 folder, for example:
 
 ```json
@@ -70,7 +70,7 @@ folder, for example:
 },
 ```
 
-You can also set `AZD_DEBUG=true` in your environment. If this environment variaible is set, `azd` will pause early in its
+You can also set `AZD_DEBUG=true` in your environment. If this environment variable is set, `azd` will pause early in its
 startup process and allow you to attach to it. The checked in `launch.json` already has a configuration for this mode called
 "Attach To Process".
 

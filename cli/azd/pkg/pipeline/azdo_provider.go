@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -19,13 +21,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
-	azdoGit "github.com/microsoft/azure-devops-go-api/azuredevops/git"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	azdoGit "github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 )
 
 // AzdoScmProvider implements ScmProvider using Azure DevOps as the provider
@@ -110,7 +110,7 @@ func (p *AzdoScmProvider) saveEnvironmentConfig(ctx context.Context, key string,
 
 // name returns the name of the provider
 func (p *AzdoScmProvider) Name() string {
-	return "Azure DevOps"
+	return azdoDisplayName
 }
 
 // ***  scmProvider implementation ******
@@ -562,7 +562,6 @@ func azdoPat(ctx context.Context, env *environment.Environment, console input.Co
 }
 
 func gitInsteadOfConfig(
-	ctx context.Context,
 	pat string,
 	gitRepo *gitRepositoryDetails) (string, string) {
 
@@ -583,7 +582,7 @@ func (p *AzdoScmProvider) GitPush(
 	// This is the same as gitCli.PushUpstream(), but it adds `-c url.PAT+HostName.insteadOf=HostName` to execute
 	// git push with the PAT to authenticate
 	pat := azdoPat(ctx, p.env, p.console)
-	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(ctx, pat, gitRepo)
+	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(pat, gitRepo)
 	runArgs := exec.NewRunArgsWithSensitiveData("git",
 		[]string{
 			"-C",
@@ -622,7 +621,8 @@ func (p *AzdoScmProvider) GitPush(
 		return err
 	}
 
-	err = azdo.QueueBuild(ctx, connection, p.repoDetails.projectId, p.repoDetails.buildDefinition)
+	err = azdo.QueueBuild(
+		ctx, connection, p.repoDetails.projectId, p.repoDetails.buildDefinition, branchName)
 	if err != nil {
 		return err
 	}
@@ -635,7 +635,7 @@ type AzdoCiProvider struct {
 	envManager    environment.Manager
 	Env           *environment.Environment
 	AzdContext    *azdcontext.AzdContext
-	credentials   *azcli.AzureCredentials
+	credentials   *entraid.AzureCredentials
 	console       input.Console
 	commandRunner exec.CommandRunner
 }
@@ -692,7 +692,7 @@ func (p *AzdoCiProvider) preConfigureCheck(
 
 // name returns the name of the provider.
 func (p *AzdoCiProvider) Name() string {
-	return "Azure DevOps"
+	return azdoDisplayName
 }
 
 // ***  ciProvider implementation ******
@@ -702,17 +702,59 @@ func (p *AzdoCiProvider) credentialOptions(
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	authType PipelineAuthType,
-) *CredentialOptions {
-	if authType == "" || authType == AuthTypeClientCredentials {
+	credentials *entraid.AzureCredentials,
+) (*CredentialOptions, error) {
+	// Default auth type to client-credentials for terraform
+	if infraOptions.Provider == provisioning.Terraform && authType == "" {
+		authType = AuthTypeClientCredentials
+	}
+
+	if authType == AuthTypeClientCredentials {
 		return &CredentialOptions{
 			EnableClientCredentials: true,
+		}, nil
+	}
+
+	// If not specified default to federated credentials
+	if authType == "" || authType == AuthTypeFederated {
+		p.credentials = credentials
+		details := repoDetails.details.(*AzdoRepositoryDetails)
+		org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)
+		if err != nil {
+			return nil, err
 		}
+		pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
+		if err != nil {
+			return nil, err
+		}
+		connection, err := azdo.GetConnection(ctx, org, pat)
+		if err != nil {
+			return nil, err
+		}
+		sConnection, err := azdo.CreateServiceConnection(
+			ctx, connection, details.projectId, details.projectName, *p.Env, p.credentials, p.console)
+		if err != nil {
+			return nil, err
+		}
+		federatedCredentials := []*graphsdk.FederatedIdentityCredential{
+			{
+				Name:        "AzureDevOpsOIDC", //Must not contain a space character and 3 to 64 characters in length
+				Issuer:      (*sConnection.Authorization.Parameters)["workloadIdentityFederationIssuer"],
+				Subject:     (*sConnection.Authorization.Parameters)["workloadIdentityFederationSubject"],
+				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Audiences:   []string{federatedIdentityAudience},
+			},
+		}
+		return &CredentialOptions{
+			EnableFederatedCredentials: true,
+			FederatedCredentialOptions: federatedCredentials,
+		}, nil
 	}
 
 	return &CredentialOptions{
 		EnableClientCredentials:    false,
 		EnableFederatedCredentials: false,
-	}
+	}, nil
 }
 
 // configureConnection set up Azure DevOps with the Azure credential
@@ -722,9 +764,14 @@ func (p *AzdoCiProvider) configureConnection(
 	provisioningProvider provisioning.Options,
 	servicePrincipal *graphsdk.ServicePrincipal,
 	authType PipelineAuthType,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) error {
+	if authType == "" || authType == AuthTypeFederated {
+		// default and federated credentials are set up in credentialOptions
+		return nil
+	}
 	p.credentials = credentials
+	// create service connection for client credentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)
 	if err != nil {
@@ -738,18 +785,9 @@ func (p *AzdoCiProvider) configureConnection(
 	if err != nil {
 		return err
 	}
-	err = azdo.CreateServiceConnection(ctx, connection, details.projectId, *p.Env, p.credentials, p.console)
-	if err != nil {
-		return err
-	}
-
-	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-		Lines: []string{
-			"",
-			"Azure DevOps project and connection is now configured.",
-			""},
-	})
-	return nil
+	_, err = azdo.CreateServiceConnection(
+		ctx, connection, details.projectId, details.projectName, *p.Env, p.credentials, p.console)
+	return err
 }
 
 // configurePipeline create Azdo pipeline

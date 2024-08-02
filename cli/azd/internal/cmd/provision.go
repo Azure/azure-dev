@@ -192,6 +192,24 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
+	// ** Registering post-provisioning operations **
+	// When azd.operations.yaml is found, the provisioning manager returns the list of operations to be executed
+	// as callbacks -> []func(ctx context.Context) error, error)
+	// See package `infra/provisioning/operations` for more details.
+	operations, err := p.provisionManager.Operations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("registering operations: %w", err)
+	}
+	for _, operation := range operations {
+		err := p.projectConfig.AddHandler(
+			"postprovision", func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
+				return operation(ctx)
+			})
+		if err != nil {
+			return nil, fmt.Errorf("registering operation: %w", err)
+		}
+	}
+
 	// Get Subscription to Display in Command Title Note
 	// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
 	// is not displayed.

@@ -11,12 +11,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/sqlcmd"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -41,9 +43,13 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		// Select the first from the list
 		return 0, nil
 	})
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	registerContainerDependencies(mockContext, env)
-
+	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 	envManager := &mockenv.MockEnvManager{}
 	mgr := NewManager(
 		mockContext.Container,
@@ -54,8 +60,9 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		mockContext.AlphaFeaturesManager,
 		nil,
 		cloud.AzurePublic(),
+		sqlcmd,
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err = mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
 	require.Equal(t, "00000000-0000-0000-0000-000000000000", env.GetSubscriptionId())
@@ -70,6 +77,12 @@ func TestManagerPreview(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
+
+	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 
 	envManager := &mockenv.MockEnvManager{}
 	mgr := NewManager(
@@ -81,8 +94,9 @@ func TestManagerPreview(t *testing.T) {
 		mockContext.AlphaFeaturesManager,
 		nil,
 		cloud.AzurePublic(),
+		sqlcmd,
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err = mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
 	deploymentPlan, err := mgr.Preview(*mockContext.Context)
@@ -99,7 +113,12 @@ func TestManagerGetState(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
+	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 	envManager := &mockenv.MockEnvManager{}
 	mgr := NewManager(
 		mockContext.Container,
@@ -110,8 +129,9 @@ func TestManagerGetState(t *testing.T) {
 		mockContext.AlphaFeaturesManager,
 		nil,
 		cloud.AzurePublic(),
+		sqlcmd,
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err = mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
 	getResult, err := mgr.State(*mockContext.Context, nil)
@@ -128,7 +148,12 @@ func TestManagerDeploy(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
+	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 	envManager := &mockenv.MockEnvManager{}
 	mgr := NewManager(
 		mockContext.Container,
@@ -139,8 +164,9 @@ func TestManagerDeploy(t *testing.T) {
 		mockContext.AlphaFeaturesManager,
 		nil,
 		cloud.AzurePublic(),
+		sqlcmd,
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err = mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
 	deployResult, err := mgr.Deploy(*mockContext.Context)
@@ -161,9 +187,14 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	}).Respond(true)
 
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
+	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 
 	mgr := NewManager(
 		mockContext.Container,
@@ -174,8 +205,9 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		mockContext.AlphaFeaturesManager,
 		nil,
 		cloud.AzurePublic(),
+		sqlcmd,
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err = mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
 	destroyOptions := NewDestroyOptions(false, false)
@@ -199,7 +231,12 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	}).Respond(false)
 
 	registerContainerDependencies(mockContext, env)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "sqlcmd") && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(0, "1.8.0", ""))
 
+	sqlcmd, err := sqlcmd.NewSqlCmdCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 	envManager := &mockenv.MockEnvManager{}
 	mgr := NewManager(
 		mockContext.Container,
@@ -210,8 +247,9 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		mockContext.AlphaFeaturesManager,
 		nil,
 		cloud.AzurePublic(),
+		sqlcmd,
 	)
-	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
+	err = mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
 	destroyOptions := NewDestroyOptions(false, false)

@@ -6,6 +6,7 @@ package azureutil
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -33,4 +34,50 @@ func GetCurrentPrincipalId(ctx context.Context, userProfile *azcli.UserProfileSe
 	}
 
 	return oid, nil
+}
+
+type LoggedInPrincipalProfileData struct {
+	PrincipalId        string
+	PrincipalType      string
+	PrincipalLoginName string
+}
+
+// LoggedInPrincipalProfile returns the info about the current logged in principal
+func LoggedInPrincipalProfile(
+	ctx context.Context, userProfile *azcli.UserProfileService, tenantId string) (*LoggedInPrincipalProfileData, error) {
+	principalProfile, err := userProfile.SignedProfile(ctx, tenantId)
+	if err == nil {
+		return &LoggedInPrincipalProfileData{
+			PrincipalId:        principalProfile.Id,
+			PrincipalType:      "User",
+			PrincipalLoginName: principalProfile.UserPrincipalName,
+		}, nil
+	}
+
+	token, err := userProfile.GetAccessToken(ctx, tenantId)
+	if err != nil {
+		return nil, fmt.Errorf("getting access token: %w", err)
+	}
+
+	tokenClaims, err := auth.GetClaimsFromAccessToken(token.AccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("getting oid from token: %w", err)
+	}
+
+	appProfile, err := userProfile.AppProfile(ctx, tenantId)
+	if err == nil {
+		return &LoggedInPrincipalProfileData{
+			PrincipalId:        *appProfile.AppId,
+			PrincipalType:      "Application",
+			PrincipalLoginName: appProfile.DisplayName,
+		}, nil
+	} else {
+		log.Println(fmt.Errorf("fetching current user information: %w", err))
+	}
+
+	return &LoggedInPrincipalProfileData{
+		PrincipalId:        tokenClaims.LocalAccountId(),
+		PrincipalType:      "User",
+		PrincipalLoginName: tokenClaims.Email,
+	}, nil
 }

@@ -9,13 +9,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -41,9 +41,9 @@ func createServiceManager(
 	env *environment.Environment,
 	operationCache ServiceOperationCache,
 ) ServiceManager {
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	resourceManager := NewResourceManager(env, azCli, depOpService)
+	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService)
 
 	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(
 		map[string]any{
@@ -450,7 +450,7 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 			ID:       convert.RefOf("ID"),
 			Name:     convert.RefOf("RESOURCE_GROUP"),
 			Location: convert.RefOf("eastus2"),
-			Type:     convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
+			Type:     convert.RefOf(string(azapi.AzureResourceTypeResourceGroup)),
 		},
 	})
 
@@ -462,7 +462,7 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 				ID:       convert.RefOf("ID"),
 				Name:     convert.RefOf("WEB_APP"),
 				Location: convert.RefOf("eastus2"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Type:     convert.RefOf(string(azapi.AzureResourceTypeWebSite)),
 				Tags: map[string]*string{
 					azure.TagKeyAzdServiceName: convert.RefOf("api"),
 				},

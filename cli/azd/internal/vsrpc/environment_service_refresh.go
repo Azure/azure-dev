@@ -8,15 +8,14 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // RefreshEnvironmentAsync is the server implementation of:
@@ -55,7 +54,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 		importManager        *project.ImportManager      `container:"type"`
 		bicep                provisioning.Provider       `container:"name"`
 		azureResourceManager *infra.AzureResourceManager `container:"type"`
-		azcli                azcli.AzCli                 `container:"type"`
+		resourceService      *azapi.ResourceService      `container:"type"`
 		resourceManager      project.ResourceManager     `container:"type"`
 		serviceManager       project.ServiceManager      `container:"type"`
 		envManager           environment.Manager         `container:"type"`
@@ -94,9 +93,9 @@ func (s *environmentService) refreshEnvironmentAsync(
 		log.Printf("failed to get latest deployment result: %v", err)
 	} else {
 		env.LastDeployment = &DeploymentResult{
-			DeploymentId: *deployment.ID,
-			Success:      *deployment.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded,
-			Time:         *deployment.Properties.Timestamp,
+			DeploymentId: deployment.Id,
+			Success:      deployment.ProvisioningState == azapi.DeploymentProvisioningStateSucceeded,
+			Time:         deployment.Timestamp,
 		}
 	}
 
@@ -147,7 +146,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 			}
 		}
 
-		resources, err := c.azcli.ListResourceGroupResources(ctx, subId, rgName, nil)
+		resources, err := c.resourceService.ListResourceGroupResources(ctx, subId, rgName, nil)
 		if err == nil {
 			for _, res := range resources {
 				env.Resources = append(env.Resources, &Resource{

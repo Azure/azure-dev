@@ -12,7 +12,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -61,7 +60,7 @@ type showAction struct {
 	writer               io.Writer
 	azCli                azcli.AzCli
 	envManager           environment.Manager
-	deploymentOperations azapi.DeploymentOperations
+	infraResourceManager infra.ResourceManager
 	azdCtx               *azdcontext.AzdContext
 	flags                *showFlags
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
@@ -75,7 +74,7 @@ func newShowAction(
 	writer io.Writer,
 	azCli azcli.AzCli,
 	envManager environment.Manager,
-	deploymentOperations azapi.DeploymentOperations,
+	infraResourceManager infra.ResourceManager,
 	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
 	azdCtx *azdcontext.AzdContext,
@@ -92,7 +91,7 @@ func newShowAction(
 		writer:               writer,
 		azCli:                azCli,
 		envManager:           envManager,
-		deploymentOperations: deploymentOperations,
+		infraResourceManager: infraResourceManager,
 		azdCtx:               azdCtx,
 		flags:                flags,
 		lazyServiceManager:   lazyServiceManager,
@@ -161,11 +160,14 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if subId = env.GetSubscriptionId(); subId == "" {
 			log.Printf("provision has not been run, resource ids will not be available")
 		} else {
-			azureResourceManager := infra.NewAzureResourceManager(s.azCli, s.deploymentOperations)
-			resourceManager := project.NewResourceManager(env, s.azCli, s.deploymentOperations)
+			resourceManager, err := s.lazyResourceManager.GetValue()
+			if err != nil {
+				return nil, err
+			}
+
 			envName := env.Name()
 
-			rgName, err = azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
+			rgName, err = s.infraResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
 			if err == nil {
 				for _, serviceConfig := range stableServices {
 					svcName := serviceConfig.Name

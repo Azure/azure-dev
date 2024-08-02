@@ -596,8 +596,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			armClientOptions,
 		)
 	})
-	container.MustRegisterSingleton(azapi.NewDeployments)
-	container.MustRegisterSingleton(azapi.NewDeploymentOperations)
+
+	// Tools
 	container.MustRegisterSingleton(docker.NewDocker)
 	container.MustRegisterSingleton(dotnet.NewDotNetCli)
 	container.MustRegisterSingleton(git.NewGitCli)
@@ -615,6 +615,29 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(project.NewAiHelper)
 
 	// Provisioning
+	container.MustRegisterSingleton(func(
+		serviceLocator ioc.ServiceLocator,
+		featureManager *alpha.FeatureManager,
+	) (azapi.DeploymentService, error) {
+		deploymentsType := azapi.DeploymentTypeStandard
+
+		if featureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
+			deploymentsType = azapi.DeploymentTypeStacks
+		}
+
+		var deployments azapi.DeploymentService
+		if err := serviceLocator.ResolveNamed(string(deploymentsType), &deployments); err != nil {
+			return nil, err
+		}
+
+		return deployments, nil
+	})
+
+	container.MustRegisterSingleton(azapi.NewResourceService)
+	container.MustRegisterNamedSingleton(string(azapi.DeploymentTypeStandard), azapi.NewDeployments)
+	container.MustRegisterNamedSingleton(string(azapi.DeploymentTypeStacks), azapi.NewDeploymentStacks)
+
+	container.MustRegisterSingleton(infra.NewDeploymentManager)
 	container.MustRegisterSingleton(infra.NewAzureResourceManager)
 	container.MustRegisterScoped(provisioning.NewManager)
 	container.MustRegisterScoped(provisioning.NewPrincipalIdProvider)

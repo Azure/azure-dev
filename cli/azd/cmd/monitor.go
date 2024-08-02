@@ -21,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -65,8 +64,8 @@ type monitorAction struct {
 	azdCtx               *azdcontext.AzdContext
 	env                  *environment.Environment
 	subResolver          account.SubscriptionTenantResolver
-	azCli                azcli.AzCli
-	deploymentOperations azapi.DeploymentOperations
+	resourceManager      infra.ResourceManager
+	resourceService      *azapi.ResourceService
 	console              input.Console
 	flags                *monitorFlags
 	portalUrlBase        string
@@ -77,8 +76,8 @@ func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	subResolver account.SubscriptionTenantResolver,
-	azCli azcli.AzCli,
-	deploymentOperations azapi.DeploymentOperations,
+	resourceManager infra.ResourceManager,
+	resourceService *azapi.ResourceService,
 	console input.Console,
 	flags *monitorFlags,
 	portalUrlBase cloud.PortalUrlBase,
@@ -87,8 +86,8 @@ func newMonitorAction(
 	return &monitorAction{
 		azdCtx:               azdCtx,
 		env:                  env,
-		azCli:                azCli,
-		deploymentOperations: deploymentOperations,
+		resourceManager:      resourceManager,
+		resourceService:      resourceService,
 		console:              console,
 		flags:                flags,
 		subResolver:          subResolver,
@@ -114,18 +113,17 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, nil
 	}
 
-	resourceManager := infra.NewAzureResourceManager(m.azCli, m.deploymentOperations)
-	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(
+	resourceGroups, err := m.resourceManager.GetResourceGroupsForEnvironment(
 		ctx, m.env.GetSubscriptionId(), m.env.Name())
 	if err != nil {
 		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
 
-	var insightsResources []azcli.AzCliResource
-	var portalResources []azcli.AzCliResource
+	var insightsResources []azapi.AzCliResource
+	var portalResources []azapi.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := m.azCli.ListResourceGroupResources(
+		resources, err := m.resourceService.ListResourceGroupResources(
 			ctx, azure.SubscriptionFromRID(resourceGroup.Id), resourceGroup.Name, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing resources: %w", err)
@@ -133,9 +131,9 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 		for _, resource := range resources {
 			switch resource.Type {
-			case string(infra.AzureResourceTypePortalDashboard):
+			case string(azapi.AzureResourceTypePortalDashboard):
 				portalResources = append(portalResources, resource)
-			case string(infra.AzureResourceTypeAppInsightComponent):
+			case string(azapi.AzureResourceTypeAppInsightComponent):
 				insightsResources = append(insightsResources, resource)
 			}
 		}

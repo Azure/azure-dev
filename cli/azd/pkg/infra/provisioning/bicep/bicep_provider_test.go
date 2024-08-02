@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -39,7 +40,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
-	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -358,8 +358,10 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	deploymentManager := infra.NewDeploymentManager(deploymentService, resourceManager, mockContext.Console)
 	accountManager := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{
 			{
@@ -377,17 +379,22 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	}
 
 	provider := NewBicepProvider(
-		bicepCli,
 		azCli,
-		depService,
-		depOpService,
+		bicepCli,
+		resourceService,
+		deploymentManager,
 		envManager,
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli, cloud.AzurePublic().PortalUrlBase),
+		prompt.NewDefaultPrompter(
+			env,
+			mockContext.Console,
+			accountManager,
+			resourceService,
+			cloud.AzurePublic().PortalUrlBase,
+		),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
-		clock.NewMock(),
 		keyvault.NewKeyVaultService(
 			mockaccount.SubscriptionCredentialProviderFunc(
 				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
@@ -492,7 +499,7 @@ func prepareStateMocks(mockContext *mocks.MockContext) {
 }
 
 func prepareDestroyMocks(mockContext *mocks.MockContext) {
-	makeItem := func(resourceType infra.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
+	makeItem := func(resourceType azapi.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
 		id := fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 			string(resourceType), resourceName)
 
@@ -506,15 +513,15 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 
 	resourceList := armresources.ResourceListResult{
 		Value: []*armresources.GenericResourceExpanded{
-			makeItem(infra.AzureResourceTypeWebSite, "app-123"),
-			makeItem(infra.AzureResourceTypeKeyVault, "kv-123"),
-			makeItem(infra.AzureResourceTypeKeyVault, "kv2-123"),
-			makeItem(infra.AzureResourceTypeManagedHSM, "hsm-123"),
-			makeItem(infra.AzureResourceTypeManagedHSM, "hsm2-123"),
-			makeItem(infra.AzureResourceTypeAppConfig, "ac-123"),
-			makeItem(infra.AzureResourceTypeAppConfig, "ac2-123"),
-			makeItem(infra.AzureResourceTypeApim, "apim-123"),
-			makeItem(infra.AzureResourceTypeApim, "apim2-123"),
+			makeItem(azapi.AzureResourceTypeWebSite, "app-123"),
+			makeItem(azapi.AzureResourceTypeKeyVault, "kv-123"),
+			makeItem(azapi.AzureResourceTypeKeyVault, "kv2-123"),
+			makeItem(azapi.AzureResourceTypeManagedHSM, "hsm-123"),
+			makeItem(azapi.AzureResourceTypeManagedHSM, "hsm2-123"),
+			makeItem(azapi.AzureResourceTypeAppConfig, "ac-123"),
+			makeItem(azapi.AzureResourceTypeAppConfig, "ac2-123"),
+			makeItem(azapi.AzureResourceTypeApim, "apim-123"),
+			makeItem(azapi.AzureResourceTypeApim, "apim2-123"),
 		},
 	}
 
@@ -619,7 +626,7 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 			Vault: armkeyvault.Vault{
 				ID: convert.RefOf(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
-						string(infra.AzureResourceTypeKeyVault), name)),
+						string(azapi.AzureResourceTypeKeyVault), name)),
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
 				Properties: &armkeyvault.VaultProperties{
@@ -646,7 +653,7 @@ func getManagedHSMMock(mockContext *mocks.MockContext, managedHSMString string, 
 			ManagedHsm: armkeyvault.ManagedHsm{
 				ID: convert.RefOf(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
-						string(infra.AzureResourceTypeManagedHSM), name)),
+						string(azapi.AzureResourceTypeManagedHSM), name)),
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
 				Properties: &armkeyvault.ManagedHsmProperties{
@@ -673,7 +680,7 @@ func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, na
 			ConfigurationStore: armappconfiguration.ConfigurationStore{
 				ID: convert.RefOf(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
-						string(infra.AzureResourceTypeAppConfig), name)),
+						string(azapi.AzureResourceTypeAppConfig), name)),
 
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
@@ -700,7 +707,7 @@ func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string,
 			ServiceResource: armapimanagement.ServiceResource{
 				ID: convert.RefOf(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
-						string(infra.AzureResourceTypeApim), name)),
+						string(azapi.AzureResourceTypeApim), name)),
 
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
@@ -729,7 +736,7 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 	t.Parallel()
 
 	t.Run("references used when no output resources", func(t *testing.T) {
-		var deployment armresources.DeploymentExtended
+		var deployment *azapi.ResourceDeployment
 
 		f, err := os.ReadFile("testdata/failed-subscription-deployment.json")
 		require.NoError(t, err)
@@ -737,37 +744,35 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 		err = json.Unmarshal(f, &deployment)
 		require.NoError(t, err)
 
-		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsToDelete(&deployment))
+		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsToDelete(deployment))
 	})
 
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
 
-		mockDeployment := armresources.DeploymentExtended{
-			ID:   convert.RefOf("DEPLOYMENT_ID"),
-			Name: convert.RefOf("test-env"),
-			Properties: &armresources.DeploymentPropertiesExtended{
-				OutputResources: []*armresources.ResourceReference{
-					{
-						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA"),
-					},
-					{
-						ID: convert.RefOf(
-							"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
-						),
-					},
-					{
-						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB"),
-					},
-					{
-						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
-					},
-					{
-						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupC"),
-					},
+		mockDeployment := azapi.ResourceDeployment{
+			Id:   "DEPLOYMENT_ID",
+			Name: "test-env",
+			Resources: []*armresources.ResourceReference{
+				{
+					ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA"),
 				},
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-				Timestamp:         to.Ptr(time.Now()),
+				{
+					ID: convert.RefOf(
+						"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
+					),
+				},
+				{
+					ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB"),
+				},
+				{
+					ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
+				},
+				{
+					ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupC"),
+				},
 			},
+			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+			Timestamp:         time.Now(),
 		}
 
 		groups := resourceGroupsToDelete(&mockDeployment)
@@ -775,31 +780,6 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 		sort.Strings(groups)
 		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
 	})
-}
-
-func TestDeploymentNameForEnv(t *testing.T) {
-	clock := clock.NewMock()
-	clock.Set(time.Unix(1683303710, 0))
-
-	tcs := []struct {
-		envName  string
-		expected string
-	}{
-		{
-			envName:  "simple-name",
-			expected: "simple-name-1683303710",
-		},
-		{
-			envName:  "azd-template-test-apim-todo-csharp-sql-swa-func-2750207-2",
-			expected: "template-test-apim-todo-csharp-sql-swa-func-2750207-2-1683303710",
-		},
-	}
-
-	for _, tc := range tcs {
-		deploymentName := deploymentNameForEnv(tc.envName, clock)
-		assert.Equal(t, tc.expected, deploymentName)
-		assert.LessOrEqual(t, len(deploymentName), 64)
-	}
 }
 
 // From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most
@@ -839,11 +819,11 @@ func TestFindCompletedDeployments(t *testing.T) {
 	baseDate := "1989-10-31"
 	envTag := "env-tag"
 
-	deployments, err := bicepProvider.findCompletedDeployments(
-		*mockContext.Context, envTag, &mockedScope{
+	deployments, err := bicepProvider.deploymentManager.CompletedDeployments(
+		*mockContext.Context, &mockedScope{
 			baseDate: baseDate,
 			envTag:   envTag,
-		}, "")
+		}, envTag, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(deployments))
 	// should take the base date + 2 years
@@ -851,7 +831,7 @@ func TestFindCompletedDeployments(t *testing.T) {
 	require.NoError(t, err)
 	expectedDate = expectedDate.Add(time.Hour * 24 * 365 * 2)
 
-	deploymentDate := *deployments[0].Properties.Timestamp
+	deploymentDate := deployments[0].Timestamp
 	require.Equal(t, expectedDate, deploymentDate)
 }
 
@@ -860,12 +840,20 @@ type mockedScope struct {
 	baseDate string
 }
 
+func (m *mockedScope) Type() infra.ScopeType {
+	return infra.ScopeType("mock")
+}
+
 func (m *mockedScope) SubscriptionId() string {
 	return "sub-id"
 }
 
+func (m *mockedScope) Deployment(deploymentName string) infra.Deployment {
+	return &infra.SubscriptionDeployment{}
+}
+
 // Return 3 deployments with the expected tag with one year difference each
-func (m *mockedScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
+func (m *mockedScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error) {
 	tags := map[string]*string{
 		azure.TagKeyAzdEnvName: &m.envTag,
 	}
@@ -877,27 +865,21 @@ func (m *mockedScope) ListDeployments(ctx context.Context) ([]*armresources.Depl
 	secondDate := baseDate.Add(time.Hour * 24 * 365)
 	thirdDate := secondDate.Add(time.Hour * 24 * 365)
 
-	return []*armresources.DeploymentExtended{
+	return []*azapi.ResourceDeployment{
 		{
-			Tags: tags,
-			Properties: &armresources.DeploymentPropertiesExtended{
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-				Timestamp:         to.Ptr(baseDate),
-			},
+			Tags:              tags,
+			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+			Timestamp:         baseDate,
 		},
 		{
-			Tags: tags,
-			Properties: &armresources.DeploymentPropertiesExtended{
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-				Timestamp:         to.Ptr(secondDate),
-			},
+			Tags:              tags,
+			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+			Timestamp:         secondDate,
 		},
 		{
-			Tags: tags,
-			Properties: &armresources.DeploymentPropertiesExtended{
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-				Timestamp:         to.Ptr(thirdDate),
-			},
+			Tags:              tags,
+			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+			Timestamp:         thirdDate,
 		},
 	}, nil
 }
@@ -911,6 +893,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		Stderr: "",
 	})
 
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	env := environment.NewWithValues("test-env", map[string]string{})
@@ -924,8 +907,8 @@ func TestUserDefinedTypes(t *testing.T) {
 
 	// super basic provider to mock the compileBicep method
 	provider := NewBicepProvider(
+		azCli,
 		bicepCli,
-		nil,
 		nil,
 		nil,
 		&mockenv.MockEnvManager{},
@@ -934,7 +917,6 @@ func TestUserDefinedTypes(t *testing.T) {
 		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, cloud.AzurePublic().PortalUrlBase),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
-		clock.NewMock(),
 		keyvault.NewKeyVaultService(
 			mockaccount.SubscriptionCredentialProviderFunc(
 				func(_ context.Context, _ string) (azcore.TokenCredential, error) {

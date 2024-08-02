@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -34,15 +33,15 @@ const (
 
 // ProvisionProvider is a devcenter provider for provisioning ADE environments
 type ProvisionProvider struct {
-	console         input.Console
-	env             *environment.Environment
-	envManager      environment.Manager
-	config          *Config
-	devCenterClient devcentersdk.DevCenterClient
-	resourceManager *infra.AzureResourceManager
-	manager         Manager
-	prompter        *Prompter
-	options         provisioning.Options
+	console           input.Console
+	env               *environment.Environment
+	envManager        environment.Manager
+	config            *Config
+	devCenterClient   devcentersdk.DevCenterClient
+	deploymentManager *infra.DeploymentManager
+	manager           Manager
+	prompter          *Prompter
+	options           provisioning.Options
 }
 
 // NewProvisionProvider creates a new devcenter provider
@@ -52,19 +51,19 @@ func NewProvisionProvider(
 	envManager environment.Manager,
 	config *Config,
 	devCenterClient devcentersdk.DevCenterClient,
-	resourceManager *infra.AzureResourceManager,
+	deploymentManager *infra.DeploymentManager,
 	manager Manager,
 	prompter *Prompter,
 ) provisioning.Provider {
 	return &ProvisionProvider{
-		console:         console,
-		env:             env,
-		envManager:      envManager,
-		config:          config,
-		devCenterClient: devCenterClient,
-		resourceManager: resourceManager,
-		manager:         manager,
-		prompter:        prompter,
+		console:           console,
+		env:               env,
+		envManager:        envManager,
+		config:            config,
+		devCenterClient:   devCenterClient,
+		deploymentManager: deploymentManager,
+		manager:           manager,
+		prompter:          prompter,
 	}
 }
 
@@ -448,9 +447,9 @@ func (p *ProvisionProvider) pollForEnvironment(ctx context.Context, envName stri
 				ctx,
 				p.config,
 				environment,
-				func(d *armresources.DeploymentExtended) bool {
-					return *d.Properties.ProvisioningState == armresources.ProvisioningStateRunning &&
-						d.Properties.Timestamp.After(pollStartTime)
+				func(d *azapi.ResourceDeployment) bool {
+					return d.ProvisioningState == azapi.DeploymentProvisioningStateRunning &&
+						d.Timestamp.After(pollStartTime)
 				},
 			)
 
@@ -476,7 +475,7 @@ func (p *ProvisionProvider) pollForProgress(ctx context.Context, deployment infr
 	}
 
 	// Report incremental progress
-	progressDisplay := provisioning.NewProvisioningProgressDisplay(p.resourceManager, p.console, deployment)
+	progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
 
 	initialDelay := 3 * time.Second
 	regularDelay := 10 * time.Second

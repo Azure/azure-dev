@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -136,9 +136,9 @@ func (m *mockDevCenterManager) LatestArmDeployment(
 	config *Config,
 	env *devcentersdk.Environment,
 	filter DeploymentFilterPredicate,
-) (*armresources.DeploymentExtended, error) {
+) (*azapi.ResourceDeployment, error) {
 	args := m.Called(ctx, config, env, filter)
-	return args.Get(0).(*armresources.DeploymentExtended), args.Error(1)
+	return args.Get(0).(*azapi.ResourceDeployment), args.Error(1)
 }
 
 func (m *mockDevCenterManager) Outputs(

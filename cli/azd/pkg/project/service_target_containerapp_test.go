@@ -12,11 +12,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -38,7 +38,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 				"SUB_ID",
 				"RG_ID",
 				"res",
-				string(infra.AzureResourceTypeContainerApp),
+				string(azapi.AzureResourceTypeContainerApp),
 			),
 			expectError: false,
 		},
@@ -47,7 +47,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 				"SUB_ID",
 				"RG_ID",
 				"res",
-				strings.ToLower(string(infra.AzureResourceTypeContainerApp)),
+				strings.ToLower(string(azapi.AzureResourceTypeContainerApp)),
 			),
 			expectError: false,
 		},
@@ -110,7 +110,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 		"SUBSCRIPTION_ID",
 		"RESOURCE_GROUP",
 		"CONTAINER_APP",
-		string(infra.AzureResourceTypeContainerApp),
+		string(azapi.AzureResourceTypeContainerApp),
 	)
 
 	deployResult, err := logProgress(
@@ -162,9 +162,9 @@ func createContainerAppServiceTarget(
 		dockerCli,
 		cloud.AzurePublic(),
 	)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	resourceManager := NewResourceManager(env, azCli, depOpService)
+	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(credentialProvider, mockContext.ArmClientOptions)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService)
 
 	return NewContainerAppTarget(
 		env,

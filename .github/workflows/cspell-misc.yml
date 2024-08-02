@@ -20,7 +20,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      # use 8.12.1 b/c 8.13.0 has a bug: https://github.com/streetsidesoftware/cspell/issues/6025
-      - run: npm install -g cspell@8.12.1
+      - run: npm install -g cspell
       - name: Spell check for general files
         run: cspell lint '**/*' --config ./.vscode/cspell.misc.yaml --relative --no-progress

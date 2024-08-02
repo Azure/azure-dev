@@ -18,37 +18,19 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-type GitCli interface {
-	tools.ExternalTool
-	GetRemoteUrl(ctx context.Context, string, remoteName string) (string, error)
-	ShallowClone(ctx context.Context, repositoryPath string, branch string, target string) error
-	InitRepo(ctx context.Context, repositoryPath string) error
-	AddRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error
-	UpdateRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error
-	GetCurrentBranch(ctx context.Context, repositoryPath string) (string, error)
-	GetRepoRoot(ctx context.Context, repositoryPath string) (string, error)
-	AddFile(ctx context.Context, repositoryPath string, filespec string) error
-	Commit(ctx context.Context, repositoryPath string, message string) error
-	PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error
-	IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error)
-	SetCredentialStore(ctx context.Context, repositoryPath string) error
-	ListStagedFiles(ctx context.Context, repositoryPath string) (string, error)
-	AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error
-	// make current repo to use gh-cli as credential helper.
-	SetGitHubAuthForRepo(ctx context.Context, repositoryPath, credential, ghPath string) error
-}
+var _ tools.ExternalTool = (*Cli)(nil)
 
-type gitCli struct {
+type Cli struct {
 	commandRunner exec.CommandRunner
 }
 
-func NewGitCli(commandRunner exec.CommandRunner) GitCli {
-	return &gitCli{
+func NewCli(commandRunner exec.CommandRunner) *Cli {
+	return &Cli{
 		commandRunner: commandRunner,
 	}
 }
 
-func (cli *gitCli) versionInfo() tools.VersionInfo {
+func (cli *Cli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		// Support version from 09-Dec-2018 08:40
 		// https://mirrors.edge.kernel.org/pub/software/scm/git/
@@ -61,7 +43,7 @@ func (cli *gitCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *gitCli) CheckInstalled(ctx context.Context) error {
+func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	err := tools.ToolInPath("git")
 	if err != nil {
 		return err
@@ -82,15 +64,15 @@ func (cli *gitCli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-func (cli *gitCli) InstallUrl() string {
+func (cli *Cli) InstallUrl() string {
 	return "https://git-scm.com/downloads"
 }
 
-func (cli *gitCli) Name() string {
+func (cli *Cli) Name() string {
 	return "git CLI"
 }
 
-func (cli *gitCli) ShallowClone(ctx context.Context, repositoryPath string, branch string, target string) error {
+func (cli *Cli) ShallowClone(ctx context.Context, repositoryPath string, branch string, target string) error {
 	args := []string{"clone", "--depth", "1", repositoryPath}
 	if branch != "" {
 		args = append(args, "--branch", branch)
@@ -115,7 +97,7 @@ var ErrNoSuchRemote = errors.New("no such remote")
 var ErrNotRepository = errors.New("not a git repository")
 var gitUntrackedFileRegex = regexp.MustCompile("untracked files present|new file")
 
-func (cli *gitCli) GetRemoteUrl(ctx context.Context, repositoryPath string, remoteName string) (string, error) {
+func (cli *Cli) GetRemoteUrl(ctx context.Context, repositoryPath string, remoteName string) (string, error) {
 	runArgs := newRunArgs("-C", repositoryPath, "remote", "get-url", remoteName)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if noSuchRemoteRegex.MatchString(res.Stderr) {
@@ -129,7 +111,7 @@ func (cli *gitCli) GetRemoteUrl(ctx context.Context, repositoryPath string, remo
 	return strings.TrimSpace(res.Stdout), nil
 }
 
-func (cli *gitCli) GetCurrentBranch(ctx context.Context, repositoryPath string) (string, error) {
+func (cli *Cli) GetCurrentBranch(ctx context.Context, repositoryPath string) (string, error) {
 	runArgs := newRunArgs("-C", repositoryPath, "branch", "--show-current")
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if notGitRepositoryRegex.MatchString(res.Stderr) {
@@ -141,7 +123,7 @@ func (cli *gitCli) GetCurrentBranch(ctx context.Context, repositoryPath string) 
 	return strings.TrimSpace(res.Stdout), nil
 }
 
-func (cli *gitCli) GetRepoRoot(ctx context.Context, repositoryPath string) (string, error) {
+func (cli *Cli) GetRepoRoot(ctx context.Context, repositoryPath string) (string, error) {
 	runArgs := newRunArgs("-C", repositoryPath, "rev-parse", "--show-toplevel")
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if notGitRepositoryRegex.MatchString(res.Stderr) {
@@ -153,7 +135,7 @@ func (cli *gitCli) GetRepoRoot(ctx context.Context, repositoryPath string) (stri
 	return strings.TrimSpace(res.Stdout), nil
 }
 
-func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
+func (cli *Cli) InitRepo(ctx context.Context, repositoryPath string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "init")
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -170,7 +152,7 @@ func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
 	return nil
 }
 
-func (cli *gitCli) SetCredentialStore(ctx context.Context, repositoryPath string) error {
+func (cli *Cli) SetCredentialStore(ctx context.Context, repositoryPath string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "config", "credential.helper", "store")
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -180,7 +162,7 @@ func (cli *gitCli) SetCredentialStore(ctx context.Context, repositoryPath string
 	return nil
 }
 
-func (cli *gitCli) AddRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error {
+func (cli *Cli) AddRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "remote", "add", remoteName, remoteUrl)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -190,7 +172,7 @@ func (cli *gitCli) AddRemote(ctx context.Context, repositoryPath string, remoteN
 	return nil
 }
 
-func (cli *gitCli) UpdateRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error {
+func (cli *Cli) UpdateRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "remote", "set-url", remoteName, remoteUrl)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -200,7 +182,7 @@ func (cli *gitCli) UpdateRemote(ctx context.Context, repositoryPath string, remo
 	return nil
 }
 
-func (cli *gitCli) AddFile(ctx context.Context, repositoryPath string, filespec string) error {
+func (cli *Cli) AddFile(ctx context.Context, repositoryPath string, filespec string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "add", filespec)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -210,7 +192,7 @@ func (cli *gitCli) AddFile(ctx context.Context, repositoryPath string, filespec 
 	return nil
 }
 
-func (cli *gitCli) Commit(ctx context.Context, repositoryPath string, message string) error {
+func (cli *Cli) Commit(ctx context.Context, repositoryPath string, message string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "commit", "--allow-empty", "-m", message)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -220,7 +202,7 @@ func (cli *gitCli) Commit(ctx context.Context, repositoryPath string, message st
 	return nil
 }
 
-func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error {
+func (cli *Cli) PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "push", "--set-upstream", "--quiet", origin, branch).
 		WithInteractive(true)
 
@@ -233,7 +215,7 @@ func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, orig
 	return nil
 }
 
-func (cli *gitCli) ListStagedFiles(ctx context.Context, repositoryPath string) (string, error) {
+func (cli *Cli) ListStagedFiles(ctx context.Context, repositoryPath string) (string, error) {
 	runArgs := newRunArgs("-C", repositoryPath, "ls-files", "--stage")
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -243,7 +225,7 @@ func (cli *gitCli) ListStagedFiles(ctx context.Context, repositoryPath string) (
 	return res.Stdout, nil
 }
 
-func (cli *gitCli) AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error {
+func (cli *Cli) AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "update-index", "--add", "--chmod=+x", file)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -253,7 +235,7 @@ func (cli *gitCli) AddFileExecPermission(ctx context.Context, repositoryPath str
 	return nil
 }
 
-func (cli *gitCli) IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error) {
+func (cli *Cli) IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error) {
 	runArgs := newRunArgs("-C", repositoryPath, "status", filePath)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -277,7 +259,7 @@ func (cli *gitCli) IsUntrackedFile(ctx context.Context, repositoryPath string, f
 // Note: Removes any previous configuration for the credential.
 // Note: `helper = ` is intentional to break the chain of previously configured global helpers.
 // See: https://github.com/cli/cli/issues/3796 for more about this strategy.
-func (cli *gitCli) SetGitHubAuthForRepo(ctx context.Context, repositoryPath, credential, ghPath string) error {
+func (cli *Cli) SetGitHubAuthForRepo(ctx context.Context, repositoryPath, credential, ghPath string) error {
 
 	if err := setAuthCredentialHelper(
 		ctx, cli.commandRunner, repositoryPath, credential, "", "replace-all"); err != nil {

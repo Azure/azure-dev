@@ -33,7 +33,7 @@ type TerraformProvider struct {
 	env          *environment.Environment
 	prompters    prompt.Prompter
 	console      input.Console
-	cli          terraform.TerraformCli
+	cli          *terraform.Cli
 	curPrincipal CurrentPrincipalIdProvider
 	projectPath  string
 	options      Options
@@ -56,7 +56,7 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 
 // NewTerraformProvider creates a new instance of a Terraform Infra provider
 func NewTerraformProvider(
-	cli terraform.TerraformCli,
+	cli *terraform.Cli,
 	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,

@@ -98,8 +98,8 @@ services:
 	err = os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
-	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner)
+	npmCli := npm.NewCli(mockContext.CommandRunner)
+	docker := docker.NewCli(mockContext.CommandRunner)
 
 	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
@@ -192,8 +192,8 @@ services:
 		}, nil
 	})
 
-	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner)
+	npmCli := npm.NewCli(mockContext.CommandRunner)
+	docker := docker.NewCli(mockContext.CommandRunner)
 
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
@@ -388,7 +388,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			temp := t.TempDir()
 
 			env := environment.New("test")
-			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, tt.language)
 			serviceConfig.Project.Path = temp
 			serviceConfig.Docker = tt.dockerOptions
@@ -416,7 +416,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				mockContext.CommandRunner)
 
 			if tt.language == ServiceLanguageTypeScript || tt.language == ServiceLanguageJavaScript {
-				npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
+				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env)
 				dockerProject.SetSource(npmProject)
 			}
 
@@ -520,7 +520,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			envManager := &mockenv.MockEnvManager{}
 
 			env := environment.NewWithValues("test", map[string]string{})
-			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 			dockerProject := NewDockerProject(
@@ -537,7 +537,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			serviceConfig.Image = tt.image
 
 			if serviceConfig.RelativePath != "" {
-				npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
+				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env)
 				dockerProject.SetSource(npmProject)
 			}
 

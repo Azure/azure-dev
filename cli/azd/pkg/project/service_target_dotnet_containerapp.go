@@ -32,7 +32,7 @@ type dotnetContainerAppTarget struct {
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
-	dotNetCli           dotnet.DotNetCli
+	dotNetCli           *dotnet.Cli
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
 	keyvaultService     keyvault.KeyVaultService
@@ -52,7 +52,7 @@ func NewDotNetContainerAppTarget(
 	containerHelper *ContainerHelper,
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
-	dotNetCli dotnet.DotNetCli,
+	dotNetCli *dotnet.Cli,
 	cosmosDbService cosmosdb.CosmosDbService,
 	sqlDbService sqldb.SqlDbService,
 	keyvaultService keyvault.KeyVaultService,

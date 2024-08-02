@@ -31,7 +31,7 @@ func Test_NpmProject_Restore(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
+	npmCli := npm.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
@@ -63,7 +63,7 @@ func Test_NpmProject_Build(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
+	npmCli := npm.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
@@ -99,7 +99,7 @@ func Test_NpmProject_Package(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
+	npmCli := npm.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
 	require.NoError(t, err)

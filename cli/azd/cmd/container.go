@@ -261,7 +261,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Environment manager depends on azd context
 	container.MustRegisterSingleton(
-		func(serviceLocator ioc.ServiceLocator, azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
+		func(serviceLocator ioc.ServiceLocator,
+			azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
 				azdCtx, err := azdContext.GetValue()
 				if err != nil {
@@ -415,7 +416,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 								return nil, &internal.ErrorWithSuggestion{
 									Err: err,
 									Suggestion: fmt.Sprintf(
-										"Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment\n%s",
+										"Set the cloud configuration by editing the 'cloud' node in the config.json "+
+											"file for the %s environment\n%s",
 										defaultEnvName,
 										validClouds,
 									),
@@ -453,8 +455,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 						return cloud, nil
 					} else {
 						return nil, &internal.ErrorWithSuggestion{
-							Err:        err,
-							Suggestion: fmt.Sprintf("Set the cloud configuration using 'azd config set cloud.name <name>'.\n%s", validClouds),
+							Err: err,
+							Suggestion: fmt.Sprintf(
+								"Set the cloud configuration using 'azd config set cloud.name <name>'.\n%s", validClouds),
 						}
 					}
 				}
@@ -598,19 +601,19 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.MustRegisterSingleton(azapi.NewDeployments)
 	container.MustRegisterSingleton(azapi.NewDeploymentOperations)
-	container.MustRegisterSingleton(docker.NewDocker)
-	container.MustRegisterSingleton(dotnet.NewDotNetCli)
-	container.MustRegisterSingleton(git.NewGitCli)
+	container.MustRegisterSingleton(docker.NewCli)
+	container.MustRegisterSingleton(dotnet.NewCli)
+	container.MustRegisterSingleton(git.NewCli)
 	container.MustRegisterSingleton(github.NewGitHubCli)
 	container.MustRegisterSingleton(javac.NewCli)
-	container.MustRegisterSingleton(kubectl.NewKubectl)
-	container.MustRegisterSingleton(maven.NewMavenCli)
+	container.MustRegisterSingleton(kubectl.NewCli)
+	container.MustRegisterSingleton(maven.NewCli)
 	container.MustRegisterSingleton(kubelogin.NewCli)
 	container.MustRegisterSingleton(helm.NewCli)
 	container.MustRegisterSingleton(kustomize.NewCli)
-	container.MustRegisterSingleton(npm.NewNpmCli)
-	container.MustRegisterSingleton(python.NewPythonCli)
-	container.MustRegisterSingleton(swa.NewSwaCli)
+	container.MustRegisterSingleton(npm.NewCli)
+	container.MustRegisterSingleton(python.NewCli)
+	container.MustRegisterSingleton(swa.NewCli)
 	container.MustRegisterScoped(ai.NewPythonBridge)
 	container.MustRegisterScoped(project.NewAiHelper)
 

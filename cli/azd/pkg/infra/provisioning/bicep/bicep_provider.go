@@ -67,7 +67,7 @@ type BicepProvider struct {
 	projectPath           string
 	options               Options
 	console               input.Console
-	bicepCli              bicep.BicepCli
+	bicepCli              *bicep.Cli
 	azCli                 azcli.AzCli
 	deploymentsService    azapi.Deployments
 	deploymentOperations  azapi.DeploymentOperations
@@ -2194,7 +2194,7 @@ func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
 func NewBicepProvider(
-	bicepCli bicep.BicepCli,
+	bicepCli *bicep.Cli,
 	azCli azcli.AzCli,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,

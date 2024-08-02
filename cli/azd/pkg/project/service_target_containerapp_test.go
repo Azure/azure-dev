@@ -132,7 +132,7 @@ func createContainerAppServiceTarget(
 	serviceConfig *ServiceConfig,
 	env *environment.Environment,
 ) ServiceTarget {
-	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	dockerCli := docker.NewCli(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil

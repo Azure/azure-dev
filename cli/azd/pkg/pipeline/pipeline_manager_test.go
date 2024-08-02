@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -410,6 +411,185 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		resetAzureYaml(t, projectFileName)
 
 		deleteYamlFiles(t, tempDir)
+	})
+}
+
+func Test_promptForCiFiles(t *testing.T) {
+	t.Run("no files - github selected - no app host - fed Cred", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, gitHubYml)
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderGitHubActions,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, content)
+	})
+	t.Run("no files - github selected - App host - fed Cred", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, gitHubYml)
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderGitHubActions,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    true,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, content)
+	})
+	t.Run("no files - azdo selected - App host - fed Cred", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, gitHubYml)
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderAzureDevOps,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    true,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, content)
+	})
+	t.Run("no files - github selected - no app host - client cred", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, gitHubYml)
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderGitHubActions,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "main",
+			AuthType:      AuthTypeClientCredentials,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, content)
+	})
+	t.Run("no files - github selected - branch name", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, gitHubYml)
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderGitHubActions,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "non-main",
+			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, content)
+	})
+	t.Run("no files - azdo selected - no app host - fed Cred", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, gitHubYml)
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderAzureDevOps,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, content)
+	})
+	t.Run("no files - azdo selected - no app host - client cred", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, gitHubYml)
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderAzureDevOps,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "main",
+			AuthType:      AuthTypeClientCredentials,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, content)
+	})
+	t.Run("no files - azdo selected - branch name", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, gitHubWorkflowsDirectory)
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, gitHubYml)
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderAzureDevOps,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "non-main",
+			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, content)
 	})
 }
 

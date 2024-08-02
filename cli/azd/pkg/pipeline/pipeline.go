@@ -212,5 +212,5 @@ type projectProperties struct {
 	RepoRoot      string
 	HasAppHost    bool
 	BranchName    string
-	authType      PipelineAuthType
+	AuthType      PipelineAuthType
 }

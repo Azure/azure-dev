@@ -44,7 +44,7 @@ jobs:
         shell: pwsh
 {{ end }}
 
-{{- if .ClientSecretLogIn }}
+{{- if not .FedCredLogIn }}
       - name: Log in with Azure (Client Credentials)
         run: |
           $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;

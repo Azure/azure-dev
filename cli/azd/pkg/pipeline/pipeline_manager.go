@@ -765,7 +765,7 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 			InfraProvider: infraProvider,
 			HasAppHost:    hasAppHost,
 			BranchName:    branchName,
-			authType:      authType,
+			AuthType:      authType,
 		}); err != nil {
 		return err
 	}
@@ -947,34 +947,8 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 		}
 
 		if !osutil.FileExists(providerPaths.yml) {
-			embedFilePath := fmt.Sprintf("pipeline/.%s/azure-dev.ymlt", props.CiProvider)
-			tmpl, err := template.
-				New("azure-dev.yml").
-				Option("missingkey=error").
-				ParseFS(resources.PipelineFiles, embedFilePath)
-			if err != nil {
-				return fmt.Errorf("parsing embedded file %s: %w", embedFilePath, err)
-			}
-			builder := strings.Builder{}
-			err = tmpl.Execute(&builder, struct {
-				BranchName          string
-				FedCredLogIn        bool
-				InstallDotNetAspire bool
-				ClientSecretLogIn   bool
-			}{
-				BranchName:          props.BranchName,
-				FedCredLogIn:        props.authType == AuthTypeFederated,
-				InstallDotNetAspire: props.HasAppHost,
-				ClientSecretLogIn:   props.authType == AuthTypeClientCredentials,
-			})
-			if err != nil {
-				return fmt.Errorf("executing template: %w", err)
-			}
-
-			contents := []byte(builder.String())
-			log.Printf("Creating file %s", providerPaths.yml)
-			if err := os.WriteFile(providerPaths.yml, contents, osutil.PermissionFile); err != nil {
-				return fmt.Errorf("creating file %s: %w", providerPaths.yml, err)
+			if generatePipelineDefinition(providerPaths.yml, props); err != nil {
+				return err
 			}
 			pm.console.Message(ctx,
 				fmt.Sprintf(
@@ -983,7 +957,6 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 					output.WithHighLightFormat(providerPaths.yml)),
 			)
 			pm.console.Message(ctx, "")
-
 		}
 
 		return nil
@@ -991,6 +964,37 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 
 	log.Printf("User declined creation of %s file at %s", filepath.Base(providerPaths.yml), providerPaths.directory)
 
+	return nil
+}
+
+func generatePipelineDefinition(path string, props projectProperties) error {
+	embedFilePath := fmt.Sprintf("pipeline/.%s/azure-dev.ymlt", props.CiProvider)
+	tmpl, err := template.
+		New("azure-dev.yml").
+		Option("missingkey=error").
+		ParseFS(resources.PipelineFiles, embedFilePath)
+	if err != nil {
+		return fmt.Errorf("parsing embedded file %s: %w", embedFilePath, err)
+	}
+	builder := strings.Builder{}
+	err = tmpl.Execute(&builder, struct {
+		BranchName          string
+		FedCredLogIn        bool
+		InstallDotNetAspire bool
+	}{
+		BranchName:          props.BranchName,
+		FedCredLogIn:        props.AuthType == AuthTypeFederated,
+		InstallDotNetAspire: props.HasAppHost,
+	})
+	if err != nil {
+		return fmt.Errorf("executing template: %w", err)
+	}
+
+	contents := []byte(builder.String())
+	log.Printf("Creating file %s", path)
+	if err := os.WriteFile(path, contents, osutil.PermissionFile); err != nil {
+		return fmt.Errorf("creating file %s: %w", path, err)
+	}
 	return nil
 }
 

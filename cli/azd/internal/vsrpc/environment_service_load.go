@@ -65,7 +65,7 @@ func (s *environmentService) loadEnvironmentAsync(
 		azdCtx         *azdcontext.AzdContext  `container:"type"`
 		envManager     environment.Manager     `container:"type"`
 		projectConfig  *project.ProjectConfig  `container:"type"`
-		dotnetCli      dotnet.DotNetCli        `container:"type"`
+		dotnetCli      *dotnet.Cli             `container:"type"`
 		dotnetImporter *project.DotNetImporter `container:"type"`
 	}
 

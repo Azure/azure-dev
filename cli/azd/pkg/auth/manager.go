@@ -300,7 +300,8 @@ func (m *Manager) CredentialForCurrentUser(
 						return nil, err
 					}
 
-					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i], m.cloud), nil
+					return newAzdCredential(
+						&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i], m.cloud), nil
 				}
 			}
 		}

@@ -86,7 +86,7 @@ type PipelineManager struct {
 	azdCtx            *azdcontext.AzdContext
 	env               *environment.Environment
 	entraIdService    entraid.EntraIdService
-	gitCli            git.GitCli
+	gitCli            *git.Cli
 	console           input.Console
 	serviceLocator    ioc.ServiceLocator
 	importManager     *project.ImportManager
@@ -99,7 +99,7 @@ func NewPipelineManager(
 	ctx context.Context,
 	envManager environment.Manager,
 	entraIdService entraid.EntraIdService,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	console input.Console,
@@ -458,7 +458,8 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	} else {
 		pm.console.Message(ctx,
 			fmt.Sprintf(
-				"To fully enable pipeline you need to push this repo to the upstream using 'git push --set-upstream %s %s'.\n",
+				"To fully enable pipeline you need to push this repo to the upstream "+
+					"using 'git push --set-upstream %s %s'.\n",
 				pm.args.PipelineRemoteName,
 				gitRepoInfo.branch))
 	}
@@ -881,7 +882,8 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 	// Confirm with the user before adding the file
 	pm.console.Message(ctx, "")
 	pm.console.Message(ctx,
-		fmt.Sprintf("The default %s file, which contains a basic workflow to help you get started, is missing from your project.",
+		fmt.Sprintf(
+			"The default %s file, which contains a basic workflow to help you get started, is missing from your project.",
 			output.WithHighLightFormat("azure-dev.yml")))
 	pm.console.Message(ctx, "")
 

@@ -947,7 +947,7 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 		}
 
 		if !osutil.FileExists(providerPaths.yml) {
-			if generatePipelineDefinition(providerPaths.yml, props); err != nil {
+			if err := generatePipelineDefinition(providerPaths.yml, props); err != nil {
 				return err
 			}
 			pm.console.Message(ctx,

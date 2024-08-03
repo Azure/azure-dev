@@ -435,7 +435,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		// open the file and check the content
 		content, err := os.ReadFile(expectedPath)
 		assert.NoError(t, err)
-		snapshot.SnapshotT(t, content)
+		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
 	t.Run("no files - github selected - App host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -457,7 +457,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		// open the file and check the content
 		content, err := os.ReadFile(expectedPath)
 		assert.NoError(t, err)
-		snapshot.SnapshotT(t, content)
+		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
 	t.Run("no files - azdo selected - App host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -479,7 +479,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		// open the file and check the content
 		content, err := os.ReadFile(expectedPath)
 		assert.NoError(t, err)
-		snapshot.SnapshotT(t, content)
+		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
 	t.Run("no files - github selected - no app host - client cred", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -501,7 +501,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		// open the file and check the content
 		content, err := os.ReadFile(expectedPath)
 		assert.NoError(t, err)
-		snapshot.SnapshotT(t, content)
+		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
 	t.Run("no files - github selected - branch name", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -523,7 +523,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		// open the file and check the content
 		content, err := os.ReadFile(expectedPath)
 		assert.NoError(t, err)
-		snapshot.SnapshotT(t, content)
+		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
 	t.Run("no files - azdo selected - no app host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -545,7 +545,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		// open the file and check the content
 		content, err := os.ReadFile(expectedPath)
 		assert.NoError(t, err)
-		snapshot.SnapshotT(t, content)
+		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
 	t.Run("no files - azdo selected - no app host - client cred", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -567,7 +567,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		// open the file and check the content
 		content, err := os.ReadFile(expectedPath)
 		assert.NoError(t, err)
-		snapshot.SnapshotT(t, content)
+		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
 	t.Run("no files - azdo selected - branch name", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -589,7 +589,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		// open the file and check the content
 		content, err := os.ReadFile(expectedPath)
 		assert.NoError(t, err)
-		snapshot.SnapshotT(t, content)
+		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
 }
 
@@ -843,4 +843,8 @@ func verifyProvider(t *testing.T, manager *PipelineManager, providerLabel ciProv
 	default:
 		t.Fatalf("%s is not a known pipeline provider", providerLabel)
 	}
+}
+
+func normalizeEOL(input []byte) string {
+	return strings.ReplaceAll(string(input), "\r\n", "\n")
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/denormal/go-gitignore"
 	"github.com/otiai10/copy"
 )
 
@@ -63,7 +64,6 @@ func (i *Initializer) Initialize(
 	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
 	staging, err := os.MkdirTemp("", "az-dev-template")
-
 	if err != nil {
 		return fmt.Errorf("creating temp folder: %w", err)
 	}
@@ -86,6 +86,16 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
+	ignoreMatcher, err := readIgnoreFile(staging)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading .azdignore file: %w", err)
+	}
+
+	err = removeIgnoredFiles(staging, ignoreMatcher)
+	if err != nil {
+		return fmt.Errorf("removing ignored files: %w", err)
+	}
+
 	skipStagingFiles, err := i.promptForDuplicates(ctx, staging, target)
 	if err != nil {
 		return err
@@ -102,7 +112,6 @@ func (i *Initializer) Initialize(
 			if _, shouldSkip := skipStagingFiles[src]; shouldSkip {
 				return true, nil
 			}
-
 			return false, nil
 		}
 	}
@@ -128,6 +137,36 @@ func (i *Initializer) Initialize(
 	i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
 	return nil
+}
+
+// readIgnoreFile reads the .azdignore file and returns a gitignore.Ignore structure
+func readIgnoreFile(projectDir string) (gitignore.GitIgnore, error) {
+	ignoreFilePath := filepath.Join(projectDir, ".azdignore")
+	if _, err := os.Stat(ignoreFilePath); os.IsNotExist(err) {
+		return nil, nil // No .azdignore file, no need to ignore any files
+	}
+	return gitignore.NewFromFile(ignoreFilePath)
+}
+
+// removeIgnoredFiles removes files in the staging area based on .azdignore rules
+func removeIgnoredFiles(staging string, ignoreMatcher gitignore.GitIgnore) error {
+	if ignoreMatcher == nil {
+		return nil // No .azdignore file, no files to ignore
+	}
+
+	return filepath.Walk(staging, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		match := ignoreMatcher.Relative(path, false)
+		if match != nil {
+			if match.Ignore() {
+				return os.Remove(path) // Remove file
+			}
+		}
+		return nil
+	})
 }
 
 func (i *Initializer) fetchCode(

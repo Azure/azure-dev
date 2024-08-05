@@ -209,3 +209,172 @@ func Test_CLI_Init_From_App(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "infra", "app", "app.bicep"))
 	require.FileExists(t, filepath.Join(dir, "infra", "app", "db-postgres.bicep"))
 }
+
+// Test_CLI_Init_With_Azdignore tests that files and directories 
+// specified in .azdignore are correctly ignored during initialization.
+func Test_CLI_Init_With_Azdignore(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	// Create a .azdignore file with various patterns
+	azdignoreContent := `
+	# Ignore all log files
+	*.log
+
+	# Ignore directories
+	tmp/
+	build/
+
+	# Ignore specific files
+	secret.yaml
+	`
+	err := os.WriteFile(filepath.Join(dir, ".azdignore"), []byte(azdignoreContent), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	// Create files and directories that should be ignored
+	ignoredFiles := []string{
+		"error.log",
+		"tmp/tempfile.txt",
+		"build/output.txt",
+		"secret.yaml",
+	}
+
+	for _, file := range ignoredFiles {
+		err := os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), osutil.PermissionDirectory)
+		require.NoError(t, err)
+		err = os.WriteFile(filepath.Join(dir, file), []byte("test content"), osutil.PermissionFile)
+		require.NoError(t, err)
+	}
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Initialize the project
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"Select a template\nMinimal\nTESTENV\n",
+		"init",
+	)
+	require.NoError(t, err)
+
+	// Verify that the ignored files are not present
+	for _, file := range ignoredFiles {
+		require.NoFileExists(t, filepath.Join(dir, file))
+	}
+
+	// Verify that other files are present
+	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
+	require.DirExists(t, filepath.Join(dir, "infra"))
+}
+
+// Test_CLI_Init_With_No_Azdignore tests that the initialization proceeds correctly when .azdignore file does not exist.
+func Test_CLI_Init_With_No_Azdignore(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Initialize the project without .azdignore
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		"Select a template\nMinimal\nTESTENV\n",
+		"init",
+	)
+	require.NoError(t, err)
+
+	// Verify that initialization is successful and required files are present
+	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
+	require.DirExists(t, filepath.Join(dir, "infra"))
+}
+
+// Test_CLI_Init_With_Empty_Azdignore tests that the initialization proceeds correctly when .azdignore file is empty.
+func Test_CLI_Init_With_Empty_Azdignore(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	// Create an empty .azdignore file
+	err := os.WriteFile(filepath.Join(dir, ".azdignore"), []byte(""), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Initialize the project
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"Select a template\nMinimal\nTESTENV\n",
+		"init",
+	)
+	require.NoError(t, err)
+
+	// Verify that initialization is successful and required files are present
+	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
+	require.DirExists(t, filepath.Join(dir, "infra"))
+}
+
+// Test_CLI_Init_With_Azdignore_Complex_Patterns tests complex ignore patterns in .azdignore.
+func Test_CLI_Init_With_Azdignore_Complex_Patterns(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	// Create a .azdignore file with complex patterns
+	azdignoreContent := `
+	# Ignore all .log files in any directory
+	**/*.log
+
+	# Ignore all files in tmp/ except tmp/important.txt
+	tmp/*
+	!tmp/important.txt
+	`
+	err := os.WriteFile(filepath.Join(dir, ".azdignore"), []byte(azdignoreContent), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	// Create files and directories that should be ignored or included
+	filesToCheck := map[string]bool{
+		"error.log":            false,
+		"tmp/ignored.txt":      false,
+		"tmp/important.txt":    true,
+		"nested/dir/error.log": false,
+		"nested/dir/keep.txt":  true,
+	}
+
+	for file := range filesToCheck {
+		err := os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), osutil.PermissionDirectory)
+		require.NoError(t, err)
+		err = os.WriteFile(filepath.Join(dir, file), []byte("test content"), osutil.PermissionFile)
+		require.NoError(t, err)
+	}
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Initialize the project
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"Select a template\nMinimal\nTESTENV\n",
+		"init",
+	)
+	require.NoError(t, err)
+
+	// Verify that the files are correctly ignored or included
+	for file, keep := range filesToCheck {
+		if keep {
+			require.FileExists(t, filepath.Join(dir, file))
+		} else {
+			require.NoFileExists(t, filepath.Join(dir, file))
+		}
+	}
+}

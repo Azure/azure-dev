@@ -37,6 +37,7 @@ require (
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
 	github.com/buger/goterm v1.0.4
 	github.com/cli/browser v1.1.0
+	github.com/denormal/go-gitignore v0.0.0-20180930084346-ae8ad1d07817
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.13.0
 	github.com/gofrs/flock v0.8.1
@@ -77,6 +78,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.9.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v0.8.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
+	github.com/danwakefield/fnmatch v0.0.0-20160403171240-cbb64ac3d964 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

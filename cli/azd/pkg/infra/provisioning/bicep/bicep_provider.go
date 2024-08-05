@@ -807,7 +807,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
 	}
 
-	if err := p.destroyConfirmation(ctx, options, deploymentToDelete, groupedResources, len(resourcesToDelete)); err != nil {
+	if err := p.destroyDeploymentWithConfirmation(ctx, options, deploymentToDelete, groupedResources, len(resourcesToDelete)); err != nil {
 		return nil, fmt.Errorf("deleting resource groups: %w", err)
 	}
 
@@ -1001,7 +1001,7 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 }
 
 // Deletes the azure resources within the deployment
-func (p *BicepProvider) destroyConfirmation(
+func (p *BicepProvider) destroyDeploymentWithConfirmation(
 	ctx context.Context,
 	options DestroyOptions,
 	deployment infra.Deployment,

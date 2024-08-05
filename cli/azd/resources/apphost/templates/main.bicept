@@ -91,7 +91,7 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.out
 {{- range $param, $value := .OutputParameters}}
 output {{bicepParameterName $param}} {{$value.Type}} = {{bicepParameterName $value.Value}}
 {{- end -}}
-{{if .RequiresStorageVolume -}}
+{{if .RequiresStorageVolume}}
 output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
 {{end -}}
 {{ end}}

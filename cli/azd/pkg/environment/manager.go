@@ -136,7 +136,7 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 	case errors.Is(err, ErrNotFound):
 	case err != nil:
 		return nil, fmt.Errorf("checking for existing environment: %w", err)
-	case err == nil:
+	default:
 		return nil, fmt.Errorf("environment '%s' already exists", spec.Name)
 	}
 
@@ -206,7 +206,7 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 			}
 		case err != nil:
 			return nil, false, fmt.Errorf("loading environment '%s': %w", environmentName, err)
-		case err == nil:
+		default:
 			return env, false, nil
 		}
 	}

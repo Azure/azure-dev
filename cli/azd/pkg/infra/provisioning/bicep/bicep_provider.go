@@ -201,7 +201,7 @@ func (p *BicepProvider) LastDeployment(ctx context.Context) (*armresources.Deplo
 		return nil, fmt.Errorf("compiling bicep template: %w", err)
 	}
 
-	scope, err := p.scopeForTemplate(ctx, compileResult.Template)
+	scope, err := p.scopeForTemplate(compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
@@ -236,7 +236,7 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 			return nil, fmt.Errorf("compiling bicep template: %w", err)
 		}
 
-		scope, err = p.scopeForTemplate(ctx, compileResult.Template)
+		scope, err = p.scopeForTemplate(compileResult.Template)
 		if err != nil {
 			return nil, fmt.Errorf("computing deployment scope: %w", err)
 		}
@@ -245,7 +245,7 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 	} else if errors.Is(err, os.ErrNotExist) {
 		// To support BYOI (bring your own infrastructure)
 		// We need to support the case where there template does not contain an `infra` folder.
-		scope, scopeErr = p.inferScopeFromEnv(ctx)
+		scope, scopeErr = p.inferScopeFromEnv()
 		if scopeErr != nil {
 			return nil, fmt.Errorf("computing deployment scope: %w", err)
 		}
@@ -270,7 +270,7 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 	}
 
 	if len(deployments) > 1 {
-		deploymentOptions := getDeploymentOptions(ctx, deployments)
+		deploymentOptions := getDeploymentOptions(deployments)
 
 		p.console.Message(ctx, output.WithWarningFormat("WARNING: Multiple matching deployments were found\n"))
 
@@ -473,7 +473,7 @@ func (p *BicepProvider) deploymentState(
 		templateHash = *createHashResult.TemplateHash
 	}
 
-	if !prevDeploymentEqualToCurrent(ctx, prevDeploymentResult, templateHash, currentParamsHash) {
+	if !prevDeploymentEqualToCurrent(prevDeploymentResult, templateHash, currentParamsHash) {
 		return nil, fmt.Errorf("deployment state has changed")
 	}
 
@@ -527,8 +527,7 @@ func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, pa
 }
 
 // prevDeploymentEqualToCurrent compares the template hash from a previous deployment against a current template.
-func prevDeploymentEqualToCurrent(
-	ctx context.Context, prev *armresources.DeploymentExtended, templateHash, paramsHash string) bool {
+func prevDeploymentEqualToCurrent(prev *armresources.DeploymentExtended, templateHash, paramsHash string) bool {
 	if prev == nil {
 		logDS("No previous deployment.")
 		return false
@@ -743,7 +742,7 @@ type itemToPurge struct {
 	cognitiveAccounts []cognitiveAccount
 }
 
-func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplate) (infra.Scope, error) {
+func (p *BicepProvider) scopeForTemplate(t azure.ArmTemplate) (infra.Scope, error) {
 	deploymentScope, err := t.TargetScope()
 	if err != nil {
 		return nil, err
@@ -764,7 +763,7 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 	}
 }
 
-func (p *BicepProvider) inferScopeFromEnv(ctx context.Context) (infra.Scope, error) {
+func (p *BicepProvider) inferScopeFromEnv() (infra.Scope, error) {
 	if resourceGroup, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
 		return infra.NewResourceGroupScope(
 			p.deploymentsService,
@@ -808,7 +807,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, fmt.Errorf("creating template: %w", err)
 	}
 
-	scope, err := p.scopeForTemplate(ctx, compileResult.Template)
+	scope, err := p.scopeForTemplate(compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
@@ -879,28 +878,28 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		resourceType: "Key Vault",
 		count:        len(keyVaults),
 		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeKeyVaults(ctx, keyVaults, options, skipPurge)
+			return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
 		},
 	}
 	managedHSMsPurge := itemToPurge{
 		resourceType: "Managed HSM",
 		count:        len(managedHSMs),
 		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeManagedHSMs(ctx, managedHSMs, options, skipPurge)
+			return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
 		},
 	}
 	appConfigsPurge := itemToPurge{
 		resourceType: "App Configuration",
 		count:        len(appConfigs),
 		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAppConfigs(ctx, appConfigs, options, skipPurge)
+			return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
 		},
 	}
 	aPIManagement := itemToPurge{
 		resourceType: "API Management",
 		count:        len(apiManagements),
 		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAPIManagement(ctx, apiManagements, options, skipPurge)
+			return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
 		},
 	}
 
@@ -918,7 +917,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 			resourceType: name,
 			count:        len(cogAccounts),
 			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, options, skipPurge)
+				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
 			},
 			cognitiveAccounts: groupByKind[name],
 		}
@@ -1049,7 +1048,7 @@ func (p *BicepProvider) findCompletedDeployments(
 	return matchingDeployments, nil
 }
 
-func getDeploymentOptions(ctx context.Context, deployments []*armresources.DeploymentExtended) []string {
+func getDeploymentOptions(deployments []*armresources.DeploymentExtended) []string {
 	promptValues := []string{}
 	for index, deployment := range deployments {
 		optionTitle := fmt.Sprintf("%d. %s (%s)",
@@ -1246,10 +1245,6 @@ func (p *BicepProvider) purgeItems(
 		if !purgeItems {
 			skipPurge = true
 		}
-
-		if err != nil {
-			return err
-		}
 	}
 	for index, item := range items {
 		if err := item.purge(skipPurge, &items[index]); err != nil {
@@ -1390,7 +1385,6 @@ func (p *BicepProvider) getCognitiveAccountsToPurge(
 func (p *BicepProvider) purgeKeyVaults(
 	ctx context.Context,
 	keyVaults []*keyvault.KeyVault,
-	options DestroyOptions,
 	skip bool,
 ) error {
 	for _, keyVault := range keyVaults {
@@ -1408,7 +1402,6 @@ func (p *BicepProvider) purgeKeyVaults(
 func (p *BicepProvider) purgeManagedHSMs(
 	ctx context.Context,
 	managedHSMs []*azcli.AzCliManagedHSM,
-	options DestroyOptions,
 	skip bool,
 ) error {
 	for _, managedHSM := range managedHSMs {
@@ -1426,7 +1419,6 @@ func (p *BicepProvider) purgeManagedHSMs(
 func (p *BicepProvider) purgeCognitiveAccounts(
 	ctx context.Context,
 	cognitiveAccounts []cognitiveAccount,
-	options DestroyOptions,
 	skip bool,
 ) error {
 	for _, cogAccount := range cognitiveAccounts {
@@ -1537,7 +1529,6 @@ func (p *BicepProvider) getApiManagementsToPurge(
 func (p *BicepProvider) purgeAppConfigs(
 	ctx context.Context,
 	appConfigs []*azcli.AzCliAppConfig,
-	options DestroyOptions,
 	skip bool,
 ) error {
 	for _, appConfig := range appConfigs {
@@ -1556,7 +1547,6 @@ func (p *BicepProvider) purgeAppConfigs(
 func (p *BicepProvider) purgeAPIManagement(
 	ctx context.Context,
 	apims []*azcli.AzCliApim,
-	options DestroyOptions,
 	skip bool,
 ) error {
 	for _, apim := range apims {

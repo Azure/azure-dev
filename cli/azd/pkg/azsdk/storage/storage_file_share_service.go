@@ -48,7 +48,7 @@ func (f *fileShareClient) UploadPath(ctx context.Context, subId, shareUrl, sourc
 		}
 		if !info.IsDir() {
 			destination := strings.TrimPrefix(path, source+string(filepath.Separator))
-			if err := f.uploadFile(ctx, subId, shareUrl, path, destination, credential); err != nil {
+			if err := f.uploadFile(ctx, shareUrl, path, destination, credential); err != nil {
 				return fmt.Errorf("error uploading file to file share: %w", err)
 			}
 		}
@@ -59,7 +59,7 @@ func (f *fileShareClient) UploadPath(ctx context.Context, subId, shareUrl, sourc
 
 // uploadFile implements FileShareService.
 func (f *fileShareClient) uploadFile(
-	ctx context.Context, subId, fileShareUrl, source, dest string, credential azcore.TokenCredential) error {
+	ctx context.Context, fileShareUrl, source, dest string, credential azcore.TokenCredential) error {
 
 	client, err := share.NewClient(fileShareUrl, credential, &share.ClientOptions{
 		ClientOptions:     f.options.ClientOptions,

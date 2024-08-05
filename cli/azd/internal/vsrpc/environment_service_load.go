@@ -23,7 +23,7 @@ import (
 func (s *environmentService) OpenEnvironmentAsync(
 	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (s *environmentService) OpenEnvironmentAsync(
 func (s *environmentService) LoadEnvironmentAsync(
 	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return nil, err
 	}

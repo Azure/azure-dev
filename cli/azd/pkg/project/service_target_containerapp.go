@@ -76,7 +76,7 @@ func (at *containerAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+	if err := at.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
@@ -141,8 +141,6 @@ func (at *containerAppTarget) Endpoints(
 }
 
 func (at *containerAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if targetResource.ResourceGroupName() == "" {
@@ -158,7 +156,7 @@ func (at *containerAppTarget) validateTargetResource(
 	return nil
 }
 
-func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, serviceConfig *ServiceConfig) error {
+func (at *containerAppTarget) addPreProvisionChecks(_ context.Context, serviceConfig *ServiceConfig) error {
 	// Attempt to retrieve the target resource for the current service
 	// This allows the resource deployment to detect whether or not to pull existing container image during
 	// provision operation to avoid resetting the container app back to a default image

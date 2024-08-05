@@ -38,7 +38,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 	//1. Test without a project file
 	t.Run("can't load project settings", func(t *testing.T) {
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.ErrorContains(
 			t, err, "Loading project configuration: reading project file:")
@@ -55,7 +55,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, true)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 
 		verifyProvider(t, manager, ciProviderGitHubActions, err)
@@ -77,7 +77,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, false)
 
-		_, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		_, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		// No error for GitHub, just a message to the console
 		assert.NoError(t, err)
 		assert.Contains(t,
@@ -91,7 +91,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, false)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf(
 			"%s provider selected, but %s is empty. Please add pipeline files and try again.",
@@ -106,7 +106,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, true)
 
 		// Initialize the PipelineManager
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
@@ -129,7 +129,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, false)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf(
 			"%s provider selected, but %s is empty. Please add pipeline files and try again.",
@@ -145,7 +145,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, true)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, env, nil)
 		verifyProvider(t, manager, ciProviderAzureDevOps, err)
 
 		deleteYamlFiles(t, tempDir)
@@ -160,7 +160,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, false)
 
-		_, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		_, err := createPipelineManager(mockContext, azdContext, env, nil)
 		// No error for GitHub, just a message to the console
 		assert.NoError(t, err)
 		assert.Contains(t,
@@ -177,7 +177,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, true)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, env, nil)
 
 		verifyProvider(t, manager, ciProviderGitHubActions, err)
 
@@ -193,7 +193,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			PipelineProvider: "other",
 		}
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, args)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, args)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "invalid ci provider type other")
 
@@ -209,7 +209,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		envValues[envPersistedKey] = "other"
 		env := environment.NewWithValues("test-env", envValues)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "invalid ci provider type other")
 
@@ -222,7 +222,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		appendToAzureYaml(t, projectFileName, "pipeline:\n\r  provider: other")
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "invalid ci provider type other")
 
@@ -240,7 +240,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		envValues[envPersistedKey] = "persisted"
 		env := environment.NewWithValues("test-env", envValues)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "invalid ci provider type fromYaml")
 
@@ -261,7 +261,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			PipelineProvider: "arg",
 		}
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, args)
+		manager, err := createPipelineManager(mockContext, azdContext, env, args)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, "invalid ci provider type arg")
 
@@ -273,7 +273,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, true)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 
 		verifyProvider(t, manager, ciProviderGitHubActions, err)
 
@@ -284,7 +284,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, true)
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 
 		verifyProvider(t, manager, ciProviderAzureDevOps, err)
 
@@ -298,7 +298,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, true)
 
 		// Initialize the PipelineManager
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
@@ -318,7 +318,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, true)
 
 		// Initialize the PipelineManager
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
@@ -341,7 +341,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			PipelineProvider: string(ciProviderAzureDevOps),
 		}
 
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, args)
+		manager, err := createPipelineManager(mockContext, azdContext, env, args)
 
 		verifyProvider(t, manager, ciProviderAzureDevOps, err)
 
@@ -366,7 +366,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		args := &PipelineManagerArgs{
 			PipelineProvider: string(ciProviderAzureDevOps),
 		}
-		manager, err := createPipelineManager(t, mockContext, azdContext, env, args)
+		manager, err := createPipelineManager(mockContext, azdContext, env, args)
 
 		verifyProvider(t, manager, ciProviderAzureDevOps, err)
 
@@ -594,7 +594,6 @@ func Test_promptForCiFiles(t *testing.T) {
 }
 
 func createPipelineManager(
-	t *testing.T,
 	mockContext *mocks.MockContext,
 	azdContext *azdcontext.AzdContext,
 	env *environment.Environment,

@@ -76,7 +76,7 @@ func (st *springAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+	if err := st.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
@@ -190,8 +190,6 @@ func (st *springAppTarget) Endpoints(
 }
 
 func (st *springAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if targetResource.ResourceGroupName() == "" {

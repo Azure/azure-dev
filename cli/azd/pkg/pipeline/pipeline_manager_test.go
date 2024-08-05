@@ -316,7 +316,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		createYamlFiles(t, tempDir, ciProviderGitHubActions, 1)
 
 		// Initialize the PipelineManager
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
@@ -334,7 +334,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		createYamlFiles(t, tempDir, ciProviderAzureDevOps, 1)
 
 		// Initialize the PipelineManager
-		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 

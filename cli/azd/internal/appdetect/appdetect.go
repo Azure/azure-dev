@@ -277,15 +277,15 @@ func detectAny(ctx context.Context, detectors []projectDetector, path string, en
 // path is the directory being visited. entries are the file entries (including directories) in that directory.
 type walkDirFunc func(path string, entries []fs.DirEntry) error
 
-// walkDirectories walks the file tree rooted at root, calling fn for each directory in the tree, including root.
+// walkDirectories recursively descends the file tree located at path, calling fn for each directory in the tree.
 // The directories are walked in lexical order.
-func walkDirectories(root string, fn walkDirFunc) error {
-	entries, err := os.ReadDir(root)
+func walkDirectories(path string, fn walkDirFunc) error {
+	entries, err := os.ReadDir(path)
 	if err != nil {
 		return fmt.Errorf("reading directory: %w", err)
 	}
 
-	err = fn(root, entries)
+	err = fn(path, entries)
 	if errors.Is(err, filepath.SkipDir) {
 		// skip the directory
 		return nil
@@ -296,7 +296,7 @@ func walkDirectories(root string, fn walkDirFunc) error {
 
 	for _, entry := range entries {
 		if entry.IsDir() {
-			dir := filepath.Join(root, entry.Name())
+			dir := filepath.Join(path, entry.Name())
 			err = walkDirectories(dir, fn)
 			if err != nil {
 				return err

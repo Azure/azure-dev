@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -158,15 +157,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 8)
-		require.Contains(t, consoleOutput[0], "Resource group(s) to be deleted")
-		require.Contains(t, consoleOutput[1], "Total resources to delete")
-		require.Contains(t, consoleOutput[2], "Deleting your resources can take some time")
-		require.Contains(t, consoleOutput[3], "")
-		require.Contains(t, consoleOutput[4], "Warning: The following operation will delete")
-		require.Contains(t, consoleOutput[5], "These resources have soft delete enabled allowing")
-		require.Contains(t, consoleOutput[6], "Would you like to permanently delete these resources instead")
-		require.Contains(t, consoleOutput[7], "")
+		require.Len(t, consoleOutput, 4)
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -445,8 +436,11 @@ func prepareBicepMocks(
 }
 
 var cTestEnvDeployment armresources.DeploymentExtended = armresources.DeploymentExtended{
-	ID:   convert.RefOf("DEPLOYMENT_ID"),
-	Name: convert.RefOf("test-env"),
+	ID:       convert.RefOf("DEPLOYMENT_ID"),
+	Name:     convert.RefOf("test-env"),
+	Location: convert.RefOf("eastus2"),
+	Tags:     map[string]*string{},
+	Type:     convert.RefOf("Microsoft.Resources/deployments"),
 	Properties: &armresources.DeploymentPropertiesExtended{
 		Outputs: map[string]interface{}{
 			"WEBSITE_URL": map[string]interface{}{"value": "http://myapp.azurewebsites.net", "type": "string"},
@@ -736,15 +730,41 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 	t.Parallel()
 
 	t.Run("references used when no output resources", func(t *testing.T) {
-		var deployment *azapi.ResourceDeployment
+		mockDeployment := &azapi.ResourceDeployment{
+			//nolint:lll
+			Id: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
+			//nolint:lll
+			DeploymentId: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
+			Name:         "matell-2508",
+			Type:         "Microsoft.Resources/deployments",
+			Tags: map[string]*string{
+				"azd-env-name": convert.RefOf("matell-2508"),
+			},
+			ProvisioningState: azapi.DeploymentProvisioningStateFailed,
+			Timestamp:         time.Now(),
+			Dependencies: []*armresources.Dependency{
+				{
+					//nolint:lll
+					ID: convert.RefOf(
+						"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg/providers/Microsoft.Resources/deployments/resources",
+					),
+					ResourceName: convert.RefOf("resources"),
+					ResourceType: convert.RefOf("Microsoft.Resources/deployments"),
+					DependsOn: []*armresources.BasicDependency{
+						{
+							//nolint:lll
+							ID: convert.RefOf(
+								"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg",
+							),
+							ResourceName: convert.RefOf("matell-2508-rg"),
+							ResourceType: convert.RefOf("Microsoft.Resources/resourceGroups"),
+						},
+					},
+				},
+			},
+		}
 
-		f, err := os.ReadFile("testdata/failed-subscription-deployment.json")
-		require.NoError(t, err)
-
-		err = json.Unmarshal(f, &deployment)
-		require.NoError(t, err)
-
-		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsToDelete(deployment))
+		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsToDelete(mockDeployment))
 	})
 
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {

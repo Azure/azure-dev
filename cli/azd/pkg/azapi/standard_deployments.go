@@ -25,7 +25,7 @@ const (
 	cOutputsUrlFragment         = "#view/HubsExtension/DeploymentDetailsBlade/~/outputs/id"
 )
 
-type deployments struct {
+type StandardDeployments struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
 	resourceService    *ResourceService
@@ -33,14 +33,14 @@ type deployments struct {
 	clock              clock.Clock
 }
 
-func NewDeployments(
+func NewStandardDeployments(
 	credentialProvider account.SubscriptionCredentialProvider,
 	armClientOptions *arm.ClientOptions,
 	resourceService *ResourceService,
 	cloud *cloud.Cloud,
 	clock clock.Clock,
-) DeploymentService {
-	return &deployments{
+) *StandardDeployments {
+	return &StandardDeployments{
 		credentialProvider: credentialProvider,
 		armClientOptions:   armClientOptions,
 		resourceService:    resourceService,
@@ -52,7 +52,7 @@ func NewDeployments(
 // GenerateDeploymentName creates a name to use for the deployment object for a given environment. It appends the current
 // unix time to the environment name (separated by a hyphen) to provide a unique name for each deployment. If the resulting
 // name is longer than the ARM limit, the longest suffix of the name under the limit is returned.
-func (ds *deployments) GenerateDeploymentName(baseName string) string {
+func (ds *StandardDeployments) GenerateDeploymentName(baseName string) string {
 	name := fmt.Sprintf("%s-%d", baseName, ds.clock.Now().Unix())
 	if len(name) <= cArmDeploymentNameLengthMax {
 		return name
@@ -61,7 +61,7 @@ func (ds *deployments) GenerateDeploymentName(baseName string) string {
 	return name[len(name)-cArmDeploymentNameLengthMax:]
 }
 
-func (ds *deployments) CalculateTemplateHash(
+func (ds *StandardDeployments) CalculateTemplateHash(
 	ctx context.Context,
 	subscriptionId string,
 	template azure.RawArmTemplate,
@@ -79,7 +79,7 @@ func (ds *deployments) CalculateTemplateHash(
 	return *response.TemplateHashResult.TemplateHash, nil
 }
 
-func (ds *deployments) ListSubscriptionDeployments(
+func (ds *StandardDeployments) ListSubscriptionDeployments(
 	ctx context.Context,
 	subscriptionId string,
 ) ([]*ResourceDeployment, error) {
@@ -105,7 +105,7 @@ func (ds *deployments) ListSubscriptionDeployments(
 	return results, nil
 }
 
-func (ds *deployments) GetSubscriptionDeployment(
+func (ds *StandardDeployments) GetSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
@@ -127,7 +127,7 @@ func (ds *deployments) GetSubscriptionDeployment(
 	return ds.convertFromArmDeployment(&deployment.DeploymentExtended), nil
 }
 
-func (ds *deployments) ListResourceGroupDeployments(
+func (ds *StandardDeployments) ListResourceGroupDeployments(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -154,7 +154,7 @@ func (ds *deployments) ListResourceGroupDeployments(
 	return results, nil
 }
 
-func (ds *deployments) GetResourceGroupDeployment(
+func (ds *StandardDeployments) GetResourceGroupDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -177,7 +177,7 @@ func (ds *deployments) GetResourceGroupDeployment(
 	return ds.convertFromArmDeployment(&deployment.DeploymentExtended), nil
 }
 
-func (ds *deployments) createDeploymentsClient(
+func (ds *StandardDeployments) createDeploymentsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentsClient, error) {
@@ -194,7 +194,7 @@ func (ds *deployments) createDeploymentsClient(
 	return client, nil
 }
 
-func (ds *deployments) DeployToSubscription(
+func (ds *StandardDeployments) DeployToSubscription(
 	ctx context.Context,
 	subscriptionId string,
 	location string,
@@ -236,7 +236,7 @@ func (ds *deployments) DeployToSubscription(
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
 }
 
-func (ds *deployments) DeployToResourceGroup(
+func (ds *StandardDeployments) DeployToResourceGroup(
 	ctx context.Context,
 	subscriptionId, resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
@@ -275,7 +275,7 @@ func (ds *deployments) DeployToResourceGroup(
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
 }
 
-func (ds *deployments) ListSubscriptionDeploymentOperations(
+func (ds *StandardDeployments) ListSubscriptionDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
@@ -296,7 +296,7 @@ func (ds *deployments) ListSubscriptionDeploymentOperations(
 			return nil, ErrDeploymentNotFound
 		}
 		if err != nil {
-			return nil, fmt.Errorf("failed getting list of deployment operations: %w", err)
+			return nil, fmt.Errorf("failed getting list of deployment operations from subscription: %w", err)
 		}
 		result = append(result, page.Value...)
 	}
@@ -304,7 +304,7 @@ func (ds *deployments) ListSubscriptionDeploymentOperations(
 	return result, nil
 }
 
-func (ds *deployments) ListResourceGroupDeploymentOperations(
+func (ds *StandardDeployments) ListResourceGroupDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -334,7 +334,7 @@ func (ds *deployments) ListResourceGroupDeploymentOperations(
 	return result, nil
 }
 
-func (ds *deployments) ListSubscriptionDeploymentResources(
+func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
@@ -351,7 +351,8 @@ func (ds *deployments) ListSubscriptionDeploymentResources(
 
 	return ds.getResourcesFromDeployment(ctx, &response.DeploymentExtended, subscriptionId)
 }
-func (ds *deployments) ListResourceGroupDeploymentResources(
+
+func (ds *StandardDeployments) ListResourceGroupDeploymentResources(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -370,7 +371,7 @@ func (ds *deployments) ListResourceGroupDeploymentResources(
 	return ds.getResourcesFromDeployment(ctx, &response.DeploymentExtended, subscriptionId)
 }
 
-func (ds *deployments) DeleteSubscriptionDeployment(
+func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
@@ -418,7 +419,7 @@ func (ds *deployments) DeleteSubscriptionDeployment(
 	return nil
 }
 
-func (ds *deployments) DeleteResourceGroupDeployment(
+func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 	ctx context.Context,
 	subscriptionId,
 	resourceGroupName string,
@@ -450,7 +451,7 @@ func (ds *deployments) DeleteResourceGroupDeployment(
 	return nil
 }
 
-func (ds *deployments) getResourcesFromDeployment(
+func (ds *StandardDeployments) getResourcesFromDeployment(
 	ctx context.Context,
 	deployment *armresources.DeploymentExtended,
 	subscriptionId string,
@@ -481,7 +482,7 @@ func (ds *deployments) getResourcesFromDeployment(
 	return allResources, nil
 }
 
-func (ds *deployments) WhatIfDeployToSubscription(
+func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	ctx context.Context,
 	subscriptionId string,
 	location string,
@@ -522,7 +523,7 @@ func (ds *deployments) WhatIfDeployToSubscription(
 	return &deployResult.WhatIfOperationResult, nil
 }
 
-func (ds *deployments) WhatIfDeployToResourceGroup(
+func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	ctx context.Context,
 	subscriptionId, resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
@@ -559,7 +560,7 @@ func (ds *deployments) WhatIfDeployToResourceGroup(
 	return &deployResult.WhatIfOperationResult, nil
 }
 
-func (ds *deployments) createDeploymentsOperationsClient(
+func (ds *StandardDeployments) createDeploymentsOperationsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentOperationsClient, error) {
@@ -577,7 +578,7 @@ func (ds *deployments) createDeploymentsOperationsClient(
 }
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment
-func (ds *deployments) convertFromArmDeployment(deployment *armresources.DeploymentExtended) *ResourceDeployment {
+func (ds *StandardDeployments) convertFromArmDeployment(deployment *armresources.DeploymentExtended) *ResourceDeployment {
 	return &ResourceDeployment{
 		Id:                *deployment.ID,
 		DeploymentId:      *deployment.ID,

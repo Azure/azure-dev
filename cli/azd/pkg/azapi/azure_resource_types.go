@@ -43,6 +43,7 @@ const (
 	AzureDevCenter                           AzureResourceType = "Microsoft.DevCenter/devcenters"
 	AzureDevCenterProject                    AzureResourceType = "Microsoft.DevCenter/projects"
 	AzureMachineLearningWorkspace            AzureResourceType = "Microsoft.MachineLearningServices/workspaces"
+	AzureUserAssignedManagedIdentity         AzureResourceType = "Microsoft.ManagedIdentity/userAssignedIdentities"
 	//nolint:lll
 	AzureMachineLearningEndpoint   AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
 	AzureMachineLearningConnection AzureResourceType = "Microsoft.MachineLearningServices/workspaces/connections"
@@ -127,6 +128,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Machine Learning Endpoint"
 	case AzureMachineLearningConnection:
 		return "Machine Learning Connection"
+	case AzureUserAssignedManagedIdentity:
+		return "Managed Identity"
 	}
 
 	return ""

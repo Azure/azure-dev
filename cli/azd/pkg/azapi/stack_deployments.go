@@ -17,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
@@ -29,48 +28,36 @@ const (
 	cStacksPortalUrlFragment = "#@microsoft.onmicrosoft.com/resource"
 )
 
-type deploymentStacks struct {
-	serviceLocator      ioc.ServiceLocator
+type StackDeployments struct {
 	credentialProvider  account.SubscriptionCredentialProvider
 	armClientOptions    *arm.ClientOptions
-	standardDeployments DeploymentService
+	standardDeployments *StandardDeployments
 	cloud               *cloud.Cloud
 }
 
-func NewDeploymentStacks(
-	serviceLocator ioc.ServiceLocator,
+func NewStackDeployments(
 	credentialProvider account.SubscriptionCredentialProvider,
 	armClientOptions *arm.ClientOptions,
+	standardDeployments *StandardDeployments,
 	cloud *cloud.Cloud,
 	clock clock.Clock,
-) DeploymentService {
-	return &deploymentStacks{
-		serviceLocator:     serviceLocator,
-		credentialProvider: credentialProvider,
-		armClientOptions:   armClientOptions,
-		cloud:              cloud,
+) *StackDeployments {
+	return &StackDeployments{
+		credentialProvider:  credentialProvider,
+		armClientOptions:    armClientOptions,
+		standardDeployments: standardDeployments,
+		cloud:               cloud,
 	}
-}
-
-func (d *deploymentStacks) init(ctx context.Context) error {
-	if d.standardDeployments == nil {
-		err := d.serviceLocator.ResolveNamed(string(DeploymentTypeStandard), &d.standardDeployments)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // GenerateDeploymentName creates a name to use for the deployment object for a given environment. It appends the current
 // unix time to the environment name (separated by a hyphen) to provide a unique name for each deployment. If the resulting
 // name is longer than the ARM limit, the longest suffix of the name under the limit is returned.
-func (d *deploymentStacks) GenerateDeploymentName(baseName string) string {
+func (d *StackDeployments) GenerateDeploymentName(baseName string) string {
 	return fmt.Sprintf("azd-stack-%s", baseName)
 }
 
-func (d *deploymentStacks) ListSubscriptionDeployments(
+func (d *StackDeployments) ListSubscriptionDeployments(
 	ctx context.Context,
 	subscriptionId string,
 ) ([]*ResourceDeployment, error) {
@@ -96,7 +83,7 @@ func (d *deploymentStacks) ListSubscriptionDeployments(
 	return results, nil
 }
 
-func (d *deploymentStacks) GetSubscriptionDeployment(
+func (d *StackDeployments) GetSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
@@ -133,13 +120,18 @@ func (d *deploymentStacks) GetSubscriptionDeployment(
 		})
 
 	if err != nil {
+		// If a deployment stack is not found with the given name, fallback to check for standard deployments
+		if errors.Is(err, ErrDeploymentNotFound) {
+			return d.standardDeployments.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
+		}
+
 		return nil, err
 	}
 
 	return d.convertFromStackDeployment(deploymentStack), nil
 }
 
-func (d *deploymentStacks) ListResourceGroupDeployments(
+func (d *StackDeployments) ListResourceGroupDeployments(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -166,7 +158,7 @@ func (d *deploymentStacks) ListResourceGroupDeployments(
 	return results, nil
 }
 
-func (d *deploymentStacks) GetResourceGroupDeployment(
+func (d *StackDeployments) GetResourceGroupDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -204,13 +196,18 @@ func (d *deploymentStacks) GetResourceGroupDeployment(
 		})
 
 	if err != nil {
+		// If a deployment stack is not found with the given name, fallback to check for standard deployments
+		if errors.Is(err, ErrDeploymentNotFound) {
+			return d.standardDeployments.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroupName, deploymentName)
+		}
+
 		return nil, err
 	}
 
 	return d.convertFromStackDeployment(deploymentStack), nil
 }
 
-func (d *deploymentStacks) DeployToSubscription(
+func (d *StackDeployments) DeployToSubscription(
 	ctx context.Context,
 	subscriptionId string,
 	location string,
@@ -262,7 +259,7 @@ func (d *deploymentStacks) DeployToSubscription(
 	return d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 }
 
-func (d *deploymentStacks) DeployToResourceGroup(
+func (d *StackDeployments) DeployToResourceGroup(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -313,35 +310,29 @@ func (d *deploymentStacks) DeployToResourceGroup(
 	return d.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroup, deploymentName)
 }
 
-func (d *deploymentStacks) ListSubscriptionDeploymentOperations(
+func (d *StackDeployments) ListSubscriptionDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
 ) ([]*armresources.DeploymentOperation, error) {
-	if err := d.init(ctx); err != nil {
-		return nil, err
-	}
-
 	deployment, err := d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
-	if err != nil {
+	if !errors.Is(err, ErrDeploymentNotFound) {
 		return nil, err
 	}
 
-	deploymentName = filepath.Base(deployment.DeploymentId)
+	if deployment != nil && deployment.DeploymentId != "" {
+		deploymentName = filepath.Base(deployment.DeploymentId)
+	}
 
 	return d.standardDeployments.ListSubscriptionDeploymentOperations(ctx, subscriptionId, deploymentName)
 }
 
-func (d *deploymentStacks) ListResourceGroupDeploymentOperations(
+func (d *StackDeployments) ListResourceGroupDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
 ) ([]*armresources.DeploymentOperation, error) {
-	if err := d.init(ctx); err != nil {
-		return nil, err
-	}
-
 	// The requested deployment name may be an inner deployment which will not be found in the deployment stacks.
 	// If this is the case continue on checking if there is a stack deployment
 	// If a deployment stack is found then use the deployment id of the stack
@@ -362,7 +353,7 @@ func (d *deploymentStacks) ListResourceGroupDeploymentOperations(
 	)
 }
 
-func (d *deploymentStacks) WhatIfDeployToSubscription(
+func (d *StackDeployments) WhatIfDeployToSubscription(
 	ctx context.Context,
 	subscriptionId string,
 	location string,
@@ -370,10 +361,6 @@ func (d *deploymentStacks) WhatIfDeployToSubscription(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 ) (*armresources.WhatIfOperationResult, error) {
-	if err := d.init(ctx); err != nil {
-		return nil, err
-	}
-
 	return d.standardDeployments.WhatIfDeployToSubscription(
 		ctx,
 		subscriptionId,
@@ -384,7 +371,7 @@ func (d *deploymentStacks) WhatIfDeployToSubscription(
 	)
 }
 
-func (d *deploymentStacks) WhatIfDeployToResourceGroup(
+func (d *StackDeployments) WhatIfDeployToResourceGroup(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -392,10 +379,6 @@ func (d *deploymentStacks) WhatIfDeployToResourceGroup(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 ) (*armresources.WhatIfOperationResult, error) {
-	if err := d.init(ctx); err != nil {
-		return nil, err
-	}
-
 	return d.standardDeployments.WhatIfDeployToResourceGroup(
 		ctx,
 		subscriptionId,
@@ -406,7 +389,7 @@ func (d *deploymentStacks) WhatIfDeployToResourceGroup(
 	)
 }
 
-func (d *deploymentStacks) ListSubscriptionDeploymentResources(
+func (d *StackDeployments) ListSubscriptionDeploymentResources(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
@@ -418,7 +401,7 @@ func (d *deploymentStacks) ListSubscriptionDeploymentResources(
 
 	return deployment.Resources, nil
 }
-func (d *deploymentStacks) ListResourceGroupDeploymentResources(
+func (d *StackDeployments) ListResourceGroupDeploymentResources(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -432,7 +415,7 @@ func (d *deploymentStacks) ListResourceGroupDeploymentResources(
 	return deployment.Resources, nil
 }
 
-func (d *deploymentStacks) DeleteSubscriptionDeployment(
+func (d *StackDeployments) DeleteSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
@@ -493,7 +476,7 @@ func (d *deploymentStacks) DeleteSubscriptionDeployment(
 	return nil
 }
 
-func (d *deploymentStacks) DeleteResourceGroupDeployment(
+func (d *StackDeployments) DeleteResourceGroupDeployment(
 	ctx context.Context,
 	subscriptionId,
 	resourceGroupName string,
@@ -518,19 +501,15 @@ func (d *deploymentStacks) DeleteResourceGroupDeployment(
 	return nil
 }
 
-func (d *deploymentStacks) CalculateTemplateHash(
+func (d *StackDeployments) CalculateTemplateHash(
 	ctx context.Context,
 	subscriptionId string,
 	template azure.RawArmTemplate,
 ) (string, error) {
-	if err := d.init(ctx); err != nil {
-		return "", err
-	}
-
 	return d.standardDeployments.CalculateTemplateHash(ctx, subscriptionId, template)
 }
 
-func (d *deploymentStacks) createClient(ctx context.Context, subscriptionId string) (*armdeploymentstacks.Client, error) {
+func (d *StackDeployments) createClient(ctx context.Context, subscriptionId string) (*armdeploymentstacks.Client, error) {
 	credential, err := d.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -540,7 +519,7 @@ func (d *deploymentStacks) createClient(ctx context.Context, subscriptionId stri
 }
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment
-func (d *deploymentStacks) convertFromStackDeployment(deployment *armdeploymentstacks.DeploymentStack) *ResourceDeployment {
+func (d *StackDeployments) convertFromStackDeployment(deployment *armdeploymentstacks.DeploymentStack) *ResourceDeployment {
 	resources := []*armresources.ResourceReference{}
 	for _, resource := range deployment.Properties.Resources {
 		resources = append(resources, &armresources.ResourceReference{ID: resource.ID})

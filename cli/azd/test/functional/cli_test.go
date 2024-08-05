@@ -268,7 +268,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	resourceService := azapi.NewResourceService(credentialProvider, armClientOptions)
 
-	deploymentOperations := azapi.NewDeployments(
+	deploymentOperations := azapi.NewStandardDeployments(
 		credentialProvider,
 		armClientOptions,
 		resourceService,
@@ -485,7 +485,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	resourceService := azapi.NewResourceService(credentialProvider, armClientOptions)
 
-	deploymentOperations := azapi.NewDeployments(
+	deploymentOperations := azapi.NewStandardDeployments(
 		credentialProvider,
 		armClientOptions,
 		resourceService,

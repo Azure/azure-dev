@@ -634,9 +634,23 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	container.MustRegisterSingleton(azapi.NewResourceService)
-	container.MustRegisterNamedSingleton(string(azapi.DeploymentTypeStandard), azapi.NewDeployments)
-	container.MustRegisterNamedSingleton(string(azapi.DeploymentTypeStacks), azapi.NewDeploymentStacks)
 
+	// Register Deployment Services
+	deploymentServiceTypes := map[azapi.DeploymentType]any{
+		azapi.DeploymentTypeStandard: func(deploymentService *azapi.StandardDeployments) azapi.DeploymentService {
+			return deploymentService
+		},
+		azapi.DeploymentTypeStacks: func(deploymentService *azapi.StackDeployments) azapi.DeploymentService {
+			return deploymentService
+		},
+	}
+
+	for deploymentType, constructor := range deploymentServiceTypes {
+		container.MustRegisterNamedSingleton(string(deploymentType), constructor)
+	}
+
+	container.MustRegisterSingleton(azapi.NewStandardDeployments)
+	container.MustRegisterSingleton(azapi.NewStackDeployments)
 	container.MustRegisterSingleton(infra.NewDeploymentManager)
 	container.MustRegisterSingleton(infra.NewAzureResourceManager)
 	container.MustRegisterScoped(provisioning.NewManager)

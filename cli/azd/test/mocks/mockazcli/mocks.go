@@ -27,10 +27,8 @@ func NewAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
 
 func NewDeploymentsServiceFromMockContext(
 	mockContext *mocks.MockContext) azapi.DeploymentService {
-	return azapi.NewDeployments(
-		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
-			return mockContext.Credentials, nil
-		}),
+	return azapi.NewStandardDeployments(
+		mockaccount.SubscriptionCredentialProviderFunc(mockContext.SubscriptionCredentialProvider.CredentialForSubscription),
 		mockContext.ArmClientOptions,
 		azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
 		cloud.AzurePublic(),

@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
@@ -28,15 +30,33 @@ func TestScopeGetDeployment(t *testing.T) {
 	// mocked response for get deployment from subscription
 	deploymentWithOptions := &armresources.DeploymentsClientGetAtSubscriptionScopeResponse{
 		DeploymentExtended: armresources.DeploymentExtended{
+			ID: convert.RefOf(
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
+			),
+			Location: convert.RefOf("eastus2"),
+			Type:     convert.RefOf("Microsoft.Resources/deployments"),
+			Tags:     map[string]*string{},
+			Name:     convert.RefOf("DEPLOYMENT_NAME"),
 			Properties: &armresources.DeploymentPropertiesExtended{
-				Outputs: outputs,
+				ProvisioningState: convert.RefOf(armresources.ProvisioningStateCreated),
+				Outputs:           outputs,
+				Timestamp:         convert.RefOf(time.Now().UTC()),
 			},
 		},
 	}
 	deploymentResourceGroupWithOptions := &armresources.DeploymentsClientGetResponse{
 		DeploymentExtended: armresources.DeploymentExtended{
+			ID: convert.RefOf(
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
+			),
+			Location: convert.RefOf("eastus2"),
+			Type:     convert.RefOf("Microsoft.Resources/deployments"),
+			Tags:     map[string]*string{},
+			Name:     convert.RefOf("DEPLOYMENT_NAME"),
 			Properties: &armresources.DeploymentPropertiesExtended{
-				Outputs: outputs,
+				ProvisioningState: convert.RefOf(armresources.ProvisioningStateCreated),
+				Outputs:           outputs,
+				Timestamp:         convert.RefOf(time.Now().UTC()),
 			},
 		},
 	}
@@ -118,8 +138,19 @@ func TestScopeGetDeployment(t *testing.T) {
 	})
 }
 
-func TestScopeDeploy(t *testing.T) {
+var deploymentExtended = armresources.DeploymentExtended{
+	ID:       convert.RefOf("/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME"),
+	Location: convert.RefOf("eastus2"),
+	Type:     convert.RefOf("Microsoft.Resources/deployments"),
+	Tags:     map[string]*string{},
+	Name:     convert.RefOf("DEPLOYMENT_NAME"),
+	Properties: &armresources.DeploymentPropertiesExtended{
+		ProvisioningState: convert.RefOf(armresources.ProvisioningStateSucceeded),
+		Timestamp:         convert.RefOf(time.Now().UTC()),
+	},
+}
 
+func TestScopeDeploy(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
@@ -130,13 +161,13 @@ func TestScopeDeploy(t *testing.T) {
 				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
 			)
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusCreated,
-				Body:       io.NopCloser(bytes.NewBuffer([]byte(testArmResponse))),
-				Request: &http.Request{
-					Method: http.MethodGet,
+			return mocks.CreateHttpResponseWithBody(
+				request,
+				http.StatusCreated,
+				armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+					DeploymentExtended: deploymentExtended,
 				},
-			}, nil
+			)
 		})
 
 		scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -157,17 +188,17 @@ func TestScopeDeploy(t *testing.T) {
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodPut && strings.Contains(
 				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP/providers/"+
-					"Microsoft.Resources/deployments/DEPLOYMENT_NAME",
+				//nolint:lll
+				"/subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
 			)
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(bytes.NewBuffer([]byte(testArmResponse))),
-				Request: &http.Request{
-					Method: http.MethodGet,
+			return mocks.CreateHttpResponseWithBody(
+				request,
+				http.StatusCreated,
+				armresources.DeploymentsClientCreateOrUpdateResponse{
+					DeploymentExtended: deploymentExtended,
 				},
-			}, nil
+			)
 		})
 
 		scope := newResourceGroupScope(deploymentService, "SUBSCRIPTION_ID", "RESOURCE_GROUP")
@@ -182,6 +213,25 @@ func TestScopeDeploy(t *testing.T) {
 	})
 }
 
+var deploymentOperationsListResult = armresources.DeploymentOperationsListResult{
+	Value: []*armresources.DeploymentOperation{
+		{
+			ID:          convert.RefOf("operation-1"),
+			OperationID: convert.RefOf("operation-1"),
+			Properties: &armresources.DeploymentOperationProperties{
+				TargetResource: &armresources.TargetResource{
+					//nolint:lll
+					ID: convert.RefOf(
+						"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/storage-account-name",
+					),
+					ResourceName: convert.RefOf("storage-account-name"),
+					ResourceType: convert.RefOf("Microsoft.Storage/storageAccounts"),
+				},
+			},
+		},
+	},
+}
+
 func TestScopeGetResourceOperations(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
@@ -193,13 +243,13 @@ func TestScopeGetResourceOperations(t *testing.T) {
 				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME/operations",
 			)
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(bytes.NewBuffer([]byte(deploymentBytes))),
-				Request: &http.Request{
-					Method: http.MethodGet,
+			return mocks.CreateHttpResponseWithBody(
+				request,
+				http.StatusOK,
+				armresources.DeploymentOperationsClientListAtScopeResponse{
+					DeploymentOperationsListResult: deploymentOperationsListResult,
 				},
-			}, nil
+			)
 		})
 
 		scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
@@ -223,13 +273,13 @@ func TestScopeGetResourceOperations(t *testing.T) {
 				"/subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP/deployments/DEPLOYMENT_NAME/operations",
 			)
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(bytes.NewBuffer([]byte(deploymentBytes))),
-				Request: &http.Request{
-					Method: http.MethodGet,
+			return mocks.CreateHttpResponseWithBody(
+				request,
+				http.StatusOK,
+				armresources.DeploymentOperationsClientListAtSubscriptionScopeResponse{
+					DeploymentOperationsListResult: deploymentOperationsListResult,
 				},
-			}, nil
+			)
 		})
 
 		scope := newResourceGroupScope(deploymentService, "SUBSCRIPTION_ID", "RESOURCE_GROUP")
@@ -243,31 +293,6 @@ func TestScopeGetResourceOperations(t *testing.T) {
 		require.Len(t, operations, 1)
 	})
 }
-
-var deploymentBytes string = `{
-	"nextLink": "",
-	"value": [{
-		"id": "id",
-		"operationId": "foo",
-		"properties": {
-		}
-	}]
-}`
-
-var testArmResponse string = `{
-	"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/foo",
-	"name":"foo",
-	"type":"Microsoft.Resources/deployments",
-	"location":"westus3",
-	"properties":{
-		"templateHash":"10006264233799735596",
-		"parameters":{
-			"environmentName":{"type":"String","value":"foo"},
-			"location":{"type":"String","value":"westus3"}
-		}
-	}
-}
-`
 
 var testArmParameters = azure.ArmParameters{
 	"location": {

@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
@@ -96,7 +97,17 @@ func (mock *mockResourceManager) MarkComplete(i int) {
 }
 
 func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
-	deployment := armresources.DeploymentExtended{}
+	deployment := armresources.DeploymentExtended{
+		ID:       convert.RefOf("/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME"),
+		Location: convert.RefOf("eastus2"),
+		Properties: &armresources.DeploymentPropertiesExtended{
+			ProvisioningState: convert.RefOf(armresources.ProvisioningStateCreated),
+			Timestamp:         convert.RefOf(time.Now().UTC()),
+		},
+		Tags: map[string]*string{},
+		Name: convert.RefOf("DEPLOYMENT_NAME"),
+		Type: convert.RefOf("Microsoft.Resources/deployments"),
+	}
 	deploymentJson, err := json.Marshal(deployment)
 	require.NoError(t, err)
 	m.HttpClient.When(func(request *http.Request) bool {

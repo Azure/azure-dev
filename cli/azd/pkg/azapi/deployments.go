@@ -66,18 +66,18 @@ type ResourceDeployment struct {
 type DeploymentProvisioningState string
 
 const (
-	DeploymentProvisioningStateCanceled                DeploymentProvisioningState = "canceled"
-	DeploymentProvisioningStateCanceling               DeploymentProvisioningState = "canceling"
-	DeploymentProvisioningStateCreating                DeploymentProvisioningState = "creating"
-	DeploymentProvisioningStateRunning                 DeploymentProvisioningState = "running"
-	DeploymentProvisioningStateDeleting                DeploymentProvisioningState = "deleting"
-	DeploymentProvisioningStateDeletingResources       DeploymentProvisioningState = "deletingResources"
-	DeploymentProvisioningStateDeploying               DeploymentProvisioningState = "deploying"
-	DeploymentProvisioningStateFailed                  DeploymentProvisioningState = "failed"
-	DeploymentProvisioningStateSucceeded               DeploymentProvisioningState = "succeeded"
-	DeploymentProvisioningStateUpdatingDenyAssignments DeploymentProvisioningState = "updatingDenyAssignments"
-	DeploymentProvisioningStateValidating              DeploymentProvisioningState = "validating"
-	DeploymentProvisioningStateWaiting                 DeploymentProvisioningState = "waiting"
+	DeploymentProvisioningStateCanceled                DeploymentProvisioningState = "Canceled"
+	DeploymentProvisioningStateCanceling               DeploymentProvisioningState = "Canceling"
+	DeploymentProvisioningStateCreating                DeploymentProvisioningState = "Creating"
+	DeploymentProvisioningStateRunning                 DeploymentProvisioningState = "Running"
+	DeploymentProvisioningStateDeleting                DeploymentProvisioningState = "Deleting"
+	DeploymentProvisioningStateDeletingResources       DeploymentProvisioningState = "DeletingResources"
+	DeploymentProvisioningStateDeploying               DeploymentProvisioningState = "Deploying"
+	DeploymentProvisioningStateFailed                  DeploymentProvisioningState = "Failed"
+	DeploymentProvisioningStateSucceeded               DeploymentProvisioningState = "Succeeded"
+	DeploymentProvisioningStateUpdatingDenyAssignments DeploymentProvisioningState = "UpdatingDenyAssignments"
+	DeploymentProvisioningStateValidating              DeploymentProvisioningState = "Validating"
+	DeploymentProvisioningStateWaiting                 DeploymentProvisioningState = "Waiting"
 )
 
 type DeploymentService interface {

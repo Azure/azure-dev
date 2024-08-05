@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -101,7 +103,13 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
 	if _, err := a.provisionManager.Destroy(ctx, destroyOptions); err != nil {
-		return nil, fmt.Errorf("deleting infrastructure: %w", err)
+		if errors.Is(err, azapi.ErrDeploymentNotFound) {
+			message := "Deleting resources (No deployments found)"
+			a.console.ShowSpinner(ctx, message, input.Step)
+			a.console.StopSpinner(ctx, message, input.StepSkipped)
+		}
+
+		return nil, err
 	}
 
 	return &actions.ActionResult{

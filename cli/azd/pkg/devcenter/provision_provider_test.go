@@ -464,7 +464,7 @@ func newProvisionProviderForTest(
 
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 
-	deploymentService := azapi.NewDeployments(
+	deploymentService := azapi.NewStandardDeployments(
 		mockContext.SubscriptionCredentialProvider,
 		mockContext.ArmClientOptions,
 		resourceService,

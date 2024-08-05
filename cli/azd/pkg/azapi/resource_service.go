@@ -258,7 +258,7 @@ func (rs *ResourceService) MapResources(resources []*armresources.ResourceRefere
 		groupResources = append(groupResources, &AzCliResource{
 			Id:       *resource.ID,
 			Name:     resourceId.Name,
-			Type:     resourceId.ResourceType.Type,
+			Type:     resourceId.ResourceType.String(),
 			Location: resourceId.Location,
 		})
 

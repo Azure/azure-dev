@@ -241,7 +241,7 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 	} else if errors.Is(err, os.ErrNotExist) {
 		// To support BYOI (bring your own infrastructure)
 		// We need to support the case where there template does not contain an `infra` folder.
-		scope, scopeErr = p.inferScopeFromEnv(ctx)
+		scope, scopeErr = p.inferScopeFromEnv()
 		if scopeErr != nil {
 			return nil, fmt.Errorf("computing deployment scope: %w", err)
 		}
@@ -734,31 +734,13 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 	}
 }
 
-func (p *BicepProvider) inferScopeFromEnv(ctx context.Context) (infra.Scope, error) {
+func (p *BicepProvider) inferScopeFromEnv() (infra.Scope, error) {
 	if resourceGroup, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
 		return p.deploymentManager.ResourceGroupScope(p.env.GetSubscriptionId(), resourceGroup), nil
 	} else {
 		return p.deploymentManager.SubscriptionScope(p.env.GetSubscriptionId(), p.env.GetLocation()), nil
 	}
 }
-
-const cEmptySubDeployTemplate = `{
-	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
-	"contentVersion": "1.0.0.0",
-	"parameters": {},
-	"variables": {},
-	"resources": [],
-	"outputs": {}
-  }`
-
-const cEmptyResourceGroupDeployTemplate = `{
-	"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-	"contentVersion": "1.0.0.0",
-	"parameters": {},
-	"variables": {},
-	"resources": [],
-	"outputs": {}
-  }`
 
 // Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
 func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
@@ -774,19 +756,13 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
 
-	targetScope, err := compileResult.Template.TargetScope()
-	if err != nil {
-		return nil, err
-	}
-
-	deployment, err := p.deploymentFromScopeType(targetScope)
-	if err != nil {
-		return nil, err
-	}
-
 	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
 	if err != nil {
 		return nil, fmt.Errorf("finding completed deployments: %w", err)
+	}
+
+	if len(completedDeployments) == 0 {
+		return nil, fmt.Errorf("no deployments found for environment, '%s'", p.env.Name())
 	}
 
 	mostRecentDeployment := completedDeployments[0]
@@ -802,37 +778,36 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, fmt.Errorf("mapping resources to resource groups: %w", err)
 	}
 
-	// TODO: Report progress, "Getting Key Vaults to purge"
+	if len(groupedResources) == 0 {
+		return nil, fmt.Errorf("no resources found for deployment, '%s'", deploymentToDelete.Name())
+	}
+
 	keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
 	if err != nil {
 		return nil, fmt.Errorf("getting key vaults to purge: %w", err)
 	}
 
-	// TODO: Report progress, "Getting Managed HSMs to purge"
 	managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
 	if err != nil {
 		return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
 	}
 
-	// TODO: Report progress, "Getting App Configurations to purge"
 	appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
 	if err != nil {
 		return nil, fmt.Errorf("getting app configurations to purge: %w", err)
 	}
 
-	// TODO: Report progress, "Getting API Management Services to purge"
 	apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
 	if err != nil {
 		return nil, fmt.Errorf("getting API managements to purge: %w", err)
 	}
 
-	// TODO: Report progress, "Getting Cognitive Accounts to purge"
 	cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
 	if err != nil {
 		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
 	}
 
-	if err := p.destroyResourceGroups(ctx, options, deploymentToDelete, groupedResources, len(resourcesToDelete)); err != nil {
+	if err := p.destroyConfirmation(ctx, options, deploymentToDelete, groupedResources, len(resourcesToDelete)); err != nil {
 		return nil, fmt.Errorf("deleting resource groups: %w", err)
 	}
 
@@ -903,26 +878,6 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		destroyResult.InvalidatedEnvKeys = append(
 			destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName,
 		)
-	}
-
-	var emptyTemplate json.RawMessage
-	if targetScope == azure.DeploymentScopeSubscription {
-		emptyTemplate = []byte(cEmptySubDeployTemplate)
-	} else {
-		emptyTemplate = []byte(cEmptyResourceGroupDeployTemplate)
-	}
-
-	// create empty deployment to void provision state
-	// We want to keep the deployment history, that's why it's not just deleted
-	if _, err := p.deployModule(ctx,
-		deployment,
-		emptyTemplate,
-		azure.ArmParameters{},
-		map[string]*string{
-			azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
-			"azd-deploy-reason":    to.Ptr("down"),
-		}); err != nil {
-		log.Println("failed creating new empty deployment after destroy")
 	}
 
 	return destroyResult, nil
@@ -1011,25 +966,42 @@ func resourceGroupsToDelete(deployment *azapi.ResourceDeployment) []string {
 	return maps.Keys(resourceGroups)
 }
 
-func (p *BicepProvider) generateResourceGroupsToDelete(groupedResources map[string][]*azapi.AzCliResource) []string {
-	lines := []string{"Resource group(s) to be deleted:", ""}
+func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]*azapi.AzCliResource) []string {
+	lines := []string{"Resource(s) to be deleted:"}
 
-	for rg := range groupedResources {
-		lines = append(lines, fmt.Sprintf(
-			"  • %s: %s",
-			rg,
-			output.WithLinkFormat("%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-				p.portalUrlBase,
-				p.env.GetSubscriptionId(),
-				rg,
+	for resourceGroupName, resources := range groupedResources {
+		lines = append(lines, "")
+
+		// Resource Group
+		resourceGroupLink := fmt.Sprintf("%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+			p.portalUrlBase,
+			p.env.GetSubscriptionId(),
+			resourceGroupName,
+		)
+
+		lines = append(lines,
+			fmt.Sprintf("%s %s",
+				output.WithHighLightFormat("Resource Group:"),
+				output.WithHyperlink(resourceGroupLink, resourceGroupName),
 			),
-		))
+		)
+
+		// Resources in each group
+		for _, resource := range resources {
+			resourceTypeName := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resource.Type))
+			if resourceTypeName == "" {
+				continue
+			}
+
+			lines = append(lines, fmt.Sprintf("  • %s: %s", resourceTypeName, resource.Name))
+		}
 	}
-	return append(lines, "")
+
+	return append(lines, "\n")
 }
 
 // Deletes the azure resources within the deployment
-func (p *BicepProvider) destroyResourceGroups(
+func (p *BicepProvider) destroyConfirmation(
 	ctx context.Context,
 	options DestroyOptions,
 	deployment infra.Deployment,
@@ -1038,7 +1010,7 @@ func (p *BicepProvider) destroyResourceGroups(
 ) error {
 	if !options.Force() {
 		p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-			Lines: p.generateResourceGroupsToDelete(groupedResources)},
+			Lines: p.generateResourcesToDelete(groupedResources)},
 		)
 		confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(

@@ -14,7 +14,7 @@ func Test_StandardDeployments_GenerateDeploymentName(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.Clock.Set(time.Unix(1683303710, 0))
 
-	deploymentService := NewDeployments(
+	deploymentService := NewStandardDeployments(
 		mockContext.SubscriptionCredentialProvider,
 		mockContext.ArmClientOptions,
 		NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),

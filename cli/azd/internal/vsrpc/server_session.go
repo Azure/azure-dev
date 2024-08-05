@@ -1,7 +1,6 @@
 package vsrpc
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -66,7 +65,7 @@ func (s *Server) sessionFromId(id string) (*serverSession, bool) {
 
 // validateSession ensures the session id is valid and returns the corresponding and serverSession object. If there
 // is an error it will be of type *jsonrpc2.Error.
-func (s *Server) validateSession(ctx context.Context, session Session) (*serverSession, error) {
+func (s *Server) validateSession(session Session) (*serverSession, error) {
 	if session.Id == "" {
 		return nil, jsonrpc2.NewError(jsonrpc2.InvalidParams, "session.Id is required")
 	}

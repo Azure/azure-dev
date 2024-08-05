@@ -238,7 +238,7 @@ func (c *AskerConsole) updateLastBytes(msg string) {
 }
 
 func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) {
-	if shouldWarn(key) {
+	if shouldWarn() {
 		c.MessageUxItem(ctx, &ux.MultilineMessage{
 			Lines: []string{
 				"",
@@ -252,7 +252,7 @@ func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) 
 }
 
 // shouldWarn returns true if a warning should be emitted when using a given alpha feature.
-func shouldWarn(key alpha.FeatureId) bool {
+func shouldWarn() bool {
 	noAlphaWarnings, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_NO_ALPHA_WARNINGS"))
 
 	return err != nil || !noAlphaWarnings
@@ -386,7 +386,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	c.spinnerLineMu.Lock()
 	c.spinnerCurrentTitle = title
 
-	indentPrefix := c.getIndent(format)
+	indentPrefix := c.getIndent()
 	line := c.spinnerLine(title, indentPrefix)
 
 	_ = c.spinner.Pause()
@@ -435,7 +435,7 @@ func setIndentation(spaces int) string {
 	return string(bytes)
 }
 
-func (c *AskerConsole) getIndent(format SpinnerUxType) string {
+func (c *AskerConsole) getIndent() string {
 	requiredSize := 2
 	if requiredSize != len(c.currentIndent.Load()) {
 		c.currentIndent.Store(setIndentation(requiredSize))
@@ -492,7 +492,7 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 	case StepSkipped:
 		stopChar = output.WithGrayFormat("(-) Skipped:")
 	}
-	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
+	return fmt.Sprintf("%s%s", c.getIndent(), stopChar)
 }
 
 func promptFromOptions(options ConsoleOptions) survey.Prompt {

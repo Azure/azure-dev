@@ -76,7 +76,7 @@ func (f *functionAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	if err := f.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+	if err := f.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
@@ -151,8 +151,6 @@ func (f *functionAppTarget) Endpoints(
 }
 
 func (f *functionAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {

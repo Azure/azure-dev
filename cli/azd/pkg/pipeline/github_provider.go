@@ -179,7 +179,7 @@ func (p *GitHubScmProvider) preventGitPush(
 	// Only check when using an existing repo in case github actions are disabled
 	if !p.newGitHubRepoCreated {
 		slug := gitRepo.owner + "/" + gitRepo.repoName
-		return p.notifyWhenGitHubActionsAreDisabled(ctx, gitRepo.gitProjectPath, slug, remoteName, branchName)
+		return p.notifyWhenGitHubActionsAreDisabled(ctx, gitRepo.gitProjectPath, slug)
 	}
 	return false, nil
 }
@@ -219,8 +219,6 @@ func (p *GitHubScmProvider) notifyWhenGitHubActionsAreDisabled(
 	ctx context.Context,
 	gitProjectPath,
 	repoSlug string,
-	origin string,
-	branch string,
 ) (bool, error) {
 	ghActionsInUpstreamRepo, err := p.ghCli.GitHubActionsExists(ctx, repoSlug)
 	if err != nil {
@@ -475,7 +473,7 @@ func (p *GitHubCiProvider) configureConnection(
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	if authType == AuthTypeClientCredentials {
-		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, servicePrincipal, credentials)
+		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, credentials)
 		if err != nil {
 			return fmt.Errorf("configuring client credentials auth: %w", err)
 		}
@@ -562,7 +560,6 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	ctx context.Context,
 	infraOptions provisioning.Options,
 	repoSlug string,
-	servicePrincipal *graphsdk.ServicePrincipal,
 	credentials *entraid.AzureCredentials,
 ) error {
 	/* #nosec G101 - Potential hardcoded credentials - false positive */

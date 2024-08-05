@@ -20,7 +20,7 @@ import (
 func (s *environmentService) CreateEnvironmentAsync(
 	ctx context.Context, rc RequestContext, newEnv Environment, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return false, err
 	}

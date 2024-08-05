@@ -1,3 +1,4 @@
+# Run when commits are pushed to main
 on:
   workflow_dispatch:
   push:
@@ -5,16 +6,8 @@ on:
     # Set this to the mainline branch you are using
     branches:
       - main
-      - master
 
-# GitHub Actions workflow to deploy to Azure using azd
-# To configure required secrets for connecting to Azure, simply run `azd pipeline config`
 
-# Set up permissions for deploying with secretless Azure federated credentials
-# https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure?tabs=azure-portal%2Clinux#set-up-azure-login-with-openid-connect-authentication
-permissions:
-  id-token: write
-  contents: read
 
 jobs:
   build:
@@ -28,21 +21,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install azd
         uses: Azure/setup-azd@v1.0.0
-
-      - name: Log in with Azure (Federated Credentials)
-        if: ${{ env.AZURE_CLIENT_ID != '' }}
-        run: |
-          azd auth login `
-            --client-id "$Env:AZURE_CLIENT_ID" `
-            --federated-credential-provider "github" `
-            --tenant-id "$Env:AZURE_TENANT_ID"
-        shell: pwsh
-
       - name: Log in with Azure (Client Credentials)
-        if: ${{ env.AZURE_CREDENTIALS != '' }}
         run: |
           $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
           Write-Host "::add-mask::$($info.clientSecret)"
@@ -55,6 +36,7 @@ jobs:
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
 
+
       - name: Provision Infrastructure
         run: azd provision --no-prompt
         env:
@@ -62,3 +44,4 @@ jobs:
 
       - name: Deploy Application
         run: azd deploy --no-prompt
+

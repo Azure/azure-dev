@@ -2,6 +2,7 @@ package mockaccount
 
 import (
 	"context"
+	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -42,11 +43,11 @@ func (a *MockAccountManager) GetAccountDefaults(ctx context.Context) (*account.A
 	}, nil
 }
 func (a *MockAccountManager) GetSubscriptionsWithDefaultSet(ctx context.Context) ([]account.Subscription, error) {
-	subscriptions := a.Subscriptions
+	subscriptions := slices.Clone(a.Subscriptions)
 
-	for _, sub := range subscriptions {
+	for i, sub := range subscriptions {
 		if sub.Id == a.DefaultSubscription {
-			sub.IsDefault = true
+			subscriptions[i].IsDefault = true
 		}
 	}
 	return subscriptions, nil

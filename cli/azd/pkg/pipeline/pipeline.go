@@ -177,7 +177,7 @@ var (
 
 var (
 	// Define a map to hold the directory and file names for each provider
-	pipelineProviderFiles = map[string]struct {
+	pipelineProviderFiles = map[ciProviderType]struct {
 		RootDirectory     string
 		PipelineDirectory string
 		Files             []string
@@ -185,14 +185,14 @@ var (
 		DisplayName       string
 		Code              string
 	}{
-		gitHubCode: {
+		ciProviderGitHubActions: {
 			RootDirectory:     gitHubRoot,
 			PipelineDirectory: filepath.Join(gitHubRoot, gitHubWorkflows),
 			Files:             generateFilePaths(filepath.Join(gitHubRoot, gitHubWorkflows), pipelineFileNames),
 			DefaultFile:       pipelineFileNames[0],
 			DisplayName:       gitHubDisplayName,
 		},
-		azdoCode: {
+		ciProviderAzureDevOps: {
 			RootDirectory:     azdoRoot,
 			PipelineDirectory: filepath.Join(azdoRoot, azdoPipelines),
 			Files:             generateFilePaths(filepath.Join(azdoRoot, azdoPipelines), pipelineFileNames),

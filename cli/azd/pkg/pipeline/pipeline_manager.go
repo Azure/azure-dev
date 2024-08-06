@@ -822,27 +822,13 @@ func (pm *PipelineManager) savePipelineProviderToEnv(
 	return nil
 }
 
-func validateProvider(provider ciProviderType) error {
-	if provider == "" {
-		errMsg := "Unknown CI provider"
-		log.Println("Error:", errMsg)
-		return fmt.Errorf(errMsg)
-	}
-	return nil
-}
-
+// checkAndPromptForProviderFiles checks if the provider files are present and prompts the user to create them if not.
 func (pm *PipelineManager) checkAndPromptForProviderFiles(
 	ctx context.Context, props projectProperties) error {
 	log.Printf("Checking for provider files for: %s", props.CiProvider)
 
-	if err := validateProvider(props.CiProvider); err != nil {
-		return err
-	}
-
-	provider := string(props.CiProvider)
-
 	if !hasPipelineFile(props.CiProvider, props.RepoRoot) {
-		log.Printf("%s YAML not found, prompting for creation", provider)
+		log.Printf("%s YAML not found, prompting for creation", props.CiProvider)
 		if err := pm.promptForCiFiles(ctx, props); err != nil {
 			log.Println("Error prompting for CI files:", err)
 			return err
@@ -880,10 +866,6 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 
 // promptForCiFiles creates CI/CD files for the specified provider, confirming with the user before creation.
 func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectProperties) error {
-	if err := validateProvider(props.CiProvider); err != nil {
-		return err
-	}
-
 	dirPath := filepath.Join(props.RepoRoot, pipelineProviderFiles[props.CiProvider].PipelineDirectory)
 	defaultFile := filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile)
 

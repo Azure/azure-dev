@@ -822,42 +822,13 @@ func (pm *PipelineManager) savePipelineProviderToEnv(
 	return nil
 }
 
+// checkAndPromptForProviderFiles checks if the provider files are present and prompts the user to create them if not.
 func (pm *PipelineManager) checkAndPromptForProviderFiles(
 	ctx context.Context, props projectProperties) error {
 	log.Printf("Checking for provider files for: %s", props.CiProvider)
 
-	providerFileChecks := map[ciProviderType]struct {
-		ymlPath             string
-		dirPath             string
-		dirDisplayName      string
-		providerDisplayName string
-	}{
-		ciProviderGitHubActions: {
-			ymlPath:             filepath.Join(props.RepoRoot, gitHubYml),
-			dirPath:             filepath.Join(props.RepoRoot, gitHubWorkflowsDirectory),
-			dirDisplayName:      gitHubWorkflowsDirectory,
-			providerDisplayName: gitHubDisplayName,
-		},
-		ciProviderAzureDevOps: {
-			ymlPath:             filepath.Join(props.RepoRoot, azdoYml),
-			dirPath:             filepath.Join(props.RepoRoot, azdoPipelinesDirectory),
-			dirDisplayName:      azdoPipelinesDirectory,
-			providerDisplayName: azdoDisplayName,
-		},
-	}
-
-	providerCheck, exists := providerFileChecks[props.CiProvider]
-	if !exists {
-		errMsg := fmt.Sprintf("%s is not a known pipeline provider", props.CiProvider)
-		log.Println("Error:", errMsg)
-		return fmt.Errorf(errMsg)
-	}
-
-	log.Printf("YAML path: %s", providerCheck.ymlPath)
-	log.Printf("Directory path: %s", providerCheck.dirPath)
-
-	if !osutil.FileExists(providerCheck.ymlPath) {
-		log.Printf("%s YAML not found, prompting for creation", providerCheck.providerDisplayName)
+	if !hasPipelineFile(props.CiProvider, props.RepoRoot) {
+		log.Printf("%s YAML not found, prompting for creation", props.CiProvider)
 		if err := pm.promptForCiFiles(ctx, props); err != nil {
 			log.Println("Error prompting for CI files:", err)
 			return err
@@ -865,28 +836,27 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 		log.Println("Prompt for CI files completed successfully.")
 	}
 
-	log.Printf("Checking if directory %s is empty", providerCheck.dirPath)
-	isEmpty, err := osutil.IsDirEmpty(providerCheck.dirPath, true)
+	dirPath := pipelineProviderFiles[props.CiProvider].PipelineDirectory
+	log.Printf("Checking if directory %s is empty", dirPath)
+	isEmpty, err := osutil.IsDirEmpty(filepath.Join(props.RepoRoot, dirPath), true)
 	if err != nil {
 		log.Println("Error checking if directory is empty:", err)
 		return fmt.Errorf("error checking if directory is empty: %w", err)
 	}
 
 	if isEmpty {
+		message := fmt.Sprintf(
+			"%s provider selected, but %s is empty. Please add pipeline files.",
+			pipelineProviderFiles[props.CiProvider].DisplayName, dirPath)
 		if props.CiProvider == ciProviderAzureDevOps {
-			message := fmt.Sprintf(
+			message = fmt.Sprintf(
 				"%s provider selected, but %s is empty. Please add pipeline files and try again.",
-				providerCheck.providerDisplayName, providerCheck.dirDisplayName)
+				pipelineProviderFiles[props.CiProvider].DisplayName, dirPath)
 			log.Println("Error:", message)
 			return fmt.Errorf(message)
 		}
-		if props.CiProvider == ciProviderGitHubActions {
-			message := fmt.Sprintf(
-				"%s provider selected, but %s is empty. Please add pipeline files.",
-				providerCheck.providerDisplayName, providerCheck.dirDisplayName)
-			log.Println("Info:", message)
-			pm.console.Message(ctx, message)
-		}
+		log.Println("Info:", message)
+		pm.console.Message(ctx, message)
 		pm.console.Message(ctx, "")
 	}
 
@@ -896,29 +866,13 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 
 // promptForCiFiles creates CI/CD files for the specified provider, confirming with the user before creation.
 func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectProperties) error {
-	paths := map[ciProviderType]struct {
-		directory string
-		yml       string
-	}{
-		ciProviderGitHubActions: {
-			filepath.Join(props.RepoRoot, gitHubWorkflowsDirectory), filepath.Join(props.RepoRoot, gitHubYml),
-		},
-		ciProviderAzureDevOps: {
-			filepath.Join(props.RepoRoot, azdoPipelinesDirectory), filepath.Join(props.RepoRoot, azdoYml),
-		},
-	}
+	dirPath := filepath.Join(props.RepoRoot, pipelineProviderFiles[props.CiProvider].PipelineDirectory)
+	defaultFile := filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile)
 
-	providerPaths, exists := paths[props.CiProvider]
-	if !exists {
-		errMsg := fmt.Sprintf("Unknown provider: %s", props.CiProvider)
-		log.Println("Error:", errMsg)
-		return fmt.Errorf(errMsg)
-	}
+	log.Printf("Directory path: %s", dirPath)
+	log.Printf("Default YAML path: %s", defaultFile)
 
-	log.Printf("Directory path: %s", providerPaths.directory)
-	log.Printf("YAML path: %s", providerPaths.yml)
-
-	// Confirm with the user before adding the file
+	// Confirm with the user before adding the default file
 	pm.console.Message(ctx, "")
 	pm.console.Message(ctx,
 		fmt.Sprintf(
@@ -937,24 +891,24 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 	pm.console.Message(ctx, "")
 
 	if confirm {
-		log.Printf("Confirmed creation of %s file at %s", filepath.Base(providerPaths.yml), providerPaths.directory)
+		log.Printf("Confirmed creation of %s file at %s", filepath.Base(defaultFile), dirPath)
 
-		if !osutil.DirExists(providerPaths.directory) {
-			log.Printf("Creating directory %s", providerPaths.directory)
-			if err := os.MkdirAll(providerPaths.directory, os.ModePerm); err != nil {
-				return fmt.Errorf("creating directory %s: %w", providerPaths.directory, err)
+		if !osutil.DirExists(dirPath) {
+			log.Printf("Creating directory %s", dirPath)
+			if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+				return fmt.Errorf("creating directory %s: %w", dirPath, err)
 			}
 		}
 
-		if !osutil.FileExists(providerPaths.yml) {
-			if err := generatePipelineDefinition(providerPaths.yml, props); err != nil {
+		if !osutil.FileExists(defaultFile) {
+			if err := generatePipelineDefinition(defaultFile, props); err != nil {
 				return err
 			}
 			pm.console.Message(ctx,
 				fmt.Sprintf(
 					"The %s file has been created at %s. You can use it as-is or modify it to suit your needs.",
-					output.WithHighLightFormat(filepath.Base(providerPaths.yml)),
-					output.WithHighLightFormat(providerPaths.yml)),
+					output.WithHighLightFormat(filepath.Base(defaultFile)),
+					output.WithHighLightFormat(defaultFile)),
 			)
 			pm.console.Message(ctx, "")
 		}
@@ -962,8 +916,7 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 		return nil
 	}
 
-	log.Printf("User declined creation of %s file at %s", filepath.Base(providerPaths.yml), providerPaths.directory)
-
+	log.Printf("User declined creation of %s file at %s", filepath.Base(defaultFile), dirPath)
 	return nil
 }
 
@@ -998,12 +951,23 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 	return nil
 }
 
+// hasPipelineFile checks if any pipeline files exist for the given provider in the specified repository root.
+func hasPipelineFile(provider ciProviderType, repoRoot string) bool {
+	for _, path := range pipelineProviderFiles[provider].Files {
+		fullPath := filepath.Join(repoRoot, path)
+		if osutil.FileExists(fullPath) {
+			return true
+		}
+	}
+	return false
+}
+
 func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot string) (ciProviderType, error) {
 	log.Printf("Checking for CI/CD YAML files in the repository root: %s", repoRoot)
 
 	// Check for existence of official YAML files in the repo root
-	hasGitHubYml := osutil.FileExists(filepath.Join(repoRoot, gitHubYml))
-	hasAzDevOpsYml := osutil.FileExists(filepath.Join(repoRoot, azdoYml))
+	hasGitHubYml := hasPipelineFile(ciProviderGitHubActions, repoRoot)
+	hasAzDevOpsYml := hasPipelineFile(ciProviderAzureDevOps, repoRoot)
 
 	log.Printf("GitHub Actions YAML exists: %v", hasGitHubYml)
 	log.Printf("Azure DevOps YAML exists: %v", hasAzDevOpsYml)

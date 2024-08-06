@@ -27,6 +27,12 @@ const PackCliInstallEvent = "tools.pack.install"
 // PackBuildEvent is the name of the event which tracks the overall pack build operation.
 const PackBuildEvent = "tools.pack.build"
 
+// RemoteBuildUploadEvent is the name of the event which tracks the upload of the remote container build context.
+const RemoteBuildUploadEvent = "container.remote.uploadContext"
+
+// RemoteBuildEvent is the name of the event which tracks the overall remote container build operation.
+const RemoteBuildEvent = "container.remote.build"
+
 // AccountSubscriptionsListEvent is the name of the event which tracks listing of account subscriptions .
 // See fields.AccountSubscriptionsListTenantsFound for additional event fields.
 const AccountSubscriptionsListEvent = "account.subscriptions.list"

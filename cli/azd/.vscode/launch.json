@@ -34,14 +34,14 @@
             "program": "${workspaceFolder}",
             "console": "integratedTerminal",
             "args": [
-                "init", "-t", "jongio/agent-openai-python-prompty1"
+                "init", "-t", "../agent"
                 //"pipeline", "config", "--principal-name", "foo", "--provider", "github"
                 //"package", "api", "--debug"
                 //"provision"
                 //"up"
                 //"env", "new"
             ],
-            "cwd": "/workspaces/agent",
+            "cwd": "/workspaces/test1",
             // "env": {
             //     "INT_TAG_VALUE":"1989"
             // }

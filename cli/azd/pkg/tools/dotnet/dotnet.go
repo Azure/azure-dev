@@ -199,7 +199,7 @@ func (cli *dotNetCli) PublishContainer(
 	runArgs = runArgs.WithEnv([]string{
 		fmt.Sprintf("DOTNET_CONTAINER_REGISTRY_UNAME=%s", username),
 		fmt.Sprintf("DOTNET_CONTAINER_REGISTRY_PWORD=%s", password),
-		// also set the legacy < .NET 9 vars
+		// legacy variables for dotnet SDK version < 8.0.400
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_UNAME=%s", username),
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_PWORD=%s", password),
 	})

@@ -491,7 +491,7 @@ func (f *fakeFramework) Requirements() FrameworkRequirements {
 	}
 }
 
-func (f *fakeFramework) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (f *fakeFramework) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{&fakeTool{}}
 }
 
@@ -581,7 +581,7 @@ func (st *fakeServiceTarget) Initialize(ctx context.Context, serviceConfig *Serv
 	return nil
 }
 
-func (st *fakeServiceTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (st *fakeServiceTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{&fakeTool{}}
 }
 

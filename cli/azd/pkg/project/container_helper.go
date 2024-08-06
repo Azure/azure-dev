@@ -177,7 +177,7 @@ func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *Ser
 	return configuredImage.Local(), nil
 }
 
-func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{ch.docker}
 }
 

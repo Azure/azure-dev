@@ -44,7 +44,7 @@ func (m *mavenProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (m *mavenProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (m *mavenProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{
 		m.mavenCli,
 		m.javacCli,

@@ -63,7 +63,7 @@ func (p *swaProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (p *swaProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (p *swaProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{p.swa}
 }
 

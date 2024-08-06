@@ -64,7 +64,7 @@ type FrameworkPackageRequirements struct {
 // restore and build commands
 type FrameworkService interface {
 	// Gets a list of the required external tools for the framework service
-	RequiredExternalTools(ctx context.Context) []tools.ExternalTool
+	RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool
 
 	// Initializes the framework service for the specified service configuration
 	// This is useful if the framework needs to subscribe to any service events

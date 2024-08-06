@@ -162,7 +162,7 @@ func (p *dockerProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (p *dockerProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (p *dockerProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{p.docker}
 }
 

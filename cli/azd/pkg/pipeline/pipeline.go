@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -161,8 +162,6 @@ func mergeProjectVariablesAndSecrets(
 const (
 	gitHubDisplayName       string = "GitHub"
 	azdoDisplayName         string = "Azure DevOps"
-	gitHubLabel             string = "github"
-	azdoLabel               string = "azdo"
 	envPersistedKey         string = "AZD_PIPELINE_PROVIDER"
 	defaultPipelineFileName string = "azure-dev.yml"
 	gitHubDirectory         string = ".github"
@@ -175,3 +174,43 @@ var (
 	gitHubYml                string = filepath.Join(gitHubWorkflowsDirectory, defaultPipelineFileName)
 	azdoYml                  string = filepath.Join(azdoPipelinesDirectory, defaultPipelineFileName)
 )
+
+type ciProviderType string
+
+const (
+	ciProviderGitHubActions ciProviderType = "github"
+	ciProviderAzureDevOps   ciProviderType = "azdo"
+)
+
+func toCiProviderType(provider string) (ciProviderType, error) {
+	result := ciProviderType(provider)
+	if result == ciProviderGitHubActions || result == ciProviderAzureDevOps {
+		return result, nil
+	}
+	return "", fmt.Errorf("invalid ci provider type %s", provider)
+}
+
+type infraProviderType string
+
+const (
+	infraProviderBicep     infraProviderType = "bicep"
+	infraProviderTerraform infraProviderType = "terraform"
+	infraProviderUndefined infraProviderType = ""
+)
+
+func toInfraProviderType(provider string) (infraProviderType, error) {
+	result := infraProviderType(provider)
+	if result == infraProviderBicep || result == infraProviderTerraform || result == infraProviderUndefined {
+		return result, nil
+	}
+	return "", fmt.Errorf("invalid infra provider type %s", provider)
+}
+
+type projectProperties struct {
+	CiProvider    ciProviderType
+	InfraProvider infraProviderType
+	RepoRoot      string
+	HasAppHost    bool
+	BranchName    string
+	AuthType      PipelineAuthType
+}

@@ -59,11 +59,9 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 
 	for test, data := range tests {
 		t.Run(test, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
 			serviceTarget := &containerAppTarget{}
-			serviceConfig := &ServiceConfig{}
 
-			err := serviceTarget.validateTargetResource(*mockContext.Context, serviceConfig, data.targetResource)
+			err := serviceTarget.validateTargetResource(data.targetResource)
 			if data.expectError {
 				require.Error(t, err)
 			} else {
@@ -83,7 +81,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 	serviceConfig := createTestServiceConfig(tempDir, ContainerAppTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createContainerAppServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createContainerAppServiceTarget(mockContext, env)
 
 	packageResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
@@ -129,7 +127,6 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 func createContainerAppServiceTarget(
 	mockContext *mocks.MockContext,
-	serviceConfig *ServiceConfig,
 	env *environment.Environment,
 ) ServiceTarget {
 	dockerCli := docker.NewCli(mockContext.CommandRunner)

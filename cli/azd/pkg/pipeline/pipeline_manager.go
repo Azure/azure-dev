@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"log"
 	"os"
 	"path/filepath"
@@ -656,7 +657,8 @@ func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepo
 
 // resolveProviderAndDetermine resolves the pipeline provider based on project configuration and environment,
 // or determines it if not already set.
-func (pm *PipelineManager) resolveProviderAndDetermine(ctx context.Context, projectPath, repoRoot string) (string, error) {
+func (pm *PipelineManager) resolveProviderAndDetermine(
+	ctx context.Context, projectPath, repoRoot string) (ciProviderType, error) {
 	log.Printf("Loading project configuration from: %s", projectPath)
 	prjConfig, err := project.Load(ctx, projectPath)
 	if err != nil {
@@ -667,13 +669,13 @@ func (pm *PipelineManager) resolveProviderAndDetermine(ctx context.Context, proj
 	// 1) Check if provider is set on azure.yaml, it should override the `lastUsedProvider`
 	if prjConfig.Pipeline.Provider != "" {
 		log.Printf("Provider set in project configuration: %s", prjConfig.Pipeline.Provider)
-		return prjConfig.Pipeline.Provider, nil
+		return toCiProviderType(prjConfig.Pipeline.Provider)
 	}
 
 	// 2) Check if there is a persisted value from a previous run in the environment
 	if lastUsedProvider, configExists := pm.env.LookupEnv(envPersistedKey); configExists {
 		log.Printf("Using persisted provider from environment: %s", lastUsedProvider)
-		return lastUsedProvider, nil
+		return toCiProviderType(lastUsedProvider)
 	}
 
 	// 3) No config on azure.yaml or from previous run, so use the determineProvider logic
@@ -704,12 +706,19 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	}
 
 	// Use the provided pipeline provider if specified, otherwise resolve or determine the provider
-	pipelineProvider := strings.ToLower(override)
-	if pipelineProvider == "" {
-		pipelineProvider, err = pm.resolveProviderAndDetermine(ctx, projectPath, repoRoot)
+	var pipelineProvider ciProviderType
+	if override != "" {
+		p, err := toCiProviderType(strings.ToLower(override))
 		if err != nil {
 			return err
 		}
+		pipelineProvider = p
+	} else {
+		p, err := pm.resolveProviderAndDetermine(ctx, projectPath, repoRoot)
+		if err != nil {
+			return err
+		}
+		pipelineProvider = p
 	}
 
 	prjConfig, err := project.Load(ctx, projectPath)
@@ -724,9 +733,40 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	defer func() { _ = infra.Cleanup() }()
 	pm.infra = infra
 
+	hasAppHost := pm.importManager.HasAppHost(ctx, prjConfig)
+
+	infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
+	if err != nil {
+		return err
+	}
+
+	// There are 2 possible options, for the git branch name, when running azd pipeline config:
+	// - There is not a git repo, so the branch name is empty. In this case, we default to "main".
+	// - There is a git repo and we can get the name of the current branch.
+	branchName := "main"
+	customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
+	// It is fine if we can't get the branch name, we will default to "main"
+	if err == nil {
+		branchName = customBranchName
+	}
+
+	// default auth type for all providers
+	authType := AuthTypeFederated
+	if pm.args.PipelineAuthTypeName == "" && infraProvider == infraProviderTerraform {
+		// empty arg for auth and terraform forces client credentials, otherwise, it will be federated
+		authType = AuthTypeClientCredentials
+	}
+
 	// Check and prompt for missing CI/CD files
 	if err := pm.checkAndPromptForProviderFiles(
-		ctx, repoRoot, pipelineProvider, string(pm.infra.Options.Provider)); err != nil {
+		ctx, projectProperties{
+			CiProvider:    pipelineProvider,
+			RepoRoot:      repoRoot,
+			InfraProvider: infraProvider,
+			HasAppHost:    hasAppHost,
+			BranchName:    branchName,
+			AuthType:      authType,
+		}); err != nil {
 		return err
 	}
 
@@ -736,13 +776,13 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	}
 
 	var scmProviderName, ciProviderName, displayName string
-	if pipelineProvider == azdoLabel {
-		scmProviderName = azdoLabel
-		ciProviderName = azdoLabel
+	if pipelineProvider == ciProviderAzureDevOps {
+		scmProviderName = string(ciProviderAzureDevOps)
+		ciProviderName = scmProviderName
 		displayName = azdoDisplayName
 	} else {
-		scmProviderName = gitHubLabel
-		ciProviderName = gitHubLabel
+		scmProviderName = string(ciProviderGitHubActions)
+		ciProviderName = scmProviderName
 		displayName = gitHubDisplayName
 	}
 	log.Printf("Using pipeline provider: %s", output.WithHighLightFormat(displayName))
@@ -771,10 +811,10 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 
 func (pm *PipelineManager) savePipelineProviderToEnv(
 	ctx context.Context,
-	provider string,
+	provider ciProviderType,
 	env *environment.Environment,
 ) error {
-	env.DotenvSet(envPersistedKey, provider)
+	env.DotenvSet(envPersistedKey, string(provider))
 	err := pm.envManager.Save(ctx, env)
 	if err != nil {
 		return err
@@ -783,37 +823,32 @@ func (pm *PipelineManager) savePipelineProviderToEnv(
 }
 
 func (pm *PipelineManager) checkAndPromptForProviderFiles(
-	ctx context.Context, repoRoot, pipelineProvider string, infraProvider string) error {
-	if pipelineProvider == "" {
-		log.Println("Pipeline provider is empty, no need to check for files.")
-		return nil
-	}
+	ctx context.Context, props projectProperties) error {
+	log.Printf("Checking for provider files for: %s", props.CiProvider)
 
-	log.Printf("Checking for provider files for: %s", pipelineProvider)
-
-	providerFileChecks := map[string]struct {
+	providerFileChecks := map[ciProviderType]struct {
 		ymlPath             string
 		dirPath             string
 		dirDisplayName      string
 		providerDisplayName string
 	}{
-		gitHubLabel: {
-			ymlPath:             filepath.Join(repoRoot, gitHubYml),
-			dirPath:             filepath.Join(repoRoot, gitHubWorkflowsDirectory),
+		ciProviderGitHubActions: {
+			ymlPath:             filepath.Join(props.RepoRoot, gitHubYml),
+			dirPath:             filepath.Join(props.RepoRoot, gitHubWorkflowsDirectory),
 			dirDisplayName:      gitHubWorkflowsDirectory,
 			providerDisplayName: gitHubDisplayName,
 		},
-		azdoLabel: {
-			ymlPath:             filepath.Join(repoRoot, azdoYml),
-			dirPath:             filepath.Join(repoRoot, azdoPipelinesDirectory),
+		ciProviderAzureDevOps: {
+			ymlPath:             filepath.Join(props.RepoRoot, azdoYml),
+			dirPath:             filepath.Join(props.RepoRoot, azdoPipelinesDirectory),
 			dirDisplayName:      azdoPipelinesDirectory,
 			providerDisplayName: azdoDisplayName,
 		},
 	}
 
-	providerCheck, exists := providerFileChecks[pipelineProvider]
+	providerCheck, exists := providerFileChecks[props.CiProvider]
 	if !exists {
-		errMsg := fmt.Sprintf("%s is not a known pipeline provider", pipelineProvider)
+		errMsg := fmt.Sprintf("%s is not a known pipeline provider", props.CiProvider)
 		log.Println("Error:", errMsg)
 		return fmt.Errorf(errMsg)
 	}
@@ -823,7 +858,7 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 
 	if !osutil.FileExists(providerCheck.ymlPath) {
 		log.Printf("%s YAML not found, prompting for creation", providerCheck.providerDisplayName)
-		if err := pm.promptForCiFiles(ctx, pipelineProvider, infraProvider, repoRoot); err != nil {
+		if err := pm.promptForCiFiles(ctx, props); err != nil {
 			log.Println("Error prompting for CI files:", err)
 			return err
 		}
@@ -838,14 +873,14 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 	}
 
 	if isEmpty {
-		if pipelineProvider == azdoLabel {
+		if props.CiProvider == ciProviderAzureDevOps {
 			message := fmt.Sprintf(
 				"%s provider selected, but %s is empty. Please add pipeline files and try again.",
 				providerCheck.providerDisplayName, providerCheck.dirDisplayName)
 			log.Println("Error:", message)
 			return fmt.Errorf(message)
 		}
-		if pipelineProvider == gitHubLabel {
+		if props.CiProvider == ciProviderGitHubActions {
 			message := fmt.Sprintf(
 				"%s provider selected, but %s is empty. Please add pipeline files.",
 				providerCheck.providerDisplayName, providerCheck.dirDisplayName)
@@ -855,23 +890,27 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 		pm.console.Message(ctx, "")
 	}
 
-	log.Printf("Provider files are present for: %s", pipelineProvider)
+	log.Printf("Provider files are present for: %s", props.CiProvider)
 	return nil
 }
 
 // promptForCiFiles creates CI/CD files for the specified provider, confirming with the user before creation.
-func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvider, infraProvider, repoRoot string) error {
-	paths := map[string]struct {
+func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectProperties) error {
+	paths := map[ciProviderType]struct {
 		directory string
 		yml       string
 	}{
-		gitHubLabel: {filepath.Join(repoRoot, gitHubWorkflowsDirectory), filepath.Join(repoRoot, gitHubYml)},
-		azdoLabel:   {filepath.Join(repoRoot, azdoPipelinesDirectory), filepath.Join(repoRoot, azdoYml)},
+		ciProviderGitHubActions: {
+			filepath.Join(props.RepoRoot, gitHubWorkflowsDirectory), filepath.Join(props.RepoRoot, gitHubYml),
+		},
+		ciProviderAzureDevOps: {
+			filepath.Join(props.RepoRoot, azdoPipelinesDirectory), filepath.Join(props.RepoRoot, azdoYml),
+		},
 	}
 
-	providerPaths, exists := paths[pipelineProvider]
+	providerPaths, exists := paths[props.CiProvider]
 	if !exists {
-		errMsg := fmt.Sprintf("Unknown provider: %s", pipelineProvider)
+		errMsg := fmt.Sprintf("Unknown provider: %s", props.CiProvider)
 		log.Println("Error:", errMsg)
 		return fmt.Errorf(errMsg)
 	}
@@ -908,17 +947,8 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 		}
 
 		if !osutil.FileExists(providerPaths.yml) {
-			embedFilePath := fmt.Sprintf("pipeline/.%s/azure-dev.yml", pipelineProvider)
-			if infraProvider == "terraform" {
-				embedFilePath = fmt.Sprintf("pipeline/.%s/azure-dev-tf.yml", pipelineProvider)
-			}
-			contents, err := resources.PipelineFiles.ReadFile(embedFilePath)
-			if err != nil {
-				return fmt.Errorf("reading embedded file %s: %w", embedFilePath, err)
-			}
-			log.Printf("Creating file %s", providerPaths.yml)
-			if err := os.WriteFile(providerPaths.yml, contents, osutil.PermissionFile); err != nil {
-				return fmt.Errorf("creating file %s: %w", providerPaths.yml, err)
+			if err := generatePipelineDefinition(providerPaths.yml, props); err != nil {
+				return err
 			}
 			pm.console.Message(ctx,
 				fmt.Sprintf(
@@ -927,7 +957,6 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 					output.WithHighLightFormat(providerPaths.yml)),
 			)
 			pm.console.Message(ctx, "")
-
 		}
 
 		return nil
@@ -938,7 +967,38 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, pipelineProvide
 	return nil
 }
 
-func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot string) (string, error) {
+func generatePipelineDefinition(path string, props projectProperties) error {
+	embedFilePath := fmt.Sprintf("pipeline/.%s/azure-dev.ymlt", props.CiProvider)
+	tmpl, err := template.
+		New("azure-dev.yml").
+		Option("missingkey=error").
+		ParseFS(resources.PipelineFiles, embedFilePath)
+	if err != nil {
+		return fmt.Errorf("parsing embedded file %s: %w", embedFilePath, err)
+	}
+	builder := strings.Builder{}
+	err = tmpl.Execute(&builder, struct {
+		BranchName          string
+		FedCredLogIn        bool
+		InstallDotNetAspire bool
+	}{
+		BranchName:          props.BranchName,
+		FedCredLogIn:        props.AuthType == AuthTypeFederated,
+		InstallDotNetAspire: props.HasAppHost,
+	})
+	if err != nil {
+		return fmt.Errorf("executing template: %w", err)
+	}
+
+	contents := []byte(builder.String())
+	log.Printf("Creating file %s", path)
+	if err := os.WriteFile(path, contents, osutil.PermissionFile); err != nil {
+		return fmt.Errorf("creating file %s: %w", path, err)
+	}
+	return nil
+}
+
+func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot string) (ciProviderType, error) {
 	log.Printf("Checking for CI/CD YAML files in the repository root: %s", repoRoot)
 
 	// Check for existence of official YAML files in the repo root
@@ -957,22 +1017,22 @@ func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot strin
 	case hasGitHubYml && !hasAzDevOpsYml:
 		// GitHub Actions YAML found, Azure DevOps YAML not found
 		log.Printf("Only GitHub Actions YAML found. Selecting GitHub Actions as the provider.")
-		return gitHubLabel, nil
+		return ciProviderGitHubActions, nil
 
 	case hasAzDevOpsYml && !hasGitHubYml:
 		// Azure DevOps YAML found, GitHub Actions YAML not found
 		log.Printf("Only Azure DevOps YAML found. Selecting Azure DevOps as the provider.")
-		return azdoLabel, nil
+		return ciProviderAzureDevOps, nil
 
 	default:
 		// Default to GitHub Actions if no provider is specified
 		log.Printf("Defaulting to GitHub Actions as the provider.")
-		return gitHubLabel, nil
+		return ciProviderGitHubActions, nil
 	}
 }
 
 // promptForProvider prompts the user to select a CI/CD provider.
-func (pm *PipelineManager) promptForProvider(ctx context.Context) (string, error) {
+func (pm *PipelineManager) promptForProvider(ctx context.Context) (ciProviderType, error) {
 	log.Printf("Prompting user to select a CI/CD provider.")
 	pm.console.Message(ctx, "")
 	choice, err := pm.console.Select(ctx, input.ConsoleOptions{
@@ -986,9 +1046,9 @@ func (pm *PipelineManager) promptForProvider(ctx context.Context) (string, error
 	log.Printf("User selected choice: %d", choice)
 
 	if choice == 0 {
-		return gitHubLabel, nil
+		return ciProviderGitHubActions, nil
 	} else if choice == 1 {
-		return azdoLabel, nil
+		return ciProviderAzureDevOps, nil
 	}
 
 	return "", nil // This case should never occur with the current options.

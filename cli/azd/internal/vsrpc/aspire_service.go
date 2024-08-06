@@ -30,7 +30,7 @@ func newAspireService(server *Server) *aspireService {
 func (s *aspireService) GetAspireHostAsync(
 	ctx context.Context, rc RequestContext, aspireEnv string, observer IObserver[ProgressMessage],
 ) (*AspireHost, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (s *aspireService) GetAspireHostAsync(
 func (s *aspireService) RenameAspireHostAsync(
 	ctx context.Context, rc RequestContext, newPath string, observer IObserver[ProgressMessage],
 ) error {
-	_, err := s.server.validateSession(ctx, rc.Session)
+	_, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return err
 	}

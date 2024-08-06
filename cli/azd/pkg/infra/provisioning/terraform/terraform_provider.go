@@ -144,10 +144,6 @@ func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDe
 		return nil, nil, fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
 	}
 
-	if err != nil {
-		return nil, nil, err
-	}
-
 	err = t.createInputParametersFile(ctx, t.parametersTemplateFilePath(), t.parametersFilePath())
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating parameters file: %w", err)
@@ -165,7 +161,7 @@ func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDe
 	}
 
 	//create deployment plan
-	deployment, err := t.createDeployment(ctx, modulePath)
+	deployment, err := t.createDeployment(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create terraform template failed: %w", err)
 	}
@@ -474,7 +470,7 @@ func (t *TerraformProvider) showCurrentState(
 }
 
 // Creates the deployment object from the specified module path
-func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath string) (*Deployment, error) {
+func (t *TerraformProvider) createDeployment(ctx context.Context) (*Deployment, error) {
 	templateParameters := make(map[string]InputParameter)
 
 	//build the template parameters.

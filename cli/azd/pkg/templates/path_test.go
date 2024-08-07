@@ -124,20 +124,42 @@ func TestIsRelativePath(t *testing.T) {
 }
 
 func TestIsAbsolutePath(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected bool
-	}{
-		{"/absolute/path/to/repo", true},
-		{"C:\\absolute\\path\\to\\repo", true},
-		{"./relative/path/to/repo", false},
-		{"../relative/path/to/repo", false},
-	}
+	if runtime.GOOS == "windows" {
+		t.Run("Windows", func(t *testing.T) {
+			tests := []struct {
+				input    string
+				expected bool
+			}{
+				{"C:\\absolute\\path\\to\\repo", true},
+				{"C:/absolute/path/to/repo", true},
+				{"./relative/path/to/repo", false},
+				{"../relative/path/to/repo", false},
+			}
 
-	for _, test := range tests {
-		t.Run(test.input, func(t *testing.T) {
-			actual := isAbsolutePath(test.input)
-			require.Equal(t, test.expected, actual)
+			for _, test := range tests {
+				t.Run(test.input, func(t *testing.T) {
+					actual := isAbsolutePath(test.input)
+					require.Equal(t, test.expected, actual)
+				})
+			}
+		})
+	} else {
+		t.Run("POSIX", func(t *testing.T) {
+			tests := []struct {
+				input    string
+				expected bool
+			}{
+				{"/absolute/path/to/repo", true},
+				{"./relative/path/to/repo", false},
+				{"../relative/path/to/repo", false},
+			}
+
+			for _, test := range tests {
+				t.Run(test.input, func(t *testing.T) {
+					actual := isAbsolutePath(test.input)
+					require.Equal(t, test.expected, actual)
+				})
+			}
 		})
 	}
 }

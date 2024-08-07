@@ -32,14 +32,14 @@
             "program": "${workspaceFolder}",
             "console": "integratedTerminal",
             "args": [
-                "init", "-t", "../agent"
+                "auth", "login"
                 //"pipeline", "config", "--principal-name", "foo", "--provider", "github"
                 //"package", "api", "--debug"
                 //"provision"
                 //"up"
                 //"env", "new"
             ],
-            "cwd": "/workspaces/test1",
+            //"cwd": "~/workspace/cwd/path",
             // "env": {
             //     "INT_TAG_VALUE":"1989"
             // }

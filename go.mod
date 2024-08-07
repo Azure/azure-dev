@@ -80,7 +80,6 @@ require (
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
 	github.com/danwakefield/fnmatch v0.0.0-20160403171240-cbb64ac3d964 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/denormal/go-gitignore v0.0.0-20180930084346-ae8ad1d07817 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect

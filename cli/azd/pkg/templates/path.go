@@ -15,8 +15,9 @@ import (
 //
 // If the path is a valid Git URL (http, https, ssh, git, file), it is returned as-is.
 // If the path is a relative or absolute file path, it is converted to a file:// URL.
+// If the path is a repo name or owner/repo format, it is converted to a GitHub URL.
 func Absolute(path string) (string, error) {
-	path = strings.TrimRight(path, "/")
+	path = strings.TrimRight(path, string(filepath.Separator))
 
 	// If the path is already a recognized Git URL, return as-is.
 	if isGitURL(path) {
@@ -60,9 +61,9 @@ func isGitURL(path string) bool {
 	}
 }
 
-// isRelativePath checks if a path is relative (not starting with a scheme or '/').
+// isRelativePath checks if a path is relative (starting with ".").
 func isRelativePath(path string) bool {
-	return !filepath.IsAbs(path) && !strings.HasPrefix(path, "/")
+	return strings.HasPrefix(path, ".")
 }
 
 // Hyperlink returns a hyperlink to the given template path.

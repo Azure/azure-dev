@@ -4,6 +4,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param keyVaultName string
+param disableLocalAuth bool = false
 
 module cosmos '../../cosmos/cosmos-account.bicep' = {
   name: 'cosmos-account'
@@ -13,6 +14,7 @@ module cosmos '../../cosmos/cosmos-account.bicep' = {
     tags: tags
     keyVaultName: keyVaultName
     kind: 'GlobalDocumentDB'
+    disableLocalAuth: disableLocalAuth
   }
 }
 

@@ -7,6 +7,7 @@ param tags object = {}
 param containers array = []
 param keyVaultName string
 param principalIds array = []
+param disableLocalAuth bool = false
 
 module cosmos 'cosmos-sql-account.bicep' = {
   name: 'cosmos-sql-account'
@@ -15,6 +16,7 @@ module cosmos 'cosmos-sql-account.bicep' = {
     location: location
     tags: tags
     keyVaultName: keyVaultName
+    disableLocalAuth: disableLocalAuth
   }
 }
 

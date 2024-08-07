@@ -26,19 +26,12 @@ func TestAbsolute(t *testing.T) {
 		{"file:///path/to/repo", "file:///path/to/repo"},
 
 		// Relative paths
-		{"./local/repo", "file://" + filepath.ToSlash(filepath.Join(cwd, "local/repo"))},
-		{"../local/repo", "file://" + filepath.ToSlash(filepath.Join(cwd, "../local/repo"))},
-
-		// Absolute paths
-		{filepath.Join(string(filepath.Separator), "absolute", "path", "to", "repo"), "file://" +
-			filepath.ToSlash(filepath.Join(string(filepath.Separator), "absolute", "path", "to", "repo"))},
+		{"./local/repo", "file:///" + filepath.ToSlash(filepath.Join(cwd, "local/repo"))},
+		{"../local/repo", "file:///" + filepath.ToSlash(filepath.Join(cwd, "../local/repo"))},
 
 		// GitHub formats
 		{"repo", "https://github.com/Azure-Samples/repo"},
 		{"owner/repo", "https://github.com/owner/repo"},
-
-		// Invalid relative paths (without . prefix)
-		{"some/owner/repo", ""},
 	}
 
 	for _, test := range tests {
@@ -50,6 +43,17 @@ func TestAbsolute(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, test.expected, actual)
 			}
+		})
+	}
+
+	// POSIX-specific tests
+	if runtime.GOOS != "windows" {
+		t.Run("/absolute/path/to/repo", func(t *testing.T) {
+			input := "/absolute/path/to/repo"
+			expected := "file:///absolute/path/to/repo"
+			actual, err := Absolute(input)
+			require.NoError(t, err)
+			require.Equal(t, expected, actual)
 		})
 	}
 

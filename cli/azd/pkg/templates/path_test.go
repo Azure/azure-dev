@@ -24,12 +24,12 @@ func TestAbsolute(t *testing.T) {
 		{"file:///path/to/repo", "file:///path/to/repo"},
 
 		// Relative paths
-		{"./local/repo", "file://" + filepath.Join(cwd, "local/repo")},
-		{"../local/repo", "file://" + filepath.Join(cwd, "../local/repo")},
+		{"./local/repo", "file://" + filepath.ToSlash(filepath.Join(cwd, "local/repo"))},
+		{"../local/repo", "file://" + filepath.ToSlash(filepath.Join(cwd, "../local/repo"))},
 
 		// Absolute paths
 		{filepath.Join(string(filepath.Separator), "absolute", "path", "to", "repo"), "file://" +
-			filepath.Join(string(filepath.Separator), "absolute", "path", "to", "repo")},
+			filepath.ToSlash(filepath.Join(string(filepath.Separator), "absolute", "path", "to", "repo"))},
 
 		// GitHub formats
 		{"repo", "https://github.com/Azure-Samples/repo"},

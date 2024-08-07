@@ -17,7 +17,6 @@ import (
 // If the path is a valid Git URL (http, https, ssh, git, file), it is returned as-is.
 // If the path is a relative or absolute file path, it is converted to a file:// URL.
 // If the path is a repo name or owner/repo format, it is converted to a GitHub URL.
-
 func Absolute(path string) (string, error) {
 	path = strings.TrimRight(path, string(filepath.Separator))
 
@@ -34,12 +33,11 @@ func Absolute(path string) (string, error) {
 		}
 
 		// Ensure the path is in URL format
-		if isWindowsPath(absPath) {
-			absPath = "/" + filepath.ToSlash(absPath)
-		} else {
-			absPath = filepath.ToSlash(absPath)
-		}
+		absPath = filepath.ToSlash(absPath)
 
+		if isWindowsPath(absPath) {
+			absPath = "/" + absPath
+		}
 		return fmt.Sprintf("file://%s", absPath), nil
 	}
 

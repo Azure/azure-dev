@@ -18,8 +18,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -383,10 +381,7 @@ func downloadPack(
 	ghReleaseUrl := fmt.Sprintf("https://github.com/buildpacks/pack/releases/download/v%s/%s", version, releaseName)
 	log.Printf("downloading pack cli release %s -> %s", ghReleaseUrl, releaseName)
 
-	spanCtx, span := tracing.Start(ctx, events.PackCliInstallEvent)
-	defer span.End()
-
-	req, err := http.NewRequestWithContext(spanCtx, "GET", ghReleaseUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", ghReleaseUrl, nil)
 	if err != nil {
 		return err
 	}

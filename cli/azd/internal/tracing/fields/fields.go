@@ -166,14 +166,6 @@ const (
 // The value used for ServiceNameKey
 const ServiceNameAzd = "azd"
 
-// Additional fields of events.AccountSubscriptionsListEvent
-const (
-	// Number of tenants found
-	AccountSubscriptionsListTenantsFound = attribute.Key("tenants.found")
-	// Number of tenants where listing of subscriptions failed
-	AccountSubscriptionsListTenantsFailed = attribute.Key("tenants.failed")
-)
-
 // Error related fields
 const (
 	// Error code that describes an error.

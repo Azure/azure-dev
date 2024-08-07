@@ -4,6 +4,7 @@
 package cli_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -210,171 +211,220 @@ func Test_CLI_Init_From_App(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "infra", "app", "db-postgres.bicep"))
 }
 
-// Test_CLI_Init_With_Azdignore tests that files and directories 
-// specified in .azdignore are correctly ignored during initialization.
-func Test_CLI_Init_With_Azdignore(t *testing.T) {
+func Test_CLI_Init_With_Advanced_Azdignore(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := tempDirWithDiagnostics(t)
+	templateDir := tempDirWithDiagnostics(t)
 
-	// Create a .azdignore file with various patterns
-	azdignoreContent := `
-	# Ignore all log files
-	*.log
+	// Define the files and directories to create in the template
+	files := map[string]string{
+		"azure.yaml":       "azure content",
+		"infra/main.bicep": "main bicep content",
+		".azdignore": `*.log
+tmp/*
+!tmp/important.txt
+*.bak
+nested/*/
+secret.yaml
+exactfile.txt
+/level1/level2/file.txt
+*.hidden
+/foo/*
+!.gitignore
+**/foo/bar
+!/foo/bar.baz
+abc/**/def
+a?c.txt`,
+		"error.log":                 "log content",
+		"tmp/ignored.txt":           "should be ignored",
+		"tmp/important.txt":         "should not be ignored",
+		"backup.bak":                "backup content",
+		"nested/dir1/ignored.file":  "should be ignored",
+		"nested/dir2/ignored.file":  "should be ignored",
+		"nested/dir3/important.txt": "should be ignored",
+		"secret.yaml":               "secret content",
+		"exactfile.txt":             "exact file match",
+		"level1/level2/file.txt":    "specific path match",
+		"hidden.hidden":             "hidden file match",
+		"foo/ignore.txt":            "foo directory ignored",
+		"foo/bar":                   "foo/bar file ignored",
+		"foo/bar.baz":               "foo/bar.baz file not ignored",
+		"abc/some/def/file.txt":     "nested match with wildcards",
+		"acc.txt":                   "single character wildcard match",
+		"abc.txt":                   "single character wildcard match",
+	}
 
-	# Ignore directories
-	tmp/
-	build/
+	// Create the template repository with the specified files
+	createGitRepo(t, ctx, templateDir, files)
 
-	# Ignore specific files
-	secret.yaml
-	`
-	err := os.WriteFile(filepath.Join(dir, ".azdignore"), []byte(azdignoreContent), osutil.PermissionFile)
+	// Log the .azdignore content for debugging
+	azdignoreContent, err := os.ReadFile(filepath.Join(templateDir, ".azdignore"))
+	require.NoError(t, err)
+	t.Logf("Contents of .azdignore:\n%s", string(azdignoreContent))
+
+	projectDir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = projectDir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2", "GIT_DISCOVERY_ACROSS_FILESYSTEM=1")
+
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"TESTENV\n",
+		"init",
+		"-t",
+		templateDir,
+		"--debug",
+	)
 	require.NoError(t, err)
 
-	// Create files and directories that should be ignored
+	// Define expected ignored and non-ignored files
 	ignoredFiles := []string{
-		"error.log",
-		"tmp/tempfile.txt",
-		"build/output.txt",
-		"secret.yaml",
+		"error.log", "tmp/ignored.txt", "backup.bak", "nested/dir1/ignored.file",
+		"nested/dir2/ignored.file", "nested/dir3/important.txt", "secret.yaml",
+		"exactfile.txt", "level1/level2/file.txt", "hidden.hidden", "foo/ignore.txt",
+		"foo/bar", "abc/some/def/file.txt", "acc.txt", "abc.txt",
 	}
 
-	for _, file := range ignoredFiles {
-		err := os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), osutil.PermissionDirectory)
-		require.NoError(t, err)
-		err = os.WriteFile(filepath.Join(dir, file), []byte("test content"), osutil.PermissionFile)
-		require.NoError(t, err)
+	nonIgnoredFiles := []string{
+		"azure.yaml", "infra/main.bicep", "tmp/important.txt",
+		"foo/bar.baz",
 	}
 
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	// Initialize the project
-	_, err = cli.RunCommandWithStdIn(
-		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
-		"init",
-	)
-	require.NoError(t, err)
-
-	// Verify that the ignored files are not present
-	for _, file := range ignoredFiles {
-		require.NoFileExists(t, filepath.Join(dir, file))
-	}
-
-	// Verify that other files are present
-	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
-	require.DirExists(t, filepath.Join(dir, "infra"))
-}
-
-// Test_CLI_Init_With_No_Azdignore tests that the initialization proceeds correctly when .azdignore file does not exist.
-func Test_CLI_Init_With_No_Azdignore(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	// Initialize the project without .azdignore
-	_, err := cli.RunCommandWithStdIn(
-		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
-		"init",
-	)
-	require.NoError(t, err)
-
-	// Verify that initialization is successful and required files are present
-	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
-	require.DirExists(t, filepath.Join(dir, "infra"))
-}
-
-// Test_CLI_Init_With_Empty_Azdignore tests that the initialization proceeds correctly when .azdignore file is empty.
-func Test_CLI_Init_With_Empty_Azdignore(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	// Create an empty .azdignore file
-	err := os.WriteFile(filepath.Join(dir, ".azdignore"), []byte(""), osutil.PermissionFile)
-	require.NoError(t, err)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	// Initialize the project
-	_, err = cli.RunCommandWithStdIn(
-		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
-		"init",
-	)
-	require.NoError(t, err)
-
-	// Verify that initialization is successful and required files are present
-	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
-	require.DirExists(t, filepath.Join(dir, "infra"))
-}
-
-// Test_CLI_Init_With_Azdignore_Complex_Patterns tests complex ignore patterns in .azdignore.
-func Test_CLI_Init_With_Azdignore_Complex_Patterns(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	// Create a .azdignore file with complex patterns
-	azdignoreContent := `
-	# Ignore all .log files in any directory
-	**/*.log
-
-	# Ignore all files in tmp/ except tmp/important.txt
-	tmp/*
-	!tmp/important.txt
-	`
-	err := os.WriteFile(filepath.Join(dir, ".azdignore"), []byte(azdignoreContent), osutil.PermissionFile)
-	require.NoError(t, err)
-
-	// Create files and directories that should be ignored or included
-	filesToCheck := map[string]bool{
-		"error.log":            false,
-		"tmp/ignored.txt":      false,
-		"tmp/important.txt":    true,
-		"nested/dir/error.log": false,
-		"nested/dir/keep.txt":  true,
-	}
-
-	for file := range filesToCheck {
-		err := os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), osutil.PermissionDirectory)
-		require.NoError(t, err)
-		err = os.WriteFile(filepath.Join(dir, file), []byte("test content"), osutil.PermissionFile)
-		require.NoError(t, err)
-	}
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	// Initialize the project
-	_, err = cli.RunCommandWithStdIn(
-		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
-		"init",
-	)
-	require.NoError(t, err)
-
-	// Verify that the files are correctly ignored or included
-	for file, keep := range filesToCheck {
-		if keep {
-			require.FileExists(t, filepath.Join(dir, file))
-		} else {
-			require.NoFileExists(t, filepath.Join(dir, file))
+	// Verify ignored files are not present
+	for _, ignoredFile := range ignoredFiles {
+		if _, err := os.Stat(filepath.Join(projectDir, ignoredFile)); !os.IsNotExist(err) {
+			t.Errorf("file '%s' should not exist", ignoredFile)
 		}
 	}
+
+	// Verify non-ignored files are present
+	for _, nonIgnoredFile := range nonIgnoredFiles {
+		require.FileExists(t, filepath.Join(projectDir, nonIgnoredFile))
+	}
+}
+
+func Test_CLI_Init_With_No_Azdignore(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	templateDir := tempDirWithDiagnostics(t)
+
+	// Define the files and directories to create in the template
+	files := map[string]string{
+		"azure.yaml":       "azure content",
+		"infra/main.bicep": "main bicep content",
+		"error.log":        "log content",
+		"tmp/ignored.txt":  "should be copied",
+		"backup.bak":       "backup content",
+		"nested/file.txt":  "nested content",
+		"secret.yaml":      "secret content",
+	}
+
+	// Create the template repository with the specified files
+	createGitRepo(t, ctx, templateDir, files)
+
+	projectDir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = projectDir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2", "GIT_DISCOVERY_ACROSS_FILESYSTEM=1")
+
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		"TESTENV\n",
+		"init",
+		"-t",
+		templateDir,
+		"--debug",
+	)
+	require.NoError(t, err)
+
+	// Define expected files which should all be present since there is no .azdignore
+	expectedFiles := []string{
+		"azure.yaml", "infra/main.bicep", "error.log",
+		"tmp/ignored.txt", "backup.bak", "nested/file.txt", "secret.yaml",
+	}
+
+	// Verify all files are present
+	for _, file := range expectedFiles {
+		require.FileExists(t, filepath.Join(projectDir, file))
+	}
+}
+
+func Test_CLI_Init_With_Empty_Azdignore(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	templateDir := tempDirWithDiagnostics(t)
+
+	// Define the files and directories to create in the template
+	files := map[string]string{
+		"azure.yaml":       "azure content",
+		"infra/main.bicep": "main bicep content",
+		".azdignore":       "",
+		"error.log":        "log content",
+		"tmp/ignored.txt":  "should be copied",
+		"backup.bak":       "backup content",
+		"nested/file.txt":  "nested content",
+		"secret.yaml":      "secret content",
+	}
+
+	// Create the template repository with the specified files
+	createGitRepo(t, ctx, templateDir, files)
+
+	projectDir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = projectDir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2", "GIT_DISCOVERY_ACROSS_FILESYSTEM=1")
+
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		"TESTENV\n",
+		"init",
+		"-t",
+		templateDir,
+		"--debug",
+	)
+	require.NoError(t, err)
+
+	// Define expected files which should all be present since .azdignore is empty
+	expectedFiles := []string{
+		"azure.yaml", "infra/main.bicep", "error.log",
+		"tmp/ignored.txt", "backup.bak", "nested/file.txt", "secret.yaml",
+	}
+
+	// Verify all files are present
+	for _, file := range expectedFiles {
+		require.FileExists(t, filepath.Join(projectDir, file))
+	}
+}
+
+func createGitRepo(t *testing.T, ctx context.Context, dir string, files map[string]string) {
+	for path, content := range files {
+		fullPath := filepath.Join(dir, path)
+		err := os.MkdirAll(filepath.Dir(fullPath), osutil.PermissionDirectory)
+		require.NoError(t, err)
+		err = os.WriteFile(fullPath, []byte(content), osutil.PermissionFile)
+		require.NoError(t, err)
+	}
+
+	cmdRun := exec.NewCommandRunner(nil)
+	_, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "init"))
+	require.NoError(t, err)
+
+	_, err = cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "add", "."))
+	require.NoError(t, err)
+	_, err = cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "commit", "-m", "Initial commit"))
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		err := os.RemoveAll(dir)
+		require.NoError(t, err)
+	})
 }

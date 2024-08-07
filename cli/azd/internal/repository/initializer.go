@@ -139,34 +139,90 @@ func (i *Initializer) Initialize(
 	return nil
 }
 
-// readIgnoreFile reads the .azdignore file and returns a gitignore.Ignore structure
+// readIgnoreFile reads the .azdignore file and returns a gitignore.GitIgnore structure
 func readIgnoreFile(projectDir string) (gitignore.GitIgnore, error) {
 	ignoreFilePath := filepath.Join(projectDir, ".azdignore")
 	if _, err := os.Stat(ignoreFilePath); os.IsNotExist(err) {
 		return nil, nil // No .azdignore file, no need to ignore any files
 	}
-	return gitignore.NewFromFile(ignoreFilePath)
+
+	ignoreMatcher, err := gitignore.NewFromFile(ignoreFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("error reading .azdignore file: %w", err)
+	}
+
+	return ignoreMatcher, nil
 }
 
-// removeIgnoredFiles removes files in the staging area based on .azdignore rules
+// collectFilePaths collects all file and directory paths under the given root directory
+func collectFilePaths(root string) ([]string, error) {
+	var paths []string
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		paths = append(paths, path)
+		return nil
+	})
+	return paths, err
+}
+
+// removeIgnoredFiles removes files and directories based on .azdignore rules using a pre-collected list of paths
 func removeIgnoredFiles(staging string, ignoreMatcher gitignore.GitIgnore) error {
 	if ignoreMatcher == nil {
 		return nil // No .azdignore file, no files to ignore
 	}
 
-	return filepath.Walk(staging, func(path string, info os.FileInfo, err error) error {
+	// Collect all file and directory paths
+	paths, err := collectFilePaths(staging)
+	if err != nil {
+		return fmt.Errorf("collecting file paths: %w", err)
+	}
+
+	// Map to store directories that should be ignored, preventing their children from being processed
+	ignoredDirs := make(map[string]struct{})
+
+	// Iterate through collected paths and determine which to remove
+	for _, path := range paths {
+		relativePath, err := filepath.Rel(staging, path)
 		if err != nil {
 			return err
 		}
 
-		match := ignoreMatcher.Relative(path, false)
-		if match != nil {
-			if match.Ignore() {
-				return os.Remove(path) // Remove file
+		// Skip processing if the path is within an ignored directory
+		skip := false
+		for ignoredDir := range ignoredDirs {
+			if strings.HasPrefix(relativePath, ignoredDir) {
+				skip = true
+				break
 			}
 		}
-		return nil
-	})
+		if skip {
+			continue
+		}
+
+		isDir := false
+		info, err := os.Lstat(path)
+		if err == nil {
+			isDir = info.IsDir()
+		}
+
+		match := ignoreMatcher.Relative(relativePath, isDir)
+		if match != nil && match.Ignore() {
+			if isDir {
+				ignoredDirs[relativePath] = struct{}{}
+				if err := os.RemoveAll(path); err != nil {
+					return fmt.Errorf("removing directory %s: %w", path, err)
+				}
+			} else {
+				if err := os.Remove(path); err != nil {
+					return fmt.Errorf("removing file %s: %w", path, err)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func (i *Initializer) fetchCode(

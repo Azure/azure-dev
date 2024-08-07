@@ -16,6 +16,7 @@ import (
 // If the path is a valid Git URL (http, https, ssh, git, file), it is returned as-is.
 // If the path is a relative or absolute file path, it is converted to a file:// URL.
 // If the path is a repo name or owner/repo format, it is converted to a GitHub URL.
+
 func Absolute(path string) (string, error) {
 	path = strings.TrimRight(path, string(filepath.Separator))
 
@@ -30,6 +31,8 @@ func Absolute(path string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to get absolute path for template: %w", err)
 		}
+		// Ensure the path is in URL format
+		absPath = filepath.ToSlash(absPath)
 		return fmt.Sprintf("file://%s", absPath), nil
 	}
 

@@ -149,7 +149,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Auth
-	container.MustRegisterSingleton(auth.NewLoggedInGuard)
 	container.MustRegisterSingleton(auth.NewMultiTenantCredentialProvider)
 	container.MustRegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
@@ -564,6 +563,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}, nil
 	})
 	container.MustRegisterScoped(auth.NewManager)
+	container.MustRegisterScoped(func(authManager *auth.Manager) middleware.CurrentUserAuthManager {
+		return authManager
+	})
 	container.MustRegisterSingleton(azcli.NewUserProfileService)
 	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)

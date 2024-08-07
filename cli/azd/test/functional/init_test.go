@@ -415,7 +415,14 @@ func createGitRepo(t *testing.T, ctx context.Context, dir string, files map[stri
 	}
 
 	cmdRun := exec.NewCommandRunner(nil)
+
 	_, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "init"))
+	require.NoError(t, err)
+
+	// Set up git user configuration
+	_, err = cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "config", "user.email", "test@example.com"))
+	require.NoError(t, err)
+	_, err = cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "config", "user.name", "Test User"))
 	require.NoError(t, err)
 
 	_, err = cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "add", "."))

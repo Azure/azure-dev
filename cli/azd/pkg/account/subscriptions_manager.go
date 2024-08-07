@@ -11,9 +11,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -202,10 +199,6 @@ type tenantSubsResult struct {
 
 // ListSubscription lists subscriptions accessible by the current account by calling azure management services.
 func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
-	var err error
-	ctx, span := tracing.Start(ctx, events.AccountSubscriptionsListEvent)
-	defer span.EndWithStatus(err)
-
 	msg := "Retrieving subscriptions..."
 	m.console.ShowSpinner(ctx, msg, input.Step)
 	defer m.console.StopSpinner(ctx, "", input.StepDone)
@@ -235,8 +228,6 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	if err != nil {
 		return nil, fmt.Errorf("listing tenants: %w", err)
 	}
-
-	span.SetAttributes(fields.AccountSubscriptionsListTenantsFound.Int(len(tenants)))
 
 	listForTenant := func(
 		jobs <-chan armsubscriptions.TenantIDDescription,
@@ -309,8 +300,6 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	sort.Slice(allSubscriptions, func(i, j int) bool {
 		return allSubscriptions[i].Name < allSubscriptions[j].Name
 	})
-
-	span.SetAttributes(fields.AccountSubscriptionsListTenantsFailed.Int(len(errors)))
 
 	if !oneSuccess && len(tenants) > 0 {
 		return nil, multierr.Combine(errors...)

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -25,14 +26,20 @@ func Absolute(path string) (string, error) {
 		return path, nil
 	}
 
-	// Check if path is an absolute or relative file path
-	if filepath.IsAbs(path) || isRelativePath(path) {
+	// Check if path is a relative or absolute file path
+	if isRelativePath(path) || isAbsolutePath(path) {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return "", fmt.Errorf("failed to get absolute path for template: %w", err)
 		}
+
 		// Ensure the path is in URL format
-		absPath = filepath.ToSlash(absPath)
+		if isWindowsPath(absPath) {
+			absPath = "/" + filepath.ToSlash(absPath)
+		} else {
+			absPath = filepath.ToSlash(absPath)
+		}
+
 		return fmt.Sprintf("file://%s", absPath), nil
 	}
 
@@ -64,9 +71,25 @@ func isGitURL(path string) bool {
 	}
 }
 
-// isRelativePath checks if a path is relative (starting with ".").
+// isRelativePath checks if a path is relative (starts with a '.').
 func isRelativePath(path string) bool {
 	return strings.HasPrefix(path, ".")
+}
+
+// isAbsolutePath checks if a path is an absolute path, either POSIX or Windows style.
+func isAbsolutePath(path string) bool {
+	if filepath.IsAbs(path) {
+		return true
+	}
+	if matched, _ := regexp.MatchString(`^[a-zA-Z]:\\`, path); matched {
+		return true
+	}
+	return false
+}
+
+// isWindowsPath checks if the given path is a Windows-style path with a drive letter.
+func isWindowsPath(path string) bool {
+	return regexp.MustCompile(`^[a-zA-Z]:`).MatchString(path)
 }
 
 // Hyperlink returns a hyperlink to the given template path.

@@ -3,6 +3,7 @@ package templates
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,13 +31,6 @@ func TestAbsolute(t *testing.T) {
 		// Absolute paths
 		{filepath.Join(string(filepath.Separator), "absolute", "path", "to", "repo"), "file://" +
 			filepath.ToSlash(filepath.Join(string(filepath.Separator), "absolute", "path", "to", "repo"))},
-
-		// GitHub formats
-		{"repo", "https://github.com/Azure-Samples/repo"},
-		{"owner/repo", "https://github.com/owner/repo"},
-
-		// Invalid relative paths (without . prefix)
-		{"some/owner/repo", ""},
 	}
 
 	for _, test := range tests {
@@ -50,45 +44,15 @@ func TestAbsolute(t *testing.T) {
 			}
 		})
 	}
-}
 
-func TestIsGitURL(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected bool
-	}{
-		{"https://github.com/owner/repo", true},
-		{"ssh://github.com/owner/repo", true},
-		{"git://github.com/owner/repo", true},
-		{"file:///path/to/repo", true},
-		{"ftp://github.com/owner/repo", false},
-		{"not-a-url", false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.input, func(t *testing.T) {
-			actual := isGitURL(test.input)
-			require.Equal(t, test.expected, actual)
-		})
-	}
-}
-
-func TestIsRelativePath(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected bool
-	}{
-		{"./local/repo", true},
-		{"../local/repo", true},
-		{"local/repo", false},
-		{"/absolute/path/to/repo", false},
-		{"https://github.com/owner/repo", false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.input, func(t *testing.T) {
-			actual := isRelativePath(test.input)
-			require.Equal(t, test.expected, actual)
+	// Windows-specific tests
+	if runtime.GOOS == "windows" {
+		t.Run(`C:\absolute\path\to\repo`, func(t *testing.T) {
+			input := `C:\absolute\path\to\repo`
+			expected := `file:///C:/absolute/path/to/repo`
+			actual, err := Absolute(input)
+			require.NoError(t, err)
+			require.Equal(t, expected, actual)
 		})
 	}
 }

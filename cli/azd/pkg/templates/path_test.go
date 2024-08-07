@@ -20,6 +20,7 @@ func TestAbsolute(t *testing.T) {
 	}{
 		// Valid Git URLs
 		{"https://github.com/owner/repo", "https://github.com/owner/repo"},
+		{"http://github.com/owner/repo", "http://github.com/owner/repo"},
 		{"ssh://github.com/owner/repo", "ssh://github.com/owner/repo"},
 		{"git://github.com/owner/repo", "git://github.com/owner/repo"},
 		{"file:///path/to/repo", "file:///path/to/repo"},
@@ -31,6 +32,13 @@ func TestAbsolute(t *testing.T) {
 		// Absolute paths
 		{filepath.Join(string(filepath.Separator), "absolute", "path", "to", "repo"), "file://" +
 			filepath.ToSlash(filepath.Join(string(filepath.Separator), "absolute", "path", "to", "repo"))},
+
+		// GitHub formats
+		{"repo", "https://github.com/Azure-Samples/repo"},
+		{"owner/repo", "https://github.com/owner/repo"},
+
+		// Invalid relative paths (without . prefix)
+		{"some/owner/repo", ""},
 	}
 
 	for _, test := range tests {
@@ -53,6 +61,95 @@ func TestAbsolute(t *testing.T) {
 			actual, err := Absolute(input)
 			require.NoError(t, err)
 			require.Equal(t, expected, actual)
+		})
+	}
+}
+
+func TestIsGitURL(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		// Valid Git URLs
+		{"https://github.com/owner/repo", true},
+		{"http://github.com/owner/repo", true},
+		{"ssh://github.com/owner/repo", true},
+		{"git://github.com/owner/repo", true},
+		{"file:///path/to/repo", true},
+
+		// Invalid URLs
+		{"ftp://github.com/owner/repo", false},
+		{"mailto://owner@github.com", false},
+		{"data:text/plain;base64,SGVsbG8sIFdvcmxkIQ==", false},
+		{"", false},
+
+		// Valid URLs without schemes
+		{"github.com/owner/repo", false},
+		{"owner/repo", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			actual := isGitURL(test.input)
+			require.Equal(t, test.expected, actual)
+		})
+	}
+}
+
+func TestIsRelativePath(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"./local/repo", true},
+		{"../local/repo", true},
+		{"/absolute/path/to/repo", false},
+		{"C:\\absolute\\path\\to\\repo", false},
+		{"relative/path/to/repo", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			actual := isRelativePath(test.input)
+			require.Equal(t, test.expected, actual)
+		})
+	}
+}
+
+func TestIsAbsolutePath(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"/absolute/path/to/repo", true},
+		{"C:\\absolute\\path\\to\\repo", true},
+		{"./relative/path/to/repo", false},
+		{"../relative/path/to/repo", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			actual := isAbsolutePath(test.input)
+			require.Equal(t, test.expected, actual)
+		})
+	}
+}
+
+func TestIsWindowsPath(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"C:\\absolute\\path\\to\\repo", true},
+		{"D:/absolute/path/to/repo", true},
+		{"/absolute/path/to/repo", false},
+		{"relative/path/to/repo", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			actual := isWindowsPath(test.input)
+			require.Equal(t, test.expected, actual)
 		})
 	}
 }

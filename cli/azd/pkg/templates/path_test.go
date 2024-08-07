@@ -13,7 +13,10 @@ func TestAbsolute(t *testing.T) {
 	// Determine the expected absolute path based on the current working directory
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
-
+	scheme := "file://"
+	if runtime.GOOS == "windows" {
+		scheme += "/"
+	}
 	tests := []struct {
 		input    string
 		expected string
@@ -26,8 +29,8 @@ func TestAbsolute(t *testing.T) {
 		{"file:///path/to/repo", "file:///path/to/repo"},
 
 		// Relative paths
-		{"./local/repo", "file:///" + filepath.ToSlash(filepath.Join(cwd, "local/repo"))},
-		{"../local/repo", "file:///" + filepath.ToSlash(filepath.Join(cwd, "../local/repo"))},
+		{"./local/repo", scheme + filepath.ToSlash(filepath.Join(cwd, "local/repo"))},
+		{"../local/repo", scheme + filepath.ToSlash(filepath.Join(cwd, "../local/repo"))},
 
 		// GitHub formats
 		{"repo", "https://github.com/Azure-Samples/repo"},

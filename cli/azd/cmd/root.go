@@ -215,6 +215,9 @@ func NewRootCmd(
 			ActionResolver: newBuildAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupConfig,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 

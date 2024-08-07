@@ -50,9 +50,8 @@ func (bf *buildFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 
 func newBuildCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "build <service>",
-		Short:  "Builds the application's code.",
-		Hidden: true,
+		Use:   "build <service>",
+		Short: fmt.Sprintf("Builds the application's code. %s", output.WithWarningFormat("(Beta)")),
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd

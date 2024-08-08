@@ -13,12 +13,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
 	"gopkg.in/yaml.v3"
@@ -292,8 +292,8 @@ func (cas *containerAppService) AddRevision(
 
 	// Update the revision with the new image name and suffix
 	revision := revisionResponse.Revision
-	revision.Properties.Template.RevisionSuffix = convert.RefOf(fmt.Sprintf("azd-%d", cas.clock.Now().Unix()))
-	revision.Properties.Template.Containers[0].Image = convert.RefOf(imageName)
+	revision.Properties.Template.RevisionSuffix = to.Ptr(fmt.Sprintf("azd-%d", cas.clock.Now().Unix()))
+	revision.Properties.Template.Containers[0].Image = to.Ptr(imageName)
 
 	// Update the container app with the new revision
 	containerApp.Properties.Template = revision.Properties.Template
@@ -390,7 +390,7 @@ func (cas *containerAppService) setTrafficWeights(
 	containerApp.Properties.Configuration.Ingress.Traffic = []*armappcontainers.TrafficWeight{
 		{
 			RevisionName: &revisionName,
-			Weight:       convert.RefOf[int32](100),
+			Weight:       to.Ptr[int32](100),
 		},
 	}
 

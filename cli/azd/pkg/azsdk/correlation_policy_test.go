@@ -7,8 +7,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
@@ -42,7 +42,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
-			expect:                convert.RefOf(traceId.String()),
+			expect:                to.Ptr(traceId.String()),
 			headerName:            cMsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
@@ -53,7 +53,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
-			expect:                convert.RefOf(""),
+			expect:                to.Ptr(""),
 			headerName:            cMsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
@@ -70,7 +70,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
-			expect:                convert.RefOf(traceId.String()),
+			expect:                to.Ptr(traceId.String()),
 			headerName:            cMsGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
@@ -81,7 +81,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
-			expect:                convert.RefOf(""),
+			expect:                to.Ptr(""),
 			headerName:            cMsGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},

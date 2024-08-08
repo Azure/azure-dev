@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
 
@@ -53,12 +53,12 @@ func sanitizeContainerAppListSecrets(i *cassette.Interaction) error {
 					val := *body.Value[i].Value
 					// Redis requirepass. Sanitize the password, remove other config.
 					if strings.Contains(val, "requirepass ") {
-						body.Value[i].Value = convert.RefOf("requirepass SANITIZED")
+						body.Value[i].Value = to.Ptr("requirepass SANITIZED")
 					}
 					continue
 				}
 
-				body.Value[i].Value = convert.RefOf("SANITIZED")
+				body.Value[i].Value = to.Ptr("SANITIZED")
 			}
 		}
 
@@ -95,7 +95,7 @@ func sanitizeContainerAppUpdate(i *cassette.Interaction) error {
 			ca.Properties.Configuration.Secrets != nil {
 			for i := range ca.Properties.Configuration.Secrets {
 				if ca.Properties.Configuration.Secrets[i] != nil {
-					ca.Properties.Configuration.Secrets[i].Value = convert.RefOf("SANITIZED")
+					ca.Properties.Configuration.Secrets[i].Value = to.Ptr("SANITIZED")
 				}
 			}
 		}

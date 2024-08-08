@@ -15,11 +15,11 @@ import (
 	_ "embed"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -268,7 +268,7 @@ func TestAuthFileConfigUpgrade(t *testing.T) {
 	userCfgMgr := newMemoryUserConfigManager()
 
 	err := userCfg.Set(cCurrentUserKey, &userProperties{
-		HomeAccountID: convert.RefOf("homeAccountID"),
+		HomeAccountID: to.Ptr("homeAccountID"),
 	})
 	require.NoError(t, err)
 

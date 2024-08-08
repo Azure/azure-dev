@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
 )
@@ -250,7 +250,7 @@ func newTestExternalPromptServer(handler func(promptOptions) json.RawMessage) *h
 
 		respBody, _ := json.Marshal(promptResponse{
 			Status: "success",
-			Value:  convert.RefOf(res),
+			Value:  to.Ptr(res),
 		})
 
 		_, _ = w.Write(respBody)

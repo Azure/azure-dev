@@ -853,22 +853,18 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 		}
 	}
 
-	// Error message when no pipeline files are found
-	var searchedPaths []string
-	for _, dir := range pipelineProviderFiles[props.CiProvider].PipelineDirectories {
-		searchedPaths = append(searchedPaths, dir)
-	}
-
 	message := fmt.Sprintf(
 		"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
 			"Please add pipeline files.",
-		pipelineProviderFiles[props.CiProvider].DisplayName, strings.Join(searchedPaths, "\n"))
+		pipelineProviderFiles[props.CiProvider].DisplayName,
+		strings.Join(pipelineProviderFiles[props.CiProvider].PipelineDirectories, "\n"))
 
 	if props.CiProvider == ciProviderAzureDevOps {
 		message = fmt.Sprintf(
 			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
 				"Please add pipeline files and try again.",
-			pipelineProviderFiles[props.CiProvider].DisplayName, strings.Join(searchedPaths, "\n"))
+			pipelineProviderFiles[props.CiProvider].DisplayName,
+			strings.Join(pipelineProviderFiles[props.CiProvider].PipelineDirectories, "\n"))
 		log.Println("Error:", message)
 		return fmt.Errorf(message)
 	}
@@ -931,14 +927,16 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 			}
 
 			if !osutil.FileExists(filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile)) {
-				if err := generatePipelineDefinition(filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile), props); err != nil {
+				if err := generatePipelineDefinition(filepath.Join(dirPath,
+					pipelineProviderFiles[props.CiProvider].DefaultFile), props); err != nil {
 					return err
 				}
 				pm.console.Message(ctx,
 					fmt.Sprintf(
 						"The %s file has been created at %s. You can use it as-is or modify it to suit your needs.",
 						output.WithHighLightFormat(filepath.Base(defaultFilePath)),
-						output.WithHighLightFormat(filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile))),
+						output.WithHighLightFormat(filepath.Join(dirPath,
+							pipelineProviderFiles[props.CiProvider].DefaultFile))),
 				)
 				pm.console.Message(ctx, "")
 				created = true

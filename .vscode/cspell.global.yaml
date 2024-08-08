@@ -96,6 +96,7 @@ ignoreWords:
     - mockexec
     - mockhttp
     - MYDIR
+    - nazd
     - nsgsr
     - ntfns
     - odata
@@ -152,6 +153,7 @@ ignoreWords:
     - traf
     - useragent
     - versioncontrol
+    - veyor
     - vmss
     - vnet
     - vpng

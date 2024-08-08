@@ -16,7 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
@@ -37,45 +37,38 @@ func (r *RemoteBuildManager) UploadBuildSource(
 	registryName string,
 	buildSourcePath string,
 ) (armcontainerregistry.SourceUploadDefinition, error) {
-	ctx, span := tracing.Start(ctx, events.RemoteBuildUploadEvent)
+	cred, err := r.credentialProvider.CredentialForSubscription(ctx, subscriptionID)
+	if err != nil {
+		return armcontainerregistry.SourceUploadDefinition{}, err
+	}
 
-	res, err := func() (armcontainerregistry.SourceUploadDefinition, error) {
-		cred, err := r.credentialProvider.CredentialForSubscription(ctx, subscriptionID)
-		if err != nil {
-			return armcontainerregistry.SourceUploadDefinition{}, err
-		}
+	regClient, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, r.armClientOptions)
+	if err != nil {
+		return armcontainerregistry.SourceUploadDefinition{}, err
+	}
 
-		regClient, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, r.armClientOptions)
-		if err != nil {
-			return armcontainerregistry.SourceUploadDefinition{}, err
-		}
+	sourceUploadRes, err := regClient.GetBuildSourceUploadURL(ctx, resourceGroupName, registryName, nil)
+	if err != nil {
+		return armcontainerregistry.SourceUploadDefinition{}, err
+	}
 
-		sourceUploadRes, err := regClient.GetBuildSourceUploadURL(ctx, resourceGroupName, registryName, nil)
-		if err != nil {
-			return armcontainerregistry.SourceUploadDefinition{}, err
-		}
+	blobClient, err := blockblob.NewClientWithNoCredential(*sourceUploadRes.UploadURL, nil)
+	if err != nil {
+		return armcontainerregistry.SourceUploadDefinition{}, err
+	}
 
-		blobClient, err := blockblob.NewClientWithNoCredential(*sourceUploadRes.UploadURL, nil)
-		if err != nil {
-			return armcontainerregistry.SourceUploadDefinition{}, err
-		}
+	dockerContext, err := os.Open(buildSourcePath)
+	if err != nil {
+		return armcontainerregistry.SourceUploadDefinition{}, err
+	}
+	defer dockerContext.Close()
 
-		dockerContext, err := os.Open(buildSourcePath)
-		if err != nil {
-			return armcontainerregistry.SourceUploadDefinition{}, err
-		}
-		defer dockerContext.Close()
+	_, err = blobClient.UploadFile(context.Background(), dockerContext, nil)
+	if err != nil {
+		return armcontainerregistry.SourceUploadDefinition{}, err
+	}
 
-		_, err = blobClient.UploadFile(context.Background(), dockerContext, nil)
-		if err != nil {
-			return armcontainerregistry.SourceUploadDefinition{}, err
-		}
-
-		return sourceUploadRes.SourceUploadDefinition, nil
-	}()
-
-	span.EndWithStatus(err)
-	return res, err
+	return sourceUploadRes.SourceUploadDefinition, nil
 }
 
 // RunDockerBuildRequestWithLogs initiates a remote build on the specified registry and streams the logs to the provided
@@ -86,61 +79,56 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 	buildRequest *armcontainerregistry.DockerBuildRequest,
 	writer io.Writer,
 ) error {
-	ctx, span := tracing.Start(ctx, events.RemoteBuildEvent)
+	tracing.IncrementUsageAttribute(fields.RemoteBuildCount.Int(1))
 
-	err := func() error {
-		cred, err := r.credentialProvider.CredentialForSubscription(ctx, subscriptionID)
-		if err != nil {
-			return err
-		}
+	cred, err := r.credentialProvider.CredentialForSubscription(ctx, subscriptionID)
+	if err != nil {
+		return err
+	}
 
-		regClient, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, r.armClientOptions)
-		if err != nil {
-			return err
-		}
+	regClient, err := armcontainerregistry.NewRegistriesClient(subscriptionID, cred, r.armClientOptions)
+	if err != nil {
+		return err
+	}
 
-		runPoller, err := regClient.BeginScheduleRun(ctx, resourceGroupName, registryName, buildRequest, nil)
-		if err != nil {
-			return err
-		}
+	runPoller, err := regClient.BeginScheduleRun(ctx, resourceGroupName, registryName, buildRequest, nil)
+	if err != nil {
+		return err
+	}
 
-		resp, err := runPoller.Poll(ctx)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		var runResp armcontainerregistry.RegistriesClientScheduleRunResponse
-		if err := json.NewDecoder(resp.Body).Decode(&runResp); err != nil {
-			return err
-		}
+	resp, err := runPoller.Poll(ctx)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var runResp armcontainerregistry.RegistriesClientScheduleRunResponse
+	if err := json.NewDecoder(resp.Body).Decode(&runResp); err != nil {
+		return err
+	}
 
-		runClient, err := armcontainerregistry.NewRunsClient(subscriptionID, cred, r.armClientOptions)
-		if err != nil {
-			return err
-		}
+	runClient, err := armcontainerregistry.NewRunsClient(subscriptionID, cred, r.armClientOptions)
+	if err != nil {
+		return err
+	}
 
-		logRes, err := runClient.GetLogSasURL(ctx, resourceGroupName, registryName, *runResp.Properties.RunID, nil)
-		if err != nil {
-			return err
-		}
+	logRes, err := runClient.GetLogSasURL(ctx, resourceGroupName, registryName, *runResp.Properties.RunID, nil)
+	if err != nil {
+		return err
+	}
 
-		logBlobClient, err := blockblob.NewClientWithNoCredential(*logRes.LogLink, &blockblob.ClientOptions{
-			ClientOptions: r.armClientOptions.ClientOptions,
-		})
-		if err != nil {
-			return err
-		}
+	logBlobClient, err := blockblob.NewClientWithNoCredential(*logRes.LogLink, &blockblob.ClientOptions{
+		ClientOptions: r.armClientOptions.ClientOptions,
+	})
+	if err != nil {
+		return err
+	}
 
-		err = streamLogs(ctx, logBlobClient, writer)
-		if err != nil {
-			return err
-		}
+	err = streamLogs(ctx, logBlobClient, writer)
+	if err != nil {
+		return err
+	}
 
-		return nil
-	}()
-
-	span.EndWithStatus(err)
-	return err
+	return nil
 }
 
 // streamLogs streams the logs from the specified blob client to the provided writer, until the log is marked as complete

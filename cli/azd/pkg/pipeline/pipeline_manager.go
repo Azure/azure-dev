@@ -823,8 +823,7 @@ func (pm *PipelineManager) savePipelineProviderToEnv(
 }
 
 // checkAndPromptForProviderFiles checks if the provider files are present and prompts the user to create them if not.
-func (pm *PipelineManager) checkAndPromptForProviderFiles(
-	ctx context.Context, props projectProperties) error {
+func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, props projectProperties) error {
 	log.Printf("Checking for provider files for: %s", props.CiProvider)
 
 	if !hasPipelineFile(props.CiProvider, props.RepoRoot) {
@@ -836,41 +835,69 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(
 		log.Println("Prompt for CI files completed successfully.")
 	}
 
-	dirPath := pipelineProviderFiles[props.CiProvider].PipelineDirectory
-	log.Printf("Checking if directory %s is empty", dirPath)
-	isEmpty, err := osutil.IsDirEmpty(filepath.Join(props.RepoRoot, dirPath), true)
-	if err != nil {
-		log.Println("Error checking if directory is empty:", err)
-		return fmt.Errorf("error checking if directory is empty: %w", err)
+	var dirPaths []string
+	for _, dir := range pipelineProviderFiles[props.CiProvider].PipelineDirectories {
+		dirPaths = append(dirPaths, filepath.Join(props.RepoRoot, dir))
 	}
 
-	if isEmpty {
-		message := fmt.Sprintf(
-			"%s provider selected, but %s is empty. Please add pipeline files.",
-			pipelineProviderFiles[props.CiProvider].DisplayName, dirPath)
-		if props.CiProvider == ciProviderAzureDevOps {
-			message = fmt.Sprintf(
-				"%s provider selected, but %s is empty. Please add pipeline files and try again.",
-				pipelineProviderFiles[props.CiProvider].DisplayName, dirPath)
-			log.Println("Error:", message)
-			return fmt.Errorf(message)
+	for _, dirPath := range dirPaths {
+		log.Printf("Checking if directory %s is empty", dirPath)
+		isEmpty, err := osutil.IsDirEmpty(dirPath, true)
+		if err != nil {
+			log.Println("Error checking if directory is empty:", err)
+			return fmt.Errorf("error checking if directory is empty: %w", err)
 		}
-		log.Println("Info:", message)
-		pm.console.Message(ctx, message)
-		pm.console.Message(ctx, "")
+		if !isEmpty {
+			log.Printf("Provider files are present in directory: %s", dirPath)
+			return nil
+		}
 	}
 
-	log.Printf("Provider files are present for: %s", props.CiProvider)
+	// Error message when no pipeline files are found
+	var searchedPaths []string
+	for _, dir := range pipelineProviderFiles[props.CiProvider].PipelineDirectories {
+		searchedPaths = append(searchedPaths, dir)
+	}
+
+	message := fmt.Sprintf(
+		"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
+			"Please add pipeline files.",
+		pipelineProviderFiles[props.CiProvider].DisplayName, strings.Join(searchedPaths, "\n"))
+
+	if props.CiProvider == ciProviderAzureDevOps {
+		message = fmt.Sprintf(
+			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
+				"Please add pipeline files and try again.",
+			pipelineProviderFiles[props.CiProvider].DisplayName, strings.Join(searchedPaths, "\n"))
+		log.Println("Error:", message)
+		return fmt.Errorf(message)
+	}
+
+	log.Println("Info:", message)
+	pm.console.Message(ctx, message)
+	pm.console.Message(ctx, "")
+
+	log.Printf("Provider files are not present for: %s", props.CiProvider)
 	return nil
 }
 
 // promptForCiFiles creates CI/CD files for the specified provider, confirming with the user before creation.
 func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectProperties) error {
-	dirPath := filepath.Join(props.RepoRoot, pipelineProviderFiles[props.CiProvider].PipelineDirectory)
-	defaultFile := filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile)
+	var dirPaths []string
+	for _, dir := range pipelineProviderFiles[props.CiProvider].PipelineDirectories {
+		dirPaths = append(dirPaths, filepath.Join(props.RepoRoot, dir))
+	}
 
-	log.Printf("Directory path: %s", dirPath)
-	log.Printf("Default YAML path: %s", defaultFile)
+	var defaultFilePath string
+	for _, dirPath := range dirPaths {
+		defaultFilePath = filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile)
+		if osutil.DirExists(dirPath) || osutil.FileExists(defaultFilePath) {
+			break
+		}
+	}
+
+	log.Printf("Directory paths: %v", dirPaths)
+	log.Printf("Default YAML path: %s", defaultFilePath)
 
 	// Confirm with the user before adding the default file
 	pm.console.Message(ctx, "")
@@ -891,32 +918,45 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 	pm.console.Message(ctx, "")
 
 	if confirm {
-		log.Printf("Confirmed creation of %s file at %s", filepath.Base(defaultFile), dirPath)
+		log.Printf("Confirmed creation of %s file at %s", filepath.Base(defaultFilePath), dirPaths)
 
-		if !osutil.DirExists(dirPath) {
-			log.Printf("Creating directory %s", dirPath)
-			if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
-				return fmt.Errorf("creating directory %s: %w", dirPath, err)
+		created := false
+		for _, dirPath := range dirPaths {
+			if !osutil.DirExists(dirPath) {
+				log.Printf("Creating directory %s", dirPath)
+				if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+					return fmt.Errorf("creating directory %s: %w", dirPath, err)
+				}
+				created = true
+			}
+
+			if !osutil.FileExists(filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile)) {
+				if err := generatePipelineDefinition(filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile), props); err != nil {
+					return err
+				}
+				pm.console.Message(ctx,
+					fmt.Sprintf(
+						"The %s file has been created at %s. You can use it as-is or modify it to suit your needs.",
+						output.WithHighLightFormat(filepath.Base(defaultFilePath)),
+						output.WithHighLightFormat(filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile))),
+				)
+				pm.console.Message(ctx, "")
+				created = true
+			}
+
+			if created {
+				break
 			}
 		}
 
-		if !osutil.FileExists(defaultFile) {
-			if err := generatePipelineDefinition(defaultFile, props); err != nil {
-				return err
-			}
-			pm.console.Message(ctx,
-				fmt.Sprintf(
-					"The %s file has been created at %s. You can use it as-is or modify it to suit your needs.",
-					output.WithHighLightFormat(filepath.Base(defaultFile)),
-					output.WithHighLightFormat(defaultFile)),
-			)
-			pm.console.Message(ctx, "")
+		if !created {
+			log.Printf("User declined creation of %s file at %s", filepath.Base(defaultFilePath), dirPaths)
 		}
 
 		return nil
 	}
 
-	log.Printf("User declined creation of %s file at %s", filepath.Base(defaultFile), dirPath)
+	log.Printf("User declined creation of %s file at %s", filepath.Base(defaultFilePath), dirPaths)
 	return nil
 }
 

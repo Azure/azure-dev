@@ -41,7 +41,7 @@ func (pp *pythonProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (pp *pythonProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (pp *pythonProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{pp.cli}
 }
 

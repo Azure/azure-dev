@@ -36,7 +36,7 @@ func NewFunctionAppTarget(
 }
 
 // Gets the required external tools for the Function app
-func (f *functionAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (f *functionAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 

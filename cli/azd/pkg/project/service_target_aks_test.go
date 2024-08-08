@@ -67,7 +67,7 @@ func Test_Required_Tools(t *testing.T) {
 	userConfig := config.NewConfig(nil)
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, userConfig)
 
-	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context)
+	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context, serviceConfig)
 	require.Len(t, requiredTools, 2)
 	require.IsType(t, &docker.Cli{}, requiredTools[0])
 	require.IsType(t, &kubectl.Cli{}, requiredTools[1])
@@ -89,7 +89,7 @@ func Test_Required_Tools_WithAlpha(t *testing.T) {
 	_ = userConfig.Set("alpha.aks.kustomize", "on")
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, userConfig)
 
-	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context)
+	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context, serviceConfig)
 	require.Len(t, requiredTools, 4)
 	require.IsType(t, &docker.Cli{}, requiredTools[0])
 	require.IsType(t, &kubectl.Cli{}, requiredTools[1])

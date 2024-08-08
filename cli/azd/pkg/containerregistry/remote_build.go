@@ -18,13 +18,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // RemoteBuildManager provides functionality to interact with the Azure Container Registry Remote Build feature.
 type RemoteBuildManager struct {
 	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
 	armClientOptions   *arm.ClientOptions
 }
 
@@ -179,12 +177,10 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 
 func NewRemoteBuildManager(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
 	armClientOptions *arm.ClientOptions,
 ) *RemoteBuildManager {
 	return &RemoteBuildManager{
 		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
 		armClientOptions:   armClientOptions,
 	}
 }

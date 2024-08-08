@@ -420,7 +420,13 @@ func (ch *ContainerHelper) runRemoteBuild(
 		return "", err
 	}
 
-	registryResourceName := strings.Split(registryName, ".")[0]
+	acrRegistryDomain := "." + ch.cloud.ContainerRegistryEndpointSuffix
+
+	if !strings.HasSuffix(registryName, acrRegistryDomain) {
+		return "", fmt.Errorf("remote build is only supported when the target registry is an Azure Container Registry")
+	}
+
+	registryResourceName := strings.TrimSuffix(registryName, acrRegistryDomain)
 
 	source, err := ch.remoteBuildManager.UploadBuildSource(
 		ctx, target.SubscriptionId(), target.ResourceGroupName(), registryResourceName, contextPath)

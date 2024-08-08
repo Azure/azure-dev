@@ -80,6 +80,7 @@ ignoreWords:
     - infradelete
     - inputhelper
     - ippre
+    - jmespath
     - JOBOBJECT
     - kubernetes
     - kusto

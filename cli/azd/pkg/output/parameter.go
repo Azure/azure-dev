@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -37,7 +38,7 @@ func AddOutputParam(cmd *cobra.Command, supportedFormats []Format, defaultFormat
 	return cmd
 }
 
-func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
+func GetCommandFormatter(cmd *cobra.Command, globalOptions *internal.GlobalCommandOptions) (Formatter, error) {
 	// If the command does not specify any output params just return nil Formatter pointer
 	outputVal, err := cmd.Flags().GetString(outputFlagName)
 	if err != nil {
@@ -48,7 +49,7 @@ func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
 	f := cmd.Flags().Lookup(outputFlagName)
 	supportedFormatters, hasFormatters := f.Annotations[supportedFormatterAnnotation]
 	if !hasFormatters {
-		return NewFormatter(desiredFormatter)
+		return NewFormatter(desiredFormatter, globalOptions)
 	}
 
 	supported := false
@@ -62,5 +63,5 @@ func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
 		return nil, fmt.Errorf("unsupported format '%s'", desiredFormatter)
 	}
 
-	return NewFormatter(desiredFormatter)
+	return NewFormatter(desiredFormatter, globalOptions)
 }

@@ -75,7 +75,7 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Command:        newEnvGetValuesCmd(),
 		FlagsResolver:  newEnvGetValuesFlags,
 		ActionResolver: newEnvGetValuesAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.EnvVarsFormat},
+		OutputFormats:  []output.Format{output.JsonFormat, output.EnvVarsFormat, output.ExportFormat},
 		DefaultFormat:  output.EnvVarsFormat,
 	})
 

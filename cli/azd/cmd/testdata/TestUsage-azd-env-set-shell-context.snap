@@ -1,14 +1,13 @@
 
-Refresh environment settings by using information from a previous infrastructure provision.
+Set the current environment variables to the shell context.
 
 Usage
-  azd env refresh <environment> [flags]
+  azd env set-shell-context [flags]
 
 Flags
-        --docs               	: Opens the documentation for azd env refresh in your web browser.
+        --docs               	: Opens the documentation for azd env set-shell-context in your web browser.
     -e, --environment string 	: The name of the environment to use.
-    -h, --help               	: Gets help for refresh.
-        --hint string        	: Hint to help identify the environment to refresh
+    -h, --help               	: Gets help for set-shell-context.
 
 Global Flags
     -C, --cwd string   	: Sets the current working directory.

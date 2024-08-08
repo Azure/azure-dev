@@ -25,6 +25,7 @@ type ProjectConfig struct {
 	Infra             provisioning.Options       `yaml:"infra,omitempty"`
 	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
 	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+	Scripts           map[string]*ext.HookConfig `yaml:"scripts,omitempty"`
 	State             *state.Config              `yaml:"state,omitempty"`
 	Platform          *platform.Config           `yaml:"platform,omitempty"`
 	Workflows         workflow.WorkflowMap       `yaml:"workflows,omitempty"`

@@ -1,0 +1,24 @@
+
+Runs the specified script for the project
+
+Usage
+  azd script run [name] [flags]
+
+Flags
+        --continueOnError    	: Continue on error.
+        --docs               	: Opens the documentation for azd script run in your web browser.
+    -e, --environment string 	: The name of the environment to use.
+    -h, --help               	: Gets help for run.
+        --interactive        	: Run in interactive mode.
+        --platform string    	: Forces scripts to run for the specified platform.
+        --run string         	: Inline script to run.
+        --shell string       	: Shell to use for the script.
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
+

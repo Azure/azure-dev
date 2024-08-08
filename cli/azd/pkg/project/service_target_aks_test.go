@@ -840,7 +840,6 @@ func createAksServiceTarget(
 	)
 	remoteBuildManager := containerregistry.NewRemoteBuildManager(
 		credentialProvider,
-		mockContext.HttpClient,
 		mockContext.ArmClientOptions,
 	)
 	containerHelper := NewContainerHelper(

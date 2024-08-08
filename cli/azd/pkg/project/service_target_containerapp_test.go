@@ -154,7 +154,6 @@ func createContainerAppServiceTarget(
 	)
 	remoteBuildManager := containerregistry.NewRemoteBuildManager(
 		credentialProvider,
-		mockContext.HttpClient,
 		mockContext.ArmClientOptions,
 	)
 	containerHelper := NewContainerHelper(

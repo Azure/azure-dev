@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const cManagementScope = "https://management.azure.com//.default"
+const managementScope = "https://management.azure.com//.default"
 
 func TestAuthToken(t *testing.T) {
 	wasCalled := false
@@ -34,7 +34,7 @@ func TestAuthToken(t *testing.T) {
 		wasCalled = true
 
 		// Default value when explicit scopes are not provided to the command.
-		require.ElementsMatch(t, []string{cManagementScope}, options.Scopes)
+		require.ElementsMatch(t, []string{managementScope}, options.Scopes)
 
 		return azcore.AccessToken{
 			Token:     "ABC123",
@@ -70,7 +70,7 @@ func TestAuthTokenSysEnv(t *testing.T) {
 	buf := &bytes.Buffer{}
 
 	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-		require.ElementsMatch(t, []string{cManagementScope}, options.Scopes)
+		require.ElementsMatch(t, []string{managementScope}, options.Scopes)
 		return azcore.AccessToken{
 			Token:     "ABC123",
 			ExpiresOn: time.Unix(1669153000, 0).UTC(),
@@ -112,7 +112,7 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 	buf := &bytes.Buffer{}
 
 	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-		require.ElementsMatch(t, []string{cManagementScope}, options.Scopes)
+		require.ElementsMatch(t, []string{managementScope}, options.Scopes)
 		return azcore.AccessToken{
 			Token:     "ABC123",
 			ExpiresOn: time.Unix(1669153000, 0).UTC(),
@@ -160,7 +160,7 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 	buf := &bytes.Buffer{}
 
 	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-		require.ElementsMatch(t, []string{cManagementScope}, options.Scopes)
+		require.ElementsMatch(t, []string{managementScope}, options.Scopes)
 		return azcore.AccessToken{
 			Token:     "ABC123",
 			ExpiresOn: time.Unix(1669153000, 0).UTC(),
@@ -204,7 +204,7 @@ func TestAuthTokenAzdEnv(t *testing.T) {
 	buf := &bytes.Buffer{}
 
 	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-		require.ElementsMatch(t, []string{cManagementScope}, options.Scopes)
+		require.ElementsMatch(t, []string{managementScope}, options.Scopes)
 		return azcore.AccessToken{
 			Token:     "ABC123",
 			ExpiresOn: time.Unix(1669153000, 0).UTC(),
@@ -245,7 +245,7 @@ func TestAuthTokenAzdEnvWithEmpty(t *testing.T) {
 	buf := &bytes.Buffer{}
 
 	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-		require.ElementsMatch(t, []string{cManagementScope}, options.Scopes)
+		require.ElementsMatch(t, []string{managementScope}, options.Scopes)
 		return azcore.AccessToken{
 			Token:     "ABC123",
 			ExpiresOn: time.Unix(1669153000, 0).UTC(),

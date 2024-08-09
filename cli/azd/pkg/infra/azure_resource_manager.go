@@ -265,15 +265,15 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 	}
 }
 
-// cWebAppApiVersion is the API Version we use when querying information about Web App resources
-const cWebAppApiVersion = "2021-03-01"
+// webAppApiVersion is the API Version we use when querying information about Web App resources
+const webAppApiVersion = "2021-03-01"
 
 func (rm *AzureResourceManager) getWebAppResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
 ) (string, error) {
-	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, cWebAppApiVersion)
+	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, webAppApiVersion)
 
 	if err != nil {
 		return "", fmt.Errorf("getting web app resource type display names: %w", err)

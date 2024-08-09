@@ -11,8 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-const cConfigDir = ".azd"
-
 // Config Manager provides the ability to load, parse and save azd configuration files
 type manager struct {
 }
@@ -74,7 +72,7 @@ func GetUserConfigDir() (string, error) {
 			return "", fmt.Errorf("could not determine current home directory: %w", err)
 		}
 
-		configDirPath = filepath.Join(homeDir, cConfigDir)
+		configDirPath = filepath.Join(homeDir, ".azd")
 	}
 
 	err := os.MkdirAll(configDirPath, osutil.PermissionDirectoryOwnerOnly)

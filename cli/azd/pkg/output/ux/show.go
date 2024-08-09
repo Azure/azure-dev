@@ -29,34 +29,22 @@ type Show struct {
 	AzurePortalLink string
 }
 
-const (
-	cHeader            = "\nShowing deployed endpoints and environments for apps in this directory.\n"
-	cHeaderNotDeployed = "\nShowing services and environments for apps in this directory.\n"
-	cHeaderNote        = "To view a different environment, run "
-	cShowDifferentEnv  = "azd show -e <environment name>"
-	cServices          = "\n  Services:\n"
-	cEnvironments      = "\n  Environments:\n"
-	cCurrentEnv        = " [Current]"
-	cRemoteEnv         = " (Remote)"
-	cViewInPortal      = "\n  View in Azure Portal:\n"
-)
-
 func (s *Show) ToString(currentIndentation string) string {
-	pickHeader := cHeader
+	pickHeader := "\nShowing deployed endpoints and environments for apps in this directory.\n"
 	if s.AzurePortalLink == "" {
-		pickHeader = cHeaderNotDeployed
+		pickHeader = "\nShowing services and environments for apps in this directory.\n"
 	}
 	return fmt.Sprintf(
 		"%s%s%s%s%s%s%s%s%s    %s\n",
 		pickHeader,
-		cHeaderNote,
-		color.HiBlueString("%s\n\n", cShowDifferentEnv),
+		"To view a different environment, run ",
+		color.HiBlueString("%s\n\n", "azd show -e <environment name>"),
 		color.HiMagentaString(s.AppName),
-		cServices,
+		"\n  Services:\n",
 		services(s.Services),
-		cEnvironments,
+		"\n  Environments:\n",
 		environments(s.Environments),
-		cViewInPortal,
+		"\n  View in Azure Portal:\n",
 		azurePortalLink(s.AzurePortalLink),
 	)
 }
@@ -104,11 +92,11 @@ func environments(environments []*ShowEnvironment) string {
 	for index, environment := range environments {
 		var defaultEnv string
 		if environment.IsCurrent {
-			defaultEnv = cCurrentEnv
+			defaultEnv = " [Current]"
 		}
 		var isRemote string
 		if environment.IsRemote {
-			isRemote = cRemoteEnv
+			isRemote = " (Remote)"
 		}
 		lines[index] = fmt.Sprintf(
 			"    %s%s%s",

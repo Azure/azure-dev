@@ -106,7 +106,7 @@ func TestCache(t *testing.T) {
 
 	// The response should have been cached, so we should have a single entry in the cache folder
 	// under the config root.
-	cacheRoot := filepath.Join(configRoot, cCacheDirectoryName)
+	cacheRoot := filepath.Join(configRoot, cacheDirectoryName)
 	cacheEntries, err := os.ReadDir(cacheRoot)
 	require.NoError(t, err)
 	require.Len(t, cacheEntries, 1)

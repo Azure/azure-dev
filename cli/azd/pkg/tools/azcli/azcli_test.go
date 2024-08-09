@@ -92,8 +92,6 @@ func newAzCliFromMockContext(mockContext *mocks.MockContext) AzCli {
 		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
 		}),
-		mockContext.HttpClient,
-		NewAzCliArgs{},
 		mockContext.ArmClientOptions,
 	)
 }

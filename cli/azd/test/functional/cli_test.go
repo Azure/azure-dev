@@ -263,8 +263,6 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
-		client,
-		azcli.NewAzCliArgs{},
 		armClientOptions,
 	)
 	deploymentOperations := azapi.NewDeploymentOperations(
@@ -480,8 +478,6 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
-		client,
-		azcli.NewAzCliArgs{},
 		armClientOptions,
 	)
 	deploymentOperations := azapi.NewDeploymentOperations(

@@ -16,11 +16,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-// cCacheFileName is the name of the file used to cache assignment information.
-const cCacheFileName string = "assign.cache"
+// cacheFileName is the name of the file used to cache assignment information.
+const cacheFileName string = "assign.cache"
 
-// cCacheDirectoryName is the name of the directory created under the user config directory that contains the cache.
-const cCacheDirectoryName string = "experimentation"
+// cacheDirectoryName is the name of the directory created under the user config directory that contains the cache.
+const cacheDirectoryName string = "experimentation"
 
 // MachineIdParameterName is the name of the parameter used to identify the machine ID in the assignment
 // request.
@@ -45,7 +45,7 @@ func NewAssignmentsManager(endpoint string, transport policy.Transporter) (*Assi
 		return nil, err
 	}
 
-	cacheRoot := filepath.Join(configRoot, cCacheDirectoryName)
+	cacheRoot := filepath.Join(configRoot, cacheDirectoryName)
 	if err := os.MkdirAll(cacheRoot, osutil.PermissionDirectory); err != nil {
 		return nil, err
 	}
@@ -152,13 +152,13 @@ func (am *AssignmentsManager) cacheResponse(response *treatmentAssignmentRespons
 		return err
 	}
 
-	cacheFilePath := filepath.Join(am.cacheRoot, cCacheFileName)
+	cacheFilePath := filepath.Join(am.cacheRoot, cacheFileName)
 	return os.WriteFile(cacheFilePath, cacheJson, osutil.PermissionFile)
 }
 
 // readResponseFromCache reads the cached response from the TAS service for the given machineId.
 func (am *AssignmentsManager) readResponseFromCache() (*treatmentAssignmentResponse, error) {
-	cache, err := os.ReadFile(filepath.Join(am.cacheRoot, cCacheFileName))
+	cache, err := os.ReadFile(filepath.Join(am.cacheRoot, cacheFileName))
 	if err != nil {
 		return nil, err
 	}

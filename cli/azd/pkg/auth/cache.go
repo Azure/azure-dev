@@ -34,7 +34,7 @@ var contractFields = []string{
 // but note that the key is a partitioning key and not a unique user key.
 // Also, given that the data contains auth data for all users, we only need a single key
 // to store all cached auth information.
-const cCurrentUserCacheKey = ""
+const currentUserCacheKey = ""
 
 // msalCacheAdapter adapts our interface to the one expected by cache.ExportReplace.
 type msalCacheAdapter struct {
@@ -42,7 +42,7 @@ type msalCacheAdapter struct {
 }
 
 func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler, _ cache.ReplaceHints) error {
-	val, err := a.cache.Read(cCurrentUserCacheKey)
+	val, err := a.cache.Read(currentUserCacheKey)
 	if errors.Is(err, errCacheKeyNotFound) {
 		return nil
 	} else if err != nil {
@@ -102,7 +102,7 @@ func (a *msalCacheAdapter) Export(ctx context.Context, cache cache.Marshaler, _ 
 		return err
 	}
 
-	return a.cache.Set(cCurrentUserCacheKey, val)
+	return a.cache.Set(currentUserCacheKey, val)
 }
 
 // Normalize keys by removing upper-case keys and replacing them with lower-case keys.

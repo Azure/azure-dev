@@ -18,6 +18,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -257,8 +258,6 @@ func newLoginAction(
 	}
 }
 
-const cLoginSuccessMessage = "Logged in to Azure."
-
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(la.flags.scopes) == 0 {
 		la.flags.scopes = la.authManager.LoginScopes()
@@ -300,7 +299,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			var msg string
 			switch res.Status {
 			case contracts.LoginStatusSuccess:
-				msg = cLoginSuccessMessage
+				msg = "Logged in to Azure."
 			case contracts.LoginStatusUnauthenticated:
 				msg = "Not logged in, run `azd auth login` to login to Azure."
 			default:
@@ -331,7 +330,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	la.console.Message(ctx, cLoginSuccessMessage)
+	la.console.Message(ctx, "Logged in to Azure.")
 	return nil, nil
 }
 
@@ -534,7 +533,7 @@ func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.Co
 		useDevCode = runningOnCodespacesBrowser(ctx, commandRunner)
 	}
 
-	if auth.ShouldUseCloudShellAuth() {
+	if runcontext.IsRunningInCloudShell() {
 		// Following az CLI behavior in Cloud Shell, use device code authentication when the user is trying to
 		// authenticate. The normal interactive authentication flow will not work in Cloud Shell because the browser
 		// cannot be opened or (if it could) cannot be redirected back to a port on the Cloud Shell instance.

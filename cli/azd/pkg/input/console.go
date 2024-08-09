@@ -318,7 +318,8 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
 	_ = c.spinner.Unpause()
 }
 
-const cPostfix = "..."
+// truncationDots is the text we use to indicate that text has been truncated.
+const truncationDots = "..."
 
 // The line of text for the spinner, displayed in the format of: <prefix><spinner> <message>
 type spinnerLine struct {
@@ -349,7 +350,7 @@ func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
 		return spinnerLine{
 			CharSet: spinnerShortCharSet[:width],
 		}
-	case width <= spinnerLen+len(cPostfix): // show number of dots
+	case width <= spinnerLen+len(truncationDots): // show number of dots
 		return spinnerLine{
 			CharSet: spinnerShortCharSet,
 		}
@@ -357,7 +358,7 @@ func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
 		return spinnerLine{
 			Prefix:  indent,
 			CharSet: spinnerCharSet,
-			Message: title[:width-spinnerLen-len(cPostfix)] + cPostfix,
+			Message: title[:width-spinnerLen-len(truncationDots)] + truncationDots,
 		}
 	default:
 		return spinnerLine{
@@ -520,10 +521,10 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 	}
 }
 
-// cAfterIO is a sentinel used after Input/Output operations as the state for the last 2-bytes written.
+// afterIoSentinel is a sentinel value used after Input/Output operations as the state for the last 2-bytes written.
 // For example, after running Prompt or Confirm, the last characters on the terminal should be any char (represented by the
 // 0 in the sentinel), followed by a new line.
-const cAfterIO = "0\n"
+const afterIoSentinel = "0\n"
 
 func (c *AskerConsole) SupportsPromptDialog() bool {
 	return c.promptClient != nil
@@ -609,7 +610,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	if err != nil {
 		return response, err
 	}
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -656,7 +657,7 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 	if err != nil {
 		return response, err
 	}
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -750,7 +751,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		return -1, err
 	}
 
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -882,7 +883,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		return false, err
 	}
 
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 

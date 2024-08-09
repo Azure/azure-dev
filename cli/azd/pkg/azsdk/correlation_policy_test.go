@@ -43,7 +43,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
 			expect:                to.Ptr(traceId.String()),
-			headerName:            cMsCorrelationIdHeader,
+			headerName:            msCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
@@ -54,14 +54,14 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
 			expect:                to.Ptr(""),
-			headerName:            cMsCorrelationIdHeader,
+			headerName:            msCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
 			name:                  "WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
-			headerName:            cMsCorrelationIdHeader,
+			headerName:            msCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
@@ -71,7 +71,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
 			expect:                to.Ptr(traceId.String()),
-			headerName:            cMsGraphCorrelationIdHeader,
+			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
@@ -82,14 +82,14 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
 			expect:                to.Ptr(""),
-			headerName:            cMsGraphCorrelationIdHeader,
+			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
 			name:                  "WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
-			headerName:            cMsGraphCorrelationIdHeader,
+			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 	}

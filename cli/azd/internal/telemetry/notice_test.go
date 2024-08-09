@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/assert"
 )
@@ -65,7 +66,7 @@ func setupSuite(withFirstRunFile bool, t *testing.T) func(t *testing.T) {
 
 func Test_FirstNotice(t *testing.T) {
 	t.Run("in Cloud Shell", func(t *testing.T) {
-		ostest.Setenv(t, "AZD_IN_CLOUDSHELL", "1")
+		ostest.Setenv(t, runcontext.AzdInCloudShellEnvVar, "1")
 
 		t.Run("returns nothing if opted into telemetry", func(t *testing.T) {
 			teardown := setupSuite(false, t)
@@ -92,7 +93,7 @@ func Test_FirstNotice(t *testing.T) {
 	})
 
 	t.Run("not in Cloud Shell", func(t *testing.T) {
-		ostest.Unsetenv(t, "AZD_IN_CLOUDSHELL")
+		ostest.Unsetenv(t, runcontext.AzdInCloudShellEnvVar)
 
 		t.Run("returns nothing if first run file doesn't exist", func(t *testing.T) {
 			teardown := setupSuite(false, t)

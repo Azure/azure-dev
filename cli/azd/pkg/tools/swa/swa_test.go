@@ -31,7 +31,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"build", "-V",
 			}, args.Args)
 
@@ -61,7 +61,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"build", "-V",
 			}, args.Args)
 
@@ -96,7 +96,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -143,7 +143,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -195,7 +195,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",

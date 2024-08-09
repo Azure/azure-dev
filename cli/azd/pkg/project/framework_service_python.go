@@ -150,11 +150,9 @@ func (pp *pythonProject) Package(
 	}, nil
 }
 
-const cVenvConfigFileName = "pyvenv.cfg"
-
 func isPythonVirtualEnv(path string) bool {
 	// check if `pyvenv.cfg` is within the folder
-	if _, err := os.Stat(filepath.Join(path, cVenvConfigFileName)); err == nil {
+	if _, err := os.Stat(filepath.Join(path, "pyvenv.cfg")); err == nil {
 		return true
 	}
 	return false

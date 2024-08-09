@@ -11,14 +11,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 var (
 	ErrAzCliNotLoggedIn         = errors.New("cli is not logged in. Try running \"az login\" to fix")
 	ErrAzCliRefreshTokenExpired = errors.New("refresh token has expired. Try running \"az login\" to fix")
-	ErrClientAssertionExpired   = errors.New("client assertion expired")
-	ErrNoConfigurationValue     = errors.New("no value configured")
 )
 
 type AzCli interface {
@@ -128,18 +125,6 @@ type AzCliResourceExtended struct {
 	Kind string `json:"kind"`
 }
 
-// AzCliConfigValue represents the value returned by `az config get`.
-type AzCliConfigValue struct {
-	Name   string `json:"name"`
-	Source string `json:"source"`
-	Value  string `json:"value"`
-}
-
-// AzCliConfigValue represents the value in the array returned by `az extension list`.
-type AzCliExtensionInfo struct {
-	Name string
-}
-
 // Optional parameters for resource group listing.
 type ListResourceGroupOptions struct {
 	// An optional tag filter
@@ -161,34 +146,17 @@ type Filter struct {
 	Value string
 }
 
-type NewAzCliArgs struct {
-	EnableDebug     bool
-	EnableTelemetry bool
-}
-
 func NewAzCli(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
-	args NewAzCliArgs,
 	armClientOptions *arm.ClientOptions,
 ) AzCli {
 	return &azCli{
 		credentialProvider: credentialProvider,
-		enableDebug:        args.EnableDebug,
-		enableTelemetry:    args.EnableTelemetry,
-		httpClient:         httpClient,
 		armClientOptions:   armClientOptions,
 	}
 }
 
 type azCli struct {
-	enableDebug     bool
-	enableTelemetry bool
-
-	// Allows us to mock the Http Requests from the go modules
-	httpClient httputil.HttpClient
-
 	credentialProvider account.SubscriptionCredentialProvider
-
-	armClientOptions *arm.ClientOptions
+	armClientOptions   *arm.ClientOptions
 }

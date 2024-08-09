@@ -583,22 +583,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Tools
-	container.MustRegisterSingleton(func(
-		rootOptions *internal.GlobalCommandOptions,
-		credentialProvider account.SubscriptionCredentialProvider,
-		httpClient httputil.HttpClient,
-		armClientOptions *arm.ClientOptions,
-	) azcli.AzCli {
-		return azcli.NewAzCli(
-			credentialProvider,
-			httpClient,
-			azcli.NewAzCliArgs{
-				EnableDebug:     rootOptions.EnableDebugLogging,
-				EnableTelemetry: rootOptions.EnableTelemetry,
-			},
-			armClientOptions,
-		)
-	})
+	container.MustRegisterSingleton(azcli.NewAzCli)
 	container.MustRegisterSingleton(azapi.NewDeployments)
 	container.MustRegisterSingleton(azapi.NewDeploymentOperations)
 	container.MustRegisterSingleton(docker.NewCli)

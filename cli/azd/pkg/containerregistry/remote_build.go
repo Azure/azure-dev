@@ -4,12 +4,17 @@
 package containerregistry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -18,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/sethvargo/go-retry"
 )
 
 // RemoteBuildManager provides functionality to interact with the Azure Container Registry Remote Build feature.
@@ -121,9 +127,20 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 		return err
 	}
 
-	err = streamLogs(ctx, logBlobClient, writer)
+	var buildLog bytes.Buffer
+
+	err = streamLogs(ctx, logBlobClient, io.MultiWriter(&buildLog, writer))
 	if err != nil {
 		return err
+	}
+
+	runRes, err := runClient.Get(ctx, resourceGroupName, registryName, *runResp.Properties.RunID, nil)
+	if err != nil {
+		return err
+	}
+
+	if *runRes.Properties.Status != armcontainerregistry.RunStatusSucceeded {
+		return fmt.Errorf("remote build failed: %v", buildLog.String())
 	}
 
 	return nil
@@ -133,46 +150,60 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 // or an error occurs.
 func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Writer) error {
 	var written int64 = 0
-	for {
-		props, err := blobClient.GetProperties(ctx, nil)
-		if err != nil {
-			return err
-		}
+	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+		err := func() error {
+			for {
+				props, err := blobClient.GetProperties(ctx, nil)
+				if err != nil {
+					return err
+				}
 
-		length := *props.ContentLength
-		if (length - written) == 0 {
-			if props.Metadata != nil {
-				if _, has := props.Metadata["Complete"]; has {
+				length := *props.ContentLength
+				if (length - written) == 0 {
+					if props.Metadata != nil {
+						if _, has := props.Metadata["Complete"]; has {
+							return nil
+						}
+					}
+
+					time.Sleep(1 * time.Second)
+					continue
+				}
+
+				err = func() error {
+					res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
+						Range: azblob.HTTPRange{
+							Offset: written,
+							Count:  length - written,
+						},
+					})
+					if err != nil {
+						return err
+					}
+					defer res.Body.Close()
+					copied, err := io.Copy(writer, res.Body)
+					if err != nil {
+						return err
+					}
+					written += copied
 					return nil
+				}()
+				if err != nil {
+					return err
 				}
 			}
-
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		err = func() error {
-			res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
-				Range: azblob.HTTPRange{
-					Offset: written,
-					Count:  length - written,
-				},
-			})
-			if err != nil {
-				return err
-			}
-			defer res.Body.Close()
-			copied, err := io.Copy(writer, res.Body)
-			if err != nil {
-				return err
-			}
-			written += copied
-			return nil
 		}()
-		if err != nil {
-			return err
+		var azErr *azcore.ResponseError
+		if errors.As(err, &azErr) {
+			if azErr.StatusCode == http.StatusNotFound {
+				// Mark log not found as a retryable error, we assume that the blob client was formed around a result from
+				// the queue job request and the fact that the log is not found means that the log is not yet available, not
+				// that it will never be available.
+				return retry.RetryableError(err)
+			}
 		}
-	}
+		return err
+	})
 }
 
 func NewRemoteBuildManager(

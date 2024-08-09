@@ -11,10 +11,8 @@ import (
 )
 
 // newUrlTemplateSource creates a new template source from a URL.
-func newUrlTemplateSource(ctx context.Context, name string, url string, transport policy.Transporter) (Source, error) {
-	pipeline := runtime.NewPipeline("azd-templates", "1.0.0", runtime.PipelineOptions{}, &policy.ClientOptions{
-		Transport: transport,
-	})
+func newUrlTemplateSource(ctx context.Context, name, url string, clientOptions *policy.ClientOptions) (Source, error) {
+	pipeline := runtime.NewPipeline("azd-templates", "1.0.0", runtime.PipelineOptions{}, clientOptions)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {

@@ -75,7 +75,7 @@ type sourceManager struct {
 	options        *SourceOptions
 	serviceLocator ioc.ServiceLocator
 	configManager  config.UserConfigManager
-	transport      policy.Transporter
+	clientOptions  *policy.ClientOptions
 }
 
 // NewSourceManager creates a new SourceManager.
@@ -83,7 +83,7 @@ func NewSourceManager(
 	options *SourceOptions,
 	serviceLocator ioc.ServiceLocator,
 	configManager config.UserConfigManager,
-	transport policy.Transporter,
+	clientOptions *policy.ClientOptions,
 ) SourceManager {
 	if options == nil {
 		options = NewSourceOptions()
@@ -93,7 +93,7 @@ func NewSourceManager(
 		options:        options,
 		serviceLocator: serviceLocator,
 		configManager:  configManager,
-		transport:      transport,
+		clientOptions:  clientOptions,
 	}
 }
 
@@ -225,9 +225,9 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	case SourceKindFile:
 		source, err = newFileTemplateSource(config.Name, config.Location)
 	case SourceKindUrl:
-		source, err = newUrlTemplateSource(ctx, config.Name, config.Location, sm.transport)
+		source, err = newUrlTemplateSource(ctx, config.Name, config.Location, sm.clientOptions)
 	case SourceKindAwesomeAzd:
-		source, err = newAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.transport)
+		source, err = newAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.clientOptions)
 	case SourceKindResource:
 		source, err = newJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
 	case SourceKindGh:

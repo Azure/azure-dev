@@ -25,11 +25,9 @@ func newAwesomeAzdTemplateSource(
 	ctx context.Context,
 	name string,
 	url string,
-	transport policy.Transporter,
+	clientOptions *policy.ClientOptions,
 ) (Source, error) {
-	pipeline := runtime.NewPipeline("azd-templates", "1.0.0", runtime.PipelineOptions{}, &policy.ClientOptions{
-		Transport: transport,
-	})
+	pipeline := runtime.NewPipeline("azd-templates", "1.0.0", runtime.PipelineOptions{}, clientOptions)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {

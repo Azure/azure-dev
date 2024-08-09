@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
@@ -24,23 +24,23 @@ var expectedServicePrincipalCredential AzureCredentials = AzureCredentials{
 
 func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	newApplication := graphsdk.Application{
-		Id:          convert.RefOf("UNIQUE_ID"),
+		Id:          to.Ptr("UNIQUE_ID"),
 		AppId:       &expectedServicePrincipalCredential.ClientId,
 		DisplayName: "MY_APP",
 	}
 	servicePrincipal := graphsdk.ServicePrincipal{
-		Id:                     convert.RefOf("SPN_ID"),
+		Id:                     to.Ptr("SPN_ID"),
 		AppId:                  expectedServicePrincipalCredential.ClientId,
 		DisplayName:            "SPN_NAME",
 		AppOwnerOrganizationId: &expectedServicePrincipalCredential.TenantId,
 	}
 	credential := &graphsdk.ApplicationPasswordCredential{
-		KeyId:       convert.RefOf("KEY_ID"),
-		DisplayName: convert.RefOf("Azure Developer CLI"),
+		KeyId:       to.Ptr("KEY_ID"),
+		DisplayName: to.Ptr("Azure Developer CLI"),
 		SecretText:  &expectedServicePrincipalCredential.ClientSecret,
 	}
 	existingApplication := graphsdk.Application{
-		Id:          convert.RefOf("UNIQUE_ID"),
+		Id:          to.Ptr("UNIQUE_ID"),
 		AppId:       &expectedServicePrincipalCredential.ClientId,
 		DisplayName: "APPLICATION_NAME",
 		PasswordCredentials: []*graphsdk.ApplicationPasswordCredential{
@@ -49,9 +49,9 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	}
 	roleDefinitions := []*armauthorization.RoleDefinition{
 		{
-			ID:   convert.RefOf("ROLE_ID"),
-			Name: convert.RefOf("Contributor"),
-			Type: convert.RefOf("ROLE_TYPE"),
+			ID:   to.Ptr("ROLE_ID"),
+			Name: to.Ptr("Contributor"),
+			Type: to.Ptr("ROLE_TYPE"),
 		},
 	}
 
@@ -244,10 +244,10 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 
 func Test_ApplyFederatedCredentials(t *testing.T) {
 	mockApplication := &graphsdk.Application{
-		Id:                  convert.RefOf("APPLICATION_ID"),
-		AppId:               convert.RefOf("CLIENT_ID"),
+		Id:                  to.Ptr("APPLICATION_ID"),
+		AppId:               to.Ptr("CLIENT_ID"),
 		DisplayName:         "APPLICATION_NAME",
-		Description:         convert.RefOf("DESCRIPTION"),
+		Description:         to.Ptr("DESCRIPTION"),
 		PasswordCredentials: []*graphsdk.ApplicationPasswordCredential{},
 	}
 
@@ -275,19 +275,19 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockCredentials := []graphsdk.FederatedIdentityCredential{
 			{
-				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Id:          to.Ptr("CREDENTIAL_ID"),
 				Name:        "owner-repo-pull_request",
 				Issuer:      federatedIdentityIssuer,
 				Subject:     "repo:owner/repo:pull_request",
-				Description: convert.RefOf("DESCRIPTION"),
+				Description: to.Ptr("DESCRIPTION"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 			{
-				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Id:          to.Ptr("CREDENTIAL_ID"),
 				Name:        "owner-repo-main",
 				Issuer:      federatedIdentityIssuer,
 				Subject:     "repo:owner/repo:ref:refs/heads/main",
-				Description: convert.RefOf("DESCRIPTION"),
+				Description: to.Ptr("DESCRIPTION"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 		}
@@ -332,27 +332,27 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockCredentials := []graphsdk.FederatedIdentityCredential{
 			{
-				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Id:          to.Ptr("CREDENTIAL_ID"),
 				Name:        "owner-repo-pull_request",
 				Issuer:      federatedIdentityIssuer,
 				Subject:     "repo:owner/repo:pull_request",
-				Description: convert.RefOf("DESCRIPTION"),
+				Description: to.Ptr("DESCRIPTION"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 			{
-				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Id:          to.Ptr("CREDENTIAL_ID"),
 				Name:        "owner-repo-main",
 				Issuer:      federatedIdentityIssuer,
 				Subject:     "repo:owner/repo:ref:refs/heads/main",
-				Description: convert.RefOf("DESCRIPTION"),
+				Description: to.Ptr("DESCRIPTION"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 			{
-				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Id:          to.Ptr("CREDENTIAL_ID"),
 				Name:        "owner-repo-dev",
 				Issuer:      federatedIdentityIssuer,
 				Subject:     "repo:owner/repo:ref:refs/heads/dev",
-				Description: convert.RefOf("DESCRIPTION"),
+				Description: to.Ptr("DESCRIPTION"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 		}
@@ -397,19 +397,19 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockCredentials := []graphsdk.FederatedIdentityCredential{
 			{
-				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Id:          to.Ptr("CREDENTIAL_ID"),
 				Name:        "owner-repo-pull_request",
 				Issuer:      federatedIdentityIssuer,
 				Subject:     "repo:owner/repo:pull_request",
-				Description: convert.RefOf("DESCRIPTION"),
+				Description: to.Ptr("DESCRIPTION"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 			{
-				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Id:          to.Ptr("CREDENTIAL_ID"),
 				Name:        "owner-repo-main",
 				Issuer:      federatedIdentityIssuer,
 				Subject:     "repo:owner/repo:ref:refs/heads/main",
-				Description: convert.RefOf("DESCRIPTION"),
+				Description: to.Ptr("DESCRIPTION"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 		}
@@ -443,25 +443,25 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 
 func Test_ResetPasswordCredentials(t *testing.T) {
 	mockApplicationPassword := &graphsdk.ApplicationPasswordCredential{
-		KeyId:       convert.RefOf("KEY_ID"),
-		DisplayName: convert.RefOf("KEY NAME"),
-		SecretText:  convert.RefOf("CLIENT_SECRET"),
+		KeyId:       to.Ptr("KEY_ID"),
+		DisplayName: to.Ptr("KEY NAME"),
+		SecretText:  to.Ptr("CLIENT_SECRET"),
 	}
 
 	mockApplication := &graphsdk.Application{
-		Id:                  convert.RefOf("APPLICATION_ID"),
-		AppId:               convert.RefOf("CLIENT_ID"),
+		Id:                  to.Ptr("APPLICATION_ID"),
+		AppId:               to.Ptr("CLIENT_ID"),
 		DisplayName:         "APPLICATION_NAME",
-		Description:         convert.RefOf("DESCRIPTION"),
+		Description:         to.Ptr("DESCRIPTION"),
 		PasswordCredentials: []*graphsdk.ApplicationPasswordCredential{mockApplicationPassword},
 	}
 
 	mockServicePrincipals := []graphsdk.ServicePrincipal{
 		{
-			Id:                     convert.RefOf("SPN_ID"),
+			Id:                     to.Ptr("SPN_ID"),
 			AppId:                  *mockApplication.AppId,
 			DisplayName:            mockApplication.DisplayName,
-			AppOwnerOrganizationId: convert.RefOf("TENANT_ID"),
+			AppOwnerOrganizationId: to.Ptr("TENANT_ID"),
 			AppDisplayName:         &mockApplication.DisplayName,
 			Description:            mockApplication.Description,
 		},

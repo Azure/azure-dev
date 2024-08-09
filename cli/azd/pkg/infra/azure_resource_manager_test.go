@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -437,10 +437,10 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 
 		for _, name := range groupNames {
 			res.Value = append(res.Value, &armresources.ResourceGroup{
-				ID:       convert.RefOf(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", SUBSCRIPTION_ID, name)),
-				Type:     convert.RefOf("Microsoft.Resources/resourceGroups"),
-				Name:     convert.RefOf(name),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", SUBSCRIPTION_ID, name)),
+				Type:     to.Ptr("Microsoft.Resources/resourceGroups"),
+				Name:     to.Ptr(name),
+				Location: to.Ptr("eastus2"),
 			})
 		}
 

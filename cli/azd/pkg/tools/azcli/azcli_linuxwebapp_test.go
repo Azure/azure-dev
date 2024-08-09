@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -105,18 +105,18 @@ func registerIsLinuxWebAppMocks(mockContext *mocks.MockContext, ran *bool) {
 		*ran = true
 		response := armappservice.WebAppsClientGetResponse{
 			Site: armappservice.Site{
-				Location: convert.RefOf("eastus2"),
-				Kind:     convert.RefOf("app,linux"),
-				Name:     convert.RefOf("LINUX_WEB_APP_NAME"),
+				Location: to.Ptr("eastus2"),
+				Kind:     to.Ptr("app,linux"),
+				Name:     to.Ptr("LINUX_WEB_APP_NAME"),
 				Properties: &armappservice.SiteProperties{
-					DefaultHostName: convert.RefOf("LINUX_WEB_APP_NAME.azurewebsites.net"),
+					DefaultHostName: to.Ptr("LINUX_WEB_APP_NAME.azurewebsites.net"),
 					SiteConfig: &armappservice.SiteConfig{
-						LinuxFxVersion: convert.RefOf("Python"),
+						LinuxFxVersion: to.Ptr("Python"),
 					},
 					HostNameSSLStates: []*armappservice.HostNameSSLState{
 						{
-							HostType: convert.RefOf(armappservice.HostTypeRepository),
-							Name:     convert.RefOf("LINUX_WEB_APP_NAME_SCM_HOST"),
+							HostType: to.Ptr(armappservice.HostTypeRepository),
+							Name:     to.Ptr("LINUX_WEB_APP_NAME_SCM_HOST"),
 						},
 					},
 				},
@@ -137,18 +137,18 @@ func registerLogicAppMocks(mockContext *mocks.MockContext, ran *bool) {
 		*ran = true
 		response := armappservice.WebAppsClientGetResponse{
 			Site: armappservice.Site{
-				Location: convert.RefOf("eastus2"),
-				Kind:     convert.RefOf("functionapp"),
-				Name:     convert.RefOf("WINDOWS_LOGIC_APP_NAME"),
+				Location: to.Ptr("eastus2"),
+				Kind:     to.Ptr("functionapp"),
+				Name:     to.Ptr("WINDOWS_LOGIC_APP_NAME"),
 				Properties: &armappservice.SiteProperties{
-					DefaultHostName: convert.RefOf("WINDOWS_LOGIC_APP_NAME.azurewebsites.net"),
+					DefaultHostName: to.Ptr("WINDOWS_LOGIC_APP_NAME.azurewebsites.net"),
 					SiteConfig: &armappservice.SiteConfig{
-						LinuxFxVersion: convert.RefOf(""),
+						LinuxFxVersion: to.Ptr(""),
 					},
 					HostNameSSLStates: []*armappservice.HostNameSSLState{
 						{
-							HostType: convert.RefOf(armappservice.HostTypeRepository),
-							Name:     convert.RefOf("WINDOWS_LOGIC_APP_SCM_HOST"),
+							HostType: to.Ptr(armappservice.HostTypeRepository),
+							Name:     to.Ptr("WINDOWS_LOGIC_APP_SCM_HOST"),
 						},
 					},
 				},
@@ -199,10 +199,10 @@ func registerLinuxWebAppDeployRuntimeSuccessfulMocks(mockContext *mocks.MockCont
 			armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
 				CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
 					Properties: &armappservice.CsmDeploymentStatusProperties{
-						Status:                      convert.RefOf(armappservice.DeploymentBuildStatusRuntimeSuccessful),
-						NumberOfInstancesSuccessful: convert.RefOf(int32(1)),
-						NumberOfInstancesFailed:     convert.RefOf(int32(0)),
-						NumberOfInstancesInProgress: convert.RefOf(int32(0)),
+						Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeSuccessful),
+						NumberOfInstancesSuccessful: to.Ptr(int32(1)),
+						NumberOfInstancesFailed:     to.Ptr(int32(0)),
+						NumberOfInstancesInProgress: to.Ptr(int32(0)),
 					},
 				},
 			},
@@ -228,10 +228,10 @@ func registerLinuxWebAppDeployRuntimeFailedMocks(mockContext *mocks.MockContext,
 			armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
 				CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
 					Properties: &armappservice.CsmDeploymentStatusProperties{
-						Status:                      convert.RefOf(armappservice.DeploymentBuildStatusRuntimeFailed),
-						NumberOfInstancesSuccessful: convert.RefOf(int32(0)),
-						NumberOfInstancesFailed:     convert.RefOf(int32(1)),
-						NumberOfInstancesInProgress: convert.RefOf(int32(0)),
+						Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeFailed),
+						NumberOfInstancesSuccessful: to.Ptr(int32(0)),
+						NumberOfInstancesFailed:     to.Ptr(int32(1)),
+						NumberOfInstancesInProgress: to.Ptr(int32(0)),
 					},
 				},
 			},

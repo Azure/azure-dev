@@ -23,10 +23,10 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -586,7 +586,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 		}
 
 		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -627,7 +627,7 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 		}
 
 		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -683,12 +683,12 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Choices: convert.RefOf(choicesFromOptions(options)),
+				Choices: to.Ptr(choicesFromOptions(options)),
 			},
 		}
 
 		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -763,12 +763,12 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Choices: convert.RefOf(choicesFromOptions(options)),
+				Choices: to.Ptr(choicesFromOptions(options)),
 			},
 		}
 
 		if value, ok := options.DefaultValue.([]string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -835,7 +835,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		}
 
 		if value, ok := options.DefaultValue.(bool); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)

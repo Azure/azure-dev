@@ -26,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -438,8 +437,8 @@ func prepareBicepMocks(
 }
 
 var cTestEnvDeployment armresources.DeploymentExtended = armresources.DeploymentExtended{
-	ID:   convert.RefOf("DEPLOYMENT_ID"),
-	Name: convert.RefOf("test-env"),
+	ID:   to.Ptr("DEPLOYMENT_ID"),
+	Name: to.Ptr("test-env"),
 	Properties: &armresources.DeploymentPropertiesExtended{
 		Outputs: map[string]interface{}{
 			"WEBSITE_URL": map[string]interface{}{"value": "http://myapp.azurewebsites.net", "type": "string"},
@@ -497,10 +496,10 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			string(resourceType), resourceName)
 
 		return &armresources.GenericResourceExpanded{
-			ID:       convert.RefOf(id),
-			Name:     convert.RefOf(resourceName),
-			Type:     convert.RefOf(string(resourceType)),
-			Location: convert.RefOf("eastus2"),
+			ID:       to.Ptr(id),
+			Name:     to.Ptr(resourceName),
+			Type:     to.Ptr(string(resourceType)),
+			Location: to.Ptr("eastus2"),
 		}
 	}
 
@@ -617,14 +616,14 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
 			Vault: armkeyvault.Vault{
-				ID: convert.RefOf(
+				ID: to.Ptr(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 						string(infra.AzureResourceTypeKeyVault), name)),
-				Name:     convert.RefOf(name),
-				Location: convert.RefOf(location),
+				Name:     to.Ptr(name),
+				Location: to.Ptr(location),
 				Properties: &armkeyvault.VaultProperties{
-					EnableSoftDelete:      convert.RefOf(true),
-					EnablePurgeProtection: convert.RefOf(false),
+					EnableSoftDelete:      to.Ptr(true),
+					EnablePurgeProtection: to.Ptr(false),
 				},
 			},
 		}
@@ -644,14 +643,14 @@ func getManagedHSMMock(mockContext *mocks.MockContext, managedHSMString string, 
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		managedHSMResponse := armkeyvault.ManagedHsmsClientGetResponse{
 			ManagedHsm: armkeyvault.ManagedHsm{
-				ID: convert.RefOf(
+				ID: to.Ptr(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 						string(infra.AzureResourceTypeManagedHSM), name)),
-				Name:     convert.RefOf(name),
-				Location: convert.RefOf(location),
+				Name:     to.Ptr(name),
+				Location: to.Ptr(location),
 				Properties: &armkeyvault.ManagedHsmProperties{
-					EnableSoftDelete:      convert.RefOf(true),
-					EnablePurgeProtection: convert.RefOf(false),
+					EnableSoftDelete:      to.Ptr(true),
+					EnablePurgeProtection: to.Ptr(false),
 				},
 			},
 		}
@@ -671,14 +670,14 @@ func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, na
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
 			ConfigurationStore: armappconfiguration.ConfigurationStore{
-				ID: convert.RefOf(
+				ID: to.Ptr(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 						string(infra.AzureResourceTypeAppConfig), name)),
 
-				Name:     convert.RefOf(name),
-				Location: convert.RefOf(location),
+				Name:     to.Ptr(name),
+				Location: to.Ptr(location),
 				Properties: &armappconfiguration.ConfigurationStoreProperties{
-					EnablePurgeProtection: convert.RefOf(false),
+					EnablePurgeProtection: to.Ptr(false),
 				},
 			},
 		}
@@ -698,12 +697,12 @@ func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string,
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		apimResponse := armapimanagement.ServiceClientGetResponse{
 			ServiceResource: armapimanagement.ServiceResource{
-				ID: convert.RefOf(
+				ID: to.Ptr(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 						string(infra.AzureResourceTypeApim), name)),
 
-				Name:     convert.RefOf(name),
-				Location: convert.RefOf(location),
+				Name:     to.Ptr(name),
+				Location: to.Ptr(location),
 			},
 		}
 
@@ -743,26 +742,26 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
 
 		mockDeployment := armresources.DeploymentExtended{
-			ID:   convert.RefOf("DEPLOYMENT_ID"),
-			Name: convert.RefOf("test-env"),
+			ID:   to.Ptr("DEPLOYMENT_ID"),
+			Name: to.Ptr("test-env"),
 			Properties: &armresources.DeploymentPropertiesExtended{
 				OutputResources: []*armresources.ResourceReference{
 					{
-						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA"),
+						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupA"),
 					},
 					{
-						ID: convert.RefOf(
+						ID: to.Ptr(
 							"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
 						),
 					},
 					{
-						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB"),
+						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB"),
 					},
 					{
-						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
+						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
 					},
 					{
-						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupC"),
+						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupC"),
 					},
 				},
 				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),

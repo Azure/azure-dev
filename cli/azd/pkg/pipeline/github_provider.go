@@ -14,8 +14,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -424,7 +424,7 @@ func (p *GitHubCiProvider) credentialOptions(
 				Name:        url.PathEscape(fmt.Sprintf("%s-pull_request", credentialSafeName)),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
-				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Description: to.Ptr("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 		}
@@ -434,7 +434,7 @@ func (p *GitHubCiProvider) credentialOptions(
 				Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, branch)),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
-				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Description: to.Ptr("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			}
 

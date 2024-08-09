@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 type AzCliAppServiceProperties struct {
@@ -148,7 +148,7 @@ func (cli *azCli) DeployAppServiceZip(
 		} else {
 			// Deployment is successful
 			statusText := "OK"
-			return convert.RefOf(statusText), nil
+			return to.Ptr(statusText), nil
 		}
 	}
 
@@ -157,7 +157,7 @@ func (cli *azCli) DeployAppServiceZip(
 		return nil, err
 	}
 
-	return convert.RefOf(response.StatusText), nil
+	return to.Ptr(response.StatusText), nil
 }
 
 func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string) (*armappservice.WebAppsClient, error) {

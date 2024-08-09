@@ -140,7 +140,6 @@ func createContainerAppServiceTarget(
 
 	containerAppService := containerapps.NewContainerAppService(
 		credentialProvider,
-		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,

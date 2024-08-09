@@ -39,7 +39,6 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 
 	cas := NewContainerAppService(
 		mockContext.SubscriptionCredentialProvider,
-		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
@@ -135,7 +134,6 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 
 	cas := NewContainerAppService(
 		mockContext.SubscriptionCredentialProvider,
-		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,

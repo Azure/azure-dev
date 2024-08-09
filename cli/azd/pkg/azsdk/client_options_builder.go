@@ -60,7 +60,7 @@ func (b *ClientOptionsBuilder) BuildCoreClientOptions() *azcore.ClientOptions {
 // These options include the underlying transport to be used.
 func (b *ClientOptionsBuilder) BuildArmClientOptions() *arm.ClientOptions {
 	return &arm.ClientOptions{
-		ClientOptions: policy.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
 			// Supports mocking for unit tests
 			Transport: b.transport,
 			// Per request policies to inject into HTTP pipeline

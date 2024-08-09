@@ -167,6 +167,7 @@ const (
 	azdoDisplayName   string = "Azure DevOps"
 	azdoCode                 = "azdo"
 	azdoRoot          string = ".azdo"
+	azdoRootAlt       string = ".azuredevops"
 	azdoPipelines     string = "pipelines"
 	envPersistedKey   string = "AZD_PIPELINE_PROVIDER"
 )
@@ -176,36 +177,38 @@ var (
 )
 
 var (
-	// Define a map to hold the directory and file names for each provider
 	pipelineProviderFiles = map[ciProviderType]struct {
-		RootDirectory     string
-		PipelineDirectory string
-		Files             []string
-		DefaultFile       string
-		DisplayName       string
-		Code              string
+		RootDirectories     []string
+		PipelineDirectories []string
+		Files               []string
+		DefaultFile         string
+		DisplayName         string
+		Code                string
 	}{
 		ciProviderGitHubActions: {
-			RootDirectory:     gitHubRoot,
-			PipelineDirectory: filepath.Join(gitHubRoot, gitHubWorkflows),
-			Files:             generateFilePaths(filepath.Join(gitHubRoot, gitHubWorkflows), pipelineFileNames),
-			DefaultFile:       pipelineFileNames[0],
-			DisplayName:       gitHubDisplayName,
+			RootDirectories:     []string{gitHubRoot},
+			PipelineDirectories: []string{filepath.Join(gitHubRoot, gitHubWorkflows)},
+			Files:               generateFilePaths([]string{filepath.Join(gitHubRoot, gitHubWorkflows)}, pipelineFileNames),
+			DefaultFile:         pipelineFileNames[0],
+			DisplayName:         gitHubDisplayName,
 		},
 		ciProviderAzureDevOps: {
-			RootDirectory:     azdoRoot,
-			PipelineDirectory: filepath.Join(azdoRoot, azdoPipelines),
-			Files:             generateFilePaths(filepath.Join(azdoRoot, azdoPipelines), pipelineFileNames),
-			DefaultFile:       pipelineFileNames[0],
-			DisplayName:       azdoDisplayName,
+			RootDirectories:     []string{azdoRoot, azdoRootAlt},
+			PipelineDirectories: []string{filepath.Join(azdoRoot, azdoPipelines), filepath.Join(azdoRootAlt, azdoPipelines)},
+			Files: generateFilePaths([]string{filepath.Join(azdoRoot, azdoPipelines),
+				filepath.Join(azdoRootAlt, azdoPipelines)}, pipelineFileNames),
+			DefaultFile: pipelineFileNames[0],
+			DisplayName: azdoDisplayName,
 		},
 	}
 )
 
-func generateFilePaths(directory string, fileNames []string) []string {
+func generateFilePaths(directories []string, fileNames []string) []string {
 	var paths []string
-	for _, file := range fileNames {
-		paths = append(paths, filepath.Join(directory, file))
+	for _, dir := range directories {
+		for _, file := range fileNames {
+			paths = append(paths, filepath.Join(dir, file))
+		}
 	}
 	return paths
 }

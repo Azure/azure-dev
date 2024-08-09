@@ -70,6 +70,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		deleteYamlFiles(t, tempDir)
 	})
+
 	t.Run("no files - github selected - empty workflows dir", func(t *testing.T) {
 		mockContext = resetContext(tempDir, ctx)
 
@@ -81,9 +82,14 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		// No error for GitHub, just a message to the console
 		assert.NoError(t, err)
 		assert.Contains(t,
-			mockContext.Console.Output(), fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-				gitHubDisplayName, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory))
+			mockContext.Console.Output(),
+			fmt.Sprintf(
+				"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
+					"Please add pipeline files.",
+				gitHubDisplayName,
+				strings.Join(pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories, "\n")))
 	})
+
 	t.Run("no files - azdo selected - empty pipelines dir", func(t *testing.T) {
 		mockContext = resetContext(tempDir, ctx)
 
@@ -94,11 +100,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf(
-			"%s provider selected, but %s is empty. Please add pipeline files and try again.",
-			azdoDisplayName, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectory))
+			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
+				"Please add pipeline files and try again.",
+			azdoDisplayName,
+			strings.Join(pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories, "\n")))
 	})
-	t.Run("no files - azdo selected", func(t *testing.T) {
 
+	t.Run("no files - azdo selected", func(t *testing.T) {
 		mockContext = resetContext(tempDir, ctx)
 
 		deleteYamlFiles(t, tempDir)
@@ -119,6 +127,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.FileExists(t, azdoYmlPath)
 		deleteYamlFiles(t, tempDir)
 	})
+
 	t.Run("from persisted data azdo error", func(t *testing.T) {
 		// User selects Azure DevOps, but the required directory is missing
 		mockContext = resetContext(tempDir, ctx)
@@ -132,9 +141,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf(
-			"%s provider selected, but %s is empty. Please add pipeline files and try again.",
-			azdoDisplayName, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectory))
+			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
+				"Please add pipeline files and try again.",
+			azdoDisplayName,
+			strings.Join(pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories, "\n")),
+		)
 	})
+
 	t.Run("from persisted data azdo", func(t *testing.T) {
 		// User has azdo persisted in env and they have the files
 		mockContext = resetContext(tempDir, ctx)
@@ -164,9 +177,15 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		// No error for GitHub, just a message to the console
 		assert.NoError(t, err)
 		assert.Contains(t,
-			mockContext.Console.Output(), fmt.Sprintf("%s provider selected, but %s is empty. Please add pipeline files.",
-				gitHubDisplayName, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory))
+			mockContext.Console.Output(),
+			fmt.Sprintf(
+				"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
+					"Please add pipeline files.",
+				gitHubDisplayName,
+				strings.Join(pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories, "\n")),
+		)
 	})
+
 	t.Run("from persisted data github", func(t *testing.T) {
 		// User has azdo persisted in env and they have the files
 		mockContext = resetContext(tempDir, ctx)
@@ -346,6 +365,25 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		deleteYamlFiles(t, tempDir)
 	})
 
+	t.Run("has azure-dev.yaml in .azuredevops folder", func(t *testing.T) {
+		mockContext = resetContext(tempDir, ctx)
+
+		// Create the azure-dev.yml file in the .azuredevops folder using createYamlFiles
+		createYamlFiles(t, tempDir, ciProviderAzureDevOps, 2)
+
+		// Initialize the PipelineManager
+		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
+		assert.NotNil(t, manager)
+		assert.NoError(t, err)
+
+		// Execute the initialize method, which should trigger the provider selection prompt
+		err = manager.initialize(ctx, "")
+
+		verifyProvider(t, manager, ciProviderAzureDevOps, err)
+
+		deleteYamlFiles(t, tempDir)
+	})
+
 	t.Run("both files - user selects azdo", func(t *testing.T) {
 		mockContext = resetContext(tempDir, ctx)
 
@@ -453,7 +491,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 func Test_promptForCiFiles(t *testing.T) {
 	t.Run("no files - github selected - no app host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
-		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory)
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
 		err := os.MkdirAll(path, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
@@ -475,7 +513,7 @@ func Test_promptForCiFiles(t *testing.T) {
 	})
 	t.Run("no files - github selected - App host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
-		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory)
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
 		err := os.MkdirAll(path, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
@@ -497,10 +535,10 @@ func Test_promptForCiFiles(t *testing.T) {
 	})
 	t.Run("no files - azdo selected - App host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
-		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory)
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
 		err := os.MkdirAll(path, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
 			CiProvider:    ciProviderAzureDevOps,
 			InfraProvider: infraProviderBicep,
@@ -519,7 +557,7 @@ func Test_promptForCiFiles(t *testing.T) {
 	})
 	t.Run("no files - github selected - no app host - client cred", func(t *testing.T) {
 		tempDir := t.TempDir()
-		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory)
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
 		err := os.MkdirAll(path, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
@@ -541,7 +579,7 @@ func Test_promptForCiFiles(t *testing.T) {
 	})
 	t.Run("no files - github selected - branch name", func(t *testing.T) {
 		tempDir := t.TempDir()
-		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory)
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
 		err := os.MkdirAll(path, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
@@ -563,10 +601,10 @@ func Test_promptForCiFiles(t *testing.T) {
 	})
 	t.Run("no files - azdo selected - no app host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
-		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory)
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
 		err := os.MkdirAll(path, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
 			CiProvider:    ciProviderAzureDevOps,
 			InfraProvider: infraProviderBicep,
@@ -585,10 +623,10 @@ func Test_promptForCiFiles(t *testing.T) {
 	})
 	t.Run("no files - azdo selected - no app host - client cred", func(t *testing.T) {
 		tempDir := t.TempDir()
-		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory)
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
 		err := os.MkdirAll(path, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
 			CiProvider:    ciProviderAzureDevOps,
 			InfraProvider: infraProviderBicep,
@@ -607,10 +645,10 @@ func Test_promptForCiFiles(t *testing.T) {
 	})
 	t.Run("no files - azdo selected - branch name", func(t *testing.T) {
 		tempDir := t.TempDir()
-		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectory)
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
 		err := os.MkdirAll(path, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 		err = generatePipelineDefinition(expectedPath, projectProperties{
 			CiProvider:    ciProviderAzureDevOps,
 			InfraProvider: infraProviderBicep,
@@ -618,6 +656,54 @@ func Test_promptForCiFiles(t *testing.T) {
 			HasAppHost:    false,
 			BranchName:    "non-main",
 			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, normalizeEOL(content))
+	})
+}
+
+func Test_promptForCiFiles_azureDevOpsDirectory(t *testing.T) {
+	t.Run("no files - azdo selected - azuredevops dir - fed Cred", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, ".azuredevops")
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, ".azuredevops/azure-dev.yml")
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderAzureDevOps,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, normalizeEOL(content))
+	})
+
+	t.Run("no files - azdo selected - azuredevops dir - client cred", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, ".azuredevops")
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, ".azuredevops/azure-dev.yml")
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderAzureDevOps,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "main",
+			AuthType:      AuthTypeClientCredentials,
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -799,16 +885,20 @@ func createYamlFiles(t *testing.T, tempDir string, createOptionsAndFileIndex ...
 
 // Helper function to create pipeline files
 func createPipelineFiles(t *testing.T, baseDir string, provider ciProviderType, fileIndex int) {
-	dir := filepath.Join(baseDir, pipelineProviderFiles[provider].PipelineDirectory)
-	err := os.MkdirAll(dir, osutil.PermissionDirectory)
-	assert.NoError(t, err)
-
 	files := pipelineProviderFiles[provider].Files
 	if fileIndex < 0 || fileIndex >= len(files) {
 		fileIndex = 0 // Default to 0 if index is out of bounds
 	}
 
+	// Get the full path by joining the baseDir with the relative file path
 	filePath := filepath.Join(baseDir, files[fileIndex])
+
+	// Ensure the directory exists
+	dir := filepath.Dir(filePath)
+	err := os.MkdirAll(dir, osutil.PermissionDirectory)
+	assert.NoError(t, err)
+
+	// Create the file
 	file, err := os.Create(filePath)
 	assert.NoError(t, err)
 	err = file.Close()
@@ -843,9 +933,11 @@ func deleteYamlFiles(t *testing.T, tempDir string, deleteOptions ...ciProviderTy
 
 // Helper function to delete pipeline files and directories
 func deletePipelineFiles(t *testing.T, baseDir string, provider ciProviderType) {
-	dir := filepath.Join(baseDir, pipelineProviderFiles[provider].RootDirectory)
-	err := os.RemoveAll(dir)
-	assert.NoError(t, err)
+	for _, file := range pipelineProviderFiles[provider].Files {
+		fullPath := filepath.Join(baseDir, file)
+		err := os.RemoveAll(fullPath)
+		assert.NoError(t, err)
+	}
 }
 
 func simulateUserInteraction(mockContext *mocks.MockContext, providerLabel ciProviderType, createConfirmation bool) {

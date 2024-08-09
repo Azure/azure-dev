@@ -436,7 +436,7 @@ func prepareBicepMocks(
 	})
 }
 
-var cTestEnvDeployment armresources.DeploymentExtended = armresources.DeploymentExtended{
+var testEnvDeployment armresources.DeploymentExtended = armresources.DeploymentExtended{
 	ID:   to.Ptr("DEPLOYMENT_ID"),
 	Name: to.Ptr("test-env"),
 	Properties: &armresources.DeploymentPropertiesExtended{
@@ -454,7 +454,7 @@ var cTestEnvDeployment armresources.DeploymentExtended = armresources.Deployment
 }
 
 func prepareStateMocks(mockContext *mocks.MockContext) {
-	deployResultBytes, _ := json.Marshal(cTestEnvDeployment)
+	deployResultBytes, _ := json.Marshal(testEnvDeployment)
 
 	// Get deployment result
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -471,7 +471,7 @@ func prepareStateMocks(mockContext *mocks.MockContext) {
 
 	deploymentsPage := &armresources.DeploymentListResult{
 		Value: []*armresources.DeploymentExtended{
-			&cTestEnvDeployment,
+			&testEnvDeployment,
 		},
 	}
 

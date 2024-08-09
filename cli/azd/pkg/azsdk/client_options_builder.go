@@ -70,7 +70,7 @@ func (b *ClientOptionsBuilder) BuildArmClientOptions() *arm.ClientOptions {
 			// Logging policy options.
 			// Always allow Azure correlation header
 			Logging: policy.LogOptions{
-				AllowedHeaders: []string{cMsCorrelationIdHeader},
+				AllowedHeaders: []string{msCorrelationIdHeader},
 			},
 
 			Cloud: b.cloud,

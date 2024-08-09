@@ -16,8 +16,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// cSwaCliPackage is the npm package (including the version version) we execute with npx to run the SWA CLI.
-const cSwaCliPackage = "@azure/static-web-apps-cli@1.1.8"
+// swaCliPackage is the npm package (including the version version) we execute with npx to run the SWA CLI.
+const swaCliPackage = "@azure/static-web-apps-cli@1.1.8"
 
 var _ tools.ExternalTool = (*Cli)(nil)
 
@@ -121,7 +121,7 @@ func (cli *Cli) executeCommand(ctx context.Context, cwd string, args ...string) 
 
 func (cli *Cli) run(ctx context.Context, cwd string, buildProgress io.Writer, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
-		NewRunArgs("npx", "-y", cSwaCliPackage).
+		NewRunArgs("npx", "-y", swaCliPackage).
 		AppendParams(args...).
 		WithCwd(cwd)
 

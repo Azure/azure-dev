@@ -263,9 +263,6 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
 		return cloud.AzurePublic()
 	})
-	mockContext.Container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {
-		return cloud.PortalUrlBase
-	})
 }
 
 func defaultProvider() (ProviderKind, error) {

@@ -82,7 +82,7 @@ func newShowAction(
 	flags *showFlags,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
-	portalUrlBase cloud.PortalUrlBase,
+	cloud *cloud.Cloud,
 ) actions.Action {
 	return &showAction{
 		projectConfig:        projectConfig,
@@ -97,7 +97,7 @@ func newShowAction(
 		flags:                flags,
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
-		portalUrlBase:        string(portalUrlBase),
+		portalUrlBase:        cloud.PortalUrlBase,
 	}
 }
 

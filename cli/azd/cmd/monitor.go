@@ -81,7 +81,7 @@ func newMonitorAction(
 	deploymentOperations azapi.DeploymentOperations,
 	console input.Console,
 	flags *monitorFlags,
-	portalUrlBase cloud.PortalUrlBase,
+	cloud *cloud.Cloud,
 	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &monitorAction{
@@ -92,7 +92,7 @@ func newMonitorAction(
 		console:              console,
 		flags:                flags,
 		subResolver:          subResolver,
-		portalUrlBase:        string(portalUrlBase),
+		portalUrlBase:        cloud.PortalUrlBase,
 		alphaFeaturesManager: alphaFeatureManager,
 	}
 }

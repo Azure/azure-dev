@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
@@ -32,7 +32,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 	}
 
 	var c struct {
-		azdContext *azdcontext.Root    `container:"type"`
+		azdContext *azdpath.Root       `container:"type"`
 		dotnetCli  *dotnet.Cli         `container:"type"`
 		envManager environment.Manager `container:"type"`
 	}
@@ -59,7 +59,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 
 	// If an azure.yaml doesn't already exist, we need to create one. Creating an environment implies initializing the
 	// azd project if it does not already exist.
-	if _, err := os.Stat(azdcontext.ProjectPath(c.azdContext)); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(azdpath.ProjectPath(c.azdContext)); errors.Is(err, fs.ErrNotExist) {
 		_ = observer.OnNext(ctx, newImportantProgressMessage("Analyzing Aspire Application (this might take a moment...)"))
 
 		manifest, err := apphost.ManifestFromAppHost(ctx, rc.HostProjectPath, c.dotnetCli, dotnetEnv)

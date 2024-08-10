@@ -11,7 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -156,11 +156,11 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 		}
 	})
 
-	c.MustRegisterScoped(func() *azdcontext.Root {
+	c.MustRegisterScoped(func() *azdpath.Root {
 		return azdCtx
 	})
 
-	c.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.Root] {
+	c.MustRegisterScoped(func() *lazy.Lazy[*azdpath.Root] {
 		return lazy.From(azdCtx)
 	})
 

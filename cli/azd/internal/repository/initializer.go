@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -54,7 +54,7 @@ func NewInitializer(
 // A confirmation prompt is displayed for any existing files to be overwritten.
 func (i *Initializer) Initialize(
 	ctx context.Context,
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	template *templates.Template,
 	templateBranch string) error {
 	var err error
@@ -259,14 +259,14 @@ func (i *Initializer) ensureGitRepository(ctx context.Context, repoPath string) 
 // Initialize the project with any metadata values from the template
 func (i *Initializer) initializeProject(
 	ctx context.Context,
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	templateMetaData *templates.Metadata,
 ) error {
 	if templateMetaData == nil || len(templateMetaData.Project) == 0 {
 		return nil
 	}
 
-	projectPath := azdcontext.ProjectPath(azdCtx)
+	projectPath := azdpath.ProjectPath(azdCtx)
 	projectConfig, err := project.LoadConfig(ctx, projectPath)
 	if err != nil {
 		return fmt.Errorf("loading project config: %w", err)
@@ -310,7 +310,7 @@ func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 }
 
 // Initializes a minimal azd project.
-func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.Root) error {
+func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdpath.Root) error {
 	projectDir := azdCtx.Directory()
 	var err error
 
@@ -332,7 +332,7 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 		return err
 	}
 
-	projectConfig, err := project.Load(ctx, azdcontext.ProjectPath(azdCtx))
+	projectConfig, err := project.Load(ctx, azdpath.ProjectPath(azdCtx))
 	if err != nil {
 		return err
 	}
@@ -422,21 +422,21 @@ func (i *Initializer) writeFileSafe(
 	return err
 }
 
-func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Root) error {
+func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdpath.Root) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
-	if _, err := os.Stat(azdcontext.ProjectPath(azdCtx)); errors.Is(err, os.ErrNotExist) {
-		_, err = project.New(ctx, azdcontext.ProjectPath(azdCtx), filepath.Base(azdCtx.Directory()))
+	if _, err := os.Stat(azdpath.ProjectPath(azdCtx)); errors.Is(err, os.ErrNotExist) {
+		_, err = project.New(ctx, azdpath.ProjectPath(azdCtx), filepath.Base(azdCtx.Directory()))
 		if err != nil {
 			return fmt.Errorf("failed to create a project file: %w", err)
 		}
 
 		i.console.MessageUxItem(ctx,
-			&ux.DoneMessage{Message: fmt.Sprintf("Created a new %s file", azdcontext.ProjectFileName)})
+			&ux.DoneMessage{Message: fmt.Sprintf("Created a new %s file", azdpath.ProjectFileName)})
 	}
 
 	//create .azure when running azd init
 	err := os.MkdirAll(
-		azdcontext.EnvironmentConfigPath(azdCtx),
+		azdpath.EnvironmentConfigPath(azdCtx),
 		osutil.PermissionDirectory,
 	)
 	if err != nil {
@@ -485,7 +485,7 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Ro
 
 		// match on entire line
 		// gitignore files can't have comments inline
-		if azdcontext.EnvironmentConfigDirectoryName == text {
+		if azdpath.EnvironmentConfigDirectoryName == text {
 			writeGitignoreFile = false
 			break
 		}
@@ -502,13 +502,13 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Ro
 			newLine = "\r\n"
 		}
 
-		appendContents := azdcontext.EnvironmentConfigDirectoryName + newLine
+		appendContents := azdpath.EnvironmentConfigDirectoryName + newLine
 		if !hasTrailingNewLine {
 			appendContents = newLine + appendContents
 		}
 		_, err := gitignoreFile.WriteString(appendContents)
 		if err != nil {
-			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentConfigDirectoryName, err)
+			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azdpath.EnvironmentConfigDirectoryName, err)
 		}
 	}
 
@@ -517,7 +517,7 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Ro
 
 // PromptIfNonEmpty prompts the user for confirmation if the project directory to initialize in is non-empty.
 // Returns error if an error occurred while prompting, or if the user declines confirmation.
-func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.Root) error {
+func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdpath.Root) error {
 	dir := azdCtx.Directory()
 	isEmpty, err := osutil.IsDirEmpty(dir)
 	if err != nil {

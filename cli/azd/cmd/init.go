@@ -17,8 +17,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -100,7 +100,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
-	lazyAzdCtx      *lazy.Lazy[*azdcontext.Root]
+	lazyAzdCtx      *lazy.Lazy[*azdpath.Root]
 	lazyEnvManager  *lazy.Lazy[environment.Manager]
 	console         input.Console
 	cmdRun          exec.CommandRunner
@@ -112,7 +112,7 @@ type initAction struct {
 }
 
 func newInitAction(
-	lazyAzdCtx *lazy.Lazy[*azdcontext.Root],
+	lazyAzdCtx *lazy.Lazy[*azdpath.Root],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	cmdRun exec.CommandRunner,
 	console input.Console,
@@ -140,7 +140,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	azdCtx := azdcontext.NewRootFromDirectory(wd)
+	azdCtx := azdpath.NewRootFromDirectory(wd)
 	i.lazyAzdCtx.SetValue(azdCtx)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
@@ -160,7 +160,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	})
 
 	var existingProject bool
-	if _, err := os.Stat(azdcontext.ProjectPath(azdCtx)); err == nil {
+	if _, err := os.Stat(azdpath.ProjectPath(azdCtx)); err == nil {
 		existingProject = true
 	} else if errors.Is(err, os.ErrNotExist) {
 		existingProject = false
@@ -294,7 +294,7 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 
 func (i *initAction) initializeTemplate(
 	ctx context.Context,
-	azdCtx *azdcontext.Root) (*templates.Template, error) {
+	azdCtx *azdpath.Root) (*templates.Template, error) {
 	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
 	if err != nil {
 		return nil, err
@@ -345,7 +345,7 @@ func (i *initAction) initializeTemplate(
 
 func (i *initAction) initializeEnv(
 	ctx context.Context,
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	templateMetadata *templates.Metadata) (*environment.Environment, error) {
 	envName, err := azdCtx.DefaultEnvironmentName()
 	if err != nil {

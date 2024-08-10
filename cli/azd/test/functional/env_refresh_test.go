@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/stretchr/testify/require"
@@ -43,7 +43,7 @@ func Test_CLI_EnvRefresh_NoBicep(t *testing.T) {
 	require.NoError(t, err)
 
 	// Remove .azure and infra
-	environment := filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName)
+	environment := filepath.Join(dir, azdpath.EnvironmentConfigDirectoryName)
 	require.NoError(t, os.RemoveAll(environment))
 
 	infraPath := filepath.Join(dir, "infra")

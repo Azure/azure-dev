@@ -11,9 +11,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/spf13/cobra"
@@ -53,7 +53,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 
 	// Set environment for commands that require environment.
 	envName := "envname"
-	azdCtx := azdcontext.NewRootFromDirectory(tempDir)
+	azdCtx := azdpath.NewRootFromDirectory(tempDir)
 	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
 
 	require.NoError(t, err)

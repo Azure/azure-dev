@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/stretchr/testify/require"
@@ -74,7 +74,7 @@ func Test_CLI_Restore_Err_WorkingDirectory(t *testing.T) {
 
 	result, err = cli.RunCommand(ctx, "restore")
 	require.Error(t, err)
-	require.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
+	require.Contains(t, result.Stdout, azdpath.ErrNoProject.Error())
 }
 
 // test restore in a service directory

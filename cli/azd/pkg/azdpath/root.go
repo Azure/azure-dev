@@ -1,4 +1,4 @@
-package azdcontext
+package azdpath
 
 import (
 	"encoding/json"
@@ -11,15 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-// ProjectFileName is the name of the file that stores the project configuration. This file is located in the root of the
-// and contains the project name and other project specific configuration.
-const ProjectFileName = "azure.yaml"
-
-// EnvironmentConfigDirectoryName is the name of the directory that contains environment specific configuration.
-// This directory is located in the root of the azd project and is not intended to be committed. Inside this directory
-// is a folder for each environment and a config.json in the root file that stores the default environment.
-const EnvironmentConfigDirectoryName = ".azure"
-
 // configFileName is the name of the file that stores the default environment and is located in the root of the .azure
 // directory.
 const configFileName = "config.json"
@@ -28,22 +19,13 @@ const configFileName = "config.json"
 const configFileVersion = 1
 
 // Root is wrapper around the root of an azd project on a file system. It is the directory that contains the azure.yaml
-// and .azure folder.
+// and .azure folder. Create a root with [FindRoot] or [FindRootFromWd] which will search upwards looking for a project file
+// to determine the root directory or use [NewRootFromDirectory] if you know the path to the project root already.
 type Root string
 
 // Directory is the path to the root of the azd project (i.e. the folder that contains .azure and azure.yaml).
 func (c *Root) Directory() string {
 	return string(*c)
-}
-
-// EnvironmentConfigPath returns the path to the .azure directory in the root of the azd project.
-func EnvironmentConfigPath(c *Root) string {
-	return filepath.Join(c.Directory(), EnvironmentConfigDirectoryName)
-}
-
-// ProjectPath returns the path to the azure.yaml file in the root of the azd project.
-func ProjectPath(c *Root) string {
-	return filepath.Join(c.Directory(), ProjectFileName)
 }
 
 // DefaultEnvironmentName returns the name of the default environment or an empty string if no default environment is set.
@@ -93,31 +75,31 @@ func (c *Root) SetDefaultEnvironmentName(name string) error {
 }
 
 // Creates context with project directory set to the desired directory.
-func NewRootFromDirectory(projectDirectory string) *Root {
-	return to.Ptr(Root(projectDirectory))
+func NewRootFromDirectory(projectRoot string) *Root {
+	return to.Ptr(Root(projectRoot))
 }
 
 var (
-	// ErrNoProject is returned by NewAzdContextFromWd when no project file is found.
+	// ErrNoProject is returned by NewRootFromWd when no project file is found.
 	ErrNoProject = errors.New("no project exists; to create a new project, run `azd init`")
 )
 
-// Creates context with project directory set to the nearest project file found by calling NewAzdContextFromWd
-// on the current working directory.
-func NewRoot() (*Root, error) {
+// Creates context with project directory set to the nearest project file found by calling NewRootFromWd on the current
+// working directory.
+func FindRoot() (*Root, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get the current directory: %w", err)
 	}
 
-	return NewRootFromWd(wd)
+	return FindRootFromWd(wd)
 }
 
 // Creates context with project directory set to the nearest project file found.
 //
 // The project file is first searched for in the working directory, if not found, the parent directory is searched
 // recursively up to root. If no project file is found, an error that matches [ErrNoProject] with [errors.Is] is returned.
-func NewRootFromWd(wd string) (*Root, error) {
+func FindRootFromWd(wd string) (*Root, error) {
 	// Walk up from the wd to the root, looking for a project file. If we find one, that's
 	// the root project directory.
 	searchDir, err := filepath.Abs(wd)

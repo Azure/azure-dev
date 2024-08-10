@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -272,11 +272,11 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 	require.Equal(t, 1, preDeployCount)
 }
 
-func createAzdContext(t *testing.T) *azdcontext.Root {
+func createAzdContext(t *testing.T) *azdpath.Root {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	return azdcontext.NewRootFromDirectory(tempDir)
+	return azdpath.NewRootFromDirectory(tempDir)
 }
 
 func createNextFn() (NextFn, *bool) {
@@ -358,7 +358,7 @@ func runMiddleware(
 
 func ensureAzdValid(
 	mockContext *mocks.MockContext,
-	azdContext *azdcontext.Root,
+	azdContext *azdpath.Root,
 	envName string,
 	projectConfig *project.ProjectConfig,
 ) error {
@@ -388,6 +388,6 @@ func ensureAzdEnv(ctx context.Context, envManager environment.Manager, envName s
 	return nil
 }
 
-func ensureAzdProject(ctx context.Context, azdContext *azdcontext.Root, projectConfig *project.ProjectConfig) error {
-	return project.Save(ctx, projectConfig, azdcontext.ProjectPath(azdContext))
+func ensureAzdProject(ctx context.Context, azdContext *azdpath.Root, projectConfig *project.ProjectConfig) error {
+	return project.Save(ctx, projectConfig, azdpath.ProjectPath(azdContext))
 }

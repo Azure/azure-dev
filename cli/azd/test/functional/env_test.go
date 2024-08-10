@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/stretchr/testify/require"
 )
@@ -111,7 +111,7 @@ func Test_CLI_Env_Management(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify creating an environment when no default environment is set
-	azdCtx := azdcontext.NewRootFromDirectory(dir)
+	azdCtx := azdpath.NewRootFromDirectory(dir)
 	err = azdCtx.SetDefaultEnvironmentName("")
 	require.NoError(t, err)
 

@@ -9,9 +9,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"golang.org/x/exp/slices"
@@ -19,12 +19,12 @@ import (
 
 // LocalFileDataStore is a DataStore implementation that stores environment data in the local file system.
 type LocalFileDataStore struct {
-	azdContext    *azdcontext.Root
+	azdContext    *azdpath.Root
 	configManager config.FileConfigManager
 }
 
 // NewLocalFileDataStore creates a new LocalFileDataStore instance
-func NewLocalFileDataStore(azdContext *azdcontext.Root, configManager config.FileConfigManager) LocalDataStore {
+func NewLocalFileDataStore(azdContext *azdpath.Root, configManager config.FileConfigManager) LocalDataStore {
 	return &LocalFileDataStore{
 		azdContext:    azdContext,
 		configManager: configManager,
@@ -48,7 +48,7 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 		return nil, err
 	}
 
-	environments, err := os.ReadDir(azdcontext.EnvironmentConfigPath(fs.azdContext))
+	environments, err := os.ReadDir(azdpath.EnvironmentConfigPath(fs.azdContext))
 	if errors.Is(err, os.ErrNotExist) {
 		return []*contracts.EnvListEnvironment{}, nil
 	}
@@ -132,7 +132,7 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 }
 
 func (fs *LocalFileDataStore) environmentRoot(name string) string {
-	return filepath.Join(azdcontext.EnvironmentConfigPath(fs.azdContext), name)
+	return filepath.Join(azdpath.EnvironmentConfigPath(fs.azdContext), name)
 }
 
 // Save saves the environment to the persistent data store

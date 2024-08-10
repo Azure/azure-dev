@@ -10,8 +10,8 @@ import (
 	"net/http"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -78,7 +78,7 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 	}
 
 	var c struct {
-		azdCtx *azdcontext.Root `container:"type"`
+		azdCtx *azdpath.Root `container:"type"`
 	}
 
 	container, err := session.newContainer(rc)

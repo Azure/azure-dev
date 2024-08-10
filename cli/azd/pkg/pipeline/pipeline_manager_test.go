@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -33,7 +33,7 @@ import (
 func Test_PipelineManager_Initialize(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
-	azdContext := azdcontext.NewRootFromDirectory(tempDir)
+	azdContext := azdpath.NewRootFromDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
 	//1. Test without a project file
@@ -631,7 +631,7 @@ func Test_promptForCiFiles(t *testing.T) {
 
 func createPipelineManager(
 	mockContext *mocks.MockContext,
-	azdContext *azdcontext.Root,
+	azdContext *azdpath.Root,
 	env *environment.Environment,
 	args *PipelineManagerArgs,
 ) (*PipelineManager, error) {

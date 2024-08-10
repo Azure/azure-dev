@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -35,7 +35,7 @@ type PythonBridge interface {
 
 // pythonBridge is a bridge to execute python components from the embedded AI resources project
 type pythonBridge struct {
-	azdCtx      *azdcontext.Root
+	azdCtx      *azdpath.Root
 	pythonCli   *python.Cli
 	workingDir  string
 	initialized bool
@@ -43,7 +43,7 @@ type pythonBridge struct {
 
 // NewPythonBridge creates a new PythonBridge instance
 func NewPythonBridge(
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	pythonCli *python.Cli,
 ) PythonBridge {
 	return &pythonBridge{

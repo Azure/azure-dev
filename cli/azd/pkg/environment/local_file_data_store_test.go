@@ -5,15 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_LocalFileDataStore_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
+	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
@@ -41,7 +41,7 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 
 func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
+	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
@@ -61,24 +61,24 @@ func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 }
 
 func Test_LocalFileDataStore_Path(t *testing.T) {
-	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
+	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
 	env := New("env1")
-	expected := filepath.Join(azdcontext.EnvironmentConfigPath(azdContext), "env1", DotEnvFileName)
+	expected := filepath.Join(azdpath.EnvironmentConfigPath(azdContext), "env1", DotEnvFileName)
 	actual := dataStore.EnvPath(env)
 
 	require.Equal(t, expected, actual)
 }
 
 func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
-	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
+	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
 	env := New("env1")
-	expected := filepath.Join(azdcontext.EnvironmentConfigPath(azdContext), "env1", ConfigFileName)
+	expected := filepath.Join(azdpath.EnvironmentConfigPath(azdContext), "env1", ConfigFileName)
 	actual := dataStore.ConfigPath(env)
 
 	require.Equal(t, expected, actual)

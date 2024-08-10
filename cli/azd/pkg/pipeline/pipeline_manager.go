@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -84,7 +84,7 @@ type PipelineManager struct {
 	scmProvider       ScmProvider
 	ciProvider        CiProvider
 	args              *PipelineManagerArgs
-	azdCtx            *azdcontext.Root
+	azdCtx            *azdpath.Root
 	env               *environment.Environment
 	entraIdService    entraid.EntraIdService
 	gitCli            *git.Cli
@@ -101,7 +101,7 @@ func NewPipelineManager(
 	envManager environment.Manager,
 	entraIdService entraid.EntraIdService,
 	gitCli *git.Cli,
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	env *environment.Environment,
 	console input.Console,
 	args *PipelineManagerArgs,
@@ -698,7 +698,7 @@ func (pm *PipelineManager) resolveProviderAndDetermine(
 //     the same provider is used directly, unless the overrideProvider is used to change the last used configuration.
 func (pm *PipelineManager) initialize(ctx context.Context, override string) error {
 	projectDir := pm.azdCtx.Directory()
-	projectPath := azdcontext.ProjectPath(pm.azdCtx)
+	projectPath := azdpath.ProjectPath(pm.azdCtx)
 	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
 	if err != nil {
 		repoRoot = projectDir

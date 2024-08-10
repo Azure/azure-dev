@@ -9,7 +9,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -43,7 +43,7 @@ func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 		&pf.all,
 		"all",
 		false,
-		"Packages all services that are listed in "+azdcontext.ProjectFileName,
+		"Packages all services that are listed in "+azdpath.ProjectFileName,
 	)
 	local.StringVar(
 		&pf.outputPath,

@@ -10,11 +10,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
@@ -59,7 +59,7 @@ var (
 )
 
 func newManagerForTest(
-	azdContext *azdcontext.Root,
+	azdContext *azdpath.Root,
 	console input.Console,
 	localDataStore LocalDataStore,
 	remoteDataStore RemoteDataStore,
@@ -115,7 +115,7 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 }
 
 func createEnvManagerForManagerTest(t *testing.T, mockContext *mocks.MockContext) Manager {
-	azdCtx := azdcontext.NewRootFromDirectory(t.TempDir())
+	azdCtx := azdpath.NewRootFromDirectory(t.TempDir())
 	localDataStore := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
 
 	return newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil)
@@ -140,7 +140,7 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 
 func Test_EnvManager_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
+	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
 
 	t.Run("LocalOnly", func(t *testing.T) {
 		localDataStore := &MockDataStore{}
@@ -202,7 +202,7 @@ func Test_EnvManager_List(t *testing.T) {
 
 func Test_EnvManager_Get(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
+	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
 
 	t.Run("ExistsLocally", func(t *testing.T) {
 		localDataStore := &MockDataStore{}
@@ -275,7 +275,7 @@ func Test_EnvManager_Get(t *testing.T) {
 
 func Test_EnvManager_Save(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
+	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
 
 	t.Run("Success", func(t *testing.T) {
 		localDataStore := &MockDataStore{}
@@ -377,8 +377,8 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(config.NewManager)
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobClient)
 
-	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
-	mockContext.Container.MustRegisterSingleton(func() *azdcontext.Root {
+	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	mockContext.Container.MustRegisterSingleton(func() *azdpath.Root {
 		return azdContext
 	})
 	mockContext.Container.MustRegisterSingleton(func() auth.HttpClient {

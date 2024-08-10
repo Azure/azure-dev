@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -48,7 +48,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
-			azdCtx := azdcontext.NewRootFromDirectory(projectDir)
+			azdCtx := azdpath.NewRootFromDirectory(projectDir)
 			mockContext := mocks.NewMockContext(context.Background())
 			mockGitClone(t, mockContext, "https://github.com/Azure-Samples/local", tt)
 
@@ -68,15 +68,15 @@ func Test_Initializer_Initialize(t *testing.T) {
 			verifyExecutableFilePermissions(t, *mockContext.Context, i.gitCli, projectDir, tt.executableFiles)
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
-			require.FileExists(t, azdcontext.ProjectPath(azdCtx))
-			require.DirExists(t, azdcontext.EnvironmentConfigPath(azdCtx))
+			require.FileExists(t, azdpath.ProjectPath(azdCtx))
+			require.DirExists(t, azdpath.EnvironmentConfigPath(azdCtx))
 		})
 	}
 }
 
 func Test_Initializer_DevCenter(t *testing.T) {
 	projectDir := t.TempDir()
-	azdCtx := azdcontext.NewRootFromDirectory(projectDir)
+	azdCtx := azdpath.NewRootFromDirectory(projectDir)
 	mockContext := mocks.NewMockContext(context.Background())
 	testMetadata := testCase{
 		name:        "devcenter",
@@ -108,7 +108,7 @@ func Test_Initializer_DevCenter(t *testing.T) {
 	err := i.Initialize(*mockContext.Context, azdCtx, template, "")
 	require.NoError(t, err)
 
-	prj, err := project.Load(*mockContext.Context, azdcontext.ProjectPath(azdCtx))
+	prj, err := project.Load(*mockContext.Context, azdpath.ProjectPath(azdCtx))
 	require.NoError(t, err)
 	require.Equal(t, prj.Platform.Type, platform.PlatformKind("devcenter"))
 	require.Equal(t, prj.Platform.Config["name"], "DEVCENTER_NAME")
@@ -130,7 +130,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 			originalReadme := "ORIGINAL"
 			originalProgram := "Console.WriteLine(\"Hello, Original World!\");"
 			projectDir := t.TempDir()
-			azdCtx := azdcontext.NewRootFromDirectory(projectDir)
+			azdCtx := azdpath.NewRootFromDirectory(projectDir)
 			// set up duplicate files
 			err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte(originalReadme), osutil.PermissionFile)
 			require.NoError(t, err, "setting up duplicate readme.md")
@@ -203,8 +203,8 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 			}
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
-			require.FileExists(t, azdcontext.ProjectPath(azdCtx))
-			require.DirExists(t, azdcontext.EnvironmentConfigPath(azdCtx))
+			require.FileExists(t, azdpath.ProjectPath(azdCtx))
+			require.DirExists(t, azdpath.EnvironmentConfigPath(azdCtx))
 		})
 	}
 }
@@ -355,7 +355,7 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
-			azdCtx := azdcontext.NewRootFromDirectory(projectDir)
+			azdCtx := azdpath.NewRootFromDirectory(projectDir)
 
 			if tt.setup.gitignoreFile != "" {
 				if tt.setup.gitIgnoreCrlf {
@@ -366,7 +366,7 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			}
 
 			if tt.setup.projectFile != "" {
-				copyFile(t, testDataPath("empty", tt.setup.projectFile), azdcontext.ProjectPath(azdCtx))
+				copyFile(t, testDataPath("empty", tt.setup.projectFile), azdpath.ProjectPath(azdCtx))
 			}
 
 			console := mockinput.NewMockConsole()
@@ -391,7 +391,7 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			gitignore := filepath.Join(projectDir, ".gitignore")
 			verifyFileContent(t, gitignore, gitIgnoreFileContent)
 
-			require.DirExists(t, azdcontext.EnvironmentConfigPath(azdCtx))
+			require.DirExists(t, azdpath.EnvironmentConfigPath(azdCtx))
 		})
 	}
 }
@@ -435,11 +435,11 @@ func verifyFileContent(t *testing.T, file string, content string) {
 	require.Equal(t, content, string(actualContent))
 }
 
-func verifyProjectFile(t *testing.T, azdCtx *azdcontext.Root, content string) {
+func verifyProjectFile(t *testing.T, azdCtx *azdpath.Root, content string) {
 	content = strings.Replace(content, "<project>", filepath.Base(azdCtx.Directory()), 1)
-	verifyFileContent(t, azdcontext.ProjectPath(azdCtx), content)
+	verifyFileContent(t, azdpath.ProjectPath(azdCtx), content)
 
-	_, err := project.Load(context.Background(), azdcontext.ProjectPath(azdCtx))
+	_, err := project.Load(context.Background(), azdpath.ProjectPath(azdCtx))
 	require.NoError(t, err)
 }
 
@@ -631,7 +631,7 @@ func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 				console: console,
 				gitCli:  gitCli,
 			}
-			azdCtx := azdcontext.NewRootFromDirectory(dir)
+			azdCtx := azdpath.NewRootFromDirectory(dir)
 			err := i.PromptIfNonEmpty(context.Background(), azdCtx)
 
 			if tt.expectedErr != "" {

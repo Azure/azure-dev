@@ -37,6 +37,7 @@ azddeploy
 azdev
 azdexec
 azdinternal
+azdpath
 azdtempl
 azdtempl
 azdtest

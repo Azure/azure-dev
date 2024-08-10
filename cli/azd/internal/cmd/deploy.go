@@ -16,9 +16,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -50,7 +50,7 @@ func (d *DeployFlags) BindNonCommon(
 		"service",
 		"",
 		//nolint:lll
-		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
+		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdpath.ProjectFileName+" file are deployed).",
 	)
 	//deprecate:flag hide --service
 	_ = local.MarkHidden("service")
@@ -65,7 +65,7 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		&d.All,
 		"all",
 		false,
-		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+		"Deploys all services that are listed in "+azdpath.ProjectFileName,
 	)
 	local.StringVar(
 		&d.fromPackage,
@@ -107,7 +107,7 @@ type DeployAction struct {
 	flags               *DeployFlags
 	args                []string
 	projectConfig       *project.ProjectConfig
-	azdCtx              *azdcontext.Root
+	azdCtx              *azdpath.Root
 	env                 *environment.Environment
 	projectManager      project.ProjectManager
 	serviceManager      project.ServiceManager
@@ -130,7 +130,7 @@ func NewDeployAction(
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
 	resourceManager project.ResourceManager,
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	environment *environment.Environment,
 	accountManager account.Manager,
 	portalUrlBase cloud.PortalUrlBase,

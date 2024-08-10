@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -97,7 +97,7 @@ func TestFromRoot(t *testing.T) {
 		t.Parallel()
 
 		envManager, azdCtx := createEnvManager(mockContext, t.TempDir())
-		envRoot := filepath.Join(azdcontext.EnvironmentConfigPath(azdCtx), "testEnv")
+		envRoot := filepath.Join(azdpath.EnvironmentConfigPath(azdCtx), "testEnv")
 
 		err := os.MkdirAll(envRoot, osutil.PermissionDirectory)
 		require.NoError(t, err)
@@ -130,7 +130,7 @@ func Test_SaveAndReload(t *testing.T) {
 	require.NoError(t, err)
 
 	// Simulate another process writing to .env file
-	envRoot := filepath.Join(azdcontext.EnvironmentConfigPath(azdCtx), "test")
+	envRoot := filepath.Join(azdpath.EnvironmentConfigPath(azdCtx), "test")
 	envPath := filepath.Join(envRoot, ".env")
 	envMap, err := godotenv.Read(envPath)
 	require.NotNil(t, envMap)
@@ -266,8 +266,8 @@ func Test_fixupUnquotedDotenv(t *testing.T) {
 	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=\"01\"", fixed)
 }
 
-func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *azdcontext.Root) {
-	azdCtx := azdcontext.NewRootFromDirectory(root)
+func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *azdpath.Root) {
+	azdCtx := azdpath.NewRootFromDirectory(root)
 	configManager := config.NewFileConfigManager(config.NewManager())
 	localDataStore := NewLocalFileDataStore(azdCtx, configManager)
 

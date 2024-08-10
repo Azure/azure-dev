@@ -12,8 +12,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -35,14 +35,14 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		&r.all,
 		"all",
 		false,
-		"Restores all services that are listed in "+azdcontext.ProjectFileName,
+		"Restores all services that are listed in "+azdpath.ProjectFileName,
 	)
 	local.StringVar(
 		&r.serviceName,
 		"service",
 		"",
 		//nolint:lll
-		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
+		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdpath.ProjectFileName+" file are restored).",
 	)
 	//deprecate:flag hide --service
 	_ = local.MarkHidden("service")
@@ -72,7 +72,7 @@ type restoreAction struct {
 	console        input.Console
 	formatter      output.Formatter
 	writer         io.Writer
-	azdCtx         *azdcontext.Root
+	azdCtx         *azdpath.Root
 	env            *environment.Environment
 	projectConfig  *project.ProjectConfig
 	projectManager project.ProjectManager
@@ -87,7 +87,7 @@ func newRestoreAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,

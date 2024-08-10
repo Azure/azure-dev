@@ -8,11 +8,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -48,7 +48,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// DevCenter Config
 	container.MustRegisterTransient(func(
 		ctx context.Context,
-		lazyAzdCtx *lazy.Lazy[*azdcontext.Root],
+		lazyAzdCtx *lazy.Lazy[*azdpath.Root],
 		userConfigManager config.UserConfigManager,
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],

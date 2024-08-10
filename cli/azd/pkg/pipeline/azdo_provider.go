@@ -12,9 +12,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -33,7 +33,7 @@ type AzdoScmProvider struct {
 	envManager     environment.Manager
 	repoDetails    *AzdoRepositoryDetails
 	env            *environment.Environment
-	azdContext     *azdcontext.Root
+	azdContext     *azdpath.Root
 	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
 	console        input.Console
@@ -43,7 +43,7 @@ type AzdoScmProvider struct {
 func NewAzdoScmProvider(
 	envManager environment.Manager,
 	env *environment.Environment,
-	azdContext *azdcontext.Root,
+	azdContext *azdpath.Root,
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	gitCli *git.Cli,
@@ -642,7 +642,7 @@ func (p *AzdoScmProvider) GitPush(
 type AzdoCiProvider struct {
 	envManager    environment.Manager
 	Env           *environment.Environment
-	AzdContext    *azdcontext.Root
+	AzdContext    *azdpath.Root
 	credentials   *entraid.AzureCredentials
 	console       input.Console
 	commandRunner exec.CommandRunner
@@ -651,7 +651,7 @@ type AzdoCiProvider struct {
 func NewAzdoCiProvider(
 	envManager environment.Manager,
 	env *environment.Environment,
-	azdContext *azdcontext.Root,
+	azdContext *azdpath.Root,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 ) CiProvider {

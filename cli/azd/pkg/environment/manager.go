@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -79,14 +79,14 @@ type Manager interface {
 type manager struct {
 	local      DataStore
 	remote     DataStore
-	azdContext *azdcontext.Root
+	azdContext *azdpath.Root
 	console    input.Console
 }
 
 // NewManager creates a new Manager instance
 func NewManager(
 	serviceLocator ioc.ServiceLocator,
-	azdContext *azdcontext.Root,
+	azdContext *azdpath.Root,
 	console input.Console,
 	local LocalDataStore,
 	remoteConfig *state.RemoteConfig,

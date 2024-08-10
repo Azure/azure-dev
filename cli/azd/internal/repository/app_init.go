@@ -13,8 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -40,7 +40,7 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
 	ctx context.Context,
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	initializeEnv func() (*environment.Environment, error)) error {
 	i.console.Message(ctx, "")
 	title := "Scanning app code in current directory"
@@ -316,9 +316,9 @@ func (i *Initializer) InitFromApp(
 
 func (i *Initializer) genProjectFile(
 	ctx context.Context,
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	detect detectConfirm) error {
-	title := "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
+	title := "Generating " + output.WithHighLightFormat("./"+azdpath.ProjectFileName)
 
 	i.console.ShowSpinner(ctx, title, input.Step)
 	var err error
@@ -331,9 +331,9 @@ func (i *Initializer) genProjectFile(
 	err = project.Save(
 		ctx,
 		&config,
-		azdcontext.ProjectPath(azdCtx))
+		azdpath.ProjectPath(azdCtx))
 	if err != nil {
-		return fmt.Errorf("generating %s: %w", azdcontext.ProjectFileName, err)
+		return fmt.Errorf("generating %s: %w", azdpath.ProjectFileName, err)
 	}
 
 	return i.writeCoreAssets(ctx, azdCtx)

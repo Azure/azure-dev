@@ -14,10 +14,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -62,7 +62,7 @@ func newMonitorCmd() *cobra.Command {
 }
 
 type monitorAction struct {
-	azdCtx               *azdcontext.Root
+	azdCtx               *azdpath.Root
 	env                  *environment.Environment
 	subResolver          account.SubscriptionTenantResolver
 	azCli                azcli.AzCli
@@ -74,7 +74,7 @@ type monitorAction struct {
 }
 
 func newMonitorAction(
-	azdCtx *azdcontext.Root,
+	azdCtx *azdpath.Root,
 	env *environment.Environment,
 	subResolver account.SubscriptionTenantResolver,
 	azCli azcli.AzCli,

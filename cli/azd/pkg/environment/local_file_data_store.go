@@ -43,7 +43,7 @@ func (fs *LocalFileDataStore) ConfigPath(env *Environment) string {
 
 // List returns a list of all environments within the data store
 func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
-	defaultEnv, err := azdcontext.DefaultEnvironmentName(fs.azdContext)
+	defaultEnv, err := fs.azdContext.DefaultEnvironmentName()
 	if err != nil {
 		return nil, err
 	}

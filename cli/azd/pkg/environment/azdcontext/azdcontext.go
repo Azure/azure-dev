@@ -48,7 +48,7 @@ func ProjectPath(c *AzdContext) string {
 }
 
 // DefaultEnvironmentName returns the name of the default environment or an empty string if no default environment is set.
-func DefaultEnvironmentName(c *AzdContext) (string, error) {
+func (c *AzdContext) DefaultEnvironmentName() (string, error) {
 	path := filepath.Join(EnvironmentConfigPath(c), configFileName)
 	file, err := os.ReadFile(path)
 	switch {
@@ -68,7 +68,7 @@ func DefaultEnvironmentName(c *AzdContext) (string, error) {
 
 // SetDefaultEnvironmentName saves the environment that is used by default when azd is run without a `-e` flag. Using "" as
 // the name will cause azd to prompt the user to select an environment in the future.
-func SetDefaultEnvironmentName(c *AzdContext, name string) error {
+func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 	path := filepath.Join(EnvironmentConfigPath(c), configFileName)
 	config := configFile{
 		Version:            configFileVersion,

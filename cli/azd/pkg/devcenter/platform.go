@@ -75,7 +75,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 		// Local environment configuration
 		var environmentConfig *Config
 		if azdCtx != nil && localEnvStore != nil {
-			defaultEnvName, err := azdcontext.DefaultEnvironmentName(azdCtx)
+			defaultEnvName, err := azdCtx.DefaultEnvironmentName()
 			if err != nil {
 				environmentConfig = &Config{}
 			} else {

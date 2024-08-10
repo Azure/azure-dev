@@ -89,7 +89,7 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 		return false, err
 	}
 
-	if err := azdcontext.SetDefaultEnvironmentName(c.azdCtx, name); err != nil {
+	if err := c.azdCtx.SetDefaultEnvironmentName(name); err != nil {
 		return false, fmt.Errorf("saving default environment: %w", err)
 	}
 

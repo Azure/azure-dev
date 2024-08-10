@@ -2,5 +2,3 @@
 // Licensed under the MIT License.
 
 package httputil
-
-type UserAgent string

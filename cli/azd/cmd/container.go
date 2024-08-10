@@ -145,9 +145,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	client := createHttpClient()
 	ioc.RegisterInstance[policy.Transporter](container, client)
 	ioc.RegisterInstance[auth.HttpClient](container, client)
-	container.MustRegisterSingleton(func() httputil.UserAgent {
-		return httputil.UserAgent(internal.UserAgent())
-	})
 
 	// Auth
 	container.MustRegisterSingleton(auth.NewLoggedInGuard)
@@ -474,10 +471,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.MustRegisterSingleton(func(
 		transporter policy.Transporter,
-		userAgent httputil.UserAgent,
 		cloud *cloud.Cloud,
 	) *azsdk.ClientOptionsBuilderFactory {
-		return azsdk.NewClientOptionsBuilderFactory(transporter, string(userAgent), cloud)
+		return azsdk.NewClientOptionsBuilderFactory(transporter, internal.UserAgent(), cloud)
 	})
 
 	container.MustRegisterSingleton(func(

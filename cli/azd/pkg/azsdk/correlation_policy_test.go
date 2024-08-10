@@ -7,8 +7,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
@@ -42,8 +42,8 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
-			expect:                convert.RefOf(traceId.String()),
-			headerName:            cMsCorrelationIdHeader,
+			expect:                to.Ptr(traceId.String()),
+			headerName:            msCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
@@ -53,15 +53,15 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
-			expect:                convert.RefOf(""),
-			headerName:            cMsCorrelationIdHeader,
+			expect:                to.Ptr(""),
+			headerName:            msCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
 			name:                  "WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
-			headerName:            cMsCorrelationIdHeader,
+			headerName:            msCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
@@ -70,8 +70,8 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
-			expect:                convert.RefOf(traceId.String()),
-			headerName:            cMsGraphCorrelationIdHeader,
+			expect:                to.Ptr(traceId.String()),
+			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
@@ -81,15 +81,15 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
-			expect:                convert.RefOf(""),
-			headerName:            cMsGraphCorrelationIdHeader,
+			expect:                to.Ptr(""),
+			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
 			name:                  "WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
-			headerName:            cMsGraphCorrelationIdHeader,
+			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 	}

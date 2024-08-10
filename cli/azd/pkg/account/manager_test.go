@@ -9,10 +9,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
@@ -538,22 +538,22 @@ func Test_HasDefaults(t *testing.T) {
 
 var allTestSubscriptions []*armsubscriptions.Subscription = []*armsubscriptions.Subscription{
 	{
-		ID:             convert.RefOf("subscriptions/SUBSCRIPTION_01"),
-		SubscriptionID: convert.RefOf("SUBSCRIPTION_01"),
-		DisplayName:    convert.RefOf("Subscription 1"),
-		TenantID:       convert.RefOf("TENANT_ID"),
+		ID:             to.Ptr("subscriptions/SUBSCRIPTION_01"),
+		SubscriptionID: to.Ptr("SUBSCRIPTION_01"),
+		DisplayName:    to.Ptr("Subscription 1"),
+		TenantID:       to.Ptr("TENANT_ID"),
 	},
 	{
-		ID:             convert.RefOf("subscriptions/SUBSCRIPTION_02"),
-		SubscriptionID: convert.RefOf("SUBSCRIPTION_02"),
-		DisplayName:    convert.RefOf("Subscription 2"),
-		TenantID:       convert.RefOf("TENANT_ID"),
+		ID:             to.Ptr("subscriptions/SUBSCRIPTION_02"),
+		SubscriptionID: to.Ptr("SUBSCRIPTION_02"),
+		DisplayName:    to.Ptr("Subscription 2"),
+		TenantID:       to.Ptr("TENANT_ID"),
 	},
 	{
-		ID:             convert.RefOf("subscriptions/SUBSCRIPTION_03"),
-		SubscriptionID: convert.RefOf("SUBSCRIPTION_03"),
-		DisplayName:    convert.RefOf("Subscription 3"),
-		TenantID:       convert.RefOf("TENANT_ID"),
+		ID:             to.Ptr("subscriptions/SUBSCRIPTION_03"),
+		SubscriptionID: to.Ptr("SUBSCRIPTION_03"),
+		DisplayName:    to.Ptr("Subscription 3"),
+		TenantID:       to.Ptr("TENANT_ID"),
 	},
 }
 
@@ -567,10 +567,10 @@ func setupGetSubscriptionMock(mockHttp *mockhttp.MockHttpClient, subscription *S
 	}
 
 	mockarmresources.MockGetSubscription(mockHttp, subscription.Id, armsubscriptions.Subscription{
-		ID:             convert.RefOf(subscription.Id),
-		SubscriptionID: convert.RefOf(subscription.Id),
-		DisplayName:    convert.RefOf(subscription.Name),
-		TenantID:       convert.RefOf(subscription.TenantId),
+		ID:             to.Ptr(subscription.Id),
+		SubscriptionID: to.Ptr(subscription.Id),
+		DisplayName:    to.Ptr(subscription.Name),
+		TenantID:       to.Ptr(subscription.TenantId),
 	})
 }
 
@@ -615,8 +615,8 @@ func setupAccountMocks(mockHttp *mockhttp.MockHttpClient) {
 	mockarmresources.MockListTenants(mockHttp, armsubscriptions.TenantListResult{
 		Value: []*armsubscriptions.TenantIDDescription{
 			{
-				DisplayName: convert.RefOf("TENANT"),
-				TenantID:    convert.RefOf("TENANT_ID"),
+				DisplayName: to.Ptr("TENANT"),
+				TenantID:    to.Ptr("TENANT_ID"),
 			},
 		},
 	})
@@ -626,39 +626,39 @@ func setupAccountMocks(mockHttp *mockhttp.MockHttpClient) {
 			armsubscriptions.LocationListResult{
 				Value: []*armsubscriptions.Location{
 					{
-						ID:                  convert.RefOf("westus"),
-						Name:                convert.RefOf("westus"),
-						DisplayName:         convert.RefOf("West US"),
-						RegionalDisplayName: convert.RefOf("(US) West US"),
+						ID:                  to.Ptr("westus"),
+						Name:                to.Ptr("westus"),
+						DisplayName:         to.Ptr("West US"),
+						RegionalDisplayName: to.Ptr("(US) West US"),
 						Metadata: &armsubscriptions.LocationMetadata{
-							RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical),
+							RegionType: to.Ptr(armsubscriptions.RegionTypePhysical),
 						},
 					},
 					{
-						ID:                  convert.RefOf("westus2"),
-						Name:                convert.RefOf("westus2"),
-						DisplayName:         convert.RefOf("West US 2"),
-						RegionalDisplayName: convert.RefOf("(US) West US 2"),
+						ID:                  to.Ptr("westus2"),
+						Name:                to.Ptr("westus2"),
+						DisplayName:         to.Ptr("West US 2"),
+						RegionalDisplayName: to.Ptr("(US) West US 2"),
 						Metadata: &armsubscriptions.LocationMetadata{
-							RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical),
+							RegionType: to.Ptr(armsubscriptions.RegionTypePhysical),
 						},
 					},
 					{
-						ID:                  convert.RefOf("eastus"),
-						Name:                convert.RefOf("eastus"),
-						DisplayName:         convert.RefOf("East US"),
-						RegionalDisplayName: convert.RefOf("(US) East US"),
+						ID:                  to.Ptr("eastus"),
+						Name:                to.Ptr("eastus"),
+						DisplayName:         to.Ptr("East US"),
+						RegionalDisplayName: to.Ptr("(US) East US"),
 						Metadata: &armsubscriptions.LocationMetadata{
-							RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical),
+							RegionType: to.Ptr(armsubscriptions.RegionTypePhysical),
 						},
 					},
 					{
-						ID:                  convert.RefOf("eastus2"),
-						Name:                convert.RefOf("eastus2"),
-						DisplayName:         convert.RefOf("East US 2"),
-						RegionalDisplayName: convert.RefOf("(US) East US 2"),
+						ID:                  to.Ptr("eastus2"),
+						Name:                to.Ptr("eastus2"),
+						DisplayName:         to.Ptr("East US 2"),
+						RegionalDisplayName: to.Ptr("(US) East US 2"),
 						Metadata: &armsubscriptions.LocationMetadata{
-							RegionType: convert.RefOf(armsubscriptions.RegionTypePhysical),
+							RegionType: to.Ptr(armsubscriptions.RegionTypePhysical),
 						},
 					},
 				},

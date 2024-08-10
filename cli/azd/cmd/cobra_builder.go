@@ -16,8 +16,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const cDocsFlagName = "docs"
-
 // CobraBuilder manages the construction of the cobra command tree from nested ActionDescriptors
 type CobraBuilder struct {
 	container *ioc.NestedContainer
@@ -196,7 +194,7 @@ func (df *docsFlag) Set(value string) error {
 		}
 
 		commandPath := strings.ReplaceAll(c.CommandPath(), " ", "-")
-		commandDocsUrl := cReferenceDocumentationUrl + commandPath
+		commandDocsUrl := referenceDocumentationUrl + commandPath
 		openWithDefaultBrowser(ctx, console, commandDocsUrl)
 	})
 
@@ -221,7 +219,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		},
 	}
 	flag := cmd.Flags().VarPF(
-		docsFlag, cDocsFlagName, "", fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
+		docsFlag, "docs", "", fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
 	flag.NoOptDefVal = "true"
 
 	// Consistently registers output formats for the descriptor

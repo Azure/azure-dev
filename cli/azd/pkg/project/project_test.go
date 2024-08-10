@@ -7,9 +7,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -37,13 +37,13 @@ services:
 	mockContext := mocks.NewMockContext(context.Background())
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("deployedApiSvc"),
-				Name:     convert.RefOf("deployedApiSvc"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("deployedApiSvc"),
+				Name:     to.Ptr("deployedApiSvc"),
+				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 			},
 		})
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
@@ -81,15 +81,15 @@ services:
 	resourceName := "app-api-abc123"
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("app-api-abc123"),
+				ID:       to.Ptr("app-api-abc123"),
 				Name:     &resourceName,
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: convert.RefOf("api"),
+					azure.TagKeyAzdServiceName: to.Ptr("api"),
 				},
 			},
 		},
@@ -135,18 +135,18 @@ services:
 		&resourceGroupName,
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("deployedApiSvc"),
-				Name:     convert.RefOf("deployedApiSvc"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("deployedApiSvc"),
+				Name:     to.Ptr("deployedApiSvc"),
+				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 			},
 			{
-				ID:       convert.RefOf("webResource"),
-				Name:     convert.RefOf("webResource"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("webResource"),
+				Name:     to.Ptr("webResource"),
+				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: to.Ptr("web"),
 				},
 			},
 		})
@@ -195,18 +195,18 @@ services:
 		&expectedResourceGroupName,
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("deployedApiSvc"),
-				Name:     convert.RefOf("deployedApiSvc"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("deployedApiSvc"),
+				Name:     to.Ptr("deployedApiSvc"),
+				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 			},
 			{
-				ID:       convert.RefOf("webResource"),
-				Name:     convert.RefOf("webResource"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("webResource"),
+				Name:     to.Ptr("webResource"),
+				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: to.Ptr("web"),
 				},
 			},
 		})

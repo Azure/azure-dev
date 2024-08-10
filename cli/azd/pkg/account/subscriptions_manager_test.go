@@ -10,8 +10,8 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
@@ -37,7 +37,7 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 			args: args{
 				principalInfo: &principalInfoProviderMock{
 					GetLoggedInServicePrincipalTenantIDFunc: func(context.Context) (*string, error) {
-						return convert.RefOf("TENANT_ID_1"), nil
+						return to.Ptr("TENANT_ID_1"), nil
 					},
 				},
 				tenants:       generateTenants(1),
@@ -180,9 +180,9 @@ func generateTenants(total int) []*armsubscriptions.TenantIDDescription {
 	results := make([]*armsubscriptions.TenantIDDescription, 0, total)
 	for i := 1; i <= total; i++ {
 		results = append(results, &armsubscriptions.TenantIDDescription{
-			DisplayName:   convert.RefOf(fmt.Sprintf("TENANT_%d", i)),
-			TenantID:      convert.RefOf(fmt.Sprintf("TENANT_ID_%d", i)),
-			DefaultDomain: convert.RefOf(fmt.Sprintf("TENANT_DOMAIN_%d", i)),
+			DisplayName:   to.Ptr(fmt.Sprintf("TENANT_%d", i)),
+			TenantID:      to.Ptr(fmt.Sprintf("TENANT_ID_%d", i)),
+			DefaultDomain: to.Ptr(fmt.Sprintf("TENANT_DOMAIN_%d", i)),
 		})
 	}
 	return results
@@ -205,9 +205,9 @@ func generateSubscriptions(total int, tenantIDs ...string) map[string][]*armsubs
 		subs := make([]*armsubscriptions.Subscription, 0, total)
 		for i := 1; i <= total; i++ {
 			subs = append(subs, &armsubscriptions.Subscription{
-				ID:             convert.RefOf(fmt.Sprintf("subscriptions/SUBSCRIPTION_%d", i)),
-				SubscriptionID: convert.RefOf(fmt.Sprintf("SUBSCRIPTION_%d_%s", i, tenantID)),
-				DisplayName:    convert.RefOf(fmt.Sprintf("Subscription %d (%s)", i, tenantID)),
+				ID:             to.Ptr(fmt.Sprintf("subscriptions/SUBSCRIPTION_%d", i)),
+				SubscriptionID: to.Ptr(fmt.Sprintf("SUBSCRIPTION_%d_%s", i, tenantID)),
+				DisplayName:    to.Ptr(fmt.Sprintf("Subscription %d (%s)", i, tenantID)),
 				TenantID:       &tenantID,
 			})
 		}

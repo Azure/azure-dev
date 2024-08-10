@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -135,10 +135,10 @@ func (s *environmentService) refreshEnvironmentAsync(
 					resSvc := env.Services[svcIdx]
 
 					if len(resourceIds) > 0 {
-						resSvc.ResourceId = convert.RefOf(resourceIds[0])
+						resSvc.ResourceId = to.Ptr(resourceIds[0])
 					}
 
-					resSvc.Endpoint = convert.RefOf(s.serviceEndpoint(
+					resSvc.Endpoint = to.Ptr(s.serviceEndpoint(
 						ctx, subId, serviceConfig, c.resourceManager, c.serviceManager,
 					))
 				}

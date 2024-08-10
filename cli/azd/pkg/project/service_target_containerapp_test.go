@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -140,7 +140,6 @@ func createContainerAppServiceTarget(
 
 	containerAppService := containerapps.NewContainerAppService(
 		credentialProvider,
-		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
@@ -194,10 +193,10 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 		Properties: &armappcontainers.ContainerAppProperties{
 			LatestRevisionName: &originalRevisionName,
 			Configuration: &armappcontainers.Configuration{
-				ActiveRevisionsMode: convert.RefOf(armappcontainers.ActiveRevisionsModeSingle),
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Secrets: []*armappcontainers.Secret{
 					{
-						Name:  convert.RefOf("secret"),
+						Name:  to.Ptr("secret"),
 						Value: nil,
 					},
 				},

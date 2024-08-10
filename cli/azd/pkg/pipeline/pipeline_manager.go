@@ -84,7 +84,7 @@ type PipelineManager struct {
 	scmProvider       ScmProvider
 	ciProvider        CiProvider
 	args              *PipelineManagerArgs
-	azdCtx            *azdpath.Root
+	azdRoot           *azdpath.Root
 	env               *environment.Environment
 	entraIdService    entraid.EntraIdService
 	gitCli            *git.Cli
@@ -101,7 +101,7 @@ func NewPipelineManager(
 	envManager environment.Manager,
 	entraIdService entraid.EntraIdService,
 	gitCli *git.Cli,
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	env *environment.Environment,
 	console input.Console,
 	args *PipelineManagerArgs,
@@ -110,7 +110,7 @@ func NewPipelineManager(
 	userConfigManager config.UserConfigManager,
 ) (*PipelineManager, error) {
 	pipelineProvider := &PipelineManager{
-		azdCtx:            azdCtx,
+		azdRoot:           azdRoot,
 		envManager:        envManager,
 		env:               env,
 		args:              args,
@@ -243,7 +243,7 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 
 	infra := pm.infra
 	// run pre-config validations.
-	rootPath := pm.azdCtx.Directory()
+	rootPath := pm.azdRoot.Directory()
 	updatedConfig, errorsFromPreConfig := pm.preConfigureCheck(ctx, infra.Options, rootPath)
 	if errorsFromPreConfig != nil {
 		return result, errorsFromPreConfig
@@ -541,14 +541,14 @@ func (pm *PipelineManager) ensureRemote(
 	if err != nil {
 		return nil, err
 	}
-	gitRepoDetails.gitProjectPath = pm.azdCtx.Directory()
+	gitRepoDetails.gitProjectPath = pm.azdRoot.Directory()
 	gitRepoDetails.branch = currentBranch
 	return gitRepoDetails, nil
 }
 
 // getGitRepoDetails get the details about a git project using the azd context to discover the project path.
 func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositoryDetails, error) {
-	repoPath := pm.azdCtx.Directory()
+	repoPath := pm.azdRoot.Directory()
 
 	checkGitMessage := "Checking current directory for Git repository"
 	var err error
@@ -631,11 +631,11 @@ func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositor
 
 // pushGitRepo commit all changes in the git project and push it to upstream.
 func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepositoryDetails, currentBranch string) error {
-	if err := pm.gitCli.AddFile(ctx, pm.azdCtx.Directory(), "."); err != nil {
+	if err := pm.gitCli.AddFile(ctx, pm.azdRoot.Directory(), "."); err != nil {
 		return fmt.Errorf("adding files: %w", err)
 	}
 
-	if err := pm.gitCli.Commit(ctx, pm.azdCtx.Directory(), "Configure Azure Developer Pipeline"); err != nil {
+	if err := pm.gitCli.Commit(ctx, pm.azdRoot.Directory(), "Configure Azure Developer Pipeline"); err != nil {
 		return fmt.Errorf("commit changes: %w", err)
 	}
 
@@ -697,8 +697,8 @@ func (pm *PipelineManager) resolveProviderAndDetermine(
 //   - The provider is persisted in the environment so the next time the function is run,
 //     the same provider is used directly, unless the overrideProvider is used to change the last used configuration.
 func (pm *PipelineManager) initialize(ctx context.Context, override string) error {
-	projectDir := pm.azdCtx.Directory()
-	projectPath := azdpath.ProjectPath(pm.azdCtx)
+	projectDir := pm.azdRoot.Directory()
+	projectPath := azdpath.ProjectPath(pm.azdRoot)
 	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
 	if err != nil {
 		repoRoot = projectDir

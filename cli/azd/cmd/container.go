@@ -225,11 +225,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 	container.MustRegisterScoped(func(lazyEnvManager *lazy.Lazy[environment.Manager]) environment.EnvironmentResolver {
 		return func(ctx context.Context) (*environment.Environment, error) {
-			azdCtx, err := azdpath.FindRoot()
+			azdRoot, err := azdpath.FindRoot()
 			if err != nil {
 				return nil, err
 			}
-			defaultEnv, err := azdCtx.DefaultEnvironmentName()
+			defaultEnv, err := azdRoot.DefaultEnvironmentName()
 			if err != nil {
 				return nil, err
 			}
@@ -262,15 +262,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Environment manager depends on azd context
 	container.MustRegisterSingleton(
 		func(serviceLocator ioc.ServiceLocator,
-			azdContext *lazy.Lazy[*azdpath.Root]) *lazy.Lazy[environment.Manager] {
+			lazyAzdRoot *lazy.Lazy[*azdpath.Root]) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
-				azdCtx, err := azdContext.GetValue()
+				azdRoot, err := lazyAzdRoot.GetValue()
 				if err != nil {
 					return nil, err
 				}
 
 				// Register the Azd context instance as a singleton in the container if now available
-				ioc.RegisterInstance(container, azdCtx)
+				ioc.RegisterInstance(container, azdRoot)
 
 				var envManager environment.Manager
 				err = serviceLocator.Resolve(&envManager)
@@ -361,15 +361,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(
 		func(
 			ctx context.Context,
-			lazyAzdContext *lazy.Lazy[*azdpath.Root],
+			lazyAzdRoot *lazy.Lazy[*azdpath.Root],
 		) *lazy.Lazy[*project.ProjectConfig] {
 			return lazy.NewLazy(func() (*project.ProjectConfig, error) {
-				azdCtx, err := lazyAzdContext.GetValue()
+				azdRoot, err := lazyAzdRoot.GetValue()
 				if err != nil {
 					return nil, err
 				}
 
-				projectConfig, err := project.Load(ctx, azdpath.ProjectPath(azdCtx))
+				projectConfig, err := project.Load(ctx, azdpath.ProjectPath(azdRoot))
 				if err != nil {
 					return nil, err
 				}

@@ -140,8 +140,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	azdCtx := azdpath.NewRootFromDirectory(wd)
-	i.lazyAzdCtx.SetValue(azdCtx)
+	azdRoot := azdpath.NewRootFromDirectory(wd)
+	i.lazyAzdCtx.SetValue(azdRoot)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil,
@@ -160,7 +160,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	})
 
 	var existingProject bool
-	if _, err := os.Stat(azdpath.ProjectPath(azdCtx)); err == nil {
+	if _, err := os.Stat(azdpath.ProjectPath(azdRoot)); err == nil {
 		existingProject = true
 	} else if errors.Is(err, os.ErrNotExist) {
 		existingProject = false
@@ -203,7 +203,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	switch initTypeSelect {
 	case initAppTemplate:
 		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
-		template, err := i.initializeTemplate(ctx, azdCtx)
+		template, err := i.initializeTemplate(ctx, azdRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -213,7 +213,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			templateMetadata = &template.Metadata
 		}
 
-		if _, err := i.initializeEnv(ctx, azdCtx, templateMetadata); err != nil {
+		if _, err := i.initializeEnv(ctx, azdRoot, templateMetadata); err != nil {
 			return nil, err
 		}
 	case initFromApp:
@@ -223,7 +223,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		followUp = "You can provision and deploy your app to Azure by running the " + color.BlueString("azd up") +
 			" command in this directory. For more information on configuring your app, see " +
 			output.WithHighLightFormat("./next-steps.md")
-		entries, err := os.ReadDir(azdCtx.Directory())
+		entries, err := os.ReadDir(azdRoot.Directory())
 		if err != nil {
 			return nil, fmt.Errorf("reading current directory: %w", err)
 		}
@@ -238,14 +238,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() (*environment.Environment, error) {
-			return i.initializeEnv(ctx, azdCtx, nil)
+		err = i.repoInitializer.InitFromApp(ctx, azdRoot, func() (*environment.Environment, error) {
+			return i.initializeEnv(ctx, azdRoot, nil)
 		})
 		if err != nil {
 			return nil, err
 		}
 	case initEnvironment:
-		_, err = i.initializeEnv(ctx, azdCtx, nil)
+		_, err = i.initializeEnv(ctx, azdRoot, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -294,8 +294,8 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 
 func (i *initAction) initializeTemplate(
 	ctx context.Context,
-	azdCtx *azdpath.Root) (*templates.Template, error) {
-	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
+	azdRoot *azdpath.Root) (*templates.Template, error) {
+	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -329,12 +329,12 @@ func (i *initAction) initializeTemplate(
 			}
 		}
 
-		err = i.repoInitializer.Initialize(ctx, azdCtx, template, i.flags.templateBranch)
+		err = i.repoInitializer.Initialize(ctx, azdRoot, template, i.flags.templateBranch)
 		if err != nil {
 			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
 	} else {
-		err := i.repoInitializer.InitializeMinimal(ctx, azdCtx)
+		err := i.repoInitializer.InitializeMinimal(ctx, azdRoot)
 		if err != nil {
 			return nil, fmt.Errorf("init empty repository: %w", err)
 		}
@@ -345,9 +345,9 @@ func (i *initAction) initializeTemplate(
 
 func (i *initAction) initializeEnv(
 	ctx context.Context,
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	templateMetadata *templates.Metadata) (*environment.Environment, error) {
-	envName, err := azdCtx.DefaultEnvironmentName()
+	envName, err := azdRoot.DefaultEnvironmentName()
 	if err != nil {
 		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
@@ -356,7 +356,7 @@ func (i *initAction) initializeEnv(
 		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
-	base := filepath.Base(azdCtx.Directory())
+	base := filepath.Base(azdRoot.Directory())
 	examples := []string{}
 	for _, c := range []string{"dev", "test", "prod"} {
 		suggest := environment.CleanName(base + "-" + c)
@@ -387,7 +387,7 @@ func (i *initAction) initializeEnv(
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
+	if err := azdRoot.SetDefaultEnvironmentName(env.Name()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 

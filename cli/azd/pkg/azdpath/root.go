@@ -19,11 +19,14 @@ const configFileName = "config.json"
 const configFileVersion = 1
 
 // Root is wrapper around the root of an azd project on a file system. It is the directory that contains the azure.yaml
-// and .azure folder. Create a root with [FindRoot] or [FindRootFromWd] which will search upwards looking for a project file
+// and .azure folder. Create a *Root with [FindRoot] or [FindRootFromWd] which will search for a project file
 // to determine the root directory or use [NewRootFromDirectory] if you know the path to the project root already.
+//
+// `azd init` creates a new Root in the current directory by creating a new [ProjectFileName] (i.e. azure.yaml) file
+// (or fetching one as part of a template) and creates the [EnvironmentConfigDirectoryName] (i.e. .azure) directory.
 type Root string
 
-// Directory is the path to the root of the azd project (i.e. the folder that contains .azure and azure.yaml).
+// Directory is the the file system path of the directory that contains .azure and azure.yaml.
 func (c *Root) Directory() string {
 	return string(*c)
 }
@@ -84,8 +87,7 @@ var (
 	ErrNoProject = errors.New("no project exists; to create a new project, run `azd init`")
 )
 
-// Creates context with project directory set to the nearest project file found by calling NewRootFromWd on the current
-// working directory.
+// FindRoot calls FindRootFromWd with the current working directory as returned by [os.Getwd].
 func FindRoot() (*Root, error) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -95,10 +97,10 @@ func FindRoot() (*Root, error) {
 	return FindRootFromWd(wd)
 }
 
-// Creates context with project directory set to the nearest project file found.
-//
-// The project file is first searched for in the working directory, if not found, the parent directory is searched
-// recursively up to root. If no project file is found, an error that matches [ErrNoProject] with [errors.Is] is returned.
+// FindRootFromWd searches upwards from the given directory to find the root of an existing azd project. The root is
+// determined by the presence of a project file (i.e. azure.yaml) in the directory. If a project is not found in the current
+// directory, the parent directory is searched recursively up to the root. If no project file is found, an error that matches
+// [ErrNoProject] with [errors.Is] is returned.
 func FindRootFromWd(wd string) (*Root, error) {
 	// Walk up from the wd to the root, looking for a project file. If we find one, that's
 	// the root project directory.

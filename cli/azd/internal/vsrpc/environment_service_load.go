@@ -62,7 +62,7 @@ func (s *environmentService) loadEnvironmentAsync(
 	ctx context.Context, container *container, name string, mustLoadServices bool,
 ) (*Environment, error) {
 	var c struct {
-		azdCtx         *azdpath.Root           `container:"type"`
+		azdRoot        *azdpath.Root           `container:"type"`
 		envManager     environment.Manager     `container:"type"`
 		projectConfig  *project.ProjectConfig  `container:"type"`
 		dotnetCli      *dotnet.Cli             `container:"type"`
@@ -78,7 +78,7 @@ func (s *environmentService) loadEnvironmentAsync(
 		return nil, fmt.Errorf("getting environment: %w", err)
 	}
 
-	currentEnv, err := c.azdCtx.DefaultEnvironmentName()
+	currentEnv, err := c.azdRoot.DefaultEnvironmentName()
 	if err != nil {
 		return nil, fmt.Errorf("getting default environment: %w", err)
 	}

@@ -96,8 +96,8 @@ func TestFromRoot(t *testing.T) {
 	t.Run("Upgrade", func(t *testing.T) {
 		t.Parallel()
 
-		envManager, azdCtx := createEnvManager(mockContext, t.TempDir())
-		envRoot := filepath.Join(azdpath.EnvironmentConfigPath(azdCtx), "testEnv")
+		envManager, azdRoot := createEnvManager(mockContext, t.TempDir())
+		envRoot := filepath.Join(azdpath.EnvironmentConfigPath(azdRoot), "testEnv")
 
 		err := os.MkdirAll(envRoot, osutil.PermissionDirectory)
 		require.NoError(t, err)
@@ -118,7 +118,7 @@ func Test_SaveAndReload(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	envManager, azdCtx := createEnvManager(mockContext, t.TempDir())
+	envManager, azdRoot := createEnvManager(mockContext, t.TempDir())
 
 	env := New("test")
 	require.NotNil(t, env)
@@ -130,7 +130,7 @@ func Test_SaveAndReload(t *testing.T) {
 	require.NoError(t, err)
 
 	// Simulate another process writing to .env file
-	envRoot := filepath.Join(azdpath.EnvironmentConfigPath(azdCtx), "test")
+	envRoot := filepath.Join(azdpath.EnvironmentConfigPath(azdRoot), "test")
 	envPath := filepath.Join(envRoot, ".env")
 	envMap, err := godotenv.Read(envPath)
 	require.NotNil(t, envMap)
@@ -267,9 +267,9 @@ func Test_fixupUnquotedDotenv(t *testing.T) {
 }
 
 func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *azdpath.Root) {
-	azdCtx := azdpath.NewRootFromDirectory(root)
+	azdRoot := azdpath.NewRootFromDirectory(root)
 	configManager := config.NewFileConfigManager(config.NewManager())
-	localDataStore := NewLocalFileDataStore(azdCtx, configManager)
+	localDataStore := NewLocalFileDataStore(azdRoot, configManager)
 
-	return newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil), azdCtx
+	return newManagerForTest(azdRoot, mockContext.Console, localDataStore, nil), azdRoot
 }

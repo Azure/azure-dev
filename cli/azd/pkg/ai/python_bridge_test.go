@@ -19,7 +19,7 @@ func Test_PythonBridge_Init(t *testing.T) {
 	tempDir := t.TempDir()
 	mockContext := mocks.NewMockContext(context.Background())
 	pythonCli := python.NewCli(mockContext.CommandRunner)
-	azdCtx := azdpath.NewRootFromDirectory(tempDir)
+	azdRoot := azdpath.NewRootFromDirectory(tempDir)
 
 	azdConfigDir := filepath.Join(tempDir, ".azd")
 	os.Setenv("AZD_CONFIG_DIR", azdConfigDir)
@@ -46,7 +46,7 @@ func Test_PythonBridge_Init(t *testing.T) {
 
 	aiDir := filepath.Join(userConfigDir, "bin", "ai")
 
-	bridge := NewPythonBridge(azdCtx, pythonCli)
+	bridge := NewPythonBridge(azdRoot, pythonCli)
 	err = bridge.Initialize(*mockContext.Context)
 	require.NoError(t, err)
 	require.DirExists(t, aiDir)
@@ -57,7 +57,7 @@ func Test_PythonBridge_Init(t *testing.T) {
 func Test_PythonBridge_Run(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	pythonCli := python.NewCli(mockContext.CommandRunner)
-	azdCtx := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 
 	ran := false
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -67,7 +67,7 @@ func Test_PythonBridge_Run(t *testing.T) {
 		return exec.NewRunResult(0, "result", ""), nil
 	})
 
-	bridge := NewPythonBridge(azdCtx, pythonCli)
+	bridge := NewPythonBridge(azdRoot, pythonCli)
 	result, err := bridge.Run(*mockContext.Context, "script.py", "arg1", "arg2")
 	require.NoError(t, err)
 	require.NotNil(t, result)

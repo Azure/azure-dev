@@ -163,8 +163,8 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	require.NoError(t, err)
 
 	// evaluate the project and environment configuration
-	azdCtx := azdpath.NewRootFromDirectory(dir)
-	projectConfig, err := project.Load(ctx, azdpath.ProjectPath(azdCtx))
+	azdRoot := azdpath.NewRootFromDirectory(dir)
+	projectConfig, err := project.Load(ctx, azdpath.ProjectPath(azdRoot))
 	require.NoError(t, err)
 
 	require.Equal(t, devCenterName, projectConfig.Platform.Config["name"])
@@ -1001,7 +1001,7 @@ func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
 }
 
 func envFromAzdRoot(ctx context.Context, azdRootDir string, envName string) (*environment.Environment, error) {
-	azdCtx := azdpath.NewRootFromDirectory(azdRootDir)
-	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	azdRoot := azdpath.NewRootFromDirectory(azdRootDir)
+	localDataStore := environment.NewLocalFileDataStore(azdRoot, config.NewFileConfigManager(config.NewManager()))
 	return localDataStore.Get(ctx, envName)
 }

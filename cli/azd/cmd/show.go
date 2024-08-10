@@ -62,7 +62,7 @@ type showAction struct {
 	azCli                azcli.AzCli
 	envManager           environment.Manager
 	deploymentOperations azapi.DeploymentOperations
-	azdCtx               *azdpath.Root
+	azdRoot              *azdpath.Root
 	flags                *showFlags
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
 	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
@@ -78,7 +78,7 @@ func newShowAction(
 	deploymentOperations azapi.DeploymentOperations,
 	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	flags *showFlags,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
@@ -93,7 +93,7 @@ func newShowAction(
 		azCli:                azCli,
 		envManager:           envManager,
 		deploymentOperations: deploymentOperations,
-		azdCtx:               azdCtx,
+		azdRoot:              azdRoot,
 		flags:                flags,
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
@@ -143,7 +143,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if environmentName == "" {
 		var err error
-		environmentName, err = s.azdCtx.DefaultEnvironmentName()
+		environmentName, err = s.azdRoot.DefaultEnvironmentName()
 		if err != nil {
 			log.Printf("could not determine current environment: %s, resource ids will not be available", err)
 		}

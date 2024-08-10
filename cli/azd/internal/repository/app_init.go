@@ -40,12 +40,12 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
 	ctx context.Context,
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	initializeEnv func() (*environment.Environment, error)) error {
 	i.console.Message(ctx, "")
 	title := "Scanning app code in current directory"
 	i.console.ShowSpinner(ctx, title, input.Step)
-	wd := azdCtx.Directory()
+	wd := azdRoot.Directory()
 
 	projects := []appdetect.Project{}
 	start := time.Now()
@@ -175,8 +175,8 @@ func (i *Initializer) InitFromApp(
 
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
-			azdCtx.Directory(),
-			filepath.Base(azdCtx.Directory()),
+			azdRoot.Directory(),
+			filepath.Base(azdRoot.Directory()),
 			appHostManifests[appHost.Path],
 			appHost.Path,
 		)
@@ -200,7 +200,7 @@ func (i *Initializer) InitFromApp(
 			}
 		}
 
-		skipStagingFiles, err := i.promptForDuplicates(ctx, staging, azdCtx.Directory())
+		skipStagingFiles, err := i.promptForDuplicates(ctx, staging, azdRoot.Directory())
 		if err != nil {
 			return err
 		}
@@ -213,7 +213,7 @@ func (i *Initializer) InitFromApp(
 			}
 		}
 
-		if err := copy.Copy(staging, azdCtx.Directory(), options); err != nil {
+		if err := copy.Copy(staging, azdRoot.Directory(), options); err != nil {
 			return fmt.Errorf("copying contents from temp staging directory: %w", err)
 		}
 
@@ -225,7 +225,7 @@ func (i *Initializer) InitFromApp(
 			Message: "Generating " + output.WithHighLightFormat("./next-steps.md"),
 		})
 
-		return i.writeCoreAssets(ctx, azdCtx)
+		return i.writeCoreAssets(ctx, azdRoot)
 	}
 
 	detect := detectConfirm{console: i.console}
@@ -255,12 +255,12 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
 	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
-	err = i.genProjectFile(ctx, azdCtx, detect)
+	err = i.genProjectFile(ctx, azdRoot, detect)
 	if err != nil {
 		return err
 	}
 
-	infra := filepath.Join(azdCtx.Directory(), "infra")
+	infra := filepath.Join(azdRoot.Directory(), "infra")
 	title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
 	i.console.ShowSpinner(ctx, title, input.Step)
 	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
@@ -302,7 +302,7 @@ func (i *Initializer) InitFromApp(
 		return fmt.Errorf("copying contents from temp staging directory: %w", err)
 	}
 
-	err = scaffold.Execute(t, "next-steps.md", spec, filepath.Join(azdCtx.Directory(), "next-steps.md"))
+	err = scaffold.Execute(t, "next-steps.md", spec, filepath.Join(azdRoot.Directory(), "next-steps.md"))
 	if err != nil {
 		return err
 	}
@@ -316,7 +316,7 @@ func (i *Initializer) InitFromApp(
 
 func (i *Initializer) genProjectFile(
 	ctx context.Context,
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	detect detectConfirm) error {
 	title := "Generating " + output.WithHighLightFormat("./"+azdpath.ProjectFileName)
 
@@ -324,19 +324,19 @@ func (i *Initializer) genProjectFile(
 	var err error
 	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 
-	config, err := prjConfigFromDetect(azdCtx.Directory(), detect)
+	config, err := prjConfigFromDetect(azdRoot.Directory(), detect)
 	if err != nil {
 		return fmt.Errorf("converting config: %w", err)
 	}
 	err = project.Save(
 		ctx,
 		&config,
-		azdpath.ProjectPath(azdCtx))
+		azdpath.ProjectPath(azdRoot))
 	if err != nil {
 		return fmt.Errorf("generating %s: %w", azdpath.ProjectFileName, err)
 	}
 
-	return i.writeCoreAssets(ctx, azdCtx)
+	return i.writeCoreAssets(ctx, azdRoot)
 }
 
 const InitGenTemplateId = "azd-init"

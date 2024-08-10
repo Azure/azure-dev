@@ -48,15 +48,15 @@ func servicesFromManifest(manifest *apphost.Manifest) []*Service {
 	return services
 }
 
-// azdContext resolves the azd context directory to use.
+// azdRoot resolves the azd root directory to use.
 //
 //   - If the host project directory contains azure.yaml, the host project directory is used.
 //   - If the nearest project directory contains azure.yaml, and the azure.yaml has services matching the given host project,
 //     the nearest project directory is used.
 //   - Otherwise, the host project directory directory is used by default.
-func azdContext(hostProjectPath string) (*azdpath.Root, error) {
+func azdRoot(hostProjectPath string) (*azdpath.Root, error) {
 	hostProjectDir := filepath.Dir(hostProjectPath)
-	azdCtx, err := azdpath.FindRootFromWd(hostProjectDir)
+	azdRoot, err := azdpath.FindRootFromWd(hostProjectDir)
 	if errors.Is(err, azdpath.ErrNoProject) {
 		// no project exists, use host project directory as the default
 		return azdpath.NewRootFromDirectory(hostProjectDir), nil
@@ -65,12 +65,12 @@ func azdContext(hostProjectPath string) (*azdpath.Root, error) {
 	}
 
 	// nearest project is in host project directory, use it
-	if azdCtx.Directory() == hostProjectDir {
-		return azdCtx, nil
+	if azdRoot.Directory() == hostProjectDir {
+		return azdRoot, nil
 	}
 
 	// nearest project is not in host project directory, check if it targets the current app host project
-	prjConfig, err := project.Load(context.Background(), azdpath.ProjectPath(azdCtx))
+	prjConfig, err := project.Load(context.Background(), azdpath.ProjectPath(azdRoot))
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func azdContext(hostProjectPath string) (*azdpath.Root, error) {
 	for _, svc := range prjConfig.Services {
 		if svc.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget {
 			if svc.Path() != hostProjectPath {
-				log.Printf("ignoring %s due to mismatch, using app host directory", azdpath.ProjectPath(azdCtx))
+				log.Printf("ignoring %s due to mismatch, using app host directory", azdpath.ProjectPath(azdRoot))
 				return azdpath.NewRootFromDirectory(hostProjectDir), nil
 			}
 		}
@@ -87,6 +87,6 @@ func azdContext(hostProjectPath string) (*azdpath.Root, error) {
 		break
 	}
 
-	log.Printf("use nearest directory: %s", azdCtx.Directory())
-	return azdCtx, nil
+	log.Printf("use nearest directory: %s", azdRoot.Directory())
+	return azdRoot, nil
 }

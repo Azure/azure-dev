@@ -360,8 +360,8 @@ func attributesMap(attributes []Attribute) map[attribute.Key]interface{} {
 }
 
 func getEnvSubscriptionId(t *testing.T, dir string, envName string) string {
-	azdCtx := azdpath.NewRootFromDirectory(dir)
-	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	azdRoot := azdpath.NewRootFromDirectory(dir)
+	localDataStore := environment.NewLocalFileDataStore(azdRoot, config.NewFileConfigManager(config.NewManager()))
 	env, err := localDataStore.Get(context.Background(), envName)
 	require.NoError(t, err)
 

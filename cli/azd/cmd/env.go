@@ -115,7 +115,7 @@ func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 
 type envSetAction struct {
 	console    input.Console
-	azdCtx     *azdpath.Root
+	azdRoot    *azdpath.Root
 	env        *environment.Environment
 	envManager environment.Manager
 	flags      *envSetFlags
@@ -123,7 +123,7 @@ type envSetAction struct {
 }
 
 func newEnvSetAction(
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	env *environment.Environment,
 	envManager environment.Manager,
 	console input.Console,
@@ -132,7 +132,7 @@ func newEnvSetAction(
 ) actions.Action {
 	return &envSetAction{
 		console:    console,
-		azdCtx:     azdCtx,
+		azdRoot:    azdRoot,
 		env:        env,
 		envManager: envManager,
 		flags:      flags,
@@ -159,14 +159,14 @@ func newEnvSelectCmd() *cobra.Command {
 }
 
 type envSelectAction struct {
-	azdCtx     *azdpath.Root
+	azdRoot    *azdpath.Root
 	envManager environment.Manager
 	args       []string
 }
 
-func newEnvSelectAction(azdCtx *azdpath.Root, envManager environment.Manager, args []string) actions.Action {
+func newEnvSelectAction(azdRoot *azdpath.Root, envManager environment.Manager, args []string) actions.Action {
 	return &envSelectAction{
-		azdCtx:     azdCtx,
+		azdRoot:    azdRoot,
 		envManager: envManager,
 		args:       args,
 	}
@@ -184,7 +184,7 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
 
-	if err := e.azdCtx.SetDefaultEnvironmentName(e.args[0]); err != nil {
+	if err := e.azdRoot.SetDefaultEnvironmentName(e.args[0]); err != nil {
 		return nil, fmt.Errorf("setting default environment: %w", err)
 	}
 
@@ -201,20 +201,20 @@ func newEnvListCmd() *cobra.Command {
 
 type envListAction struct {
 	envManager environment.Manager
-	azdCtx     *azdpath.Root
+	azdRoot    *azdpath.Root
 	formatter  output.Formatter
 	writer     io.Writer
 }
 
 func newEnvListAction(
 	envManager environment.Manager,
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	formatter output.Formatter,
 	writer io.Writer,
 ) actions.Action {
 	return &envListAction{
 		envManager: envManager,
-		azdCtx:     azdCtx,
+		azdRoot:    azdRoot,
 		formatter:  formatter,
 		writer:     writer,
 	}
@@ -296,7 +296,7 @@ func newEnvNewCmd() *cobra.Command {
 }
 
 type envNewAction struct {
-	azdCtx     *azdpath.Root
+	azdRoot    *azdpath.Root
 	envManager environment.Manager
 	flags      *envNewFlags
 	args       []string
@@ -304,14 +304,14 @@ type envNewAction struct {
 }
 
 func newEnvNewAction(
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	envManager environment.Manager,
 	flags *envNewFlags,
 	args []string,
 	console input.Console,
 ) actions.Action {
 	return &envNewAction{
-		azdCtx:     azdCtx,
+		azdRoot:    azdRoot,
 		envManager: envManager,
 		flags:      flags,
 		args:       args,
@@ -336,7 +336,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	if err := en.azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
+	if err := en.azdRoot.SetDefaultEnvironmentName(env.Name()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
@@ -548,7 +548,7 @@ func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalC
 }
 
 type envGetValuesAction struct {
-	azdCtx     *azdpath.Root
+	azdRoot    *azdpath.Root
 	console    input.Console
 	envManager environment.Manager
 	formatter  output.Formatter
@@ -557,7 +557,7 @@ type envGetValuesAction struct {
 }
 
 func newEnvGetValuesAction(
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	envManager environment.Manager,
 	console input.Console,
 	formatter output.Formatter,
@@ -565,7 +565,7 @@ func newEnvGetValuesAction(
 	flags *envGetValuesFlags,
 ) actions.Action {
 	return &envGetValuesAction{
-		azdCtx:     azdCtx,
+		azdRoot:    azdRoot,
 		console:    console,
 		envManager: envManager,
 		formatter:  formatter,
@@ -575,7 +575,7 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	name, err := eg.azdCtx.DefaultEnvironmentName()
+	name, err := eg.azdRoot.DefaultEnvironmentName()
 	if err != nil {
 		return nil, err
 	}
@@ -626,7 +626,7 @@ func (eg *envGetValueFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCo
 }
 
 type envGetValueAction struct {
-	azdCtx     *azdpath.Root
+	azdRoot    *azdpath.Root
 	console    input.Console
 	envManager environment.Manager
 	writer     io.Writer
@@ -635,7 +635,7 @@ type envGetValueAction struct {
 }
 
 func newEnvGetValueAction(
-	azdCtx *azdpath.Root,
+	azdRoot *azdpath.Root,
 	envManager environment.Manager,
 	console input.Console,
 	writer io.Writer,
@@ -644,7 +644,7 @@ func newEnvGetValueAction(
 
 ) actions.Action {
 	return &envGetValueAction{
-		azdCtx:     azdCtx,
+		azdRoot:    azdRoot,
 		console:    console,
 		envManager: envManager,
 		writer:     writer,
@@ -660,7 +660,7 @@ func (eg *envGetValueAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	keyName := eg.args[0]
 
-	name, err := eg.azdCtx.DefaultEnvironmentName()
+	name, err := eg.azdRoot.DefaultEnvironmentName()
 	if err != nil {
 		return nil, err
 	}

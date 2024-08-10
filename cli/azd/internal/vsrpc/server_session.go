@@ -94,7 +94,7 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 	}
 
 	id := s.id
-	azdCtx, err := azdContext(rc.HostProjectPath)
+	azdRoot, err := azdRoot(rc.HostProjectPath)
 	if err != nil {
 		return nil, err
 	}
@@ -157,11 +157,11 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 	})
 
 	c.MustRegisterScoped(func() *azdpath.Root {
-		return azdCtx
+		return azdRoot
 	})
 
 	c.MustRegisterScoped(func() *lazy.Lazy[*azdpath.Root] {
-		return lazy.From(azdCtx)
+		return lazy.From(azdRoot)
 	})
 
 	c.MustRegisterScoped(func() auth.ExternalAuthConfiguration {

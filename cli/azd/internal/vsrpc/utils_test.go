@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_azdContext(t *testing.T) {
+func Test_azdRoot(t *testing.T) {
 	root := t.TempDir()
 	nearestRel := filepath.Join("nearest", "apphost.csproj")
 	nearest := filepath.Join(root, nearestRel)
@@ -24,15 +24,15 @@ func Test_azdContext(t *testing.T) {
 	require.NoError(t, createAppHost(nearestUnmatched))
 
 	// By default, no azure.yaml is present. All projects would choose their app host directory as the context directory.
-	ctxDir, err := azdContext(nearest)
+	ctxDir, err := azdRoot(nearest)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Dir(nearest), ctxDir.Directory())
 
-	ctxDir, err = azdContext(inAppHost)
+	ctxDir, err = azdRoot(inAppHost)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Dir(inAppHost), ctxDir.Directory())
 
-	ctxDir, err = azdContext(nearestUnmatched)
+	ctxDir, err = azdRoot(nearestUnmatched)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Dir(nearestUnmatched), ctxDir.Directory())
 
@@ -41,17 +41,17 @@ func Test_azdContext(t *testing.T) {
 	require.NoError(t, createProject(filepath.Dir(inAppHost), "apphost.csproj"))
 
 	// nearest uses 'root'
-	ctxDir, err = azdContext(nearest)
+	ctxDir, err = azdRoot(nearest)
 	require.NoError(t, err)
 	require.Equal(t, root, ctxDir.Directory())
 
 	// inAppHost uses 'in-apphost'
-	ctxDir, err = azdContext(inAppHost)
+	ctxDir, err = azdRoot(inAppHost)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Dir(inAppHost), ctxDir.Directory())
 
 	// nearestUnmatched uses its own directory
-	ctxDir, err = azdContext(nearestUnmatched)
+	ctxDir, err = azdRoot(nearestUnmatched)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Dir(nearestUnmatched), ctxDir.Directory())
 }

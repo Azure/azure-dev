@@ -115,10 +115,10 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 }
 
 func createEnvManagerForManagerTest(t *testing.T, mockContext *mocks.MockContext) Manager {
-	azdCtx := azdpath.NewRootFromDirectory(t.TempDir())
-	localDataStore := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
+	localDataStore := NewLocalFileDataStore(azdRoot, config.NewFileConfigManager(config.NewManager()))
 
-	return newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil)
+	return newManagerForTest(azdRoot, mockContext.Console, localDataStore, nil)
 }
 
 func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {

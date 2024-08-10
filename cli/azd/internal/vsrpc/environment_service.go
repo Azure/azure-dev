@@ -78,7 +78,7 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 	}
 
 	var c struct {
-		azdCtx *azdpath.Root `container:"type"`
+		azdRoot *azdpath.Root `container:"type"`
 	}
 
 	container, err := session.newContainer(rc)
@@ -89,7 +89,7 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 		return false, err
 	}
 
-	if err := c.azdCtx.SetDefaultEnvironmentName(name); err != nil {
+	if err := c.azdRoot.SetDefaultEnvironmentName(name); err != nil {
 		return false, fmt.Errorf("saving default environment: %w", err)
 	}
 

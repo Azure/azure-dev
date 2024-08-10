@@ -311,9 +311,9 @@ func newEnvironmentStoreForTest(
 	}
 	prompter := NewPrompter(mockContext.Console, manager, devCenterClient)
 
-	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	dataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	dataStore := environment.NewLocalFileDataStore(azdRoot, fileConfigManager)
 
 	return NewEnvironmentStore(devCenterConfig, devCenterClient, prompter, manager, dataStore)
 }

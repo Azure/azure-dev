@@ -22,7 +22,7 @@ import (
 
 func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := createAzdContext(t)
+	azdRoot := createAzdRoot(t)
 
 	envName := "test"
 	runOptions := Options{CommandPath: "command"}
@@ -37,7 +37,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 		},
 	}
 
-	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdRoot, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -54,7 +54,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 
 func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := createAzdContext(t)
+	azdRoot := createAzdRoot(t)
 
 	envName := "test"
 	runOptions := Options{CommandPath: "another command"}
@@ -69,7 +69,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 		},
 	}
 
-	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdRoot, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -86,7 +86,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 
 func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := createAzdContext(t)
+	azdRoot := createAzdRoot(t)
 
 	envName := "test"
 	runOptions := Options{CommandPath: "another command"}
@@ -95,7 +95,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 		Name: envName,
 	}
 
-	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdRoot, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -112,7 +112,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 
 func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := createAzdContext(t)
+	azdRoot := createAzdRoot(t)
 
 	envName := "test"
 	runOptions := Options{CommandPath: "command"}
@@ -127,7 +127,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 		},
 	}
 
-	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdRoot, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -147,7 +147,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 
 func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := createAzdContext(t)
+	azdRoot := createAzdRoot(t)
 
 	envName := "test"
 	runOptions := Options{CommandPath: "command"}
@@ -163,7 +163,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 		},
 	}
 
-	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdRoot, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -183,7 +183,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 
 func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := createAzdContext(t)
+	azdRoot := createAzdRoot(t)
 
 	envName := "test"
 	runOptions := Options{CommandPath: "command", Aliases: []string{"alias"}}
@@ -198,7 +198,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 		},
 	}
 
-	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdRoot, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -215,7 +215,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 
 func Test_ServiceHooks_Registered(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := createAzdContext(t)
+	azdRoot := createAzdRoot(t)
 
 	envName := "test"
 	runOptions := Options{CommandPath: "deploy"}
@@ -249,7 +249,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdRoot, envName, &projectConfig)
 	require.NoError(t, err)
 
 	projectConfig.Services["api"].Project = &projectConfig
@@ -272,7 +272,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 	require.Equal(t, 1, preDeployCount)
 }
 
-func createAzdContext(t *testing.T) *azdpath.Root {
+func createAzdRoot(t *testing.T) *azdpath.Root {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -358,7 +358,7 @@ func runMiddleware(
 
 func ensureAzdValid(
 	mockContext *mocks.MockContext,
-	azdContext *azdpath.Root,
+	azdRoot *azdpath.Root,
 	envName string,
 	projectConfig *project.ProjectConfig,
 ) error {
@@ -371,7 +371,7 @@ func ensureAzdValid(
 		return err
 	}
 
-	if err := ensureAzdProject(*mockContext.Context, azdContext, projectConfig); err != nil {
+	if err := ensureAzdProject(*mockContext.Context, azdRoot, projectConfig); err != nil {
 		return err
 	}
 
@@ -388,6 +388,6 @@ func ensureAzdEnv(ctx context.Context, envManager environment.Manager, envName s
 	return nil
 }
 
-func ensureAzdProject(ctx context.Context, azdContext *azdpath.Root, projectConfig *project.ProjectConfig) error {
-	return project.Save(ctx, projectConfig, azdpath.ProjectPath(azdContext))
+func ensureAzdProject(ctx context.Context, azdRoot *azdpath.Root, projectConfig *project.ProjectConfig) error {
+	return project.Save(ctx, projectConfig, azdpath.ProjectPath(azdRoot))
 }

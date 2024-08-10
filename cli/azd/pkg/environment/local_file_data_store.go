@@ -19,14 +19,14 @@ import (
 
 // LocalFileDataStore is a DataStore implementation that stores environment data in the local file system.
 type LocalFileDataStore struct {
-	azdContext    *azdpath.Root
+	azdRoot       *azdpath.Root
 	configManager config.FileConfigManager
 }
 
 // NewLocalFileDataStore creates a new LocalFileDataStore instance
-func NewLocalFileDataStore(azdContext *azdpath.Root, configManager config.FileConfigManager) LocalDataStore {
+func NewLocalFileDataStore(azdRoot *azdpath.Root, configManager config.FileConfigManager) LocalDataStore {
 	return &LocalFileDataStore{
-		azdContext:    azdContext,
+		azdRoot:       azdRoot,
 		configManager: configManager,
 	}
 }
@@ -43,12 +43,12 @@ func (fs *LocalFileDataStore) ConfigPath(env *Environment) string {
 
 // List returns a list of all environments within the data store
 func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
-	defaultEnv, err := fs.azdContext.DefaultEnvironmentName()
+	defaultEnv, err := fs.azdRoot.DefaultEnvironmentName()
 	if err != nil {
 		return nil, err
 	}
 
-	environments, err := os.ReadDir(azdpath.EnvironmentConfigPath(fs.azdContext))
+	environments, err := os.ReadDir(azdpath.EnvironmentConfigPath(fs.azdRoot))
 	if errors.Is(err, os.ErrNotExist) {
 		return []*contracts.EnvListEnvironment{}, nil
 	}
@@ -132,7 +132,7 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 }
 
 func (fs *LocalFileDataStore) environmentRoot(name string) string {
-	return filepath.Join(azdpath.EnvironmentConfigPath(fs.azdContext), name)
+	return filepath.Join(azdpath.EnvironmentConfigPath(fs.azdRoot), name)
 }
 
 // Save saves the environment to the persistent data store

@@ -13,9 +13,9 @@ import (
 
 func Test_LocalFileDataStore_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
+	dataStore := NewLocalFileDataStore(azdRoot, fileConfigManager)
 
 	t.Run("List", func(t *testing.T) {
 		env1 := New("env1")
@@ -41,9 +41,9 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 
 func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
+	dataStore := NewLocalFileDataStore(azdRoot, fileConfigManager)
 
 	t.Run("Success", func(t *testing.T) {
 		env1 := New("env1")
@@ -61,24 +61,24 @@ func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 }
 
 func Test_LocalFileDataStore_Path(t *testing.T) {
-	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
+	dataStore := NewLocalFileDataStore(azdRoot, fileConfigManager)
 
 	env := New("env1")
-	expected := filepath.Join(azdpath.EnvironmentConfigPath(azdContext), "env1", DotEnvFileName)
+	expected := filepath.Join(azdpath.EnvironmentConfigPath(azdRoot), "env1", DotEnvFileName)
 	actual := dataStore.EnvPath(env)
 
 	require.Equal(t, expected, actual)
 }
 
 func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
-	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
+	dataStore := NewLocalFileDataStore(azdRoot, fileConfigManager)
 
 	env := New("env1")
-	expected := filepath.Join(azdpath.EnvironmentConfigPath(azdContext), "env1", ConfigFileName)
+	expected := filepath.Join(azdpath.EnvironmentConfigPath(azdRoot), "env1", ConfigFileName)
 	actual := dataStore.ConfigPath(env)
 
 	require.Equal(t, expected, actual)

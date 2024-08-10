@@ -28,7 +28,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	// Create a empty azure.yaml to ensure AzdContext can be constructed
+	// Create a empty azure.yaml to ensure *azdpath.Root can be constructed, as if `azd init` was run.
 	err := os.WriteFile("azure.yaml", []byte("name: test"), osutil.PermissionFile)
 	require.NoError(t, err)
 

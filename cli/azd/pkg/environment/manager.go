@@ -77,16 +77,16 @@ type Manager interface {
 }
 
 type manager struct {
-	local      DataStore
-	remote     DataStore
-	azdContext *azdpath.Root
-	console    input.Console
+	local   DataStore
+	remote  DataStore
+	azdRoot *azdpath.Root
+	console input.Console
 }
 
 // NewManager creates a new Manager instance
 func NewManager(
 	serviceLocator ioc.ServiceLocator,
-	azdContext *azdpath.Root,
+	azdRoot *azdpath.Root,
 	console input.Console,
 	local LocalDataStore,
 	remoteConfig *state.RemoteConfig,
@@ -112,10 +112,10 @@ func NewManager(
 	}
 
 	return &manager{
-		azdContext: azdContext,
-		local:      local,
-		remote:     remote,
-		console:    console,
+		azdRoot: azdRoot,
+		local:   local,
+		remote:  remote,
+		console: console,
 	}, nil
 }
 
@@ -171,7 +171,7 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 			return nil, err
 		}
 
-		if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
+		if err := m.azdRoot.SetDefaultEnvironmentName(env.Name()); err != nil {
 			return nil, fmt.Errorf("saving default environment: %w", err)
 		}
 	}
@@ -183,7 +183,7 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 	// If there's a default environment, use that
 	if environmentName == "" {
 		var err error
-		environmentName, err = m.azdContext.DefaultEnvironmentName()
+		environmentName, err = m.azdRoot.DefaultEnvironmentName()
 		if err != nil {
 			return nil, false, fmt.Errorf("getting default environment: %w", err)
 		}
@@ -257,7 +257,7 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 			if err != nil {
 				return nil, false, err
 			}
-			if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
+			if err := m.azdRoot.SetDefaultEnvironmentName(env.Name()); err != nil {
 				return nil, false, fmt.Errorf("saving default environment: %w", err)
 			}
 
@@ -290,7 +290,7 @@ func (m *manager) EnvPath(env *Environment) string {
 // List returns a list of all environments within the data store
 func (m *manager) List(ctx context.Context) ([]*Description, error) {
 	envMap := map[string]*Description{}
-	defaultEnvName, err := m.azdContext.DefaultEnvironmentName()
+	defaultEnvName, err := m.azdRoot.DefaultEnvironmentName()
 	if err != nil {
 		defaultEnvName = ""
 	}
@@ -419,13 +419,13 @@ func (m *manager) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
-	defaultEnvName, err := m.azdContext.DefaultEnvironmentName()
+	defaultEnvName, err := m.azdRoot.DefaultEnvironmentName()
 	if err != nil {
 		return fmt.Errorf("getting default environment: %w", err)
 	}
 
 	if defaultEnvName == name {
-		err = m.azdContext.SetDefaultEnvironmentName("")
+		err = m.azdRoot.SetDefaultEnvironmentName("")
 		if err != nil {
 			return fmt.Errorf("clearing default environment: %w", err)
 		}

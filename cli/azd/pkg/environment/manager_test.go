@@ -59,16 +59,16 @@ var (
 )
 
 func newManagerForTest(
-	azdContext *azdpath.Root,
+	azdRoot *azdpath.Root,
 	console input.Console,
 	localDataStore LocalDataStore,
 	remoteDataStore RemoteDataStore,
 ) Manager {
 	return &manager{
-		azdContext: azdContext,
-		console:    console,
-		local:      localDataStore,
-		remote:     remoteDataStore,
+		azdRoot: azdRoot,
+		console: console,
+		local:   localDataStore,
+		remote:  remoteDataStore,
 	}
 }
 
@@ -140,7 +140,7 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 
 func Test_EnvManager_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 
 	t.Run("LocalOnly", func(t *testing.T) {
 		localDataStore := &MockDataStore{}
@@ -149,7 +149,7 @@ func Test_EnvManager_List(t *testing.T) {
 		localDataStore.On("List", *mockContext.Context).Return(localEnvList, nil)
 		remoteDataStore.On("List", *mockContext.Context).Return(emptyEnvList, nil)
 
-		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdRoot, mockContext.Console, localDataStore, remoteDataStore)
 		envList, err := manager.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.NotNil(t, envList)
@@ -168,7 +168,7 @@ func Test_EnvManager_List(t *testing.T) {
 		localDataStore.On("List", *mockContext.Context).Return(emptyEnvList, nil)
 		remoteDataStore.On("List", *mockContext.Context).Return(remoteEnvList, nil)
 
-		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdRoot, mockContext.Console, localDataStore, remoteDataStore)
 		envList, err := manager.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.NotNil(t, envList)
@@ -187,7 +187,7 @@ func Test_EnvManager_List(t *testing.T) {
 		localDataStore.On("List", *mockContext.Context).Return(localEnvList, nil)
 		remoteDataStore.On("List", *mockContext.Context).Return(remoteEnvList, nil)
 
-		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdRoot, mockContext.Console, localDataStore, remoteDataStore)
 		envList, err := manager.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.NotNil(t, envList)
@@ -202,7 +202,7 @@ func Test_EnvManager_List(t *testing.T) {
 
 func Test_EnvManager_Get(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 
 	t.Run("ExistsLocally", func(t *testing.T) {
 		localDataStore := &MockDataStore{}
@@ -210,7 +210,7 @@ func Test_EnvManager_Get(t *testing.T) {
 
 		localDataStore.On("Get", *mockContext.Context, "env1").Return(getEnv, nil)
 
-		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdRoot, mockContext.Console, localDataStore, remoteDataStore)
 		env, err := manager.Get(*mockContext.Context, "env1")
 		require.NoError(t, err)
 		require.NotNil(t, env)
@@ -229,7 +229,7 @@ func Test_EnvManager_Get(t *testing.T) {
 		remoteDataStore.On("Get", *mockContext.Context, "env1").Return(getEnv, nil)
 		localDataStore.On("Save", *mockContext.Context, getEnv, mock.Anything).Return(nil)
 
-		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdRoot, mockContext.Console, localDataStore, remoteDataStore)
 		env, err := manager.Get(*mockContext.Context, "env1")
 		require.NoError(t, err)
 		require.NotNil(t, env)
@@ -243,7 +243,7 @@ func Test_EnvManager_Get(t *testing.T) {
 		localDataStore.On("Get", *mockContext.Context, "env1").Return(nil, ErrNotFound)
 		remoteDataStore.On("Get", *mockContext.Context, "env1").Return(nil, ErrNotFound)
 
-		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdRoot, mockContext.Console, localDataStore, remoteDataStore)
 		env, err := manager.Get(*mockContext.Context, "env1")
 		require.ErrorIs(t, err, ErrNotFound)
 		require.Nil(t, env)
@@ -261,7 +261,7 @@ func Test_EnvManager_Get(t *testing.T) {
 		localDataStore.On("Get", *mockContext.Context, "env1").Return(foundEnv, nil)
 		localDataStore.On("Save", *mockContext.Context, foundEnv, mock.Anything).Return(nil)
 
-		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
+		manager := newManagerForTest(azdRoot, mockContext.Console, localDataStore, nil)
 		env, err := manager.Get(*mockContext.Context, "env1")
 		require.NoError(t, err)
 		require.NotNil(t, env)
@@ -275,7 +275,7 @@ func Test_EnvManager_Get(t *testing.T) {
 
 func Test_EnvManager_Save(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 
 	t.Run("Success", func(t *testing.T) {
 		localDataStore := &MockDataStore{}
@@ -288,7 +288,7 @@ func Test_EnvManager_Save(t *testing.T) {
 		localDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(nil)
 		remoteDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(nil)
 
-		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdRoot, mockContext.Console, localDataStore, remoteDataStore)
 		err := manager.Save(*mockContext.Context, env)
 		require.NoError(t, err)
 
@@ -306,7 +306,7 @@ func Test_EnvManager_Save(t *testing.T) {
 
 		localDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(errors.New("error"))
 
-		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdRoot, mockContext.Console, localDataStore, remoteDataStore)
 		err := manager.Save(*mockContext.Context, env)
 		require.Error(t, err)
 
@@ -377,9 +377,9 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(config.NewManager)
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobClient)
 
-	azdContext := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
 	mockContext.Container.MustRegisterSingleton(func() *azdpath.Root {
-		return azdContext
+		return azdRoot
 	})
 	mockContext.Container.MustRegisterSingleton(func() auth.HttpClient {
 		return mockContext.HttpClient

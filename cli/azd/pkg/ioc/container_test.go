@@ -27,7 +27,7 @@ func Test_Container_Resolve(t *testing.T) {
 		container := NewNestedContainer(nil)
 
 		var instance *azdpath.Root
-		// Since a resolver wasn't registered for AzdContext
+		// Since a resolver wasn't registered for *azdpath.Root
 		// Expect a resolution container failure
 		err := container.Resolve(&instance)
 
@@ -41,7 +41,7 @@ func Test_Container_Resolve(t *testing.T) {
 		container.MustRegisterSingleton(azdpath.FindRoot)
 
 		var instance *azdpath.Root
-		// AzdContext resolver is registered above
+		// *azdpath.Root resolver is registered above
 		// Expect failure from no project
 		err := container.Resolve(&instance)
 

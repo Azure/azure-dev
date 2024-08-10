@@ -32,7 +32,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 	}
 
 	var c struct {
-		azdContext *azdpath.Root       `container:"type"`
+		azdRoot    *azdpath.Root       `container:"type"`
 		dotnetCli  *dotnet.Cli         `container:"type"`
 		envManager environment.Manager `container:"type"`
 	}
@@ -59,7 +59,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 
 	// If an azure.yaml doesn't already exist, we need to create one. Creating an environment implies initializing the
 	// azd project if it does not already exist.
-	if _, err := os.Stat(azdpath.ProjectPath(c.azdContext)); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(azdpath.ProjectPath(c.azdRoot)); errors.Is(err, fs.ErrNotExist) {
 		_ = observer.OnNext(ctx, newImportantProgressMessage("Analyzing Aspire Application (this might take a moment...)"))
 
 		manifest, err := apphost.ManifestFromAppHost(ctx, rc.HostProjectPath, c.dotnetCli, dotnetEnv)
@@ -67,12 +67,12 @@ func (s *environmentService) CreateEnvironmentAsync(
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
 
-		projectName := strings.TrimSuffix(filepath.Base(c.azdContext.Directory()), ".AppHost")
+		projectName := strings.TrimSuffix(filepath.Base(c.azdRoot.Directory()), ".AppHost")
 
 		// Write an azure.yaml file to the project.
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
-			c.azdContext.Directory(),
+			c.azdRoot.Directory(),
 			projectName,
 			manifest,
 			rc.HostProjectPath,
@@ -82,7 +82,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 		}
 
 		file := files["azure.yaml"]
-		projectFilePath := filepath.Join(c.azdContext.Directory(), "azure.yaml")
+		projectFilePath := filepath.Join(c.azdRoot.Directory(), "azure.yaml")
 
 		if err := os.WriteFile(projectFilePath, []byte(file.Contents), file.Mode); err != nil {
 			return false, fmt.Errorf("writing azure.yaml: %w", err)
@@ -108,7 +108,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 		return false, fmt.Errorf("saving new environment: %w", err)
 	}
 
-	if err := c.azdContext.SetDefaultEnvironmentName(newEnv.Name); err != nil {
+	if err := c.azdRoot.SetDefaultEnvironmentName(newEnv.Name); err != nil {
 		return false, fmt.Errorf("saving default environment: %w", err)
 	}
 

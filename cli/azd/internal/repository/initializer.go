@@ -266,7 +266,7 @@ func (i *Initializer) initializeProject(
 		return nil
 	}
 
-	projectPath := azdpath.ProjectPath(azdRoot)
+	projectPath := azdRoot.ProjectPath()
 	projectConfig, err := project.LoadConfig(ctx, projectPath)
 	if err != nil {
 		return fmt.Errorf("loading project config: %w", err)
@@ -332,7 +332,7 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdRoot *azdpath.Ro
 		return err
 	}
 
-	projectConfig, err := project.Load(ctx, azdpath.ProjectPath(azdRoot))
+	projectConfig, err := project.Load(ctx, azdRoot.ProjectPath())
 	if err != nil {
 		return err
 	}
@@ -424,8 +424,8 @@ func (i *Initializer) writeFileSafe(
 
 func (i *Initializer) writeCoreAssets(ctx context.Context, azdRoot *azdpath.Root) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
-	if _, err := os.Stat(azdpath.ProjectPath(azdRoot)); errors.Is(err, os.ErrNotExist) {
-		_, err = project.New(ctx, azdpath.ProjectPath(azdRoot), filepath.Base(azdRoot.Directory()))
+	if _, err := os.Stat(azdRoot.ProjectPath()); errors.Is(err, os.ErrNotExist) {
+		_, err = project.New(ctx, azdRoot.ProjectPath(), filepath.Base(azdRoot.Directory()))
 		if err != nil {
 			return fmt.Errorf("failed to create a project file: %w", err)
 		}
@@ -436,7 +436,7 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdRoot *azdpath.Root
 
 	//create .azure when running azd init
 	err := os.MkdirAll(
-		azdpath.EnvironmentConfigPath(azdRoot),
+		azdRoot.EnvironmentConfigPath(),
 		osutil.PermissionDirectory,
 	)
 	if err != nil {

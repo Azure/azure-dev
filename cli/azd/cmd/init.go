@@ -160,7 +160,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	})
 
 	var existingProject bool
-	if _, err := os.Stat(azdpath.ProjectPath(azdRoot)); err == nil {
+	if _, err := os.Stat(azdRoot.ProjectPath()); err == nil {
 		existingProject = true
 	} else if errors.Is(err, os.ErrNotExist) {
 		existingProject = false

@@ -97,7 +97,7 @@ func TestFromRoot(t *testing.T) {
 		t.Parallel()
 
 		envManager, azdRoot := createEnvManager(mockContext, t.TempDir())
-		envRoot := filepath.Join(azdpath.EnvironmentConfigPath(azdRoot), "testEnv")
+		envRoot := filepath.Join(azdRoot.EnvironmentConfigPath(), "testEnv")
 
 		err := os.MkdirAll(envRoot, osutil.PermissionDirectory)
 		require.NoError(t, err)
@@ -130,7 +130,7 @@ func Test_SaveAndReload(t *testing.T) {
 	require.NoError(t, err)
 
 	// Simulate another process writing to .env file
-	envRoot := filepath.Join(azdpath.EnvironmentConfigPath(azdRoot), "test")
+	envRoot := filepath.Join(azdRoot.EnvironmentConfigPath(), "test")
 	envPath := filepath.Join(envRoot, ".env")
 	envMap, err := godotenv.Read(envPath)
 	require.NotNil(t, envMap)

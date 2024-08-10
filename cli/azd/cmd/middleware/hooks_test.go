@@ -389,5 +389,5 @@ func ensureAzdEnv(ctx context.Context, envManager environment.Manager, envName s
 }
 
 func ensureAzdProject(ctx context.Context, azdRoot *azdpath.Root, projectConfig *project.ProjectConfig) error {
-	return project.Save(ctx, projectConfig, azdpath.ProjectPath(azdRoot))
+	return project.Save(ctx, projectConfig, azdRoot.ProjectPath())
 }

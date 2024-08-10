@@ -331,7 +331,7 @@ func (i *Initializer) genProjectFile(
 	err = project.Save(
 		ctx,
 		&config,
-		azdpath.ProjectPath(azdRoot))
+		azdRoot.ProjectPath())
 	if err != nil {
 		return fmt.Errorf("generating %s: %w", azdpath.ProjectFileName, err)
 	}

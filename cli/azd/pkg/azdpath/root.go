@@ -31,9 +31,21 @@ func (c *Root) Directory() string {
 	return string(*c)
 }
 
+// EnvironmentConfigPath returns the path to the .azure folder, it is shorthand for
+// filepath.Join(c.Directory(), EnvironmentConfigDirectoryName).
+func (c *Root) EnvironmentConfigPath() string {
+	return filepath.Join(c.Directory(), EnvironmentConfigDirectoryName)
+}
+
+// ProjectPath returns the path to the azure.yaml file, it is shorthand for
+// `filepath.Join(c.Directory(), ProjectFileName).
+func (c *Root) ProjectPath() string {
+	return filepath.Join(c.Directory(), ProjectFileName)
+}
+
 // DefaultEnvironmentName returns the name of the default environment or an empty string if no default environment is set.
 func (c *Root) DefaultEnvironmentName() (string, error) {
-	path := filepath.Join(EnvironmentConfigPath(c), configFileName)
+	path := filepath.Join(c.EnvironmentConfigPath(), configFileName)
 	file, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -53,7 +65,7 @@ func (c *Root) DefaultEnvironmentName() (string, error) {
 // SetDefaultEnvironmentName saves the environment that is used by default when azd is run without a `-e` flag. Using "" as
 // the name will cause azd to prompt the user to select an environment in the future.
 func (c *Root) SetDefaultEnvironmentName(name string) error {
-	path := filepath.Join(EnvironmentConfigPath(c), configFileName)
+	path := filepath.Join(c.EnvironmentConfigPath(), configFileName)
 	config := configFile{
 		Version:            configFileVersion,
 		DefaultEnvironment: name,
@@ -73,7 +85,7 @@ func (c *Root) SetDefaultEnvironmentName(name string) error {
 	}
 
 	// make sure to ignore the environment directory
-	path = filepath.Join(EnvironmentConfigPath(c), ".gitignore")
+	path = filepath.Join(c.EnvironmentConfigPath(), ".gitignore")
 	return os.WriteFile(path, []byte("# .azure is not intended to be committed\n*"), osutil.PermissionFile)
 }
 

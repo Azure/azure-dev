@@ -68,8 +68,8 @@ func Test_Initializer_Initialize(t *testing.T) {
 			verifyExecutableFilePermissions(t, *mockContext.Context, i.gitCli, projectDir, tt.executableFiles)
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
-			require.FileExists(t, azdpath.ProjectPath(azdRoot))
-			require.DirExists(t, azdpath.EnvironmentConfigPath(azdRoot))
+			require.FileExists(t, azdRoot.ProjectPath())
+			require.DirExists(t, azdRoot.EnvironmentConfigPath())
 		})
 	}
 }
@@ -108,7 +108,7 @@ func Test_Initializer_DevCenter(t *testing.T) {
 	err := i.Initialize(*mockContext.Context, azdRoot, template, "")
 	require.NoError(t, err)
 
-	prj, err := project.Load(*mockContext.Context, azdpath.ProjectPath(azdRoot))
+	prj, err := project.Load(*mockContext.Context, azdRoot.ProjectPath())
 	require.NoError(t, err)
 	require.Equal(t, prj.Platform.Type, platform.PlatformKind("devcenter"))
 	require.Equal(t, prj.Platform.Config["name"], "DEVCENTER_NAME")
@@ -203,8 +203,8 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 			}
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
-			require.FileExists(t, azdpath.ProjectPath(azdRoot))
-			require.DirExists(t, azdpath.EnvironmentConfigPath(azdRoot))
+			require.FileExists(t, azdRoot.ProjectPath())
+			require.DirExists(t, azdRoot.EnvironmentConfigPath())
 		})
 	}
 }
@@ -366,7 +366,7 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			}
 
 			if tt.setup.projectFile != "" {
-				copyFile(t, testDataPath("empty", tt.setup.projectFile), azdpath.ProjectPath(azdRoot))
+				copyFile(t, testDataPath("empty", tt.setup.projectFile), azdRoot.ProjectPath())
 			}
 
 			console := mockinput.NewMockConsole()
@@ -391,7 +391,7 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			gitignore := filepath.Join(projectDir, ".gitignore")
 			verifyFileContent(t, gitignore, gitIgnoreFileContent)
 
-			require.DirExists(t, azdpath.EnvironmentConfigPath(azdRoot))
+			require.DirExists(t, azdRoot.EnvironmentConfigPath())
 		})
 	}
 }
@@ -437,9 +437,9 @@ func verifyFileContent(t *testing.T, file string, content string) {
 
 func verifyProjectFile(t *testing.T, azdRoot *azdpath.Root, content string) {
 	content = strings.Replace(content, "<project>", filepath.Base(azdRoot.Directory()), 1)
-	verifyFileContent(t, azdpath.ProjectPath(azdRoot), content)
+	verifyFileContent(t, azdRoot.ProjectPath(), content)
 
-	_, err := project.Load(context.Background(), azdpath.ProjectPath(azdRoot))
+	_, err := project.Load(context.Background(), azdRoot.ProjectPath())
 	require.NoError(t, err)
 }
 

@@ -369,7 +369,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					return nil, err
 				}
 
-				projectConfig, err := project.Load(ctx, azdpath.ProjectPath(azdRoot))
+				projectConfig, err := project.Load(ctx, azdRoot.ProjectPath())
 				if err != nil {
 					return nil, err
 				}

@@ -48,7 +48,7 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 		return nil, err
 	}
 
-	environments, err := os.ReadDir(azdpath.EnvironmentConfigPath(fs.azdRoot))
+	environments, err := os.ReadDir(fs.azdRoot.EnvironmentConfigPath())
 	if errors.Is(err, os.ErrNotExist) {
 		return []*contracts.EnvListEnvironment{}, nil
 	}
@@ -132,7 +132,7 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 }
 
 func (fs *LocalFileDataStore) environmentRoot(name string) string {
-	return filepath.Join(azdpath.EnvironmentConfigPath(fs.azdRoot), name)
+	return filepath.Join(fs.azdRoot.EnvironmentConfigPath(), name)
 }
 
 // Save saves the environment to the persistent data store

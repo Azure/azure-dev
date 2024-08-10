@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
+	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"

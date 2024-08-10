@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
+	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"

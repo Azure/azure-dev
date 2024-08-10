@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdpath"
+	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/stretchr/testify/require"
 )
 

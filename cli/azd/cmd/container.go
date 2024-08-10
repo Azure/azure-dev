@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -229,7 +230,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			if err != nil {
 				return nil, err
 			}
-			defaultEnv, err := azdCtx.DefaultEnvironmentName()
+			defaultEnv, err := azdcontext.DefaultEnvironmentName(azdCtx)
 			if err != nil {
 				return nil, err
 			}
@@ -329,7 +330,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 				environmentName := envFlags.EnvironmentName
 				if environmentName == "" {
-					environmentName, err = azdCtx.DefaultEnvironmentName()
+					environmentName, err = azdcontext.DefaultEnvironmentName(azdCtx)
 					if err != nil {
 						return nil, err
 					}
@@ -369,7 +370,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					return nil, err
 				}
 
-				projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+				projectConfig, err := project.Load(ctx, filepath.Join(azdCtx.RootDirectory(), azdcontext.ProjectFileName))
 				if err != nil {
 					return nil, err
 				}
@@ -404,7 +405,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		localEnvStore, _ := lazyLocalEnvStore.GetValue()
 		if azdCtx, err := lazyAzdContext.GetValue(); err == nil {
 			if azdCtx != nil && localEnvStore != nil {
-				if defaultEnvName, err := azdCtx.DefaultEnvironmentName(); err == nil {
+				if defaultEnvName, err := azdcontext.DefaultEnvironmentName(azdCtx); err == nil {
 					if env, err := localEnvStore.Get(ctx, defaultEnvName); err == nil {
 						if cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath); exists {
 							if value, err := cloud.ParseCloudConfig(cloudConfigurationNode); err == nil {

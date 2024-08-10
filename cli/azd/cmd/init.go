@@ -160,7 +160,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	})
 
 	var existingProject bool
-	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
+	if _, err := os.Stat(filepath.Join(azdCtx.RootDirectory(), azdcontext.ProjectFileName)); err == nil {
 		existingProject = true
 	} else if errors.Is(err, os.ErrNotExist) {
 		existingProject = false
@@ -347,7 +347,7 @@ func (i *initAction) initializeEnv(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	templateMetadata *templates.Metadata) (*environment.Environment, error) {
-	envName, err := azdCtx.DefaultEnvironmentName()
+	envName, err := azdcontext.DefaultEnvironmentName(azdCtx)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
@@ -387,7 +387,7 @@ func (i *initAction) initializeEnv(
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
+	if err := azdcontext.SetDefaultEnvironmentName(azdCtx, env.Name()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 

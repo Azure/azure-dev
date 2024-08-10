@@ -698,7 +698,7 @@ func (pm *PipelineManager) resolveProviderAndDetermine(
 //     the same provider is used directly, unless the overrideProvider is used to change the last used configuration.
 func (pm *PipelineManager) initialize(ctx context.Context, override string) error {
 	projectDir := pm.azdCtx.RootDirectory()
-	projectPath := pm.azdCtx.ProjectPath()
+	projectPath := azdcontext.ProjectPath(pm.azdCtx)
 	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
 	if err != nil {
 		repoRoot = projectDir

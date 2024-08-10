@@ -57,7 +57,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
 
 	require.NoError(t, err)
-	err = azdCtx.SetDefaultEnvironmentName(envName)
+	err = azdcontext.SetDefaultEnvironmentName(azdCtx, envName)
 	require.NoError(t, err)
 
 	env := environment.New(envName)

@@ -266,7 +266,7 @@ func (i *Initializer) initializeProject(
 		return nil
 	}
 
-	projectPath := azdCtx.ProjectPath()
+	projectPath := azdcontext.ProjectPath(azdCtx)
 	projectConfig, err := project.LoadConfig(ctx, projectPath)
 	if err != nil {
 		return fmt.Errorf("loading project config: %w", err)
@@ -332,7 +332,7 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 		return err
 	}
 
-	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+	projectConfig, err := project.Load(ctx, azdcontext.ProjectPath(azdCtx))
 	if err != nil {
 		return err
 	}
@@ -424,8 +424,8 @@ func (i *Initializer) writeFileSafe(
 
 func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
-	if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
-		_, err = project.New(ctx, azdCtx.ProjectPath(), filepath.Base(azdCtx.RootDirectory()))
+	if _, err := os.Stat(azdcontext.ProjectPath(azdCtx)); errors.Is(err, os.ErrNotExist) {
+		_, err = project.New(ctx, azdcontext.ProjectPath(azdCtx), filepath.Base(azdCtx.RootDirectory()))
 		if err != nil {
 			return fmt.Errorf("failed to create a project file: %w", err)
 		}

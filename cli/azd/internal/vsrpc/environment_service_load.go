@@ -78,7 +78,7 @@ func (s *environmentService) loadEnvironmentAsync(
 		return nil, fmt.Errorf("getting environment: %w", err)
 	}
 
-	currentEnv, err := c.azdCtx.DefaultEnvironmentName()
+	currentEnv, err := azdcontext.DefaultEnvironmentName(c.azdCtx)
 	if err != nil {
 		return nil, fmt.Errorf("getting default environment: %w", err)
 	}

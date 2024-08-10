@@ -70,7 +70,7 @@ func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 	}
 
 	// nearest project is not in host project directory, check if it targets the current app host project
-	prjConfig, err := project.Load(context.Background(), azdCtx.ProjectPath())
+	prjConfig, err := project.Load(context.Background(), azdcontext.ProjectPath(azdCtx))
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 	for _, svc := range prjConfig.Services {
 		if svc.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget {
 			if svc.Path() != hostProjectPath {
-				log.Printf("ignoring %s due to mismatch, using app host directory", azdCtx.ProjectPath())
+				log.Printf("ignoring %s due to mismatch, using app host directory", azdcontext.ProjectPath(azdCtx))
 				return azdcontext.NewAzdContextWithDirectory(hostProjectDir), nil
 			}
 		}

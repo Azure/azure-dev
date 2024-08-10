@@ -32,19 +32,24 @@ type AzdContext struct {
 	rootDirectory string
 }
 
-// RootDirectory is the path to the root of the azd project.
+// RootDirectory is the path to the root of the azd project (i.e. the folder that contains .azure and azure.yaml).
 func (c *AzdContext) RootDirectory() string {
 	return c.rootDirectory
 }
 
-// ProjectPath is the path to the azure.yaml file in the root of the azd project.
-func (c *AzdContext) ProjectPath() string {
+// EnvironmentConfigPath returns the path to the .azure directory in the root of the azd project.
+func EnvironmentConfigPath(c *AzdContext) string {
+	return filepath.Join(c.RootDirectory(), EnvironmentConfigDirectoryName)
+}
+
+// ProjectPath returns the path to the azure.yaml file in the root of the azd project.
+func ProjectPath(c *AzdContext) string {
 	return filepath.Join(c.RootDirectory(), ProjectFileName)
 }
 
 // DefaultEnvironmentName returns the name of the default environment or an empty string if no default environment is set.
-func (c *AzdContext) DefaultEnvironmentName() (string, error) {
-	path := filepath.Join(c.RootDirectory(), EnvironmentConfigDirectoryName, configFileName)
+func DefaultEnvironmentName(c *AzdContext) (string, error) {
+	path := filepath.Join(EnvironmentConfigPath(c), configFileName)
 	file, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -63,8 +68,8 @@ func (c *AzdContext) DefaultEnvironmentName() (string, error) {
 
 // SetDefaultEnvironmentName saves the environment that is used by default when azd is run without a `-e` flag. Using "" as
 // the name will cause azd to prompt the user to select an environment in the future.
-func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
-	path := filepath.Join(c.RootDirectory(), EnvironmentConfigDirectoryName, configFileName)
+func SetDefaultEnvironmentName(c *AzdContext, name string) error {
+	path := filepath.Join(EnvironmentConfigPath(c), configFileName)
 	config := configFile{
 		Version:            configFileVersion,
 		DefaultEnvironment: name,
@@ -84,7 +89,7 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 	}
 
 	// make sure to ignore the environment directory
-	path = filepath.Join(c.RootDirectory(), EnvironmentConfigDirectoryName, ".gitignore")
+	path = filepath.Join(EnvironmentConfigPath(c), ".gitignore")
 	return os.WriteFile(path, []byte("# .azure is not intended to be committed\n*"), osutil.PermissionFile)
 }
 
@@ -96,6 +101,7 @@ func NewAzdContextWithDirectory(projectDirectory string) *AzdContext {
 }
 
 var (
+	// ErrNoProject is returned by NewAzdContextFromWd when no project file is found.
 	ErrNoProject = errors.New("no project exists; to create a new project, run `azd init`")
 )
 
@@ -113,7 +119,7 @@ func NewAzdContext() (*AzdContext, error) {
 // Creates context with project directory set to the nearest project file found.
 //
 // The project file is first searched for in the working directory, if not found, the parent directory is searched
-// recursively up to root. If no project file is found, errNoProject is returned.
+// recursively up to root. If no project file is found, an error that matches [ErrNoProject] with [errors.Is] is returned.
 func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 	// Walk up from the wd to the root, looking for a project file. If we find one, that's
 	// the root project directory.
@@ -145,6 +151,8 @@ func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 	}, nil
 }
 
+// configFile is the model type for the config file that is stored in the root of the .azure directory. It can be read and
+// written using the json.Marshal and json.Unmarshal functions.
 type configFile struct {
 	Version            int    `json:"version"`
 	DefaultEnvironment string `json:"defaultEnvironment,omitempty"`

@@ -59,7 +59,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 
 	// If an azure.yaml doesn't already exist, we need to create one. Creating an environment implies initializing the
 	// azd project if it does not already exist.
-	if _, err := os.Stat(c.azdContext.ProjectPath()); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(azdcontext.ProjectPath(c.azdContext)); errors.Is(err, fs.ErrNotExist) {
 		_ = observer.OnNext(ctx, newImportantProgressMessage("Analyzing Aspire Application (this might take a moment...)"))
 
 		manifest, err := apphost.ManifestFromAppHost(ctx, rc.HostProjectPath, c.dotnetCli, dotnetEnv)
@@ -108,7 +108,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 		return false, fmt.Errorf("saving new environment: %w", err)
 	}
 
-	if err := c.azdContext.SetDefaultEnvironmentName(newEnv.Name); err != nil {
+	if err := azdcontext.SetDefaultEnvironmentName(c.azdContext, newEnv.Name); err != nil {
 		return false, fmt.Errorf("saving default environment: %w", err)
 	}
 

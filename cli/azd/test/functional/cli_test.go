@@ -164,7 +164,7 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 
 	// evaluate the project and environment configuration
 	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
-	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+	projectConfig, err := project.Load(ctx, azdcontext.ProjectPath(azdCtx))
 	require.NoError(t, err)
 
 	require.Equal(t, devCenterName, projectConfig.Platform.Config["name"])

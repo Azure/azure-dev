@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -370,7 +369,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					return nil, err
 				}
 
-				projectConfig, err := project.Load(ctx, filepath.Join(azdCtx.RootDirectory(), azdcontext.ProjectFileName))
+				projectConfig, err := project.Load(ctx, azdcontext.ProjectPath(azdCtx))
 				if err != nil {
 					return nil, err
 				}

@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -390,5 +389,5 @@ func ensureAzdEnv(ctx context.Context, envManager environment.Manager, envName s
 }
 
 func ensureAzdProject(ctx context.Context, azdContext *azdcontext.AzdContext, projectConfig *project.ProjectConfig) error {
-	return project.Save(ctx, projectConfig, filepath.Join(azdContext.RootDirectory(), azdcontext.ProjectFileName))
+	return project.Save(ctx, projectConfig, azdcontext.ProjectPath(azdContext))
 }

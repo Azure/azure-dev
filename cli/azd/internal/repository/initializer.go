@@ -436,7 +436,7 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Az
 
 	//create .azure when running azd init
 	err := os.MkdirAll(
-		filepath.Join(azdCtx.RootDirectory(), azdcontext.EnvironmentConfigDirectoryName),
+		azdcontext.EnvironmentConfigPath(azdCtx),
 		osutil.PermissionDirectory,
 	)
 	if err != nil {

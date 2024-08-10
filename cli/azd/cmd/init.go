@@ -160,7 +160,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	})
 
 	var existingProject bool
-	if _, err := os.Stat(filepath.Join(azdCtx.RootDirectory(), azdcontext.ProjectFileName)); err == nil {
+	if _, err := os.Stat(azdcontext.ProjectPath(azdCtx)); err == nil {
 		existingProject = true
 	} else if errors.Is(err, os.ErrNotExist) {
 		existingProject = false

@@ -272,11 +272,11 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 	require.Equal(t, 1, preDeployCount)
 }
 
-func createAzdContext(t *testing.T) *azdcontext.AzdContext {
+func createAzdContext(t *testing.T) *azdcontext.Root {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	return azdcontext.NewAzdContextWithDirectory(tempDir)
+	return azdcontext.NewRootFromDirectory(tempDir)
 }
 
 func createNextFn() (NextFn, *bool) {
@@ -358,7 +358,7 @@ func runMiddleware(
 
 func ensureAzdValid(
 	mockContext *mocks.MockContext,
-	azdContext *azdcontext.AzdContext,
+	azdContext *azdcontext.Root,
 	envName string,
 	projectConfig *project.ProjectConfig,
 ) error {
@@ -388,6 +388,6 @@ func ensureAzdEnv(ctx context.Context, envManager environment.Manager, envName s
 	return nil
 }
 
-func ensureAzdProject(ctx context.Context, azdContext *azdcontext.AzdContext, projectConfig *project.ProjectConfig) error {
+func ensureAzdProject(ctx context.Context, azdContext *azdcontext.Root, projectConfig *project.ProjectConfig) error {
 	return project.Save(ctx, projectConfig, azdcontext.ProjectPath(azdContext))
 }

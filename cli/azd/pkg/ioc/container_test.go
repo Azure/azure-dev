@@ -26,7 +26,7 @@ func Test_Container_Resolve(t *testing.T) {
 	t.Run("FailWithContainerError", func(t *testing.T) {
 		container := NewNestedContainer(nil)
 
-		var instance *azdcontext.AzdContext
+		var instance *azdcontext.Root
 		// Since a resolver wasn't registered for AzdContext
 		// Expect a resolution container failure
 		err := container.Resolve(&instance)
@@ -38,9 +38,9 @@ func Test_Container_Resolve(t *testing.T) {
 
 	t.Run("FailWithOtherError", func(t *testing.T) {
 		container := NewNestedContainer(nil)
-		container.MustRegisterSingleton(azdcontext.NewAzdContext)
+		container.MustRegisterSingleton(azdcontext.NewRoot)
 
-		var instance *azdcontext.AzdContext
+		var instance *azdcontext.Root
 		// AzdContext resolver is registered above
 		// Expect failure from no project
 		err := container.Resolve(&instance)

@@ -55,7 +55,7 @@ type infraSynthAction struct {
 	projectConfig *project.ProjectConfig
 	importManager *project.ImportManager
 	console       input.Console
-	azdCtx        *azdcontext.AzdContext
+	azdCtx        *azdcontext.Root
 	flags         *infraSynthFlags
 	alphaManager  *alpha.FeatureManager
 }
@@ -65,7 +65,7 @@ func newInfraSynthAction(
 	importManager *project.ImportManager,
 	flags *infraSynthFlags,
 	console input.Console,
-	azdCtx *azdcontext.AzdContext,
+	azdCtx *azdcontext.Root,
 	alphaManager *alpha.FeatureManager,
 ) actions.Action {
 	return &infraSynthAction{
@@ -139,7 +139,7 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		}
 
 	} else {
-		skipStagingFiles, err := a.promptForDuplicates(ctx, staging, a.azdCtx.RootDirectory())
+		skipStagingFiles, err := a.promptForDuplicates(ctx, staging, a.azdCtx.Directory())
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +152,7 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		}
 	}
 
-	if err := copy.Copy(staging, a.azdCtx.RootDirectory(), options); err != nil {
+	if err := copy.Copy(staging, a.azdCtx.Directory(), options); err != nil {
 		return nil, fmt.Errorf("copying contents from temp staging directory: %w", err)
 	}
 

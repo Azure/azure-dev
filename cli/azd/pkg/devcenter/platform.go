@@ -48,7 +48,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// DevCenter Config
 	container.MustRegisterTransient(func(
 		ctx context.Context,
-		lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
+		lazyAzdCtx *lazy.Lazy[*azdcontext.Root],
 		userConfigManager config.UserConfigManager,
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],

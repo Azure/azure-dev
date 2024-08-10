@@ -156,11 +156,11 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 		}
 	})
 
-	c.MustRegisterScoped(func() *azdcontext.AzdContext {
+	c.MustRegisterScoped(func() *azdcontext.Root {
 		return azdCtx
 	})
 
-	c.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
+	c.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.Root] {
 		return lazy.From(azdCtx)
 	})
 

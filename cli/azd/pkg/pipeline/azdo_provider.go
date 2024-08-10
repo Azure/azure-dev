@@ -33,7 +33,7 @@ type AzdoScmProvider struct {
 	envManager     environment.Manager
 	repoDetails    *AzdoRepositoryDetails
 	env            *environment.Environment
-	azdContext     *azdcontext.AzdContext
+	azdContext     *azdcontext.Root
 	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
 	console        input.Console
@@ -43,7 +43,7 @@ type AzdoScmProvider struct {
 func NewAzdoScmProvider(
 	envManager environment.Manager,
 	env *environment.Environment,
-	azdContext *azdcontext.AzdContext,
+	azdContext *azdcontext.Root,
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	gitCli *git.Cli,
@@ -284,7 +284,7 @@ func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input
 	case 1:
 		projectName, projectId, err = azdo.GetProjectFromNew(
 			ctx,
-			p.azdContext.RootDirectory(),
+			p.azdContext.Directory(),
 			connection,
 			p.env,
 			console,
@@ -642,7 +642,7 @@ func (p *AzdoScmProvider) GitPush(
 type AzdoCiProvider struct {
 	envManager    environment.Manager
 	Env           *environment.Environment
-	AzdContext    *azdcontext.AzdContext
+	AzdContext    *azdcontext.Root
 	credentials   *entraid.AzureCredentials
 	console       input.Console
 	commandRunner exec.CommandRunner
@@ -651,7 +651,7 @@ type AzdoCiProvider struct {
 func NewAzdoCiProvider(
 	envManager environment.Manager,
 	env *environment.Environment,
-	azdContext *azdcontext.AzdContext,
+	azdContext *azdcontext.Root,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 ) CiProvider {

@@ -54,11 +54,11 @@ func NewInitializer(
 // A confirmation prompt is displayed for any existing files to be overwritten.
 func (i *Initializer) Initialize(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext,
+	azdCtx *azdcontext.Root,
 	template *templates.Template,
 	templateBranch string) error {
 	var err error
-	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.RootDirectory()))
+	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.Directory()))
 	i.console.ShowSpinner(ctx, stepMessage, input.Step)
 	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
@@ -74,7 +74,7 @@ func (i *Initializer) Initialize(
 		_ = os.RemoveAll(staging)
 	}()
 
-	target := azdCtx.RootDirectory()
+	target := azdCtx.Directory()
 
 	templateUrl, err := templates.Absolute(template.RepositoryPath)
 	if err != nil {
@@ -259,7 +259,7 @@ func (i *Initializer) ensureGitRepository(ctx context.Context, repoPath string) 
 // Initialize the project with any metadata values from the template
 func (i *Initializer) initializeProject(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext,
+	azdCtx *azdcontext.Root,
 	templateMetaData *templates.Metadata,
 ) error {
 	if templateMetaData == nil || len(templateMetaData.Project) == 0 {
@@ -310,8 +310,8 @@ func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 }
 
 // Initializes a minimal azd project.
-func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	projectDir := azdCtx.RootDirectory()
+func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.Root) error {
+	projectDir := azdCtx.Directory()
 	var err error
 
 	projectFormatted := output.WithLinkFormat("%s", projectDir)
@@ -422,10 +422,10 @@ func (i *Initializer) writeFileSafe(
 	return err
 }
 
-func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Root) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
 	if _, err := os.Stat(azdcontext.ProjectPath(azdCtx)); errors.Is(err, os.ErrNotExist) {
-		_, err = project.New(ctx, azdcontext.ProjectPath(azdCtx), filepath.Base(azdCtx.RootDirectory()))
+		_, err = project.New(ctx, azdcontext.ProjectPath(azdCtx), filepath.Base(azdCtx.Directory()))
 		if err != nil {
 			return fmt.Errorf("failed to create a project file: %w", err)
 		}
@@ -445,7 +445,7 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Az
 
 	//create .gitignore or open existing .gitignore file, and contains .azure
 	gitignoreFile, err := os.OpenFile(
-		filepath.Join(azdCtx.RootDirectory(), ".gitignore"),
+		filepath.Join(azdCtx.Directory(), ".gitignore"),
 		os.O_APPEND|os.O_RDWR|os.O_CREATE,
 		osutil.PermissionFile,
 	)
@@ -517,8 +517,8 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Az
 
 // PromptIfNonEmpty prompts the user for confirmation if the project directory to initialize in is non-empty.
 // Returns error if an error occurred while prompting, or if the user declines confirmation.
-func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	dir := azdCtx.RootDirectory()
+func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.Root) error {
+	dir := azdCtx.Directory()
 	isEmpty, err := osutil.IsDirEmpty(dir)
 	if err != nil {
 		return err

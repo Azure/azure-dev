@@ -53,7 +53,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 
 	// Set environment for commands that require environment.
 	envName := "envname"
-	azdCtx := azdcontext.NewAzdContextWithDirectory(tempDir)
+	azdCtx := azdcontext.NewRootFromDirectory(tempDir)
 	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
 
 	require.NoError(t, err)

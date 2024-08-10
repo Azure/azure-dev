@@ -185,13 +185,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Azd Context
-	container.MustRegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+	container.MustRegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.Root]) (*azdcontext.Root, error) {
 		return lazyAzdContext.GetValue()
 	})
 
 	// Lazy loads the Azd context after the azure.yaml file becomes available
-	container.MustRegisterSingleton(func() *lazy.Lazy[*azdcontext.AzdContext] {
-		return lazy.NewLazy(azdcontext.NewAzdContext)
+	container.MustRegisterSingleton(func() *lazy.Lazy[*azdcontext.Root] {
+		return lazy.NewLazy(azdcontext.NewRoot)
 	})
 
 	// Register an initialized environment based on the specified environment flag, or the default environment.
@@ -199,7 +199,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// environment is uninitialized or a default environment doesn't yet exist.
 	container.MustRegisterScoped(
 		func(ctx context.Context,
-			azdContext *azdcontext.AzdContext,
+			azdContext *azdcontext.Root,
 			envManager environment.Manager,
 			lazyEnv *lazy.Lazy[*environment.Environment],
 			envFlags internal.EnvFlag,
@@ -225,7 +225,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 	container.MustRegisterScoped(func(lazyEnvManager *lazy.Lazy[environment.Manager]) environment.EnvironmentResolver {
 		return func(ctx context.Context) (*environment.Environment, error) {
-			azdCtx, err := azdcontext.NewAzdContext()
+			azdCtx, err := azdcontext.NewRoot()
 			if err != nil {
 				return nil, err
 			}
@@ -262,7 +262,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Environment manager depends on azd context
 	container.MustRegisterSingleton(
 		func(serviceLocator ioc.ServiceLocator,
-			azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
+			azdContext *lazy.Lazy[*azdcontext.Root]) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
 				azdCtx, err := azdContext.GetValue()
 				if err != nil {
@@ -318,7 +318,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		func(
 			ctx context.Context,
 			lazyEnvManager *lazy.Lazy[environment.Manager],
-			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+			lazyAzdContext *lazy.Lazy[*azdcontext.Root],
 			envFlags internal.EnvFlag,
 		) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
@@ -361,7 +361,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(
 		func(
 			ctx context.Context,
-			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+			lazyAzdContext *lazy.Lazy[*azdcontext.Root],
 		) *lazy.Lazy[*project.ProjectConfig] {
 			return lazy.NewLazy(func() (*project.ProjectConfig, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
@@ -383,7 +383,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		ctx context.Context,
 		userConfigManager config.UserConfigManager,
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
-		lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+		lazyAzdContext *lazy.Lazy[*azdcontext.Root],
 		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
 	) (*cloud.Cloud, error) {
 

@@ -26,15 +26,15 @@ func Test_azdContext(t *testing.T) {
 	// By default, no azure.yaml is present. All projects would choose their app host directory as the context directory.
 	ctxDir, err := azdContext(nearest)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Dir(nearest), ctxDir.RootDirectory())
+	require.Equal(t, filepath.Dir(nearest), ctxDir.Directory())
 
 	ctxDir, err = azdContext(inAppHost)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Dir(inAppHost), ctxDir.RootDirectory())
+	require.Equal(t, filepath.Dir(inAppHost), ctxDir.Directory())
 
 	ctxDir, err = azdContext(nearestUnmatched)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Dir(nearestUnmatched), ctxDir.RootDirectory())
+	require.Equal(t, filepath.Dir(nearestUnmatched), ctxDir.Directory())
 
 	// Create azure.yaml files.
 	require.NoError(t, createProject(root, nearestRel))
@@ -43,17 +43,17 @@ func Test_azdContext(t *testing.T) {
 	// nearest uses 'root'
 	ctxDir, err = azdContext(nearest)
 	require.NoError(t, err)
-	require.Equal(t, root, ctxDir.RootDirectory())
+	require.Equal(t, root, ctxDir.Directory())
 
 	// inAppHost uses 'in-apphost'
 	ctxDir, err = azdContext(inAppHost)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Dir(inAppHost), ctxDir.RootDirectory())
+	require.Equal(t, filepath.Dir(inAppHost), ctxDir.Directory())
 
 	// nearestUnmatched uses its own directory
 	ctxDir, err = azdContext(nearestUnmatched)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Dir(nearestUnmatched), ctxDir.RootDirectory())
+	require.Equal(t, filepath.Dir(nearestUnmatched), ctxDir.Directory())
 }
 
 func createProject(prjDir string, appHostPath string) error {

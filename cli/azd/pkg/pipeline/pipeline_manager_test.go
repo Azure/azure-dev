@@ -33,7 +33,7 @@ import (
 func Test_PipelineManager_Initialize(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
-	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+	azdContext := azdcontext.NewRootFromDirectory(tempDir)
 	mockContext := resetContext(tempDir, ctx)
 
 	//1. Test without a project file
@@ -631,7 +631,7 @@ func Test_promptForCiFiles(t *testing.T) {
 
 func createPipelineManager(
 	mockContext *mocks.MockContext,
-	azdContext *azdcontext.AzdContext,
+	azdContext *azdcontext.Root,
 	env *environment.Environment,
 	args *PipelineManagerArgs,
 ) (*PipelineManager, error) {

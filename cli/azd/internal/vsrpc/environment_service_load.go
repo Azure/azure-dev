@@ -62,7 +62,7 @@ func (s *environmentService) loadEnvironmentAsync(
 	ctx context.Context, container *container, name string, mustLoadServices bool,
 ) (*Environment, error) {
 	var c struct {
-		azdCtx         *azdcontext.AzdContext  `container:"type"`
+		azdCtx         *azdcontext.Root        `container:"type"`
 		envManager     environment.Manager     `container:"type"`
 		projectConfig  *project.ProjectConfig  `container:"type"`
 		dotnetCli      *dotnet.Cli             `container:"type"`

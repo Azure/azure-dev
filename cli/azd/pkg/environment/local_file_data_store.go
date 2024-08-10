@@ -19,12 +19,12 @@ import (
 
 // LocalFileDataStore is a DataStore implementation that stores environment data in the local file system.
 type LocalFileDataStore struct {
-	azdContext    *azdcontext.AzdContext
+	azdContext    *azdcontext.Root
 	configManager config.FileConfigManager
 }
 
 // NewLocalFileDataStore creates a new LocalFileDataStore instance
-func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager config.FileConfigManager) LocalDataStore {
+func NewLocalFileDataStore(azdContext *azdcontext.Root, configManager config.FileConfigManager) LocalDataStore {
 	return &LocalFileDataStore{
 		azdContext:    azdContext,
 		configManager: configManager,

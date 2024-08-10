@@ -32,9 +32,9 @@ func (s *environmentService) CreateEnvironmentAsync(
 	}
 
 	var c struct {
-		azdContext *azdcontext.AzdContext `container:"type"`
-		dotnetCli  *dotnet.Cli            `container:"type"`
-		envManager environment.Manager    `container:"type"`
+		azdContext *azdcontext.Root    `container:"type"`
+		dotnetCli  *dotnet.Cli         `container:"type"`
+		envManager environment.Manager `container:"type"`
 	}
 
 	container, err := session.newContainer(rc)
@@ -67,12 +67,12 @@ func (s *environmentService) CreateEnvironmentAsync(
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
 
-		projectName := strings.TrimSuffix(filepath.Base(c.azdContext.RootDirectory()), ".AppHost")
+		projectName := strings.TrimSuffix(filepath.Base(c.azdContext.Directory()), ".AppHost")
 
 		// Write an azure.yaml file to the project.
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
-			c.azdContext.RootDirectory(),
+			c.azdContext.Directory(),
 			projectName,
 			manifest,
 			rc.HostProjectPath,
@@ -82,7 +82,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 		}
 
 		file := files["azure.yaml"]
-		projectFilePath := filepath.Join(c.azdContext.RootDirectory(), "azure.yaml")
+		projectFilePath := filepath.Join(c.azdContext.Directory(), "azure.yaml")
 
 		if err := os.WriteFile(projectFilePath, []byte(file.Contents), file.Mode); err != nil {
 			return false, fmt.Errorf("writing azure.yaml: %w", err)

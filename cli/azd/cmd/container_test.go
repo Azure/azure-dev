@@ -89,8 +89,8 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 
 	// Register the testing lazy component
 	container.MustRegisterTransient(
-		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) *testLazyComponent[*azdcontext.AzdContext] {
-			return &testLazyComponent[*azdcontext.AzdContext]{
+		func(lazyAzdContext *lazy.Lazy[*azdcontext.Root]) *testLazyComponent[*azdcontext.Root] {
+			return &testLazyComponent[*azdcontext.Root]{
 				lazy: lazyAzdContext,
 			}
 		},
@@ -98,8 +98,8 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 
 	// Register the testing concrete component
 	container.MustRegisterTransient(
-		func(azdContext *azdcontext.AzdContext) *testConcreteComponent[*azdcontext.AzdContext] {
-			return &testConcreteComponent[*azdcontext.AzdContext]{
+		func(azdContext *azdcontext.Root) *testConcreteComponent[*azdcontext.Root] {
+			return &testConcreteComponent[*azdcontext.Root]{
 				concrete: azdContext,
 			}
 		},
@@ -107,13 +107,13 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 
 	// The lazy components depends on the lazy project config.
 	// The lazy instance itself should never be nil
-	var lazyComponent *testLazyComponent[*azdcontext.AzdContext]
+	var lazyComponent *testLazyComponent[*azdcontext.Root]
 	err := container.Resolve(&lazyComponent)
 	require.NoError(t, err)
 	require.NotNil(t, lazyComponent.lazy)
 
 	// Get the lazy project config instance itself to use for comparison
-	var lazyInstance *lazy.Lazy[*azdcontext.AzdContext]
+	var lazyInstance *lazy.Lazy[*azdcontext.Root]
 	err = container.Resolve(&lazyInstance)
 	require.NoError(t, err)
 	require.NotNil(t, lazyInstance)
@@ -124,13 +124,13 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 	require.Error(t, err)
 
 	// Set a project config on the lazy instance
-	azdContext = azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	azdContext = azdcontext.NewRootFromDirectory(t.TempDir())
 
 	lazyInstance.SetValue(azdContext)
 
 	// Now lets resolve a type that depends on a concrete project config
 	// The project config should be be available not that the lazy has been set above
-	var staticComponent *testConcreteComponent[*azdcontext.AzdContext]
+	var staticComponent *testConcreteComponent[*azdcontext.Root]
 	err = container.Resolve(&staticComponent)
 	require.NoError(t, err)
 	require.NotNil(t, staticComponent.concrete)

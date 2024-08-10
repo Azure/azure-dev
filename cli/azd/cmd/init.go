@@ -100,7 +100,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
-	lazyAzdCtx      *lazy.Lazy[*azdcontext.AzdContext]
+	lazyAzdCtx      *lazy.Lazy[*azdcontext.Root]
 	lazyEnvManager  *lazy.Lazy[environment.Manager]
 	console         input.Console
 	cmdRun          exec.CommandRunner
@@ -112,7 +112,7 @@ type initAction struct {
 }
 
 func newInitAction(
-	lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
+	lazyAzdCtx *lazy.Lazy[*azdcontext.Root],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	cmdRun exec.CommandRunner,
 	console input.Console,
@@ -140,7 +140,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
+	azdCtx := azdcontext.NewRootFromDirectory(wd)
 	i.lazyAzdCtx.SetValue(azdCtx)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
@@ -223,7 +223,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		followUp = "You can provision and deploy your app to Azure by running the " + color.BlueString("azd up") +
 			" command in this directory. For more information on configuring your app, see " +
 			output.WithHighLightFormat("./next-steps.md")
-		entries, err := os.ReadDir(azdCtx.RootDirectory())
+		entries, err := os.ReadDir(azdCtx.Directory())
 		if err != nil {
 			return nil, fmt.Errorf("reading current directory: %w", err)
 		}
@@ -294,7 +294,7 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 
 func (i *initAction) initializeTemplate(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext) (*templates.Template, error) {
+	azdCtx *azdcontext.Root) (*templates.Template, error) {
 	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
 	if err != nil {
 		return nil, err
@@ -345,7 +345,7 @@ func (i *initAction) initializeTemplate(
 
 func (i *initAction) initializeEnv(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext,
+	azdCtx *azdcontext.Root,
 	templateMetadata *templates.Metadata) (*environment.Environment, error) {
 	envName, err := azdCtx.DefaultEnvironmentName()
 	if err != nil {
@@ -356,7 +356,7 @@ func (i *initAction) initializeEnv(
 		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
-	base := filepath.Base(azdCtx.RootDirectory())
+	base := filepath.Base(azdCtx.Directory())
 	examples := []string{}
 	for _, c := range []string{"dev", "test", "prod"} {
 		suggest := environment.CleanName(base + "-" + c)

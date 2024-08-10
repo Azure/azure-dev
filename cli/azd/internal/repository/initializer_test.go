@@ -48,7 +48,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
-			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+			azdCtx := azdcontext.NewRootFromDirectory(projectDir)
 			mockContext := mocks.NewMockContext(context.Background())
 			mockGitClone(t, mockContext, "https://github.com/Azure-Samples/local", tt)
 
@@ -76,7 +76,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 
 func Test_Initializer_DevCenter(t *testing.T) {
 	projectDir := t.TempDir()
-	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+	azdCtx := azdcontext.NewRootFromDirectory(projectDir)
 	mockContext := mocks.NewMockContext(context.Background())
 	testMetadata := testCase{
 		name:        "devcenter",
@@ -130,7 +130,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 			originalReadme := "ORIGINAL"
 			originalProgram := "Console.WriteLine(\"Hello, Original World!\");"
 			projectDir := t.TempDir()
-			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+			azdCtx := azdcontext.NewRootFromDirectory(projectDir)
 			// set up duplicate files
 			err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte(originalReadme), osutil.PermissionFile)
 			require.NoError(t, err, "setting up duplicate readme.md")
@@ -355,7 +355,7 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
-			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+			azdCtx := azdcontext.NewRootFromDirectory(projectDir)
 
 			if tt.setup.gitignoreFile != "" {
 				if tt.setup.gitIgnoreCrlf {
@@ -435,8 +435,8 @@ func verifyFileContent(t *testing.T, file string, content string) {
 	require.Equal(t, content, string(actualContent))
 }
 
-func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content string) {
-	content = strings.Replace(content, "<project>", filepath.Base(azdCtx.RootDirectory()), 1)
+func verifyProjectFile(t *testing.T, azdCtx *azdcontext.Root, content string) {
+	content = strings.Replace(content, "<project>", filepath.Base(azdCtx.Directory()), 1)
 	verifyFileContent(t, azdcontext.ProjectPath(azdCtx), content)
 
 	_, err := project.Load(context.Background(), azdcontext.ProjectPath(azdCtx))
@@ -631,7 +631,7 @@ func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 				console: console,
 				gitCli:  gitCli,
 			}
-			azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+			azdCtx := azdcontext.NewRootFromDirectory(dir)
 			err := i.PromptIfNonEmpty(context.Background(), azdCtx)
 
 			if tt.expectedErr != "" {

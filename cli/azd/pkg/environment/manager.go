@@ -79,14 +79,14 @@ type Manager interface {
 type manager struct {
 	local      DataStore
 	remote     DataStore
-	azdContext *azdcontext.AzdContext
+	azdContext *azdcontext.Root
 	console    input.Console
 }
 
 // NewManager creates a new Manager instance
 func NewManager(
 	serviceLocator ioc.ServiceLocator,
-	azdContext *azdcontext.AzdContext,
+	azdContext *azdcontext.Root,
 	console input.Console,
 	local LocalDataStore,
 	remoteConfig *state.RemoteConfig,

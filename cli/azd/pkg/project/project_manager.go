@@ -64,14 +64,14 @@ type ProjectManager interface {
 type ServiceFilterPredicate func(svc *ServiceConfig) bool
 
 type projectManager struct {
-	azdContext     *azdcontext.AzdContext
+	azdContext     *azdcontext.Root
 	serviceManager ServiceManager
 	importManager  *ImportManager
 }
 
 // NewProjectManager creates a new instance of the ProjectManager
 func NewProjectManager(
-	azdContext *azdcontext.AzdContext,
+	azdContext *azdcontext.Root,
 	serviceManager ServiceManager,
 	importManager *ImportManager,
 ) ProjectManager {
@@ -128,7 +128,7 @@ func (pm *projectManager) DefaultServiceFromWd(
 		return nil, err
 	}
 
-	if wd == pm.azdContext.RootDirectory() {
+	if wd == pm.azdContext.Directory() {
 		return nil, nil
 	}
 

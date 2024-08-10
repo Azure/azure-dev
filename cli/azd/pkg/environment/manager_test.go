@@ -59,7 +59,7 @@ var (
 )
 
 func newManagerForTest(
-	azdContext *azdcontext.AzdContext,
+	azdContext *azdcontext.Root,
 	console input.Console,
 	localDataStore LocalDataStore,
 	remoteDataStore RemoteDataStore,
@@ -115,7 +115,7 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 }
 
 func createEnvManagerForManagerTest(t *testing.T, mockContext *mocks.MockContext) Manager {
-	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	azdCtx := azdcontext.NewRootFromDirectory(t.TempDir())
 	localDataStore := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
 
 	return newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil)
@@ -140,7 +140,7 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 
 func Test_EnvManager_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
 
 	t.Run("LocalOnly", func(t *testing.T) {
 		localDataStore := &MockDataStore{}
@@ -202,7 +202,7 @@ func Test_EnvManager_List(t *testing.T) {
 
 func Test_EnvManager_Get(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
 
 	t.Run("ExistsLocally", func(t *testing.T) {
 		localDataStore := &MockDataStore{}
@@ -275,7 +275,7 @@ func Test_EnvManager_Get(t *testing.T) {
 
 func Test_EnvManager_Save(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
 
 	t.Run("Success", func(t *testing.T) {
 		localDataStore := &MockDataStore{}
@@ -377,8 +377,8 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(config.NewManager)
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobClient)
 
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
-	mockContext.Container.MustRegisterSingleton(func() *azdcontext.AzdContext {
+	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
+	mockContext.Container.MustRegisterSingleton(func() *azdcontext.Root {
 		return azdContext
 	})
 	mockContext.Container.MustRegisterSingleton(func() auth.HttpClient {

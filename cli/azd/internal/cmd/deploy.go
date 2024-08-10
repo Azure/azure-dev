@@ -107,7 +107,7 @@ type DeployAction struct {
 	flags               *DeployFlags
 	args                []string
 	projectConfig       *project.ProjectConfig
-	azdCtx              *azdcontext.AzdContext
+	azdCtx              *azdcontext.Root
 	env                 *environment.Environment
 	projectManager      project.ProjectManager
 	serviceManager      project.ServiceManager
@@ -130,7 +130,7 @@ func NewDeployAction(
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
 	resourceManager project.ResourceManager,
-	azdCtx *azdcontext.AzdContext,
+	azdCtx *azdcontext.Root,
 	environment *environment.Environment,
 	accountManager account.Manager,
 	portalUrlBase cloud.PortalUrlBase,

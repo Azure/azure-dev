@@ -72,7 +72,7 @@ type restoreAction struct {
 	console        input.Console
 	formatter      output.Formatter
 	writer         io.Writer
-	azdCtx         *azdcontext.AzdContext
+	azdCtx         *azdcontext.Root
 	env            *environment.Environment
 	projectConfig  *project.ProjectConfig
 	projectManager project.ProjectManager
@@ -87,7 +87,7 @@ func newRestoreAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	azdCtx *azdcontext.AzdContext,
+	azdCtx *azdcontext.Root,
 	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,

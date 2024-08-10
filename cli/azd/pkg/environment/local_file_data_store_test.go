@@ -13,7 +13,7 @@ import (
 
 func Test_LocalFileDataStore_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
@@ -41,7 +41,7 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 
 func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
@@ -61,7 +61,7 @@ func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 }
 
 func Test_LocalFileDataStore_Path(t *testing.T) {
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
@@ -73,7 +73,7 @@ func Test_LocalFileDataStore_Path(t *testing.T) {
 }
 
 func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	azdContext := azdcontext.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 

@@ -78,7 +78,7 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 	}
 
 	var c struct {
-		azdCtx *azdcontext.AzdContext `container:"type"`
+		azdCtx *azdcontext.Root `container:"type"`
 	}
 
 	container, err := session.newContainer(rc)

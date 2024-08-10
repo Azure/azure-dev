@@ -62,7 +62,7 @@ type showAction struct {
 	azCli                azcli.AzCli
 	envManager           environment.Manager
 	deploymentOperations azapi.DeploymentOperations
-	azdCtx               *azdcontext.AzdContext
+	azdCtx               *azdcontext.Root
 	flags                *showFlags
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
 	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
@@ -78,7 +78,7 @@ func newShowAction(
 	deploymentOperations azapi.DeploymentOperations,
 	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
-	azdCtx *azdcontext.AzdContext,
+	azdCtx *azdcontext.Root,
 	flags *showFlags,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],

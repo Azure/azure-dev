@@ -111,7 +111,7 @@ func Test_CLI_Env_Management(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify creating an environment when no default environment is set
-	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	azdCtx := azdcontext.NewRootFromDirectory(dir)
 	err = azdCtx.SetDefaultEnvironmentName("")
 	require.NoError(t, err)
 

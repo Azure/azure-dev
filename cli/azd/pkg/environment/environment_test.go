@@ -266,8 +266,8 @@ func Test_fixupUnquotedDotenv(t *testing.T) {
 	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=\"01\"", fixed)
 }
 
-func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *azdcontext.AzdContext) {
-	azdCtx := azdcontext.NewAzdContextWithDirectory(root)
+func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *azdcontext.Root) {
+	azdCtx := azdcontext.NewRootFromDirectory(root)
 	configManager := config.NewFileConfigManager(config.NewManager())
 	localDataStore := NewLocalFileDataStore(azdCtx, configManager)
 

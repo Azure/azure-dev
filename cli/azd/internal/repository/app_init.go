@@ -45,7 +45,7 @@ func (i *Initializer) InitFromApp(
 	i.console.Message(ctx, "")
 	title := "Scanning app code in current directory"
 	i.console.ShowSpinner(ctx, title, input.Step)
-	wd := azdCtx.ProjectDirectory()
+	wd := azdCtx.RootDirectory()
 
 	projects := []appdetect.Project{}
 	start := time.Now()
@@ -175,8 +175,8 @@ func (i *Initializer) InitFromApp(
 
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
-			azdCtx.ProjectDirectory(),
-			filepath.Base(azdCtx.ProjectDirectory()),
+			azdCtx.RootDirectory(),
+			filepath.Base(azdCtx.RootDirectory()),
 			appHostManifests[appHost.Path],
 			appHost.Path,
 		)
@@ -200,7 +200,7 @@ func (i *Initializer) InitFromApp(
 			}
 		}
 
-		skipStagingFiles, err := i.promptForDuplicates(ctx, staging, azdCtx.ProjectDirectory())
+		skipStagingFiles, err := i.promptForDuplicates(ctx, staging, azdCtx.RootDirectory())
 		if err != nil {
 			return err
 		}
@@ -213,7 +213,7 @@ func (i *Initializer) InitFromApp(
 			}
 		}
 
-		if err := copy.Copy(staging, azdCtx.ProjectDirectory(), options); err != nil {
+		if err := copy.Copy(staging, azdCtx.RootDirectory(), options); err != nil {
 			return fmt.Errorf("copying contents from temp staging directory: %w", err)
 		}
 
@@ -260,7 +260,7 @@ func (i *Initializer) InitFromApp(
 		return err
 	}
 
-	infra := filepath.Join(azdCtx.ProjectDirectory(), "infra")
+	infra := filepath.Join(azdCtx.RootDirectory(), "infra")
 	title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
 	i.console.ShowSpinner(ctx, title, input.Step)
 	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
@@ -302,7 +302,7 @@ func (i *Initializer) InitFromApp(
 		return fmt.Errorf("copying contents from temp staging directory: %w", err)
 	}
 
-	err = scaffold.Execute(t, "next-steps.md", spec, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
+	err = scaffold.Execute(t, "next-steps.md", spec, filepath.Join(azdCtx.RootDirectory(), "next-steps.md"))
 	if err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func (i *Initializer) genProjectFile(
 	var err error
 	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 
-	config, err := prjConfigFromDetect(azdCtx.ProjectDirectory(), detect)
+	config, err := prjConfigFromDetect(azdCtx.RootDirectory(), detect)
 	if err != nil {
 		return fmt.Errorf("converting config: %w", err)
 	}

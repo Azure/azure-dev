@@ -69,7 +69,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
 			require.FileExists(t, azdCtx.ProjectPath())
-			require.DirExists(t, azdCtx.EnvironmentDirectory())
+			require.DirExists(t, filepath.Join(azdCtx.RootDirectory(), azdcontext.EnvironmentConfigDirectoryName))
 		})
 	}
 }
@@ -204,7 +204,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
 			require.FileExists(t, azdCtx.ProjectPath())
-			require.DirExists(t, azdCtx.EnvironmentDirectory())
+			require.DirExists(t, filepath.Join(azdCtx.RootDirectory(), azdcontext.EnvironmentConfigDirectoryName))
 		})
 	}
 }
@@ -391,7 +391,7 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			gitignore := filepath.Join(projectDir, ".gitignore")
 			verifyFileContent(t, gitignore, gitIgnoreFileContent)
 
-			require.DirExists(t, azdCtx.EnvironmentDirectory())
+			require.DirExists(t, filepath.Join(azdCtx.RootDirectory(), azdcontext.EnvironmentConfigDirectoryName))
 		})
 	}
 }
@@ -436,7 +436,7 @@ func verifyFileContent(t *testing.T, file string, content string) {
 }
 
 func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content string) {
-	content = strings.Replace(content, "<project>", azdCtx.GetDefaultProjectName(), 1)
+	content = strings.Replace(content, "<project>", filepath.Base(azdCtx.RootDirectory()), 1)
 	verifyFileContent(t, azdCtx.ProjectPath(), content)
 
 	_, err := project.Load(context.Background(), azdCtx.ProjectPath())

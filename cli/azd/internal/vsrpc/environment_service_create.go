@@ -67,12 +67,12 @@ func (s *environmentService) CreateEnvironmentAsync(
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
 
-		projectName := strings.TrimSuffix(filepath.Base(c.azdContext.ProjectDirectory()), ".AppHost")
+		projectName := strings.TrimSuffix(filepath.Base(c.azdContext.RootDirectory()), ".AppHost")
 
 		// Write an azure.yaml file to the project.
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
-			c.azdContext.ProjectDirectory(),
+			c.azdContext.RootDirectory(),
 			projectName,
 			manifest,
 			rc.HostProjectPath,
@@ -82,7 +82,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 		}
 
 		file := files["azure.yaml"]
-		projectFilePath := filepath.Join(c.azdContext.ProjectDirectory(), "azure.yaml")
+		projectFilePath := filepath.Join(c.azdContext.RootDirectory(), "azure.yaml")
 
 		if err := os.WriteFile(projectFilePath, []byte(file.Contents), file.Mode); err != nil {
 			return false, fmt.Errorf("writing azure.yaml: %w", err)

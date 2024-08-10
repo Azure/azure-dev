@@ -284,7 +284,7 @@ func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input
 	case 1:
 		projectName, projectId, err = azdo.GetProjectFromNew(
 			ctx,
-			p.azdContext.ProjectDirectory(),
+			p.azdContext.RootDirectory(),
 			connection,
 			p.env,
 			console,

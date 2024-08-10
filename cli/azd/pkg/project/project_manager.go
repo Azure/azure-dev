@@ -128,7 +128,7 @@ func (pm *projectManager) DefaultServiceFromWd(
 		return nil, err
 	}
 
-	if wd == pm.azdContext.ProjectDirectory() {
+	if wd == pm.azdContext.RootDirectory() {
 		return nil, nil
 	}
 

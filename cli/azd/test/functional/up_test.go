@@ -86,7 +86,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "deploy", "web")
 	require.NoError(t, err)
 
-	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	url, has := env["WEBSITE_URL"]
@@ -106,7 +106,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	// Ensure `env refresh` works by removing an output parameter from the .env file and ensure that `env refresh`
 	// brings it back.
 	delete(env, "WEBSITE_URL")
-	err = godotenv.Write(env, filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	err = godotenv.Write(env, filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	//clear dotnet secrets to test if dotnet secrets works when running env refresh
@@ -117,7 +117,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "env", "refresh", envName)
 	require.NoError(t, err)
 
-	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	_, has = env["WEBSITE_URL"]
@@ -256,7 +256,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 
 	// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
 	// (without the quotes). Validate that the application is working.
-	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	url, has := env["WEBSITE_URL"]
@@ -279,7 +279,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 
 	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
 	// have been removed from the environment.
-	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	_, has = env["WEBSITE_URL"]
@@ -356,7 +356,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 
 	// The sample outputs the ID of the storage account it created, let's make sure that resource is in the resource
 	// group we created (by looking at the resourceGroup component in the id)
-	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	storageAccountId, has := env["STORAGE_ACCOUNT_ID"]

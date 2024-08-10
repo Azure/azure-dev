@@ -66,7 +66,7 @@ func Test_LocalFileDataStore_Path(t *testing.T) {
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
 	env := New("env1")
-	expected := filepath.Join(azdContext.EnvironmentRoot("env1"), DotEnvFileName)
+	expected := filepath.Join(azdContext.RootDirectory(), azdcontext.EnvironmentConfigDirectoryName, "env1", DotEnvFileName)
 	actual := dataStore.EnvPath(env)
 
 	require.Equal(t, expected, actual)
@@ -78,7 +78,7 @@ func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
 	env := New("env1")
-	expected := filepath.Join(azdContext.EnvironmentRoot("env1"), ConfigFileName)
+	expected := filepath.Join(azdContext.RootDirectory(), azdcontext.EnvironmentConfigDirectoryName, "env1", ConfigFileName)
 	actual := dataStore.ConfigPath(env)
 
 	require.Equal(t, expected, actual)

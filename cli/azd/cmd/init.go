@@ -223,7 +223,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		followUp = "You can provision and deploy your app to Azure by running the " + color.BlueString("azd up") +
 			" command in this directory. For more information on configuring your app, see " +
 			output.WithHighLightFormat("./next-steps.md")
-		entries, err := os.ReadDir(azdCtx.ProjectDirectory())
+		entries, err := os.ReadDir(azdCtx.RootDirectory())
 		if err != nil {
 			return nil, fmt.Errorf("reading current directory: %w", err)
 		}
@@ -356,7 +356,7 @@ func (i *initAction) initializeEnv(
 		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
-	base := filepath.Base(azdCtx.ProjectDirectory())
+	base := filepath.Base(azdCtx.RootDirectory())
 	examples := []string{}
 	for _, c := range []string{"dev", "test", "prod"} {
 		suggest := environment.CleanName(base + "-" + c)

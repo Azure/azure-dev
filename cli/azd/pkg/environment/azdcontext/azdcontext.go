@@ -10,39 +10,41 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
+// ProjectFileName is the name of the file that stores the project configuration. This file is located in the root of the
+// and contains the project name and other project specific configuration.
 const ProjectFileName = "azure.yaml"
-const EnvironmentDirectoryName = ".azure"
-const DotEnvFileName = ".env"
-const ConfigFileName = "config.json"
-const ConfigFileVersion = 1
 
+// EnvironmentConfigDirectoryName is the name of the directory that contains environment specific configuration.
+// This directory is located in the root of the azd project and is not intended to be committed. Inside this directory
+// is a folder for each environment and a config.json in the root file that stores the default environment.
+const EnvironmentConfigDirectoryName = ".azure"
+
+// configFileName is the name of the file that stores the default environment and is located in the root of the .azure
+// directory.
+const configFileName = "config.json"
+
+// configFileVersion is the version of the config file format that we understand and write.
+const configFileVersion = 1
+
+// AzdContext is wrapper around the root of an azd project on a file system. It is the directory that contains the azure.yaml
+// and .azure folder.
 type AzdContext struct {
-	projectDirectory string
+	rootDirectory string
 }
 
-func (c *AzdContext) ProjectDirectory() string {
-	return c.projectDirectory
+// RootDirectory is the path to the root of the azd project.
+func (c *AzdContext) RootDirectory() string {
+	return c.rootDirectory
 }
 
+// ProjectPath is the path to the azure.yaml file in the root of the azd project.
 func (c *AzdContext) ProjectPath() string {
-	return filepath.Join(c.ProjectDirectory(), ProjectFileName)
-}
-
-func (c *AzdContext) EnvironmentDirectory() string {
-	return filepath.Join(c.ProjectDirectory(), EnvironmentDirectoryName)
-}
-
-func (c *AzdContext) GetDefaultProjectName() string {
-	return filepath.Base(c.ProjectDirectory())
-}
-
-func (c *AzdContext) EnvironmentRoot(name string) string {
-	return filepath.Join(c.EnvironmentDirectory(), name)
+	return filepath.Join(c.RootDirectory(), ProjectFileName)
 }
 
 // DefaultEnvironmentName returns the name of the default environment or an empty string if no default environment is set.
 func (c *AzdContext) DefaultEnvironmentName() (string, error) {
-	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
+	path := filepath.Join(c.RootDirectory(), EnvironmentConfigDirectoryName, configFileName)
 	file, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -62,9 +64,9 @@ func (c *AzdContext) DefaultEnvironmentName() (string, error) {
 // SetDefaultEnvironmentName saves the environment that is used by default when azd is run without a `-e` flag. Using "" as
 // the name will cause azd to prompt the user to select an environment in the future.
 func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
-	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
+	path := filepath.Join(c.RootDirectory(), EnvironmentConfigDirectoryName, configFileName)
 	config := configFile{
-		Version:            ConfigFileVersion,
+		Version:            configFileVersion,
 		DefaultEnvironment: name,
 	}
 
@@ -82,14 +84,14 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 	}
 
 	// make sure to ignore the environment directory
-	path = filepath.Join(c.EnvironmentDirectory(), ".gitignore")
+	path = filepath.Join(c.RootDirectory(), EnvironmentConfigDirectoryName, ".gitignore")
 	return os.WriteFile(path, []byte("# .azure is not intended to be committed\n*"), osutil.PermissionFile)
 }
 
 // Creates context with project directory set to the desired directory.
 func NewAzdContextWithDirectory(projectDirectory string) *AzdContext {
 	return &AzdContext{
-		projectDirectory: projectDirectory,
+		rootDirectory: projectDirectory,
 	}
 }
 
@@ -139,7 +141,7 @@ func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 	}
 
 	return &AzdContext{
-		projectDirectory: searchDir,
+		rootDirectory: searchDir,
 	}, nil
 }
 

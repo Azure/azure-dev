@@ -243,7 +243,7 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 
 	infra := pm.infra
 	// run pre-config validations.
-	rootPath := pm.azdCtx.ProjectDirectory()
+	rootPath := pm.azdCtx.RootDirectory()
 	updatedConfig, errorsFromPreConfig := pm.preConfigureCheck(ctx, infra.Options, rootPath)
 	if errorsFromPreConfig != nil {
 		return result, errorsFromPreConfig
@@ -541,14 +541,14 @@ func (pm *PipelineManager) ensureRemote(
 	if err != nil {
 		return nil, err
 	}
-	gitRepoDetails.gitProjectPath = pm.azdCtx.ProjectDirectory()
+	gitRepoDetails.gitProjectPath = pm.azdCtx.RootDirectory()
 	gitRepoDetails.branch = currentBranch
 	return gitRepoDetails, nil
 }
 
 // getGitRepoDetails get the details about a git project using the azd context to discover the project path.
 func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositoryDetails, error) {
-	repoPath := pm.azdCtx.ProjectDirectory()
+	repoPath := pm.azdCtx.RootDirectory()
 
 	checkGitMessage := "Checking current directory for Git repository"
 	var err error
@@ -631,11 +631,11 @@ func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositor
 
 // pushGitRepo commit all changes in the git project and push it to upstream.
 func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepositoryDetails, currentBranch string) error {
-	if err := pm.gitCli.AddFile(ctx, pm.azdCtx.ProjectDirectory(), "."); err != nil {
+	if err := pm.gitCli.AddFile(ctx, pm.azdCtx.RootDirectory(), "."); err != nil {
 		return fmt.Errorf("adding files: %w", err)
 	}
 
-	if err := pm.gitCli.Commit(ctx, pm.azdCtx.ProjectDirectory(), "Configure Azure Developer Pipeline"); err != nil {
+	if err := pm.gitCli.Commit(ctx, pm.azdCtx.RootDirectory(), "Configure Azure Developer Pipeline"); err != nil {
 		return fmt.Errorf("commit changes: %w", err)
 	}
 
@@ -697,7 +697,7 @@ func (pm *PipelineManager) resolveProviderAndDetermine(
 //   - The provider is persisted in the environment so the next time the function is run,
 //     the same provider is used directly, unless the overrideProvider is used to change the last used configuration.
 func (pm *PipelineManager) initialize(ctx context.Context, override string) error {
-	projectDir := pm.azdCtx.ProjectDirectory()
+	projectDir := pm.azdCtx.RootDirectory()
 	projectPath := pm.azdCtx.ProjectPath()
 	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
 	if err != nil {

@@ -65,7 +65,7 @@ func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 	}
 
 	// nearest project is in host project directory, use it
-	if azdCtx.ProjectDirectory() == hostProjectDir {
+	if azdCtx.RootDirectory() == hostProjectDir {
 		return azdCtx, nil
 	}
 
@@ -87,6 +87,6 @@ func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 		break
 	}
 
-	log.Printf("use nearest directory: %s", azdCtx.ProjectDirectory())
+	log.Printf("use nearest directory: %s", azdCtx.RootDirectory())
 	return azdCtx, nil
 }

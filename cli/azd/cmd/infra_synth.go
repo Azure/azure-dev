@@ -139,7 +139,7 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		}
 
 	} else {
-		skipStagingFiles, err := a.promptForDuplicates(ctx, staging, a.azdCtx.ProjectDirectory())
+		skipStagingFiles, err := a.promptForDuplicates(ctx, staging, a.azdCtx.RootDirectory())
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +152,7 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		}
 	}
 
-	if err := copy.Copy(staging, a.azdCtx.ProjectDirectory(), options); err != nil {
+	if err := copy.Copy(staging, a.azdCtx.RootDirectory(), options); err != nil {
 		return nil, fmt.Errorf("copying contents from temp staging directory: %w", err)
 	}
 

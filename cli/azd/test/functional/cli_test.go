@@ -335,7 +335,7 @@ func Test_CLI_ProvisionState(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
 
-	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	if session != nil {
@@ -391,7 +391,7 @@ func Test_CLI_ProvisionStateWithDown(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, reProvisionAfterDown.Stdout, expectedOutputContains)
 
-	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	if session != nil {
@@ -759,7 +759,7 @@ func stdinForProvision() string {
 }
 
 func getTestEnvPath(dir string, envName string) string {
-	return filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
+	return filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env")
 }
 
 // newTestContext returns a new empty context, suitable for use in tests. If a

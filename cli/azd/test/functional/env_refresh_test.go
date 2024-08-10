@@ -43,7 +43,7 @@ func Test_CLI_EnvRefresh_NoBicep(t *testing.T) {
 	require.NoError(t, err)
 
 	// Remove .azure and infra
-	environment := filepath.Join(dir, azdcontext.EnvironmentDirectoryName)
+	environment := filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName)
 	require.NoError(t, os.RemoveAll(environment))
 
 	infraPath := filepath.Join(dir, "infra")

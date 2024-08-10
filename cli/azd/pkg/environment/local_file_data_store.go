@@ -33,12 +33,12 @@ func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager conf
 
 // Path returns the path to the .env file for the given environment
 func (fs *LocalFileDataStore) EnvPath(env *Environment) string {
-	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), DotEnvFileName)
+	return filepath.Join(fs.environmentRoot(env.name), DotEnvFileName)
 }
 
 // ConfigPath returns the path to the config.json file for the given environment
 func (fs *LocalFileDataStore) ConfigPath(env *Environment) string {
-	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), ConfigFileName)
+	return filepath.Join(fs.environmentRoot(env.name), ConfigFileName)
 }
 
 // List returns a list of all environments within the data store
@@ -48,7 +48,7 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 		return nil, err
 	}
 
-	environments, err := os.ReadDir(fs.azdContext.EnvironmentDirectory())
+	environments, err := os.ReadDir(filepath.Join(fs.azdContext.RootDirectory(), azdcontext.EnvironmentConfigDirectoryName))
 	if errors.Is(err, os.ErrNotExist) {
 		return []*contracts.EnvListEnvironment{}, nil
 	}
@@ -64,8 +64,8 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 			ev := &contracts.EnvListEnvironment{
 				Name:       ent.Name(),
 				IsDefault:  ent.Name() == defaultEnv,
-				DotEnvPath: filepath.Join(fs.azdContext.EnvironmentRoot(ent.Name()), DotEnvFileName),
-				ConfigPath: filepath.Join(fs.azdContext.EnvironmentRoot(ent.Name()), ConfigFileName),
+				DotEnvPath: filepath.Join(fs.environmentRoot(ent.Name()), DotEnvFileName),
+				ConfigPath: filepath.Join(fs.environmentRoot(ent.Name()), ConfigFileName),
 			}
 			envs = append(envs, ev)
 		}
@@ -80,7 +80,7 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 
 // Get returns the environment instance for the specified environment name
 func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environment, error) {
-	root := fs.azdContext.EnvironmentRoot(name)
+	root := fs.environmentRoot(name)
 	_, err := os.Stat(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("'%s': %w", name, ErrNotFound)
@@ -129,6 +129,10 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 	}
 
 	return nil
+}
+
+func (fs *LocalFileDataStore) environmentRoot(name string) string {
+	return filepath.Join(fs.azdContext.RootDirectory(), azdcontext.EnvironmentConfigDirectoryName, name)
 }
 
 // Save saves the environment to the persistent data store
@@ -180,7 +184,7 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 }
 
 func (fs *LocalFileDataStore) Delete(ctx context.Context, name string) error {
-	envRoot := fs.azdContext.EnvironmentRoot(name)
+	envRoot := fs.environmentRoot(name)
 	_, err := os.Stat(envRoot)
 	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("'%s': %w", name, ErrNotFound)

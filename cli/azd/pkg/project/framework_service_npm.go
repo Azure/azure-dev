@@ -148,8 +148,6 @@ func (np *npmProject) Package(
 	}, nil
 }
 
-const cNodeModulesName = "node_modules"
-
 func excludeNodeModules(path string, file os.FileInfo) bool {
-	return file.IsDir() && file.Name() == cNodeModulesName
+	return file.IsDir() && file.Name() == "node_modules"
 }

@@ -229,7 +229,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			if err != nil {
 				return nil, err
 			}
-			defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+			defaultEnv, err := azdCtx.DefaultEnvironmentName()
 			if err != nil {
 				return nil, err
 			}
@@ -329,7 +329,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 				environmentName := envFlags.EnvironmentName
 				if environmentName == "" {
-					environmentName, err = azdCtx.GetDefaultEnvironmentName()
+					environmentName, err = azdCtx.DefaultEnvironmentName()
 					if err != nil {
 						return nil, err
 					}
@@ -404,7 +404,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		localEnvStore, _ := lazyLocalEnvStore.GetValue()
 		if azdCtx, err := lazyAzdContext.GetValue(); err == nil {
 			if azdCtx != nil && localEnvStore != nil {
-				if defaultEnvName, err := azdCtx.GetDefaultEnvironmentName(); err == nil {
+				if defaultEnvName, err := azdCtx.DefaultEnvironmentName(); err == nil {
 					if env, err := localEnvStore.Get(ctx, defaultEnvName); err == nil {
 						if cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath); exists {
 							if value, err := cloud.ParseCloudConfig(cloudConfigurationNode); err == nil {

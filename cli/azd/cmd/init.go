@@ -347,7 +347,7 @@ func (i *initAction) initializeEnv(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	templateMetadata *templates.Metadata) (*environment.Environment, error) {
-	envName, err := azdCtx.GetDefaultEnvironmentName()
+	envName, err := azdCtx.DefaultEnvironmentName()
 	if err != nil {
 		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
@@ -387,7 +387,7 @@ func (i *initAction) initializeEnv(
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+	if err := azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 

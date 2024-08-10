@@ -143,7 +143,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if environmentName == "" {
 		var err error
-		environmentName, err = s.azdCtx.GetDefaultEnvironmentName()
+		environmentName, err = s.azdCtx.DefaultEnvironmentName()
 		if err != nil {
 			log.Printf("could not determine current environment: %s, resource ids will not be available", err)
 		}

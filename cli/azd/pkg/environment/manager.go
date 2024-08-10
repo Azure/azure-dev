@@ -171,7 +171,7 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 			return nil, err
 		}
 
-		if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+		if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
 			return nil, fmt.Errorf("saving default environment: %w", err)
 		}
 	}
@@ -183,7 +183,7 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 	// If there's a default environment, use that
 	if environmentName == "" {
 		var err error
-		environmentName, err = m.azdContext.GetDefaultEnvironmentName()
+		environmentName, err = m.azdContext.DefaultEnvironmentName()
 		if err != nil {
 			return nil, false, fmt.Errorf("getting default environment: %w", err)
 		}
@@ -257,7 +257,7 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 			if err != nil {
 				return nil, false, err
 			}
-			if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+			if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
 				return nil, false, fmt.Errorf("saving default environment: %w", err)
 			}
 
@@ -290,7 +290,7 @@ func (m *manager) EnvPath(env *Environment) string {
 // List returns a list of all environments within the data store
 func (m *manager) List(ctx context.Context) ([]*Description, error) {
 	envMap := map[string]*Description{}
-	defaultEnvName, err := m.azdContext.GetDefaultEnvironmentName()
+	defaultEnvName, err := m.azdContext.DefaultEnvironmentName()
 	if err != nil {
 		defaultEnvName = ""
 	}
@@ -419,13 +419,13 @@ func (m *manager) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
-	defaultEnvName, err := m.azdContext.GetDefaultEnvironmentName()
+	defaultEnvName, err := m.azdContext.DefaultEnvironmentName()
 	if err != nil {
 		return fmt.Errorf("getting default environment: %w", err)
 	}
 
 	if defaultEnvName == name {
-		err = m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: ""})
+		err = m.azdContext.SetDefaultEnvironmentName("")
 		if err != nil {
 			return fmt.Errorf("clearing default environment: %w", err)
 		}

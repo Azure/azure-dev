@@ -24,10 +24,6 @@ func (c *AzdContext) ProjectDirectory() string {
 	return c.projectDirectory
 }
 
-func (c *AzdContext) SetProjectDirectory(dir string) {
-	c.projectDirectory = dir
-}
-
 func (c *AzdContext) ProjectPath() string {
 	return filepath.Join(c.ProjectDirectory(), ProjectFileName)
 }
@@ -44,13 +40,8 @@ func (c *AzdContext) EnvironmentRoot(name string) string {
 	return filepath.Join(c.EnvironmentDirectory(), name)
 }
 
-func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
-	return filepath.Join(c.EnvironmentRoot(name), "wd")
-}
-
-// GetDefaultEnvironmentName returns the name of the default environment. Returns
-// an empty string if a default environment has not been set.
-func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
+// DefaultEnvironmentName returns the name of the default environment or an empty string if no default environment is set.
+func (c *AzdContext) DefaultEnvironmentName() (string, error) {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
 	file, err := os.ReadFile(path)
 	switch {
@@ -68,21 +59,26 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 	return config.DefaultEnvironment, nil
 }
 
-// ProjectState represents the state of the project.
-type ProjectState struct {
-	DefaultEnvironment string
-}
-
-// SetProjectState persists the state of the project to the file system, like the default environment.
-func (c *AzdContext) SetProjectState(state ProjectState) error {
+// SetDefaultEnvironmentName saves the environment that is used by default when azd is run without a `-e` flag. Using "" as
+// the name will cause azd to prompt the user to select an environment in the future.
+func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
 	config := configFile{
 		Version:            ConfigFileVersion,
-		DefaultEnvironment: state.DefaultEnvironment,
+		DefaultEnvironment: name,
 	}
 
-	if err := writeConfig(path, config); err != nil {
-		return err
+	bytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("serializing config file: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("creating environment root: %w", err)
+	}
+
+	if err := os.WriteFile(path, bytes, osutil.PermissionFile); err != nil {
+		return fmt.Errorf("writing config file: %w", err)
 	}
 
 	// make sure to ignore the environment directory
@@ -150,21 +146,4 @@ func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 type configFile struct {
 	Version            int    `json:"version"`
 	DefaultEnvironment string `json:"defaultEnvironment,omitempty"`
-}
-
-func writeConfig(path string, config configFile) error {
-	bytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("serializing config file: %w", err)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("creating environment root: %w", err)
-	}
-
-	if err := os.WriteFile(path, bytes, osutil.PermissionFile); err != nil {
-		return fmt.Errorf("writing config file: %w", err)
-	}
-
-	return nil
 }

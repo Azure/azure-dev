@@ -184,7 +184,7 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
 
-	if err := e.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: e.args[0]}); err != nil {
+	if err := e.azdCtx.SetDefaultEnvironmentName(e.args[0]); err != nil {
 		return nil, fmt.Errorf("setting default environment: %w", err)
 	}
 
@@ -336,7 +336,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	if err := en.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+	if err := en.azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
@@ -575,7 +575,7 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	name, err := eg.azdCtx.GetDefaultEnvironmentName()
+	name, err := eg.azdCtx.DefaultEnvironmentName()
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +660,7 @@ func (eg *envGetValueAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	keyName := eg.args[0]
 
-	name, err := eg.azdCtx.GetDefaultEnvironmentName()
+	name, err := eg.azdCtx.DefaultEnvironmentName()
 	if err != nil {
 		return nil, err
 	}

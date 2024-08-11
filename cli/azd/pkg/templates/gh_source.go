@@ -6,11 +6,13 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )
 
 // newGhTemplateSource creates a new template source from a Github repository.
-func newGhTemplateSource(ctx context.Context, name string, urlArg string, ghCli *github.Cli) (Source, error) {
+func newGhTemplateSource(
+	ctx context.Context, name string, urlArg string, ghCli *github.Cli, console input.Console) (Source, error) {
 	// urlArg validation:
 	// - accepts only URLs with the following format:
 	//  - https://raw.<hostname>/<owner>/<repo>/<branch>/<path>/<file>.json
@@ -72,10 +74,13 @@ func newGhTemplateSource(ctx context.Context, name string, urlArg string, ghCli 
 		return nil, fmt.Errorf("failed to get auth status: %w", err)
 	}
 	if !authResult.LoggedIn {
+		// ensure no spinner is shown when logging in, as this is interactive operation
+		console.StopSpinner(ctx, "", input.Step)
 		err := ghCli.Login(ctx, hostname)
 		if err != nil {
 			return nil, fmt.Errorf("failed to login: %w", err)
 		}
+		console.ShowSpinner(ctx, "Validating template source", input.Step)
 	}
 
 	content, err := ghCli.ApiCall(ctx, hostname, apiPath, []string{"Accept: application/vnd.github.v3.raw"})

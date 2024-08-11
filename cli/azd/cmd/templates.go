@@ -407,7 +407,7 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 		}
 
 		// Validate the custom source config
-		_, err := a.sourceManager.CreateSource(ctx, sourceConfig)
+		_, err := a.sourceManager.CreateSource(ctx, sourceConfig, a.console)
 		a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 		if err != nil {
 			if errors.Is(err, templates.ErrSourceTypeInvalid) {

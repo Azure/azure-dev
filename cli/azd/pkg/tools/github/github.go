@@ -210,7 +210,7 @@ func (cli *Cli) ApiCall(ctx context.Context, hostname, path string, headers []st
 	runArgs := cli.newRunArgs(args...)
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return "", fmt.Errorf("failed running gh auth login: %w", err)
+		return "", fmt.Errorf("failed running gh api: %s: %w", url, err)
 	}
 
 	return result.Stdout, nil

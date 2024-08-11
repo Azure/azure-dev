@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/resources"
@@ -67,7 +68,7 @@ type SourceManager interface {
 	// Remove removes a template source.
 	Remove(ctx context.Context, name string) error
 	// CreateSource creates a new template source from a source configuration
-	CreateSource(ctx context.Context, source *SourceConfig) (Source, error)
+	CreateSource(ctx context.Context, source *SourceConfig, console input.Console) (Source, error)
 }
 
 type sourceManager struct {
@@ -219,7 +220,7 @@ func (sm *sourceManager) Remove(ctx context.Context, key string) error {
 }
 
 // Source returns a hydrated template source for the current config.
-func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig) (Source, error) {
+func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig, console input.Console) (Source, error) {
 	var source Source
 	var err error
 
@@ -233,7 +234,7 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	case SourceKindResource:
 		source, err = newJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
 	case SourceKindGh:
-		source, err = newGhTemplateSource(ctx, config.Name, config.Location, sm.ghCli)
+		source, err = newGhTemplateSource(ctx, config.Name, config.Location, sm.ghCli, console)
 	default:
 		err = sm.serviceLocator.ResolveNamed(string(config.Type), &source)
 		if err != nil {

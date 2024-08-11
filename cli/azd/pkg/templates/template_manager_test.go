@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
@@ -23,12 +24,16 @@ var defaultTemplateSourceData = map[string]interface{}{
 
 func Test_Templates_NewTemplateManager(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 	templateManager, err := NewTemplateManager(
 		NewSourceManager(
 			NewSourceOptions(),
 			mockContext.Container,
 			config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
 			mockContext.HttpClient,
+			ghCli,
 		),
 		mockContext.Console,
 	)
@@ -42,9 +47,12 @@ func Test_Templates_ListTemplates(t *testing.T) {
 
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -66,9 +74,12 @@ func Test_Templates_ListTemplates_WithTagFilter(t *testing.T) {
 
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -114,9 +125,12 @@ func Test_Templates_ListTemplates_SourceError(t *testing.T) {
 		},
 	})
 	configManager.On("Load").Return(config, nil)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -132,9 +146,12 @@ func Test_Templates_GetTemplate_WithValidPath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -154,9 +171,12 @@ func Test_Templates_GetTemplate_WithInvalidPath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -172,9 +192,12 @@ func Test_Templates_GetTemplate_WithNotFoundPath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli),
 		mockContext.Console,
 	)
 	require.NoError(t, err)

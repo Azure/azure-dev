@@ -5,19 +5,33 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
+func addGhMocks(mockContext *mocks.MockContext) {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "/gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+}
+
 func Test_sourceManager_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli)
 
 	config := config.NewConfig(nil)
 	_ = config.Set("template.sources", map[string]interface{}{
@@ -39,7 +53,10 @@ func Test_sourceManager_List(t *testing.T) {
 func Test_sourceManager_List_EmptySources(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli)
 
 	config := config.NewConfig(nil)
 	_ = config.Set("template.sources", map[string]interface{}{})
@@ -56,7 +73,10 @@ func Test_sourceManager_List_EmptySources(t *testing.T) {
 func Test_sourceManager_List_UndefinedSources(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli)
 
 	config := config.NewConfig(nil)
 	configManager.On("Load").Return(config, nil)
@@ -73,7 +93,10 @@ func Test_sourceManager_List_UndefinedSources(t *testing.T) {
 func Test_sourceManager_Get(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli)
 
 	config := config.NewConfig(nil)
 	_ = config.Set("template.sources", map[string]interface{}{
@@ -94,7 +117,10 @@ func Test_sourceManager_Get(t *testing.T) {
 func Test_sourceManager_Add(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli)
 
 	config := config.NewConfig(defaultTemplateSourceData)
 	configManager.On("Load").Return(config, nil)
@@ -105,14 +131,17 @@ func Test_sourceManager_Add(t *testing.T) {
 		Type:     SourceKindFile,
 		Location: "testdata/templates.json",
 	}
-	err := sm.Add(*mockContext.Context, key, source)
+	err = sm.Add(*mockContext.Context, key, source)
 	require.Nil(t, err)
 }
 
 func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli)
 
 	key := "test"
 	config := config.NewConfig(nil)
@@ -123,7 +152,7 @@ func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 		Type:     SourceKindFile,
 		Location: "testdata/templates.json",
 	}
-	err := sm.Add(*mockContext.Context, key, source)
+	err = sm.Add(*mockContext.Context, key, source)
 	require.NotNil(t, err)
 	require.ErrorIs(t, err, ErrSourceExists)
 }
@@ -131,7 +160,10 @@ func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 func Test_sourceManager_Remove(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli)
 
 	key := "test"
 	config := config.NewConfig(defaultTemplateSourceData)
@@ -139,20 +171,23 @@ func Test_sourceManager_Remove(t *testing.T) {
 	configManager.On("Load").Return(config, nil)
 	configManager.On("Save", mock.Anything).Return(nil)
 
-	err := sm.Remove(*mockContext.Context, key)
+	err = sm.Remove(*mockContext.Context, key)
 	require.Nil(t, err)
 }
 
 func Test_sourceManager_Remove_SourceNotFound(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli)
 
 	key := "invalid"
 	config := config.NewConfig(defaultTemplateSourceData)
 	configManager.On("Load").Return(config, nil)
 
-	err := sm.Remove(*mockContext.Context, key)
+	err = sm.Remove(*mockContext.Context, key)
 	require.NotNil(t, err)
 	require.ErrorIs(t, err, ErrSourceNotFound)
 }
@@ -162,7 +197,10 @@ func Test_sourceManager_CreateSource(t *testing.T) {
 	mockAwesomeAzdTemplateSource(mockContext)
 
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
+	addGhMocks(mockContext)
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient, ghCli)
 
 	configDir, err := config.GetUserConfigDir()
 	require.NoError(t, err)

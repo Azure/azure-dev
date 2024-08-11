@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -114,7 +115,7 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		columns := []output.Column{
 			{
 				Heading:       "Name",
-				ValueTemplate: "{{.Name}}",
+				ValueTemplate: `{{if ne .Name ""}}{{.Name}}{{else}}{{.Title}}{{end}}`,
 			},
 			{
 				Heading:       "Source",
@@ -122,7 +123,7 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			},
 			{
 				Heading:       "Repository Path",
-				ValueTemplate: "{{.RepositoryPath}}",
+				ValueTemplate: `{{if ne .RepositoryPath ""}}{{.RepositoryPath}}{{else}}{{.RepoSource}}{{end}}`,
 				Transformer:   templates.Hyperlink,
 			},
 		}
@@ -316,9 +317,18 @@ func (a *templateSourceListAction) Run(ctx context.Context) (*actions.ActionResu
 
 func newTemplateSourceAddCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "add <key>",
-		Short: fmt.Sprintf("Adds an azd template source at the specified key %s", output.WithWarningFormat("(Beta)")),
-		Args:  cobra.ExactArgs(1),
+		Use: "add <key>",
+		Short: fmt.Sprintf(
+			"Adds an azd template source at the provided key %s\n"+
+				"  Use known-keys w/o a type for:\n"+
+				"   ・default: azd built-in template list\n"+
+				"   ・awesome-azd: Includes all templates from http://aka.ms/awesome-azd\n"+
+				"  For custom key, use type and location flags. Supported types:\n"+
+				"   ・file: local file only \n"+
+				"   ・url: public urls, only, to download json source\n"+
+				"   ・gh: path to json file in a GitHub repository (supports private repos)",
+			output.WithWarningFormat("(Beta)")),
+		Args: cobra.ExactArgs(1),
 	}
 }
 
@@ -364,7 +374,7 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 		Title: "Add template source (azd template source add)",
 	})
 
-	var key = a.args[0]
+	var key = strings.ToLower(a.args[0])
 	sourceConfig := &templates.SourceConfig{}
 
 	spinnerMessage := "Validating template source"
@@ -372,10 +382,17 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 
 	// Don't allow source type since they can only be added with known key like 'default' or 'awesome-azd'
 	for _, wellKnownSource := range templates.WellKnownSources {
-		if wellKnownSource.Type == templates.SourceKind(a.flags.kind) {
+		if wellKnownSource.Type == templates.SourceKind(strings.ToLower(a.flags.kind)) {
 			a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 			return nil, fmt.Errorf(
-				"template source type '%s' is not supported. Supported types are 'file' and 'url'",
+				"'%s' is a known key. It can't be used as type for the custom key '%s'. "+
+					"For custom key, supported types are %s. "+
+					"If you are trying to add the known source '%s', "+
+					"run `azd template source add %s` (w/o the --type flag). ",
+				a.flags.kind,
+				key,
+				ux.ListAsText([]string{"'file'", "'url'", "'gh'"}),
+				a.flags.kind,
 				a.flags.kind,
 			)
 		}
@@ -395,8 +412,9 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 		if err != nil {
 			if errors.Is(err, templates.ErrSourceTypeInvalid) {
 				return nil, fmt.Errorf(
-					"template source type '%s' is not supported. Supported types are 'file' and 'url'",
+					"template source type '%s' is not supported. Supported types are %s",
 					a.flags.kind,
+					ux.ListAsText([]string{"'file'", "'url'", "'gh'"}),
 				)
 			}
 
@@ -452,7 +470,7 @@ func (a *templateSourceRemoveAction) Run(ctx context.Context) (*actions.ActionRe
 		Title: "Remove template source (azd template source remove)",
 	})
 
-	var key = a.args[0]
+	var key = strings.ToLower(a.args[0])
 	spinnerMessage := fmt.Sprintf("Removing template source (%s)", key)
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	err := a.sourceManager.Remove(ctx, key)

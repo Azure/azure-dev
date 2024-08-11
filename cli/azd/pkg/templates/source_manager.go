@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
@@ -74,6 +75,7 @@ type sourceManager struct {
 	serviceLocator ioc.ServiceLocator
 	configManager  config.UserConfigManager
 	httpClient     httputil.HttpClient
+	ghCli          *github.Cli
 }
 
 // NewSourceManager creates a new SourceManager.
@@ -82,6 +84,7 @@ func NewSourceManager(
 	serviceLocator ioc.ServiceLocator,
 	configManager config.UserConfigManager,
 	httpClient httputil.HttpClient,
+	ghCli *github.Cli,
 ) SourceManager {
 	if options == nil {
 		options = NewSourceOptions()
@@ -92,6 +95,7 @@ func NewSourceManager(
 		serviceLocator: serviceLocator,
 		configManager:  configManager,
 		httpClient:     httpClient,
+		ghCli:          ghCli,
 	}
 }
 
@@ -221,13 +225,15 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 
 	switch config.Type {
 	case SourceKindFile:
-		source, err = NewFileTemplateSource(config.Name, config.Location)
+		source, err = newFileTemplateSource(config.Name, config.Location)
 	case SourceKindUrl:
-		source, err = NewUrlTemplateSource(ctx, config.Name, config.Location, sm.httpClient)
+		source, err = newUrlTemplateSource(ctx, config.Name, config.Location, sm.httpClient)
 	case SourceKindAwesomeAzd:
-		source, err = NewAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.httpClient)
+		source, err = newAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.httpClient)
 	case SourceKindResource:
-		source, err = NewJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
+		source, err = newJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
+	case SourceKindGh:
+		source, err = newGhTemplateSource(ctx, config.Name, config.Location, sm.ghCli)
 	default:
 		err = sm.serviceLocator.ResolveNamed(string(config.Type), &source)
 		if err != nil {

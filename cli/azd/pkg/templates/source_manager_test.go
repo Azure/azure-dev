@@ -19,7 +19,7 @@ import (
 
 func addGhMocks(mockContext *mocks.MockContext) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "--version"
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
 		Stdout: github.Version.String(),
 	})

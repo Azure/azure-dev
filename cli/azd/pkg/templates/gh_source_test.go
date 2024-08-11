@@ -40,7 +40,8 @@ func Test_GhSourceRawFile(t *testing.T) {
 	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	source, err := newGhTemplateSource(
-		*mockContext.Context, name, "https://raw.github.com/owner/repo/branch/path/to/the/folder/file.json", ghCli)
+		*mockContext.Context, name, "https://raw.github.com/owner/repo/branch/path/to/the/folder/file.json", ghCli,
+		mockContext.Console)
 	require.Nil(t, err)
 	require.Equal(t, name, source.Name())
 }
@@ -73,7 +74,8 @@ func Test_GhSourceApiFile(t *testing.T) {
 	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	source, err := newGhTemplateSource(
-		*mockContext.Context, name, "https://api.github.com/repos/owner/repo/contents/path/to/the/folder/file.json", ghCli)
+		*mockContext.Context, name, "https://api.github.com/repos/owner/repo/contents/path/to/the/folder/file.json", ghCli,
+		mockContext.Console)
 	require.Nil(t, err)
 	require.Equal(t, name, source.Name())
 }
@@ -106,7 +108,8 @@ func Test_GhSourceUrl(t *testing.T) {
 	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	source, err := newGhTemplateSource(
-		*mockContext.Context, name, "https://github.com/owner/repo/branch/path/to/the/folder/file.json", ghCli)
+		*mockContext.Context, name, "https://github.com/owner/repo/branch/path/to/the/folder/file.json", ghCli,
+		mockContext.Console)
 	require.Nil(t, err)
 	require.Equal(t, name, source.Name())
 }

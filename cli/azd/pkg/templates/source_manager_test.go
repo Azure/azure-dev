@@ -248,7 +248,7 @@ func Test_sourceManager_CreateSource(t *testing.T) {
 
 	for _, config := range configs {
 		t.Run(config.Name, func(t *testing.T) {
-			source, err := sm.CreateSource(*mockContext.Context, config)
+			source, err := sm.CreateSource(*mockContext.Context, config, mockContext.Console)
 			if config.Type == "invalid" {
 				require.NotNil(t, err)
 				require.ErrorIs(t, err, ErrSourceTypeInvalid)

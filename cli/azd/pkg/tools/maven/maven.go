@@ -221,8 +221,9 @@ func (cli *Cli) GetProperty(ctx context.Context, propertyPath string, projectPat
 		return "", err
 	}
 	runArgs := exec.NewRunArgs(mvnCmd,
-		"help:evaluate", "-Dexpression="+propertyPath,
-		"-q", "-DforceStdout").WithCwd(projectPath)
+		"help:evaluate",
+		// cspell: disable-next-line Dexpression and DforceStdout are maven command line arguments
+		"-Dexpression="+propertyPath, "-q", "-DforceStdout").WithCwd(projectPath)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", fmt.Errorf("mvn help:evaluate on project '%s' failed: %w", projectPath, err)

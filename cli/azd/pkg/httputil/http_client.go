@@ -3,12 +3,4 @@
 
 package httputil
 
-import (
-	"net/http"
-)
-
 type UserAgent string
-
-type HttpClient interface {
-	Do(req *http.Request) (*http.Response, error)
-}

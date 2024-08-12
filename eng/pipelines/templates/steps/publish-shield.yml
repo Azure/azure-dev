@@ -2,8 +2,6 @@ parameters:
   ArtifactName: not-set
   ArtifactDownloadPath: shields
   ArtifactFilename: not-set
-  StorageAccountName: not-set
-  StorageAccountKey: not-set
   StorageContainerName: not-set
   PublishDestination: not-set
 
@@ -13,13 +11,17 @@ steps:
       artifact: ${{ parameters.ArtifactName }}
       path: ${{ parameters.ArtifactDownloadPath }}
 
-  - pwsh: |
-      az storage blob upload `
-        --account-name '${{ parameters.StorageAccountName }}' `
-        --account-key '${{ parameters.StorageAccountKey }}' `
-        --auth-mode key `
-        --file "${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}" `
-        --container-name '${{ parameters.StorageContainerName }}' `
-        --name "${{ parameters.PublishDestination }}/shield.json" `
-        --overwrite
+  - task: AzurePowerShell@5
     displayName: Upload shield JSON info
+    inputs:
+      azureSubscription: 'Azure SDK Artifacts'
+      azurePowerShellVersion: LatestVersion
+      pwsh: true
+      ScriptType: InlineScript
+      Inline: |
+        az storage blob upload `
+          --account-name '$(publish-storage-account-name)' `
+          --file "${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}" `
+          --container-name '${{ parameters.StorageContainerName }}' `
+          --name "${{ parameters.PublishDestination }}/shield.json" `
+          --overwrite

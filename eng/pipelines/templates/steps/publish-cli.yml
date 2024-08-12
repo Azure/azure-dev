@@ -5,8 +5,6 @@ parameters:
   UploadMsi: false
   PublishShield: false
   PublishUpdatedDocs: false
-  StorageAccountName: $(azdev-storage-account-name)
-  StorageAccountKey: $(azdev-storage-account-key)
   StorageContainerName: azd
   PublishBrewFormula: false
   AllowPrerelease: false
@@ -137,26 +135,30 @@ steps:
       env:
         GH_TOKEN: $(azuresdk-github-pat)
 
-  - pwsh: |
-      $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
+    - task: AzurePowerShell@5
+      displayName: Upload release to storage account
+      inputs:
+        azureSubscription: 'Azure SDK Artifacts'
+        azurePowerShellVersion: LatestVersion
+        pwsh: true
+        ScriptType: InlineScript
+        Inline: |
+          $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
 
-      Get-ChildItem release/
+          Get-ChildItem release/
 
-      foreach ($folder in $uploadLocations) {
-          Write-Host "Upload to ${{ parameters.StorageContainerName }}/standalone/$folder"
-          az storage blob upload-batch `
-            --account-name '${{ parameters.StorageAccountName }}' `
-            --account-key '${{ parameters.StorageAccountKey }}' `
-            --auth-mode key `
-            -s release/ `
-            -d "${{ parameters.StorageContainerName }}/standalone/$folder" `
-            --overwrite
-          if ($LASTEXITCODE) {
-            Write-Error "Upload failed"
-            exit 1
+          foreach ($folder in $uploadLocations) {
+              Write-Host "Upload to ${{ parameters.StorageContainerName }}/standalone/$folder"
+              az storage blob upload-batch `
+                --account-name '$(publish-storage-account-name)' `
+                -s release/ `
+                -d "${{ parameters.StorageContainerName }}/standalone/$folder" `
+                --overwrite
+              if ($LASTEXITCODE) {
+                Write-Error "Upload failed"
+                exit 1
+              }
           }
-      }
-    displayName: Upload release to storage account
 
   - task: 1ES.PublishPipelineArtifact@1
     inputs: 
@@ -169,8 +171,6 @@ steps:
         ArtifactName: shield-standalone
         ArtifactDownloadPath: shields/standalone
         ArtifactFilename: standalone.json
-        StorageAccountName: ${{ parameters.StorageAccountName }}
-        StorageAccountKey: ${{ parameters.StorageAccountKey }}
         StorageContainerName: ${{ parameters.StorageContainerName }}
         PublishDestination: standalone/latest
 

@@ -215,6 +215,7 @@ func (m *mavenProject) funcAppDir(ctx context.Context, svc *ServiceConfig) (stri
 	if len(dirs) == 1 {
 		return filepath.Join(functionsStagingDir, dirs[0]), nil
 	}
+
 	for i := range dirs {
 		dirs[i] = filepath.Join(functionsStagingRel, dirs[i])
 	}

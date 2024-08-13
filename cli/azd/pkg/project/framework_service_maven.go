@@ -188,7 +188,7 @@ func (m *mavenProject) funcAppDir(ctx context.Context, svc *ServiceConfig) (stri
 	// with its property value is passed to azure-functions-maven-plugin as 'appName'.
 	appName, err := m.mavenCli.GetProperty(ctx, "functionAppName", svcPath)
 	if err != nil && !errors.Is(err, maven.ErrPropertyNotFound) {
-		return "", err
+		return "", fmt.Errorf("getting 'functionAppName' maven property: %w", err)
 	}
 
 	if appName != "" {
@@ -196,7 +196,7 @@ func (m *mavenProject) funcAppDir(ctx context.Context, svc *ServiceConfig) (stri
 		if _, err := os.Stat(funcDir); err == nil {
 			return funcDir, nil
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("checking for function app directory: %w", err)
+			return "", fmt.Errorf("checking for function app staging directory: %w", err)
 		}
 	}
 
@@ -214,16 +214,15 @@ func (m *mavenProject) funcAppDir(ctx context.Context, svc *ServiceConfig) (stri
 
 	if len(dirs) == 1 {
 		return filepath.Join(functionsStagingDir, dirs[0]), nil
-	} else {
-		for i := range dirs {
-			dirs[i] = filepath.Join(functionsStagingRel, dirs[i])
-		}
-
-		return "", fmt.Errorf(
-			//nolint:lll
-			"multiple staging directories found: %s. Specify 'dist' in azure.yaml to select a specific directory",
-			strings.Join(dirs, ", "))
 	}
+	for i := range dirs {
+		dirs[i] = filepath.Join(functionsStagingRel, dirs[i])
+	}
+
+	return "", fmt.Errorf(
+		//nolint:lll
+		"multiple staging directories found: %s. Specify 'dist' in azure.yaml to select a specific directory",
+		strings.Join(dirs, ", "))
 }
 
 func isSupportedJavaArchive(archiveFile string) bool {

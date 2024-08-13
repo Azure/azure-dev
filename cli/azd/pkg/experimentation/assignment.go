@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
@@ -50,7 +51,7 @@ func NewAssignmentsManager(endpoint string, transport policy.Transporter) (*Assi
 		return nil, err
 	}
 
-	client, err := newTasClient(endpoint, &policy.ClientOptions{
+	client, err := newTasClient(endpoint, &azcore.ClientOptions{
 		Transport: transport,
 	})
 	if err != nil {

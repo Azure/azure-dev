@@ -8,14 +8,12 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -358,9 +356,6 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() context.Context {
 		return *mockContext.Context
-	})
-	mockContext.Container.MustRegisterSingleton(func() httputil.UserAgent {
-		return httputil.UserAgent(internal.UserAgent())
 	})
 	mockContext.Container.MustRegisterSingleton(func() auth.MultiTenantCredentialProvider {
 		return mockContext.MultiTenantCredentialProvider

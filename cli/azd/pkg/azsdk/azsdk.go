@@ -3,7 +3,6 @@ package azsdk
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 type ClientOptionsBuilderFactory struct {
@@ -13,12 +12,12 @@ type ClientOptionsBuilderFactory struct {
 }
 
 func NewClientOptionsBuilderFactory(
-	httpClient httputil.HttpClient,
+	transport policy.Transporter,
 	userAgent string,
 	cloud *cloud.Cloud,
 ) *ClientOptionsBuilderFactory {
 	return &ClientOptionsBuilderFactory{
-		defaultTransport: httpClient,
+		defaultTransport: transport,
 		defaultUserAgent: userAgent,
 		cloud:            cloud,
 	}

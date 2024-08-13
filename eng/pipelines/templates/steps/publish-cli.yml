@@ -151,6 +151,7 @@ steps:
             Write-Host "Upload to ${{ parameters.StorageContainerName }}/standalone/$folder"
             az storage blob upload-batch `
               --account-name '$(publish-storage-account-name)' `
+              --auth-mode login `
               -s release/ `
               -d "${{ parameters.StorageContainerName }}/standalone/$folder" `
               --overwrite

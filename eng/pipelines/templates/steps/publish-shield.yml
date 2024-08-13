@@ -21,6 +21,7 @@ steps:
       Inline: |
         az storage blob upload `
           --account-name '$(publish-storage-account-name)' `
+          --auth-mode login `
           --file "${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}" `
           --container-name '${{ parameters.StorageContainerName }}' `
           --name "${{ parameters.PublishDestination }}/shield.json" `

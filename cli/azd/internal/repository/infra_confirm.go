@@ -99,7 +99,7 @@ func (i *Initializer) prjConfigFromDetect(
 			case appdetect.DbMongo:
 				dbType = project.ResourceTypeDbMongo
 			case appdetect.DbPostgres:
-				dbType = project.ResourceTypeDbRedis
+				dbType = project.ResourceTypeDbPostgres
 			}
 
 			db := project.ResourceConfig{

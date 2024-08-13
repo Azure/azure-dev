@@ -333,18 +333,14 @@ stages:
 
                         foreach ($folder in $publishUploadLocations) {
                           Write-Host "Upload to azd/standalone/$folder"
-                          az storage blob upload-batch `
-                            --account-name '$(publish-storage-account-name)' `
-                            --auth-mode login `
-                            -s release/ `
-                            -d "azd/standalone/$folder" `
-                            --overwrite
-
+                          azcopy copy 'release' '$(publish-storage-location)/azd/standalone/$folder' --recursive --overwrite
                           if ($LASTEXITCODE) {
                             Write-Error "Upload failed"
                             exit 1
                           }
                         }
+                      env:
+                        AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - stage: PublishIntegration
     dependsOn: Sign
@@ -452,7 +448,7 @@ stages:
                 DownloadArtifacts: false
 
           - pwsh: |
-              $urlBase = "https://$(publish-storage-account-name).blob.core.windows.net/azd/standalone/pr/$(PRNumber)"
+              $urlBase = "$(publish-storage-location)/azd/standalone/pr/$(PRNumber)"
               Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
             name: GenerateUrlBase
             displayName: Set UrlBase
@@ -611,9 +607,10 @@ stages:
                       pwsh: true
                       ScriptType: InlineScript
                       Inline: |
-                        az storage blob upload-batch `
-                          --account-name '$(publish-storage-account-name)' `
-                          --auth-mode login `
-                          -s script-release/ `
-                          -d "azd/standalone/installer" `
-                          --overwrite
+                        azcopy copy 'script-release' '$(publish-storage-location)/azd/standalone/installer' --recursive --overwrite
+                        if ($LASTEXITCODE) {
+                          Write-Error "Upload failed"
+                          exit 1
+                        }
+                      env:
+                        AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

@@ -146,20 +146,16 @@ steps:
         $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
 
         Get-ChildItem release/
-
         foreach ($folder in $uploadLocations) {
             Write-Host "Upload to ${{ parameters.StorageContainerName }}/standalone/$folder"
-            az storage blob upload-batch `
-              --account-name '$(publish-storage-account-name)' `
-              --auth-mode login `
-              -s release/ `
-              -d "${{ parameters.StorageContainerName }}/standalone/$folder" `
-              --overwrite
+            azcopy copy 'release' '$(publish-storage-location)/${{ parameters.StorageContainerName }}/standalone/$folder' --recursive --overwrite
             if ($LASTEXITCODE) {
               Write-Error "Upload failed"
               exit 1
             }
         }
+      env:
+        AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - task: 1ES.PublishPipelineArtifact@1
     inputs: 

@@ -6,6 +6,6 @@ variables:
   Codeql.SkipTaskAutoInjection: true
 
   ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
-    publish-storage-account-name: 'azuresdkreleasepreview'
+    publish-storage-location: 'https://azuresdkreleasepreview.blob.core.windows.net'
   ${{ else }}:
-    publish-storage-account-name: 'azdprivatebuilds7bc140ae'
+    publish-storage-location: 'https://azdprivatebuilds7bc140ae.blob.core.windows.net'

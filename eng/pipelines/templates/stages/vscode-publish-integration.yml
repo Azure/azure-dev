@@ -72,7 +72,7 @@ stages:
               PublishLocations: vscode/pr/$(PRNumber)
 
           - pwsh: |
-              $downloadUrl = "https://$(publish-storage-account-name).blob.core.windows.net/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"
+              $downloadUrl = "$(publish-storage-location)/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"
 
               $content = @"
               <!-- #comment-vscode-pr -->

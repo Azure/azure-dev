@@ -148,7 +148,7 @@ steps:
         Get-ChildItem release/
         foreach ($folder in $uploadLocations) {
             Write-Host "Upload to ${{ parameters.StorageContainerName }}/standalone/$folder"
-            azcopy copy 'release' '$(publish-storage-location)/${{ parameters.StorageContainerName }}/standalone/$folder' --recursive --overwrite true
+            azcopy copy "release" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/standalone/$folder" --recursive --overwrite true
             if ($LASTEXITCODE) {
               Write-Error "Upload failed"
               exit 1

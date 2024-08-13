@@ -333,7 +333,7 @@ stages:
 
                         foreach ($folder in $publishUploadLocations) {
                           Write-Host "Upload to azd/standalone/$folder"
-                          azcopy copy 'release' '$(publish-storage-location)/azd/standalone/$folder' --recursive --overwrite true
+                          azcopy copy "release" "$(publish-storage-location)/azd/standalone/$folder" --recursive --overwrite true
                           if ($LASTEXITCODE) {
                             Write-Error "Upload failed"
                             exit 1
@@ -607,7 +607,7 @@ stages:
                       pwsh: true
                       ScriptType: InlineScript
                       Inline: |
-                        azcopy copy 'script-release' '$(publish-storage-location)/azd/standalone/installer' --recursive --overwrite true
+                        azcopy copy "script-release" "$(publish-storage-location)/azd/standalone/installer" --recursive --overwrite true
                         if ($LASTEXITCODE) {
                           Write-Error "Upload failed"
                           exit 1

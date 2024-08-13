@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,7 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -55,7 +55,8 @@ const authConfigFileName = "auth.json"
 
 // HttpClient interface as required by MSAL library.
 type HttpClient interface {
-	httputil.HttpClient
+	// Do sends an HTTP request and returns an HTTP response.
+	Do(*http.Request) (*http.Response, error)
 
 	// CloseIdleConnections closes any idle connections in a "keep-alive" state.
 	CloseIdleConnections()
@@ -90,9 +91,9 @@ type Manager struct {
 }
 
 type ExternalAuthConfiguration struct {
-	Endpoint string
-	Key      string
-	Client   httputil.HttpClient
+	Endpoint    string
+	Key         string
+	Transporter policy.Transporter
 }
 
 func NewManager(
@@ -203,7 +204,7 @@ func (m *Manager) CredentialForCurrentUser(
 			m.externalAuthCfg.Endpoint,
 			m.externalAuthCfg.Key,
 			options.TenantID,
-			m.externalAuthCfg.Client), nil
+			m.externalAuthCfg.Transporter), nil
 	}
 
 	userConfig, err := m.userConfigManager.Load()
@@ -465,7 +466,7 @@ func (m *Manager) newCredentialFromClientSecret(
 	clientSecret string,
 ) (azcore.TokenCredential, error) {
 	options := &azidentity.ClientSecretCredentialOptions{
-		ClientOptions: policy.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
 			Transport: m.httpClient,
 			// TODO: Inject client options instead? this can be done if we're OK
 			// using the default user agent string.
@@ -496,7 +497,7 @@ func (m *Manager) newCredentialFromClientCertificate(
 	}
 
 	options := &azidentity.ClientCertificateCredentialOptions{
-		ClientOptions: policy.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
 			Transport: m.httpClient,
 			// TODO: Inject client options instead? this can be done if we're OK
 			// using the default user agent string.
@@ -522,7 +523,7 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
 	}
 	options := &azidentity.ClientAssertionCredentialOptions{
-		ClientOptions: policy.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
 			Transport: m.httpClient,
 			// TODO: Inject client options instead? this can be done if we're OK
 			// using the default user agent string.

@@ -23,11 +23,11 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	tm "github.com/buger/goterm"
@@ -994,9 +994,9 @@ type Writers struct {
 
 // ExternalPromptConfiguration allows configuring the console to delegate prompts to an external service.
 type ExternalPromptConfiguration struct {
-	Endpoint string
-	Key      string
-	Client   httputil.HttpClient
+	Endpoint    string
+	Key         string
+	Transporter policy.Transporter
 }
 
 // Creates a new console with the specified writers, handles and formatter. When externalPromptCfg is non nil, it is used
@@ -1026,7 +1026,8 @@ func NewConsole(
 	}
 
 	if externalPromptCfg != nil {
-		c.promptClient = newExternalPromptClient(externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Client)
+		c.promptClient = newExternalPromptClient(
+			externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Transporter)
 	}
 
 	spinnerConfig := yacspin.Config{

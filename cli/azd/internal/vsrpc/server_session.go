@@ -140,9 +140,9 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 			},
 			&output.NoneFormatter{},
 			&input.ExternalPromptConfiguration{
-				Endpoint: s.externalServicesEndpoint,
-				Key:      s.externalServicesKey,
-				Client:   s.externalServicesClient,
+				Endpoint:    s.externalServicesEndpoint,
+				Key:         s.externalServicesKey,
+				Transporter: s.externalServicesClient,
 			})
 	})
 
@@ -166,9 +166,9 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 
 	c.MustRegisterScoped(func() auth.ExternalAuthConfiguration {
 		return auth.ExternalAuthConfiguration{
-			Endpoint: s.externalServicesEndpoint,
-			Key:      s.externalServicesKey,
-			Client:   s.externalServicesClient,
+			Endpoint:    s.externalServicesEndpoint,
+			Key:         s.externalServicesKey,
+			Transporter: s.externalServicesClient,
 		}
 	})
 

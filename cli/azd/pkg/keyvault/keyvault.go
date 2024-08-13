@@ -139,6 +139,11 @@ func (kvs *keyVaultService) PurgeKeyVault(
 
 	poller, err := client.BeginPurgeDeleted(ctx, vaultName, location, nil)
 	if err != nil {
+		var httpErr *azcore.ResponseError
+		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+			// no need to purge if the vault is already deleted (not found)
+			return nil
+		}
 		return fmt.Errorf("starting purging key vault: %w", err)
 	}
 

@@ -154,8 +154,8 @@ steps:
               exit 1
             }
         }
-      env:
-        AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - task: 1ES.PublishPipelineArtifact@1
     inputs: 

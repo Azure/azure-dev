@@ -43,8 +43,8 @@ steps:
           Write-Host "Publishing to $location"
           azcopy copy 'release' '$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location' --recursive --overwrite
         }
-      env:
-        AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - ${{ if eq('true', parameters.UpdateShield) }}:
     - template: /eng/pipelines/templates/steps/publish-shield.yml

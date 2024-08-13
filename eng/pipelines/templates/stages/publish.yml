@@ -339,8 +339,8 @@ stages:
                             exit 1
                           }
                         }
-                      env:
-                        AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+                    env:
+                      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - stage: PublishIntegration
     dependsOn: Sign
@@ -612,5 +612,5 @@ stages:
                           Write-Error "Upload failed"
                           exit 1
                         }
-                      env:
-                        AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+                    env:
+                      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

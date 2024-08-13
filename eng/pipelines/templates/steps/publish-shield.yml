@@ -20,5 +20,5 @@ steps:
       ScriptType: InlineScript
       Inline: |
         azcopy copy '${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}' '$(publish-storage-location)/${{ parameters.StorageContainerName }}/${{ parameters.PublishDestination }}/shield.json' --overwrite
-      env:
-        AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

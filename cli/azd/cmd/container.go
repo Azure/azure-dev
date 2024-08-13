@@ -12,6 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -142,11 +143,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	client := createHttpClient()
-	ioc.RegisterInstance[httputil.HttpClient](container, client)
+	ioc.RegisterInstance[policy.Transporter](container, client)
 	ioc.RegisterInstance[auth.HttpClient](container, client)
-	container.MustRegisterSingleton(func() httputil.UserAgent {
-		return httputil.UserAgent(internal.UserAgent())
-	})
 
 	// Auth
 	container.MustRegisterSingleton(auth.NewLoggedInGuard)
@@ -472,11 +470,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	container.MustRegisterSingleton(func(
-		httpClient httputil.HttpClient,
-		userAgent httputil.UserAgent,
+		transporter policy.Transporter,
 		cloud *cloud.Cloud,
 	) *azsdk.ClientOptionsBuilderFactory {
-		return azsdk.NewClientOptionsBuilderFactory(httpClient, string(userAgent), cloud)
+		return azsdk.NewClientOptionsBuilderFactory(transporter, internal.UserAgent(), cloud)
 	})
 
 	container.MustRegisterSingleton(func(
@@ -558,9 +555,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			}
 		}
 		return auth.ExternalAuthConfiguration{
-			Endpoint: endpoint,
-			Client:   client,
-			Key:      key,
+			Endpoint:    endpoint,
+			Transporter: client,
+			Key:         key,
 		}, nil
 	})
 	container.MustRegisterScoped(auth.NewManager)

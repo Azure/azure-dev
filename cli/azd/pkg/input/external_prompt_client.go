@@ -8,14 +8,14 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
 // externalPromptClient is a client for the external prompt service, as described in [../../docs/external-prompt.md].
 type externalPromptClient struct {
-	endpoint string
-	key      string
-	pipeline httputil.HttpClient
+	endpoint    string
+	key         string
+	transporter policy.Transporter
 }
 
 type promptOptions struct {
@@ -82,11 +82,11 @@ type externalPromptDialogResponseInput struct {
 	Value json.RawMessage `json:"value"`
 }
 
-func newExternalPromptClient(endpoint string, key string, pipeline httputil.HttpClient) *externalPromptClient {
+func newExternalPromptClient(endpoint string, key string, transporter policy.Transporter) *externalPromptClient {
 	return &externalPromptClient{
-		endpoint: endpoint,
-		key:      key,
-		pipeline: pipeline,
+		endpoint:    endpoint,
+		key:         key,
+		transporter: transporter,
 	}
 }
 
@@ -115,7 +115,7 @@ func (c *externalPromptClient) PromptDialog(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.key))
 
-	res, err := c.pipeline.Do(req)
+	res, err := c.transporter.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)
 	}
@@ -160,7 +160,7 @@ func (c *externalPromptClient) Prompt(ctx context.Context, options promptOptions
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.key))
 
-	res, err := c.pipeline.Do(req)
+	res, err := c.transporter.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("making request: %w", err)
 	}

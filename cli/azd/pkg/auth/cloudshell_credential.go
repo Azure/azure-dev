@@ -13,7 +13,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 type TokenFromCloudShell struct {
@@ -27,11 +26,11 @@ type TokenFromCloudShell struct {
 }
 
 type CloudShellCredential struct {
-	httpClient httputil.HttpClient
+	transporter policy.Transporter
 }
 
-func NewCloudShellCredential(httpClient httputil.HttpClient) *CloudShellCredential {
-	cloudShellCredential := CloudShellCredential{httpClient: httpClient}
+func NewCloudShellCredential(transporter policy.Transporter) *CloudShellCredential {
+	cloudShellCredential := CloudShellCredential{transporter: transporter}
 	return &cloudShellCredential
 }
 
@@ -57,7 +56,7 @@ func (t CloudShellCredential) GetToken(ctx context.Context, options policy.Token
 	req.Header.Add("Metadata", "true")
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.transporter.Do(req)
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}

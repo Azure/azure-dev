@@ -41,7 +41,7 @@ steps:
         $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
         foreach ($location in $publishLocations) {
           Write-Host "Publishing to $location"
-          azcopy copy 'release' '$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location' --recursive --overwrite
+          azcopy copy 'release' '$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location' --recursive --overwrite true
         }
     env:
       AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

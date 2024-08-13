@@ -3,6 +3,7 @@ package templates
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,13 +18,14 @@ func Test_GhSourceRawFile(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "--version"
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
 		Stdout: github.Version.String(),
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
 	}).Respond(exec.RunResult{
 		Stdout: "Logged in to",
 	})
@@ -32,7 +34,7 @@ func Test_GhSourceRawFile(t *testing.T) {
 	require.NoError(t, err)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "api"
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "api"
 	}).Respond(exec.RunResult{
 		Stdout: string(expectedResult),
 	})
@@ -51,13 +53,14 @@ func Test_GhSourceApiFile(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "--version"
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
 		Stdout: github.Version.String(),
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
 	}).Respond(exec.RunResult{
 		Stdout: "Logged in to",
 	})
@@ -66,7 +69,7 @@ func Test_GhSourceApiFile(t *testing.T) {
 	require.NoError(t, err)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "api"
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "api"
 	}).Respond(exec.RunResult{
 		Stdout: string(expectedResult),
 	})
@@ -85,13 +88,14 @@ func Test_GhSourceUrl(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "--version"
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
 		Stdout: github.Version.String(),
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
 	}).Respond(exec.RunResult{
 		Stdout: "Logged in to",
 	})
@@ -100,7 +104,7 @@ func Test_GhSourceUrl(t *testing.T) {
 	require.NoError(t, err)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "/gh") && args.Args[0] == "api"
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "api"
 	}).Respond(exec.RunResult{
 		Stdout: string(expectedResult),
 	})

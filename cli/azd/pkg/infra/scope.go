@@ -29,6 +29,13 @@ type Deployment interface {
 	// OutputsUrl is the URL that may be used to view this deployment outputs the in Azure Portal.
 	OutputsUrl() string
 	// Deploy a given template with a set of parameters.
+	ValidatePreflight(
+		ctx context.Context,
+		template azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+		tags map[string]*string,
+	) (*armresources.DeploymentPropertiesExtended, error)
+	// Deploy a given template with a set of parameters.
 	Deploy(
 		ctx context.Context,
 		template azure.RawArmTemplate,
@@ -65,6 +72,13 @@ func (s *ResourceGroupDeployment) SubscriptionId() string {
 // Gets the resource group name
 func (s *ResourceGroupDeployment) ResourceGroupName() string {
 	return s.resourceGroupName
+}
+
+func (s *ResourceGroupDeployment) ValidatePreflight(
+	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
+) (*armresources.DeploymentPropertiesExtended, error) {
+	return s.deployments.ValidatePreflightToResourceGroup(
+		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags)
 }
 
 func (s *ResourceGroupDeployment) Deploy(
@@ -198,6 +212,12 @@ func (s *SubscriptionDeployment) OutputsUrl() string {
 // Gets the Azure location for the subscription deployment
 func (s *SubscriptionDeployment) Location() string {
 	return s.location
+}
+
+func (s *SubscriptionDeployment) ValidatePreflight(
+	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
+) (*armresources.DeploymentPropertiesExtended, error) {
+	return s.deploymentsService.ValidatePreflightToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters, tags)
 }
 
 // Deploy a given template with a set of parameters.

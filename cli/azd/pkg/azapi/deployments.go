@@ -57,6 +57,24 @@ type Deployments interface {
 		parameters azure.ArmParameters,
 		tags map[string]*string,
 	) (*armresources.DeploymentExtended, error)
+	ValidatePreflightToSubscription(
+		ctx context.Context,
+		subscriptionId string,
+		location string,
+		deploymentName string,
+		armTemplate azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+		tags map[string]*string,
+	) (*armresources.DeploymentPropertiesExtended, error)
+	ValidatePreflightToResourceGroup(
+		ctx context.Context,
+		subscriptionId,
+		resourceGroup,
+		deploymentName string,
+		armTemplate azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+		tags map[string]*string,
+	) (*armresources.DeploymentPropertiesExtended, error)
 	WhatIfDeployToSubscription(
 		ctx context.Context,
 		subscriptionId string,
@@ -220,6 +238,84 @@ func (ds *deployments) createDeploymentsClient(
 	}
 
 	return client, nil
+}
+
+func (ds *deployments) ValidatePreflightToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+) (*armresources.DeploymentPropertiesExtended, error) {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	validate, err := deploymentClient.BeginValidateAtSubscriptionScope(
+		ctx, deploymentName,
+		armresources.Deployment{
+			Properties: &armresources.DeploymentProperties{
+				Template:   armTemplate,
+				Parameters: parameters,
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+			Location: to.Ptr(location),
+			Tags:     tags,
+		}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("starting preflight validation to subscription: %w", err)
+	}
+
+	validateResult, err := validate.PollUntilDone(ctx, nil)
+	if err != nil {
+		preflightError := createDeploymentError(err)
+		return nil, fmt.Errorf(
+			"validating preflight to subscription:\n\nPreflight Error Details:\n%w",
+			preflightError,
+		)
+	}
+
+	return validateResult.DeploymentValidateResult.Properties, nil
+}
+
+func (ds *deployments) ValidatePreflightToResourceGroup(
+	ctx context.Context,
+	subscriptionId, resourceGroup, deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+) (*armresources.DeploymentPropertiesExtended, error) {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	validate, err := deploymentClient.BeginValidate(ctx, resourceGroup, deploymentName,
+		armresources.Deployment{
+			Properties: &armresources.DeploymentProperties{
+				Template:   armTemplate,
+				Parameters: parameters,
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+			Tags: tags,
+		}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	validateResult, err := validate.PollUntilDone(ctx, nil)
+	if err != nil {
+		deploymentError := createDeploymentError(err)
+		return nil, fmt.Errorf(
+			"validating preflight to resource group:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
+	}
+
+	return validateResult.DeploymentValidateResult.Properties, nil
 }
 
 func (ds *deployments) DeployToSubscription(

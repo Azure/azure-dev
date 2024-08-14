@@ -469,27 +469,31 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return cloud.PortalUrlBase
 	})
 
-	container.MustRegisterSingleton(func(
-		transporter policy.Transporter,
-		cloud *cloud.Cloud,
-	) *azsdk.ClientOptionsBuilderFactory {
-		return azsdk.NewClientOptionsBuilderFactory(transporter, internal.UserAgent(), cloud)
+	container.MustRegisterSingleton(func(transport policy.Transporter, cloud *cloud.Cloud) *azcore.ClientOptions {
+		return &azcore.ClientOptions{
+			Cloud: cloud.Configuration,
+			PerCallPolicies: []policy.Policy{
+				azsdk.NewMsCorrelationPolicy(),
+				azsdk.NewUserAgentPolicy(internal.UserAgent()),
+			},
+			Transport: transport,
+		}
 	})
 
-	container.MustRegisterSingleton(func(
-		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
-	) *azcore.ClientOptions {
-		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
-			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
-			BuildCoreClientOptions()
-	})
-
-	container.MustRegisterSingleton(func(
-		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
-	) *arm.ClientOptions {
-		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
-			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
-			BuildArmClientOptions()
+	container.MustRegisterSingleton(func(transport policy.Transporter, cloud *cloud.Cloud) *arm.ClientOptions {
+		return &arm.ClientOptions{
+			ClientOptions: azcore.ClientOptions{
+				Cloud: cloud.Configuration,
+				Logging: policy.LogOptions{
+					AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
+				},
+				PerCallPolicies: []policy.Policy{
+					azsdk.NewMsCorrelationPolicy(),
+					azsdk.NewUserAgentPolicy(internal.UserAgent()),
+				},
+				Transport: transport,
+			},
+		}
 	})
 
 	container.MustRegisterSingleton(templates.NewTemplateManager)

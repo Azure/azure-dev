@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -19,7 +19,7 @@ func Test_PythonBridge_Init(t *testing.T) {
 	tempDir := t.TempDir()
 	mockContext := mocks.NewMockContext(context.Background())
 	pythonCli := python.NewCli(mockContext.CommandRunner)
-	azdRoot := azdpath.NewRootFromDirectory(tempDir)
+	azdRoot := azdcontext.NewRootFromDirectory(tempDir)
 
 	azdConfigDir := filepath.Join(tempDir, ".azd")
 	os.Setenv("AZD_CONFIG_DIR", azdConfigDir)
@@ -57,7 +57,7 @@ func Test_PythonBridge_Init(t *testing.T) {
 func Test_PythonBridge_Run(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	pythonCli := python.NewCli(mockContext.CommandRunner)
-	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdcontext.NewRootFromDirectory(t.TempDir())
 
 	ran := false
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {

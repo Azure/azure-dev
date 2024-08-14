@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -360,7 +360,7 @@ func attributesMap(attributes []Attribute) map[attribute.Key]interface{} {
 }
 
 func getEnvSubscriptionId(t *testing.T, dir string, envName string) string {
-	azdRoot := azdpath.NewRootFromDirectory(dir)
+	azdRoot := azdcontext.NewRootFromDirectory(dir)
 	localDataStore := environment.NewLocalFileDataStore(azdRoot, config.NewFileConfigManager(config.NewManager()))
 	env, err := localDataStore.Get(context.Background(), envName)
 	require.NoError(t, err)

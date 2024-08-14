@@ -11,9 +11,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -115,7 +115,7 @@ func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 
 type envSetAction struct {
 	console    input.Console
-	azdRoot    *azdpath.Root
+	azdRoot    *azdcontext.Root
 	env        *environment.Environment
 	envManager environment.Manager
 	flags      *envSetFlags
@@ -123,7 +123,7 @@ type envSetAction struct {
 }
 
 func newEnvSetAction(
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	env *environment.Environment,
 	envManager environment.Manager,
 	console input.Console,
@@ -159,12 +159,12 @@ func newEnvSelectCmd() *cobra.Command {
 }
 
 type envSelectAction struct {
-	azdRoot    *azdpath.Root
+	azdRoot    *azdcontext.Root
 	envManager environment.Manager
 	args       []string
 }
 
-func newEnvSelectAction(azdRoot *azdpath.Root, envManager environment.Manager, args []string) actions.Action {
+func newEnvSelectAction(azdRoot *azdcontext.Root, envManager environment.Manager, args []string) actions.Action {
 	return &envSelectAction{
 		azdRoot:    azdRoot,
 		envManager: envManager,
@@ -201,14 +201,14 @@ func newEnvListCmd() *cobra.Command {
 
 type envListAction struct {
 	envManager environment.Manager
-	azdRoot    *azdpath.Root
+	azdRoot    *azdcontext.Root
 	formatter  output.Formatter
 	writer     io.Writer
 }
 
 func newEnvListAction(
 	envManager environment.Manager,
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	formatter output.Formatter,
 	writer io.Writer,
 ) actions.Action {
@@ -296,7 +296,7 @@ func newEnvNewCmd() *cobra.Command {
 }
 
 type envNewAction struct {
-	azdRoot    *azdpath.Root
+	azdRoot    *azdcontext.Root
 	envManager environment.Manager
 	flags      *envNewFlags
 	args       []string
@@ -304,7 +304,7 @@ type envNewAction struct {
 }
 
 func newEnvNewAction(
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	envManager environment.Manager,
 	flags *envNewFlags,
 	args []string,
@@ -548,7 +548,7 @@ func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalC
 }
 
 type envGetValuesAction struct {
-	azdRoot    *azdpath.Root
+	azdRoot    *azdcontext.Root
 	console    input.Console
 	envManager environment.Manager
 	formatter  output.Formatter
@@ -557,7 +557,7 @@ type envGetValuesAction struct {
 }
 
 func newEnvGetValuesAction(
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	envManager environment.Manager,
 	console input.Console,
 	formatter output.Formatter,
@@ -626,7 +626,7 @@ func (eg *envGetValueFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCo
 }
 
 type envGetValueAction struct {
-	azdRoot    *azdpath.Root
+	azdRoot    *azdcontext.Root
 	console    input.Console
 	envManager environment.Manager
 	writer     io.Writer
@@ -635,7 +635,7 @@ type envGetValueAction struct {
 }
 
 func newEnvGetValueAction(
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	envManager environment.Manager,
 	console input.Console,
 	writer io.Writer,

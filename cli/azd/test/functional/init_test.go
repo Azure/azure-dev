@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -42,7 +42,7 @@ func Test_CLI_Init_Minimal(t *testing.T) {
 	require.NoError(t, err)
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-	proj, err := project.Load(ctx, filepath.Join(dir, azdpath.ProjectFileName))
+	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
 	require.NoError(t, err)
 	require.Equal(t, filepath.Base(dir), proj.Name)
 
@@ -92,7 +92,7 @@ func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
 	require.NoError(t, err)
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-	proj, err := project.Load(ctx, filepath.Join(dir, azdpath.ProjectFileName))
+	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
 	require.NoError(t, err)
 	require.Equal(t, filepath.Base(dir), proj.Name)
 

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
@@ -54,12 +54,12 @@ func servicesFromManifest(manifest *apphost.Manifest) []*Service {
 //   - If the nearest project directory contains azure.yaml, and the azure.yaml has services matching the given host project,
 //     the nearest project directory is used.
 //   - Otherwise, the host project directory directory is used by default.
-func azdRoot(hostProjectPath string) (*azdpath.Root, error) {
+func azdRoot(hostProjectPath string) (*azdcontext.Root, error) {
 	hostProjectDir := filepath.Dir(hostProjectPath)
-	azdRoot, err := azdpath.FindRootFromWd(hostProjectDir)
-	if errors.Is(err, azdpath.ErrNoProject) {
+	azdRoot, err := azdcontext.FindRootFromWd(hostProjectDir)
+	if errors.Is(err, azdcontext.ErrNoProject) {
 		// no project exists, use host project directory as the default
-		return azdpath.NewRootFromDirectory(hostProjectDir), nil
+		return azdcontext.NewRootFromDirectory(hostProjectDir), nil
 	} else if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func azdRoot(hostProjectPath string) (*azdpath.Root, error) {
 		if svc.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget {
 			if svc.Path() != hostProjectPath {
 				log.Printf("ignoring %s due to mismatch, using app host directory", azdRoot.ProjectPath())
-				return azdpath.NewRootFromDirectory(hostProjectDir), nil
+				return azdcontext.NewRootFromDirectory(hostProjectDir), nil
 			}
 		}
 

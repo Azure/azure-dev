@@ -12,11 +12,11 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -62,7 +62,7 @@ type showAction struct {
 	azCli                azcli.AzCli
 	envManager           environment.Manager
 	deploymentOperations azapi.DeploymentOperations
-	azdRoot              *azdpath.Root
+	azdRoot              *azdcontext.Root
 	flags                *showFlags
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
 	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
@@ -78,7 +78,7 @@ func newShowAction(
 	deploymentOperations azapi.DeploymentOperations,
 	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	flags *showFlags,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
@@ -320,7 +320,7 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 							"setting in %s for this service",
 						svc.Path(),
 						svc.Name,
-						azdpath.ProjectFileName)
+						azdcontext.ProjectFileName)
 				} else {
 					projectFile = entry.Name()
 				}
@@ -332,7 +332,7 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 					" include the name of the .NET project file in project setting in %s for"+
 					" this service",
 				svc.Name,
-				azdpath.ProjectFileName)
+				azdcontext.ProjectFileName)
 		} else {
 			if svc.RelativePath != "" {
 				svc.RelativePath = filepath.Join(svc.RelativePath, projectFile)

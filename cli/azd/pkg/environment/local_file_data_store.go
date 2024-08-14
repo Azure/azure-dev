@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"golang.org/x/exp/slices"
@@ -19,12 +19,12 @@ import (
 
 // LocalFileDataStore is a DataStore implementation that stores environment data in the local file system.
 type LocalFileDataStore struct {
-	azdRoot       *azdpath.Root
+	azdRoot       *azdcontext.Root
 	configManager config.FileConfigManager
 }
 
 // NewLocalFileDataStore creates a new LocalFileDataStore instance
-func NewLocalFileDataStore(azdRoot *azdpath.Root, configManager config.FileConfigManager) LocalDataStore {
+func NewLocalFileDataStore(azdRoot *azdcontext.Root, configManager config.FileConfigManager) LocalDataStore {
 	return &LocalFileDataStore{
 		azdRoot:       azdRoot,
 		configManager: configManager,

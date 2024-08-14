@@ -11,9 +11,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/spf13/cobra"
@@ -28,7 +28,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	// Create a empty azure.yaml to ensure *azdpath.Root can be constructed, as if `azd init` was run.
+	// Create a empty azure.yaml to ensure *azdcontext.Root can be constructed, as if `azd init` was run.
 	err := os.WriteFile("azure.yaml", []byte("name: test"), osutil.PermissionFile)
 	require.NoError(t, err)
 
@@ -53,7 +53,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 
 	// Set environment for commands that require environment.
 	envName := "envname"
-	azdRoot := azdpath.NewRootFromDirectory(tempDir)
+	azdRoot := azdcontext.NewRootFromDirectory(tempDir)
 	localDataStore := environment.NewLocalFileDataStore(azdRoot, config.NewFileConfigManager(config.NewManager()))
 
 	require.NoError(t, err)

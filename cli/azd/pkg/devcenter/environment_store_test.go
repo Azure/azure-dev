@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockdevcentersdk"
@@ -311,7 +311,7 @@ func newEnvironmentStoreForTest(
 	}
 	prompter := NewPrompter(mockContext.Console, manager, devCenterClient)
 
-	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdcontext.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := environment.NewLocalFileDataStore(azdRoot, fileConfigManager)
 

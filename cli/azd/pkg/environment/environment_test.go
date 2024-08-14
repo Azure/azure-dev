@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -266,8 +266,8 @@ func Test_fixupUnquotedDotenv(t *testing.T) {
 	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=\"01\"", fixed)
 }
 
-func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *azdpath.Root) {
-	azdRoot := azdpath.NewRootFromDirectory(root)
+func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *azdcontext.Root) {
+	azdRoot := azdcontext.NewRootFromDirectory(root)
 	configManager := config.NewFileConfigManager(config.NewManager())
 	localDataStore := NewLocalFileDataStore(azdRoot, configManager)
 

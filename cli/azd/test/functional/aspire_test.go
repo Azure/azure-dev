@@ -277,7 +277,7 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up")
 	require.NoError(t, err)
 
-	//env, err := godotenv.Read(filepath.Join(dir, azdpath.EnvironmentConfigDirectoryName, envName, ".env"))
+	//env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	//require.NoError(t, err)
 
 	//domain, has := env["AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"]

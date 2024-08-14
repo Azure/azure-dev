@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
@@ -62,7 +62,7 @@ func (s *environmentService) loadEnvironmentAsync(
 	ctx context.Context, container *container, name string, mustLoadServices bool,
 ) (*Environment, error) {
 	var c struct {
-		azdRoot        *azdpath.Root           `container:"type"`
+		azdRoot        *azdcontext.Root        `container:"type"`
 		envManager     environment.Manager     `container:"type"`
 		projectConfig  *project.ProjectConfig  `container:"type"`
 		dotnetCli      *dotnet.Cli             `container:"type"`

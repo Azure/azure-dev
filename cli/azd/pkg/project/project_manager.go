@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -64,14 +64,14 @@ type ProjectManager interface {
 type ServiceFilterPredicate func(svc *ServiceConfig) bool
 
 type projectManager struct {
-	azdRoot        *azdpath.Root
+	azdRoot        *azdcontext.Root
 	serviceManager ServiceManager
 	importManager  *ImportManager
 }
 
 // NewProjectManager creates a new instance of the ProjectManager
 func NewProjectManager(
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	serviceManager ServiceManager,
 	importManager *ImportManager,
 ) ProjectManager {

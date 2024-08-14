@@ -1,4 +1,4 @@
-package azdpath
+package azdcontext
 
 import (
 	"encoding/json"

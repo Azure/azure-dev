@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -84,7 +84,7 @@ type PipelineManager struct {
 	scmProvider       ScmProvider
 	ciProvider        CiProvider
 	args              *PipelineManagerArgs
-	azdRoot           *azdpath.Root
+	azdRoot           *azdcontext.Root
 	env               *environment.Environment
 	entraIdService    entraid.EntraIdService
 	gitCli            *git.Cli
@@ -101,7 +101,7 @@ func NewPipelineManager(
 	envManager environment.Manager,
 	entraIdService entraid.EntraIdService,
 	gitCli *git.Cli,
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	env *environment.Environment,
 	console input.Console,
 	args *PipelineManagerArgs,

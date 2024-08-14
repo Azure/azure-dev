@@ -1,4 +1,4 @@
-package azdpath
+package azdcontext
 
 // ProjectFileName is the name of the file that stores the project configuration. This file is located in the root of the
 // and contains the project name and other project specific configuration.

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
 )
@@ -61,7 +61,7 @@ func createProject(prjDir string, appHostPath string) error {
 	if err != nil {
 		return err
 	}
-	prjPath := filepath.Join(prjDir, azdpath.ProjectFileName)
+	prjPath := filepath.Join(prjDir, azdcontext.ProjectFileName)
 
 	prjConfig := &project.ProjectConfig{
 		Name: "app",

@@ -10,8 +10,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -55,7 +55,7 @@ type infraSynthAction struct {
 	projectConfig *project.ProjectConfig
 	importManager *project.ImportManager
 	console       input.Console
-	azdRoot       *azdpath.Root
+	azdRoot       *azdcontext.Root
 	flags         *infraSynthFlags
 	alphaManager  *alpha.FeatureManager
 }
@@ -65,7 +65,7 @@ func newInfraSynthAction(
 	importManager *project.ImportManager,
 	flags *infraSynthFlags,
 	console input.Console,
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	alphaManager *alpha.FeatureManager,
 ) actions.Action {
 	return &infraSynthAction{

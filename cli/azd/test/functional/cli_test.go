@@ -28,7 +28,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -36,6 +35,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -163,7 +163,7 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	require.NoError(t, err)
 
 	// evaluate the project and environment configuration
-	azdRoot := azdpath.NewRootFromDirectory(dir)
+	azdRoot := azdcontext.NewRootFromDirectory(dir)
 	projectConfig, err := project.Load(ctx, azdRoot.ProjectPath())
 	require.NoError(t, err)
 
@@ -335,7 +335,7 @@ func Test_CLI_ProvisionState(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
 
-	env, err := godotenv.Read(filepath.Join(dir, azdpath.EnvironmentConfigDirectoryName, envName, ".env"))
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	if session != nil {
@@ -391,7 +391,7 @@ func Test_CLI_ProvisionStateWithDown(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, reProvisionAfterDown.Stdout, expectedOutputContains)
 
-	env, err := godotenv.Read(filepath.Join(dir, azdpath.EnvironmentConfigDirectoryName, envName, ".env"))
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	if session != nil {
@@ -541,7 +541,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			assert.Contains(t, result.Stdout, azdpath.ErrNoProject.Error())
+			assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
 		})
 	}
 }
@@ -759,7 +759,7 @@ func stdinForProvision() string {
 }
 
 func getTestEnvPath(dir string, envName string) string {
-	return filepath.Join(dir, azdpath.EnvironmentConfigDirectoryName, envName, ".env")
+	return filepath.Join(dir, azdcontext.EnvironmentConfigDirectoryName, envName, ".env")
 }
 
 // newTestContext returns a new empty context, suitable for use in tests. If a
@@ -1001,7 +1001,7 @@ func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
 }
 
 func envFromAzdRoot(ctx context.Context, azdRootDir string, envName string) (*environment.Environment, error) {
-	azdRoot := azdpath.NewRootFromDirectory(azdRootDir)
+	azdRoot := azdcontext.NewRootFromDirectory(azdRootDir)
 	localDataStore := environment.NewLocalFileDataStore(azdRoot, config.NewFileConfigManager(config.NewManager()))
 	return localDataStore.Get(ctx, envName)
 }

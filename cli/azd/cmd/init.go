@@ -13,12 +13,12 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -100,7 +100,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
-	lazyAzdCtx      *lazy.Lazy[*azdpath.Root]
+	lazyAzdCtx      *lazy.Lazy[*azdcontext.Root]
 	lazyEnvManager  *lazy.Lazy[environment.Manager]
 	console         input.Console
 	cmdRun          exec.CommandRunner
@@ -112,7 +112,7 @@ type initAction struct {
 }
 
 func newInitAction(
-	lazyAzdCtx *lazy.Lazy[*azdpath.Root],
+	lazyAzdCtx *lazy.Lazy[*azdcontext.Root],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	cmdRun exec.CommandRunner,
 	console input.Console,
@@ -140,7 +140,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	azdRoot := azdpath.NewRootFromDirectory(wd)
+	azdRoot := azdcontext.NewRootFromDirectory(wd)
 	i.lazyAzdCtx.SetValue(azdRoot)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
@@ -294,7 +294,7 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 
 func (i *initAction) initializeTemplate(
 	ctx context.Context,
-	azdRoot *azdpath.Root) (*templates.Template, error) {
+	azdRoot *azdcontext.Root) (*templates.Template, error) {
 	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdRoot)
 	if err != nil {
 		return nil, err
@@ -345,7 +345,7 @@ func (i *initAction) initializeTemplate(
 
 func (i *initAction) initializeEnv(
 	ctx context.Context,
-	azdRoot *azdpath.Root,
+	azdRoot *azdcontext.Root,
 	templateMetadata *templates.Metadata) (*environment.Environment, error) {
 	envName, err := azdRoot.DefaultEnvironmentName()
 	if err != nil {

@@ -5,15 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/azdpath"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_LocalFileDataStore_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdcontext.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdRoot, fileConfigManager)
 
@@ -41,7 +41,7 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 
 func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdcontext.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdRoot, fileConfigManager)
 
@@ -61,7 +61,7 @@ func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 }
 
 func Test_LocalFileDataStore_Path(t *testing.T) {
-	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdcontext.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdRoot, fileConfigManager)
 
@@ -73,7 +73,7 @@ func Test_LocalFileDataStore_Path(t *testing.T) {
 }
 
 func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
-	azdRoot := azdpath.NewRootFromDirectory(t.TempDir())
+	azdRoot := azdcontext.NewRootFromDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	dataStore := NewLocalFileDataStore(azdRoot, fileConfigManager)
 

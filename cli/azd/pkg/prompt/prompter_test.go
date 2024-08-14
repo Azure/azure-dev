@@ -38,7 +38,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			mockContext.Console,
 			mockAccount,
 			azCli,
-			cloud.AzurePublic().PortalUrlBase,
+			cloud.AzurePublic(),
 		).(*DefaultPrompter)
 		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 
@@ -81,7 +81,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			mockContext.Console,
 			mockAccount,
 			azCli,
-			cloud.AzurePublic().PortalUrlBase,
+			cloud.AzurePublic(),
 		).(*DefaultPrompter)
 		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 

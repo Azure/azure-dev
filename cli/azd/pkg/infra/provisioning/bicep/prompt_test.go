@@ -279,7 +279,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		mockContext.Console,
 		accountManager,
 		azCli,
-		cloud.AzurePublic().PortalUrlBase,
+		cloud.AzurePublic(),
 	)
 
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {

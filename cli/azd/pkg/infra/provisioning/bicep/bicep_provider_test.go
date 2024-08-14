@@ -383,7 +383,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		envManager,
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli, cloud.AzurePublic().PortalUrlBase),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
@@ -395,7 +395,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 			mockContext.ArmClientOptions,
 			mockContext.CoreClientOptions,
 		),
-		cloud.AzurePublic().PortalUrlBase,
+		cloud.AzurePublic(),
 	)
 
 	err = provider.Initialize(*mockContext.Context, projectDir, options)
@@ -930,7 +930,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		&mockenv.MockEnvManager{},
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, cloud.AzurePublic().PortalUrlBase),
+		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
@@ -942,7 +942,7 @@ func TestUserDefinedTypes(t *testing.T) {
 			mockContext.ArmClientOptions,
 			mockContext.CoreClientOptions,
 		),
-		cloud.AzurePublic().PortalUrlBase,
+		cloud.AzurePublic(),
 	)
 	bicepProvider, gooCast := provider.(*BicepProvider)
 	require.True(t, gooCast)

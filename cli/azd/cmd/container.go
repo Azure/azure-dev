@@ -465,10 +465,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return cloud.NewCloud(&cloud.Config{Name: cloud.AzurePublicName})
 	})
 
-	container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {
-		return cloud.PortalUrlBase
-	})
-
 	container.MustRegisterSingleton(func(transport policy.Transporter, cloud *cloud.Cloud) *azcore.ClientOptions {
 		return &azcore.ClientOptions{
 			Cloud: cloud.Configuration,

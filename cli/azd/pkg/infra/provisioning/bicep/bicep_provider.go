@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -2196,7 +2197,7 @@ func NewBicepProvider(
 	alphaFeatureManager *alpha.FeatureManager,
 	clock clock.Clock,
 	keyvaultService keyvault.KeyVaultService,
-	portalUrlBase string,
+	cloud *cloud.Cloud,
 ) Provider {
 	return &BicepProvider{
 		envManager:           envManager,
@@ -2211,6 +2212,6 @@ func NewBicepProvider(
 		alphaFeatureManager:  alphaFeatureManager,
 		clock:                clock,
 		keyvaultService:      keyvaultService,
-		portalUrlBase:        portalUrlBase,
+		portalUrlBase:        cloud.PortalUrlBase,
 	}
 }

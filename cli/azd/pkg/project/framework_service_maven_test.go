@@ -327,7 +327,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "mvn package")
+			return strings.Contains(command, getMvnwCmd()+" package")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			return exec.NewRunResult(0, "", ""), nil
@@ -337,7 +337,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 	mvnFuncAppNameProperty := ""
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "mvn help:evaluate -Dexpression=functionAppName")
+			return strings.Contains(command, getMvnwCmd()+" help:evaluate -Dexpression=functionAppName")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			if len(mvnFuncAppNameProperty) == 0 {

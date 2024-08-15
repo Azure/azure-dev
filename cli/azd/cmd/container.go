@@ -12,6 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -143,11 +144,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	client := createHttpClient()
-	ioc.RegisterInstance[httputil.HttpClient](container, client)
+	ioc.RegisterInstance[policy.Transporter](container, client)
 	ioc.RegisterInstance[auth.HttpClient](container, client)
-	container.MustRegisterSingleton(func() httputil.UserAgent {
-		return httputil.UserAgent(internal.UserAgent())
-	})
 
 	// Auth
 	container.MustRegisterSingleton(auth.NewLoggedInGuard)
@@ -468,32 +466,31 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return cloud.NewCloud(&cloud.Config{Name: cloud.AzurePublicName})
 	})
 
-	container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {
-		return cloud.PortalUrlBase
+	container.MustRegisterSingleton(func(transport policy.Transporter, cloud *cloud.Cloud) *azcore.ClientOptions {
+		return &azcore.ClientOptions{
+			Cloud: cloud.Configuration,
+			PerCallPolicies: []policy.Policy{
+				azsdk.NewMsCorrelationPolicy(),
+				azsdk.NewUserAgentPolicy(internal.UserAgent()),
+			},
+			Transport: transport,
+		}
 	})
 
-	container.MustRegisterSingleton(func(
-		httpClient httputil.HttpClient,
-		userAgent httputil.UserAgent,
-		cloud *cloud.Cloud,
-	) *azsdk.ClientOptionsBuilderFactory {
-		return azsdk.NewClientOptionsBuilderFactory(httpClient, string(userAgent), cloud)
-	})
-
-	container.MustRegisterSingleton(func(
-		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
-	) *azcore.ClientOptions {
-		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
-			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
-			BuildCoreClientOptions()
-	})
-
-	container.MustRegisterSingleton(func(
-		clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
-	) *arm.ClientOptions {
-		return clientOptionsBuilderFactory.NewClientOptionsBuilder().
-			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
-			BuildArmClientOptions()
+	container.MustRegisterSingleton(func(transport policy.Transporter, cloud *cloud.Cloud) *arm.ClientOptions {
+		return &arm.ClientOptions{
+			ClientOptions: azcore.ClientOptions{
+				Cloud: cloud.Configuration,
+				Logging: policy.LogOptions{
+					AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
+				},
+				PerCallPolicies: []policy.Policy{
+					azsdk.NewMsCorrelationPolicy(),
+					azsdk.NewUserAgentPolicy(internal.UserAgent()),
+				},
+				Transport: transport,
+			},
+		}
 	})
 
 	container.MustRegisterSingleton(templates.NewTemplateManager)
@@ -559,9 +556,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			}
 		}
 		return auth.ExternalAuthConfiguration{
-			Endpoint: endpoint,
-			Client:   client,
-			Key:      key,
+			Endpoint:    endpoint,
+			Transporter: client,
+			Key:         key,
 		}, nil
 	})
 	container.MustRegisterScoped(auth.NewManager)
@@ -585,22 +582,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Tools
-	container.MustRegisterSingleton(func(
-		rootOptions *internal.GlobalCommandOptions,
-		credentialProvider account.SubscriptionCredentialProvider,
-		httpClient httputil.HttpClient,
-		armClientOptions *arm.ClientOptions,
-	) azcli.AzCli {
-		return azcli.NewAzCli(
-			credentialProvider,
-			httpClient,
-			azcli.NewAzCliArgs{
-				EnableDebug:     rootOptions.EnableDebugLogging,
-				EnableTelemetry: rootOptions.EnableTelemetry,
-			},
-			armClientOptions,
-		)
-	})
+	container.MustRegisterSingleton(azcli.NewAzCli)
 	container.MustRegisterSingleton(azapi.NewDeployments)
 	container.MustRegisterSingleton(azapi.NewDeploymentOperations)
 	container.MustRegisterSingleton(docker.NewCli)

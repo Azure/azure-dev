@@ -10,8 +10,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -749,7 +749,7 @@ func (p *AzdoCiProvider) credentialOptions(
 				Name:        "AzureDevOpsOIDC", //Must not contain a space character and 3 to 64 characters in length
 				Issuer:      (*sConnection.Authorization.Parameters)["workloadIdentityFederationIssuer"],
 				Subject:     (*sConnection.Authorization.Parameters)["workloadIdentityFederationSubject"],
-				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Description: to.Ptr("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 		}

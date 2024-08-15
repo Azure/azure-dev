@@ -33,5 +33,6 @@
                 "jinliming2.vscode-go-template"
             ]
         }
-    }
+    },
+    "postCreateCommand": "go install gotest.tools/gotestsum@latest"
 }

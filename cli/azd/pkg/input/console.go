@@ -23,11 +23,11 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	tm "github.com/buger/goterm"
@@ -318,7 +318,8 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
 	_ = c.spinner.Unpause()
 }
 
-const cPostfix = "..."
+// truncationDots is the text we use to indicate that text has been truncated.
+const truncationDots = "..."
 
 // The line of text for the spinner, displayed in the format of: <prefix><spinner> <message>
 type spinnerLine struct {
@@ -349,7 +350,7 @@ func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
 		return spinnerLine{
 			CharSet: spinnerShortCharSet[:width],
 		}
-	case width <= spinnerLen+len(cPostfix): // show number of dots
+	case width <= spinnerLen+len(truncationDots): // show number of dots
 		return spinnerLine{
 			CharSet: spinnerShortCharSet,
 		}
@@ -357,7 +358,7 @@ func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
 		return spinnerLine{
 			Prefix:  indent,
 			CharSet: spinnerCharSet,
-			Message: title[:width-spinnerLen-len(cPostfix)] + cPostfix,
+			Message: title[:width-spinnerLen-len(truncationDots)] + truncationDots,
 		}
 	default:
 		return spinnerLine{
@@ -520,10 +521,10 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 	}
 }
 
-// cAfterIO is a sentinel used after Input/Output operations as the state for the last 2-bytes written.
+// afterIoSentinel is a sentinel value used after Input/Output operations as the state for the last 2-bytes written.
 // For example, after running Prompt or Confirm, the last characters on the terminal should be any char (represented by the
 // 0 in the sentinel), followed by a new line.
-const cAfterIO = "0\n"
+const afterIoSentinel = "0\n"
 
 func (c *AskerConsole) SupportsPromptDialog() bool {
 	return c.promptClient != nil
@@ -586,7 +587,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 		}
 
 		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -609,7 +610,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	if err != nil {
 		return response, err
 	}
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -627,7 +628,7 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 		}
 
 		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -656,7 +657,7 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 	if err != nil {
 		return response, err
 	}
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -683,12 +684,12 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Choices: convert.RefOf(choicesFromOptions(options)),
+				Choices: to.Ptr(choicesFromOptions(options)),
 			},
 		}
 
 		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -750,7 +751,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		return -1, err
 	}
 
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -763,12 +764,12 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Choices: convert.RefOf(choicesFromOptions(options)),
+				Choices: to.Ptr(choicesFromOptions(options)),
 			},
 		}
 
 		if value, ok := options.DefaultValue.([]string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -835,7 +836,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		}
 
 		if value, ok := options.DefaultValue.(bool); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -882,7 +883,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		return false, err
 	}
 
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -993,9 +994,9 @@ type Writers struct {
 
 // ExternalPromptConfiguration allows configuring the console to delegate prompts to an external service.
 type ExternalPromptConfiguration struct {
-	Endpoint string
-	Key      string
-	Client   httputil.HttpClient
+	Endpoint    string
+	Key         string
+	Transporter policy.Transporter
 }
 
 // Creates a new console with the specified writers, handles and formatter. When externalPromptCfg is non nil, it is used
@@ -1025,7 +1026,8 @@ func NewConsole(
 	}
 
 	if externalPromptCfg != nil {
-		c.promptClient = newExternalPromptClient(externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Client)
+		c.promptClient = newExternalPromptClient(
+			externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Transporter)
 	}
 
 	spinnerConfig := yacspin.Config{

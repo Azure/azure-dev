@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -51,13 +51,13 @@ services:
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("app-api-abc123"),
-				Name:     convert.RefOf("test-containerapp-web"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("app-api-abc123"),
+				Name:     to.Ptr("test-containerapp-web"),
+				Type:     to.Ptr(string(infra.AzureResourceTypeContainerApp)),
+				Location: to.Ptr("eastus2"),
 			},
 		})
 
@@ -153,13 +153,13 @@ services:
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("app-api-abc123"),
-				Name:     convert.RefOf("test-containerapp-web"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("app-api-abc123"),
+				Name:     to.Ptr("test-containerapp-web"),
+				Type:     to.Ptr(string(infra.AzureResourceTypeContainerApp)),
+				Location: to.Ptr("eastus2"),
 			},
 		})
 

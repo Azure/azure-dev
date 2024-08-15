@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -18,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/helm"
@@ -481,12 +481,12 @@ func setupGetClusterMock(mockContext *mocks.MockContext, statusCode int) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		managedCluster := armcontainerservice.ManagedClustersClientGetResponse{
 			ManagedCluster: armcontainerservice.ManagedCluster{
-				ID:       convert.RefOf("cluster1"),
-				Location: convert.RefOf("eastus2"),
-				Type:     convert.RefOf("Microsoft.ContainerService/managedClusters"),
+				ID:       to.Ptr("cluster1"),
+				Location: to.Ptr("eastus2"),
+				Type:     to.Ptr("Microsoft.ContainerService/managedClusters"),
 				Properties: &armcontainerservice.ManagedClusterProperties{
-					EnableRBAC:           convert.RefOf(true),
-					DisableLocalAccounts: convert.RefOf(false),
+					EnableRBAC:           to.Ptr(true),
+					DisableLocalAccounts: to.Ptr(false),
 				},
 			},
 		}
@@ -513,7 +513,7 @@ func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, status
 		creds := armcontainerservice.CredentialResults{
 			Kubeconfigs: []*armcontainerservice.CredentialResult{
 				{
-					Name:  convert.RefOf("context"),
+					Name:  to.Ptr("context"),
 					Value: kubeConfigBytes,
 				},
 			},
@@ -543,7 +543,7 @@ func setupListClusterUserCredentialsMock(mockContext *mocks.MockContext, statusC
 		creds := armcontainerservice.CredentialResults{
 			Kubeconfigs: []*armcontainerservice.CredentialResult{
 				{
-					Name:  convert.RefOf("context"),
+					Name:  to.Ptr("context"),
 					Value: kubeConfigBytes,
 				},
 			},
@@ -562,24 +562,24 @@ func setupListClusterUserCredentialsMock(mockContext *mocks.MockContext, statusC
 func setupMocksForAcr(mockContext *mocks.MockContext) {
 	mockazsdk.MockContainerRegistryList(mockContext, []*armcontainerregistry.Registry{
 		{
-			ID: convert.RefOf(
+			ID: to.Ptr(
 				//nolint:lll
 				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.ContainerRegistry/registries/REGISTRY",
 			),
-			Location: convert.RefOf("eastus2"),
-			Name:     convert.RefOf("REGISTRY"),
+			Location: to.Ptr("eastus2"),
+			Name:     to.Ptr("REGISTRY"),
 			Properties: &armcontainerregistry.RegistryProperties{
-				LoginServer: convert.RefOf("REGISTRY.azurecr.io"),
+				LoginServer: to.Ptr("REGISTRY.azurecr.io"),
 			},
 		},
 	})
 
 	mockazsdk.MockContainerRegistryCredentials(mockContext, &armcontainerregistry.RegistryListCredentialsResult{
-		Username: convert.RefOf("admin"),
+		Username: to.Ptr("admin"),
 		Passwords: []*armcontainerregistry.RegistryPassword{
 			{
-				Name:  convert.RefOf(armcontainerregistry.PasswordName("admin")),
-				Value: convert.RefOf("password"),
+				Name:  to.Ptr(armcontainerregistry.PasswordName("admin")),
+				Value: to.Ptr("password"),
 			},
 		},
 	})

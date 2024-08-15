@@ -68,7 +68,9 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	} else {
 		// Otherwise find the resource group within the deployment operations
 		for _, operation := range topLevelDeploymentOperations {
-			if operation.Properties.TargetResource != nil &&
+			if operation.Properties != nil &&
+				operation.Properties.TargetResource != nil &&
+				operation.Properties.TargetResource.ResourceType != nil &&
 				*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
 				resourceGroupName = *operation.Properties.TargetResource.ResourceName
 				break
@@ -87,10 +89,15 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	// Recursively append any resource group deployments that are found
 	innerLevelDeploymentOperations := make(map[string]*armresources.DeploymentOperation)
 	for _, operation := range topLevelDeploymentOperations {
-		if operation.Properties.TargetResource == nil {
+		if operation.Properties == nil ||
+			operation.Properties.TargetResource == nil ||
+			operation.Properties.TargetResource.ID == nil ||
+			operation.Properties.TargetResource.ResourceType == nil ||
+			operation.Properties.ProvisioningOperation == nil {
 			// Operations w/o target data can't be resolved. Ignoring them
 			continue
 		}
+
 		if !strings.HasPrefix(*operation.Properties.TargetResource.ID, resourceIdPrefix) {
 			// topLevelDeploymentOperations might include deployments NOT within the resource group which we don't want to
 			// resolve
@@ -258,15 +265,15 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 	}
 }
 
-// cWebAppApiVersion is the API Version we use when querying information about Web App resources
-const cWebAppApiVersion = "2021-03-01"
+// webAppApiVersion is the API Version we use when querying information about Web App resources
+const webAppApiVersion = "2021-03-01"
 
 func (rm *AzureResourceManager) getWebAppResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
 ) (string, error) {
-	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, cWebAppApiVersion)
+	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, webAppApiVersion)
 
 	if err != nil {
 		return "", fmt.Errorf("getting web app resource type display names: %w", err)

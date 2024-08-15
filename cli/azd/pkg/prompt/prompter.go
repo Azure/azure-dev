@@ -41,14 +41,14 @@ func NewDefaultPrompter(
 	console input.Console,
 	accountManager account.Manager,
 	azCli azcli.AzCli,
-	portalUrlBase cloud.PortalUrlBase,
+	cloud *cloud.Cloud,
 ) Prompter {
 	return &DefaultPrompter{
 		console:        console,
 		env:            env,
 		accountManager: accountManager,
 		azCli:          azCli,
-		portalUrlBase:  portalUrlBase,
+		portalUrlBase:  cloud.PortalUrlBase,
 	}
 }
 

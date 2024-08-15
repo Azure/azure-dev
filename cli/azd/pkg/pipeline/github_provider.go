@@ -14,13 +14,12 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -316,7 +315,6 @@ type GitHubCiProvider struct {
 	ghCli              *github.Cli
 	gitCli             *git.Cli
 	console            input.Console
-	httpClient         httputil.HttpClient
 }
 
 func NewGitHubCiProvider(
@@ -325,8 +323,7 @@ func NewGitHubCiProvider(
 	entraIdService entraid.EntraIdService,
 	ghCli *github.Cli,
 	gitCli *git.Cli,
-	console input.Console,
-	httpClient httputil.HttpClient) CiProvider {
+	console input.Console) CiProvider {
 	return &GitHubCiProvider{
 		env:                env,
 		credentialProvider: credentialProvider,
@@ -334,7 +331,6 @@ func NewGitHubCiProvider(
 		ghCli:              ghCli,
 		gitCli:             gitCli,
 		console:            console,
-		httpClient:         httpClient,
 	}
 }
 
@@ -424,7 +420,7 @@ func (p *GitHubCiProvider) credentialOptions(
 				Name:        url.PathEscape(fmt.Sprintf("%s-pull_request", credentialSafeName)),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
-				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Description: to.Ptr("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 		}
@@ -434,7 +430,7 @@ func (p *GitHubCiProvider) credentialOptions(
 				Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, branch)),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
-				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Description: to.Ptr("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			}
 

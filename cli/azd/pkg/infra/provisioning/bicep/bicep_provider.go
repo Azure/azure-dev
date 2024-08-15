@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -427,19 +428,19 @@ func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (
 	return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 }
 
-// cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
-const cArmDeploymentNameLengthMax = 64
+// armDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
+const armDeploymentNameLengthMax = 64
 
 // deploymentNameForEnv creates a name to use for the deployment object for a given environment. It appends the current
 // unix time to the environment name (separated by a hyphen) to provide a unique name for each deployment. If the resulting
 // name is longer than the ARM limit, the longest suffix of the name under the limit is returned.
 func deploymentNameForEnv(envName string, clock clock.Clock) string {
 	name := fmt.Sprintf("%s-%d", envName, clock.Now().Unix())
-	if len(name) <= cArmDeploymentNameLengthMax {
+	if len(name) <= armDeploymentNameLengthMax {
 		return name
 	}
 
-	return name[len(name)-cArmDeploymentNameLengthMax:]
+	return name[len(name)-armDeploymentNameLengthMax:]
 }
 
 // deploymentState returns the latests deployment if it is the same as the deployment within deploymentData or an error
@@ -780,7 +781,7 @@ func (p *BicepProvider) inferScopeFromEnv() (infra.Scope, error) {
 	}
 }
 
-const cEmptySubDeployTemplate = `{
+const emptySubDeployTemplate = `{
 	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 	"contentVersion": "1.0.0.0",
 	"parameters": {},
@@ -789,7 +790,7 @@ const cEmptySubDeployTemplate = `{
 	"outputs": {}
   }`
 
-const cEmptyResourceGroupDeployTemplate = `{
+const emptyResourceGroupDeployTemplate = `{
 	"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
 	"contentVersion": "1.0.0.0",
 	"parameters": {},
@@ -945,9 +946,9 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 
 	var emptyTemplate json.RawMessage
 	if targetScope == azure.DeploymentScopeSubscription {
-		emptyTemplate = []byte(cEmptySubDeployTemplate)
+		emptyTemplate = []byte(emptySubDeployTemplate)
 	} else {
-		emptyTemplate = []byte(cEmptyResourceGroupDeployTemplate)
+		emptyTemplate = []byte(emptyResourceGroupDeployTemplate)
 	}
 
 	// create empty deployment to void provision state
@@ -2196,7 +2197,7 @@ func NewBicepProvider(
 	alphaFeatureManager *alpha.FeatureManager,
 	clock clock.Clock,
 	keyvaultService keyvault.KeyVaultService,
-	portalUrlBase string,
+	cloud *cloud.Cloud,
 ) Provider {
 	return &BicepProvider{
 		envManager:           envManager,
@@ -2211,6 +2212,6 @@ func NewBicepProvider(
 		alphaFeatureManager:  alphaFeatureManager,
 		clock:                clock,
 		keyvaultService:      keyvaultService,
-		portalUrlBase:        portalUrlBase,
+		portalUrlBase:        cloud.PortalUrlBase,
 	}
 }

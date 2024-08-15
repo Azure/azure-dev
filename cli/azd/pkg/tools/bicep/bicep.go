@@ -15,8 +15,6 @@ import (
 	"runtime"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -27,7 +25,7 @@ import (
 
 // Version is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
 // user).
-var Version semver.Version = semver.MustParse("0.28.1")
+var Version semver.Version = semver.MustParse("0.29.47")
 
 // NewCli creates a new Bicep CLI. Azd manages its own copy of the bicep CLI, stored in `$AZD_CONFIG_DIR/bin`. If
 // bicep is not present at this location, or if it is present but is older than the minimum supported version, it is
@@ -177,11 +175,7 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 
 	log.Printf("downloading bicep release %s -> %s", bicepReleaseUrl, name)
 
-	var err error
-	spanCtx, span := tracing.Start(ctx, events.BicepInstallEvent)
-	defer span.EndWithStatus(err)
-
-	req, err := http.NewRequestWithContext(spanCtx, "GET", bicepReleaseUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", bicepReleaseUrl, nil)
 	if err != nil {
 		return err
 	}

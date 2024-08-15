@@ -324,6 +324,9 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 
 	ostest.Chdir(t, tempDir)
 
+	err := os.WriteFile(getMvnwCmd(), nil, osutil.PermissionExecutableFile)
+	require.NoError(t, err)
+
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
@@ -352,7 +355,7 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 	javaCli := javac.NewCli(mockContext.CommandRunner)
 
 	serviceConfig := createTestServiceConfig("./src/api", AzureFunctionTarget, ServiceLanguageJava)
-	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
+	err = os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
 	require.NoError(t, err)
 
 	mavenProject := NewMavenProject(env, mavenCli, javaCli)

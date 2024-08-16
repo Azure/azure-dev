@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 
 	osexec "os/exec"
@@ -210,6 +211,30 @@ func (cli *Cli) ResolveDependencies(ctx context.Context, projectPath string) err
 	}
 
 	return nil
+}
+
+var ErrPropertyNotFound = errors.New("property not found")
+
+func (cli *Cli) GetProperty(ctx context.Context, propertyPath string, projectPath string) (string, error) {
+	mvnCmd, err := cli.mvnCmd()
+	if err != nil {
+		return "", err
+	}
+	runArgs := exec.NewRunArgs(mvnCmd,
+		"help:evaluate",
+		// cspell: disable-next-line Dexpression and DforceStdout are maven command line arguments
+		"-Dexpression="+propertyPath, "-q", "-DforceStdout").WithCwd(projectPath)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return "", fmt.Errorf("mvn help:evaluate on project '%s' failed: %w", projectPath, err)
+	}
+
+	result := strings.TrimSpace(res.Stdout)
+	if result == "null object or invalid expression" {
+		return "", ErrPropertyNotFound
+	}
+
+	return result, nil
 }
 
 func NewCli(commandRunner exec.CommandRunner) *Cli {

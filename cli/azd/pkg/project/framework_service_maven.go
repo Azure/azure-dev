@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -95,14 +96,34 @@ func (m *mavenProject) Package(
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	packageDest, err := os.MkdirTemp("", "azd")
-	if err != nil {
-		return nil, fmt.Errorf("creating staging directory: %w", err)
-	}
-
 	progress.SetProgress(NewServiceProgress("Packaging maven project"))
 	if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
 		return nil, err
+	}
+
+	if serviceConfig.Host == AzureFunctionTarget {
+		if serviceConfig.OutputPath != "" {
+			// If the 'dist' property is specified, we use it directly.
+			return &ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath),
+			}, nil
+		}
+
+		funcAppDir, err := m.funcAppDir(ctx, serviceConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ServicePackageResult{
+			Build:       buildOutput,
+			PackagePath: funcAppDir,
+		}, nil
+	}
+
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return nil, fmt.Errorf("creating staging directory: %w", err)
 	}
 
 	packageSrcPath := buildOutput.BuildOutputPath
@@ -151,6 +172,58 @@ func (m *mavenProject) Package(
 		Build:       buildOutput,
 		PackagePath: packageDest,
 	}, nil
+}
+
+// funcAppDir returns the directory of the function app packaged by azure-functions-maven-plugin for the given service.
+//
+// The app is typically packaged under target/azure-functions.
+func (m *mavenProject) funcAppDir(ctx context.Context, svc *ServiceConfig) (string, error) {
+	svcPath := svc.Path()
+	// The staging directory for azure-functions-maven-plugin is target/azure-functions.
+	// It isn't configurable, but this may change in the future: https://github.com/microsoft/azure-maven-plugins/issues/1968
+	functionsStagingRel := filepath.Join("target", "azure-functions")
+	functionsStagingDir := filepath.Join(svcPath, functionsStagingRel)
+
+	// A conventional azure-functions-maven-plugin project will have the property 'functionAppName' in pom.xml,
+	// with its property value is passed to azure-functions-maven-plugin as 'appName'.
+	appName, err := m.mavenCli.GetProperty(ctx, "functionAppName", svcPath)
+	if err != nil && !errors.Is(err, maven.ErrPropertyNotFound) {
+		return "", fmt.Errorf("getting 'functionAppName' maven property: %w", err)
+	}
+
+	if appName != "" {
+		funcDir := filepath.Join(functionsStagingDir, appName)
+		if _, err := os.Stat(funcDir); err == nil {
+			return funcDir, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("checking for function app staging directory: %w", err)
+		}
+	}
+
+	entries, err := os.ReadDir(functionsStagingDir)
+	if err != nil {
+		return "", fmt.Errorf("reading azure-functions directory: %w", err)
+	}
+
+	dirs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dirs = append(dirs, entry.Name())
+		}
+	}
+
+	if len(dirs) == 1 {
+		return filepath.Join(functionsStagingDir, dirs[0]), nil
+	}
+
+	for i := range dirs {
+		dirs[i] = filepath.Join(functionsStagingRel, dirs[i])
+	}
+
+	return "", fmt.Errorf(
+		//nolint:lll
+		"multiple staging directories found: %s. Specify 'dist' in azure.yaml to select a specific directory",
+		strings.Join(dirs, ", "))
 }
 
 func isSupportedJavaArchive(archiveFile string) bool {

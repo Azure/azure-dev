@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -943,9 +944,9 @@ func (m *MockResourceManager) GetServiceResources(
 	subscriptionId string,
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
-) ([]azcli.AzCliResource, error) {
+) ([]azapi.Resource, error) {
 	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig)
-	return args.Get(0).([]azcli.AzCliResource), args.Error(1)
+	return args.Get(0).([]azapi.Resource), args.Error(1)
 }
 
 func (m *MockResourceManager) GetServiceResource(
@@ -954,9 +955,9 @@ func (m *MockResourceManager) GetServiceResource(
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 	rerunCommand string,
-) (azcli.AzCliResource, error) {
+) (azapi.Resource, error) {
 	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig, rerunCommand)
-	return args.Get(0).(azcli.AzCliResource), args.Error(1)
+	return args.Get(0).(azapi.Resource), args.Error(1)
 }
 
 func (m *MockResourceManager) GetTargetResource(

@@ -16,11 +16,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type AzureResourceManager struct {
-	azCli                azcli.AzCli
+	resourceService      *azapi.ResourceService
 	deploymentOperations azapi.DeploymentOperations
 }
 
@@ -36,9 +35,11 @@ type ResourceManager interface {
 }
 
 func NewAzureResourceManager(
-	azCli azcli.AzCli, deploymentOperations azapi.DeploymentOperations) *AzureResourceManager {
+	resourceService *azapi.ResourceService,
+	deploymentOperations azapi.DeploymentOperations,
+) *AzureResourceManager {
 	return &AzureResourceManager{
-		azCli:                azCli,
+		resourceService:      resourceService,
 		deploymentOperations: deploymentOperations,
 	}
 }
@@ -136,9 +137,9 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	ctx context.Context,
 	subscriptionId string,
 	envName string,
-) ([]azcli.AzCliResource, error) {
-	res, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, &azcli.ListResourceGroupOptions{
-		TagFilter: &azcli.Filter{Key: azure.TagKeyAzdEnvName, Value: envName},
+) ([]azapi.Resource, error) {
+	res, err := rm.resourceService.ListResourceGroup(ctx, subscriptionId, &azapi.ListResourceGroupOptions{
+		TagFilter: &azapi.Filter{Key: azure.TagKeyAzdEnvName, Value: envName},
 	})
 
 	if err != nil {
@@ -161,10 +162,10 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(
 	ctx context.Context,
 	subscriptionId string,
 	environmentName string,
-) ([]azcli.AzCliResource, error) {
-	allGroups, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, nil)
+) ([]azapi.Resource, error) {
+	allGroups, err := rm.resourceService.ListResourceGroup(ctx, subscriptionId, nil)
 
-	matchingGroups := []azcli.AzCliResource{}
+	matchingGroups := []azapi.Resource{}
 	for _, group := range allGroups {
 		if group.Name == fmt.Sprintf("rg-%[1]s", environmentName) ||
 			group.Name == fmt.Sprintf("%[1]s-rg", environmentName) {
@@ -273,7 +274,7 @@ func (rm *AzureResourceManager) getWebAppResourceTypeDisplayName(
 	subscriptionId string,
 	resourceId string,
 ) (string, error) {
-	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, webAppApiVersion)
+	resource, err := rm.resourceService.GetResource(ctx, subscriptionId, resourceId, webAppApiVersion)
 
 	if err != nil {
 		return "", fmt.Errorf("getting web app resource type display names: %w", err)
@@ -296,7 +297,7 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 	subscriptionId string,
 	resourceId string,
 ) (string, error) {
-	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, cognitiveServiceApiVersion)
+	resource, err := rm.resourceService.GetResource(ctx, subscriptionId, resourceId, cognitiveServiceApiVersion)
 
 	if err != nil {
 		return "", fmt.Errorf("getting cognitive service resource type display names: %w", err)

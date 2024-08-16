@@ -2193,6 +2193,7 @@ func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
 func NewBicepProvider(
 	bicepCli *bicep.Cli,
 	azCli azcli.AzCli,
+	resourceService *azapi.ResourceService,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
 	envManager environment.Manager,
@@ -2211,6 +2212,7 @@ func NewBicepProvider(
 		console:              console,
 		bicepCli:             bicepCli,
 		azCli:                azCli,
+		resourceService:      resourceService,
 		deploymentsService:   deploymentsService,
 		deploymentOperations: deploymentOperations,
 		prompters:            prompters,

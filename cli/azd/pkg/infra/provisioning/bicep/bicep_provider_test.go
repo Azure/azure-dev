@@ -380,6 +380,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	provider := NewBicepProvider(
 		bicepCli,
 		azCli,
+		resourceService,
 		depService,
 		depOpService,
 		envManager,
@@ -926,6 +927,7 @@ func TestUserDefinedTypes(t *testing.T) {
 	// super basic provider to mock the compileBicep method
 	provider := NewBicepProvider(
 		bicepCli,
+		nil,
 		nil,
 		nil,
 		nil,

@@ -16,12 +16,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/helm"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -134,7 +134,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.NotNil(t, packageResult)
 	require.IsType(t, new(dockerPackageResult), packageResult.Details)
 
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
 			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope, progress)
@@ -289,7 +289,7 @@ func Test_Deploy_Helm(t *testing.T) {
 		PackagePath: "",
 	}
 
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
 			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope, progress)
@@ -353,7 +353,7 @@ func Test_Deploy_Kustomize(t *testing.T) {
 		PackagePath: "",
 	}
 
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
 			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope, progress)
@@ -824,7 +824,7 @@ func createAksServiceTarget(
 		"SUBSCRIPTION_ID",
 		"RESOURCE_GROUP",
 		"",
-		string(infra.AzureResourceTypeManagedCluster),
+		string(azapi.AzureResourceTypeManagedCluster),
 	)
 	resourceManager.
 		On("GetTargetResource", *mockContext.Context, "SUBSCRIPTION_ID", serviceConfig).

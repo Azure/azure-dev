@@ -9,9 +9,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -42,7 +42,7 @@ services:
 			{
 				ID:       to.Ptr("deployedApiSvc"),
 				Name:     to.Ptr("deployedApiSvc"),
-				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				Location: to.Ptr("eastus2"),
 			},
 		})
@@ -86,7 +86,7 @@ services:
 			{
 				ID:       to.Ptr("app-api-abc123"),
 				Name:     &resourceName,
-				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				Location: to.Ptr("eastus2"),
 				Tags: map[string]*string{
 					azure.TagKeyAzdServiceName: to.Ptr("api"),
@@ -137,13 +137,13 @@ services:
 			{
 				ID:       to.Ptr("deployedApiSvc"),
 				Name:     to.Ptr("deployedApiSvc"),
-				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				Location: to.Ptr("eastus2"),
 			},
 			{
 				ID:       to.Ptr("webResource"),
 				Name:     to.Ptr("webResource"),
-				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				Location: to.Ptr("eastus2"),
 				Tags: map[string]*string{
 					azure.TagKeyAzdServiceName: to.Ptr("web"),
@@ -197,13 +197,13 @@ services:
 			{
 				ID:       to.Ptr("deployedApiSvc"),
 				Name:     to.Ptr("deployedApiSvc"),
-				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				Location: to.Ptr("eastus2"),
 			},
 			{
 				ID:       to.Ptr("webResource"),
 				Name:     to.Ptr("webResource"),
-				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				Location: to.Ptr("eastus2"),
 				Tags: map[string]*string{
 					azure.TagKeyAzdServiceName: to.Ptr("web"),

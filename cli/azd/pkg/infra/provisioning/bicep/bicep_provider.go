@@ -1087,7 +1087,7 @@ func resourceGroupsToDelete(deployment *armresources.DeploymentExtended) []strin
 		// for the common pattern of having a subscription level deployment which allocates a set of resource groups
 		// and then does nested deployments into them.
 		for _, dependency := range deployment.Properties.Dependencies {
-			if *dependency.ResourceType == string(infra.AzureResourceTypeDeployment) {
+			if *dependency.ResourceType == string(azapi.AzureResourceTypeDeployment) {
 				for _, dependent := range dependency.DependsOn {
 					if *dependent.ResourceType == arm.ResourceGroupResourceType.String() {
 						resourceGroups[*dependent.ResourceName] = struct{}{}
@@ -1264,7 +1264,7 @@ func (p *BicepProvider) getKeyVaults(
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeKeyVault) {
+			if resource.Type == string(azapi.AzureResourceTypeKeyVault) {
 				vault, err := p.keyvaultService.GetKeyVault(
 					ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
@@ -1305,7 +1305,7 @@ func (p *BicepProvider) getManagedHSMs(
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeManagedHSM) {
+			if resource.Type == string(azapi.AzureResourceTypeManagedHSM) {
 				managedHSM, err := p.azCli.GetManagedHSM(
 					ctx,
 					azure.SubscriptionFromRID(resource.Id),
@@ -1351,7 +1351,7 @@ func (p *BicepProvider) getCognitiveAccountsToPurge(
 	for resourceGroup, groupResources := range groupedResources {
 		cognitiveAccounts := []armcognitiveservices.Account{}
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeCognitiveServiceAccount) {
+			if resource.Type == string(azapi.AzureResourceTypeCognitiveServiceAccount) {
 				account, err := p.azCli.GetCognitiveAccount(
 					ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
@@ -1471,7 +1471,7 @@ func (p *BicepProvider) getAppConfigsToPurge(
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
+			if resource.Type == string(azapi.AzureResourceTypeAppConfig) {
 				config, err := p.azCli.GetAppConfig(
 					ctx,
 					azure.SubscriptionFromRID(resource.Id),
@@ -1500,7 +1500,7 @@ func (p *BicepProvider) getApiManagementsToPurge(
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeApim) {
+			if resource.Type == string(azapi.AzureResourceTypeApim) {
 				apim, err := p.azCli.GetApim(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing api management service %s properties: %w", resource.Name, err)

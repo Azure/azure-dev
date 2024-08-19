@@ -9,7 +9,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -93,7 +95,11 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			mockDeploymentOperations := &mockDeploymentOperations{}
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			deploymentService := &mockDeploymentService{}
 
 			if tt.init != nil {
 				tt.init(mockContext)
@@ -108,11 +114,7 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 
 			setupGetResourceMock(mockContext, expectedResource)
 
-			resourceService := azapi.NewResourceService(
-				mockContext.SubscriptionCredentialProvider,
-				mockContext.ArmClientOptions,
-			)
-			resourceManager := NewResourceManager(tt.env, resourceService, mockDeploymentOperations)
+			resourceManager := NewResourceManager(tt.env, deploymentService, resourceService)
 			targetResource, err := resourceManager.GetTargetResource(
 				*mockContext.Context,
 				tt.env.GetSubscriptionId(),
@@ -128,8 +130,169 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 	}
 }
 
-type mockDeploymentOperations struct {
+type mockDeploymentService struct {
 	mock.Mock
+}
+
+// GenerateDeploymentName implements azapi.DeploymentService.
+func (m *mockDeploymentService) GenerateDeploymentName(baseName string) string {
+	args := m.Called(baseName)
+	return args.Get(0).(string)
+}
+
+// ListResourceGroupDeploymentResources implements azapi.DeploymentService.
+func (m *mockDeploymentService) ListResourceGroupDeploymentResources(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+) ([]*armresources.ResourceReference, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroupName, deploymentName)
+	return args.Get(0).([]*armresources.ResourceReference), args.Error(1)
+}
+
+// ListSubscriptionDeploymentResources implements azapi.DeploymentService.
+func (m *mockDeploymentService) ListSubscriptionDeploymentResources(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+) ([]*armresources.ResourceReference, error) {
+	args := m.Called(ctx, subscriptionId, deploymentName)
+	return args.Get(0).([]*armresources.ResourceReference), args.Error(1)
+}
+
+func (m *mockDeploymentService) ListSubscriptionDeployments(
+	ctx context.Context,
+	subscriptionId string,
+) ([]*azapi.ResourceDeployment, error) {
+	args := m.Called(ctx, subscriptionId)
+	return args.Get(0).([]*azapi.ResourceDeployment), args.Error(1)
+}
+
+func (m *mockDeploymentService) GetSubscriptionDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+) (*azapi.ResourceDeployment, error) {
+	args := m.Called(ctx, subscriptionId, deploymentName)
+	return args.Get(0).(*azapi.ResourceDeployment), args.Error(1)
+}
+
+func (m *mockDeploymentService) ListResourceGroupDeployments(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+) ([]*azapi.ResourceDeployment, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroupName)
+	return args.Get(0).([]*azapi.ResourceDeployment), args.Error(1)
+}
+
+func (m *mockDeploymentService) GetResourceGroupDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+) (*azapi.ResourceDeployment, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroupName, deploymentName)
+	return args.Get(0).(*azapi.ResourceDeployment), args.Error(1)
+}
+
+func (m *mockDeploymentService) DeployToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+) (*azapi.ResourceDeployment, error) {
+	args := m.Called(ctx, subscriptionId, location, deploymentName, armTemplate, parameters, tags)
+	return args.Get(0).(*azapi.ResourceDeployment), args.Error(1)
+}
+
+func (m *mockDeploymentService) DeployToResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+) (*azapi.ResourceDeployment, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroup, deploymentName, armTemplate, parameters, tags)
+	return args.Get(0).(*azapi.ResourceDeployment), args.Error(1)
+}
+
+func (m *mockDeploymentService) WhatIfDeployToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+) (*armresources.WhatIfOperationResult, error) {
+	args := m.Called(ctx, subscriptionId, location, deploymentName, armTemplate, parameters)
+	return args.Get(0).(*armresources.WhatIfOperationResult), args.Error(1)
+}
+
+func (m *mockDeploymentService) WhatIfDeployToResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+) (*armresources.WhatIfOperationResult, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroup, deploymentName, armTemplate, parameters)
+	return args.Get(0).(*armresources.WhatIfOperationResult), args.Error(1)
+}
+
+func (m *mockDeploymentService) DeleteSubscriptionDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+	progress *async.Progress[azapi.DeleteDeploymentProgress],
+) error {
+	args := m.Called(ctx, subscriptionId, deploymentName, progress)
+	return args.Error(0)
+}
+func (m *mockDeploymentService) DeleteResourceGroupDeployment(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+	progress *async.Progress[azapi.DeleteDeploymentProgress],
+) error {
+	args := m.Called(ctx, subscriptionId, resourceGroupName, deploymentName, progress)
+	return args.Error(0)
+}
+
+func (m *mockDeploymentService) CalculateTemplateHash(
+	ctx context.Context,
+	subscriptionId string,
+	template azure.RawArmTemplate,
+) (string, error) {
+	args := m.Called(ctx, subscriptionId, template)
+	return args.Get(0).(string), args.Error(1)
+}
+
+func (m *mockDeploymentService) ListSubscriptionDeploymentOperations(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+) ([]*armresources.DeploymentOperation, error) {
+	args := m.Called(ctx, subscriptionId, deploymentName)
+	return args.Get(0).([]*armresources.DeploymentOperation), args.Error(1)
+}
+
+func (m *mockDeploymentService) ListResourceGroupDeploymentOperations(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	deploymentName string,
+) ([]*armresources.DeploymentOperation, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroupName, deploymentName)
+	return args.Get(0).([]*armresources.DeploymentOperation), args.Error(1)
 }
 
 func setupGetResourceGroupMock(mockContext *mocks.MockContext, resourceGroup *armresources.ResourceGroup) {
@@ -158,23 +321,4 @@ func setupGetResourceMock(mockContext *mocks.MockContext, resource *armresources
 
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
 	})
-}
-
-func (m *mockDeploymentOperations) ListSubscriptionDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	deploymentName string,
-) ([]*armresources.DeploymentOperation, error) {
-	args := m.Called(ctx, subscriptionId, deploymentName)
-	return args.Get(0).([]*armresources.DeploymentOperation), args.Error(1)
-}
-
-func (m *mockDeploymentOperations) ListResourceGroupDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	deploymentName string,
-) ([]*armresources.DeploymentOperation, error) {
-	args := m.Called(ctx, subscriptionId, resourceGroupName, deploymentName)
-	return args.Get(0).([]*armresources.DeploymentOperation), args.Error(1)
 }

@@ -7,20 +7,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
+	"golang.org/x/exp/maps"
 )
 
 type AzureResourceManager struct {
-	resourceService      *azapi.ResourceService
-	deploymentOperations azapi.DeploymentOperations
+	resourceService   *azapi.ResourceService
+	deploymentService azapi.DeploymentService
 }
 
 type ResourceManager interface {
@@ -32,15 +33,25 @@ type ResourceManager interface {
 		resourceId string,
 		resourceType azapi.AzureResourceType,
 	) (string, error)
+	GetResourceGroupsForEnvironment(
+		ctx context.Context,
+		subscriptionId string,
+		envName string,
+	) ([]*azapi.Resource, error)
+	FindResourceGroupForEnvironment(
+		ctx context.Context,
+		subscriptionId string,
+		envName string,
+	) (string, error)
 }
 
 func NewAzureResourceManager(
 	resourceService *azapi.ResourceService,
-	deploymentOperations azapi.DeploymentOperations,
-) *AzureResourceManager {
+	deploymentService azapi.DeploymentService,
+) ResourceManager {
 	return &AzureResourceManager{
-		resourceService:      resourceService,
-		deploymentOperations: deploymentOperations,
+		resourceService:   resourceService,
+		deploymentService: deploymentService,
 	}
 }
 
@@ -53,83 +64,17 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	deployment Deployment,
 	queryStart *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
-	// Gets all the scope level resource operations
-	topLevelDeploymentOperations, err := deployment.Operations(ctx)
+	rootDeploymentOperations, err := deployment.Operations(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting subscription deployment: %w", err)
+		return nil, fmt.Errorf("getting root deployment operations: %w", err)
 	}
 
-	subscriptionId := deployment.SubscriptionId()
-	var resourceGroupName string
-	resourceGroupDeployment, ok := deployment.(*ResourceGroupDeployment)
-
-	if ok {
-		// If the scope is a resource group scope get the resource group directly
-		resourceGroupName = resourceGroupDeployment.ResourceGroupName()
-	} else {
-		// Otherwise find the resource group within the deployment operations
-		for _, operation := range topLevelDeploymentOperations {
-			if operation.Properties != nil &&
-				operation.Properties.TargetResource != nil &&
-				operation.Properties.TargetResource.ResourceType != nil &&
-				*operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeResourceGroup) {
-				resourceGroupName = *operation.Properties.TargetResource.ResourceName
-				break
-			}
-		}
+	operationMap := map[string]*armresources.DeploymentOperation{}
+	if err := rm.appendDeploymentOperationsRecursive(ctx, queryStart, rootDeploymentOperations, operationMap); err != nil {
+		return nil, err
 	}
 
-	if strings.TrimSpace(resourceGroupName) == "" {
-		return topLevelDeploymentOperations, nil
-	}
-
-	allLevelsDeploymentOperations := []*armresources.DeploymentOperation{}
-	resourceIdPrefix := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionId, resourceGroupName)
-
-	// Find all resource group deployments within the subscription operations
-	// Recursively append any resource group deployments that are found
-	innerLevelDeploymentOperations := make(map[string]*armresources.DeploymentOperation)
-	for _, operation := range topLevelDeploymentOperations {
-		if operation.Properties == nil ||
-			operation.Properties.TargetResource == nil ||
-			operation.Properties.TargetResource.ID == nil ||
-			operation.Properties.TargetResource.ResourceType == nil ||
-			operation.Properties.ProvisioningOperation == nil {
-			// Operations w/o target data can't be resolved. Ignoring them
-			continue
-		}
-
-		if !strings.HasPrefix(*operation.Properties.TargetResource.ID, resourceIdPrefix) {
-			// topLevelDeploymentOperations might include deployments NOT within the resource group which we don't want to
-			// resolve
-			continue
-		}
-		if *operation.Properties.TargetResource.ResourceType != string(azapi.AzureResourceTypeDeployment) {
-			// non-deploy ops can be part of the final result, we don't need to resolve inner level operations
-			allLevelsDeploymentOperations = append(allLevelsDeploymentOperations, operation)
-			continue
-		}
-		if *operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeDeployment) &&
-			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
-			// for deploy/create ops, we want to traverse all inner operations to fetch resources.
-			err = rm.appendDeploymentResourcesRecursive(
-				ctx,
-				subscriptionId,
-				resourceGroupName,
-				*operation.Properties.TargetResource.ResourceName,
-				&innerLevelDeploymentOperations,
-				queryStart,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("appending deployment resources: %w", err)
-			}
-		}
-	}
-	// Add the inner level dep-ops to the all level list to complete the result list
-	for _, op := range innerLevelDeploymentOperations {
-		allLevelsDeploymentOperations = append(allLevelsDeploymentOperations, op)
-	}
-	return allLevelsDeploymentOperations, nil
+	return maps.Values(operationMap), nil
 }
 
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment
@@ -137,7 +82,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	ctx context.Context,
 	subscriptionId string,
 	envName string,
-) ([]azapi.Resource, error) {
+) ([]*azapi.Resource, error) {
 	res, err := rm.resourceService.ListResourceGroup(ctx, subscriptionId, &azapi.ListResourceGroupOptions{
 		TagFilter: &azapi.Filter{Key: azure.TagKeyAzdEnvName, Value: envName},
 	})
@@ -162,10 +107,10 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(
 	ctx context.Context,
 	subscriptionId string,
 	environmentName string,
-) ([]azapi.Resource, error) {
+) ([]*azapi.Resource, error) {
 	allGroups, err := rm.resourceService.ListResourceGroup(ctx, subscriptionId, nil)
 
-	matchingGroups := []azapi.Resource{}
+	matchingGroups := []*azapi.Resource{}
 	for _, group := range allGroups {
 		if group.Name == fmt.Sprintf("rg-%[1]s", environmentName) ||
 			group.Name == fmt.Sprintf("%[1]s-rg", environmentName) {
@@ -314,26 +259,12 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 
 // appendDeploymentResourcesRecursive gets the leaf deployment operations and adds them to resourceOperations
 // if they are not already in the list.
-func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
+func (rm *AzureResourceManager) appendDeploymentOperationsRecursive(
 	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	deploymentName string,
-	resourceOperations *map[string]*armresources.DeploymentOperation,
 	queryStart *time.Time,
+	operations []*armresources.DeploymentOperation,
+	operationMap map[string]*armresources.DeploymentOperation,
 ) error {
-	operations, err := rm.deploymentOperations.ListResourceGroupDeploymentOperations(
-		ctx, subscriptionId, resourceGroupName, deploymentName)
-	if err != nil {
-		// Don't return an error upon getting the deployment operations from deploymentName.
-		// That's because returning an error would stop traversing the entire deployments graph and prevent
-		// the caller function from getting any deployment operation at all.
-		// So, instead of returning error, ignore the problematic deployment node and log an error about it.
-		// This will allow the caller to get as much information about the deployments operations as possible.
-		log.Printf("getting subscription deployment operations: %s", err.Error())
-		return nil
-	}
-
 	for _, operation := range operations {
 		// Operations w/o target data can't be resolved. Ignoring them
 		if operation.Properties.TargetResource == nil ||
@@ -346,30 +277,42 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			continue
 		}
 
-		if compare.PtrValueEquals(
-			operation.Properties.TargetResource.ResourceType,
-			string(azapi.AzureResourceTypeDeployment),
-		) {
-			// go to inner levels to resolve resources
-			err := rm.appendDeploymentResourcesRecursive(
-				ctx,
-				subscriptionId,
-				resourceGroupName,
-				*operation.Properties.TargetResource.ResourceName,
-				resourceOperations,
-				queryStart,
-			)
+		// Process any nested deployments
+		if *operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeDeployment) &&
+			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
+			deploymentResourceId, err := arm.ParseResourceID(*operation.Properties.TargetResource.ID)
 			if err != nil {
-				return fmt.Errorf("appending deployment resources: %w", err)
+				return fmt.Errorf("parsing deployment resource ID: %w", err)
 			}
-			continue
-		}
 
-		_, alreadyAdded := (*resourceOperations)[*operation.OperationID]
-		if !alreadyAdded &&
-			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
+			var nestedOperations []*armresources.DeploymentOperation
+			var nestedError error
+
+			if deploymentResourceId.ResourceGroupName == "" {
+				nestedOperations, nestedError = rm.deploymentService.ListSubscriptionDeploymentOperations(
+					ctx,
+					deploymentResourceId.SubscriptionID,
+					deploymentResourceId.Name)
+			} else {
+				nestedOperations, nestedError = rm.deploymentService.ListResourceGroupDeploymentOperations(
+					ctx,
+					deploymentResourceId.SubscriptionID,
+					deploymentResourceId.ResourceGroupName,
+					deploymentResourceId.Name,
+				)
+			}
+
+			if nestedError != nil {
+				return fmt.Errorf("getting deployment operations recursively: %w", nestedError)
+			}
+
+			if err = rm.appendDeploymentOperationsRecursive(ctx, queryStart, nestedOperations, operationMap); err != nil {
+				return err
+			}
+		} else if *operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
+			// Only append CREATE operations that started after our queryStart time
 			operation.Properties.Timestamp.After(*queryStart) {
-			(*resourceOperations)[*operation.OperationID] = operation
+			operationMap[*operation.ID] = operation
 		}
 	}
 

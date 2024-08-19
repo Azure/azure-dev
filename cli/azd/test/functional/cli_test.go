@@ -242,7 +242,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
-	cred, err := azidentity.NewAzureCLICredential(nil)
+	cred, err := azidentity.NewAzureDeveloperCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
@@ -467,7 +467,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	} else {
 		client = http.DefaultClient
 	}
-	cred, err := azidentity.NewAzureCLICredential(nil)
+	cred, err := azidentity.NewAzureDeveloperCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
 	}

@@ -16,11 +16,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -271,7 +271,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		serviceConfig.Name,
-		string(infra.AzureResourceTypeContainerApp))
+		string(azapi.AzureResourceTypeContainerApp))
 
 	endpoints, err := at.Endpoints(ctx, serviceConfig, containerAppTarget)
 	if err != nil {
@@ -321,7 +321,7 @@ func (at *dotnetContainerAppTarget) validateTargetResource(
 	}
 
 	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerAppEnvironment); err != nil {
+		if err := checkResourceType(targetResource, azapi.AzureResourceTypeContainerAppEnvironment); err != nil {
 			return err
 		}
 	}

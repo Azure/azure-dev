@@ -31,7 +31,7 @@ type ResourceManager interface {
 		ctx context.Context,
 		subscriptionId string,
 		resourceId string,
-		resourceType AzureResourceType,
+		resourceType azapi.AzureResourceType,
 	) (string, error)
 }
 
@@ -71,7 +71,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 			if operation.Properties != nil &&
 				operation.Properties.TargetResource != nil &&
 				operation.Properties.TargetResource.ResourceType != nil &&
-				*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
+				*operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeResourceGroup) {
 				resourceGroupName = *operation.Properties.TargetResource.ResourceName
 				break
 			}
@@ -103,12 +103,12 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 			// resolve
 			continue
 		}
-		if *operation.Properties.TargetResource.ResourceType != string(AzureResourceTypeDeployment) {
+		if *operation.Properties.TargetResource.ResourceType != string(azapi.AzureResourceTypeDeployment) {
 			// non-deploy ops can be part of the final result, we don't need to resolve inner level operations
 			allLevelsDeploymentOperations = append(allLevelsDeploymentOperations, operation)
 			continue
 		}
-		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) &&
+		if *operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeDeployment) &&
 			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
 			// for deploy/create ops, we want to traverse all inner operations to fetch resources.
 			err = rm.appendDeploymentResourcesRecursive(
@@ -238,9 +238,9 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
-	resourceType AzureResourceType,
+	resourceType azapi.AzureResourceType,
 ) (string, error) {
-	if resourceType == AzureResourceTypeWebSite {
+	if resourceType == azapi.AzureResourceTypeWebSite {
 		// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app
 		// vs. App service It is extremely important that we display the right one, thus we resolve it by querying the
 		// properties of the ARM resource.
@@ -251,7 +251,7 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 		} else {
 			return resourceTypeDisplayName, nil
 		}
-	} else if resourceType == AzureResourceTypeCognitiveServiceAccount {
+	} else if resourceType == azapi.AzureResourceTypeCognitiveServiceAccount {
 		resourceTypeDisplayName, err := rm.getCognitiveServiceResourceTypeDisplayName(ctx, subscriptionId, resourceId)
 
 		if err != nil {
@@ -260,7 +260,7 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 			return resourceTypeDisplayName, nil
 		}
 	} else {
-		resourceTypeDisplayName := GetResourceTypeDisplayName(resourceType)
+		resourceTypeDisplayName := azapi.GetResourceTypeDisplayName(resourceType)
 		return resourceTypeDisplayName, nil
 	}
 }
@@ -345,7 +345,10 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			continue
 		}
 
-		if compare.PtrValueEquals(operation.Properties.TargetResource.ResourceType, string(AzureResourceTypeDeployment)) {
+		if compare.PtrValueEquals(
+			operation.Properties.TargetResource.ResourceType,
+			string(azapi.AzureResourceTypeDeployment),
+		) {
 			// go to inner levels to resolve resources
 			err := rm.appendDeploymentResourcesRecursive(
 				ctx,

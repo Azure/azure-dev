@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -491,7 +492,7 @@ func prepareStateMocks(mockContext *mocks.MockContext) {
 }
 
 func prepareDestroyMocks(mockContext *mocks.MockContext) {
-	makeItem := func(resourceType infra.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
+	makeItem := func(resourceType azapi.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
 		id := fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 			string(resourceType), resourceName)
 
@@ -505,15 +506,15 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 
 	resourceList := armresources.ResourceListResult{
 		Value: []*armresources.GenericResourceExpanded{
-			makeItem(infra.AzureResourceTypeWebSite, "app-123"),
-			makeItem(infra.AzureResourceTypeKeyVault, "kv-123"),
-			makeItem(infra.AzureResourceTypeKeyVault, "kv2-123"),
-			makeItem(infra.AzureResourceTypeManagedHSM, "hsm-123"),
-			makeItem(infra.AzureResourceTypeManagedHSM, "hsm2-123"),
-			makeItem(infra.AzureResourceTypeAppConfig, "ac-123"),
-			makeItem(infra.AzureResourceTypeAppConfig, "ac2-123"),
-			makeItem(infra.AzureResourceTypeApim, "apim-123"),
-			makeItem(infra.AzureResourceTypeApim, "apim2-123"),
+			makeItem(azapi.AzureResourceTypeWebSite, "app-123"),
+			makeItem(azapi.AzureResourceTypeKeyVault, "kv-123"),
+			makeItem(azapi.AzureResourceTypeKeyVault, "kv2-123"),
+			makeItem(azapi.AzureResourceTypeManagedHSM, "hsm-123"),
+			makeItem(azapi.AzureResourceTypeManagedHSM, "hsm2-123"),
+			makeItem(azapi.AzureResourceTypeAppConfig, "ac-123"),
+			makeItem(azapi.AzureResourceTypeAppConfig, "ac2-123"),
+			makeItem(azapi.AzureResourceTypeApim, "apim-123"),
+			makeItem(azapi.AzureResourceTypeApim, "apim2-123"),
 		},
 	}
 
@@ -618,7 +619,7 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 			Vault: armkeyvault.Vault{
 				ID: to.Ptr(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
-						string(infra.AzureResourceTypeKeyVault), name)),
+						string(azapi.AzureResourceTypeKeyVault), name)),
 				Name:     to.Ptr(name),
 				Location: to.Ptr(location),
 				Properties: &armkeyvault.VaultProperties{
@@ -645,7 +646,7 @@ func getManagedHSMMock(mockContext *mocks.MockContext, managedHSMString string, 
 			ManagedHsm: armkeyvault.ManagedHsm{
 				ID: to.Ptr(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
-						string(infra.AzureResourceTypeManagedHSM), name)),
+						string(azapi.AzureResourceTypeManagedHSM), name)),
 				Name:     to.Ptr(name),
 				Location: to.Ptr(location),
 				Properties: &armkeyvault.ManagedHsmProperties{
@@ -672,7 +673,7 @@ func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, na
 			ConfigurationStore: armappconfiguration.ConfigurationStore{
 				ID: to.Ptr(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
-						string(infra.AzureResourceTypeAppConfig), name)),
+						string(azapi.AzureResourceTypeAppConfig), name)),
 
 				Name:     to.Ptr(name),
 				Location: to.Ptr(location),
@@ -699,7 +700,7 @@ func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string,
 			ServiceResource: armapimanagement.ServiceResource{
 				ID: to.Ptr(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
-						string(infra.AzureResourceTypeApim), name)),
+						string(azapi.AzureResourceTypeApim), name)),
 
 				Name:     to.Ptr(name),
 				Location: to.Ptr(location),

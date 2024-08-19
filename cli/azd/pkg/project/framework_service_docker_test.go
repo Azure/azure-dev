@@ -13,10 +13,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
@@ -56,7 +56,7 @@ services:
 			{
 				ID:       to.Ptr("app-api-abc123"),
 				Name:     to.Ptr("test-containerapp-web"),
-				Type:     to.Ptr(string(infra.AzureResourceTypeContainerApp)),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeContainerApp)),
 				Location: to.Ptr("eastus2"),
 			},
 		})
@@ -158,7 +158,7 @@ services:
 			{
 				ID:       to.Ptr("app-api-abc123"),
 				Name:     to.Ptr("test-containerapp-web"),
-				Type:     to.Ptr(string(infra.AzureResourceTypeContainerApp)),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeContainerApp)),
 				Location: to.Ptr("eastus2"),
 			},
 		})

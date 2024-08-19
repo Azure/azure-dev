@@ -133,9 +133,9 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 		for _, resource := range resources {
 			switch resource.Type {
-			case string(infra.AzureResourceTypePortalDashboard):
+			case string(azapi.AzureResourceTypePortalDashboard):
 				portalResources = append(portalResources, resource)
-			case string(infra.AzureResourceTypeAppInsightComponent):
+			case string(azapi.AzureResourceTypeAppInsightComponent):
 				insightsResources = append(insightsResources, resource)
 			}
 		}

@@ -70,6 +70,7 @@ type BicepProvider struct {
 	console               input.Console
 	bicepCli              *bicep.Cli
 	azCli                 azcli.AzCli
+	resourceService       *azapi.ResourceService
 	deploymentsService    azapi.Deployments
 	deploymentOperations  azapi.DeploymentOperations
 	prompters             prompt.Prompter
@@ -616,7 +617,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		}
 
 		// Report incremental progress
-		resourceManager := infra.NewAzureResourceManager(p.azCli, p.deploymentOperations)
+		resourceManager := infra.NewAzureResourceManager(p.resourceService, p.deploymentOperations)
 		progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, bicepDeploymentData.Target)
 		// Make initial delay shorter to be more responsive in displaying initial progress
 		initialDelay := 3 * time.Second
@@ -836,7 +837,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, fmt.Errorf("getting resources to delete: %w", err)
 	}
 
-	allResources := []azcli.AzCliResource{}
+	allResources := []azapi.Resource{}
 	for _, groupResources := range groupedResources {
 		allResources = append(allResources, groupResources...)
 	}
@@ -1104,11 +1105,16 @@ func resourceGroupsToDelete(deployment *armresources.DeploymentExtended) []strin
 func (p *BicepProvider) getAllResourcesToDelete(
 	ctx context.Context,
 	resourceGroups []string,
-) (map[string][]azcli.AzCliResource, error) {
-	allResources := map[string][]azcli.AzCliResource{}
+) (map[string][]azapi.Resource, error) {
+	allResources := map[string][]azapi.Resource{}
 
 	for _, resourceGroup := range resourceGroups {
-		groupResources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
+		groupResources, err := p.resourceService.ListResourceGroupResources(
+			ctx,
+			p.env.GetSubscriptionId(),
+			resourceGroup,
+			nil,
+		)
 		var errDetails *azcore.ResponseError
 		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
 			// Resource group not found and already deleted, skip grouping for deletion
@@ -1125,7 +1131,7 @@ func (p *BicepProvider) getAllResourcesToDelete(
 	return allResources, nil
 }
 
-func (p *BicepProvider) generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliResource) []string {
+func (p *BicepProvider) generateResourceGroupsToDelete(groupedResources map[string][]azapi.Resource) []string {
 	lines := []string{"Resource group(s) to be deleted:", ""}
 
 	for rg := range groupedResources {
@@ -1146,7 +1152,7 @@ func (p *BicepProvider) generateResourceGroupsToDelete(groupedResources map[stri
 func (p *BicepProvider) destroyResourceGroups(
 	ctx context.Context,
 	options DestroyOptions,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 	resourceCount int,
 ) error {
 	if !options.Force() {
@@ -1178,7 +1184,7 @@ func (p *BicepProvider) destroyResourceGroups(
 			output.WithHighLightFormat(resourceGroup),
 		)
 		p.console.ShowSpinner(ctx, message, input.Step)
-		err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup)
+		err := p.resourceService.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup)
 
 		p.console.StopSpinner(ctx, message, input.GetStepResultFormat(err))
 		if err != nil {
@@ -1258,7 +1264,7 @@ func (p *BicepProvider) purgeItems(
 
 func (p *BicepProvider) getKeyVaults(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*keyvault.KeyVault, error) {
 	vaults := []*keyvault.KeyVault{}
 
@@ -1280,7 +1286,7 @@ func (p *BicepProvider) getKeyVaults(
 
 func (p *BicepProvider) getKeyVaultsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*keyvault.KeyVault, error) {
 	vaults, err := p.getKeyVaults(ctx, groupedResources)
 	if err != nil {
@@ -1299,7 +1305,7 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 
 func (p *BicepProvider) getManagedHSMs(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*azcli.AzCliManagedHSM, error) {
 	managedHSMs := []*azcli.AzCliManagedHSM{}
 
@@ -1325,7 +1331,7 @@ func (p *BicepProvider) getManagedHSMs(
 
 func (p *BicepProvider) getManagedHSMsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*azcli.AzCliManagedHSM, error) {
 	managedHSMs, err := p.getManagedHSMs(ctx, groupedResources)
 	if err != nil {
@@ -1344,7 +1350,7 @@ func (p *BicepProvider) getManagedHSMsToPurge(
 
 func (p *BicepProvider) getCognitiveAccountsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) (map[string][]armcognitiveservices.Account, error) {
 	result := make(map[string][]armcognitiveservices.Account)
 
@@ -1465,7 +1471,7 @@ func (p *BicepProvider) runPurgeAsStep(
 
 func (p *BicepProvider) getAppConfigsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*azcli.AzCliAppConfig, error) {
 	configs := []*azcli.AzCliAppConfig{}
 
@@ -1494,7 +1500,7 @@ func (p *BicepProvider) getAppConfigsToPurge(
 
 func (p *BicepProvider) getApiManagementsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*azcli.AzCliApim, error) {
 	apims := []*azcli.AzCliApim{}
 
@@ -2187,6 +2193,7 @@ func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
 func NewBicepProvider(
 	bicepCli *bicep.Cli,
 	azCli azcli.AzCli,
+	resourceService *azapi.ResourceService,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
 	envManager environment.Manager,
@@ -2205,6 +2212,7 @@ func NewBicepProvider(
 		console:              console,
 		bicepCli:             bicepCli,
 		azCli:                azCli,
+		resourceService:      resourceService,
 		deploymentsService:   deploymentsService,
 		deploymentOperations: deploymentOperations,
 		prompters:            prompters,

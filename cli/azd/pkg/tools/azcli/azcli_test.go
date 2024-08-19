@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/stretchr/testify/require"
@@ -38,10 +39,10 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 	var rawResponse *http.Response
 	ctx := runtime.WithCaptureResponse(*mockContext.Context, &rawResponse)
 
-	azCli := newAzCliFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	// We don't care about the actual response or if an error occurred
 	// Any API call that leverages the Go SDK is fine
-	_, _ = azCli.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID", "API_VERSION")
+	_, _ = resourceService.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID", "API_VERSION")
 
 	userAgent, ok := rawResponse.Request.Header["User-Agent"]
 	if !ok {
@@ -73,10 +74,10 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 	var rawResponse *http.Response
 	ctx := runtime.WithCaptureResponse(*mockContext.Context, &rawResponse)
 
-	azCli := newAzCliFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	// We don't care about the actual response or if an error occurred
 	// Any API call that leverages the Go SDK is fine
-	_, _ = azCli.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID", "API_VERSION")
+	_, _ = resourceService.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID", "API_VERSION")
 
 	userAgent, ok := rawResponse.Request.Header["User-Agent"]
 	if !ok {

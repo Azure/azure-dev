@@ -360,6 +360,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	accountManager := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{
 			{
@@ -379,12 +380,13 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	provider := NewBicepProvider(
 		bicepCli,
 		azCli,
+		resourceService,
 		depService,
 		depOpService,
 		envManager,
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli, cloud.AzurePublic()),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
@@ -925,6 +927,7 @@ func TestUserDefinedTypes(t *testing.T) {
 	// super basic provider to mock the compileBicep method
 	provider := NewBicepProvider(
 		bicepCli,
+		nil,
 		nil,
 		nil,
 		nil,

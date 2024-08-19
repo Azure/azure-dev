@@ -583,6 +583,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(azcli.NewAzCli)
 	container.MustRegisterSingleton(azapi.NewDeployments)
 	container.MustRegisterSingleton(azapi.NewDeploymentOperations)
+	container.MustRegisterSingleton(azapi.NewResourceService)
 	container.MustRegisterSingleton(docker.NewCli)
 	container.MustRegisterSingleton(dotnet.NewCli)
 	container.MustRegisterSingleton(git.NewCli)

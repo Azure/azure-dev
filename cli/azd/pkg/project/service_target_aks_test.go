@@ -943,9 +943,9 @@ func (m *MockResourceManager) GetServiceResources(
 	subscriptionId string,
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
-) ([]azcli.AzCliResource, error) {
+) ([]azapi.Resource, error) {
 	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig)
-	return args.Get(0).([]azcli.AzCliResource), args.Error(1)
+	return args.Get(0).([]azapi.Resource), args.Error(1)
 }
 
 func (m *MockResourceManager) GetServiceResource(
@@ -954,9 +954,9 @@ func (m *MockResourceManager) GetServiceResource(
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 	rerunCommand string,
-) (azcli.AzCliResource, error) {
+) (azapi.Resource, error) {
 	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig, rerunCommand)
-	return args.Get(0).(azcli.AzCliResource), args.Error(1)
+	return args.Get(0).(azapi.Resource), args.Error(1)
 }
 
 func (m *MockResourceManager) GetTargetResource(

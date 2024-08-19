@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -246,7 +245,6 @@ func TestPromptForParametersLocation(t *testing.T) {
 	prepareBicepMocks(mockContext)
 
 	env := environment.New("test")
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	accountManager := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{
 			{
@@ -278,7 +276,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		env,
 		mockContext.Console,
 		accountManager,
-		azCli,
+		p.resourceService,
 		cloud.AzurePublic(),
 	)
 

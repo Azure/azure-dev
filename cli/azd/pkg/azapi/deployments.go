@@ -22,9 +22,30 @@ const (
 	DeploymentTypeStacks   DeploymentType = "deployments.stacks"
 )
 
+const emptySubscriptionArmTemplate = `{
+	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {},
+	"variables": {},
+	"resources": [],
+	"outputs": {}
+  }`
+
+const emptyResourceGroupArmTemplate = `{
+	"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {},
+	"variables": {},
+	"resources": [],
+	"outputs": {}
+  }`
+
 type ResourceDeployment struct {
 	// The Azure resource id of the deployment operation
 	Id string
+
+	// The location of the deployment
+	Location string
 
 	// The Azure resource id of the actual deployment object
 	DeploymentId string

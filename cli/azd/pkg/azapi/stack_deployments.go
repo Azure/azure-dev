@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
@@ -241,6 +242,7 @@ func (d *StackDeployments) DeployToSubscription(
 		Location: &location,
 		Tags:     tags,
 		Properties: &armdeploymentstacks.DeploymentStackProperties{
+			BypassStackOutOfSyncError: to.Ptr(false),
 			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
 				Resources:        &deleteBehavior,
 				ManagementGroups: &deleteBehavior,
@@ -292,6 +294,7 @@ func (d *StackDeployments) DeployToResourceGroup(
 	stack := armdeploymentstacks.DeploymentStack{
 		Tags: tags,
 		Properties: &armdeploymentstacks.DeploymentStackProperties{
+			BypassStackOutOfSyncError: to.Ptr(false),
 			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
 				Resources:        &deleteBehavior,
 				ManagementGroups: &deleteBehavior,
@@ -453,6 +456,7 @@ func (d *StackDeployments) DeleteSubscriptionDeployment(
 
 	// Delete all resource groups & resources within the deployment stack
 	options := armdeploymentstacks.ClientBeginDeleteAtSubscriptionOptions{
+		BypassStackOutOfSyncError:      to.Ptr(false),
 		UnmanageActionManagementGroups: to.Ptr(armdeploymentstacks.UnmanageActionManagementGroupModeDelete),
 		UnmanageActionResourceGroups:   to.Ptr(armdeploymentstacks.UnmanageActionResourceGroupModeDelete),
 		UnmanageActionResources:        to.Ptr(armdeploymentstacks.UnmanageActionResourceModeDelete),
@@ -515,6 +519,7 @@ func (d *StackDeployments) DeleteResourceGroupDeployment(
 
 	// Delete all resource groups & resources within the deployment stack
 	options := armdeploymentstacks.ClientBeginDeleteAtResourceGroupOptions{
+		BypassStackOutOfSyncError:      to.Ptr(false),
 		UnmanageActionManagementGroups: to.Ptr(armdeploymentstacks.UnmanageActionManagementGroupModeDelete),
 		UnmanageActionResourceGroups:   to.Ptr(armdeploymentstacks.UnmanageActionResourceGroupModeDelete),
 		UnmanageActionResources:        to.Ptr(armdeploymentstacks.UnmanageActionResourceModeDelete),
@@ -587,14 +592,11 @@ func (d *StackDeployments) convertFromStackDeployment(deployment *armdeployments
 		resources = append(resources, &armresources.ResourceReference{ID: resource.ID})
 	}
 
-	// When the deployment stack is initially created it may have not been have a deployment id set
-	deploymentId := ""
-	if deployment.Properties.DeploymentID != nil {
-		deploymentId = *deployment.Properties.DeploymentID
-	}
+	deploymentId := convert.ToValueWithDefault(deployment.Properties.DeploymentID, "")
 
 	return &ResourceDeployment{
 		Id:                *deployment.ID,
+		Location:          convert.ToValueWithDefault(deployment.Location, ""),
 		DeploymentId:      deploymentId,
 		Name:              *deployment.Name,
 		Type:              *deployment.Type,

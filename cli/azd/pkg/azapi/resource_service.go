@@ -237,6 +237,8 @@ func (rs *ResourceService) createResourceGroupClient(
 	return client, nil
 }
 
+// MapResources creates a map of resources group by their resource group name.
+// The key is the resource group name and the value is a list of resources in that group.
 func (rs *ResourceService) MapResources(resources []*armresources.ResourceReference) (map[string][]*Resource, error) {
 	resourceMap := map[string][]*Resource{}
 
@@ -255,12 +257,15 @@ func (rs *ResourceService) MapResources(resources []*armresources.ResourceRefere
 			groupResources = []*Resource{}
 		}
 
-		groupResources = append(groupResources, &Resource{
-			Id:       *resource.ID,
-			Name:     resourceId.Name,
-			Type:     resourceId.ResourceType.String(),
-			Location: resourceId.Location,
-		})
+		resourceType := resourceId.ResourceType.String()
+		if resourceType != string(AzureResourceTypeResourceGroup) {
+			groupResources = append(groupResources, &Resource{
+				Id:       *resource.ID,
+				Name:     resourceId.Name,
+				Type:     resourceType,
+				Location: resourceId.Location,
+			})
+		}
 
 		resourceMap[resourceId.ResourceGroupName] = groupResources
 	}

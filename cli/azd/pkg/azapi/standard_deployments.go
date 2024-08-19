@@ -2,6 +2,7 @@ package azapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
 	"golang.org/x/exp/maps"
@@ -417,43 +419,36 @@ func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 		})
 	}
 
-	client, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	// Deploy empty template to void provision state and keep deployment history instead of deleting previous deployments
+	// Get deployment metadata
+	deployment, err := ds.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {
-		return fmt.Errorf("creating deployments client: %w", err)
+		return fmt.Errorf("subscription deployment '%s' not found: %w", deploymentName, err)
 	}
 
-	progress.SetProgress(DeleteDeploymentProgress{
-		Name:    deploymentName,
-		Message: fmt.Sprintf("Deleting subscription deployment %s", output.WithHighLightFormat(deploymentName)),
-		State:   DeleteResourceStateInProgress,
-	})
+	envName, has := deployment.Tags[azure.TagKeyAzdEnvName]
+	if has {
+		var emptyTemplate json.RawMessage = []byte(emptySubscriptionArmTemplate)
+		emptyDeploymentName := ds.GenerateDeploymentName(*envName)
+		tags := map[string]*string{
+			azure.TagKeyAzdEnvName: envName,
+			"azd-deploy-reason":    to.Ptr("down"),
+		}
 
-	poller, err := client.BeginDeleteAtSubscriptionScope(ctx, deploymentName, nil)
-	if err != nil {
-		progress.SetProgress(DeleteDeploymentProgress{
-			Name:    deploymentName,
-			Message: fmt.Sprintf("Failing deleting subscription deployment %s", output.WithHighLightFormat(deploymentName)),
-			State:   DeleteResourceStateFailed,
-		})
+		_, err = ds.DeployToSubscription(
+			ctx,
+			subscriptionId,
+			deployment.Location,
+			emptyDeploymentName,
+			emptyTemplate,
+			azure.ArmParameters{},
+			tags,
+		)
 
-		return fmt.Errorf("deleting deployment from subscription: %w", err)
+		if err != nil {
+			return fmt.Errorf("deploying empty template to subscription: %w", err)
+		}
 	}
-
-	if _, err := poller.PollUntilDone(ctx, nil); err != nil {
-		progress.SetProgress(DeleteDeploymentProgress{
-			Name:    deploymentName,
-			Message: fmt.Sprintf("Failing deleting subscription deployment %s", output.WithHighLightFormat(deploymentName)),
-			State:   DeleteResourceStateFailed,
-		})
-
-		return fmt.Errorf("deleting deployment from subscription: %w", err)
-	}
-
-	progress.SetProgress(DeleteDeploymentProgress{
-		Name:    deploymentName,
-		Message: fmt.Sprintf("Deleted subscription deployment %s", output.WithHighLightFormat(deploymentName)),
-		State:   DeleteResourceStateSucceeded,
-	})
 
 	return nil
 }
@@ -487,49 +482,36 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 		State:   DeleteResourceStateInProgress,
 	})
 
-	client, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	// Deploy empty template to void provision state and keep deployment history instead of deleting previous deployments
+	// Get deployment metadata
+	deployment, err := ds.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
-		return fmt.Errorf("creating deployments client: %w", err)
+		return fmt.Errorf("resource group deployment '%s' not found: %w", deploymentName, err)
 	}
 
-	progress.SetProgress(DeleteDeploymentProgress{
-		Name:    deploymentName,
-		Message: fmt.Sprintf("Deleting resource group deployment %s", output.WithHighLightFormat(deploymentName)),
-		State:   DeleteResourceStateInProgress,
-	})
+	envName, has := deployment.Tags[azure.TagKeyAzdEnvName]
+	if has {
+		var emptyTemplate json.RawMessage = []byte(emptySubscriptionArmTemplate)
+		emptyDeploymentName := ds.GenerateDeploymentName(*envName)
+		tags := map[string]*string{
+			azure.TagKeyAzdEnvName: envName,
+			"azd-deploy-reason":    to.Ptr("down"),
+		}
 
-	poller, err := client.BeginDelete(ctx, resourceGroupName, deploymentName, nil)
-	if err != nil {
-		progress.SetProgress(DeleteDeploymentProgress{
-			Name: deploymentName,
-			Message: fmt.Sprintf(
-				"Failing deleting resource group deployment %s",
-				output.WithHighLightFormat(deploymentName),
-			),
-			State: DeleteResourceStateFailed,
-		})
+		_, err = ds.DeployToResourceGroup(
+			ctx,
+			subscriptionId,
+			resourceGroupName,
+			emptyDeploymentName,
+			emptyTemplate,
+			azure.ArmParameters{},
+			tags,
+		)
 
-		return fmt.Errorf("deleting deployment from resource group: %w", err)
+		if err != nil {
+			return fmt.Errorf("deploying empty template to resource group: %w", err)
+		}
 	}
-
-	if _, err := poller.PollUntilDone(ctx, nil); err != nil {
-		progress.SetProgress(DeleteDeploymentProgress{
-			Name: deploymentName,
-			Message: fmt.Sprintf(
-				"Failing deleting resource group deployment %s",
-				output.WithHighLightFormat(deploymentName),
-			),
-			State: DeleteResourceStateFailed,
-		})
-
-		return fmt.Errorf("deleting deployment from resource group: %w", err)
-	}
-
-	progress.SetProgress(DeleteDeploymentProgress{
-		Name:    deploymentName,
-		Message: fmt.Sprintf("Deleted resource group deployment %s", output.WithHighLightFormat(deploymentName)),
-		State:   DeleteResourceStateSucceeded,
-	})
 
 	return nil
 }
@@ -673,6 +655,7 @@ func (ds *StandardDeployments) createDeploymentsOperationsClient(
 func (ds *StandardDeployments) convertFromArmDeployment(deployment *armresources.DeploymentExtended) *ResourceDeployment {
 	return &ResourceDeployment{
 		Id:                *deployment.ID,
+		Location:          convert.ToValueWithDefault(deployment.Location, ""),
 		DeploymentId:      *deployment.ID,
 		Name:              *deployment.Name,
 		Type:              *deployment.Type,

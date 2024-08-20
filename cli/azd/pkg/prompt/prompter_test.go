@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +20,6 @@ func Test_getSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.New("test")
-		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 		mockAccount := &mockaccount.MockAccountManager{
 			Subscriptions: []account.Subscription{
 				{
@@ -33,11 +32,12 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			},
 		}
 
+		resourceSerivce := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 		prompter := NewDefaultPrompter(
 			env,
 			mockContext.Console,
 			mockAccount,
-			azCli,
+			resourceSerivce,
 			cloud.AzurePublic(),
 		).(*DefaultPrompter)
 		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
@@ -53,7 +53,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		defaultSubId := "SUBSCRIPTION_DEFAULT"
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.New("test")
-		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+		resourceSerivce := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 		mockAccount := &mockaccount.MockAccountManager{
 			DefaultLocation:     "location",
 			DefaultSubscription: defaultSubId,
@@ -80,7 +80,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			env,
 			mockContext.Console,
 			mockAccount,
-			azCli,
+			resourceSerivce,
 			cloud.AzurePublic(),
 		).(*DefaultPrompter)
 		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)

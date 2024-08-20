@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -197,7 +197,7 @@ func (st *springAppTarget) validateTargetResource(
 	}
 
 	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, infra.AzureResourceTypeSpringApp); err != nil {
+		if err := checkResourceType(targetResource, azapi.AzureResourceTypeSpringApp); err != nil {
 			return err
 		}
 	}

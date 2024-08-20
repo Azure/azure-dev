@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +21,7 @@ func TestNewSpringAppTargetTypeValidation(t *testing.T) {
 				"SUB_ID",
 				"RG_ID",
 				"res",
-				string(infra.AzureResourceTypeSpringApp),
+				string(azapi.AzureResourceTypeSpringApp),
 			),
 			expectError: false,
 		},
@@ -30,7 +30,7 @@ func TestNewSpringAppTargetTypeValidation(t *testing.T) {
 				"SUB_ID",
 				"RG_ID",
 				"res",
-				strings.ToLower(string(infra.AzureResourceTypeSpringApp)),
+				strings.ToLower(string(azapi.AzureResourceTypeSpringApp)),
 			),
 			expectError: false,
 		},

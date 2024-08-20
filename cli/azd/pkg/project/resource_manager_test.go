@@ -9,10 +9,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -93,7 +93,6 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 			mockDeploymentOperations := &mockDeploymentOperations{}
 
 			if tt.init != nil {
@@ -109,7 +108,11 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 
 			setupGetResourceMock(mockContext, expectedResource)
 
-			resourceManager := NewResourceManager(tt.env, azCli, mockDeploymentOperations)
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			resourceManager := NewResourceManager(tt.env, resourceService, mockDeploymentOperations)
 			targetResource, err := resourceManager.GetTargetResource(
 				*mockContext.Context,
 				tt.env.GetSubscriptionId(),

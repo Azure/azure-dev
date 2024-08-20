@@ -76,9 +76,11 @@ csharpapptest
 cupaloy
 custommaps
 deletedservices
+deviceid
 devcenter
 devcenters
 devcentersdk
+devdeviceid
 devel
 discarder
 docf

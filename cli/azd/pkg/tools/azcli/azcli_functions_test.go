@@ -159,7 +159,9 @@ func registerInfoMocks(mockContext *mocks.MockContext, ran *bool) {
 							},
 						},
 						//nolint:lll
-						ServerFarmID: to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN_NAME"),
+						ServerFarmID: to.Ptr(
+							"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN_NAME",
+						),
 					},
 				},
 			},

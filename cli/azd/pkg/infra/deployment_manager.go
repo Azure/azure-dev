@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -9,6 +10,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+)
+
+var (
+	ErrDeploymentsNotFound = errors.New("no deployments found")
 )
 
 type DeploymentManager struct {
@@ -112,7 +117,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 	}
 
 	if len(matchingDeployments) == 0 {
-		return nil, fmt.Errorf("'%s': %w", envName, azapi.ErrDeploymentNotFound)
+		return nil, fmt.Errorf("'%s': %w", envName, ErrDeploymentsNotFound)
 	}
 
 	return matchingDeployments, nil

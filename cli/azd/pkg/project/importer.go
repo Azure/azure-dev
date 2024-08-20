@@ -567,7 +567,6 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 				Parameters: parameters,
 			}
 		case ResourceTypeHostContainerApp:
-			fmt.Println("%+v", res.Props)
 			props := res.Props.(ContainerAppProps)
 			svcSpec := scaffold.ServiceSpec{
 				Name: res.Name,

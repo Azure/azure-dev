@@ -26,7 +26,7 @@ import (
 var FeatureDeploymentStacks = alpha.MustFeatureKey("deployment.stacks")
 
 const (
-	cStacksPortalUrlFragment = "#@microsoft.onmicrosoft.com/resource"
+	stacksPortalUrlFragment = "#@microsoft.onmicrosoft.com/resource"
 )
 
 type StackDeployments struct {
@@ -610,13 +610,13 @@ func (d *StackDeployments) convertFromStackDeployment(deployment *armdeployments
 
 		PortalUrl: fmt.Sprintf("%s/%s/%s",
 			d.cloud.PortalUrlBase,
-			cStacksPortalUrlFragment,
+			stacksPortalUrlFragment,
 			*deployment.ID,
 		),
 
 		OutputsUrl: fmt.Sprintf("%s/%s/%s/outputs",
 			d.cloud.PortalUrlBase,
-			cStacksPortalUrlFragment,
+			stacksPortalUrlFragment,
 			*deployment.ID,
 		),
 

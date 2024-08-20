@@ -37,7 +37,7 @@ module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
   }
 }
 
-module dashboard 'dashboard-web.bicep' = {
+module dashboard './modules/dashboard-web.bicep' = {
   name: 'dashboard'
   params: {
     name: '${abbrs.portalDashboards}${resourceToken}'
@@ -164,7 +164,7 @@ module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assi
   }
 }
 
-module {{bicepName .Name}}FetchLatestImage 'fetch-container-image.bicep' = {
+module {{bicepName .Name}}FetchLatestImage './modules/fetch-container-image.bicep' = {
   name: '{{bicepName .Name}}-fetch-image'
   params: {
     exists: {{bicepName .Name}}Exists
@@ -172,7 +172,7 @@ module {{bicepName .Name}}FetchLatestImage 'fetch-container-image.bicep' = {
   }
 }
 
-module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.2.0' = {
+module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
   name: '{{bicepName .Name}}'
   params: {
     name: '${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}'
@@ -305,7 +305,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.2.0' = {
         identity: {{bicepName .Name}}Identity.outputs.resourceId
       }
     ]
-    environmentId: containerAppsEnvironment.outputs.resourceId
+    environmentResourceId: containerAppsEnvironment.outputs.resourceId
     location: location
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
   }
@@ -330,7 +330,7 @@ module redis 'br/public:avm/res/cache/redis:0.3.2' = {
   }
 }
 
-module redisConn 'set-redis-conn.bicep' = {
+module redisConn './modules/set-redis-conn.bicep' = {
   name: 'redisConn'
   params: {
     name: redis.outputs.name

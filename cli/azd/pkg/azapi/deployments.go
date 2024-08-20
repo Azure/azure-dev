@@ -303,7 +303,7 @@ func (ds *deployments) ValidatePreflightToResourceGroup(
 			Tags: tags,
 		}, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("calling preflight validate api failing: %w", err)
 	}
 
 	validateResult, err := validate.PollUntilDone(ctx, nil)

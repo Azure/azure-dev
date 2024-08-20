@@ -482,37 +482,6 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 		State:   DeleteResourceStateInProgress,
 	})
 
-	// Deploy empty template to void provision state and keep deployment history instead of deleting previous deployments
-	// Get deployment metadata
-	deployment, err := ds.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroupName, deploymentName)
-	if err != nil {
-		return fmt.Errorf("resource group deployment '%s' not found: %w", deploymentName, err)
-	}
-
-	envName, has := deployment.Tags[azure.TagKeyAzdEnvName]
-	if has {
-		var emptyTemplate json.RawMessage = []byte(emptySubscriptionArmTemplate)
-		emptyDeploymentName := ds.GenerateDeploymentName(*envName)
-		tags := map[string]*string{
-			azure.TagKeyAzdEnvName: envName,
-			"azd-deploy-reason":    to.Ptr("down"),
-		}
-
-		_, err = ds.DeployToResourceGroup(
-			ctx,
-			subscriptionId,
-			resourceGroupName,
-			emptyDeploymentName,
-			emptyTemplate,
-			azure.ArmParameters{},
-			tags,
-		)
-
-		if err != nil {
-			return fmt.Errorf("deploying empty template to resource group: %w", err)
-		}
-	}
-
 	return nil
 }
 

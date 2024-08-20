@@ -378,7 +378,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 
 	resourceGroupName := fmt.Sprintf("rg-%s", envName)
 
-	cred, err := azidentity.NewAzureCLICredential(nil)
+	cred, err := azidentity.NewAzureDeveloperCLICredential(nil)
 	require.NoError(t, err)
 
 	rgClient, err := armresources.NewResourceGroupsClient(subscriptionId, cred, &arm.ClientOptions{

@@ -55,12 +55,13 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	flags            *downFlags
-	provisionManager *provisioning.Manager
-	importManager    *project.ImportManager
-	env              *environment.Environment
-	console          input.Console
-	projectConfig    *project.ProjectConfig
+	flags               *downFlags
+	provisionManager    *provisioning.Manager
+	importManager       *project.ImportManager
+	env                 *environment.Environment
+	console             input.Console
+	projectConfig       *project.ProjectConfig
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 func newDownAction(
@@ -73,12 +74,13 @@ func newDownAction(
 	importManager *project.ImportManager,
 ) actions.Action {
 	return &downAction{
-		flags:            flags,
-		provisionManager: provisionManager,
-		env:              env,
-		console:          console,
-		projectConfig:    projectConfig,
-		importManager:    importManager,
+		flags:               flags,
+		provisionManager:    provisionManager,
+		env:                 env,
+		console:             console,
+		projectConfig:       projectConfig,
+		importManager:       importManager,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -99,6 +101,10 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, infra.Options); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+	}
+
+	if a.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
+		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)

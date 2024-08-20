@@ -112,8 +112,8 @@ func (i *Initializer) prjConfigFromDetect(
 		}
 	}
 
-	backends := []*project.ServiceConfig{}
-	frontends := []*project.ServiceConfig{}
+	backends := []*project.ResourceConfig{}
+	frontends := []*project.ResourceConfig{}
 	for _, svc := range detect.Services {
 		name := filepath.Base(svc.Path)
 		rel, err := filepath.Rel(root, svc.Path)
@@ -121,9 +121,14 @@ func (i *Initializer) prjConfigFromDetect(
 			return project.ProjectConfig{}, err
 		}
 
-		svcSpec := project.ServiceConfig{
+		resSpec := project.ResourceConfig{
+			Type: project.ResourceTypeHostContainerApp,
+		}
+		props := project.ContainerAppProps{
 			Port: -1,
 		}
+
+		svcSpec := project.ServiceConfig{}
 		svcSpec.Host = project.ContainerAppTarget
 		svcSpec.RelativePath = rel
 
@@ -135,14 +140,14 @@ func (i *Initializer) prjConfigFromDetect(
 
 		if svc.Docker == nil || svc.Docker.Path == "" {
 			// default builder always specifies port 80
-			svcSpec.Port = 80
+			props.Port = 80
 
 			if svc.Language == appdetect.Java {
-				svcSpec.Port = 8080
+				props.Port = 8080
 			}
 		}
 
-		if svcSpec.Port == -1 {
+		if props.Port == -1 {
 			var port int
 			for {
 				val, err := i.console.Prompt(ctx, input.ConsoleOptions{
@@ -165,7 +170,7 @@ func (i *Initializer) prjConfigFromDetect(
 
 				break
 			}
-			svcSpec.Port = port
+			props.Port = port
 		}
 
 		if svc.Docker != nil {
@@ -185,15 +190,15 @@ func (i *Initializer) prjConfigFromDetect(
 				continue
 			}
 
-			svcSpec.Uses = append(svcSpec.Uses, dbNames[db])
+			resSpec.Uses = append(resSpec.Uses, dbNames[db])
 		}
 
 		frontend := svc.HasWebUIFramework()
 
 		if frontend {
-			frontends = append(frontends, &svcSpec)
+			frontends = append(frontends, &resSpec)
 		} else {
-			backends = append(backends, &svcSpec)
+			backends = append(backends, &resSpec)
 		}
 
 		if frontend && svc.Docker == nil {
@@ -229,6 +234,10 @@ func (i *Initializer) prjConfigFromDetect(
 		}
 		svcSpec.Name = name
 		prj.Services[name] = &svcSpec
+
+		resSpec.Name = name
+		resSpec.Props = props
+		prj.Resources[name] = &resSpec
 	}
 
 	for _, frontend := range frontends {

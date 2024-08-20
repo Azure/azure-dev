@@ -125,7 +125,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	for _, svc := range svcOptions {
-		err = AppendNode(&doc, fmt.Sprintf("services.%s.uses[]?", svc), &yaml.Node{
+		err = AppendNode(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
 			Kind:  yaml.ScalarNode,
 			Value: resourceToAdd.Name,
 		})

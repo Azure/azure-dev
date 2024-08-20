@@ -566,73 +566,63 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 
 				Parameters: parameters,
 			}
-		}
-	}
-
-	for _, svc := range projectConfig.Services {
-		svcSpec := scaffold.ServiceSpec{
-			Name: svc.Name,
-			Port: -1,
-		}
-
-		processedEnv := map[string]string{}
-		for _, envVar := range svc.Env {
-			val, err := envVar.Value.Envsubst(env.Getenv)
-			if err != nil {
-				return nil, fmt.Errorf("evaluating environment variable %s for service %s: %w", envVar.Name, svc.Name, err)
+		case ResourceTypeHostContainerApp:
+			fmt.Println("%+v", res.Props)
+			props := res.Props.(ContainerAppProps)
+			svcSpec := scaffold.ServiceSpec{
+				Name: res.Name,
+				Port: -1,
 			}
 
-			processedEnv[envVar.Name] = val
-		}
+			processedEnv := map[string]string{}
+			for _, envVar := range props.Env {
+				val, err := envVar.Value.Envsubst(env.Getenv)
+				if err != nil {
+					return nil, fmt.Errorf(
+						"evaluating environment variable %s for host %s: %w", envVar.Name, res.Name, err)
+				}
 
-		svcSpec.Env = processedEnv
-
-		if svc.Port != 0 {
-			port := svc.Port
+				processedEnv[envVar.Name] = val
+			}
+			svcSpec.Env = processedEnv
+			port := props.Port
 			if port < 1 || port > 65535 {
-				return nil, fmt.Errorf("port value %d for service %s must be between 1 and 65535", svc.Port, svc.Name)
+				return nil, fmt.Errorf("port value %d for host %s must be between 1 and 65535", port, res.Name)
 			}
 
 			svcSpec.Port = port
-		} else if svc.Docker.Path == "" {
-			// default builder always specifies port 80
-			svcSpec.Port = 80
 
-			if svc.Language == ServiceLanguageJava {
-				svcSpec.Port = 8080
-			}
-		}
-
-		for _, use := range svc.Uses {
-			useRes, isRes := projectConfig.Resources[use]
-			if isRes {
-				switch useRes.Type {
-				case ResourceTypeDbMongo:
-					svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
-				case ResourceTypeDbPostgres:
-					svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
-				case ResourceTypeDbRedis:
-					svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
-				}
-				continue
-			}
-
-			_, ok := projectConfig.Services[use]
-			if ok {
-				if svcSpec.Frontend == nil {
-					svcSpec.Frontend = &scaffold.Frontend{}
+			for _, use := range res.Uses {
+				useRes, isRes := projectConfig.Resources[use]
+				if isRes {
+					switch useRes.Type {
+					case ResourceTypeDbMongo:
+						svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+					case ResourceTypeDbPostgres:
+						svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+					case ResourceTypeDbRedis:
+						svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+					}
+					continue
 				}
 
-				svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
-					scaffold.ServiceReference{Name: use})
-				backendMapping[use] = svc.Name
-				continue
+				_, ok := projectConfig.Services[use]
+				if ok {
+					if svcSpec.Frontend == nil {
+						svcSpec.Frontend = &scaffold.Frontend{}
+					}
+
+					svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
+						scaffold.ServiceReference{Name: use})
+					backendMapping[use] = res.Name
+					continue
+				}
+
+				return nil, fmt.Errorf("resource %s uses %s, which does not exist", res.Name, use)
 			}
 
-			return nil, fmt.Errorf("service %s uses %s, which does not exist", svc.Name, use)
+			infraSpec.Services = append(infraSpec.Services, svcSpec)
 		}
-
-		infraSpec.Services = append(infraSpec.Services, svcSpec)
 	}
 
 	// create reverse mapping

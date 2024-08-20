@@ -39,7 +39,15 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Language:     project.ServiceLanguageDotNet,
 						RelativePath: "dotnet",
 						Host:         project.ContainerAppTarget,
-						Port:         80,
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"dotnet": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "dotnet",
+						Props: project.ContainerAppProps{
+							Port: 80,
+						},
 					},
 				},
 			},
@@ -65,7 +73,15 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Host:         project.ContainerAppTarget,
 						RelativePath: "js",
 						OutputPath:   "build",
-						Port:         80,
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"js": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "js",
+						Props: project.ContainerAppProps{
+							Port: 80,
+						},
 					},
 				},
 			},
@@ -91,12 +107,20 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			want: project.ProjectConfig{
 				Services: map[string]*project.ServiceConfig{
 					"dotnet": {
-						Port:         1234,
 						Language:     project.ServiceLanguageDotNet,
 						Host:         project.ContainerAppTarget,
 						RelativePath: "dotnet",
 						Docker: project.DockerProjectOptions{
 							Path: "Dockerfile",
+						},
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"dotnet": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "dotnet",
+						Props: project.ContainerAppProps{
+							Port: 1234,
 						},
 					},
 				},
@@ -125,16 +149,31 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 					"py": {
 						Language:     project.ServiceLanguagePython,
 						Host:         project.ContainerAppTarget,
-						Port:         80,
 						RelativePath: "py",
 					},
 					"js": {
 						Language:     project.ServiceLanguageJavaScript,
 						Host:         project.ContainerAppTarget,
-						Port:         80,
 						RelativePath: "js",
 						OutputPath:   "build",
-						Uses:         []string{"py"},
+					},
+				},
+
+				Resources: map[string]*project.ResourceConfig{
+					"py": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "py",
+						Props: project.ContainerAppProps{
+							Port: 80,
+						},
+					},
+					"js": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "js",
+						Uses: []string{"py"},
+						Props: project.ContainerAppProps{
+							Port: 80,
+						},
 					},
 				},
 			},
@@ -170,23 +209,35 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 					"py": {
 						Language:     project.ServiceLanguagePython,
 						Host:         project.ContainerAppTarget,
-						Port:         80,
 						RelativePath: "py",
-						Uses:         []string{"myappdb"},
 					},
 					"js": {
 						Language:     project.ServiceLanguageJavaScript,
 						Host:         project.ContainerAppTarget,
-						Port:         80,
 						RelativePath: "js",
 						OutputPath:   "build",
-						Uses:         []string{"py"},
 					},
 				},
 				Resources: map[string]*project.ResourceConfig{
 					"myappdb": {
-						Type: project.ResourceTypeDbRedis,
+						Type: project.ResourceTypeDbPostgres,
 						Name: "myappdb",
+					},
+					"py": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "py",
+						Uses: []string{"myappdb"},
+						Props: project.ContainerAppProps{
+							Port: 80,
+						},
+					},
+					"js": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "js",
+						Uses: []string{"py"},
+						Props: project.ContainerAppProps{
+							Port: 80,
+						},
 					},
 				},
 			},

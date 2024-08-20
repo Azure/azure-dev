@@ -156,14 +156,6 @@
                         "type": "object",
                         "additionalProperties": true
                     },
-                    "uses": {
-                        "type": "array",
-                        "title": "List of services/resources that this service uses",
-                        "items": {
-                            "type": "string"
-                        },
-                        "uniqueItems": true
-                    },
                     "hooks": {
                         "type": "object",
                         "title": "Service level hooks",
@@ -351,26 +343,40 @@
             "type": "object",
             "additionalProperties": {
                 "type": "object",
-                "additionalProperties": false,
                 "required": [
                     "type"
                 ],
-                "properties": {
-                    "type": {
-                        "type": "string",
-                        "title": "Type of resource",
-                        "description": "The type of resource to be created. (Example: db.postgres)",
-                        "enum": [
-                            "db.postgres",
-                            "db.redis",
-                            "db.mongo"
-                        ]
+"properties": {
+                "type": {
+                    "type": "string",
+                    "title": "Type of resource",
+                    "description": "The type of resource to be created. (Example: db.postgres)",
+                    "enum": [
+                        "db.postgres",
+                        "db.redis",
+                        "db.mongo",
+                        "host.containerapp"
+                    ]
+                },
+                "module": {
+                    "type": "string",
+                    "title": "Path of the infrastructure module used to deploy the resource"
+                },
+                "uses": {
+                    "type": "array",
+                    "title": "List of services/resources that this service uses",
+                    "items": {
+                        "type": "string"
                     },
-                    "module": {
-                        "type": "string",
-                        "title": "Path of the infrastructure module used to deploy the resource"
-                    }
+                    "uniqueItems": true
                 }
+            },
+                "allOf": [
+                    { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
+                    { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} }
+                ]
             }
         },
         "pipeline": {
@@ -1076,6 +1082,69 @@
             "required": [
                 "deployment"
             ]
+        },
+        "resource": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "title": "Type of resource",
+                    "description": "The type of resource to be created. (Example: db.postgres)",
+                    "enum": [
+                        "db.postgres",
+                        "db.redis",
+                        "db.mongo",
+                        "host.containerapp"
+                    ]
+                },
+                "module": {
+                    "type": "string",
+                    "title": "Path of the infrastructure module used to deploy the resource"
+                },
+                "uses": {
+                    "type": "array",
+                    "title": "List of services/resources that this service uses",
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "containerAppResource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "port"
+            ],
+            "properties": {
+                "type": true,
+                "module": true,
+                "uses": true,
+                "port": {
+                    "type": "integer",
+                    "title": "Port that the container app listens on",
+                    "description": "Optional. The port that the container app listens on. (Default: 80)"
+                },
+                "env": {
+                    "type": "array",
+                    "title": "Environment variables to set for the container app",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "title": "Name of the environment variable"
+                            },
+                            "value": {
+                                "type": "string",
+                                "title": "Value of the environment variable. Supports environment variable substitution."
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

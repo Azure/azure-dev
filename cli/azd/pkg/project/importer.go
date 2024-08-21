@@ -113,6 +113,20 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 	return allServicesSlice, nil
 }
 
+// HasAppHost returns true when there is one AppHost (Aspire) in the project.
+func (im *ImportManager) HasAppHost(ctx context.Context, projectConfig *ProjectConfig) bool {
+	for _, svcConfig := range projectConfig.Services {
+		if svcConfig.Language == ServiceLanguageDotNet {
+			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
+				return true
+			} else if err != nil {
+				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
+			}
+		}
+	}
+	return false
+}
+
 // defaultOptions for infra settings. These values are applied across provisioning providers.
 const (
 	DefaultModule = "main"

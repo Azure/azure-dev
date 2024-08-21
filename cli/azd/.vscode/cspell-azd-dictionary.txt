@@ -74,9 +74,11 @@ csharpapptest
 cupaloy
 custommaps
 deletedservices
+deviceid
 devcenter
 devcenters
 devcentersdk
+devdeviceid
 devel
 discarder
 docf
@@ -216,4 +218,5 @@ webfrontend
 westus2
 wireinject
 yacspin
+ymlt
 zerr

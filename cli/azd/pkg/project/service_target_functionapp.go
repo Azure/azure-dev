@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -46,7 +46,7 @@ func NewFunctionAppTarget(
 }
 
 // Gets the required external tools for the Function app
-func (f *functionAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (f *functionAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
@@ -86,7 +86,7 @@ func (f *functionAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	if err := f.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+	if err := f.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
@@ -161,15 +161,13 @@ func (f *functionAppTarget) Endpoints(
 }
 
 func (f *functionAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
-	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
+	if !strings.EqualFold(targetResource.ResourceType(), string(azapi.AzureResourceTypeWebSite)) {
 		return resourceTypeMismatchError(
 			targetResource.ResourceName(),
 			targetResource.ResourceType(),
-			infra.AzureResourceTypeWebSite,
+			azapi.AzureResourceTypeWebSite,
 		)
 	}
 

@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -319,7 +319,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	require.NoError(t, err)
 
 	rgClient, err := armresources.NewResourceGroupsClient(subscriptionId, cred, &arm.ClientOptions{
-		ClientOptions: policy.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
 			Transport: client,
 		},
 	})

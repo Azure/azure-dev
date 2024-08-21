@@ -30,6 +30,7 @@ func New() *resource.Resource {
 			fields.ExecutionEnvironmentKey.String(getExecutionEnvironment()),
 			fields.MachineIdKey.String(MachineId()),
 			fields.InstalledByKey.String(getInstalledBy()),
+			fields.DevDeviceIdKey.String(DevDeviceId()),
 		),
 	)
 

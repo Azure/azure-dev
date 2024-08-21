@@ -13,13 +13,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
-
-// Use URL from https://learn.microsoft.com/azure/cloud-shell/msi-authorization
-const cLocalTokenUrl = "http://localhost:50342/oauth2/token" //#nosec G101 -- This is a false positive
-
-const cDefaultSuffix = "/.default"
 
 type TokenFromCloudShell struct {
 	AccessToken  string      `json:"access_token"`
@@ -32,11 +26,11 @@ type TokenFromCloudShell struct {
 }
 
 type CloudShellCredential struct {
-	httpClient httputil.HttpClient
+	transporter policy.Transporter
 }
 
-func NewCloudShellCredential(httpClient httputil.HttpClient) *CloudShellCredential {
-	cloudShellCredential := CloudShellCredential{httpClient: httpClient}
+func NewCloudShellCredential(transporter policy.Transporter) *CloudShellCredential {
+	cloudShellCredential := CloudShellCredential{transporter: transporter}
 	return &cloudShellCredential
 }
 
@@ -47,20 +41,22 @@ func (t CloudShellCredential) GetToken(ctx context.Context, options policy.Token
 	}
 
 	// API expects an AAD v1 resource, not a v2 scope
-	scope := strings.TrimSuffix(options.Scopes[0], cDefaultSuffix)
+	scope := strings.TrimSuffix(options.Scopes[0], "/.default")
 
 	postData := url.Values{}
 	postData.Set("resource", scope)
 
+	// Use URL from https://learn.microsoft.com/azure/cloud-shell/msi-authorization
+	//#nosec G101 -- This is a false positive
 	req, err := http.NewRequestWithContext(
-		ctx, "POST", cLocalTokenUrl, strings.NewReader(postData.Encode()))
+		ctx, "POST", "http://localhost:50342/oauth2/token", strings.NewReader(postData.Encode()))
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}
 	req.Header.Add("Metadata", "true")
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.transporter.Do(req)
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}

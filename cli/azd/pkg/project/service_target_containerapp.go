@@ -9,10 +9,10 @@ import (
 	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -60,8 +60,8 @@ func NewContainerAppTarget(
 }
 
 // Gets the required external tools
-func (at *containerAppTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
-	return at.containerHelper.RequiredExternalTools(ctx)
+func (at *containerAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	return at.containerHelper.RequiredExternalTools(ctx, serviceConfig)
 }
 
 // Initializes the Container App target
@@ -91,7 +91,7 @@ func (at *containerAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+	if err := at.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
@@ -156,8 +156,6 @@ func (at *containerAppTarget) Endpoints(
 }
 
 func (at *containerAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if targetResource.ResourceGroupName() == "" {
@@ -165,7 +163,7 @@ func (at *containerAppTarget) validateTargetResource(
 	}
 
 	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
+		if err := checkResourceType(targetResource, azapi.AzureResourceTypeContainerApp); err != nil {
 			return err
 		}
 	}
@@ -173,7 +171,7 @@ func (at *containerAppTarget) validateTargetResource(
 	return nil
 }
 
-func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, serviceConfig *ServiceConfig) error {
+func (at *containerAppTarget) addPreProvisionChecks(_ context.Context, serviceConfig *ServiceConfig) error {
 	// Attempt to retrieve the target resource for the current service
 	// This allows the resource deployment to detect whether or not to pull existing container image during
 	// provision operation to avoid resetting the container app back to a default image

@@ -64,7 +64,7 @@ type FrameworkPackageRequirements struct {
 // restore and build commands
 type FrameworkService interface {
 	// Gets a list of the required external tools for the framework service
-	RequiredExternalTools(ctx context.Context) []tools.ExternalTool
+	RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool
 
 	// Initializes the framework service for the specified service configuration
 	// This is useful if the framework needs to subscribe to any service events
@@ -115,7 +115,7 @@ func validatePackageOutput(packagePath string) error {
 		return fmt.Errorf("package output '%s' does not exist, %w", packagePath, err)
 	} else if err != nil {
 		return fmt.Errorf("failed to read package output '%s', %w", packagePath, err)
-	} else if err == nil && len(entries) == 0 {
+	} else if len(entries) == 0 {
 		return fmt.Errorf("package output '%s' is empty", packagePath)
 	}
 

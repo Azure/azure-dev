@@ -17,11 +17,11 @@ import (
 
 type npmProject struct {
 	env *environment.Environment
-	cli npm.NpmCli
+	cli *npm.Cli
 }
 
 // NewNpmProject creates a new instance of a NPM project
-func NewNpmProject(cli npm.NpmCli, env *environment.Environment) FrameworkService {
+func NewNpmProject(cli *npm.Cli, env *environment.Environment) FrameworkService {
 	return &npmProject{
 		env: env,
 		cli: cli,
@@ -39,7 +39,7 @@ func (np *npmProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (np *npmProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (np *npmProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{np.cli}
 }
 
@@ -148,8 +148,6 @@ func (np *npmProject) Package(
 	}, nil
 }
 
-const cNodeModulesName = "node_modules"
-
 func excludeNodeModules(path string, file os.FileInfo) bool {
-	return file.IsDir() && file.Name() == cNodeModulesName
+	return file.IsDir() && file.Name() == "node_modules"
 }

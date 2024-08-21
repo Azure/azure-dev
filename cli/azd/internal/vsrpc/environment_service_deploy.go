@@ -19,7 +19,7 @@ import (
 func (s *environmentService) DeployAsync(
 	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -81,9 +81,9 @@ func (s *environmentService) DeployAsync(
 		}
 	})
 
-	ioc.RegisterInstance[*cmd.ProvisionFlags](container.NestedContainer, provisionFlags)
-	ioc.RegisterInstance[*cmd.DeployFlags](container.NestedContainer, deployFlags)
-	ioc.RegisterInstance[[]string](container.NestedContainer, []string{})
+	ioc.RegisterInstance(container.NestedContainer, provisionFlags)
+	ioc.RegisterInstance(container.NestedContainer, deployFlags)
+	ioc.RegisterInstance(container.NestedContainer, []string{})
 
 	container.MustRegisterNamedTransient("provisionAction", cmd.NewProvisionAction)
 	container.MustRegisterNamedTransient("deployAction", cmd.NewDeployAction)

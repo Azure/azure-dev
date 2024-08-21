@@ -24,7 +24,7 @@ type ContainerHelper struct {
 	env                      *environment.Environment
 	envManager               environment.Manager
 	containerRegistryService azcli.ContainerRegistryService
-	docker                   docker.Docker
+	docker                   *docker.Cli
 	clock                    clock.Clock
 	cloud                    *cloud.Cloud
 }
@@ -34,7 +34,7 @@ func NewContainerHelper(
 	envManager environment.Manager,
 	clock clock.Clock,
 	containerRegistryService azcli.ContainerRegistryService,
-	docker docker.Docker,
+	docker *docker.Cli,
 	cloud *cloud.Cloud,
 ) *ContainerHelper {
 	return &ContainerHelper{
@@ -177,7 +177,7 @@ func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *Ser
 	return configuredImage.Local(), nil
 }
 
-func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{ch.docker}
 }
 

@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
@@ -42,8 +44,8 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
-			expect:                convert.RefOf(traceId.String()),
-			headerName:            cMsCorrelationIdHeader,
+			expect:                to.Ptr(traceId.String()),
+			headerName:            MsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
@@ -53,15 +55,15 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
-			expect:                convert.RefOf(""),
-			headerName:            cMsCorrelationIdHeader,
+			expect:                to.Ptr(""),
+			headerName:            MsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
 			name:                  "WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
-			headerName:            cMsCorrelationIdHeader,
+			headerName:            MsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
@@ -70,8 +72,8 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
-			expect:                convert.RefOf(traceId.String()),
-			headerName:            cMsGraphCorrelationIdHeader,
+			expect:                to.Ptr(traceId.String()),
+			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
@@ -81,15 +83,15 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(invalidTraceId),
 			),
-			expect:                convert.RefOf(""),
-			headerName:            cMsGraphCorrelationIdHeader,
+			expect:                to.Ptr(""),
+			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
 			name:                  "WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
-			headerName:            cMsGraphCorrelationIdHeader,
+			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 	}
@@ -102,12 +104,12 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				return mocks.CreateEmptyHttpResponse(request, http.StatusOK)
 			})
 
-			clientOptions := NewClientOptionsBuilder().
-				WithTransport(httpClient).
-				WithPerCallPolicy(tt.correlationPolicyFunc()).
-				BuildArmClientOptions()
-
-			client, err := armresources.NewClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, clientOptions)
+			client, err := armresources.NewClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, &arm.ClientOptions{
+				ClientOptions: azcore.ClientOptions{
+					PerCallPolicies: []policy.Policy{tt.correlationPolicyFunc()},
+					Transport:       httpClient,
+				},
+			})
 			require.NoError(t, err)
 
 			var response *http.Response

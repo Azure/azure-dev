@@ -14,7 +14,7 @@ func NewNoOpProject(env *environment.Environment) FrameworkService {
 	return &noOpProject{}
 }
 
-func (n *noOpProject) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (n *noOpProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 

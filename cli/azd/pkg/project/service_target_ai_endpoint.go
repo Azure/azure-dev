@@ -56,7 +56,7 @@ func (m *aiEndpointTarget) Initialize(ctx context.Context, serviceConfig *Servic
 }
 
 // RequiredExternalTools returns the required external tools for the machineLearningEndpointTarget
-func (m *aiEndpointTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (m *aiEndpointTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return m.aiHelper.RequiredExternalTools(ctx)
 }
 

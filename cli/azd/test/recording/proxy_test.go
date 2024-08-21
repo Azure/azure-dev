@@ -24,8 +24,11 @@ func Test_gzip2HttpRoundTripper_ContentLength(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	writer := gzip.NewWriter(buf)
-	writer.Write([]byte(message))
-	writer.Close()
+
+	_, err := writer.Write([]byte(message))
+	require.NoError(t, err)
+	err = writer.Close()
+	require.NoError(t, err)
 
 	rt := &gzip2HttpRoundTripper{
 		transport: funcRoundTripper(func(req *http.Request) (*http.Response, error) {
@@ -71,7 +74,8 @@ func TestBlobClientGetProperties(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(msg)))
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(msg))
+		_, err := w.Write([]byte(msg))
+		require.NoError(t, err)
 	}))
 	defer server.Close()
 

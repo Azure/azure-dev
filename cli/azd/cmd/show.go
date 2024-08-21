@@ -227,6 +227,35 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, s.formatter.Format(res, s.writer, nil)
 	}
 
+	// TODO(weilim): prototype only
+	if len(s.args) == 1 {
+		service := s.args[0]
+
+		if _, ok := s.projectConfig.Services[service]; !ok {
+			return nil, fmt.Errorf("service %s not found", service)
+		}
+
+		s.console.Message(ctx, "Blueprint")
+		if res, ok := s.projectConfig.Resources[service]; ok {
+			s.console.Message(ctx, fmt.Sprintf("%s (%s)", res.Name, "Azure Container App"))
+			for _, dep := range res.Uses {
+				if r, ok := s.projectConfig.Resources[dep]; ok {
+					host := ""
+					switch r.Type {
+					case project.ResourceTypeDbRedis:
+						host = "Azure Redis for Cache"
+					case project.ResourceTypeDbMongo:
+						host = "Azure Cosmos DB for MongoDB"
+					case project.ResourceTypeDbPostgres:
+						host = "Azure Database for PostgreSQL flexible server"
+					}
+					s.console.Message(ctx, fmt.Sprintf("  ╰─ %s (%s)", r.Name, host))
+				}
+			}
+		}
+		return nil, nil
+	}
+
 	if len(s.args) > 1 && s.args[1] == "env" {
 		s.console.Message(ctx, fmt.Sprintf("Environment variables for %s", showService))
 		environ := res.Services[showService].RemoteEnviron

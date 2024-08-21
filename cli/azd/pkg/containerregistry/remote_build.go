@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -75,6 +76,18 @@ func (r *RemoteBuildManager) UploadBuildSource(
 	return sourceUploadRes.SourceUploadDefinition, nil
 }
 
+// terminalContainerRegistryRunStates is the list of states we consider terminal when waiting for a container registry run
+// to complete. Unfortunately, in the current version of the armcontainerregistry package, the poller returned by
+// BeginScheduleRun treats all states as terminal and so calling `PollUntilDone` will return even if if the run is still
+// progressing.  So we open code this polling loop ourselves.
+var terminalContainerRegistryRunStates = []armcontainerregistry.RunStatus{
+	armcontainerregistry.RunStatusCanceled,
+	armcontainerregistry.RunStatusError,
+	armcontainerregistry.RunStatusFailed,
+	armcontainerregistry.RunStatusSucceeded,
+	armcontainerregistry.RunStatusTimeout,
+}
+
 // RunDockerBuildRequestWithLogs initiates a remote build on the specified registry and streams the logs to the provided
 // writer.
 func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
@@ -134,16 +147,28 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 		return err
 	}
 
-	runRes, err := runClient.Get(ctx, resourceGroupName, registryName, *runResp.Properties.RunID, nil)
-	if err != nil {
-		return err
-	}
+	// Poll until the run is complete - we do this ourselves because the poller returned by BeginScheduleRun treats all
+	// states as terminal and so calling `PollUntilDone` will return even if if the run is still progressing.
+	//
+	// Since the call to streamLogs above will block until the log is complete, we expect the final status will be
+	// available shortly, and so we used an exponential backoff with a capped duration and a short initial delay.
+	return retry.Do(ctx, retry.WithCappedDuration(30*time.Second, retry.NewExponential(1*time.Second)),
+		func(ctx context.Context) error {
+			runRes, err := runClient.Get(ctx, resourceGroupName, registryName, *runResp.Properties.RunID, nil)
+			if err != nil {
+				return err
+			}
 
-	if *runRes.Properties.Status != armcontainerregistry.RunStatusSucceeded {
-		return fmt.Errorf("remote build failed: %v", buildLog.String())
-	}
+			if !slices.Contains(terminalContainerRegistryRunStates, *runRes.Properties.Status) {
+				return retry.RetryableError(errors.New("remote build still in progress"))
+			}
 
-	return nil
+			if *runRes.Properties.Status != armcontainerregistry.RunStatusSucceeded {
+				return fmt.Errorf("remote build failed: %v", buildLog.String())
+			}
+
+			return nil
+		})
 }
 
 // streamLogs streams the logs from the specified blob client to the provided writer, until the log is marked as complete

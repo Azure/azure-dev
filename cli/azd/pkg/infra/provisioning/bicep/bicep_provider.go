@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -67,8 +68,9 @@ type BicepProvider struct {
 	projectPath           string
 	options               provisioning.Options
 	console               input.Console
-	bicepCli              bicep.BicepCli
+	bicepCli              *bicep.Cli
 	azCli                 azcli.AzCli
+	resourceService       *azapi.ResourceService
 	deploymentsService    azapi.Deployments
 	deploymentOperations  azapi.DeploymentOperations
 	prompters             prompt.Prompter
@@ -202,7 +204,7 @@ func (p *BicepProvider) LastDeployment(ctx context.Context) (*armresources.Deplo
 		return nil, fmt.Errorf("compiling bicep template: %w", err)
 	}
 
-	scope, err := p.scopeForTemplate(ctx, compileResult.Template)
+	scope, err := p.scopeForTemplate(compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
@@ -237,7 +239,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 			return nil, fmt.Errorf("compiling bicep template: %w", err)
 		}
 
-		scope, err = p.scopeForTemplate(ctx, compileResult.Template)
+		scope, err = p.scopeForTemplate(compileResult.Template)
 		if err != nil {
 			return nil, fmt.Errorf("computing deployment scope: %w", err)
 		}
@@ -246,7 +248,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 	} else if errors.Is(err, os.ErrNotExist) {
 		// To support BYOI (bring your own infrastructure)
 		// We need to support the case where there template does not contain an `infra` folder.
-		scope, scopeErr = p.inferScopeFromEnv(ctx)
+		scope, scopeErr = p.inferScopeFromEnv()
 		if scopeErr != nil {
 			return nil, fmt.Errorf("computing deployment scope: %w", err)
 		}
@@ -271,7 +273,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 	}
 
 	if len(deployments) > 1 {
-		deploymentOptions := getDeploymentOptions(ctx, deployments)
+		deploymentOptions := getDeploymentOptions(deployments)
 
 		p.console.Message(ctx, output.WithWarningFormat("WARNING: Multiple matching deployments were found\n"))
 
@@ -428,19 +430,19 @@ func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (
 	return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 }
 
-// cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
-const cArmDeploymentNameLengthMax = 64
+// armDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
+const armDeploymentNameLengthMax = 64
 
 // deploymentNameForEnv creates a name to use for the deployment object for a given environment. It appends the current
 // unix time to the environment name (separated by a hyphen) to provide a unique name for each deployment. If the resulting
 // name is longer than the ARM limit, the longest suffix of the name under the limit is returned.
 func deploymentNameForEnv(envName string, clock clock.Clock) string {
 	name := fmt.Sprintf("%s-%d", envName, clock.Now().Unix())
-	if len(name) <= cArmDeploymentNameLengthMax {
+	if len(name) <= armDeploymentNameLengthMax {
 		return name
 	}
 
-	return name[len(name)-cArmDeploymentNameLengthMax:]
+	return name[len(name)-armDeploymentNameLengthMax:]
 }
 
 // deploymentState returns the latests deployment if it is the same as the deployment within deploymentData or an error
@@ -474,7 +476,7 @@ func (p *BicepProvider) deploymentState(
 		templateHash = *createHashResult.TemplateHash
 	}
 
-	if !prevDeploymentEqualToCurrent(ctx, prevDeploymentResult, templateHash, currentParamsHash) {
+	if !prevDeploymentEqualToCurrent(prevDeploymentResult, templateHash, currentParamsHash) {
 		return nil, fmt.Errorf("deployment state has changed")
 	}
 
@@ -528,8 +530,7 @@ func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, pa
 }
 
 // prevDeploymentEqualToCurrent compares the template hash from a previous deployment against a current template.
-func prevDeploymentEqualToCurrent(
-	ctx context.Context, prev *armresources.DeploymentExtended, templateHash, paramsHash string) bool {
+func prevDeploymentEqualToCurrent(prev *armresources.DeploymentExtended, templateHash, paramsHash string) bool {
 	if prev == nil {
 		logDS("No previous deployment.")
 		return false
@@ -617,7 +618,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		}
 
 		// Report incremental progress
-		resourceManager := infra.NewAzureResourceManager(p.azCli, p.deploymentOperations)
+		resourceManager := infra.NewAzureResourceManager(p.resourceService, p.deploymentOperations)
 		progressDisplay := provisioning.NewProvisioningProgressDisplay(
 			resourceManager, p.console, bicepDeploymentData.Target)
 		// Make initial delay shorter to be more responsive in displaying initial progress
@@ -745,7 +746,7 @@ type itemToPurge struct {
 	cognitiveAccounts []cognitiveAccount
 }
 
-func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplate) (infra.Scope, error) {
+func (p *BicepProvider) scopeForTemplate(t azure.ArmTemplate) (infra.Scope, error) {
 	deploymentScope, err := t.TargetScope()
 	if err != nil {
 		return nil, err
@@ -766,7 +767,7 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 	}
 }
 
-func (p *BicepProvider) inferScopeFromEnv(ctx context.Context) (infra.Scope, error) {
+func (p *BicepProvider) inferScopeFromEnv() (infra.Scope, error) {
 	if resourceGroup, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
 		return infra.NewResourceGroupScope(
 			p.deploymentsService,
@@ -783,7 +784,7 @@ func (p *BicepProvider) inferScopeFromEnv(ctx context.Context) (infra.Scope, err
 	}
 }
 
-const cEmptySubDeployTemplate = `{
+const emptySubDeployTemplate = `{
 	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 	"contentVersion": "1.0.0.0",
 	"parameters": {},
@@ -792,7 +793,7 @@ const cEmptySubDeployTemplate = `{
 	"outputs": {}
   }`
 
-const cEmptyResourceGroupDeployTemplate = `{
+const emptyResourceGroupDeployTemplate = `{
 	"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
 	"contentVersion": "1.0.0.0",
 	"parameters": {},
@@ -813,7 +814,7 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("creating template: %w", err)
 	}
 
-	scope, err := p.scopeForTemplate(ctx, compileResult.Template)
+	scope, err := p.scopeForTemplate(compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
@@ -841,7 +842,7 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("getting resources to delete: %w", err)
 	}
 
-	allResources := []azcli.AzCliResource{}
+	allResources := []azapi.Resource{}
 	for _, groupResources := range groupedResources {
 		allResources = append(allResources, groupResources...)
 	}
@@ -884,28 +885,28 @@ func (p *BicepProvider) Destroy(
 		resourceType: "Key Vault",
 		count:        len(keyVaults),
 		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeKeyVaults(ctx, keyVaults, options, skipPurge)
+			return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
 		},
 	}
 	managedHSMsPurge := itemToPurge{
 		resourceType: "Managed HSM",
 		count:        len(managedHSMs),
 		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeManagedHSMs(ctx, managedHSMs, options, skipPurge)
+			return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
 		},
 	}
 	appConfigsPurge := itemToPurge{
 		resourceType: "App Configuration",
 		count:        len(appConfigs),
 		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAppConfigs(ctx, appConfigs, options, skipPurge)
+			return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
 		},
 	}
 	aPIManagement := itemToPurge{
 		resourceType: "API Management",
 		count:        len(apiManagements),
 		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAPIManagement(ctx, apiManagements, options, skipPurge)
+			return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
 		},
 	}
 
@@ -923,7 +924,7 @@ func (p *BicepProvider) Destroy(
 			resourceType: name,
 			count:        len(cogAccounts),
 			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, options, skipPurge)
+				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
 			},
 			cognitiveAccounts: groupByKind[name],
 		}
@@ -951,9 +952,9 @@ func (p *BicepProvider) Destroy(
 
 	var emptyTemplate json.RawMessage
 	if targetScope == azure.DeploymentScopeSubscription {
-		emptyTemplate = []byte(cEmptySubDeployTemplate)
+		emptyTemplate = []byte(emptySubDeployTemplate)
 	} else {
-		emptyTemplate = []byte(cEmptyResourceGroupDeployTemplate)
+		emptyTemplate = []byte(emptyResourceGroupDeployTemplate)
 	}
 
 	// create empty deployment to void provision state
@@ -1054,7 +1055,7 @@ func (p *BicepProvider) findCompletedDeployments(
 	return matchingDeployments, nil
 }
 
-func getDeploymentOptions(ctx context.Context, deployments []*armresources.DeploymentExtended) []string {
+func getDeploymentOptions(deployments []*armresources.DeploymentExtended) []string {
 	promptValues := []string{}
 	for index, deployment := range deployments {
 		optionTitle := fmt.Sprintf("%d. %s (%s)",
@@ -1092,7 +1093,7 @@ func resourceGroupsToDelete(deployment *armresources.DeploymentExtended) []strin
 		// for the common pattern of having a subscription level deployment which allocates a set of resource groups
 		// and then does nested deployments into them.
 		for _, dependency := range deployment.Properties.Dependencies {
-			if *dependency.ResourceType == string(infra.AzureResourceTypeDeployment) {
+			if *dependency.ResourceType == string(azapi.AzureResourceTypeDeployment) {
 				for _, dependent := range dependency.DependsOn {
 					if *dependent.ResourceType == arm.ResourceGroupResourceType.String() {
 						resourceGroups[*dependent.ResourceName] = struct{}{}
@@ -1109,11 +1110,16 @@ func resourceGroupsToDelete(deployment *armresources.DeploymentExtended) []strin
 func (p *BicepProvider) getAllResourcesToDelete(
 	ctx context.Context,
 	resourceGroups []string,
-) (map[string][]azcli.AzCliResource, error) {
-	allResources := map[string][]azcli.AzCliResource{}
+) (map[string][]azapi.Resource, error) {
+	allResources := map[string][]azapi.Resource{}
 
 	for _, resourceGroup := range resourceGroups {
-		groupResources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
+		groupResources, err := p.resourceService.ListResourceGroupResources(
+			ctx,
+			p.env.GetSubscriptionId(),
+			resourceGroup,
+			nil,
+		)
 		var errDetails *azcore.ResponseError
 		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
 			// Resource group not found and already deleted, skip grouping for deletion
@@ -1130,7 +1136,7 @@ func (p *BicepProvider) getAllResourcesToDelete(
 	return allResources, nil
 }
 
-func (p *BicepProvider) generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliResource) []string {
+func (p *BicepProvider) generateResourceGroupsToDelete(groupedResources map[string][]azapi.Resource) []string {
 	lines := []string{"Resource group(s) to be deleted:", ""}
 
 	for rg := range groupedResources {
@@ -1151,7 +1157,7 @@ func (p *BicepProvider) generateResourceGroupsToDelete(groupedResources map[stri
 func (p *BicepProvider) destroyResourceGroups(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 	resourceCount int,
 ) error {
 	if !options.Force() {
@@ -1183,7 +1189,7 @@ func (p *BicepProvider) destroyResourceGroups(
 			output.WithHighLightFormat(resourceGroup),
 		)
 		p.console.ShowSpinner(ctx, message, input.Step)
-		err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup)
+		err := p.resourceService.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup)
 
 		p.console.StopSpinner(ctx, message, input.GetStepResultFormat(err))
 		if err != nil {
@@ -1251,10 +1257,6 @@ func (p *BicepProvider) purgeItems(
 		if !purgeItems {
 			skipPurge = true
 		}
-
-		if err != nil {
-			return err
-		}
 	}
 	for index, item := range items {
 		if err := item.purge(skipPurge, &items[index]); err != nil {
@@ -1267,13 +1269,13 @@ func (p *BicepProvider) purgeItems(
 
 func (p *BicepProvider) getKeyVaults(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*keyvault.KeyVault, error) {
 	vaults := []*keyvault.KeyVault{}
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeKeyVault) {
+			if resource.Type == string(azapi.AzureResourceTypeKeyVault) {
 				vault, err := p.keyvaultService.GetKeyVault(
 					ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
@@ -1289,7 +1291,7 @@ func (p *BicepProvider) getKeyVaults(
 
 func (p *BicepProvider) getKeyVaultsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*keyvault.KeyVault, error) {
 	vaults, err := p.getKeyVaults(ctx, groupedResources)
 	if err != nil {
@@ -1308,13 +1310,13 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 
 func (p *BicepProvider) getManagedHSMs(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*azcli.AzCliManagedHSM, error) {
 	managedHSMs := []*azcli.AzCliManagedHSM{}
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeManagedHSM) {
+			if resource.Type == string(azapi.AzureResourceTypeManagedHSM) {
 				managedHSM, err := p.azCli.GetManagedHSM(
 					ctx,
 					azure.SubscriptionFromRID(resource.Id),
@@ -1334,7 +1336,7 @@ func (p *BicepProvider) getManagedHSMs(
 
 func (p *BicepProvider) getManagedHSMsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*azcli.AzCliManagedHSM, error) {
 	managedHSMs, err := p.getManagedHSMs(ctx, groupedResources)
 	if err != nil {
@@ -1353,14 +1355,14 @@ func (p *BicepProvider) getManagedHSMsToPurge(
 
 func (p *BicepProvider) getCognitiveAccountsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) (map[string][]armcognitiveservices.Account, error) {
 	result := make(map[string][]armcognitiveservices.Account)
 
 	for resourceGroup, groupResources := range groupedResources {
 		cognitiveAccounts := []armcognitiveservices.Account{}
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeCognitiveServiceAccount) {
+			if resource.Type == string(azapi.AzureResourceTypeCognitiveServiceAccount) {
 				account, err := p.azCli.GetCognitiveAccount(
 					ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
@@ -1395,7 +1397,6 @@ func (p *BicepProvider) getCognitiveAccountsToPurge(
 func (p *BicepProvider) purgeKeyVaults(
 	ctx context.Context,
 	keyVaults []*keyvault.KeyVault,
-	options provisioning.DestroyOptions,
 	skip bool,
 ) error {
 	for _, keyVault := range keyVaults {
@@ -1413,7 +1414,6 @@ func (p *BicepProvider) purgeKeyVaults(
 func (p *BicepProvider) purgeManagedHSMs(
 	ctx context.Context,
 	managedHSMs []*azcli.AzCliManagedHSM,
-	options provisioning.DestroyOptions,
 	skip bool,
 ) error {
 	for _, managedHSM := range managedHSMs {
@@ -1431,7 +1431,6 @@ func (p *BicepProvider) purgeManagedHSMs(
 func (p *BicepProvider) purgeCognitiveAccounts(
 	ctx context.Context,
 	cognitiveAccounts []cognitiveAccount,
-	options provisioning.DestroyOptions,
 	skip bool,
 ) error {
 	for _, cogAccount := range cognitiveAccounts {
@@ -1477,13 +1476,13 @@ func (p *BicepProvider) runPurgeAsStep(
 
 func (p *BicepProvider) getAppConfigsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*azcli.AzCliAppConfig, error) {
 	configs := []*azcli.AzCliAppConfig{}
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
+			if resource.Type == string(azapi.AzureResourceTypeAppConfig) {
 				config, err := p.azCli.GetAppConfig(
 					ctx,
 					azure.SubscriptionFromRID(resource.Id),
@@ -1506,13 +1505,13 @@ func (p *BicepProvider) getAppConfigsToPurge(
 
 func (p *BicepProvider) getApiManagementsToPurge(
 	ctx context.Context,
-	groupedResources map[string][]azcli.AzCliResource,
+	groupedResources map[string][]azapi.Resource,
 ) ([]*azcli.AzCliApim, error) {
 	apims := []*azcli.AzCliApim{}
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
-			if resource.Type == string(infra.AzureResourceTypeApim) {
+			if resource.Type == string(azapi.AzureResourceTypeApim) {
 				apim, err := p.azCli.GetApim(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing api management service %s properties: %w", resource.Name, err)
@@ -1542,7 +1541,6 @@ func (p *BicepProvider) getApiManagementsToPurge(
 func (p *BicepProvider) purgeAppConfigs(
 	ctx context.Context,
 	appConfigs []*azcli.AzCliAppConfig,
-	options provisioning.DestroyOptions,
 	skip bool,
 ) error {
 	for _, appConfig := range appConfigs {
@@ -1561,7 +1559,6 @@ func (p *BicepProvider) purgeAppConfigs(
 func (p *BicepProvider) purgeAPIManagement(
 	ctx context.Context,
 	apims []*azcli.AzCliApim,
-	options provisioning.DestroyOptions,
 	skip bool,
 ) error {
 	for _, apim := range apims {
@@ -2199,8 +2196,9 @@ func isValueAssignableToParameterType(paramType provisioning.ParameterType, valu
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
 func NewBicepProvider(
-	bicepCli bicep.BicepCli,
+	bicepCli *bicep.Cli,
 	azCli azcli.AzCli,
+	resourceService *azapi.ResourceService,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
 	envManager environment.Manager,
@@ -2211,7 +2209,7 @@ func NewBicepProvider(
 	alphaFeatureManager *alpha.FeatureManager,
 	clock clock.Clock,
 	keyvaultService keyvault.KeyVaultService,
-	portalUrlBase string,
+	cloud *cloud.Cloud,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:           envManager,
@@ -2219,6 +2217,7 @@ func NewBicepProvider(
 		console:              console,
 		bicepCli:             bicepCli,
 		azCli:                azCli,
+		resourceService:      resourceService,
 		deploymentsService:   deploymentsService,
 		deploymentOperations: deploymentOperations,
 		prompters:            prompters,
@@ -2226,6 +2225,6 @@ func NewBicepProvider(
 		alphaFeatureManager:  alphaFeatureManager,
 		clock:                clock,
 		keyvaultService:      keyvaultService,
-		portalUrlBase:        portalUrlBase,
+		portalUrlBase:        cloud.PortalUrlBase,
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -132,7 +133,7 @@ func NewDeployAction(
 	azdCtx *azdcontext.AzdContext,
 	environment *environment.Environment,
 	accountManager account.Manager,
-	portalUrlBase cloud.PortalUrlBase,
+	cloud *cloud.Cloud,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	console input.Console,
@@ -151,7 +152,7 @@ func NewDeployAction(
 		serviceManager:      serviceManager,
 		resourceManager:     resourceManager,
 		accountManager:      accountManager,
-		portalUrlBase:       string(portalUrlBase),
+		portalUrlBase:       cloud.PortalUrlBase,
 		azCli:               azCli,
 		formatter:           formatter,
 		writer:              writer,
@@ -255,19 +256,16 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		} else {
 			//  --from-package not set, package the application
-			packageTask := da.serviceManager.Package(ctx, svc, nil, nil)
-			done := make(chan struct{})
-			go func() {
-				for packageProgress := range packageTask.Progress() {
+			packageResult, err = async.RunWithProgress(
+				func(packageProgress project.ServiceProgress) {
 					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
-				}
-				close(done)
-			}()
+				},
+				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
+					return da.serviceManager.Package(ctx, svc, nil, progress, nil)
+				},
+			)
 
-			packageResult, err = packageTask.Await()
-			// wait for console updates to complete
-			<-done
 			// do not stop progress here as next step is to deploy
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -275,19 +273,16 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		}
 
-		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
-		done := make(chan struct{})
-		go func() {
-			for deployProgress := range deployTask.Progress() {
+		deployResult, err := async.RunWithProgress(
+			func(deployProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-			close(done)
-		}()
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
+				return da.serviceManager.Deploy(ctx, svc, packageResult, progress)
+			},
+		)
 
-		deployResult, err := deployTask.Await()
-		// wait for console updates to complete
-		<-done
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {
 			return nil, err

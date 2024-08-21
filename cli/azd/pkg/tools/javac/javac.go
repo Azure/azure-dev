@@ -16,21 +16,19 @@ import (
 
 const javac = "javac"
 
-type JavacCli interface {
-	tools.ExternalTool
-}
+var _ tools.ExternalTool = (*Cli)(nil)
 
-type javacCli struct {
+type Cli struct {
 	cmdRun exec.CommandRunner
 }
 
-func NewCli(cmdRun exec.CommandRunner) JavacCli {
-	return &javacCli{
+func NewCli(cmdRun exec.CommandRunner) *Cli {
+	return &Cli{
 		cmdRun: cmdRun,
 	}
 }
 
-func (j *javacCli) VersionInfo() tools.VersionInfo {
+func (j *Cli) VersionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 17,
@@ -40,7 +38,7 @@ func (j *javacCli) VersionInfo() tools.VersionInfo {
 	}
 }
 
-func (j *javacCli) CheckInstalled(ctx context.Context) error {
+func (j *Cli) CheckInstalled(ctx context.Context) error {
 	path, err := getInstalledPath()
 	if err != nil {
 		return err
@@ -81,11 +79,11 @@ func (j *javacCli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-func (j *javacCli) InstallUrl() string {
+func (j *Cli) InstallUrl() string {
 	return "https://www.microsoft.com/openjdk"
 }
 
-func (j *javacCli) Name() string {
+func (j *Cli) Name() string {
 	return "Java JDK"
 }
 

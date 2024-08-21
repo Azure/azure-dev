@@ -62,7 +62,7 @@ func getPipelineDefinition(
 
 	// GetDefinitions return just the first page (it could be more)
 	// using pager to iterate pages
-	definitionsPager := getDefinitionsPager(ctx, client, projectId, pipelineName)
+	definitionsPager := getDefinitionsPager(client, projectId, pipelineName)
 
 	for definitionsPager.More() {
 		page, err := definitionsPager.NextPage(ctx)
@@ -134,7 +134,7 @@ func CreatePipeline(
 	}
 
 	createDefinitionArgs, err := createAzureDevPipelineArgs(
-		ctx, projectId, name, repoName, credentials, env, queue,
+		projectId, name, repoName, credentials, env, queue,
 		provisioningProvider, additionalSecrets, additionalVariables)
 	if err != nil {
 		return nil, err
@@ -198,7 +198,6 @@ Visit %s for more information on configuring Terraform remote state`,
 
 // create Azure Deploy Pipeline parameters
 func createAzureDevPipelineArgs(
-	ctx context.Context,
 	projectId string,
 	name string,
 	repoName string,

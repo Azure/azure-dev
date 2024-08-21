@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -42,17 +43,17 @@ func Test_MavenProject(t *testing.T) {
 
 		env := environment.New("test")
 		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
-		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+		mavenCli := maven.NewCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		restoreTask := mavenProject.Restore(*mockContext.Context, serviceConfig)
-		logProgress(restoreTask)
+		result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+			return mavenProject.Restore(*mockContext.Context, serviceConfig, progess)
+		})
 
-		result, err := restoreTask.Await()
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())
@@ -78,17 +79,19 @@ func Test_MavenProject(t *testing.T) {
 
 		env := environment.New("test")
 		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
-		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+		mavenCli := maven.NewCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		mavenProject := NewMavenProject(env, mavenCli, javaCli)
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		buildTask := mavenProject.Build(*mockContext.Context, serviceConfig, nil)
-		logProgress(buildTask)
+		result, err := logProgress(
+			t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+				return mavenProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+			},
+		)
 
-		result, err := buildTask.Await()
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())
@@ -113,7 +116,7 @@ func Test_MavenProject(t *testing.T) {
 
 		env := environment.New("test")
 		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
-		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+		mavenCli := maven.NewCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
 		// Simulate a build output with a jar file
@@ -127,16 +130,17 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		packageTask := mavenProject.Package(
-			*mockContext.Context,
-			serviceConfig,
-			&ServiceBuildResult{
-				BuildOutputPath: serviceConfig.Path(),
-			},
-		)
-		logProgress(packageTask)
+		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			return mavenProject.Package(
+				*mockContext.Context,
+				serviceConfig,
+				&ServiceBuildResult{
+					BuildOutputPath: serviceConfig.Path(),
+				},
+				progress,
+			)
+		})
 
-		result, err := packageTask.Await()
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotEmpty(t, result.PackagePath)
@@ -148,7 +152,7 @@ func Test_MavenProject(t *testing.T) {
 	})
 }
 
-func Test_MavenProject_Package(t *testing.T) {
+func Test_MavenProject_AppService_Package(t *testing.T) {
 	type args struct {
 		// service config to be packaged.
 		svc *ServiceConfig
@@ -282,20 +286,23 @@ func Test_MavenProject_Package(t *testing.T) {
 				})
 
 			env := environment.New("test")
-			mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+			mavenCli := maven.NewCli(mockContext.CommandRunner)
 			javaCli := javac.NewCli(mockContext.CommandRunner)
 			mavenProject := NewMavenProject(env, mavenCli, javaCli)
 			err = mavenProject.Initialize(*mockContext.Context, tt.args.svc)
 			require.NoError(t, err)
 
-			packageTask := mavenProject.Package(
-				*mockContext.Context,
-				tt.args.svc,
-				&ServiceBuildResult{},
+			result, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+					return mavenProject.Package(
+						*mockContext.Context,
+						tt.args.svc,
+						&ServiceBuildResult{},
+						progress,
+					)
+				},
 			)
-			logProgress(packageTask)
 
-			result, err := packageTask.Await()
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -310,6 +317,145 @@ func Test_MavenProject_Package(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_MavenProject_FuncApp_Package(t *testing.T) {
+	tempDir := t.TempDir()
+
+	ostest.Chdir(t, tempDir)
+
+	err := os.WriteFile(getMvnwCmd(), nil, osutil.PermissionExecutableFile)
+	require.NoError(t, err)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.
+		When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, getMvnwCmd()+" package")
+		}).
+		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+	// mvnFuncAppNameProperty is the value of the maven property that holds the function app name.
+	mvnFuncAppNameProperty := ""
+	mockContext.CommandRunner.
+		When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, getMvnwCmd()+" help:evaluate -Dexpression=functionAppName")
+		}).
+		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			if len(mvnFuncAppNameProperty) == 0 {
+				return exec.NewRunResult(0, "", ""), maven.ErrPropertyNotFound
+			}
+
+			return exec.NewRunResult(0, mvnFuncAppNameProperty, ""), nil
+		})
+
+	env := environment.New("test")
+	mavenCli := maven.NewCli(mockContext.CommandRunner)
+	javaCli := javac.NewCli(mockContext.CommandRunner)
+
+	serviceConfig := createTestServiceConfig("./src/api", AzureFunctionTarget, ServiceLanguageJava)
+	err = os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
+	require.NoError(t, err)
+
+	mavenProject := NewMavenProject(env, mavenCli, javaCli)
+
+	t.Run("uses maven property functionAppName", func(t *testing.T) {
+		mvnFuncAppNameProperty = "my-function-app"
+		var svc ServiceConfig = *serviceConfig
+
+		err = os.RemoveAll(filepath.Join(svc.Path(), "target", "azure-functions"))
+		require.NoError(t, err)
+
+		err = os.MkdirAll(
+			filepath.Join(svc.Path(), "target", "azure-functions", mvnFuncAppNameProperty),
+			osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			return mavenProject.Package(
+				*mockContext.Context,
+				&svc,
+				&ServiceBuildResult{
+					BuildOutputPath: svc.Path(),
+				},
+				progress,
+			)
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, result.PackagePath, filepath.Join(svc.Path(), "target", "azure-functions", mvnFuncAppNameProperty))
+	})
+
+	t.Run("uses target/azure-functions when maven property functionAppName not available", func(t *testing.T) {
+		mvnFuncAppNameProperty = ""
+		var svc ServiceConfig = *serviceConfig
+
+		err = os.RemoveAll(filepath.Join(svc.Path(), "target", "azure-functions"))
+		require.NoError(t, err)
+
+		err = os.MkdirAll(
+			filepath.Join(svc.Path(), "target", "azure-functions", "any"),
+			osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			return mavenProject.Package(
+				*mockContext.Context,
+				&svc,
+				&ServiceBuildResult{
+					BuildOutputPath: svc.Path(),
+				},
+				progress,
+			)
+		})
+
+		// returns single staging directory
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, result.PackagePath, filepath.Join(svc.Path(), "target", "azure-functions", "any"))
+
+		// errors when multiple staging directories are found
+		err = os.MkdirAll(
+			filepath.Join(svc.Path(), "target", "azure-functions", "any2"),
+			osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		_, err = logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			return mavenProject.Package(
+				*mockContext.Context,
+				&svc,
+				&ServiceBuildResult{
+					BuildOutputPath: svc.Path(),
+				},
+				progress,
+			)
+		})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "multiple staging directories")
+	})
+
+	t.Run("uses dist specified", func(t *testing.T) {
+		mvnFuncAppNameProperty = ""
+		var svc ServiceConfig = *serviceConfig
+
+		svc.OutputPath = "my-custom-dir"
+		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			return mavenProject.Package(
+				*mockContext.Context,
+				&svc,
+				&ServiceBuildResult{
+					BuildOutputPath: svc.Path(),
+				},
+				progress,
+			)
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, result.PackagePath, filepath.Join(svc.Path(), svc.OutputPath))
+	})
 }
 
 func getMvnwCmd() string {

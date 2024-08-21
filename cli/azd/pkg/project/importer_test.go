@@ -33,7 +33,7 @@ func TestImportManagerHasService(t *testing.T) {
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	manager := NewImportManager(&DotNetImporter{
-		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
@@ -74,7 +74,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	manager := NewImportManager(&DotNetImporter{
-		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
@@ -127,7 +127,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	manager := NewImportManager(&DotNetImporter{
-		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
@@ -173,7 +173,7 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	manager := NewImportManager(&DotNetImporter{
-		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
@@ -222,7 +222,7 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	manager := NewImportManager(&DotNetImporter{
-		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
 			return environment.NewWithValues("env", map[string]string{}), nil
@@ -260,8 +260,8 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 	require.Equal(t, expectedDefaultModule, r.Options.Module)
 }
 
-//go:embed testdata/aspire-escaping.json
-var aspireEscapingManifest []byte
+//go:embed testdata/aspire-simple.json
+var aspireSimpleManifest []byte
 
 func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	manifestInvokeCount := 0
@@ -289,7 +289,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 
 		require.Contains(t, args.Env, "DOTNET_ENVIRONMENT=Development")
 
-		err := os.WriteFile(args.Args[6], aspireEscapingManifest, osutil.PermissionFile)
+		err := os.WriteFile(args.Args[6], aspireSimpleManifest, osutil.PermissionFile)
 		if err != nil {
 			return exec.RunResult{
 				ExitCode: -1,
@@ -300,7 +300,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	})
 
 	manager := NewImportManager(&DotNetImporter{
-		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
 			return environment.NewWithValues("env", map[string]string{

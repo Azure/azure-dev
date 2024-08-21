@@ -57,7 +57,9 @@ func (r *RemoteBuildManager) UploadBuildSource(
 		return armcontainerregistry.SourceUploadDefinition{}, err
 	}
 
-	blobClient, err := blockblob.NewClientWithNoCredential(*sourceUploadRes.UploadURL, nil)
+	blobClient, err := blockblob.NewClientWithNoCredential(*sourceUploadRes.UploadURL, &blockblob.ClientOptions{
+		ClientOptions: r.armClientOptions.ClientOptions,
+	})
 	if err != nil {
 		return armcontainerregistry.SourceUploadDefinition{}, err
 	}

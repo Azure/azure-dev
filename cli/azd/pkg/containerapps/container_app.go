@@ -121,7 +121,7 @@ func (cas *containerAppService) GetEnviron(ctx context.Context,
 		key := *env.Name
 		val := env.Value
 		if env.SecretRef != nil {
-			val = convert.RefOf("*******")
+			val = to.Ptr("*******")
 
 			for _, secret := range secrets {
 				if *env.SecretRef == *secret.Name {
@@ -354,9 +354,9 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	// Update the container app
-	//!HACK: prototype ONLY
+	// TODO(weilim):!HACK: prototype ONLY
 	containerApp.Properties.Configuration.Ingress.CorsPolicy = &armappcontainers.CorsPolicy{
-		AllowedOrigins: []*string{convert.RefOf("*")},
+		AllowedOrigins: []*string{to.Ptr("*")},
 	}
 	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp)
 	if err != nil {

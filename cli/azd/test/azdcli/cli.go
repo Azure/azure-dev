@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
+	osexec "os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -23,6 +23,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -130,7 +132,7 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 	description := "azd " + strings.Join(args, " ") + " in " + cli.WorkingDirectory
 
 	/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
-	cmd := exec.CommandContext(ctx, cli.AzdPath, args...)
+	cmd := osexec.CommandContext(ctx, cli.AzdPath, args...)
 	if cli.WorkingDirectory != "" {
 		cmd.Dir = cli.WorkingDirectory
 	}
@@ -227,11 +229,14 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 			return i, err
 		}
 
+		output := exec.RedactSensitiveData(l.sb.String())
+
 		if b == '\n' {
-			l.t.Logf("%s %s%s", time.Since(l.initialTime).Round(1*time.Millisecond), l.prefix, l.sb.String())
+			l.t.Logf("%s %s%s", time.Since(l.initialTime).Round(1*time.Millisecond), l.prefix, output)
 			l.sb.Reset()
 		}
 	}
+
 	return len(bytes), nil
 }
 
@@ -242,7 +247,7 @@ func GetSourcePath() string {
 
 func build(t *testing.T, pkgPath string, args ...string) {
 	startTime := time.Now()
-	cmd := exec.Command("go", "build")
+	cmd := osexec.Command("go", "build")
 	cmd.Dir = pkgPath
 	cmd.Args = append(cmd.Args, args...)
 

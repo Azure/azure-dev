@@ -333,22 +333,17 @@ func (p *BicepProvider) createDeploymentFromArmDeployment(
 	scope infra.Scope,
 	deploymentName string,
 ) (infra.Deployment, error) {
-	switch scope.Type() {
-	case infra.ScopeTypeResourceGroup:
-		resourceGroupScope, ok := scope.(*infra.ResourceGroupScope)
-		if !ok {
-			return nil, errors.New("ResourceGroupScope was expected")
-		}
+	resourceGroupScope, ok := scope.(*infra.ResourceGroupScope)
+	if ok {
 		return p.deploymentManager.ResourceGroupDeployment(resourceGroupScope, deploymentName), nil
-	case infra.ScopeTypeSubscription:
-		subscriptionScope, ok := scope.(*infra.SubscriptionScope)
-		if !ok {
-			return nil, errors.New("SubscriptionScope was expected")
-		}
-		return p.deploymentManager.SubscriptionDeployment(subscriptionScope, deploymentName), nil
-	default:
-		return nil, errors.New("unsupported deployment scope")
 	}
+
+	subscriptionScope, ok := scope.(*infra.SubscriptionScope)
+	if ok {
+		return p.deploymentManager.SubscriptionDeployment(subscriptionScope, deploymentName), nil
+	}
+
+	return nil, errors.New("unsupported deployment scope")
 }
 
 var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
@@ -775,7 +770,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, fmt.Errorf("getting resources to delete: %w", err)
 	}
 
-	groupedResources, err := p.resourceService.MapResources(resourcesToDelete)
+	groupedResources, err := azapi.GroupByResourceGroup(resourcesToDelete)
 	if err != nil {
 		return nil, fmt.Errorf("mapping resources to resource groups: %w", err)
 	}

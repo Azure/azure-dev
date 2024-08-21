@@ -20,7 +20,6 @@ const (
 )
 
 type Scope interface {
-	Type() ScopeType
 	// SubscriptionId is the id of the subscription which this deployment targets.
 	SubscriptionId() string
 	// ListDeployments returns all the deployments at this scope.
@@ -178,10 +177,6 @@ func newResourceGroupScope(
 	}
 }
 
-func (s *ResourceGroupScope) Type() ScopeType {
-	return ScopeTypeResourceGroup
-}
-
 func (s *ResourceGroupScope) SubscriptionId() string {
 	return s.subscriptionId
 }
@@ -306,10 +301,6 @@ type SubscriptionScope struct {
 	deploymentService azapi.DeploymentService
 	subscriptionId    string
 	location          string
-}
-
-func (s *SubscriptionScope) Type() ScopeType {
-	return ScopeTypeSubscription
 }
 
 // Gets the Azure subscription id

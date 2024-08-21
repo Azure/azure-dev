@@ -22,6 +22,8 @@ const (
 	DeploymentTypeStacks   DeploymentType = "deployments.stacks"
 )
 
+var ErrPreviewNotSupported = errors.New("preview not supported")
+
 const emptySubscriptionArmTemplate = `{
 	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 	"contentVersion": "1.0.0.0",

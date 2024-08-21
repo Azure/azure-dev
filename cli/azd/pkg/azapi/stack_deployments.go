@@ -371,23 +371,7 @@ func (d *StackDeployments) WhatIfDeployToSubscription(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 ) (*armresources.WhatIfOperationResult, error) {
-	deployment, err := d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
-	if err != nil && !errors.Is(err, ErrDeploymentNotFound) {
-		return nil, err
-	}
-
-	if deployment != nil && deployment.DeploymentId != "" {
-		deploymentName = filepath.Base(deployment.DeploymentId)
-	}
-
-	return d.standardDeployments.WhatIfDeployToSubscription(
-		ctx,
-		subscriptionId,
-		location,
-		deploymentName,
-		armTemplate,
-		parameters,
-	)
+	return nil, ErrPreviewNotSupported
 }
 
 func (d *StackDeployments) WhatIfDeployToResourceGroup(
@@ -398,23 +382,7 @@ func (d *StackDeployments) WhatIfDeployToResourceGroup(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 ) (*armresources.WhatIfOperationResult, error) {
-	deployment, err := d.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroup, deploymentName)
-	if err != nil && !errors.Is(err, ErrDeploymentNotFound) {
-		return nil, err
-	}
-
-	if deployment != nil && deployment.DeploymentId != "" {
-		deploymentName = filepath.Base(deployment.DeploymentId)
-	}
-
-	return d.standardDeployments.WhatIfDeployToResourceGroup(
-		ctx,
-		subscriptionId,
-		resourceGroup,
-		deploymentName,
-		armTemplate,
-		parameters,
-	)
+	return nil, ErrPreviewNotSupported
 }
 
 func (d *StackDeployments) ListSubscriptionDeploymentResources(

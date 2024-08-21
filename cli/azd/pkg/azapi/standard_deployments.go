@@ -342,17 +342,49 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 	subscriptionId string,
 	deploymentName string,
 ) ([]*armresources.ResourceReference, error) {
-	client, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	subscriptionDeployment, err := ds.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
+		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
-	response, err := client.GetAtSubscriptionScope(ctx, deploymentName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting deployment from subscription: %w", err)
+	// Get the environment name from the deployment tags
+	envName, has := subscriptionDeployment.Tags[azure.TagKeyAzdEnvName]
+	if !has || envName == nil {
+		return nil, fmt.Errorf("environment name not found in deployment tags")
 	}
 
-	return ds.getResourcesFromDeployment(ctx, &response.DeploymentExtended, subscriptionId)
+	// Get all resource groups tagged with the azd-env-name tag
+	resourceGroups, err := ds.resourceService.ListResourceGroup(ctx, subscriptionId, &ListResourceGroupOptions{
+		TagFilter: &Filter{Key: azure.TagKeyAzdEnvName, Value: *envName},
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("listing resource groups: %w", err)
+	}
+
+	allResources := []*armresources.ResourceReference{}
+
+	// Find all the resources from all the resource groups
+	for _, resourceGroup := range resourceGroups {
+
+		resources, err := ds.resourceService.ListResourceGroupResources(ctx, subscriptionId, resourceGroup.Name, nil)
+		if err != nil {
+			return nil, fmt.Errorf("listing resource group resources: %w", err)
+		}
+
+		resourceGroupId := azure.ResourceGroupRID(subscriptionId, resourceGroup.Name)
+		allResources = append(allResources, &armresources.ResourceReference{
+			ID: &resourceGroupId,
+		})
+
+		for _, resource := range resources {
+			allResources = append(allResources, &armresources.ResourceReference{
+				ID: to.Ptr(resource.Id),
+			})
+		}
+	}
+
+	return allResources, nil
 }
 
 func (ds *StandardDeployments) ListResourceGroupDeploymentResources(
@@ -361,17 +393,25 @@ func (ds *StandardDeployments) ListResourceGroupDeploymentResources(
 	resourceGroupName string,
 	deploymentName string,
 ) ([]*armresources.ResourceReference, error) {
-	client, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	resources, err := ds.resourceService.ListResourceGroupResources(ctx, subscriptionId, resourceGroupName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
+		return nil, fmt.Errorf("listing resource group resources: %w", err)
 	}
 
-	response, err := client.Get(ctx, resourceGroupName, deploymentName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting deployment from subscription: %w", err)
+	resourceGroupId := azure.ResourceGroupRID(subscriptionId, resourceGroupName)
+
+	allResources := []*armresources.ResourceReference{}
+	allResources = append(allResources, &armresources.ResourceReference{
+		ID: &resourceGroupId,
+	})
+
+	for _, resource := range resources {
+		allResources = append(allResources, &armresources.ResourceReference{
+			ID: to.Ptr(resource.Id),
+		})
 	}
 
-	return ds.getResourcesFromDeployment(ctx, &response.DeploymentExtended, subscriptionId)
+	return allResources, nil
 }
 
 func (ds *StandardDeployments) DeleteSubscriptionDeployment(

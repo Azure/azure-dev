@@ -237,9 +237,9 @@ func (rs *ResourceService) createResourceGroupClient(
 	return client, nil
 }
 
-// MapResources creates a map of resources group by their resource group name.
+// GroupByResourceGroup creates a map of resources group by their resource group name.
 // The key is the resource group name and the value is a list of resources in that group.
-func (rs *ResourceService) MapResources(resources []*armresources.ResourceReference) (map[string][]*Resource, error) {
+func GroupByResourceGroup(resources []*armresources.ResourceReference) (map[string][]*Resource, error) {
 	resourceMap := map[string][]*Resource{}
 
 	for _, resource := range resources {

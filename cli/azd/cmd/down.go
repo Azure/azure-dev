@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -109,13 +108,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
 	if _, err := a.provisionManager.Destroy(ctx, destroyOptions); err != nil {
-		if errors.Is(err, azapi.ErrDeploymentNotFound) {
-			message := "Deleting resources (No deployments found)"
-			a.console.ShowSpinner(ctx, message, input.Step)
-			a.console.StopSpinner(ctx, message, input.StepSkipped)
-		}
-
-		return nil, err
+		return nil, fmt.Errorf("deleting infrastructure: %w", err)
 	}
 
 	return &actions.ActionResult{

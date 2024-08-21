@@ -31,15 +31,6 @@ const emptySubscriptionArmTemplate = `{
 	"outputs": {}
   }`
 
-const emptyResourceGroupArmTemplate = `{
-	"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-	"contentVersion": "1.0.0.0",
-	"parameters": {},
-	"variables": {},
-	"resources": [],
-	"outputs": {}
-  }`
-
 type ResourceDeployment struct {
 	// The Azure resource id of the deployment operation
 	Id string

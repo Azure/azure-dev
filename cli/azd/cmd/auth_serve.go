@@ -29,12 +29,32 @@ type TokenResponse struct {
 
 // tokenHandler handles token requests.
 func (serve *serveAction) tokenHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract the IP address from the request's RemoteAddr field
+	clientIP := r.RemoteAddr
+
+	// Only allow requests from 127.0.0.1 or host.docker.internal
+	allowedIPs := []string{"127.0.0.1", "host.docker.internal"}
+
+	// Check if the request comes from an allowed IP address
+	ipAllowed := false
+	for _, allowedIP := range allowedIPs {
+		if clientIP == allowedIP {
+			ipAllowed = true
+			break
+		}
+	}
+
+	if !ipAllowed {
+		http.Error(w, "Forbidden: Requests are only allowed from 127.0.0.1 or host.docker.internal", http.StatusForbidden)
+		return
+	}
+
 	resource := r.URL.Query().Get("resource")
 	if resource == "" {
 		resource = "https://management.azure.com/"
 	}
 
-	fmt.Printf("Received request for resource: %s\n", resource)
+	fmt.Printf("Received request for resource: %s from IP: %s\n", resource, clientIP)
 
 	ctx := context.Background()
 	var cred azcore.TokenCredential
@@ -45,6 +65,7 @@ func (serve *serveAction) tokenHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		fmt.Printf("credentialProvider: %v", err)
+		http.Error(w, "Failed to get credentials: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -53,6 +74,7 @@ func (serve *serveAction) tokenHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		fmt.Printf("fetching token: %v", err)
+		http.Error(w, "Failed to fetch token: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

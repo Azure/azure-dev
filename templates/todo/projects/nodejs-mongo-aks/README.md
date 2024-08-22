@@ -66,8 +66,8 @@ azd up
 ```
 
 > Note: If you are running on an internal sub, then you need to test this from a DevBox. Here's the error you'll receive if you attempt to run outside of a DevBox:
-
-!["Screenshot of error page"](assets/errorpage.png)
+>
+> !["Screenshot of error page"](assets/errorpage.png)
 
 #### Optional Configuration
 

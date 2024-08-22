@@ -16,8 +16,11 @@ func newGhTemplateSource(
 	// urlArg validation:
 	// - accepts only URLs with the following format:
 	//  - https://raw.<hostname>/<owner>/<repo>/<branch>/<path>/<file>.json
+	//    - This url comes from a user clicking the `raw` button on a file in a GitHub repository (web view).
 	//  - https://<hostname>/<owner>/<repo>/<branch>/<path>/<file>.json
+	//    - This url comes from a user browsing GitHub repository and copy-pasting the url from the browser.
 	//  - https://api.<hostname>/repos/<owner>/<repo>/contents/<path>/<file>.json
+	//    - This url comes from users familiar with the GitHub API. Usually for programmatic registration of templates.
 
 	// Parse the URL to get the hostname
 	parsedURL, err := url.Parse(urlArg)

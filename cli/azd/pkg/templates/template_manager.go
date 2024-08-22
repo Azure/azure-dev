@@ -168,7 +168,7 @@ func (tm *TemplateManager) createSourcesFromConfig(
 			continue
 		}
 
-		source, err := tm.sourceManager.CreateSource(ctx, config, tm.console)
+		source, err := tm.sourceManager.CreateSource(ctx, config)
 		if err != nil {
 			log.Printf("failed to create source: %s", err.Error())
 			continue

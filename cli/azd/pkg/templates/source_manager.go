@@ -68,7 +68,7 @@ type SourceManager interface {
 	// Remove removes a template source.
 	Remove(ctx context.Context, name string) error
 	// CreateSource creates a new template source from a source configuration
-	CreateSource(ctx context.Context, source *SourceConfig, console input.Console) (Source, error)
+	CreateSource(ctx context.Context, source *SourceConfig) (Source, error)
 }
 
 type sourceManager struct {
@@ -76,7 +76,6 @@ type sourceManager struct {
 	serviceLocator ioc.ServiceLocator
 	configManager  config.UserConfigManager
 	transport      policy.Transporter
-	ghCli          *github.Cli
 }
 
 // NewSourceManager creates a new SourceManager.
@@ -85,7 +84,6 @@ func NewSourceManager(
 	serviceLocator ioc.ServiceLocator,
 	configManager config.UserConfigManager,
 	transport policy.Transporter,
-	ghCli *github.Cli,
 ) SourceManager {
 	if options == nil {
 		options = NewSourceOptions()
@@ -96,7 +94,6 @@ func NewSourceManager(
 		serviceLocator: serviceLocator,
 		configManager:  configManager,
 		transport:      transport,
-		ghCli:          ghCli,
 	}
 }
 
@@ -220,7 +217,7 @@ func (sm *sourceManager) Remove(ctx context.Context, key string) error {
 }
 
 // Source returns a hydrated template source for the current config.
-func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig, console input.Console) (Source, error) {
+func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig) (Source, error) {
 	var source Source
 	var err error
 
@@ -234,7 +231,16 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig,
 	case SourceKindResource:
 		source, err = newJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
 	case SourceKindGh:
-		source, err = newGhTemplateSource(ctx, config.Name, config.Location, sm.ghCli, console)
+		// resolve the GitHub cli from container
+		var dependencies struct {
+			ghCli   *github.Cli   `container:"type"`
+			console input.Console `container:"type"`
+		}
+		err = sm.serviceLocator.Fill(&dependencies)
+		if err != nil {
+			return nil, fmt.Errorf("unable to resolve dependencies: %w", err)
+		}
+		source, err = newGhTemplateSource(ctx, config.Name, config.Location, dependencies.ghCli, dependencies.console)
 	default:
 		err = sm.serviceLocator.ResolveNamed(string(config.Type), &source)
 		if err != nil {

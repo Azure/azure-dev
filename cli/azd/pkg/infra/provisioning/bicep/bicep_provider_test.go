@@ -432,8 +432,10 @@ var testEnvDeployment armresources.DeploymentExtended = armresources.DeploymentE
 	ID:       to.Ptr("DEPLOYMENT_ID"),
 	Name:     to.Ptr("test-env"),
 	Location: to.Ptr("eastus2"),
-	Tags:     map[string]*string{},
-	Type:     to.Ptr("Microsoft.Resources/deployments"),
+	Tags: map[string]*string{
+		"azd-env-name": to.Ptr("test-env"),
+	},
+	Type: to.Ptr("Microsoft.Resources/deployments"),
 	Properties: &armresources.DeploymentPropertiesExtended{
 		Outputs: map[string]interface{}{
 			"WEBSITE_URL": map[string]interface{}{"value": "http://myapp.azurewebsites.net", "type": "string"},
@@ -487,7 +489,7 @@ func prepareStateMocks(mockContext *mocks.MockContext) {
 
 func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	makeItem := func(resourceType azapi.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
-		id := fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+		id := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 			string(resourceType), resourceName)
 
 		return &armresources.GenericResourceExpanded{
@@ -512,16 +514,34 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		},
 	}
 
+	resourceGroup := &armresources.ResourceGroup{
+		ID:       to.Ptr(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
+		Location: to.Ptr("eastus2"),
+		Name:     to.Ptr("RESOURCE_GROUP"),
+		Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
+		Tags: map[string]*string{
+			"azd-env-name": to.Ptr("test-env"),
+		},
+	}
+
+	// Get resource group
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasSuffix(request.URL.Path, "/resourcegroups") && strings.Contains(request.URL.RawQuery, "filter=")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := armresources.ResourceGroupListResult{
+			Value: []*armresources.ResourceGroup{
+				resourceGroup,
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
+
 	// Get list of resources to delete
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/resources")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		resourceListBytes, _ := json.Marshal(resourceList)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(resourceListBytes)),
-		}, nil
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resourceList)
 	})
 
 	// Get Key Vault
@@ -602,7 +622,25 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPut &&
 			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
-	}).RespondFn(httpRespondFn)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armresources.DeploymentExtended{
+				ID:       to.Ptr("DEPLOYMENT_ID"),
+				Name:     to.Ptr("test-env"),
+				Location: to.Ptr("eastus2"),
+				Tags: map[string]*string{
+					"azd-env-name": to.Ptr("test-env"),
+				},
+				Type: to.Ptr("Microsoft.Resources/deployments"),
+				Properties: &armresources.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					Timestamp:         to.Ptr(time.Now()),
+				},
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
 }
 
 func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {

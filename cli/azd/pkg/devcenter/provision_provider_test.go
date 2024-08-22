@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockdevcentersdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -463,12 +462,9 @@ func newProvisionProviderForTest(
 
 	require.NoError(t, err)
 
-	azCli := azcli.NewAzCli(
-		mockContext.SubscriptionCredentialProvider,
-		mockContext.ArmClientOptions,
-	)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	resourceManager := infra.NewAzureResourceManager(
-		azCli,
+		resourceService,
 		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
 	)
 

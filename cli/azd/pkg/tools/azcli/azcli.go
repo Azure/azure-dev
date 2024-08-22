@@ -19,12 +19,6 @@ var (
 )
 
 type AzCli interface {
-	GetResource(
-		ctx context.Context,
-		subscriptionId string,
-		resourceId string,
-		apiVersion string,
-	) (AzCliResourceExtended, error)
 	GetManagedHSM(
 		ctx context.Context,
 		subscriptionId string,
@@ -67,26 +61,6 @@ type AzCli interface {
 		resourceGroup string,
 		funcName string,
 	) (*AzCliFunctionAppProperties, error)
-
-	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
-	CreateOrUpdateResourceGroup(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		location string,
-		tags map[string]*string,
-	) error
-	ListResourceGroup(
-		ctx context.Context,
-		subscriptionId string,
-		listOptions *ListResourceGroupOptions,
-	) ([]AzCliResource, error)
-	ListResourceGroupResources(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		listOptions *ListResourceGroupResourcesOptions,
-	) ([]AzCliResource, error)
 	// CreateOrUpdateServicePrincipal creates a service principal using a given name and returns a JSON object which
 	// may be used by tools which understand the `AZURE_CREDENTIALS` format (i.e. the `sdk-auth` format). The service
 	// principal is assigned a given role. If an existing principal exists with the given name,
@@ -111,39 +85,6 @@ type AzCli interface {
 		appName string,
 		environmentName string,
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
-}
-
-type AzCliResource struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Location string `json:"location"`
-}
-
-type AzCliResourceExtended struct {
-	AzCliResource
-	Kind string `json:"kind"`
-}
-
-// Optional parameters for resource group listing.
-type ListResourceGroupOptions struct {
-	// An optional tag filter
-	TagFilter *Filter
-	// An optional filter expression to filter the resource group results
-	// https://learn.microsoft.com/en-us/rest/api/resources/resource-groups/list
-	Filter *string
-}
-
-// Optional parameters for resource group resources listing.
-type ListResourceGroupResourcesOptions struct {
-	// An optional filter expression to filter the resource list result
-	// https://learn.microsoft.com/en-us/rest/api/resources/resources/list-by-resource-group#uri-parameters
-	Filter *string
-}
-
-type Filter struct {
-	Key   string
-	Value string
 }
 
 func NewAzCli(

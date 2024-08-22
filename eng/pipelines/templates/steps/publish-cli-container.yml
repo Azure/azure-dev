@@ -11,10 +11,10 @@ parameters:
     default: true
   - name: AcrHost
     type: string
-    default: $(azdev-acr-host)
+    default: 'azdevcliextacr.azurecr.io'
   - name: SyndicatedAcrHost
     type: string
-    default: $(azdev-acr-syndicated-host)
+    default: 'azdevmcrpublish.azurecr.io'
 
 steps: 
   - ${{ if eq('true', parameters.DownloadArtifacts) }}:

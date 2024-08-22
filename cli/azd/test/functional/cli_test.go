@@ -40,7 +40,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
@@ -260,7 +259,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 			Cloud:     cloud.AzurePublic().Configuration,
 		},
 	}
-	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
+	resourceService := azapi.NewResourceService(mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
@@ -275,7 +274,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
+	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentOperations)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
@@ -475,12 +474,13 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		},
 	}
 
-	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
+	resourceService := azapi.NewResourceService(mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
 		armClientOptions,
 	)
+
 	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
@@ -490,7 +490,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
+	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentOperations)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)

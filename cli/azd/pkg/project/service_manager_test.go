@@ -10,12 +10,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -41,9 +41,9 @@ func createServiceManager(
 	env *environment.Environment,
 	operationCache ServiceOperationCache,
 ) ServiceManager {
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	resourceManager := NewResourceManager(env, azCli, depOpService)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	resourceManager := NewResourceManager(env, resourceService, depOpService)
 
 	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(
 		map[string]any{
@@ -450,7 +450,7 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 			ID:       to.Ptr("ID"),
 			Name:     to.Ptr("RESOURCE_GROUP"),
 			Location: to.Ptr("eastus2"),
-			Type:     to.Ptr(string(infra.AzureResourceTypeResourceGroup)),
+			Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
 		},
 	})
 
@@ -462,7 +462,7 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 				ID:       to.Ptr("ID"),
 				Name:     to.Ptr("WEB_APP"),
 				Location: to.Ptr("eastus2"),
-				Type:     to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				Tags: map[string]*string{
 					azure.TagKeyAzdServiceName: to.Ptr("api"),
 				},

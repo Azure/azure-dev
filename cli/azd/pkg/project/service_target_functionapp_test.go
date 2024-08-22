@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,12 +17,12 @@ func TestNewFunctionAppTargetTypeValidation(t *testing.T) {
 
 	tests := map[string]*serviceTargetValidationTest{
 		"ValidateTypeSuccess": {
-			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", string(infra.AzureResourceTypeWebSite)),
+			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", string(azapi.AzureResourceTypeWebSite)),
 			expectError:    false,
 		},
 		"ValidateTypeLowerCaseSuccess": {
 			targetResource: environment.NewTargetResource(
-				"SUB_ID", "RG_ID", "res", strings.ToLower(string(infra.AzureResourceTypeWebSite)),
+				"SUB_ID", "RG_ID", "res", strings.ToLower(string(azapi.AzureResourceTypeWebSite)),
 			),
 			expectError: false,
 		},

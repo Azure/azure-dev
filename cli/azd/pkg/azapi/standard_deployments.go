@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
-	"golang.org/x/exp/maps"
 )
 
 // cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
@@ -523,46 +522,6 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 	})
 
 	return nil
-}
-
-func (ds *StandardDeployments) getResourcesFromDeployment(
-	ctx context.Context,
-	deployment *armresources.DeploymentExtended,
-	subscriptionId string,
-) ([]*armresources.ResourceReference, error) {
-	allResources := map[string]*armresources.ResourceReference{}
-	for _, outputResource := range deployment.Properties.OutputResources {
-		allResources[*outputResource.ID] = outputResource
-	}
-
-	for _, dependency := range deployment.Properties.Dependencies {
-		if *dependency.ResourceType == string(AzureResourceTypeDeployment) {
-			for _, dependentResource := range dependency.DependsOn {
-				if *dependentResource.ResourceType == string(AzureResourceTypeResourceGroup) {
-					parsedResource, err := arm.ParseResourceID(*dependency.ID)
-					if err != nil {
-						return nil, fmt.Errorf("parsing resource ID: %w", err)
-					}
-
-					deploymentResources, err := ds.ListResourceGroupDeploymentResources(
-						ctx,
-						subscriptionId,
-						parsedResource.ResourceGroupName,
-						*dependency.ResourceName,
-					)
-					if err != nil {
-						return nil, fmt.Errorf("getting deployment resources: %w", err)
-					}
-
-					for _, deploymentResource := range deploymentResources {
-						allResources[*deploymentResource.ID] = deploymentResource
-					}
-				}
-			}
-		}
-	}
-
-	return maps.Values(allResources), nil
 }
 
 func (ds *StandardDeployments) WhatIfDeployToSubscription(

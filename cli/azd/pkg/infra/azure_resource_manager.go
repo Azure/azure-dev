@@ -16,11 +16,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type AzureResourceManager struct {
-	azCli                azcli.AzCli
+	resourceService      *azapi.ResourceService
 	deploymentOperations azapi.DeploymentOperations
 }
 
@@ -31,14 +30,16 @@ type ResourceManager interface {
 		ctx context.Context,
 		subscriptionId string,
 		resourceId string,
-		resourceType AzureResourceType,
+		resourceType azapi.AzureResourceType,
 	) (string, error)
 }
 
 func NewAzureResourceManager(
-	azCli azcli.AzCli, deploymentOperations azapi.DeploymentOperations) *AzureResourceManager {
+	resourceService *azapi.ResourceService,
+	deploymentOperations azapi.DeploymentOperations,
+) *AzureResourceManager {
 	return &AzureResourceManager{
-		azCli:                azCli,
+		resourceService:      resourceService,
 		deploymentOperations: deploymentOperations,
 	}
 }
@@ -71,7 +72,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 			if operation.Properties != nil &&
 				operation.Properties.TargetResource != nil &&
 				operation.Properties.TargetResource.ResourceType != nil &&
-				*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
+				*operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeResourceGroup) {
 				resourceGroupName = *operation.Properties.TargetResource.ResourceName
 				break
 			}
@@ -103,12 +104,12 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 			// resolve
 			continue
 		}
-		if *operation.Properties.TargetResource.ResourceType != string(AzureResourceTypeDeployment) {
+		if *operation.Properties.TargetResource.ResourceType != string(azapi.AzureResourceTypeDeployment) {
 			// non-deploy ops can be part of the final result, we don't need to resolve inner level operations
 			allLevelsDeploymentOperations = append(allLevelsDeploymentOperations, operation)
 			continue
 		}
-		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) &&
+		if *operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeDeployment) &&
 			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
 			// for deploy/create ops, we want to traverse all inner operations to fetch resources.
 			err = rm.appendDeploymentResourcesRecursive(
@@ -136,9 +137,9 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	ctx context.Context,
 	subscriptionId string,
 	envName string,
-) ([]azcli.AzCliResource, error) {
-	res, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, &azcli.ListResourceGroupOptions{
-		TagFilter: &azcli.Filter{Key: azure.TagKeyAzdEnvName, Value: envName},
+) ([]azapi.Resource, error) {
+	res, err := rm.resourceService.ListResourceGroup(ctx, subscriptionId, &azapi.ListResourceGroupOptions{
+		TagFilter: &azapi.Filter{Key: azure.TagKeyAzdEnvName, Value: envName},
 	})
 
 	if err != nil {
@@ -161,10 +162,10 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(
 	ctx context.Context,
 	subscriptionId string,
 	environmentName string,
-) ([]azcli.AzCliResource, error) {
-	allGroups, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, nil)
+) ([]azapi.Resource, error) {
+	allGroups, err := rm.resourceService.ListResourceGroup(ctx, subscriptionId, nil)
 
-	matchingGroups := []azcli.AzCliResource{}
+	matchingGroups := []azapi.Resource{}
 	for _, group := range allGroups {
 		if group.Name == fmt.Sprintf("rg-%[1]s", environmentName) ||
 			group.Name == fmt.Sprintf("%[1]s-rg", environmentName) {
@@ -238,9 +239,9 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
-	resourceType AzureResourceType,
+	resourceType azapi.AzureResourceType,
 ) (string, error) {
-	if resourceType == AzureResourceTypeWebSite {
+	if resourceType == azapi.AzureResourceTypeWebSite {
 		// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app
 		// vs. App service It is extremely important that we display the right one, thus we resolve it by querying the
 		// properties of the ARM resource.
@@ -251,7 +252,7 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 		} else {
 			return resourceTypeDisplayName, nil
 		}
-	} else if resourceType == AzureResourceTypeCognitiveServiceAccount {
+	} else if resourceType == azapi.AzureResourceTypeCognitiveServiceAccount {
 		resourceTypeDisplayName, err := rm.getCognitiveServiceResourceTypeDisplayName(ctx, subscriptionId, resourceId)
 
 		if err != nil {
@@ -260,7 +261,7 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 			return resourceTypeDisplayName, nil
 		}
 	} else {
-		resourceTypeDisplayName := GetResourceTypeDisplayName(resourceType)
+		resourceTypeDisplayName := azapi.GetResourceTypeDisplayName(resourceType)
 		return resourceTypeDisplayName, nil
 	}
 }
@@ -273,7 +274,7 @@ func (rm *AzureResourceManager) getWebAppResourceTypeDisplayName(
 	subscriptionId string,
 	resourceId string,
 ) (string, error) {
-	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, webAppApiVersion)
+	resource, err := rm.resourceService.GetResource(ctx, subscriptionId, resourceId, webAppApiVersion)
 
 	if err != nil {
 		return "", fmt.Errorf("getting web app resource type display names: %w", err)
@@ -296,7 +297,7 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 	subscriptionId string,
 	resourceId string,
 ) (string, error) {
-	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, cognitiveServiceApiVersion)
+	resource, err := rm.resourceService.GetResource(ctx, subscriptionId, resourceId, cognitiveServiceApiVersion)
 
 	if err != nil {
 		return "", fmt.Errorf("getting cognitive service resource type display names: %w", err)
@@ -345,7 +346,10 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			continue
 		}
 
-		if compare.PtrValueEquals(operation.Properties.TargetResource.ResourceType, string(AzureResourceTypeDeployment)) {
+		if compare.PtrValueEquals(
+			operation.Properties.TargetResource.ResourceType,
+			string(azapi.AzureResourceTypeDeployment),
+		) {
 			// go to inner levels to resolve resources
 			err := rm.appendDeploymentResourcesRecursive(
 				ctx,

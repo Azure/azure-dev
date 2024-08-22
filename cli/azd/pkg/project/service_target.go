@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -123,7 +123,7 @@ func NewServiceDeployResult(
 func resourceTypeMismatchError(
 	resourceName string,
 	resourceType string,
-	expectedResourceType infra.AzureResourceType,
+	expectedResourceType azapi.AzureResourceType,
 ) error {
 	return fmt.Errorf(
 		"resource '%s' with type '%s' does not match expected resource type '%s'",
@@ -142,7 +142,7 @@ func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
 	return st == AksTarget
 }
 
-func checkResourceType(resource *environment.TargetResource, expectedResourceType infra.AzureResourceType) error {
+func checkResourceType(resource *environment.TargetResource, expectedResourceType azapi.AzureResourceType) error {
 	if !strings.EqualFold(resource.ResourceType(), string(expectedResourceType)) {
 		return resourceTypeMismatchError(
 			resource.ResourceName(),

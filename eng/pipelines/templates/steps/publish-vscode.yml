@@ -2,8 +2,6 @@ parameters:
   TagRepository: false
   VsixVersion: $(VSIX_VERSION)
   UpdateShield: false
-  StorageAccountName: $(azdev-storage-account-name)
-  StorageAccountKey: $(azdev-storage-account-key)
   StorageContainerName: azd
 
 steps:
@@ -32,19 +30,21 @@ steps:
       Get-ChildItem signed/
     displayName: Copy signed vsix to release location
 
-  - pwsh: |
-      $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
-      foreach ($location in $publishLocations) {
-        Write-Host "Publishing to $location"
-        az storage blob upload-batch `
-          --account-name '${{ parameters.StorageAccountName }}' `
-          --account-key '${{ parameters.StorageAccountKey }}' `
-          --auth-mode key `
-          -s release `
-          -d "${{ parameters.StorageContainerName }}/$location" `
-          --overwrite
-      }
+  - task: AzurePowerShell@5
     displayName: Publish files to storage locations
+    inputs:
+      azureSubscription: 'Azure SDK Artifacts'
+      azurePowerShellVersion: LatestVersion
+      pwsh: true
+      ScriptType: InlineScript
+      Inline: |
+        $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
+        foreach ($location in $publishLocations) {
+          Write-Host "Publishing to $location"
+          azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location" --overwrite=true
+        }
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - ${{ if eq('true', parameters.UpdateShield) }}:
     - template: /eng/pipelines/templates/steps/publish-shield.yml
@@ -52,8 +52,6 @@ steps:
         ArtifactName: shield-vscode
         ArtifactDownloadPath: shields/vscode
         ArtifactFilename: vscode.json
-        StorageAccountName: ${{ parameters.StorageAccountName }}
-        StorageAccountKey: ${{ parameters.StorageAccountKey }}
         StorageContainerName: ${{ parameters.StorageContainerName }}
         PublishDestination: vscode/latest
 

@@ -8,7 +8,7 @@ import (
 )
 
 // See https://github.com/Azure/azure-resource-manager-rpc/blob/master/v1.0/common-api-details.md#client-request-headers
-const msCorrelationIdHeader = "x-ms-correlation-request-id"
+const MsCorrelationIdHeader = "x-ms-correlation-request-id"
 
 // See https://learn.microsoft.com/en-us/graph/best-practices-concept#reliability-and-support
 const msGraphCorrelationIdHeader = "client-request-id"
@@ -33,7 +33,7 @@ func (p *simpleCorrelationPolicy) Do(req *policy.Request) (*http.Response, error
 // This works for Azure REST API, and could also work for other Microsoft-hosted services that do not yet honor distributed
 // tracing.
 func NewMsCorrelationPolicy() policy.Policy {
-	return &simpleCorrelationPolicy{headerName: msCorrelationIdHeader}
+	return &simpleCorrelationPolicy{headerName: MsCorrelationIdHeader}
 }
 
 // NewMsGraphCorrelationPolicy creates a policy that sets Microsoft Graph correlation ID headers on HTTP requests.

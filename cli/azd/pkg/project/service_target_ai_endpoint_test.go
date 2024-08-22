@@ -10,8 +10,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -43,7 +43,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		env.GetSubscriptionId(),
 		env.Getenv(environment.ResourceGroupEnvVarName),
 		endpointName,
-		string(infra.AzureMachineLearningEndpoint),
+		string(azapi.AzureResourceTypeMachineLearningEndpoint),
 	)
 	serviceConfig := createTestServiceConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
 	serviceConfig.Config = map[string]any{

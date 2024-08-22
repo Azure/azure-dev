@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -153,11 +153,11 @@ func (f *functionAppTarget) Endpoints(
 func (f *functionAppTarget) validateTargetResource(
 	targetResource *environment.TargetResource,
 ) error {
-	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
+	if !strings.EqualFold(targetResource.ResourceType(), string(azapi.AzureResourceTypeWebSite)) {
 		return resourceTypeMismatchError(
 			targetResource.ResourceName(),
 			targetResource.ResourceType(),
-			infra.AzureResourceTypeWebSite,
+			azapi.AzureResourceTypeWebSite,
 		)
 	}
 

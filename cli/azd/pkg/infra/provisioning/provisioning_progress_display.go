@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -96,8 +97,8 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 			resourceId := *operations[i].Properties.TargetResource.ResourceName
 
 			if !display.displayedResources[resourceId] &&
-				infra.IsTopLevelResourceType(
-					infra.AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
+				azapi.IsTopLevelResourceType(
+					azapi.AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
 
 				switch *operations[i].Properties.ProvisioningState {
 				case string(armresources.ProvisioningStateSucceeded):
@@ -134,12 +135,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			ctx,
 			display.target.SubscriptionId(),
 			*resource.Properties.TargetResource.ID,
-			infra.AzureResourceType(resourceTypeName),
+			azapi.AzureResourceType(resourceTypeName),
 		)
 
 		if err != nil {
 			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceTypeName))
+			resourceTypeDisplayName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resourceTypeName))
 		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
@@ -173,12 +174,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			ctx,
 			display.target.SubscriptionId(),
 			*inProgResource.Properties.TargetResource.ID,
-			infra.AzureResourceType(resourceTypeName),
+			azapi.AzureResourceType(resourceTypeName),
 		)
 
 		if err != nil {
 			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = infra.GetResourceTypeDisplayName(infra.AzureResourceType(resourceTypeName))
+			resourceTypeDisplayName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resourceTypeName))
 		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.

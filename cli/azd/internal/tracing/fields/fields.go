@@ -247,6 +247,11 @@ const (
 	AppInitLastStep = attribute.Key("appinit.lastStep")
 )
 
+// Remote docker build related fields
+const (
+	RemoteBuildCount = attribute.Key("container.remoteBuild.count")
+)
+
 // JSON-RPC related fields
 const (
 	// Logical name of the method from the RPC interface

@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -150,12 +151,18 @@ func createContainerAppServiceTarget(
 		mockContext.ArmClientOptions,
 		mockContext.CoreClientOptions,
 	)
+	remoteBuildManager := containerregistry.NewRemoteBuildManager(
+		credentialProvider,
+		mockContext.ArmClientOptions,
+	)
 	containerHelper := NewContainerHelper(
 		env,
 		envManager,
 		clock.NewMock(),
 		containerRegistryService,
+		remoteBuildManager,
 		dockerCli,
+		mockContext.Console,
 		cloud.AzurePublic(),
 	)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)

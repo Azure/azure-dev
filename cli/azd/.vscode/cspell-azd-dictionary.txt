@@ -29,6 +29,7 @@ aspnetcore
 asyncmy
 asyncpg
 azapi
+azblob
 AZCLI
 azcorelog
 azdcli
@@ -53,6 +54,7 @@ azureutil
 azureyaml
 Backticks
 bicepparam
+blockblob
 BOOLSLICE
 BUILDID
 BUILDNUMBER
@@ -110,6 +112,7 @@ goterm
 gotest
 gotestsum
 hotspot
+ignorefile
 iidfile
 ineffassign
 jaegertracing
@@ -128,6 +131,7 @@ mgmt
 mgutz
 microsoftonline
 missingkey
+moby
 mockarmresources
 mockazcli
 mongojs
@@ -152,6 +156,7 @@ otlptrace
 otlptracehttp
 overriden
 paketobuildpacks
+patternmatcher
 pflag
 posix
 preinit

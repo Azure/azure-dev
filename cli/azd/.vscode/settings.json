@@ -7,7 +7,7 @@
     "go.lintFlags": ["--fast"],
     "go.lintOnSave": "package",
     "go.lintTool": "golangci-lint",
-    "go.testTimeout": "10m",
+    "go.testTimeout": "60m",
     "files.associations": {
         "*.bicept": "go-template",
         "*.yamlt": "go-template",

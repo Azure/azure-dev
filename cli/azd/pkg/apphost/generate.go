@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
@@ -147,11 +148,12 @@ func Containers(manifest *Manifest) map[string]genContainer {
 		switch comp.Type {
 		case "container.v0":
 			res[name] = genContainer{
-				Image:    *comp.Image,
-				Env:      comp.Env,
-				Bindings: comp.Bindings,
-				Inputs:   comp.Inputs,
-				Volumes:  comp.Volumes,
+				Image:      *comp.Image,
+				Env:        comp.Env,
+				Bindings:   comp.Bindings,
+				Inputs:     comp.Inputs,
+				Volumes:    comp.Volumes,
+				BindMounts: comp.BindMounts,
 			}
 		}
 	}
@@ -159,7 +161,26 @@ func Containers(manifest *Manifest) map[string]genContainer {
 	return res
 }
 
+// BuildContainers returns information about all container.v1 resources from a manifest.
+func BuildContainers(manifest *Manifest) (map[string]genBuildContainer, error) {
+	res := make(map[string]genBuildContainer)
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "container.v1":
+			bc, err := buildContainerFromResource(comp)
+			if err != nil {
+				return nil, fmt.Errorf("building container from resource %s: %w", name, err)
+			}
+			res[name] = *bc
+		}
+	}
+
+	return res, nil
+}
+
 type AppHostOptions struct {
+	AzdOperations bool
 }
 
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
@@ -178,7 +199,23 @@ func ContainerAppManifestTemplateForProject(
 
 	var buf bytes.Buffer
 
-	tmplCtx := generator.containerAppTemplateContexts[projectName]
+	type yamlTemplateCtx struct {
+		genContainerAppManifestTemplateContext
+		TargetPortExpression string
+	}
+	tCtx := generator.containerAppTemplateContexts[projectName]
+	tmplCtx := yamlTemplateCtx{
+		genContainerAppManifestTemplateContext: tCtx,
+	}
+
+	if tCtx.Ingress != nil {
+		if tCtx.Ingress.TargetPort != 0 && !tCtx.Ingress.UsingDefaultPort {
+			// not using default port makes this to be a non-changing value
+			tmplCtx.TargetPortExpression = fmt.Sprintf("%d", tCtx.Ingress.TargetPort)
+		} else {
+			tmplCtx.TargetPortExpression = fmt.Sprintf("{{ targetPortOrDefault %d }}", tCtx.Ingress.TargetPort)
+		}
+	}
 
 	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
 	if err != nil {
@@ -270,6 +307,20 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	if err := executeToFS(
 		fs, genTemplates, "main.parameters.json", name+".parameters.json", generator.bicepContext); err != nil {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
+	}
+
+	// azd operations
+	if generator.bicepContext.HasBindMounts {
+		if options.AzdOperations {
+			if err := executeToFS(
+				fs, genTemplates, "azd.operations.yaml", "azd.operations.yaml", generator.bicepContext); err != nil {
+				return nil, fmt.Errorf("generating infra/azd.operations.yaml: %w", err)
+			}
+		} else {
+			// returning fs because this error can be handled by the caller as expected
+			return fs, provisioning.ErrBindMountOperationDisabled
+		}
+
 	}
 
 	return fs, nil
@@ -392,21 +443,16 @@ type infraGenerator struct {
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
 	allServicesIngress           map[string]ingressDetails
+	buildContainers              map[string]genBuildContainer
 }
 
 func newInfraGenerator() *infraGenerator {
 	return &infraGenerator{
 		bicepContext: genBicepTemplateContext{
-			AppInsights:                     make(map[string]genAppInsight),
 			ContainerAppEnvironmentServices: make(map[string]genContainerAppEnvironmentServices),
-			ServiceBuses:                    make(map[string]genServiceBus),
-			StorageAccounts:                 make(map[string]genStorageAccount),
 			KeyVaults:                       make(map[string]genKeyVault),
 			ContainerApps:                   make(map[string]genContainerApp),
-			AppConfigs:                      make(map[string]genAppConfig),
 			DaprComponents:                  make(map[string]genDaprComponent),
-			CosmosDbAccounts:                make(map[string]genCosmosAccount),
-			SqlServers:                      make(map[string]genSqlServer),
 			InputParameters:                 make(map[string]Input),
 			BicepModules:                    make(map[string]genBicepModules),
 			OutputParameters:                make(map[string]genOutputParameter),
@@ -419,6 +465,7 @@ func newInfraGenerator() *infraGenerator {
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
+		buildContainers:              make(map[string]genBuildContainer),
 	}
 }
 
@@ -495,14 +542,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		}
 
 		switch comp.Type {
-		case "azure.servicebus.v0":
-			b.addServiceBus(name, comp.Queues, comp.Topics)
-		case "azure.appinsights.v0":
-			b.addAppInsights(name)
 		case "project.v0":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
 		case "container.v0":
-			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes)
+			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts)
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
 			if err != nil {
@@ -513,49 +556,13 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			if err != nil {
 				return err
 			}
+		case "container.v1":
+			err := b.addBuildContainer(name, comp)
+			if err != nil {
+				return err
+			}
 		case "dockerfile.v0":
 			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs, comp.Args)
-		case "redis.v0":
-			b.addContainerAppService(name, RedisContainerAppService)
-		case "azure.keyvault.v0":
-			b.addKeyVault(name, false, false)
-		case "azure.appconfiguration.v0":
-			b.addAppConfig(name)
-		case "azure.storage.v0":
-			b.addStorageAccount(name)
-		case "azure.storage.blob.v0":
-			b.addStorageBlob(*comp.Parent, name)
-		case "azure.storage.queue.v0":
-			b.addStorageQueue(*comp.Parent, name)
-		case "azure.storage.table.v0":
-			b.addStorageTable(*comp.Parent, name)
-		case "azure.cosmosdb.account.v0":
-			b.addCosmosDbAccount(name)
-		case "azure.cosmosdb.database.v0":
-			b.addCosmosDatabase(*comp.Parent, name)
-		case "azure.sql.v0", "sqlserver.server.v0":
-			b.addSqlServer(name)
-		case "azure.sql.database.v0", "sqlserver.database.v0":
-			if comp.Parent == nil || *comp.Parent == "" {
-				return fmt.Errorf("database resource %s does not have a parent", name)
-			}
-			if m.Resources[*comp.Parent].Type != "container.v0" {
-				// When the resource has a server (using container) as a parent, it means that the database is
-				// NOT created within AzureSql service, and db will use parent's connection string instead.
-				b.addSqlDatabase(*comp.Parent, name)
-			}
-		case "postgres.server.v0":
-			b.addContainerAppService(name, "postgres")
-		case "postgres.database.v0":
-			if comp.Parent == nil || *comp.Parent == "" {
-				return fmt.Errorf("database resource %s does not have a parent", name)
-			}
-			pType := m.Resources[*comp.Parent].Type
-			if pType != "container.v0" && pType != "postgres.server.v0" {
-				// When the resource has a server (container or p.server) as a parent, it means that the database is
-				// a part of a server and it should not be created as a separate resource.
-				b.addContainerAppService(name, "postgres")
-			}
 		case "parameter.v0":
 			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
@@ -620,32 +627,39 @@ func (b *infraGenerator) requireStorageVolume() {
 	b.bicepContext.RequiresStorageVolume = true
 }
 
-func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
-	if queues == nil {
-		queues = &[]string{}
-	}
-
-	if topics == nil {
-		topics = &[]string{}
-	}
-	b.bicepContext.ServiceBuses[name] = genServiceBus{Queues: *queues, Topics: *topics}
+func (b *infraGenerator) hasBindMounts() {
+	b.bicepContext.HasBindMounts = true
 }
 
 func (b *infraGenerator) addInputParameter(name string, comp *Resource) error {
-	pValue := comp.Value
-
-	if !hasInputs(pValue) {
-		// no inputs in the value, nothing to do
-		return nil
-	}
-
-	input, err := resolveResourceInput(name, comp)
+	input, err := InputParameter(name, comp)
 	if err != nil {
 		return fmt.Errorf("resolving input for parameter %s: %w", name, err)
 	}
 
-	b.bicepContext.InputParameters[name] = input
+	if input == nil {
+		// no inputs in the value, nothing to do
+		return nil
+	}
+
+	b.bicepContext.InputParameters[name] = *input
 	return nil
+}
+
+// InputParameter gets the Input from a parameter. If the parameter does not have an input, it returns nil.
+func InputParameter(name string, comp *Resource) (*Input, error) {
+	pValue := comp.Value
+
+	if !hasInputs(pValue) {
+		// no inputs in the value, nothing to do
+		return nil, nil
+	}
+
+	input, err := resolveResourceInput(name, comp)
+	if err != nil {
+		return nil, fmt.Errorf("resolving input for parameter %s: %w", name, err)
+	}
+	return &input, nil
 }
 
 func hasInputs(value string) bool {
@@ -788,35 +802,6 @@ func uniqueFnvNumber(val string) string {
 	return fmt.Sprintf("%x", hash.Sum32())
 }
 
-func (b *infraGenerator) addAppInsights(name string) {
-	b.requireLogAnalyticsWorkspace()
-	b.bicepContext.AppInsights[name] = genAppInsight{}
-}
-
-func (b *infraGenerator) addCosmosDbAccount(name string) {
-	if _, exists := b.bicepContext.CosmosDbAccounts[name]; !exists {
-		b.bicepContext.CosmosDbAccounts[name] = genCosmosAccount{}
-	}
-}
-
-func (b *infraGenerator) addCosmosDatabase(cosmosDbAccount, dbName string) {
-	account := b.bicepContext.CosmosDbAccounts[cosmosDbAccount]
-	account.Databases = append(account.Databases, dbName)
-	b.bicepContext.CosmosDbAccounts[cosmosDbAccount] = account
-}
-
-func (b *infraGenerator) addSqlServer(name string) {
-	if _, exists := b.bicepContext.SqlServers[name]; !exists {
-		b.bicepContext.SqlServers[name] = genSqlServer{}
-	}
-}
-
-func (b *infraGenerator) addSqlDatabase(sqlAccount, dbName string) {
-	account := b.bicepContext.SqlServers[sqlAccount]
-	account.Databases = append(account.Databases, dbName)
-	b.bicepContext.SqlServers[sqlAccount] = account
-}
-
 func (b *infraGenerator) addProject(
 	name string, path string, env map[string]string, bindings custommaps.WithOrder[Binding], args []string,
 ) {
@@ -839,42 +824,11 @@ func (b *infraGenerator) addContainerAppService(name string, serviceType string)
 	}
 }
 
-func (b *infraGenerator) addStorageAccount(name string) {
-	// storage account can be added from addStorageTable, addStorageQueue or addStorageBlob
-	// We only need to add it if it wasn't added before to cover cases of manifest with only one storage account and no
-	// blobs, queues or tables.
-	if _, exists := b.bicepContext.StorageAccounts[name]; !exists {
-		b.bicepContext.StorageAccounts[name] = genStorageAccount{}
-	}
-}
-
 func (b *infraGenerator) addKeyVault(name string, noTags, readAccessPrincipalId bool) {
 	b.bicepContext.KeyVaults[name] = genKeyVault{
 		NoTags:                noTags,
 		ReadAccessPrincipalId: readAccessPrincipalId,
 	}
-}
-
-func (b *infraGenerator) addAppConfig(name string) {
-	b.bicepContext.AppConfigs[name] = genAppConfig{}
-}
-
-func (b *infraGenerator) addStorageBlob(storageAccount, blobName string) {
-	account := b.bicepContext.StorageAccounts[storageAccount]
-	account.Blobs = append(account.Blobs, blobName)
-	b.bicepContext.StorageAccounts[storageAccount] = account
-}
-
-func (b *infraGenerator) addStorageQueue(storageAccount, queueName string) {
-	account := b.bicepContext.StorageAccounts[storageAccount]
-	account.Queues = append(account.Queues, queueName)
-	b.bicepContext.StorageAccounts[storageAccount] = account
-}
-
-func (b *infraGenerator) addStorageTable(storageAccount, tableName string) {
-	account := b.bicepContext.StorageAccounts[storageAccount]
-	account.Tables = append(account.Tables, tableName)
-	b.bicepContext.StorageAccounts[storageAccount] = account
 }
 
 func (b *infraGenerator) addContainer(
@@ -883,20 +837,107 @@ func (b *infraGenerator) addContainer(
 	env map[string]string,
 	bindings custommaps.WithOrder[Binding],
 	inputs map[string]Input,
-	volumes []*Volume) {
+	volumes []*Volume,
+	bindMounts []*BindMount) {
 	b.requireCluster()
 
 	if len(volumes) > 0 {
 		b.requireStorageVolume()
 	}
 
-	b.containers[name] = genContainer{
-		Image:    image,
-		Env:      env,
-		Bindings: bindings,
-		Inputs:   inputs,
-		Volumes:  volumes,
+	if len(bindMounts) > 0 {
+		b.requireStorageVolume()
+		b.hasBindMounts()
 	}
+
+	b.containers[name] = genContainer{
+		Image:      image,
+		Env:        env,
+		Bindings:   bindings,
+		Inputs:     inputs,
+		Volumes:    volumes,
+		BindMounts: bindMounts,
+	}
+}
+
+// buildContainer represents a container defined with a pre-build image or a build context.
+// container.v0 resources are used to define containers with pre-built images.
+//   - uses image field
+//
+// dockerfile.v0 resources are used to define containers with build context.
+//   - uses path and context fields
+//
+// container.v1 resources are used to define containers with either build context or pre-built images.
+//   - uses image field or build field
+func (b *infraGenerator) addBuildContainer(
+	name string,
+	r *Resource) error {
+	if r.Image != nil && r.Build != nil {
+		return fmt.Errorf("Resource '%s' cannot have both an image and a build", name)
+	}
+
+	b.requireCluster()
+	if len(r.Volumes) > 0 {
+		b.requireStorageVolume()
+	}
+
+	bc, err := buildContainerFromResource(r)
+	if err != nil {
+		return fmt.Errorf("container resource '%s': %w", name, err)
+	}
+	if bc.Build != nil {
+		b.requireContainerRegistry()
+	}
+	b.buildContainers[name] = *bc
+	return nil
+}
+
+func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
+	// common fields for all build containers
+	bc := &genBuildContainer{
+		Entrypoint: r.Entrypoint,
+		Args:       r.Args,
+		Env:        r.Env,
+		Bindings:   r.Bindings,
+		Volumes:    r.Volumes,
+	}
+
+	// container.v0 and container.v1+pre-build image
+	if r.Image != nil {
+		bc.Image = *r.Image
+		return bc, nil
+	}
+
+	// details to build container, either from dockerfile.v0 or container.v1
+	var build *genBuildContainerDetails
+
+	// dockerfile.v0
+	if r.Context != nil {
+		build = &genBuildContainerDetails{
+			Context: *r.Context,
+			Args:    nil, // dockerfile.v0 does not support build args, it only has top level args []string
+		}
+		if r.Path != nil {
+			build.Dockerfile = *r.Path
+		}
+	} else
+
+	// container.v1+build
+	if r.Build != nil {
+		build = &genBuildContainerDetails{
+			Context:    r.Build.Context,
+			Dockerfile: r.Build.Dockerfile,
+			Args:       r.Build.Args,
+			Secrets:    r.Build.Secrets,
+		}
+	}
+
+	if build == nil {
+		return nil, fmt.Errorf("container resource must have either an image, context or a build")
+	}
+
+	bc.Build = build
+	return bc, nil
 }
 
 func (b *infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) error {
@@ -1055,6 +1096,16 @@ func (b *infraGenerator) compileIngress() error {
 			ingressBindings: bindingsFromIngress,
 		}
 	}
+	for name, bc := range b.buildContainers {
+		ingress, bindingsFromIngress, err := buildAcaIngress(bc.Bindings, 8080)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
+		}
+		result[name] = ingressDetails{
+			ingress:         ingress,
+			ingressBindings: bindingsFromIngress,
+		}
+	}
 	b.allServicesIngress = result
 	return nil
 }
@@ -1070,8 +1121,26 @@ func (b *infraGenerator) Compile() error {
 	}
 
 	for resourceName, container := range b.containers {
+		var bMounts []*BindMount
+		if len(container.BindMounts) > 0 {
+			// must grant write role to the Storage File Share to upload data
+			b.bicepContext.RequiresPrincipalId = true
+		}
+		for count, bm := range container.BindMounts {
+			bMounts = append(bMounts, &BindMount{
+				// adding a name using the index. This name is used for naming the resource in bicep.
+				Name: fmt.Sprintf("bm%d", count),
+				// mount bind is not supported across devices, as it depends on a local path which might be missing in
+				// another device.
+				Source:   bm.Source,
+				Target:   bm.Target,
+				ReadOnly: bm.ReadOnly,
+			})
+		}
+
 		cs := genContainerApp{
-			Volumes: container.Volumes,
+			Volumes:    container.Volumes,
+			BindMounts: bMounts,
 		}
 
 		b.bicepContext.ContainerApps[resourceName] = cs
@@ -1083,9 +1152,33 @@ func (b *infraGenerator) Compile() error {
 			KeyVaultSecrets: make(map[string]string),
 			Ingress:         b.allServicesIngress[resourceName].ingress,
 			Volumes:         container.Volumes,
+			BindMounts:      bMounts,
 		}
 
 		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
+			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
+	}
+
+	for resourceName, bc := range b.buildContainers {
+		cs := genContainerApp{
+			Volumes: bc.Volumes,
+		}
+
+		b.bicepContext.ContainerApps[resourceName] = cs
+
+		projectTemplateCtx := genContainerAppManifestTemplateContext{
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Volumes:         bc.Volumes,
+		}
+
+		if err := b.buildEnvBlock(bc.Env, &projectTemplateCtx); err != nil {
 			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
 		}
 
@@ -1376,45 +1469,6 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				fmt.Errorf("malformed binding expression, expected "+
 					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
-	case targetType == "postgres.database.v0" ||
-		targetType == "redis.v0" ||
-		targetType == "azure.cosmosdb.account.v0" ||
-		targetType == "azure.cosmosdb.database.v0" ||
-		targetType == "azure.sql.v0" ||
-		targetType == "azure.sql.database.v0" ||
-		targetType == "sqlserver.server.v0" ||
-		targetType == "sqlserver.database.v0":
-		switch prop {
-		case "connectionString":
-			// returns something like {{ connectionString "resource" }}
-			return fmt.Sprintf(`{{ connectionString "%s" }}`, resource), nil
-		default:
-			return "", errUnsupportedProperty(targetType, prop)
-		}
-	case targetType == "azure.servicebus.v0":
-		switch prop {
-		case "connectionString":
-			return fmt.Sprintf("{{ urlHost .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource)), nil
-		default:
-			return "", errUnsupportedProperty("azure.servicebus.v0", prop)
-		}
-	case targetType == "azure.appinsights.v0":
-		switch prop {
-		case "connectionString":
-			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_CONNECTION_STRING }}", scaffold.AlphaSnakeUpper(resource)), nil
-		default:
-			return "", errUnsupportedProperty("azure.appinsights.v0", prop)
-		}
-	case targetType == "azure.keyvault.v0" ||
-		targetType == "azure.storage.blob.v0" ||
-		targetType == "azure.storage.queue.v0" ||
-		targetType == "azure.storage.table.v0":
-		switch prop {
-		case "connectionString":
-			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource)), nil
-		default:
-			return "", errUnsupportedProperty(targetType, prop)
-		}
 	case targetType == "azure.bicep.v0":
 		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs.") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
@@ -1570,7 +1624,6 @@ func (b *infraGenerator) buildArgsBlock(args []string, manifestCtx *genContainer
 		// This logic is similar to what we do in buildEnvBlock to detect when we need to take values and treat them as ACA
 		// secrets.
 		if strings.Contains(arg, ".connectionString}") ||
-			strings.Contains(resolvedArg, "{{ connectionString") ||
 			strings.Contains(resolvedArg, "{{ securedParameter ") ||
 			strings.Contains(resolvedArg, "{{ secretOutput ") {
 
@@ -1606,14 +1659,12 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// connectionString detection, either of:
 		//  a) explicit connection string key for env, like "ConnectionStrings__resource": "XXXXX"
 		//  b) a connection string field references in the value, like "FOO": "{resource.connectionString}"
-		//  c) found placeholder for a connection string within resolved value, like "{{ connectionString resource }}"
-		//  d) found placeholder for a secured-param, like "{{ securedParameter param }}"
-		//  e) found placeholder for a secret output, like "{{ secretOutput kv secret }}"
+		//  c) found placeholder for a secured-param, like "{{ securedParameter param }}"
+		//  d) found placeholder for a secret output, like "{{ secretOutput kv secret }}"
 		if strings.Contains(k, "ConnectionStrings__") || // a)
 			strings.Contains(value, ".connectionString}") || // b)
-			strings.Contains(resolvedValue, "{{ connectionString") || // c)
-			strings.Contains(resolvedValue, "{{ securedParameter ") || // d)
-			strings.Contains(resolvedValue, "{{ secretOutput ") { // e)
+			strings.Contains(resolvedValue, "{{ securedParameter ") || // c)
+			strings.Contains(resolvedValue, "{{ secretOutput ") { // d)
 
 			// handle secret-outputs:
 			// secret outputs can be set either as a direct reference to a key vault secret, or as secret within the
@@ -1651,11 +1702,6 @@ var secretOutputRegex = regexp.MustCompile(`{{ secretOutput {{ \.Env\.(.*) }}sec
 // with `{{ secretOutput [host] "secretName" }}`, creating a placeholder to be resolved during the deployment.
 func secretOutputForDeployTemplate(secretName string) string {
 	return secretOutputRegex.ReplaceAllString(secretName, `{{ secretOutput "$1" "$2" }}`)
-}
-
-// errUnsupportedProperty returns an error indicating that the given property is not supported for the given resource.
-func errUnsupportedProperty(resourceType, propertyName string) error {
-	return fmt.Errorf("unsupported property referenced in binding expression: %s for %s", propertyName, resourceType)
 }
 
 // executeToFS executes the given template with the given name and context, and writes the result to the given path in

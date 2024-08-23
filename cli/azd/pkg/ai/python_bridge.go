@@ -36,7 +36,7 @@ type PythonBridge interface {
 // pythonBridge is a bridge to execute python components from the embedded AI resources project
 type pythonBridge struct {
 	azdCtx      *azdcontext.AzdContext
-	pythonCli   *python.PythonCli
+	pythonCli   *python.Cli
 	workingDir  string
 	initialized bool
 }
@@ -44,7 +44,7 @@ type pythonBridge struct {
 // NewPythonBridge creates a new PythonBridge instance
 func NewPythonBridge(
 	azdCtx *azdcontext.AzdContext,
-	pythonCli *python.PythonCli,
+	pythonCli *python.Cli,
 ) PythonBridge {
 	return &pythonBridge{
 		azdCtx:    azdCtx,

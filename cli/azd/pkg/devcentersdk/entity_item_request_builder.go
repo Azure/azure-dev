@@ -54,10 +54,6 @@ func (b *EntityItemRequestBuilder[T]) createRequest(
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
 	raw := req.Raw()
 	query := raw.URL.Query()
 

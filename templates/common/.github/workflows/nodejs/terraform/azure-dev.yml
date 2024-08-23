@@ -61,7 +61,8 @@ jobs:
           RS_RESOURCE_GROUP: ${{ vars.RS_RESOURCE_GROUP }}
           RS_STORAGE_ACCOUNT: ${{ vars.RS_STORAGE_ACCOUNT }}
           RS_CONTAINER_NAME: ${{ vars.RS_CONTAINER_NAME }}
-
+          AZD_INITIAL_ENVIRONMENT_CONFIG: ${{ secrets.AZD_INITIAL_ENVIRONMENT_CONFIG }}
+          
       - name: Deploy Application
         run: azd deploy --no-prompt
         env:

@@ -10,8 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -67,29 +68,55 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 		require.True(t, ran)
 		require.Error(t, err)
 	})
+
+	t.Run("Error", func(t *testing.T) {
+		ran := false
+		mockContext := mocks.NewMockContext(context.Background())
+		azCli := newAzCliFromMockContext(mockContext)
+
+		registerLogicAppMocks(mockContext, &ran)
+		registerLogicAppZipDeployMocks(mockContext, &ran)
+		registerLogicAppPollingMocks(mockContext, &ran)
+
+		zipFile := bytes.NewReader([]byte{})
+
+		res, err := azCli.DeployAppServiceZip(
+			*mockContext.Context,
+			"SUBSCRIPTION_ID",
+			"RESOURCE_GROUP_ID",
+			"WINDOWS_LOGIC_APP_NAME",
+			zipFile,
+			func(s string) {},
+		)
+
+		require.NoError(t, err)
+		require.True(t, ran)
+		require.NotNil(t, res)
+	})
 }
 
 func registerIsLinuxWebAppMocks(mockContext *mocks.MockContext, ran *bool) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
 			strings.Contains(request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/sites/LINUX_WEB_APP_NAME")
+				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/sites/"+
+					"LINUX_WEB_APP_NAME")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		*ran = true
 		response := armappservice.WebAppsClientGetResponse{
 			Site: armappservice.Site{
-				Location: convert.RefOf("eastus2"),
-				Kind:     convert.RefOf("appserivce"),
-				Name:     convert.RefOf("LINUX_WEB_APP_NAME"),
+				Location: to.Ptr("eastus2"),
+				Kind:     to.Ptr("app,linux"),
+				Name:     to.Ptr("LINUX_WEB_APP_NAME"),
 				Properties: &armappservice.SiteProperties{
-					DefaultHostName: convert.RefOf("LINUX_WEB_APP_NAME.azurewebsites.net"),
+					DefaultHostName: to.Ptr("LINUX_WEB_APP_NAME.azurewebsites.net"),
 					SiteConfig: &armappservice.SiteConfig{
-						LinuxFxVersion: convert.RefOf("Python"),
+						LinuxFxVersion: to.Ptr("Python"),
 					},
 					HostNameSSLStates: []*armappservice.HostNameSSLState{
 						{
-							HostType: convert.RefOf(armappservice.HostTypeRepository),
-							Name:     convert.RefOf("LINUX_WEB_APP_NAME_SCM_HOST"),
+							HostType: to.Ptr(armappservice.HostTypeRepository),
+							Name:     to.Ptr("LINUX_WEB_APP_NAME_SCM_HOST"),
 						},
 					},
 				},
@@ -97,6 +124,62 @@ func registerIsLinuxWebAppMocks(mockContext *mocks.MockContext, ran *bool) {
 		}
 
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
+	})
+}
+
+func registerLogicAppMocks(mockContext *mocks.MockContext, ran *bool) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/sites/"+
+					"WINDOWS_LOGIC_APP_NAME")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*ran = true
+		response := armappservice.WebAppsClientGetResponse{
+			Site: armappservice.Site{
+				Location: to.Ptr("eastus2"),
+				Kind:     to.Ptr("functionapp"),
+				Name:     to.Ptr("WINDOWS_LOGIC_APP_NAME"),
+				Properties: &armappservice.SiteProperties{
+					DefaultHostName: to.Ptr("WINDOWS_LOGIC_APP_NAME.azurewebsites.net"),
+					SiteConfig: &armappservice.SiteConfig{
+						LinuxFxVersion: to.Ptr(""),
+					},
+					HostNameSSLStates: []*armappservice.HostNameSSLState{
+						{
+							HostType: to.Ptr(armappservice.HostTypeRepository),
+							Name:     to.Ptr("WINDOWS_LOGIC_APP_SCM_HOST"),
+						},
+					},
+				},
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
+	})
+}
+
+func registerLogicAppPollingMocks(mockContext *mocks.MockContext, ran *bool) {
+	// Polling call to check on the deployment status
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/deployments/latest")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*ran = true
+		completeStatus := azsdk.DeployStatusResponse{
+			DeployStatus: azsdk.DeployStatus{
+				Id:         "ID",
+				Status:     http.StatusOK,
+				StatusText: "OK",
+				Message:    "Deployment Complete",
+				Progress:   nil,
+				Complete:   true,
+				Active:     true,
+				SiteName:   "WINDOWS_LOGIC_APP_NAME",
+				LogUrl:     "https://log.url",
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, completeStatus)
 	})
 }
 
@@ -116,10 +199,10 @@ func registerLinuxWebAppDeployRuntimeSuccessfulMocks(mockContext *mocks.MockCont
 			armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
 				CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
 					Properties: &armappservice.CsmDeploymentStatusProperties{
-						Status:                      convert.RefOf(armappservice.DeploymentBuildStatusRuntimeSuccessful),
-						NumberOfInstancesSuccessful: convert.RefOf(int32(1)),
-						NumberOfInstancesFailed:     convert.RefOf(int32(0)),
-						NumberOfInstancesInProgress: convert.RefOf(int32(0)),
+						Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeSuccessful),
+						NumberOfInstancesSuccessful: to.Ptr(int32(1)),
+						NumberOfInstancesFailed:     to.Ptr(int32(0)),
+						NumberOfInstancesInProgress: to.Ptr(int32(0)),
 					},
 				},
 			},
@@ -145,14 +228,29 @@ func registerLinuxWebAppDeployRuntimeFailedMocks(mockContext *mocks.MockContext,
 			armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{
 				CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
 					Properties: &armappservice.CsmDeploymentStatusProperties{
-						Status:                      convert.RefOf(armappservice.DeploymentBuildStatusRuntimeFailed),
-						NumberOfInstancesSuccessful: convert.RefOf(int32(0)),
-						NumberOfInstancesFailed:     convert.RefOf(int32(1)),
-						NumberOfInstancesInProgress: convert.RefOf(int32(0)),
+						Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeFailed),
+						NumberOfInstancesSuccessful: to.Ptr(int32(0)),
+						NumberOfInstancesFailed:     to.Ptr(int32(1)),
+						NumberOfInstancesInProgress: to.Ptr(int32(0)),
 					},
 				},
 			},
 		)
+
+		return response, nil
+	})
+}
+
+func registerLogicAppZipDeployMocks(mockContext *mocks.MockContext, ran *bool) {
+	// Original call to start the deployment operation
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost &&
+			request.URL.Host == "WINDOWS_LOGIC_APP_SCM_HOST" &&
+			strings.Contains(request.URL.Path, "/api/zipdeploy")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*ran = true
+		response, _ := mocks.CreateEmptyHttpResponse(request, http.StatusAccepted)
+		response.Header.Set("Location", "https://WINDOWS_LOGIC_APP_SCM_HOST/deployments/latest")
 
 		return response, nil
 	})

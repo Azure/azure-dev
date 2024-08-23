@@ -18,37 +18,19 @@ import (
 
 const DefaultPlatform string = "linux/amd64"
 
-type Docker interface {
-	tools.ExternalTool
-	Login(ctx context.Context, loginServer string, username string, password string) error
-	Build(
-		ctx context.Context,
-		cwd string,
-		dockerFilePath string,
-		platform string,
-		target string,
-		buildContext string,
-		name string,
-		buildArgs []string,
-		buildProgress io.Writer,
-	) (string, error)
-	Tag(ctx context.Context, cwd string, imageName string, tag string) error
-	Push(ctx context.Context, cwd string, tag string) error
-	Pull(ctx context.Context, imageName string) error
-	Inspect(ctx context.Context, imageName string, format string) (string, error)
-}
+var _ tools.ExternalTool = (*Cli)(nil)
 
-func NewDocker(commandRunner exec.CommandRunner) Docker {
-	return &docker{
+func NewCli(commandRunner exec.CommandRunner) *Cli {
+	return &Cli{
 		commandRunner: commandRunner,
 	}
 }
 
-type docker struct {
+type Cli struct {
 	commandRunner exec.CommandRunner
 }
 
-func (d *docker) Login(ctx context.Context, loginServer string, username string, password string) error {
+func (d *Cli) Login(ctx context.Context, loginServer string, username string, password string) error {
 	runArgs := exec.NewRunArgs(
 		"docker", "login",
 		"--username", username,
@@ -67,7 +49,7 @@ func (d *docker) Login(ctx context.Context, loginServer string, username string,
 // Runs a Docker build for a given Dockerfile, writing the output of docker build to [stdOut] when it is
 // not nil. If the platform is not specified (empty) it defaults to amd64. If the build is successful,
 // the function returns the image id of the built image.
-func (d *docker) Build(
+func (d *Cli) Build(
 	ctx context.Context,
 	cwd string,
 	dockerFilePath string,
@@ -76,6 +58,8 @@ func (d *docker) Build(
 	buildContext string,
 	tagName string,
 	buildArgs []string,
+	buildSecrets []string,
+	buildEnv []string,
 	buildProgress io.Writer,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
@@ -111,13 +95,17 @@ func (d *docker) Build(
 	for _, arg := range buildArgs {
 		args = append(args, "--build-arg", arg)
 	}
+
+	for _, arg := range buildSecrets {
+		args = append(args, "--secret", arg)
+	}
 	args = append(args, buildContext)
 
 	// create a file with the docker img id
 	args = append(args, "--iidfile", imgIdFile)
 
 	// Build and produce output
-	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd)
+	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd).WithEnv(buildEnv)
 
 	if buildProgress != nil {
 		// setting stderr and stdout both, as it's been noticed
@@ -137,7 +125,7 @@ func (d *docker) Build(
 	return strings.TrimSpace(string(imgId)), nil
 }
 
-func (d *docker) Tag(ctx context.Context, cwd string, imageName string, tag string) error {
+func (d *Cli) Tag(ctx context.Context, cwd string, imageName string, tag string) error {
 	_, err := d.executeCommand(ctx, cwd, "tag", imageName, tag)
 	if err != nil {
 		return fmt.Errorf("tagging image: %w", err)
@@ -146,7 +134,7 @@ func (d *docker) Tag(ctx context.Context, cwd string, imageName string, tag stri
 	return nil
 }
 
-func (d *docker) Push(ctx context.Context, cwd string, tag string) error {
+func (d *Cli) Push(ctx context.Context, cwd string, tag string) error {
 	_, err := d.executeCommand(ctx, cwd, "push", tag)
 	if err != nil {
 		return fmt.Errorf("pushing image: %w", err)
@@ -155,7 +143,7 @@ func (d *docker) Push(ctx context.Context, cwd string, tag string) error {
 	return nil
 }
 
-func (d *docker) Pull(ctx context.Context, imageName string) error {
+func (d *Cli) Pull(ctx context.Context, imageName string) error {
 	_, err := d.executeCommand(ctx, "", "pull", imageName)
 	if err != nil {
 		return fmt.Errorf("pulling image: %w", err)
@@ -164,7 +152,7 @@ func (d *docker) Pull(ctx context.Context, imageName string) error {
 	return nil
 }
 
-func (d *docker) Inspect(ctx context.Context, imageName string, format string) (string, error) {
+func (d *Cli) Inspect(ctx context.Context, imageName string, format string) (string, error) {
 	out, err := d.executeCommand(ctx, "", "image", "inspect", "--format", format, imageName)
 	if err != nil {
 		return "", fmt.Errorf("inspecting image: %w", err)
@@ -173,7 +161,7 @@ func (d *docker) Inspect(ctx context.Context, imageName string, format string) (
 	return out.Stdout, nil
 }
 
-func (d *docker) versionInfo() tools.VersionInfo {
+func (d *Cli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 17,
@@ -258,7 +246,7 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	// If we reach this point, we don't understand how to validate the version based on its scheme.
 	return false, fmt.Errorf("could not determine version from docker version string: %s", version)
 }
-func (d *docker) CheckInstalled(ctx context.Context) error {
+func (d *Cli) CheckInstalled(ctx context.Context) error {
 	err := tools.ToolInPath("docker")
 	if err != nil {
 		return err
@@ -278,15 +266,15 @@ func (d *docker) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-func (d *docker) InstallUrl() string {
+func (d *Cli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/docker-install"
 }
 
-func (d *docker) Name() string {
+func (d *Cli) Name() string {
 	return "Docker"
 }
 
-func (d *docker) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
+func (d *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("docker", args...).
 		WithCwd(cwd)
 

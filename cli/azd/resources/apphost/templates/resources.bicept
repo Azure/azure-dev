@@ -30,9 +30,6 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   sku: {
     name: 'Basic'
   }
-  properties: {
-    adminUserEnabled: true
-  }
   tags: tags
 }
 
@@ -75,11 +72,31 @@ resource storageVolumeFileService 'Microsoft.Storage/storageAccounts/fileService
   parent: storageVolume
   name: 'default'
 }
+{{if .HasBindMounts -}}
+resource volumesAccountRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageVolume.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd'))
+  scope: storageVolume
+  properties: {
+    principalId: principalId
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69566ab7-960f-475b-8e7c-b3118f30c6bd')
+  }
+}
+{{ end -}}
 {{range $name, $value := .ContainerApps}}
 {{- range $volume := $value.Volumes}}
 resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
   name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}', 32)
+  properties: {
+    shareQuota: 1024
+    enabledProtocols: 'SMB'
+  }
+}
+{{- end }}
+{{- range $bMount := $value.BindMounts}}
+resource {{mergeBicepName $name $bMount.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
+  parent: storageVolumeFileService
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}', 32)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -138,6 +155,25 @@ resource {{mergeBicepName $name $volume.Name}}Store 'Microsoft.App/managedEnviro
       accessMode: 'ReadOnly'
 {{- end}}
 {{- if eq false $volume.ReadOnly }}
+      accessMode: 'ReadWrite'
+{{- end}}
+    }
+  }
+}
+{{end -}}
+{{- range $bMount := $value.BindMounts}}
+resource {{mergeBicepName $name $bMount.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
+  parent: containerAppEnvironment
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}', 32)
+  properties: {
+    azureFile: {
+      shareName: '${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}'
+      accountName: storageVolume.name
+      accountKey: storageVolume.listKeys().keys[0].value
+{{- if $bMount.ReadOnly }}
+      accessMode: 'ReadOnly'
+{{- end}}
+{{- if eq false $bMount.ReadOnly }}
       accessMode: 'ReadWrite'
 {{- end}}
     }
@@ -203,103 +239,6 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
 }
 {{end -}}
-{{range $name, $value := .ServiceBuses}}
-resource {{bicepName $name}} 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
-  name: '{{$name}}-${resourceToken}'
-  location: location
-  sku: {
-    name: 'Standard'
-  }
-  properties: {
-    minimumTlsVersion: '1.2'
-  }
-  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
-{{- range $name := $value.Queues}}
-
-  resource {{bicepName $name}} 'queues@2022-10-01-preview' = {
-    name: '{{$name}}'
-  }
-{{end -}}
-{{range $name := $value.Topics}}
-
-  resource {{bicepName $name}} 'topics@2022-10-01-preview' = {
-    name: '{{$name}}'
-  }
-{{end -}}
-}
-
-resource {{bicepName $name}}MiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
-  }
-}
-{{end -}}
-{{range $name, $value := .AppInsights}}
-resource {{bicepName $name}} 'Microsoft.Insights/components@2020-02-02-preview' = {
-  name: '{{$name}}'
-  location: location
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: logAnalyticsWorkspace.id
-  }
-  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
-}
-{{end -}}
-{{range $name, $value := .StorageAccounts}}
-resource {{bicepName $name}} 'Microsoft.Storage/storageAccounts@2022-05-01' = {
-  name: replace('{{$name}}-${resourceToken}', '-', '')
-  location: location
-  kind: 'Storage'
-  sku: {
-    name: 'Standard_GRS'
-  }
-  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
-
-  resource blobs 'blobServices@2022-05-01' = {
-    name: 'default'
-  }
-}
-
-{{if gt (len $value.Blobs) 0 -}}
-resource {{bicepName $name}}BlobsRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  }
-}
-
-{{end -}}
-{{if gt (len $value.Queues) 0 -}}
-resource {{bicepName $name}}QueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
-  }
-}
-
-{{end -}}
-{{if gt (len $value.Tables) 0 -}}
-resource {{bicepName $name}}TablesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
-  }
-}
-{{end -}}
-{{end -}}
 {{range $name, $value := .KeyVaults}}
 resource {{bicepName $name}} 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: replace('{{$name}}-${resourceToken}', '-', '')
@@ -336,95 +275,7 @@ resource {{bicepName $name}}UserReadRoleAssignment 'Microsoft.Authorization/role
   }
 }
 {{end -}}
-{{end -}}
-{{range $name, $value := .AppConfigs}}
-resource {{bicepName $name}} 'Microsoft.AppConfiguration/configurationStores@2023-03-01'= {
-  name: replace('{{$name}}-${resourceToken}', '-', '')
-  location: location
-  sku: {
-    name: 'free'
-  }
-}
-
-resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b')
-  }
-}
-{{- end}}
-{{range $name, $value := .CosmosDbAccounts}}
-resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
-  name: replace('{{$name}}-${resourceToken}', '-', '')
-  location: location
-  kind: 'GlobalDocumentDB'
-  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
-  properties: {
-    consistencyPolicy: { defaultConsistencyLevel: 'Session' }
-    locations: [
-      {
-        locationName: location
-        failoverPriority: 0
-      }
-    ]
-    databaseAccountOfferType: 'Standard'
-  }
-{{range $cname := $value.Databases}}
-  resource {{bicepName $cname}} 'sqlDatabases@2023-04-15' = {
-    name: '{{$cname}}'
-    location: location
-    tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
-    properties: {
-      resource: {
-        id: '{{$cname}}'
-      }
-    }
-  }
-{{end -}}
-}
-{{end -}}
-
-{{range $name, $value := .SqlServers}}
-resource {{bicepName $name}} 'Microsoft.Sql/servers@2022-05-01-preview' = {
-  name: '{{$name}}-${resourceToken}'
-  location: location
-  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
-  properties: {
-    minimalTlsVersion: '1.2'
-    publicNetworkAccess: 'Enabled'
-    administrators: {
-      administratorType: 'ActiveDirectory'
-      azureADOnlyAuthentication: true
-      login: managedIdentity.name
-      principalType: 'User'
-      sid: managedIdentity.properties.principalId
-      tenantId: subscription().tenantId
-    }
-  }
-
-resource {{bicepName $name}}Firewall 'firewallRules@2022-05-01-preview' = {
-    name: 'fw-{{$name}}'
-    properties: {
-      startIpAddress: '0.0.0.0'
-      endIpAddress: '255.255.255.255'
-    }
-}
-
-  {{range $cname := $value.Databases}}
-  resource {{bicepName $cname}} 'databases@2022-05-01-preview' = {
-  name: '{{$cname}}'
-  location: location
-  sku: {
-    name: 'S0'
-  }
-  tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
-  }
-{{end -}}
-}
-{{end -}}
+{{end}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 output MANAGED_IDENTITY_NAME string = managedIdentity.name
 output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
@@ -445,35 +296,16 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvi
 {{range $volume := $value.Volumes -}}
 output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $volume.Name | alphaSnakeUpper}}_NAME string = {{mergeBicepName $name $volume.Name}}Store.name
 {{end -}}
-{{end -}}
-{{range $name, $value := .ServiceBuses -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.serviceBusEndpoint
-{{end -}}
-{{range $name, $value := .AppInsights -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_CONNECTION_STRING string = {{bicepName $name}}.properties.ConnectionString
-{{end -}}
-{{range $name, $value := .StorageAccounts -}}
-{{range $cname := $value.Blobs -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName $name}}.properties.primaryEndpoints.blob
-{{end -}}
-{{range $cname := $value.Tables -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName $name}}.properties.primaryEndpoints.table
-{{end -}}
-{{range $cname := $value.Queues -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName $name}}.properties.primaryEndpoints.queue
+{{range $bMount := $value.BindMounts -}}
+output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME string = {{mergeBicepName $name $bMount.Name}}Store.name
+output SERVICE_{{alphaSnakeUpper $name}}_FILE_SHARE_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME string = {{mergeBicepName $name $bMount.Name}}FileShare.name
 {{end -}}
 {{end -}}
 {{range $name, $value := .KeyVaults -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.vaultUri
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
-{{range $name, $value := .AppConfigs -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.endpoint
-{{end -}}
-{{range $name, $value := .CosmosDbAccounts -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
-{{end -}}
-{{range $name, $value := .SqlServers -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
-{{end -}}
+{{if .RequiresStorageVolume -}}
+output AZURE_VOLUMES_STORAGE_ACCOUNT string = storageVolume.name
+{{ end -}}
 {{ end}}

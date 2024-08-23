@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -329,13 +329,13 @@ func Test_AiHelper_UpdateTraffic(t *testing.T) {
 	mockContext.Clock.Set(time.Now())
 
 	trafficMap := map[string]*int32{
-		deploymentName: convert.RefOf(int32(100)),
+		deploymentName: to.Ptr(int32(100)),
 	}
 	endpoint := &armmachinelearning.OnlineEndpoint{
-		Name: convert.RefOf(endpointName),
+		Name: to.Ptr(endpointName),
 		Properties: &armmachinelearning.OnlineEndpointProperties{
 			Traffic: map[string]*int32{
-				deploymentName: convert.RefOf(int32(100)),
+				deploymentName: to.Ptr(int32(100)),
 			},
 		},
 	}
@@ -365,10 +365,10 @@ func Test_AiHelper_DeletePreviousDeployments(t *testing.T) {
 	deploymentName := "MY-DEPLOYMENT"
 
 	endpoint := &armmachinelearning.OnlineEndpoint{
-		Name: convert.RefOf(endpointName),
+		Name: to.Ptr(endpointName),
 		Properties: &armmachinelearning.OnlineEndpointProperties{
 			Traffic: map[string]*int32{
-				deploymentName: convert.RefOf(int32(100)),
+				deploymentName: to.Ptr(int32(100)),
 			},
 		},
 	}

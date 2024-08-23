@@ -2,23 +2,6 @@ package apphost
 
 import "github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 
-type genAppInsight struct{}
-
-type genStorageAccount struct {
-	Blobs  []string
-	Tables []string
-	Queues []string
-}
-
-type genCosmosAccount struct {
-	Databases []string
-}
-
-type genServiceBus struct {
-	Queues []string
-	Topics []string
-}
-
 type genContainerAppEnvironmentServices struct {
 	Type string
 }
@@ -31,7 +14,8 @@ type genKeyVault struct {
 }
 
 type genContainerApp struct {
-	Volumes []*Volume
+	Volumes    []*Volume
+	BindMounts []*BindMount
 }
 
 type genContainerAppIngressPort struct {
@@ -49,15 +33,17 @@ type genContainerAppIngress struct {
 	genContainerAppIngressPort
 	Transport              string
 	AllowInsecure          bool
+	UsingDefaultPort       bool
 	AdditionalPortMappings []genContainerAppIngressAdditionalPortMappings
 }
 
 type genContainer struct {
-	Image    string
-	Env      map[string]string
-	Bindings custommaps.WithOrder[Binding]
-	Inputs   map[string]Input
-	Volumes  []*Volume
+	Image      string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Inputs     map[string]Input
+	Volumes    []*Volume
+	BindMounts []*BindMount
 }
 
 type genDockerfile struct {
@@ -69,14 +55,29 @@ type genDockerfile struct {
 	Args      []string
 }
 
+type genBuildContainer struct {
+	Image      string
+	Entrypoint string
+	Args       []string
+	Env        map[string]string
+	Bindings   custommaps.WithOrder[Binding]
+	Volumes    []*Volume
+	Build      *genBuildContainerDetails
+}
+
+type genBuildContainerDetails struct {
+	Context    string
+	Dockerfile string
+	Args       map[string]string
+	Secrets    map[string]ContainerV1BuildSecrets
+}
+
 type genProject struct {
 	Path     string
 	Env      map[string]string
 	Args     []string
 	Bindings custommaps.WithOrder[Binding]
 }
-
-type genAppConfig struct{}
 
 type genDapr struct {
 	AppId                  string
@@ -105,10 +106,6 @@ type genDaprComponent struct {
 	Version  string
 }
 
-type genSqlServer struct {
-	Databases []string
-}
-
 type genOutputParameter struct {
 	Type  string
 	Value string
@@ -126,16 +123,11 @@ type genBicepTemplateContext struct {
 	HasLogAnalyticsWorkspace        bool
 	RequiresPrincipalId             bool
 	RequiresStorageVolume           bool
-	AppInsights                     map[string]genAppInsight
-	ServiceBuses                    map[string]genServiceBus
-	StorageAccounts                 map[string]genStorageAccount
+	HasBindMounts                   bool
 	KeyVaults                       map[string]genKeyVault
 	ContainerAppEnvironmentServices map[string]genContainerAppEnvironmentServices
 	ContainerApps                   map[string]genContainerApp
-	AppConfigs                      map[string]genAppConfig
 	DaprComponents                  map[string]genDaprComponent
-	CosmosDbAccounts                map[string]genCosmosAccount
-	SqlServers                      map[string]genSqlServer
 	InputParameters                 map[string]Input
 	OutputParameters                map[string]genOutputParameter
 	OutputSecretParameters          map[string]genOutputParameter
@@ -153,6 +145,7 @@ type genContainerAppManifestTemplateContext struct {
 	Dapr            *genContainerAppManifestTemplateContextDapr
 	Args            []string
 	Volumes         []*Volume
+	BindMounts      []*BindMount
 }
 
 type genProjectFileContext struct {

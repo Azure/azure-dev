@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -31,11 +31,11 @@ func Test_GetFunctionAppProperties(t *testing.T) {
 
 			response := armappservice.WebAppsClientGetResponse{
 				Site: armappservice.Site{
-					Location: convert.RefOf("eastus2"),
-					Kind:     convert.RefOf("funcapp"),
-					Name:     convert.RefOf("FUNC_APP_NAME"),
+					Location: to.Ptr("eastus2"),
+					Kind:     to.Ptr("funcapp"),
+					Name:     to.Ptr("FUNC_APP_NAME"),
 					Properties: &armappservice.SiteProperties{
-						DefaultHostName: convert.RefOf("FUNC_APP_NAME.azurewebsites.net"),
+						DefaultHostName: to.Ptr("FUNC_APP_NAME.azurewebsites.net"),
 					},
 				},
 			}
@@ -99,6 +99,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 			"RESOURCE_GROUP_ID",
 			"FUNC_APP_NAME",
 			zipFile,
+			false,
 		)
 
 		require.NoError(t, err)
@@ -122,6 +123,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 			"RESOURCE_GROUP_ID",
 			"FUNC_APP_NAME",
 			zipFile,
+			false,
 		)
 
 		require.Nil(t, res)
@@ -148,18 +150,45 @@ func registerInfoMocks(mockContext *mocks.MockContext, ran *bool) {
 					Properties: &armappservice.SiteProperties{
 						HostNameSSLStates: []*armappservice.HostNameSSLState{
 							{
-								HostType: convert.RefOf(armappservice.HostTypeStandard),
-								Name:     convert.RefOf("INVALID"),
+								HostType: to.Ptr(armappservice.HostTypeStandard),
+								Name:     to.Ptr("INVALID"),
 							},
 							{
-								HostType: convert.RefOf(armappservice.HostTypeRepository),
-								Name:     convert.RefOf("FUNC_APP_NAME_SCM_HOST"),
+								HostType: to.Ptr(armappservice.HostTypeRepository),
+								Name:     to.Ptr("FUNC_APP_NAME_SCM_HOST"),
 							},
 						},
+						//nolint:lll
+						ServerFarmID: to.Ptr(
+							"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN_NAME",
+						),
 					},
 				},
 			},
 		)
+
+		return response, nil
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		//nolint:lll
+		return request.Method == http.MethodGet &&
+			strings.Contains(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN_NAME",
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		response, _ := mocks.CreateHttpResponseWithBody(
+			request,
+			http.StatusOK,
+			armappservice.PlansClientGetResponse{
+				Plan: armappservice.Plan{
+					SKU: &armappservice.SKUDescription{
+						Name: to.Ptr("Y1"),
+						Tier: to.Ptr("Dynamic"),
+					},
+				},
+			})
 
 		return response, nil
 	})

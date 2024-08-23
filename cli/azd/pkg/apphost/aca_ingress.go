@@ -251,6 +251,7 @@ func pickIngress(endpointByTargetPortProperties map[string]*acaPort, httpIngress
 		finalIngress.TargetPort = props.port
 		if finalIngress.TargetPort == 0 {
 			finalIngress.TargetPort = defaultPort
+			finalIngress.UsingDefaultPort = true
 		}
 		finalIngress.Transport = acaIngressSchemaHttp
 		if props.hasHttp2 {

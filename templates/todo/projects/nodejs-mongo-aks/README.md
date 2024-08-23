@@ -64,6 +64,11 @@ azd init --template Azure-Samples/todo-nodejs-mongo-aks
 # Provision and deploy to Azure
 azd up
 ```
+
+> Note: If you are running on an internal sub, then you need to test this from a DevBox. Here's the error you'll receive if you attempt to run outside of a DevBox:
+>
+> !["Screenshot of error page"](assets/errorpage.png)
+
 #### Optional Configuration
 
 To take advantage of `azd` alpha features for **[Helm](https://helm.sh)** or **[Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/)** run the following commands prior to deploying the application.
@@ -133,7 +138,7 @@ If you are deploying via CI/CD and are using `azd pipeline config` ensure you se
 
 ### Roles
 
-This template creates a [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) for your app inside your Azure Active Directory tenant, and it is used to authenticate your app with Azure and other services that support Azure AD authentication like Key Vault via access policies. You will see principalId referenced in the infrastructure as code files, that refers to the id of the currently logged in Azure CLI user, which will be granted access policies and permissions to run the application locally. To view your managed identity in the Azure Portal, follow these [steps](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-view-managed-identity-service-principal-portal).
+This template creates a [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) for your app inside your Azure Active Directory tenant, and it is used to authenticate your app with Azure and other services that support Azure AD authentication like Key Vault via access policies. You will see principalId referenced in the infrastructure as code files, that refers to the id of the currently logged in Azure Developer CLI user, which will be granted access policies and permissions to run the application locally. To view your managed identity in the Azure Portal, follow these [steps](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-view-managed-identity-service-principal-portal).
 
 ### Key Vault
 

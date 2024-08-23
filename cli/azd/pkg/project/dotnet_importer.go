@@ -2,13 +2,16 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -28,7 +31,7 @@ type hostCheckResult struct {
 
 // DotNetImporter is an importer that is able to import projects and infrastructure from a manifest produced by a .NET App.
 type DotNetImporter struct {
-	dotnetCli           dotnet.DotNetCli
+	dotnetCli           *dotnet.Cli
 	console             input.Console
 	lazyEnv             *lazy.Lazy[*environment.Environment]
 	lazyEnvManager      *lazy.Lazy[environment.Manager]
@@ -53,7 +56,7 @@ type manifestCacheKey struct {
 }
 
 func NewDotNetImporter(
-	dotnetCli dotnet.DotNetCli,
+	dotnetCli *dotnet.Cli,
 	console input.Console,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
@@ -104,9 +107,17 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{})
+	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
+	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
+		AzdOperations: azdOperationsEnabled,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
+		if errors.Is(err, provisioning.ErrAzdOperationsNotEnabled) {
+			// Use a warning for this error about azd operations is required for the current project to fully work
+			ai.console.Message(ctx, err.Error())
+		} else {
+			return nil, fmt.Errorf("generating bicep from manifest: %w", err)
+		}
 	}
 
 	tmpDir, err := os.MkdirTemp("", "azd-infra")
@@ -272,7 +283,163 @@ func (ai *DotNetImporter) Services(
 
 		services[svc.Name] = svc
 	}
+
+	buildContainers, err := apphost.BuildContainers(manifest)
+	if err != nil {
+		return nil, err
+	}
+	for name, bContainer := range buildContainers {
+
+		defaultLanguage := ServiceLanguageDotNet
+		relativePath := svcConfig.RelativePath
+		var dOptions DockerProjectOptions
+
+		if bContainer.Build != nil {
+			defaultLanguage = ServiceLanguageDocker
+			relPath, err := filepath.Rel(p.Path, filepath.Dir(bContainer.Build.Dockerfile))
+			if err != nil {
+				return nil, err
+			}
+			relativePath = relPath
+
+			bArgs, err := evaluateArgsWithConfig(*manifest, bContainer.Build.Args)
+			if err != nil {
+				return nil, fmt.Errorf("evaluating build args for service %s: %w", name, err)
+			}
+			bArgsArray, reqEnv, err := buildArgsArrayAndEnv(*manifest, bContainer.Build.Secrets)
+			if err != nil {
+				return nil, fmt.Errorf("converting build args to array for service %s: %w", name, err)
+			}
+
+			dOptions = DockerProjectOptions{
+				Path:         bContainer.Build.Dockerfile,
+				Context:      bContainer.Build.Context,
+				BuildArgs:    mapToStringSlice(bArgs, "="),
+				BuildSecrets: bArgsArray,
+				BuildEnv:     reqEnv,
+			}
+		}
+
+		svc := &ServiceConfig{
+			RelativePath: relativePath,
+			Language:     defaultLanguage,
+			Host:         DotNetContainerAppTarget,
+			Docker:       dOptions,
+		}
+
+		svc.Name = name
+		svc.Project = p
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
+
+		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.DotNetContainerApp = &DotNetContainerAppOptions{
+			ContainerImage: bContainer.Image,
+			Manifest:       manifest,
+			ProjectName:    name,
+			AppHostPath:    svcConfig.Path(),
+		}
+		services[svc.Name] = svc
+
+	}
 	return services, nil
+}
+
+// buildArgsArray produces an array of args to pass to the container build command.
+// See: https://docs.docker.com/build/building/secrets/
+func buildArgsArrayAndEnv(
+	manifest apphost.Manifest,
+	bArgs map[string]apphost.ContainerV1BuildSecrets) ([]string, []string, error) {
+	var result []string
+	var reqEnv []string
+
+	for bArgKey, bArg := range bArgs {
+		if bArg.Type != "env" && bArg.Type != "file" {
+			return nil, nil, fmt.Errorf("unsupported secret type %q for build arg %q", bArg.Type, bArgKey)
+		}
+
+		baseArg := fmt.Sprintf("id=%s", bArgKey)
+		if bArg.Type == "file" {
+			if bArg.Source == nil {
+				return nil, nil, fmt.Errorf("missing source for file secret %q", bArgKey)
+			}
+			baseArg = fmt.Sprintf("id=%s,src=%s", bArgKey, *bArg.Source)
+		}
+		if bArg.Type == "env" {
+			if bArg.Value == nil {
+				return nil, nil, fmt.Errorf("missing value for env secret %q", bArgKey)
+			}
+			bArgValue, err := evaluateExpressions(*bArg.Value, manifest)
+			if err != nil {
+				return nil, nil, fmt.Errorf("evaluating value for env secret %q: %w", bArgKey, err)
+			}
+			reqEnv = append(reqEnv, fmt.Sprintf("%s=%s", bArgKey, bArgValue))
+		}
+		result = append(result, baseArg)
+	}
+
+	return result, reqEnv, nil
+}
+
+func evaluateArgsWithConfig(
+	manifest apphost.Manifest, args map[string]string) (map[string]string, error) {
+	result := make(map[string]string, len(args))
+	for argKey, argValue := range args {
+		evaluatedValue, err := evaluateExpressions(argValue, manifest)
+		if err != nil {
+			return nil, err
+		}
+		result[argKey] = evaluatedValue
+
+	}
+	return result, nil
+}
+
+func evaluateExpressions(source string, manifest apphost.Manifest) (string, error) {
+	return apphost.EvalString(source, func(match string) (string, error) {
+		return evaluateSingleExpressionMatch(match, manifest)
+	})
+}
+
+func evaluateSingleExpressionMatch(
+	match string, manifest apphost.Manifest) (string, error) {
+
+	exp := match
+	resourceAndPath := strings.SplitN(exp, ".", 2)
+	if len(resourceAndPath) != 2 {
+		return match, fmt.Errorf("invalid expression %q. Expecting the form of: resource.value", exp)
+	}
+	resourceName := resourceAndPath[0]
+	resource, has := manifest.Resources[resourceName]
+	if !has {
+		return match, fmt.Errorf("resource %q not found in manifest", resourceName)
+	}
+	if resource.Type != "parameter.v0" {
+		return match, fmt.Errorf(
+			"resource %q is not a parameter. Only parameters are supported for build args expressions",
+			resourceName)
+	}
+	inputParam, err := apphost.InputParameter(resourceName, resource)
+	if err != nil {
+		return match, fmt.Errorf("getting input parameter for resource %q: %w", resourceName, err)
+	}
+	if inputParam == nil {
+		// parameter not using inputs, has a constant value, use it
+		return resource.Value, nil
+	}
+	fromEnvVar := strings.TrimSuffix(scaffold.EnvFormat(resourceName)[2:], "}")
+	if valueInEnv := os.Getenv(fromEnvVar); valueInEnv != "" {
+		log.Println("Using value from environment variable", fromEnvVar, "for parameter", resourceName)
+		return valueInEnv, nil
+	}
+	// can't resolve the parameter here yet, best we can do is resolve the name of the parameter, removing the path
+	// of the resource from the expression, keeping only the name of the expected parameter.
+	// The parameter might not be requested at this point, because it could be
+	// the first time azd is running for the project.
+	return fmt.Sprintf("{%s%s}", infraParametersKey, resourceName), nil
 }
 
 func (ai *DotNetImporter) SynthAllInfrastructure(
@@ -290,9 +457,17 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		rootModuleName = p.Infra.Module
 	}
 
-	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{})
+	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
+	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{
+		AzdOperations: azdOperationsEnabled,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("generating infra/ folder: %w", err)
+		if errors.Is(err, provisioning.ErrAzdOperationsNotEnabled) {
+			// Use a warning for this error about azd operations is required for the current project to fully work
+			ai.console.Message(ctx, err.Error())
+		} else {
+			return nil, fmt.Errorf("generating infra/ folder: %w", err)
+		}
 	}
 
 	infraPathPrefix := DefaultPath
@@ -374,6 +549,16 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	}
 
 	for name := range apphost.Containers(manifest) {
+		if err := writeManifestForResource(name); err != nil {
+			return nil, err
+		}
+	}
+
+	bcs, err := apphost.BuildContainers(manifest)
+	if err != nil {
+		return nil, err
+	}
+	for name := range bcs {
 		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}

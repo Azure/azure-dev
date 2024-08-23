@@ -34,19 +34,19 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path        string                  `yaml:"path,omitempty"      json:"path,omitempty"`
-	Context     string                  `yaml:"context,omitempty"   json:"context,omitempty"`
-	Platform    string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
-	Target      string                  `yaml:"target,omitempty"    json:"target,omitempty"`
-	Registry    osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
-	Image       osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
-	Tag         osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
+	Path        string                  `yaml:"path,omitempty"        json:"path,omitempty"`
+	Context     string                  `yaml:"context,omitempty"     json:"context,omitempty"`
+	Platform    string                  `yaml:"platform,omitempty"    json:"platform,omitempty"`
+	Target      string                  `yaml:"target,omitempty"      json:"target,omitempty"`
+	Registry    osutil.ExpandableString `yaml:"registry,omitempty"    json:"registry,omitempty"`
+	Image       osutil.ExpandableString `yaml:"image,omitempty"       json:"image,omitempty"`
+	Tag         osutil.ExpandableString `yaml:"tag,omitempty"         json:"tag,omitempty"`
 	RemoteBuild bool                    `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
-	BuildArgs   []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	BuildArgs   []string                `yaml:"buildArgs,omitempty"   json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
 	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
-	BuildSecrets []string `yaml:"-"                   json:"-"`
-	BuildEnv     []string `yaml:"-"                   json:"-"`
+	BuildSecrets []string `yaml:"-"                     json:"-"`
+	BuildEnv     []string `yaml:"-"                     json:"-"`
 }
 
 type dockerBuildResult struct {

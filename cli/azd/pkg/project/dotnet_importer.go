@@ -32,7 +32,7 @@ type hostCheckResult struct {
 
 // DotNetImporter is an importer that is able to import projects and infrastructure from a manifest produced by a .NET App.
 type DotNetImporter struct {
-	dotnetCli           dotnet.DotNetCli
+	dotnetCli           *dotnet.Cli
 	console             input.Console
 	lazyEnv             *lazy.Lazy[*environment.Environment]
 	lazyEnvManager      *lazy.Lazy[environment.Manager]
@@ -57,7 +57,7 @@ type manifestCacheKey struct {
 }
 
 func NewDotNetImporter(
-	dotnetCli dotnet.DotNetCli,
+	dotnetCli *dotnet.Cli,
 	console input.Console,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	lazyEnvManager *lazy.Lazy[environment.Manager],

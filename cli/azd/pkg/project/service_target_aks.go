@@ -83,7 +83,7 @@ type aksTarget struct {
 	console                input.Console
 	managedClustersService azcli.ManagedClustersService
 	resourceManager        ResourceManager
-	kubectl                kubectl.KubectlCli
+	kubectl                *kubectl.Cli
 	kubeLoginCli           *kubelogin.Cli
 	helmCli                *helm.Cli
 	kustomizeCli           *kustomize.Cli
@@ -98,7 +98,7 @@ func NewAksTarget(
 	console input.Console,
 	managedClustersService azcli.ManagedClustersService,
 	resourceManager ResourceManager,
-	kubectlCli kubectl.KubectlCli,
+	kubectlCli *kubectl.Cli,
 	kubeLoginCli *kubelogin.Cli,
 	helmCli *helm.Cli,
 	kustomizeCli *kustomize.Cli,
@@ -121,9 +121,9 @@ func NewAksTarget(
 }
 
 // Gets the required external tools to support the AKS service
-func (t *aksTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (t *aksTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	allTools := []tools.ExternalTool{}
-	allTools = append(allTools, t.containerHelper.RequiredExternalTools(ctx)...)
+	allTools = append(allTools, t.containerHelper.RequiredExternalTools(ctx, serviceConfig)...)
 	allTools = append(allTools, t.kubectl)
 
 	if t.featureManager.IsEnabled(featureHelm) {
@@ -189,7 +189,7 @@ func (t *aksTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+	if err := t.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
@@ -492,7 +492,7 @@ func (t *aksTarget) Endpoints(
 
 	// Find endpoints for any matching services
 	// These endpoints would typically be internal cluster accessible endpoints
-	serviceEndpoints, err := t.getServiceEndpoints(ctx, serviceConfig, serviceName)
+	serviceEndpoints, err := t.getServiceEndpoints(ctx, serviceName)
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 		return nil, fmt.Errorf("failed retrieving service endpoints, %w", err)
 	}
@@ -510,8 +510,6 @@ func (t *aksTarget) Endpoints(
 }
 
 func (t *aksTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if targetResource.ResourceGroupName() == "" {
@@ -746,7 +744,6 @@ func (t *aksTarget) waitForService(
 // Supports service types for LoadBalancer and ClusterIP
 func (t *aksTarget) getServiceEndpoints(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	serviceNameFilter string,
 ) ([]string, error) {
 	service, err := t.waitForService(ctx, serviceNameFilter)

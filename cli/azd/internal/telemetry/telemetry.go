@@ -94,9 +94,6 @@ func GetTelemetrySystem() *TelemetrySystem {
 	return instance
 }
 
-// ref: go.opentelemetry.io/otel/exporters/otlp/otlptrace/internal/otlpconfig/DefaultCollectorHTTPPort
-const cDefaultCollectorHTTPPort uint16 = 4318
-
 func initialize() (*TelemetrySystem, error) {
 	if !IsTelemetryEnabled() {
 		log.Println("telemetry is disabled by user and will not be initialized.")
@@ -177,7 +174,8 @@ func initialize() (*TelemetrySystem, error) {
 		if u.Port() != "" {
 			traceOptions = append(traceOptions, otlptracehttp.WithEndpoint(u.Host))
 		} else {
-			hostWithDefaultPort := fmt.Sprintf("%s:%d", u.Host, cDefaultCollectorHTTPPort)
+			// ref: go.opentelemetry.io/otel/exporters/otlp/otlptrace/internal/otlpconfig/DefaultCollectorHTTPPort
+			hostWithDefaultPort := fmt.Sprintf("%s:%d", u.Host, 4318)
 			traceOptions = append(traceOptions, otlptracehttp.WithEndpoint(hostWithDefaultPort))
 		}
 

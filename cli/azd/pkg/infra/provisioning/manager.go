@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/operations"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -163,7 +163,7 @@ func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
 	}
 
 	for index, result := range deployResult.Preview.Properties.Changes {
-		mappingName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(result.ResourceType))
+		mappingName := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(result.ResourceType))
 		if mappingName == "" {
 			// ignore
 			continue

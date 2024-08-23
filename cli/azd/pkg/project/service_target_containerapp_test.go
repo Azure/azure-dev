@@ -10,13 +10,14 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -38,7 +39,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 				"SUB_ID",
 				"RG_ID",
 				"res",
-				string(infra.AzureResourceTypeContainerApp),
+				string(azapi.AzureResourceTypeContainerApp),
 			),
 			expectError: false,
 		},
@@ -47,7 +48,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 				"SUB_ID",
 				"RG_ID",
 				"res",
-				strings.ToLower(string(infra.AzureResourceTypeContainerApp)),
+				strings.ToLower(string(azapi.AzureResourceTypeContainerApp)),
 			),
 			expectError: false,
 		},
@@ -59,11 +60,9 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 
 	for test, data := range tests {
 		t.Run(test, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
 			serviceTarget := &containerAppTarget{}
-			serviceConfig := &ServiceConfig{}
 
-			err := serviceTarget.validateTargetResource(*mockContext.Context, serviceConfig, data.targetResource)
+			err := serviceTarget.validateTargetResource(data.targetResource)
 			if data.expectError {
 				require.Error(t, err)
 			} else {
@@ -83,7 +82,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 	serviceConfig := createTestServiceConfig(tempDir, ContainerAppTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createContainerAppServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createContainerAppServiceTarget(mockContext, env)
 
 	packageResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
@@ -110,7 +109,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 		"SUBSCRIPTION_ID",
 		"RESOURCE_GROUP",
 		"CONTAINER_APP",
-		string(infra.AzureResourceTypeContainerApp),
+		string(azapi.AzureResourceTypeContainerApp),
 	)
 
 	deployResult, err := logProgress(
@@ -129,10 +128,9 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 func createContainerAppServiceTarget(
 	mockContext *mocks.MockContext,
-	serviceConfig *ServiceConfig,
 	env *environment.Environment,
 ) ServiceTarget {
-	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	dockerCli := docker.NewCli(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
@@ -143,7 +141,6 @@ func createContainerAppServiceTarget(
 
 	containerAppService := containerapps.NewContainerAppService(
 		credentialProvider,
-		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
@@ -154,17 +151,23 @@ func createContainerAppServiceTarget(
 		mockContext.ArmClientOptions,
 		mockContext.CoreClientOptions,
 	)
+	remoteBuildManager := containerregistry.NewRemoteBuildManager(
+		credentialProvider,
+		mockContext.ArmClientOptions,
+	)
 	containerHelper := NewContainerHelper(
 		env,
 		envManager,
 		clock.NewMock(),
 		containerRegistryService,
+		remoteBuildManager,
 		dockerCli,
+		mockContext.Console,
 		cloud.AzurePublic(),
 	)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	resourceManager := NewResourceManager(env, azCli, depOpService)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	resourceManager := NewResourceManager(env, resourceService, depOpService)
 
 	return NewContainerAppTarget(
 		env,
@@ -197,10 +200,10 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 		Properties: &armappcontainers.ContainerAppProperties{
 			LatestRevisionName: &originalRevisionName,
 			Configuration: &armappcontainers.Configuration{
-				ActiveRevisionsMode: convert.RefOf(armappcontainers.ActiveRevisionsModeSingle),
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Secrets: []*armappcontainers.Secret{
 					{
-						Name:  convert.RefOf("secret"),
+						Name:  to.Ptr("secret"),
 						Value: nil,
 					},
 				},

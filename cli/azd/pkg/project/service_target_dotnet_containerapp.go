@@ -16,11 +16,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -32,7 +32,7 @@ type dotnetContainerAppTarget struct {
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
-	dotNetCli           dotnet.DotNetCli
+	dotNetCli           *dotnet.Cli
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
 	keyvaultService     keyvault.KeyVaultService
@@ -52,7 +52,7 @@ func NewDotNetContainerAppTarget(
 	containerHelper *ContainerHelper,
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
-	dotNetCli dotnet.DotNetCli,
+	dotNetCli *dotnet.Cli,
 	cosmosDbService cosmosdb.CosmosDbService,
 	sqlDbService sqldb.SqlDbService,
 	keyvaultService keyvault.KeyVaultService,
@@ -72,7 +72,7 @@ func NewDotNetContainerAppTarget(
 }
 
 // Gets the required external tools
-func (at *dotnetContainerAppTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (at *dotnetContainerAppTarget) RequiredExternalTools(ctx context.Context, svc *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{at.dotNetCli}
 }
 
@@ -99,7 +99,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+	if err := at.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
@@ -271,7 +271,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		serviceConfig.Name,
-		string(infra.AzureResourceTypeContainerApp))
+		string(azapi.AzureResourceTypeContainerApp))
 
 	endpoints, err := at.Endpoints(ctx, serviceConfig, containerAppTarget)
 	if err != nil {
@@ -314,8 +314,6 @@ func (at *dotnetContainerAppTarget) Endpoints(
 }
 
 func (at *dotnetContainerAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if targetResource.ResourceGroupName() == "" {
@@ -323,7 +321,7 @@ func (at *dotnetContainerAppTarget) validateTargetResource(
 	}
 
 	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerAppEnvironment); err != nil {
+		if err := checkResourceType(targetResource, azapi.AzureResourceTypeContainerAppEnvironment); err != nil {
 			return err
 		}
 	}

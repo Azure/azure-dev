@@ -19,11 +19,11 @@ import (
 
 type pythonProject struct {
 	env *environment.Environment
-	cli *python.PythonCli
+	cli *python.Cli
 }
 
 // NewPythonProject creates a new instance of the Python project
-func NewPythonProject(cli *python.PythonCli, env *environment.Environment) FrameworkService {
+func NewPythonProject(cli *python.Cli, env *environment.Environment) FrameworkService {
 	return &pythonProject{
 		env: env,
 		cli: cli,
@@ -41,7 +41,7 @@ func (pp *pythonProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (pp *pythonProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (pp *pythonProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{pp.cli}
 }
 
@@ -150,11 +150,9 @@ func (pp *pythonProject) Package(
 	}, nil
 }
 
-const cVenvConfigFileName = "pyvenv.cfg"
-
 func isPythonVirtualEnv(path string) bool {
 	// check if `pyvenv.cfg` is within the folder
-	if _, err := os.Stat(filepath.Join(path, cVenvConfigFileName)); err == nil {
+	if _, err := os.Stat(filepath.Join(path, "pyvenv.cfg")); err == nil {
 		return true
 	}
 	return false

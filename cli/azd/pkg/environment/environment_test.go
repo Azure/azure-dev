@@ -39,7 +39,7 @@ func TestConfigRoundTrips(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	root := t.TempDir()
 
-	envManager, _ := createEnvManager(t, mockContext, root)
+	envManager, _ := createEnvManager(mockContext, root)
 
 	// Create a new config from an empty root.
 	env := New("test")
@@ -84,7 +84,7 @@ func TestFromRoot(t *testing.T) {
 	t.Run("EmptyWhenMissing", func(t *testing.T) {
 		t.Parallel()
 
-		envManager, _ := createEnvManager(t, mockContext, t.TempDir())
+		envManager, _ := createEnvManager(mockContext, t.TempDir())
 		env, err := envManager.Get(*mockContext.Context, "test")
 		require.ErrorIs(t, err, ErrNotFound)
 		require.Nil(t, env)
@@ -96,7 +96,7 @@ func TestFromRoot(t *testing.T) {
 	t.Run("Upgrade", func(t *testing.T) {
 		t.Parallel()
 
-		envManager, azdCtx := createEnvManager(t, mockContext, t.TempDir())
+		envManager, azdCtx := createEnvManager(mockContext, t.TempDir())
 		envRoot := azdCtx.EnvironmentRoot("testEnv")
 
 		err := os.MkdirAll(envRoot, osutil.PermissionDirectory)
@@ -118,7 +118,7 @@ func Test_SaveAndReload(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	envManager, azdCtx := createEnvManager(t, mockContext, t.TempDir())
+	envManager, azdCtx := createEnvManager(mockContext, t.TempDir())
 
 	env := New("test")
 	require.NotNil(t, env)
@@ -186,7 +186,7 @@ func TestCleanName(t *testing.T) {
 
 func TestRoundTripNumberWithLeadingZeros(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	envManager, _ := createEnvManager(t, mockContext, t.TempDir())
+	envManager, _ := createEnvManager(mockContext, t.TempDir())
 	env := New("test")
 	env.DotenvSet("TEST", "01")
 	err := envManager.Save(*mockContext.Context, env)
@@ -266,7 +266,7 @@ func Test_fixupUnquotedDotenv(t *testing.T) {
 	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=\"01\"", fixed)
 }
 
-func createEnvManager(t *testing.T, mockContext *mocks.MockContext, root string) (Manager, *azdcontext.AzdContext) {
+func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *azdcontext.AzdContext) {
 	azdCtx := azdcontext.NewAzdContextWithDirectory(root)
 	configManager := config.NewFileConfigManager(config.NewManager())
 	localDataStore := NewLocalFileDataStore(azdCtx, configManager)

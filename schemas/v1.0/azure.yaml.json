@@ -156,6 +156,16 @@
                                 "description": "Runs after the service dependencies are restored",
                                 "$ref": "#/definitions/hook"
                             },
+                            "prebuild": {
+                                "title": "pre build hook",
+                                "description": "Runs before the service is built",
+                                "$ref": "#/definitions/hook"
+                            },
+                            "postbuild": {
+                                "title": "post build hook",
+                                "description": "Runs after the service is built",
+                                "$ref": "#/definitions/hook"
+                            },
                             "prepackage": {
                                 "title": "pre package hook",
                                 "description": "Runs before the service is deployment package is created",

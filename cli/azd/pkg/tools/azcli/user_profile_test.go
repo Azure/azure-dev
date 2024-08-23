@@ -9,7 +9,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -29,14 +28,15 @@ func Test_GetUserAccessToken(t *testing.T) {
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd", cloud.AzurePublic())
 	userProfile := NewUserProfileService(
 		&mocks.MockMultiTenantCredentialProvider{
 			TokenMap: map[string]mocks.MockCredentials{
 				"": mockCredential,
 			},
 		},
-		clientOptionsBuilderFactory,
+		&azcore.ClientOptions{
+			Transport: mockContext.HttpClient,
+		},
 		cloud.AzurePublic(),
 		nil,
 	)
@@ -60,14 +60,11 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusOK, &mockUserProfile)
 
-		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(
-			mockContext.HttpClient,
-			"azd",
-			cloud.AzurePublic(),
-		)
 		userProfile := NewUserProfileService(
 			&mocks.MockMultiTenantCredentialProvider{},
-			clientOptionsBuilderFactory,
+			&azcore.ClientOptions{
+				Transport: mockContext.HttpClient,
+			},
 			cloud.AzurePublic(),
 			nil,
 		)
@@ -81,14 +78,11 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusBadRequest, nil)
 
-		clientOptionsBuilderFactory := azsdk.NewClientOptionsBuilderFactory(
-			mockContext.HttpClient,
-			"azd",
-			cloud.AzurePublic(),
-		)
 		userProfile := NewUserProfileService(
 			&mocks.MockMultiTenantCredentialProvider{},
-			clientOptionsBuilderFactory,
+			&azcore.ClientOptions{
+				Transport: mockContext.HttpClient,
+			},
 			cloud.AzurePublic(),
 			nil,
 		)

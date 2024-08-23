@@ -10,11 +10,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
@@ -545,7 +545,7 @@ func (ad *entraIdService) getRoleDefinition(
 	}
 
 	pager := roleDefinitionsClient.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{
-		Filter: convert.RefOf(fmt.Sprintf("roleName eq '%s'", roleName)),
+		Filter: to.Ptr(fmt.Sprintf("roleName eq '%s'", roleName)),
 	})
 
 	roleDefinitions := []*armauthorization.RoleDefinition{}

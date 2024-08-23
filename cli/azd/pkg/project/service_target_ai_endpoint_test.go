@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -43,7 +43,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		env.GetSubscriptionId(),
 		env.Getenv(environment.ResourceGroupEnvVarName),
 		endpointName,
-		string(infra.AzureMachineLearningEndpoint),
+		string(azapi.AzureResourceTypeMachineLearningEndpoint),
 	)
 	serviceConfig := createTestServiceConfig("./contoso-chat", AiEndpointTarget, ServiceLanguagePython)
 	serviceConfig.Config = map[string]any{
@@ -71,11 +71,11 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	}
 
 	environmentVersion := &armmachinelearning.EnvironmentVersion{
-		Name: convert.RefOf("1"),
+		Name: to.Ptr("1"),
 	}
 
 	modelVersion := &armmachinelearning.ModelVersion{
-		Name: convert.RefOf("1"),
+		Name: to.Ptr("1"),
 	}
 
 	onlineDeployment := &armmachinelearning.OnlineDeployment{
@@ -83,12 +83,12 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	}
 
 	onlineEndpoint := &armmachinelearning.OnlineEndpoint{
-		Name: convert.RefOf(endpointName),
+		Name: to.Ptr(endpointName),
 		Properties: &armmachinelearning.OnlineEndpointProperties{
-			ScoringURI: convert.RefOf("https://SCRORING_URI"),
-			SwaggerURI: convert.RefOf("https://SWAGGER_URI"),
+			ScoringURI: to.Ptr("https://SCRORING_URI"),
+			SwaggerURI: to.Ptr("https://SWAGGER_URI"),
 			Traffic: map[string]*int32{
-				deploymentName: convert.RefOf(int32(100)),
+				deploymentName: to.Ptr(int32(100)),
 			},
 		},
 	}

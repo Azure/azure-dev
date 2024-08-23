@@ -8,7 +8,6 @@ import (
 	azcloud "github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 )
@@ -23,15 +22,10 @@ type UserProfileService struct {
 
 func NewUserProfileService(
 	credentialProvider auth.MultiTenantCredentialProvider,
-	clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
+	coreClientOptions *azcore.ClientOptions,
 	cloud *cloud.Cloud,
 	authManager *auth.Manager,
 ) *UserProfileService {
-	coreClientOptions := clientOptionsBuilderFactory.NewClientOptionsBuilder().
-		WithCloud(cloud.Configuration).
-		WithPerCallPolicy(azsdk.NewMsGraphCorrelationPolicy()).
-		BuildCoreClientOptions()
-
 	return &UserProfileService{
 		credentialProvider: credentialProvider,
 		coreClientOptions:  coreClientOptions,

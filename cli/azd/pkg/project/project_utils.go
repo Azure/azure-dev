@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdignore"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/otiai10/copy"
 )
@@ -23,15 +24,23 @@ func createDeployableZip(projectName string, appName string, path string) (strin
 		return "", fmt.Errorf("failed when creating zip package to deploy %s: %w", appName, err)
 	}
 
-	if err := rzip.CreateFromDirectory(path, zipFile); err != nil {
-		// if we fail here just do our best to close things out and cleanup
+	// Read and honor the .azdignore files
+	ignoreMatchers, err := azdignore.ReadIgnoreFiles(path)
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("reading .azdignore files: %w", err)
+	}
+
+	// Create the zip file, excluding files that match the .azdignore rules
+	err = rzip.CreateFromDirectoryWithIgnore(path, zipFile, ignoreMatchers)
+	if err != nil {
+		// If we fail here, just do our best to close things out and cleanup
 		zipFile.Close()
 		os.Remove(zipFile.Name())
 		return "", err
 	}
 
 	if err := zipFile.Close(); err != nil {
-		// may fail but, again, we'll do our best to cleanup here.
+		// May fail, but again, we'll do our best to cleanup here.
 		os.Remove(zipFile.Name())
 		return "", err
 	}
@@ -48,12 +57,40 @@ type buildForZipOptions struct {
 	excludeConditions []excludeDirEntryCondition
 }
 
-// buildForZip is use by projects which build strategy is to only copy the source code into a folder which is later
-// zipped for packaging. For example Python and Node framework languages. buildForZipOptions provides the specific
-// details for each language which should not be ever copied.
+// buildForZip is used by projects whose build strategy is to only copy the source code into a folder, which is later
+// zipped for packaging. buildForZipOptions provides the specific details for each language regarding which files should
+// not be copied.
 func buildForZip(src, dst string, options buildForZipOptions) error {
+	// Add a global exclude condition for the .azdignore file
+	ignoreMatchers, err := azdignore.ReadIgnoreFiles(src)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading .azdignore files: %w", err)
+	}
 
-	// these exclude conditions applies to all projects
+	options.excludeConditions = append(options.excludeConditions, func(path string, file os.FileInfo) bool {
+		if len(ignoreMatchers) > 0 {
+			// Get the relative path from the source directory
+			relativePath, err := filepath.Rel(src, path)
+			if err != nil {
+				return false
+			}
+
+			// Check if the relative path should be ignored
+			isDir := file.IsDir()
+			if azdignore.ShouldIgnore(relativePath, isDir, ignoreMatchers) {
+				return true
+			}
+		}
+
+		// Always exclude .azdignore files
+		if filepath.Base(path) == ".azdignore" {
+			return true
+		}
+
+		return false
+	})
+
+	// These exclude conditions apply to all projects
 	options.excludeConditions = append(options.excludeConditions, globalExcludeAzdFolder)
 
 	return copy.Copy(src, dst, copy.Options{

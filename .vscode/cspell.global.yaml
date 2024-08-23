@@ -73,6 +73,7 @@ ignoreWords:
     - fdfp
     - fics
     - Frontdoor
+    - gitcli
     - golobby
     - graphsdk
     - hndl

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -29,10 +30,10 @@ import (
 type ImportManager struct {
 	dotNetImporter *DotNetImporter
 	env            *environment.Environment
-	bicep          bicep.BicepCli
+	bicep          *bicep.Cli
 }
 
-func NewImportManager(dotNetImporter *DotNetImporter, env *environment.Environment, bicep bicep.BicepCli) *ImportManager {
+func NewImportManager(dotNetImporter *DotNetImporter, env *environment.Environment, bicep *bicep.Cli) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,
 		env:            env,
@@ -538,6 +539,45 @@ func (i *Infra) Cleanup() error {
 	return nil
 }
 
+type location struct {
+	start int
+	stop  int
+}
+
+// parseEnvSubtVariables parses the envsubt expression(s) present in a string.
+// substitutions.
+// It works with both:
+// - ${var} and ${var:=default} syntaxes
+func parseEnvSubtVariables(s string) (names []string, expressions []location) {
+	i := 0
+	inVar := false
+	name := ""
+	start := 0
+
+	for i < len(s) {
+		if s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
+			inVar = true
+			start = i
+			i += len("${")
+			continue
+		}
+
+		if inVar {
+			if unicode.IsLetter(rune(s[i])) || unicode.IsDigit(rune(s[i])) || s[i] == '_' {
+				name += string(s[i])
+			} else if s[i] == '}' {
+				inVar = false
+				names = append(names, name)
+				name = ""
+
+				expressions = append(expressions, location{start, i})
+			}
+		}
+		i++
+	}
+	return
+}
+
 func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*scaffold.InfraSpec, error) {
 	infraSpec := scaffold.InfraSpec{}
 	backendMapping := map[string]string{}
@@ -587,17 +627,65 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 				Port: -1,
 			}
 
-			processedEnv := map[string]string{}
+			svcSpec.Env = make(map[string]string)
 			for _, envVar := range props.Env {
-				val, err := envVar.Value.Envsubst(env.Getenv)
-				if err != nil {
+				// TODO(weilim): use cue for schema validation
+				if len(envVar.Value) == 0 && len(envVar.Secret) == 0 {
 					return nil, fmt.Errorf(
-						"evaluating environment variable %s for host %s: %w", envVar.Name, res.Name, err)
+						"environment variable %s for host %s is invalid: both value and secret are set",
+						envVar.Name,
+						res.Name)
 				}
 
-				processedEnv[envVar.Name] = val
+				if len(envVar.Value) > 0 && len(envVar.Secret) > 0 {
+					return nil, fmt.Errorf(
+						"environment variable %s for host %s is invalid: both value and secret are empty",
+						envVar.Name,
+						res.Name)
+				}
+
+				isSecret := len(envVar.Secret) > 0
+				value := envVar.Value
+				if isSecret {
+					value = envVar.Secret
+				}
+
+				names, locations := parseEnvSubtVariables(value)
+				for i, name := range names {
+					expression := value[locations[i].start : locations[i].stop+1]
+
+					// Notice the use of isSecret below:
+					// We derive the "secret-ness" from it's usage.
+					// This is generally correct, except for the case where:
+					// - CONNECTION_STRING: ${DB_HOST}:${DB_SECRET}
+					// Here, DB_HOST is not a secret, but DB_SECRET is. And yet, DB_HOST will be marked as a secrete.
+					// This is a limitation of the current implementation, but it's safer to mark both as a secret above.
+					setParameter(&infraSpec, scaffold.BicepName(name), expression, isSecret)
+				}
+
+				var evaluatedValue string
+				if len(names) == 0 {
+					evaluatedValue = "'" + value + "'"
+				} else if len(names) == 1 {
+					// reference the variable that describes it
+					evaluatedValue = scaffold.BicepName(names[0])
+				} else {
+					previous := 0
+					evaluatedValue = "'"
+					// replace each expression with references by variable name
+					for i, loc := range locations {
+						evaluatedValue += value[previous:loc.start]
+						evaluatedValue += "${"
+						evaluatedValue += scaffold.BicepName(names[i])
+						evaluatedValue += "}"
+						previous = loc.stop + 1
+					}
+					evaluatedValue += "'"
+				}
+
+				svcSpec.Env[envVar.Name] = evaluatedValue
 			}
-			svcSpec.Env = processedEnv
+
 			port := props.Port
 			if port < 1 || port > 65535 {
 				return nil, fmt.Errorf("port value %d for host %s must be between 1 and 65535", port, res.Name)
@@ -655,6 +743,34 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 
 	return &infraSpec, nil
 }
+
+func setParameter(spec *scaffold.InfraSpec, name string, value string, isSecret bool) {
+	for _, parameters := range spec.Parameters {
+		if parameters.Name == name { // handle existing parameter
+			if isSecret && !parameters.Secret {
+				// escalate the parameter to a secret
+				parameters.Secret = true
+			}
+
+			// safe-guard against multiple writes on the same parameter name
+			// if you run into this error, consider using a different name
+			if valStr, ok := parameters.Value.(string); ok && valStr != value {
+				panic(fmt.Sprintf(
+					"parameter collision: parameter %s already set to %s, cannot set to %s", name, valStr, value))
+			}
+
+			return
+		}
+	}
+
+	spec.Parameters = append(spec.Parameters, scaffold.Parameter{
+		Name:   name,
+		Value:  value,
+		Type:   "string",
+		Secret: isSecret,
+	})
+}
+
 func convertToBicep(data interface{}, indent int) string {
 	var builder strings.Builder
 

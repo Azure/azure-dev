@@ -48,8 +48,12 @@ type ServiceConfig struct {
 }
 
 type ServiceEnvVar struct {
-	Name  string                  `yaml:"name,omitempty"`
-	Value osutil.ExpandableString `yaml:"value,omitempty"`
+	Name string `yaml:"name,omitempty"`
+
+	// either Value or Secret can be set, but not both
+
+	Value  string `yaml:"value,omitempty"`
+	Secret string `yaml:"secret,omitempty"`
 }
 
 type DotNetContainerAppOptions struct {

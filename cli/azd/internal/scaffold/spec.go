@@ -22,6 +22,7 @@ type Parameter struct {
 	Secret bool
 }
 
+// TODO(weilim): rename this
 type ParameterValue struct {
 	Name  string
 	Value string

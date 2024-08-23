@@ -310,7 +310,7 @@ func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "app"))
@@ -336,7 +336,7 @@ func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 
 	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should

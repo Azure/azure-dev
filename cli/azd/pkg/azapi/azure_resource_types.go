@@ -44,12 +44,9 @@ const (
 	AzureResourceTypeMachineLearningConnection AzureResourceType = "Microsoft.MachineLearningServices/workspaces/connections"
 
 	//nolint:lll
-	AzureResourceTypeMachineLearningEndpoint AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
-	//nolint:lll
+	AzureResourceTypeMachineLearningEndpoint           AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
 	AzureResourceTypeCognitiveServiceAccountDeployment AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
 )
-
-const resourceLevelSeparator = "/"
 
 // GetResourceTypeDisplayName retrieves the display name for the given resource type.
 // If the display name was not found for the given resource type, an empty string is returned instead.

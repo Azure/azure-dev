@@ -172,4 +172,4 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
 }
 
-const cReferenceDocumentationUrl = "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#"
+const referenceDocumentationUrl = "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#"

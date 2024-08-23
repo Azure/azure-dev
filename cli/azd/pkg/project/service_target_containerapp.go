@@ -9,10 +9,10 @@ import (
 	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -45,8 +45,8 @@ func NewContainerAppTarget(
 }
 
 // Gets the required external tools
-func (at *containerAppTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
-	return at.containerHelper.RequiredExternalTools(ctx)
+func (at *containerAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	return at.containerHelper.RequiredExternalTools(ctx, serviceConfig)
 }
 
 // Initializes the Container App target
@@ -148,7 +148,7 @@ func (at *containerAppTarget) validateTargetResource(
 	}
 
 	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
+		if err := checkResourceType(targetResource, azapi.AzureResourceTypeContainerApp); err != nil {
 			return err
 		}
 	}

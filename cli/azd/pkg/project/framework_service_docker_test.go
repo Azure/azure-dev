@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
@@ -51,13 +51,13 @@ services:
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("app-api-abc123"),
-				Name:     convert.RefOf("test-containerapp-web"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("app-api-abc123"),
+				Name:     to.Ptr("test-containerapp-web"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeContainerApp)),
+				Location: to.Ptr("eastus2"),
 			},
 		})
 
@@ -107,7 +107,7 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker, cloud.AzurePublic()),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -153,13 +153,13 @@ services:
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("app-api-abc123"),
-				Name:     convert.RefOf("test-containerapp-web"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("app-api-abc123"),
+				Name:     to.Ptr("test-containerapp-web"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeContainerApp)),
+				Location: to.Ptr("eastus2"),
 			},
 		})
 
@@ -211,7 +211,7 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker, cloud.AzurePublic()),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -410,7 +410,8 @@ func Test_DockerProject_Build(t *testing.T) {
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
@@ -526,7 +527,8 @@ func Test_DockerProject_Package(t *testing.T) {
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +30,7 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 			response := armappservice.StaticSitesClientGetStaticSiteResponse{
 				StaticSiteARMResource: armappservice.StaticSiteARMResource{
 					Properties: &armappservice.StaticSite{
-						DefaultHostname: convert.RefOf("https://test.com")},
+						DefaultHostname: to.Ptr("https://test.com")},
 				},
 			}
 
@@ -78,8 +78,8 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 			response := armappservice.StaticSitesClientGetStaticSiteBuildResponse{
 				StaticSiteBuildARMResource: armappservice.StaticSiteBuildARMResource{
 					Properties: &armappservice.StaticSiteBuildARMResourceProperties{
-						Hostname: convert.RefOf("default-environment-name.azurestaticapps.net"),
-						Status:   convert.RefOf(armappservice.BuildStatusReady),
+						Hostname: to.Ptr("default-environment-name.azurestaticapps.net"),
+						Status:   to.Ptr(armappservice.BuildStatusReady),
 					},
 				},
 			}
@@ -140,7 +140,7 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 			response := armappservice.StaticSitesClientListStaticSiteSecretsResponse{
 				StringDictionary: armappservice.StringDictionary{
 					Properties: map[string]*string{
-						"apiKey": convert.RefOf("ABC123"),
+						"apiKey": to.Ptr("ABC123"),
 					},
 				},
 			}

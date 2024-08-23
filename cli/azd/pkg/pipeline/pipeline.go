@@ -160,26 +160,64 @@ func mergeProjectVariablesAndSecrets(
 }
 
 const (
-	gitHubDisplayName       string = "GitHub"
-	azdoDisplayName         string = "Azure DevOps"
-	envPersistedKey         string = "AZD_PIPELINE_PROVIDER"
-	defaultPipelineFileName string = "azure-dev.yml"
-	gitHubDirectory         string = ".github"
-	azdoDirectory           string = ".azdo"
+	gitHubDisplayName string = "GitHub"
+	gitHubCode               = "github"
+	gitHubRoot        string = ".github"
+	gitHubWorkflows   string = "workflows"
+	azdoDisplayName   string = "Azure DevOps"
+	azdoCode                 = "azdo"
+	azdoRoot          string = ".azdo"
+	azdoRootAlt       string = ".azuredevops"
+	azdoPipelines     string = "pipelines"
+	envPersistedKey   string = "AZD_PIPELINE_PROVIDER"
 )
 
 var (
-	gitHubWorkflowsDirectory string = filepath.Join(gitHubDirectory, "workflows")
-	azdoPipelinesDirectory   string = filepath.Join(azdoDirectory, "pipelines")
-	gitHubYml                string = filepath.Join(gitHubWorkflowsDirectory, defaultPipelineFileName)
-	azdoYml                  string = filepath.Join(azdoPipelinesDirectory, defaultPipelineFileName)
+	pipelineFileNames = []string{"azure-dev.yml", "azure-dev.yaml"}
 )
+
+var (
+	pipelineProviderFiles = map[ciProviderType]struct {
+		RootDirectories     []string
+		PipelineDirectories []string
+		Files               []string
+		DefaultFile         string
+		DisplayName         string
+		Code                string
+	}{
+		ciProviderGitHubActions: {
+			RootDirectories:     []string{gitHubRoot},
+			PipelineDirectories: []string{filepath.Join(gitHubRoot, gitHubWorkflows)},
+			Files:               generateFilePaths([]string{filepath.Join(gitHubRoot, gitHubWorkflows)}, pipelineFileNames),
+			DefaultFile:         pipelineFileNames[0],
+			DisplayName:         gitHubDisplayName,
+		},
+		ciProviderAzureDevOps: {
+			RootDirectories:     []string{azdoRoot, azdoRootAlt},
+			PipelineDirectories: []string{filepath.Join(azdoRoot, azdoPipelines), filepath.Join(azdoRootAlt, azdoPipelines)},
+			Files: generateFilePaths([]string{filepath.Join(azdoRoot, azdoPipelines),
+				filepath.Join(azdoRootAlt, azdoPipelines)}, pipelineFileNames),
+			DefaultFile: pipelineFileNames[0],
+			DisplayName: azdoDisplayName,
+		},
+	}
+)
+
+func generateFilePaths(directories []string, fileNames []string) []string {
+	var paths []string
+	for _, dir := range directories {
+		for _, file := range fileNames {
+			paths = append(paths, filepath.Join(dir, file))
+		}
+	}
+	return paths
+}
 
 type ciProviderType string
 
 const (
-	ciProviderGitHubActions ciProviderType = "github"
-	ciProviderAzureDevOps   ciProviderType = "azdo"
+	ciProviderGitHubActions ciProviderType = gitHubCode
+	ciProviderAzureDevOps   ciProviderType = azdoCode
 )
 
 func toCiProviderType(provider string) (ciProviderType, error) {

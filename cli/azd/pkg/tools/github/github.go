@@ -21,8 +21,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -137,7 +135,7 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRunner, binaryPath string) bool {
 	ghVersion, err := tools.ExecuteCommand(ctx, commandRunner, binaryPath, "--version")
 	if err != nil {
-		log.Printf("checking %s version: %s", cGhToolName, err.Error())
+		log.Printf("checking GitHub CLI version: %s", err.Error())
 		return false
 	}
 	ghSemver, err := tools.ExtractVersion(ghVersion)
@@ -152,10 +150,8 @@ func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRun
 	return true
 }
 
-const cGhToolName = "GitHub CLI"
-
 func (cli *Cli) Name() string {
-	return cGhToolName
+	return "GitHub CLI"
 }
 
 func (cli *Cli) BinaryPath() string {
@@ -268,11 +264,11 @@ func (cli *Cli) DeleteVariable(ctx context.Context, repoSlug string, name string
 	return nil
 }
 
-// cGhCliVersionRegexp fetches the version number from the output of gh --version, which looks like this:
+// ghCliVersionRegexp fetches the version number from the output of gh --version, which looks like this:
 //
 // gh version 2.6.0 (2022-03-15)
 // https://github.com/cli/cli/releases/tag/v2.6.0
-var cGhCliVersionRegexp = regexp.MustCompile(`gh version ([0-9]+\.[0-9]+\.[0-9]+)`)
+var ghCliVersionRegexp = regexp.MustCompile(`gh version ([0-9]+\.[0-9]+\.[0-9]+)`)
 
 // logVersion writes the version of the GitHub CLI to the debug log for diagnostics purposes, or an error if
 // it could not be determined
@@ -292,7 +288,7 @@ func (cli *Cli) extractVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("error running gh --version: %w", err)
 	}
 
-	matches := cGhCliVersionRegexp.FindStringSubmatch(res.Stdout)
+	matches := ghCliVersionRegexp.FindStringSubmatch(res.Stdout)
 	if len(matches) != 2 {
 		return "", fmt.Errorf("could not extract version from output: %s", res.Stdout)
 	}
@@ -572,10 +568,7 @@ func downloadGh(
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)
 
-	spanCtx, span := tracing.Start(ctx, events.GitHubCliInstallEvent)
-	defer span.End()
-
-	req, err := http.NewRequestWithContext(spanCtx, "GET", ghReleaseUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", ghReleaseUrl, nil)
 	if err != nil {
 		return err
 	}

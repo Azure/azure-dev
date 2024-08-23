@@ -248,7 +248,7 @@ func Test_RunDocsFlow(t *testing.T) {
 	cmd.SetArgs([]string{"--docs"})
 	err = cmd.ExecuteContext(*testCtx.Context)
 	require.NoError(t, err)
-	require.Equal(t, cReferenceDocumentationUrl+"root", calledUrl)
+	require.Equal(t, referenceDocumentationUrl+"root", calledUrl)
 }
 
 func Test_RunDocsAndHelpFlow(t *testing.T) {

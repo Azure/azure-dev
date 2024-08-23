@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
@@ -43,7 +43,7 @@ func NewStaticWebAppTarget(
 }
 
 // Gets the required external tools for the Static Web App target
-func (at *staticWebAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (at *staticWebAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{at.swa}
 }
 
@@ -188,11 +188,11 @@ func (at *staticWebAppTarget) Endpoints(
 func (at *staticWebAppTarget) validateTargetResource(
 	targetResource *environment.TargetResource,
 ) error {
-	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeStaticWebSite)) {
+	if !strings.EqualFold(targetResource.ResourceType(), string(azapi.AzureResourceTypeStaticWebSite)) {
 		return resourceTypeMismatchError(
 			targetResource.ResourceName(),
 			targetResource.ResourceType(),
-			infra.AzureResourceTypeStaticWebSite,
+			azapi.AzureResourceTypeStaticWebSite,
 		)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -74,7 +75,14 @@ func (m *HooksMiddleware) registerCommandHooks(
 	projectConfig *project.ProjectConfig,
 	next NextFn,
 ) (*actions.ActionResult, error) {
-	if projectConfig.Hooks == nil || len(projectConfig.Hooks) == 0 {
+
+	hooksDefinedAtInfraPath, err := ext.HooksFromFolderPath(
+		filepath.Join(projectConfig.Path, projectConfig.Infra.Path))
+	if err != nil {
+		return nil, fmt.Errorf("failed getting hooks from infra path, %w", err)
+	}
+
+	if len(projectConfig.Hooks) == 0 && len(hooksDefinedAtInfraPath) == 0 {
 		log.Println(
 			"azd project is not available or does not contain any command hooks, skipping command hook registrations.",
 		)
@@ -84,6 +92,17 @@ func (m *HooksMiddleware) registerCommandHooks(
 	envManager, err := m.lazyEnvManager.GetValue()
 	if err != nil {
 		return nil, fmt.Errorf("failed getting environment manager, %w", err)
+	}
+
+	if len(hooksDefinedAtInfraPath) > 0 && len(projectConfig.Hooks) > 0 {
+		return nil, fmt.Errorf(
+			"project hooks defined in both %s and azure.yaml configuration,"+
+				" please remove one of them",
+			filepath.Join(projectConfig.Infra.Path, "azd.hooks.yaml"),
+		)
+	}
+	if projectConfig.Hooks == nil {
+		projectConfig.Hooks = hooksDefinedAtInfraPath
 	}
 
 	hooksManager := ext.NewHooksManager(projectConfig.Path)
@@ -139,20 +158,18 @@ func (m *HooksMiddleware) registerServiceHooks(
 	for _, service := range stableServices {
 		serviceName := service.Name
 
-		hooksDefinedAtServicePath, err := ext.HooksFromServicePath(service.Path())
+		hooksDefinedAtServicePath, err := ext.HooksFromFolderPath(service.Path())
 		if err != nil {
 			return fmt.Errorf("failed getting hooks from service path, %w", err)
 		}
 
 		// If the service hasn't configured any hooks we can continue on.
-		if (service.Hooks == nil || len(service.Hooks) == 0) &&
-			(hooksDefinedAtServicePath == nil || len(hooksDefinedAtServicePath) == 0) {
+		if len(service.Hooks) == 0 && len(hooksDefinedAtServicePath) == 0 {
 			log.Printf("service '%s' does not require any hooks.\n", serviceName)
 			continue
 		}
 
-		if (service.Hooks != nil && len(service.Hooks) > 0) &&
-			(hooksDefinedAtServicePath != nil && len(hooksDefinedAtServicePath) > 0) {
+		if len(service.Hooks) > 0 && len(hooksDefinedAtServicePath) > 0 {
 			return fmt.Errorf(
 				"service '%s' has hooks defined in both azd.hooks.yaml and azure.yaml configuration,"+
 					" please remove one of them.",

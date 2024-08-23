@@ -221,7 +221,7 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("saving project file: %w", err)
 	}
 
-	projectConfig.Path = projectFilePath
+	projectConfig.Path = filepath.Dir(projectFilePath)
 
 	return nil
 }

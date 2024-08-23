@@ -220,9 +220,9 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	return file.Name(), nil
 }
 
-// HooksFromServicePath check if there is file named azd.hooks.yaml in the service path
+// HooksFromFolderPath check if there is file named azd.hooks.yaml in the service path
 // and return the hooks configuration.
-func HooksFromServicePath(servicePath string) (map[string]*HookConfig, error) {
+func HooksFromFolderPath(servicePath string) (map[string]*HookConfig, error) {
 	hooksPath := filepath.Join(servicePath, "azd.hooks.yaml")
 	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
 		hooksPath = filepath.Join(servicePath, "azd.hooks.yml")

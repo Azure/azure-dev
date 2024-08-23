@@ -46,7 +46,7 @@ type ModifyAction struct {
 	env        *environment.Environment
 	envManager environment.Manager
 	im         *project.ImportManager
-	bicepCli   bicepCli.BicepCli
+	bicepCli   *bicepCli.Cli
 }
 
 func NewInfraModAction(
@@ -55,7 +55,7 @@ func NewInfraModAction(
 	env *environment.Environment,
 	envManager environment.Manager,
 	im *project.ImportManager,
-	bicepCli bicepCli.BicepCli,
+	bicepCli *bicepCli.Cli,
 	args []string,
 	ioc ioc.ServiceLocator,
 ) actions.Action {

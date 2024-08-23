@@ -231,16 +231,13 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	case SourceKindResource:
 		source, err = newJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
 	case SourceKindGh:
-		// resolve the GitHub cli from container
-		var dependencies struct {
-			ghCli   *github.Cli   `container:"type"`
-			console input.Console `container:"type"`
-		}
-		err = sm.serviceLocator.Fill(&dependencies)
+		err = sm.serviceLocator.Invoke(func(ghCli *github.Cli, console input.Console) error {
+			source, err = newGhTemplateSource(ctx, config.Name, config.Location, ghCli, console)
+			return err
+		})
 		if err != nil {
 			return nil, fmt.Errorf("unable to resolve dependencies: %w", err)
 		}
-		source, err = newGhTemplateSource(ctx, config.Name, config.Location, dependencies.ghCli, dependencies.console)
 	default:
 		err = sm.serviceLocator.ResolveNamed(string(config.Type), &source)
 		if err != nil {

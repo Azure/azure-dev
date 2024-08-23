@@ -5,7 +5,7 @@
         "ghcr.io/devcontainers/features/go:1": {
             "version": "1.21"
         },
-        "ghcr.io/guiyomh/features/golangci-lint:0":{},
+        "ghcr.io/guiyomh/features/golangci-lint:0": {},
         "ghcr.io/devcontainers/features/docker-in-docker:2.11.0": {
             "version": "latest",
             "moby": true
@@ -19,7 +19,6 @@
         "ghcr.io/devcontainers/features/git:1": {},
         "ghcr.io/devcontainers/features/github-cli:1": {},
         "ghcr.io/devcontainers/features/terraform:1": {}
-        
     },
     "customizations": {
         "vscode": {
@@ -34,5 +33,10 @@
             ]
         }
     },
-    "postCreateCommand": "go install gotest.tools/gotestsum@latest"
+    "postCreateCommand": "go install gotest.tools/gotestsum@latest",
+    "runArgs": [
+        "--cap-add=SYS_PTRACE",
+        "--security-opt",
+        "seccomp=unconfined"
+    ]
 }

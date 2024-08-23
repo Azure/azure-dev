@@ -4,7 +4,6 @@
 package cli_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/gitcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -257,7 +257,7 @@ a?c.txt`,
 	}
 
 	// Create the template repository with the specified files
-	createGitRepo(t, ctx, templateDir, files)
+	gitcli.CreateGitRepo(t, ctx, templateDir, files)
 
 	// Log the .azdignore content for debugging
 	azdignoreContent, err := os.ReadFile(filepath.Join(templateDir, ".azdignore"))
@@ -325,7 +325,7 @@ func Test_CLI_Init_With_No_Azdignore(t *testing.T) {
 	}
 
 	// Create the template repository with the specified files
-	createGitRepo(t, ctx, templateDir, files)
+	gitcli.CreateGitRepo(t, ctx, templateDir, files)
 
 	projectDir := tempDirWithDiagnostics(t)
 
@@ -375,7 +375,7 @@ func Test_CLI_Init_With_Empty_Azdignore(t *testing.T) {
 	}
 
 	// Create the template repository with the specified files
-	createGitRepo(t, ctx, templateDir, files)
+	gitcli.CreateGitRepo(t, ctx, templateDir, files)
 
 	projectDir := tempDirWithDiagnostics(t)
 
@@ -403,35 +403,4 @@ func Test_CLI_Init_With_Empty_Azdignore(t *testing.T) {
 	for _, file := range expectedFiles {
 		require.FileExists(t, filepath.Join(projectDir, file))
 	}
-}
-
-func createGitRepo(t *testing.T, ctx context.Context, dir string, files map[string]string) {
-	for path, content := range files {
-		fullPath := filepath.Join(dir, path)
-		err := os.MkdirAll(filepath.Dir(fullPath), osutil.PermissionDirectory)
-		require.NoError(t, err)
-		err = os.WriteFile(fullPath, []byte(content), osutil.PermissionFile)
-		require.NoError(t, err)
-	}
-
-	cmdRun := exec.NewCommandRunner(nil)
-
-	_, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "init"))
-	require.NoError(t, err)
-
-	// Set up git user configuration
-	_, err = cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "config", "user.email", "test@example.com"))
-	require.NoError(t, err)
-	_, err = cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "config", "user.name", "Test User"))
-	require.NoError(t, err)
-
-	_, err = cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "add", "."))
-	require.NoError(t, err)
-	_, err = cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "commit", "-m", "Initial commit"))
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		err := os.RemoveAll(dir)
-		require.NoError(t, err)
-	})
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -570,6 +571,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(entraid.NewEntraIdService)
 	container.MustRegisterSingleton(azcli.NewContainerRegistryService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
+	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
 	container.MustRegisterScoped(project.NewContainerHelper)

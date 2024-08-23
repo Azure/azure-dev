@@ -14,9 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
-const cLoginCmd = "azd auth login"
-const cDefaultReloginScenario = "reauthentication required"
-
 // ErrNoCurrentUser indicates that the current user is not logged in.
 // This is typically determined by inspecting the stored auth information and credentials on the machine.
 // If the auth information or credentials are not found or invalid, the user is considered not to be logged in.
@@ -57,8 +54,8 @@ func newReLoginRequiredError(
 }
 
 func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string, cloud *cloud.Cloud) {
-	e.scenario = cDefaultReloginScenario
-	e.loginCmd = cLoginCmd
+	e.scenario = "reauthentication required"
+	e.loginCmd = "azd auth login"
 	if !matchesLoginScopes(scopes, cloud) { // if matching default login scopes, no scopes need to be specified
 		for _, scope := range scopes {
 			e.loginCmd += fmt.Sprintf(" --scope %s", scope)

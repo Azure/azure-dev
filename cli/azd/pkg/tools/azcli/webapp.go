@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 type AzCliAppServiceProperties struct {
@@ -81,14 +81,27 @@ func appServiceRepositoryHost(
 }
 
 func resumeDeployment(err error, progressLog func(msg string)) bool {
-	if strings.Contains(err.Error(), "empty deployment status id") {
+	errorMessage := err.Error()
+	if strings.Contains(errorMessage, "empty deployment status id") {
 		progressLog("Deployment status id is empty. Failed to enable tracking runtime status." +
 			"Resuming deployment without tracking status.")
 		return true
 	}
 
-	if strings.Contains(err.Error(), "response or its properties are empty") {
+	if strings.Contains(errorMessage, "response or its properties are empty") {
 		progressLog("Response or its properties are empty. Failed to enable tracking runtime status." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+
+	if strings.Contains(errorMessage, "failed to start within the allotted time") {
+		progressLog("Deployment with tracking status failed to start within the allotted time." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+
+	if strings.Contains(errorMessage, "the build process failed") && !strings.Contains(errorMessage, "logs for more info") {
+		progressLog("Failed to enable tracking runtime status." +
 			"Resuming deployment without tracking status.")
 		return true
 	}
@@ -127,14 +140,15 @@ func (cli *azCli) DeployAppServiceZip(
 
 	// Deployment Status API only support linux web app for now
 	if isLinuxWebApp(app) {
-		if err := client.DeployTrackStatus(ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
+		if err := client.DeployTrackStatus(
+			ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog); err != nil {
 			if !resumeDeployment(err, progressLog) {
 				return nil, err
 			}
 		} else {
 			// Deployment is successful
 			statusText := "OK"
-			return convert.RefOf(statusText), nil
+			return to.Ptr(statusText), nil
 		}
 	}
 
@@ -143,7 +157,7 @@ func (cli *azCli) DeployAppServiceZip(
 		return nil, err
 	}
 
-	return convert.RefOf(response.StatusText), nil
+	return to.Ptr(response.StatusText), nil
 }
 
 func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string) (*armappservice.WebAppsClient, error) {

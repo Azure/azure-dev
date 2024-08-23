@@ -8,11 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -38,7 +37,7 @@ type AzdoScmProvider struct {
 	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
 	console        input.Console
-	gitCli         git.GitCli
+	gitCli         *git.Cli
 }
 
 func NewAzdoScmProvider(
@@ -47,7 +46,7 @@ func NewAzdoScmProvider(
 	azdContext *azdcontext.AzdContext,
 	commandRunner exec.CommandRunner,
 	console input.Console,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 ) ScmProvider {
 	return &AzdoScmProvider{
 		envManager:    envManager,
@@ -332,7 +331,7 @@ func (p *AzdoScmProvider) configureGitRemote(
 			return "", err
 		}
 	} else {
-		remoteUrl, err = p.getDefaultRepoRemote(ctx, projectName, projectId, p.console)
+		remoteUrl, err = p.getDefaultRepoRemote(ctx, projectName)
 		if err != nil {
 			return "", err
 		}
@@ -359,8 +358,6 @@ func (p *AzdoScmProvider) getCurrentGitBranch(ctx context.Context, repoPath stri
 func (p *AzdoScmProvider) getDefaultRepoRemote(
 	ctx context.Context,
 	projectName string,
-	projectId string,
-	console input.Console,
 ) (string, error) {
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
@@ -418,12 +415,6 @@ func (p *AzdoScmProvider) promptForAzdoRepository(ctx context.Context, console i
 	return remoteUrl, nil
 }
 
-// defines the structure of an ssl git remote
-var azdoRemoteGitUrlRegex = regexp.MustCompile(`^git@ssh.dev.azure\.com:(.*?)(?:\.git)?$`)
-
-// defines the structure of an HTTPS git remote
-var azdoRemoteHttpsUrlRegex = regexp.MustCompile(`^https://[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:*.+@dev.azure\.com/(.*?)$`)
-
 // ErrRemoteHostIsNotAzDo the error used when a non Azure DevOps remote is found
 var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an Azure DevOps host")
 
@@ -431,43 +422,61 @@ var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an Azure DevOps 
 var ErrSSHNotSupported = errors.New("ssh git remote is not supported. " +
 	"Use HTTPS git remote to connect the remote repository")
 
-// helper function to determine if the provided remoteUrl is an azure devops repo.
-// currently supports AzDo PaaS
-func isAzDoRemote(remoteUrl string) error {
-	if azdoRemoteGitUrlRegex.MatchString(remoteUrl) {
-		return ErrSSHNotSupported
-	}
-	slug := ""
-	for _, r := range []*regexp.Regexp{azdoRemoteGitUrlRegex, azdoRemoteHttpsUrlRegex} {
-		captures := r.FindStringSubmatch(remoteUrl)
-		if captures != nil {
-			slug = captures[1]
-		}
-	}
-	if slug == "" {
-		return ErrRemoteHostIsNotAzDo
-	}
-	return nil
+type azdoRemote struct {
+	Project        string
+	RepositoryName string
 }
 
-func parseAzDoRemote(remoteUrl string) (string, error) {
-	for _, r := range []*regexp.Regexp{azdoRemoteGitUrlRegex, azdoRemoteHttpsUrlRegex} {
-		captures := r.FindStringSubmatch(remoteUrl)
-		if captures != nil {
-			return captures[1], nil
-		}
+// parseAzDoRemote extracts the organization, project and repository name from an Azure DevOps remote url
+// the url can be in the form of:
+//   - https://dev.azure.com/[org|user]/[project]/_git/[repo]
+//   - https://[user]@dev.azure.com/[org|user]/[project]/_git/[repo]
+//   - https://[org].visualstudio.com/[project]/_git/[repo]
+//   - git@ssh.dev.azure.com:v[1-3]/[user|org]/[project]/[repo]
+//   - git@vs-ssh.visualstudio.com:v[1-3]/[user|org]/[project]/[repo]
+//   - git@ssh.visualstudio.com:v[1-3]/[user|org]/[project]/[repo]
+func parseAzDoRemote(remoteUrl string) (*azdoRemote, error) {
+	// Initialize the azdoRemote struct
+	azdoRemote := &azdoRemote{}
+
+	if !strings.Contains(remoteUrl, "visualstudio.com") && !strings.Contains(remoteUrl, "dev.azure.com") {
+		return nil, fmt.Errorf("%w: %s", ErrRemoteHostIsNotAzDo, remoteUrl)
 	}
-	return "", nil
+
+	if strings.Contains(remoteUrl, "/_git/") {
+		// applies to http or https
+		parts := strings.Split(remoteUrl, "/_git/")
+		projectNameStart := strings.LastIndex(parts[0], "/")
+		projectPartLen := len(parts[0])
+
+		if len(parts) != 2 || // remoteUrl must have exactly one "/_git/" substring
+			!strings.Contains(parts[0], "/") || // part 0 (the project) must have more than one "/"
+			projectPartLen <= 1 || // part 0 must be greater than 1 character
+			projectNameStart == projectPartLen-1 { // part 0 must not end with "/"
+			return nil, fmt.Errorf("%w: %s", ErrRemoteHostIsNotAzDo, remoteUrl)
+		}
+
+		azdoRemote.Project = parts[0][projectNameStart+1:]
+		azdoRemote.RepositoryName = parts[1]
+		return azdoRemote, nil
+	}
+
+	if strings.Contains(remoteUrl, "git@") {
+		// applies to git@ -> project and repo always in the last two parts
+		parts := strings.Split(remoteUrl, "/")
+		partsLen := len(parts)
+		azdoRemote.Project = parts[partsLen-2]
+		azdoRemote.RepositoryName = parts[partsLen-1]
+		return azdoRemote, nil
+	}
+
+	// If the remoteUrl does not match any of the supported formats, return an error
+	return nil, fmt.Errorf("%w: %s", ErrRemoteHostIsNotAzDo, remoteUrl)
 }
 
 // gitRepoDetails extracts the information from an Azure DevOps remote url into general scm concepts
 // like owner, name and path
 func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) (*gitRepositoryDetails, error) {
-	err := isAzDoRemote(remoteUrl)
-	if err != nil {
-		return nil, err
-	}
-
 	repoDetails := p.getRepoDetails()
 	// Try getting values from the env.
 	// This is a quick shortcut to avoid parsing the remote in detail.
@@ -496,17 +505,16 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 	}
 
 	if repoDetails.projectId == "" || repoDetails.repoId == "" {
-		// Removing environment or creating a new one would remove any memory fro project
+		// Removing environment or creating a new one would remove any memory from project
 		// and repo.  In that case, it needs to be calculated from the remote url
-		azdoSlug, err := parseAzDoRemote(remoteUrl)
+		azdoRemote, err := parseAzDoRemote(remoteUrl)
 		if err != nil {
 			return nil, fmt.Errorf("parsing Azure DevOps remote url: %s: %w", remoteUrl, err)
 		}
-		// azdoSlug => Org/Project/_git/repoName
-		parts := strings.Split(azdoSlug, "_git/")
-		repoDetails.projectName = strings.Split(parts[0], "/")[1]
+
+		repoDetails.projectName = azdoRemote.Project
 		p.env.DotenvSet(azdo.AzDoEnvironmentProjectName, repoDetails.projectName)
-		repoDetails.repoName = parts[1]
+		repoDetails.repoName = azdoRemote.RepositoryName
 		p.env.DotenvSet(azdo.AzDoEnvironmentRepoName, repoDetails.repoName)
 
 		connection, err := p.getAzdoConnection(ctx)
@@ -741,7 +749,7 @@ func (p *AzdoCiProvider) credentialOptions(
 				Name:        "AzureDevOpsOIDC", //Must not contain a space character and 3 to 64 characters in length
 				Issuer:      (*sConnection.Authorization.Parameters)["workloadIdentityFederationIssuer"],
 				Subject:     (*sConnection.Authorization.Parameters)["workloadIdentityFederationSubject"],
-				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Description: to.Ptr("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 		}

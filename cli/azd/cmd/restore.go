@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -171,15 +172,16 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		restoreTask := ra.serviceManager.Restore(ctx, svc)
-		go func() {
-			for restoreProgress := range restoreTask.Progress() {
-				progressMessage := fmt.Sprintf("Restoring service %s (%s)", svc.Name, restoreProgress.Message)
+		restoreResult, err := async.RunWithProgress(
+			func(buildProgress project.ServiceProgress) {
+				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
 				ra.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceRestoreResult, error) {
+				return ra.serviceManager.Restore(ctx, svc, progress)
+			},
+		)
 
-		restoreResult, err := restoreTask.Await()
 		if err != nil {
 			ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

@@ -13,12 +13,12 @@ import (
 
 // Manages k8s configurations available to the k8s CLI
 type KubeConfigManager struct {
-	cli        KubectlCli
+	cli        *Cli
 	configPath string
 }
 
 // Creates a new instance of the KubeConfigManager
-func NewKubeConfigManager(cli KubectlCli) (*KubeConfigManager, error) {
+func NewKubeConfigManager(cli *Cli) (*KubeConfigManager, error) {
 	kubeConfigDir, err := getKubeConfigDir()
 	if err != nil {
 		return nil, err

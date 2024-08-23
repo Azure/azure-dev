@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
@@ -38,8 +38,8 @@ func RegisterGetEnvironment(
 			EnvironmentContainer: armmachinelearning.EnvironmentContainer{
 				Name: &environmentName,
 				Properties: &armmachinelearning.EnvironmentContainerProperties{
-					LatestVersion: convert.RefOf("2"),
-					NextVersion:   convert.RefOf("3"),
+					LatestVersion: to.Ptr("2"),
+					NextVersion:   to.Ptr("3"),
 				},
 			},
 		}
@@ -73,7 +73,7 @@ func RegisterGetEnvironmentVersion(
 
 		response := armmachinelearning.EnvironmentVersionsClientGetResponse{
 			EnvironmentVersion: armmachinelearning.EnvironmentVersion{
-				Name: convert.RefOf(fmt.Sprint(version)),
+				Name: to.Ptr(fmt.Sprint(version)),
 			},
 		}
 

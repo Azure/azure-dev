@@ -16,6 +16,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -40,7 +41,7 @@ func (mock *mockResourceManager) GetResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
-	resourceType infra.AzureResourceType,
+	resourceType azapi.AzureResourceType,
 ) (string, error) {
 	return string(resourceType), nil
 }
@@ -51,7 +52,7 @@ func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
 		Properties: &armresources.DeploymentOperationProperties{
 			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
 			TargetResource: &armresources.TargetResource{
-				ResourceType: to.Ptr(string(infra.AzureResourceTypeWebSite) + "/config"),
+				ResourceType: to.Ptr(string(azapi.AzureResourceTypeWebSite) + "/config"),
 				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},
@@ -66,7 +67,7 @@ func (mock *mockResourceManager) AddInProgressOperation() {
 		Properties: &armresources.DeploymentOperationProperties{
 			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperation("Create")),
 			TargetResource: &armresources.TargetResource{
-				ResourceType: to.Ptr(string(infra.AzureResourceTypeWebSite)),
+				ResourceType: to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				ID:           to.Ptr(fmt.Sprintf("website-resource-id-%d", len(mock.operations))),
 				ResourceName: to.Ptr(fmt.Sprintf("website-resource-name-%d", len(mock.operations))),
 			},

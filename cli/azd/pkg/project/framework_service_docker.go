@@ -34,18 +34,19 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path      string                  `yaml:"path,omitempty"      json:"path,omitempty"`
-	Context   string                  `yaml:"context,omitempty"   json:"context,omitempty"`
-	Platform  string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
-	Target    string                  `yaml:"target,omitempty"    json:"target,omitempty"`
-	Registry  osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
-	Image     osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
-	Tag       osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
-	BuildArgs []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	Path        string                  `yaml:"path,omitempty"      json:"path,omitempty"`
+	Context     string                  `yaml:"context,omitempty"   json:"context,omitempty"`
+	Platform    string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
+	Target      string                  `yaml:"target,omitempty"    json:"target,omitempty"`
+	Registry    osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
+	Image       osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
+	Tag         osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
+	RemoteBuild bool                    `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
+	BuildArgs   []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
 	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
-	BuildSecrets []string `yaml:"-" json:"-"`
-	BuildEnv     []string `yaml:"-" json:"-"`
+	BuildSecrets []string `yaml:"-"                   json:"-"`
+	BuildEnv     []string `yaml:"-"                   json:"-"`
 }
 
 type dockerBuildResult struct {
@@ -108,7 +109,7 @@ func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
 
 type dockerProject struct {
 	env                 *environment.Environment
-	docker              docker.Docker
+	docker              *docker.Cli
 	framework           FrameworkService
 	containerHelper     *ContainerHelper
 	console             input.Console
@@ -120,7 +121,7 @@ type dockerProject struct {
 // leverages docker for building
 func NewDockerProject(
 	env *environment.Environment,
-	docker docker.Docker,
+	docker *docker.Cli,
 	containerHelper *ContainerHelper,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
@@ -142,7 +143,7 @@ func NewDockerProject(
 // of a CompositeFrameworkService as [NewDockerProject] does.
 func NewDockerProjectAsFrameworkService(
 	env *environment.Environment,
-	docker docker.Docker,
+	docker *docker.Cli,
 	containerHelper *ContainerHelper,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
@@ -162,7 +163,11 @@ func (p *dockerProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (p *dockerProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (p *dockerProject) RequiredExternalTools(_ context.Context, sc *ServiceConfig) []tools.ExternalTool {
+	if sc.Docker.RemoteBuild {
+		return []tools.ExternalTool{}
+	}
+
 	return []tools.ExternalTool{p.docker}
 }
 
@@ -180,10 +185,11 @@ func (p *dockerProject) SetSource(inner FrameworkService) {
 func (p *dockerProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+	progress *async.Progress[ServiceProgress],
+) (*ServiceRestoreResult, error) {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.Restore(ctx, serviceConfig)
+	return p.framework.Restore(ctx, serviceConfig, progress)
 }
 
 // Builds the docker project based on the docker options specified within the Service configuration
@@ -191,189 +197,190 @@ func (p *dockerProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+	progress *async.Progress[ServiceProgress],
+) (*ServiceBuildResult, error) {
+	if serviceConfig.Docker.RemoteBuild {
+		return &ServiceBuildResult{Restore: restoreOutput}, nil
+	}
 
-			resolveParameters := func(source []string) []string {
-				result := make([]string, len(source))
-				for i, arg := range source {
-					evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
-						path := match
-						value, has := p.env.Config.GetString(path)
-						if !has {
-							return "", fmt.Errorf("parameter %s not found", path)
-						}
-						return value, nil
-					})
-					if err != nil {
-						task.SetError(err)
-						return nil
-					}
-					result[i] = evaluatedString
+	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+
+	resolveParameters := func(source []string) ([]string, error) {
+		result := make([]string, len(source))
+		for i, arg := range source {
+			evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
+				path := match
+				value, has := p.env.Config.GetString(path)
+				if !has {
+					return "", fmt.Errorf("parameter %s not found", path)
 				}
-				return result
-			}
-			// resolve parameters for build args and secrets
-			dockerOptions.BuildArgs = resolveParameters(dockerOptions.BuildArgs)
-			dockerOptions.BuildEnv = resolveParameters(dockerOptions.BuildEnv)
-
-			// For services that do not specify a project path and have not specified a language then
-			// there is nothing to build and we can return an empty build result
-			// Ex) A container app project that uses an external image path
-			if serviceConfig.RelativePath == "" &&
-				(serviceConfig.Language == ServiceLanguageNone || serviceConfig.Language == ServiceLanguageDocker) {
-				task.SetResult(&ServiceBuildResult{})
-				return
-			}
-
-			buildArgs := []string{}
-			for _, arg := range dockerOptions.BuildArgs {
-				buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
-			}
-
-			log.Printf(
-				"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
-				serviceConfig.Name,
-				serviceConfig.Path(),
-				dockerOptions.Path,
-				dockerOptions.Context,
-				buildArgs,
-			)
-
-			imageName := fmt.Sprintf(
-				"%s-%s",
-				strings.ToLower(serviceConfig.Project.Name),
-				strings.ToLower(serviceConfig.Name),
-			)
-
-			path := dockerOptions.Path
-			if !filepath.IsAbs(path) {
-				path = filepath.Join(serviceConfig.Path(), path)
-			}
-
-			_, err := os.Stat(path)
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
-				return
-			}
-
-			if errors.Is(err, os.ErrNotExist) {
-				// Build the container from source
-				task.SetProgress(NewServiceProgress("Building Docker image from source"))
-				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-
-				res.Restore = restoreOutput
-				task.SetResult(res)
-				return
-			}
-
-			// Build the container
-			task.SetProgress(NewServiceProgress("Building Docker image"))
-			previewerWriter := p.console.ShowPreviewer(ctx,
-				&input.ShowPreviewerOptions{
-					Prefix:       "  ",
-					MaxLineCount: 8,
-					Title:        "Docker Output",
-				})
-			imageId, err := p.docker.Build(
-				ctx,
-				serviceConfig.Path(),
-				dockerOptions.Path,
-				dockerOptions.Platform,
-				dockerOptions.Target,
-				dockerOptions.Context,
-				imageName,
-				dockerOptions.BuildArgs,
-				dockerOptions.BuildSecrets,
-				dockerOptions.BuildEnv,
-				previewerWriter,
-			)
-			p.console.StopPreviewer(ctx, false)
-			if err != nil {
-				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
-				return
-			}
-
-			log.Printf("built image %s for %s", imageId, serviceConfig.Name)
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: imageId,
-				Details: &dockerBuildResult{
-					ImageId:   imageId,
-					ImageName: imageName,
-				},
+				return value, nil
 			})
-		},
+			if err != nil {
+				return nil, err
+			}
+			result[i] = evaluatedString
+		}
+		return result, nil
+	}
+	// resolve parameters for build args and secrets
+	resolvedBuildArgs, err := resolveParameters(dockerOptions.BuildArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	dockerOptions.BuildArgs = resolvedBuildArgs
+
+	resolvedBuildEnv, err := resolveParameters(dockerOptions.BuildEnv)
+	if err != nil {
+		return nil, err
+	}
+
+	dockerOptions.BuildEnv = resolvedBuildEnv
+
+	// For services that do not specify a project path and have not specified a language then
+	// there is nothing to build and we can return an empty build result
+	// Ex) A container app project that uses an external image path
+	if serviceConfig.RelativePath == "" &&
+		(serviceConfig.Language == ServiceLanguageNone || serviceConfig.Language == ServiceLanguageDocker) {
+		return &ServiceBuildResult{}, nil
+	}
+
+	buildArgs := []string{}
+	for _, arg := range dockerOptions.BuildArgs {
+		buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
+	}
+
+	log.Printf(
+		"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
+		serviceConfig.Name,
+		serviceConfig.Path(),
+		dockerOptions.Path,
+		dockerOptions.Context,
+		buildArgs,
 	)
+
+	imageName := fmt.Sprintf(
+		"%s-%s",
+		strings.ToLower(serviceConfig.Project.Name),
+		strings.ToLower(serviceConfig.Name),
+	)
+
+	path := dockerOptions.Path
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(serviceConfig.Path(), path)
+	}
+
+	_, err = os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) && serviceConfig.Docker.Path == "" {
+		// Build the container from source when:
+		// 1. No Dockerfile path is specified, and
+		// 2. <service directory>/Dockerfile doesn't exist
+		progress.SetProgress(NewServiceProgress("Building Docker image from source"))
+		res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
+		if err != nil {
+			return nil, err
+		}
+
+		res.Restore = restoreOutput
+		return res, nil
+	}
+
+	// Build the container
+	progress.SetProgress(NewServiceProgress("Building Docker image"))
+	previewerWriter := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Docker Output",
+		})
+	imageId, err := p.docker.Build(
+		ctx,
+		serviceConfig.Path(),
+		dockerOptions.Path,
+		dockerOptions.Platform,
+		dockerOptions.Target,
+		dockerOptions.Context,
+		imageName,
+		dockerOptions.BuildArgs,
+		dockerOptions.BuildSecrets,
+		dockerOptions.BuildEnv,
+		previewerWriter,
+	)
+	p.console.StopPreviewer(ctx, false)
+	if err != nil {
+		return nil, fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err)
+	}
+
+	log.Printf("built image %s for %s", imageId, serviceConfig.Name)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: imageId,
+		Details: &dockerBuildResult{
+			ImageId:   imageId,
+			ImageName: imageName,
+		},
+	}, nil
 }
 
 func (p *dockerProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			var imageId string
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	if serviceConfig.Docker.RemoteBuild {
+		return &ServicePackageResult{Build: buildOutput}, nil
+	}
 
-			if buildOutput != nil {
-				imageId = buildOutput.BuildOutputPath
-			}
+	var imageId string
 
-			packageDetails := &dockerPackageResult{
-				ImageHash: imageId,
-			}
+	if buildOutput != nil {
+		imageId = buildOutput.BuildOutputPath
+	}
 
-			// If we don't have an image ID from a docker build then an external source image is being used
-			if imageId == "" {
-				sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
-				if err != nil {
-					task.SetError(fmt.Errorf("parsing source container image: %w", err))
-					return
-				}
+	packageDetails := &dockerPackageResult{
+		ImageHash: imageId,
+	}
 
-				remoteImageUrl := sourceImage.Remote()
+	// If we don't have an image ID from a docker build then an external source image is being used
+	if imageId == "" {
+		sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
+		if err != nil {
+			return nil, fmt.Errorf("parsing source container image: %w", err)
+		}
 
-				task.SetProgress(NewServiceProgress("Pulling container source image"))
-				if err := p.docker.Pull(ctx, remoteImageUrl); err != nil {
-					task.SetError(fmt.Errorf("pulling source container image: %w", err))
-					return
-				}
+		remoteImageUrl := sourceImage.Remote()
 
-				imageId = remoteImageUrl
-				packageDetails.SourceImage = remoteImageUrl
-			}
+		progress.SetProgress(NewServiceProgress("Pulling container source image"))
+		if err := p.docker.Pull(ctx, remoteImageUrl); err != nil {
+			return nil, fmt.Errorf("pulling source container image: %w", err)
+		}
 
-			// Generate a local tag from the 'docker' configuration section of the service
-			imageWithTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("generating local image tag: %w", err))
-				return
-			}
+		imageId = remoteImageUrl
+		packageDetails.SourceImage = remoteImageUrl
+	}
 
-			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, imageWithTag)
-			task.SetProgress(NewServiceProgress("Tagging container image"))
-			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
-				return
-			}
+	// Generate a local tag from the 'docker' configuration section of the service
+	imageWithTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("generating local image tag: %w", err)
+	}
 
-			packageDetails.TargetImage = imageWithTag
+	// Tag image.
+	log.Printf("tagging image %s as %s", imageId, imageWithTag)
+	progress.SetProgress(NewServiceProgress("Tagging container image"))
+	if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
+		return nil, fmt.Errorf("tagging image: %w", err)
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDetails.SourceImage,
-				Details:     packageDetails,
-			})
-		},
-	)
+	packageDetails.TargetImage = imageWithTag
+
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDetails.SourceImage,
+		Details:     packageDetails,
+	}, nil
 }
 
 // Default builder image to produce container images from source, needn't java jdk storage, use the standard bp
@@ -384,7 +391,7 @@ func (p *dockerProject) packBuild(
 	svc *ServiceConfig,
 	dockerOptions DockerProjectOptions,
 	imageName string) (*ServiceBuildResult, error) {
-	packCli, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
+	packCli, err := pack.NewCli(ctx, p.console, p.commandRunner)
 	if err != nil {
 		return nil, err
 	}

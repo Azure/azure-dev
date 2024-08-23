@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -21,12 +22,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -39,24 +40,23 @@ import (
 //
 // nolint:lll
 // https://github.com/Azure/azure-cli/blob/azure-cli-2.41.0/src/azure-cli-core/azure/cli/core/auth/identity.py#L23
-const cAZD_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+const azdClientID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
-// cCurrentUserKey is the key we use in config for the storing identity information of the currently logged in user.
-const cCurrentUserKey = "auth.account.currentUser"
+// currentUserKey is the key we use in config for the storing identity information of the currently logged in user.
+const currentUserKey = "auth.account.currentUser"
 
-// cUseAzCli is the key we use in config to denote that we want to use the az CLI for authentication instead of managing
-// it ourselves. The value should be a string as specified by [strconv.ParseBool].
-const cUseAzCliAuthKey = "auth.useAzCliAuth"
+// useAzCliAuthKey is the key we use in config to denote that we want to use the az CLI for authentication instead of
+// managing it ourselves. The value should be a string as specified by [strconv.ParseBool].
+const useAzCliAuthKey = "auth.useAzCliAuth"
 
-// cAuthConfigFileName is the name of the file we store in the user configuration directory which is used to persist
+// authConfigFileName is the name of the file we store in the user configuration directory which is used to persist
 // auth related configuration information (e.g. the home account id of the current user). This information is not secret.
-const cAuthConfigFileName = "auth.json"
-
-const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
+const authConfigFileName = "auth.json"
 
 // HttpClient interface as required by MSAL library.
 type HttpClient interface {
-	httputil.HttpClient
+	// Do sends an HTTP request and returns an HTTP response.
+	Do(*http.Request) (*http.Response, error)
 
 	// CloseIdleConnections closes any idle connections in a "keep-alive" state.
 	CloseIdleConnections()
@@ -91,9 +91,9 @@ type Manager struct {
 }
 
 type ExternalAuthConfiguration struct {
-	Endpoint string
-	Key      string
-	Client   httputil.HttpClient
+	Endpoint    string
+	Key         string
+	Transporter policy.Transporter
 }
 
 func NewManager(
@@ -130,7 +130,7 @@ func NewManager(
 		public.WithHTTPClient(httpClient),
 	}
 
-	publicClientApp, err := public.New(cAZD_CLIENT_ID, options...)
+	publicClientApp, err := public.New(azdClientID, options...)
 	if err != nil {
 		return nil, fmt.Errorf("creating msal client: %w", err)
 	}
@@ -204,7 +204,7 @@ func (m *Manager) CredentialForCurrentUser(
 			m.externalAuthCfg.Endpoint,
 			m.externalAuthCfg.Key,
 			options.TenantID,
-			m.externalAuthCfg.Client), nil
+			m.externalAuthCfg.Transporter), nil
 	}
 
 	userConfig, err := m.userConfigManager.Load()
@@ -213,7 +213,7 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if shouldUseLegacyAuth(userConfig) {
-		log.Printf("delegating auth to az since %s is set to true", cUseAzCliAuthKey)
+		log.Printf("delegating auth to az since %s is set to true", useAzCliAuthKey)
 		cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
 			TenantID: options.TenantID,
 		})
@@ -231,7 +231,7 @@ func (m *Manager) CredentialForCurrentUser(
 	currentUser, err := readUserProperties(authConfig)
 	if errors.Is(err, ErrNoCurrentUser) {
 		// User is not logged in, not using az credentials, try CloudShell if possible
-		if ShouldUseCloudShellAuth() {
+		if runcontext.IsRunningInCloudShell() {
 			cloudShellCredential, err := m.newCredentialFromCloudShell()
 			if err != nil {
 				return nil, err
@@ -249,7 +249,7 @@ func (m *Manager) CredentialForCurrentUser(
 							tenant = "organizations"
 						}
 						authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenant
-						return oneauth.NewCredential(authority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
+						return oneauth.NewCredential(authority, azdClientID, oneauth.CredentialOptions{
 							HomeAccountID: *user.HomeAccountID,
 						})
 					}
@@ -271,7 +271,7 @@ func (m *Manager) CredentialForCurrentUser(
 				return nil, fmt.Errorf("joining authority url: %w", err)
 			}
 
-			return oneauth.NewCredential(authority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
+			return oneauth.NewCredential(authority, azdClientID, oneauth.CredentialOptions{
 				HomeAccountID: *currentUser.HomeAccountID,
 				NoPrompt:      options.NoPrompt,
 			})
@@ -295,12 +295,13 @@ func (m *Manager) CredentialForCurrentUser(
 					// override the default authority.
 					newOptions = append(newOptions, public.WithAuthority(newAuthority))
 
-					clientWithNewTenant, err := public.New(cAZD_CLIENT_ID, newOptions...)
+					clientWithNewTenant, err := public.New(azdClientID, newOptions...)
 					if err != nil {
 						return nil, err
 					}
 
-					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i], m.cloud), nil
+					return newAzdCredential(
+						&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i], m.cloud), nil
 				}
 			}
 		}
@@ -369,19 +370,8 @@ func (m *Manager) ClaimsForCurrentUser(ctx context.Context, options *ClaimsForCu
 }
 
 func shouldUseLegacyAuth(cfg config.Config) bool {
-	if useLegacyAuth, has := cfg.Get(cUseAzCliAuthKey); has {
+	if useLegacyAuth, has := cfg.Get(useAzCliAuthKey); has {
 		if use, err := strconv.ParseBool(useLegacyAuth.(string)); err == nil && use {
-			return true
-		}
-	}
-
-	return false
-}
-
-func ShouldUseCloudShellAuth() bool {
-	if useCloudShellAuth, has := os.LookupEnv(cUseCloudShellAuthEnvVar); has {
-		if use, err := strconv.ParseBool(useCloudShellAuth); err == nil && use {
-			log.Printf("using CloudShell auth")
 			return true
 		}
 	}
@@ -421,7 +411,7 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 	if err != nil {
 		// No user is logged in, if running in CloudShell use tenant id from
 		// CloudShell session (single tenant)
-		if ShouldUseCloudShellAuth() {
+		if runcontext.IsRunningInCloudShell() {
 			// Tenant ID is not required when requesting a token from CloudShell
 			credential, err := m.CredentialForCurrentUser(ctx, nil)
 			if err != nil {
@@ -476,7 +466,7 @@ func (m *Manager) newCredentialFromClientSecret(
 	clientSecret string,
 ) (azcore.TokenCredential, error) {
 	options := &azidentity.ClientSecretCredentialOptions{
-		ClientOptions: policy.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
 			Transport: m.httpClient,
 			// TODO: Inject client options instead? this can be done if we're OK
 			// using the default user agent string.
@@ -507,7 +497,7 @@ func (m *Manager) newCredentialFromClientCertificate(
 	}
 
 	options := &azidentity.ClientCertificateCredentialOptions{
-		ClientOptions: policy.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
 			Transport: m.httpClient,
 			// TODO: Inject client options instead? this can be done if we're OK
 			// using the default user agent string.
@@ -533,7 +523,7 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
 	}
 	options := &azidentity.ClientAssertionCredentialOptions{
-		ClientOptions: policy.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
 			Transport: m.httpClient,
 			// TODO: Inject client options instead? this can be done if we're OK
 			// using the default user agent string.
@@ -615,7 +605,7 @@ func (m *Manager) LoginInteractive(
 // For example, it will log in the user currently signed in to Windows. This method never prompts for
 // user interaction and returns an error when the broker doesn't provide an account.
 func (m *Manager) LoginWithBrokerAccount() error {
-	accountID, err := oneauth.LogInSilently(cAZD_CLIENT_ID)
+	accountID, err := oneauth.LogInSilently(azdClientID)
 	if err == nil {
 		err = m.saveUserProperties(&userProperties{
 			FromOneAuth:   true,
@@ -631,7 +621,7 @@ func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes 
 		scopes = m.LoginScopes()
 	}
 	authority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + tenantID
-	accountID, err := oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
+	accountID, err := oneauth.LogIn(authority, azdClientID, strings.Join(scopes, " "))
 	if err == nil {
 		err = m.saveUserProperties(&userProperties{
 			FromOneAuth:   true,
@@ -662,7 +652,7 @@ func (m *Manager) LoginWithDeviceCode(
 
 	url := "https://microsoft.com/devicelogin"
 
-	if ShouldUseCloudShellAuth() {
+	if runcontext.IsRunningInCloudShell() {
 		m.console.MessageUxItem(ctx, &ux.MultilineMessage{
 			Lines: []string{
 				// nolint:lll
@@ -810,7 +800,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 	currentUser, _ := readUserProperties(cfg)
 	if currentUser != nil {
 		if currentUser.FromOneAuth {
-			if err := oneauth.Logout(cAZD_CLIENT_ID); err != nil {
+			if err := oneauth.Logout(azdClientID); err != nil {
 				return fmt.Errorf("logging out of OneAuth: %w", err)
 			}
 		} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
@@ -823,7 +813,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 		}
 	}
 
-	if err := cfg.Unset(cCurrentUserKey); err != nil {
+	if err := cfg.Unset(currentUserKey); err != nil {
 		return fmt.Errorf("un-setting current user: %w", err)
 	}
 
@@ -905,7 +895,7 @@ func (m *Manager) saveUserProperties(user *userProperties) error {
 		return fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if err := cfg.Set(cCurrentUserKey, *user); err != nil {
+	if err := cfg.Set(currentUserKey, *user); err != nil {
 		return fmt.Errorf("setting account id in config: %w", err)
 	}
 
@@ -920,7 +910,7 @@ func (m *Manager) readAuthConfig() (config.Config, error) {
 		return nil, fmt.Errorf("getting user config dir: %w", err)
 	}
 
-	authCfgFile := filepath.Join(cfgPath, cAuthConfigFileName)
+	authCfgFile := filepath.Join(cfgPath, authConfigFileName)
 
 	authCfg, err := m.configManager.Load(authCfgFile)
 	if err == nil {
@@ -937,13 +927,13 @@ func (m *Manager) readAuthConfig() (config.Config, error) {
 		return nil, fmt.Errorf("reading user config: %w", err)
 	}
 
-	curUserData, has := userCfg.Get(cCurrentUserKey)
+	curUserData, has := userCfg.Get(currentUserKey)
 	if !has {
 		return config.NewEmptyConfig(), nil
 	}
 
 	authCfg = config.NewEmptyConfig()
-	if err := authCfg.Set(cCurrentUserKey, curUserData); err != nil {
+	if err := authCfg.Set(currentUserKey, curUserData); err != nil {
 		return nil, err
 	}
 
@@ -951,7 +941,7 @@ func (m *Manager) readAuthConfig() (config.Config, error) {
 		return nil, err
 	}
 
-	if err := userCfg.Unset(cCurrentUserKey); err != nil {
+	if err := userCfg.Unset(currentUserKey); err != nil {
 		return nil, err
 	}
 
@@ -968,7 +958,7 @@ func (m *Manager) saveAuthConfig(c config.Config) error {
 		return fmt.Errorf("getting user config dir: %w", err)
 	}
 
-	authCfgFile := filepath.Join(cfgPath, cAuthConfigFileName)
+	authCfgFile := filepath.Join(cfgPath, authConfigFileName)
 
 	return m.configManager.Save(c, authCfgFile)
 }
@@ -1051,7 +1041,7 @@ type userProperties struct {
 }
 
 func readUserProperties(cfg config.Config) (*userProperties, error) {
-	currentUser, has := cfg.Get(cCurrentUserKey)
+	currentUser, has := cfg.Get(currentUserKey)
 	if !has {
 		return nil, ErrNoCurrentUser
 	}

@@ -19,8 +19,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -312,10 +310,7 @@ func downloadSqlCmd(
 
 	log.Printf("downloading sqlCmd cli release %s -> %s", sqlCmdReleaseUrl, releaseName)
 
-	spanCtx, span := tracing.Start(ctx, events.SqlCmdCliInstallEvent)
-	defer span.End()
-
-	req, err := http.NewRequestWithContext(spanCtx, "GET", sqlCmdReleaseUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", sqlCmdReleaseUrl, nil)
 	if err != nil {
 		return err
 	}

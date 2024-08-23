@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -12,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -21,15 +23,20 @@ import (
 
 // Telemetry middleware tracks telemetry for the given action
 type TelemetryMiddleware struct {
-	options            *Options
-	lazyPlatformConfig *lazy.Lazy[*platform.Config]
+	options             *Options
+	lazyPlatformConfig  *lazy.Lazy[*platform.Config]
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 // Creates a new Telemetry middleware instance
-func NewTelemetryMiddleware(options *Options, lazyPlatformConfig *lazy.Lazy[*platform.Config]) Middleware {
+func NewTelemetryMiddleware(
+	options *Options,
+	lazyPlatformConfig *lazy.Lazy[*platform.Config],
+	alphaFeatureManager *alpha.FeatureManager) Middleware {
 	return &TelemetryMiddleware{
-		options:            options,
-		lazyPlatformConfig: lazyPlatformConfig,
+		options:             options,
+		lazyPlatformConfig:  lazyPlatformConfig,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -61,6 +68,18 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	}
 
 	span.SetAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
+
+	// Track all alpha features that are enabled for the current command
+	if allFeatures, err := m.alphaFeatureManager.ListFeatures(); err == nil && len(allFeatures) > 0 {
+		enabledFeatures := []string{}
+		for _, feature := range allFeatures {
+			if strings.ToLower(feature.Status) == "on" {
+				enabledFeatures = append(enabledFeatures, feature.Id)
+			}
+		}
+
+		span.SetAttributes(fields.AlphaFeaturesKey.StringSlice(enabledFeatures))
+	}
 
 	// Set the platform type when available
 	// Valid platform types are validating in the platform config resolver and will error here if not known & valid

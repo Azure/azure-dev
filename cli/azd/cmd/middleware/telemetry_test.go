@@ -25,7 +25,7 @@ func Test_Telemetry_Run(t *testing.T) {
 			CommandPath: "azd provision",
 			Name:        "provision",
 		}
-		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig)
+		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig, mockContext.AlphaFeaturesManager)
 
 		ran := false
 		var actualContext context.Context
@@ -54,7 +54,7 @@ func Test_Telemetry_Run(t *testing.T) {
 			CommandPath: "azd provision",
 			Name:        "provision",
 		}
-		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig)
+		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig, mockContext.AlphaFeaturesManager)
 
 		ran := false
 		var actualContext context.Context

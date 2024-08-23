@@ -99,6 +99,11 @@ const (
 	PlatformTypeKey = attribute.Key("platform.type")
 )
 
+// Tracks what alpha features are enabled on each command
+const (
+	AlphaFeaturesKey = attribute.Key("config.features")
+)
+
 // Environment related attributes
 const (
 	// Hashed environment name

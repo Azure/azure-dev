@@ -82,7 +82,11 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	// Always set telemetry opt-inn setting to avoid influence from user settings
-	cli.Env = append(os.Environ(), "AZURE_DEV_COLLECT_TELEMETRY=yes")
+	cli.Env = append(
+		os.Environ(),
+		"AZURE_DEV_COLLECT_TELEMETRY=yes",
+		"AZD_ALPHA_ENABLE_INFRASYNTH=true",
+	)
 	cli.WorkingDirectory = dir
 
 	envName := randomEnvName()
@@ -123,6 +127,10 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 			// env new provides a single position argument.
 			require.Contains(t, m, fields.CmdArgsCount)
 			require.Equal(t, float64(1), m[fields.CmdArgsCount])
+
+			// Validate alpha features
+			require.Contains(t, m, fields.AlphaFeaturesKey)
+			require.Contains(t, m[fields.AlphaFeaturesKey].([]interface{}), "infraSynth")
 		}
 	}
 

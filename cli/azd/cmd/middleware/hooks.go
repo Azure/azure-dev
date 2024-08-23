@@ -138,10 +138,30 @@ func (m *HooksMiddleware) registerServiceHooks(
 
 	for _, service := range stableServices {
 		serviceName := service.Name
+
+		hooksDefinedAtServicePath, err := ext.HooksFromServicePath(service.Path())
+		if err != nil {
+			return fmt.Errorf("failed getting hooks from service path, %w", err)
+		}
+
 		// If the service hasn't configured any hooks we can continue on.
-		if service.Hooks == nil || len(service.Hooks) == 0 {
-			log.Printf("service '%s' does not require any command hooks.\n", serviceName)
+		if (service.Hooks == nil || len(service.Hooks) == 0) &&
+			(hooksDefinedAtServicePath == nil || len(hooksDefinedAtServicePath) == 0) {
+			log.Printf("service '%s' does not require any hooks.\n", serviceName)
 			continue
+		}
+
+		if (service.Hooks != nil && len(service.Hooks) > 0) &&
+			(hooksDefinedAtServicePath != nil && len(hooksDefinedAtServicePath) > 0) {
+			return fmt.Errorf(
+				"service '%s' has hooks defined in both azd.hooks.yaml and azure.yaml configuration,"+
+					" please remove one of them.",
+				serviceName)
+		}
+
+		// If the service has hooks defined in azd.hooks.yaml but not in azure.yaml
+		if service.Hooks == nil || len(service.Hooks) == 0 {
+			service.Hooks = hooksDefinedAtServicePath
 		}
 
 		serviceHooksManager := ext.NewHooksManager(service.Path())

@@ -146,6 +146,17 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	// Service level hooks
 	for _, service := range stableServices {
 		skip := hra.flags.service != "" && service.Name != hra.flags.service
+		hooksDefinedAtServicePath, err := ext.HooksFromServicePath(service.Path())
+		if err != nil {
+			return nil, err
+		}
+		if service.Hooks != nil && hooksDefinedAtServicePath != nil {
+			return nil, fmt.Errorf("service %s has hooks defined in both azd.hooks.yaml and azure.yaml, "+
+				"please remove one of them.", service.Name)
+		}
+		if service.Hooks == nil {
+			service.Hooks = hooksDefinedAtServicePath
+		}
 
 		if err := hra.processHooks(
 			ctx,

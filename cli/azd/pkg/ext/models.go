@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"gopkg.in/yaml.v3"
 )
 
 // The type of hooks. Supported values are 'pre' and 'post'
@@ -217,4 +218,29 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	}
 
 	return file.Name(), nil
+}
+
+// HooksFromServicePath check if there is file named azd.hooks.yaml in the service path
+// and return the hooks configuration.
+func HooksFromServicePath(servicePath string) (map[string]*HookConfig, error) {
+	hooksPath := filepath.Join(servicePath, "azd.hooks.yaml")
+	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+		hooksPath = filepath.Join(servicePath, "azd.hooks.yml")
+		if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+			return nil, nil
+		}
+	}
+
+	hooksFile, err := os.ReadFile(hooksPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading hooks from '%s', %w", hooksPath, err)
+	}
+
+	// open hooksPath into a byte array and unmarshal it into a map[string]*ext.HookConfig
+	hooks := make(map[string]*HookConfig)
+	if err := yaml.Unmarshal(hooksFile, &hooks); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling hooks from '%s', %w", hooksPath, err)
+	}
+
+	return hooks, nil
 }

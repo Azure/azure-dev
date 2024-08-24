@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -30,7 +31,7 @@ type hostCheckResult struct {
 
 // DotNetImporter is an importer that is able to import projects and infrastructure from a manifest produced by a .NET App.
 type DotNetImporter struct {
-	dotnetCli           dotnet.DotNetCli
+	dotnetCli           *dotnet.Cli
 	console             input.Console
 	lazyEnv             *lazy.Lazy[*environment.Environment]
 	lazyEnvManager      *lazy.Lazy[environment.Manager]
@@ -55,7 +56,7 @@ type manifestCacheKey struct {
 }
 
 func NewDotNetImporter(
-	dotnetCli dotnet.DotNetCli,
+	dotnetCli *dotnet.Cli,
 	console input.Console,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
@@ -106,9 +107,17 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
-	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{})
+	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
+	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
+		AzdOperations: azdOperationsEnabled,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
+		if errors.Is(err, provisioning.ErrAzdOperationsNotEnabled) {
+			// Use a warning for this error about azd operations is required for the current project to fully work
+			ai.console.Message(ctx, err.Error())
+		} else {
+			return nil, fmt.Errorf("generating bicep from manifest: %w", err)
+		}
 	}
 
 	tmpDir, err := os.MkdirTemp("", "azd-infra")
@@ -448,9 +457,17 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		rootModuleName = p.Infra.Module
 	}
 
-	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{})
+	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
+	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{
+		AzdOperations: azdOperationsEnabled,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("generating infra/ folder: %w", err)
+		if errors.Is(err, provisioning.ErrAzdOperationsNotEnabled) {
+			// Use a warning for this error about azd operations is required for the current project to fully work
+			ai.console.Message(ctx, err.Error())
+		} else {
+			return nil, fmt.Errorf("generating infra/ folder: %w", err)
+		}
 	}
 
 	infraPathPrefix := DefaultPath

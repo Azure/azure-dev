@@ -164,7 +164,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 
 			if err := service.AddHandler(
 				ext.Event(hookName),
-				m.createServiceEventHandler(ctx, hookType, eventName, serviceHooksRunner),
+				m.createServiceEventHandler(hookType, eventName, serviceHooksRunner),
 			); err != nil {
 				return fmt.Errorf(
 					"failed registering event handler for service '%s' and event '%s', %w",
@@ -181,7 +181,6 @@ func (m *HooksMiddleware) registerServiceHooks(
 
 // Creates an event handler for the specified service config and event name
 func (m *HooksMiddleware) createServiceEventHandler(
-	ctx context.Context,
 	hookType ext.HookType,
 	hookName string,
 	hooksRunner *ext.HooksRunner,

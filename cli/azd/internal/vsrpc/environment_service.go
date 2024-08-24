@@ -33,7 +33,7 @@ func newEnvironmentService(server *Server) *environmentService {
 func (s *environmentService) GetEnvironmentsAsync(
 	ctx context.Context, rc RequestContext, observer IObserver[ProgressMessage],
 ) ([]*EnvironmentInfo, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (s *environmentService) GetEnvironmentsAsync(
 func (s *environmentService) SetCurrentEnvironmentAsync(
 	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return false, err
 	}
@@ -108,7 +108,7 @@ const (
 func (s *environmentService) DeleteEnvironmentAsync(
 	ctx context.Context, rc RequestContext, name string, mode int, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return false, err
 	}

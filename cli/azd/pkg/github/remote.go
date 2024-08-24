@@ -18,7 +18,7 @@ var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?github\.c
 // `repositoryPath` has a remote and it is configured with a
 // URL for a repository hosted on GitHub.
 // It returns the repository slug `(<organization>/<repo>)`.
-func EnsureRemote(ctx context.Context, repositoryPath string, remoteName string, gitCli git.GitCli) (string, error) {
+func EnsureRemote(ctx context.Context, repositoryPath string, remoteName string, gitCli *git.Cli) (string, error) {
 	remoteUrl, err := gitCli.GetRemoteUrl(ctx, repositoryPath, remoteName)
 	if err != nil {
 		return "", fmt.Errorf("failed to get remote url: %w", err)

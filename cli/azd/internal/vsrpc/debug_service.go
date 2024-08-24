@@ -74,7 +74,7 @@ func (s *debugService) TestPanicAsync(ctx context.Context, message string) error
 //
 // It fetches an access token for the current user and returns it.
 func (s *debugService) FetchTokenAsync(ctx context.Context, sessionId Session) (azcore.AccessToken, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	session, err := s.server.validateSession(sessionId)
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}

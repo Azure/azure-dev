@@ -10,7 +10,8 @@ type redactData struct {
 	replaceString string
 }
 
-const cRedacted = "<redacted>"
+// redactedReplacement is the string that will replace sensitive data in the output.
+const redactedReplacement = "<redacted>"
 
 func RedactSensitiveArgs(args []string, sensitiveDataMatch []string) []string {
 	if len(sensitiveDataMatch) == 0 {
@@ -20,7 +21,7 @@ func RedactSensitiveArgs(args []string, sensitiveDataMatch []string) []string {
 	for i, arg := range args {
 		redacted := arg
 		for _, sensitiveData := range sensitiveDataMatch {
-			redacted = strings.ReplaceAll(redacted, sensitiveData, cRedacted)
+			redacted = strings.ReplaceAll(redacted, sensitiveData, redactedReplacement)
 		}
 		redactedArgs[i] = redacted
 	}
@@ -31,27 +32,27 @@ func RedactSensitiveData(msg string) string {
 	var regexpRedactRules = map[string]redactData{
 		"access token": {
 			regexp.MustCompile("\"accessToken\": \".*\""),
-			"\"accessToken\": \"" + cRedacted + "\"",
+			"\"accessToken\": \"" + redactedReplacement + "\"",
 		},
 		"deployment token": {
 			regexp.MustCompile(`--deployment-token \S+`),
-			"--deployment-token " + cRedacted,
+			"--deployment-token " + redactedReplacement,
 		},
 		"username": {
 			regexp.MustCompile(`--username \S+`),
-			"--username " + cRedacted,
+			"--username " + redactedReplacement,
 		},
 		"password": {
 			regexp.MustCompile(`--password \S+`),
-			"--password " + cRedacted,
+			"--password " + redactedReplacement,
 		},
 		"kubectl-from-literal": {
 			regexp.MustCompile(`--from-literal=([^=]+)=(\S+)`),
-			"--from-literal=$1=" + cRedacted,
+			"--from-literal=$1=" + redactedReplacement,
 		},
 		"combined-arg": {
 			regexp.MustCompile(`(.*)=(\S+)`),
-			"$1=" + cRedacted,
+			"$1=" + redactedReplacement,
 		},
 	}
 

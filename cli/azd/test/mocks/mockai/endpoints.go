@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
@@ -79,7 +79,7 @@ func RegisterUpdateOnlineEndpoint(
 				Name: &endpointName,
 				Properties: &armmachinelearning.OnlineEndpointProperties{
 					Traffic:           trafficMap,
-					ProvisioningState: convert.RefOf(armmachinelearning.EndpointProvisioningStateSucceeded),
+					ProvisioningState: to.Ptr(armmachinelearning.EndpointProvisioningStateSucceeded),
 				},
 			},
 		}

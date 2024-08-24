@@ -176,10 +176,10 @@ var allDetectors = []projectDetector{
 	&javaDetector{},
 	&dotNetAppHostDetector{
 		// TODO(ellismg): Remove ambient authority.
-		dotnetCli: dotnet.NewDotNetCli(exec.NewCommandRunner(nil)),
+		dotnetCli: dotnet.NewCli(exec.NewCommandRunner(nil)),
 	},
 	&dotNetDetector{
-		dotnetCli: dotnet.NewDotNetCli(exec.NewCommandRunner(nil)),
+		dotnetCli: dotnet.NewCli(exec.NewCommandRunner(nil)),
 	},
 	&pythonDetector{},
 	&javaScriptDetector{},
@@ -277,18 +277,9 @@ func detectAny(ctx context.Context, detectors []projectDetector, path string, en
 // path is the directory being visited. entries are the file entries (including directories) in that directory.
 type walkDirFunc func(path string, entries []fs.DirEntry) error
 
-// walkDirectories walks the file tree rooted at root, calling fn for each directory in the tree, including root.
+// walkDirectories recursively descends the file tree located at path, calling fn for each directory in the tree.
 // The directories are walked in lexical order.
-func walkDirectories(root string, fn walkDirFunc) error {
-	info, err := os.Lstat(root)
-	if err != nil {
-		return err
-	}
-
-	return walkDirRecursive(root, fs.FileInfoToDirEntry(info), fn)
-}
-
-func walkDirRecursive(path string, d fs.DirEntry, fn walkDirFunc) error {
+func walkDirectories(path string, fn walkDirFunc) error {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return fmt.Errorf("reading directory: %w", err)
@@ -306,7 +297,7 @@ func walkDirRecursive(path string, d fs.DirEntry, fn walkDirFunc) error {
 	for _, entry := range entries {
 		if entry.IsDir() {
 			dir := filepath.Join(path, entry.Name())
-			err = walkDirRecursive(dir, entry, fn)
+			err = walkDirectories(dir, fn)
 			if err != nil {
 				return err
 			}

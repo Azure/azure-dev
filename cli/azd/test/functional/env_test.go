@@ -260,6 +260,59 @@ func Test_CLI_Env_Values_MultipleEnvironments(t *testing.T) {
 	require.Equal(t, values["envName2"], envName2)
 }
 
+func Test_CLI_Env_GetValue(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Create an environment
+	envName := randomEnvName()
+	envNew(ctx, t, cli, envName, false)
+
+	// Set key1
+	envSetValue(ctx, t, cli, "key1", "value1")
+
+	// Get key1 value
+	value := envGetValue(ctx, t, cli, "key1")
+	require.Equal(t, "value1", value)
+
+	// Set key2
+	envSetValue(ctx, t, cli, "key2", "value2")
+
+	// Get key2 value
+	value = envGetValue(ctx, t, cli, "key2")
+	require.Equal(t, "value2", value)
+
+	// Modify key1
+	envSetValue(ctx, t, cli, "key1", "modified1")
+
+	// Get modified key1 value
+	value = envGetValue(ctx, t, cli, "key1")
+	require.Equal(t, "modified1", value)
+
+	// Test non-existent key
+	res, err := cli.RunCommand(ctx, "env", "get-value", "non_existent_key")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "key 'non_existent_key' not found in the environment values")
+}
+
+func envGetValue(ctx context.Context, t *testing.T, cli *azdcli.CLI, key string) string {
+	args := []string{"env", "get-value", key}
+
+	result, err := cli.RunCommand(ctx, args...)
+	require.NoError(t, err)
+
+	return strings.TrimSpace(result.Stdout)
+}
+
 func requireIsDefault(t *testing.T, list []contracts.EnvListEnvironment, envName string) {
 	for _, env := range list {
 		if env.Name == envName {

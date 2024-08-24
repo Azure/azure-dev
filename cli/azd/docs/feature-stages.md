@@ -38,3 +38,4 @@ As of `1.9.3`, each Azure Developer CLI feature has been evaluated and assigned 
 | Host         | Azure Functions          | Stable    |
 | Host         | Azure Kubernetes Service | Beta      |
 | Host         | Azure Spring Apps        | Beta      |
+| Host         | Azure AI                 | Beta      |

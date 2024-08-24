@@ -297,7 +297,7 @@ func (p *progressLog) buildTopBottom() {
 	if titleLen >= consoleLen {
 		// can't add lines as title is longer than what's available
 		// limit output to what's available
-		p.displayTitle = withPrefixTitle[:consoleLen-4] + cPostfix
+		p.displayTitle = withPrefixTitle[:consoleLen-4] + truncationDots
 		return
 	}
 

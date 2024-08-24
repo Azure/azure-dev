@@ -7,8 +7,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
@@ -237,9 +237,9 @@ func RegisterRoleAssignmentPutMock(mockContext *mocks.MockContext, statusCode in
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		response := armauthorization.RoleAssignmentsClientCreateResponse{
 			RoleAssignment: armauthorization.RoleAssignment{
-				ID:   convert.RefOf("ASSIGNMENT_ID"),
-				Name: convert.RefOf("ROLE_NAME"),
-				Type: convert.RefOf("ASSIGNMENT_TYPE"),
+				ID:   to.Ptr("ASSIGNMENT_ID"),
+				Name: to.Ptr("ROLE_NAME"),
+				Type: to.Ptr("ASSIGNMENT_TYPE"),
 			},
 		}
 

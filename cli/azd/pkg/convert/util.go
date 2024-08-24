@@ -20,11 +20,6 @@ func ToValueWithDefault[T any](ptr *T, defaultValue T) T {
 	return *ptr
 }
 
-// Returns a pointer for the specified value
-func RefOf[T any](value T) *T {
-	return &value
-}
-
 // Attempts to convert the specified value to a string, otherwise returns the default value
 func ToStringWithDefault(value any, defaultValue string) string {
 	if value == nil {

@@ -6,14 +6,23 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"gopkg.in/yaml.v3"
 )
 
 type DefaultProviderResolver func() (ProviderKind, error)
@@ -29,6 +38,8 @@ type Manager struct {
 	alphaFeatureManager *alpha.FeatureManager
 	projectPath         string
 	options             *Options
+	fileShareService    storage.FileShareService
+	cloud               *cloud.Cloud
 }
 
 // defaultOptions for this package.
@@ -68,6 +79,8 @@ func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResul
 	return result, nil
 }
 
+var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
+
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	// Apply the infrastructure deployment
@@ -86,10 +99,156 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
+	infraRoot := m.options.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(m.projectPath, m.options.Path)
+	}
+	bindMountOperations, err := azdFileShareUploadOperations(infraRoot, *m.env)
+	azdOperationsEnabled := m.alphaFeatureManager.IsEnabled(AzdOperationsFeatureKey)
+	if !azdOperationsEnabled && len(bindMountOperations) > 0 {
+		m.console.Message(ctx, ErrBindMountOperationDisabled.Error())
+	}
+	if azdOperationsEnabled {
+		if err != nil {
+			return nil, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
+		}
+		if err := doBindMountOperation(
+			ctx, bindMountOperations, *m.env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix); err != nil {
+			return nil, fmt.Errorf("error running bind mount operation: %w", err)
+		}
+	}
+
 	// make sure any spinner is stopped
 	m.console.StopSpinner(ctx, "", input.StepDone)
 
 	return deployResult, nil
+}
+
+const (
+	fileShareUploadOperation string = "FileShareUpload"
+	azdOperationsFileName    string = "azd.operations.yaml"
+)
+
+type azdOperation struct {
+	Type        string
+	Description string
+	Config      any
+}
+
+type azdOperationFileShareUpload struct {
+	Description    string
+	StorageAccount string
+	FileShareName  string
+	Path           string
+}
+
+type azdOperationsModel struct {
+	Operations []azdOperation
+}
+
+func azdOperations(infraPath string, env environment.Environment) (azdOperationsModel, error) {
+	path := filepath.Join(infraPath, azdOperationsFileName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// file not found is not an error, there's just nothing to do
+			return azdOperationsModel{}, nil
+		}
+		return azdOperationsModel{}, err
+	}
+
+	// resolve environment variables
+	expString := osutil.NewExpandableString(string(data))
+	evaluated, err := expString.Envsubst(env.Getenv)
+	if err != nil {
+		return azdOperationsModel{}, err
+	}
+	data = []byte(evaluated)
+
+	// Unmarshal the file into azdOperationsModel
+	var operations azdOperationsModel
+	err = yaml.Unmarshal(data, &operations)
+	if err != nil {
+		return azdOperationsModel{}, err
+	}
+
+	return operations, nil
+}
+
+func azdFileShareUploadOperations(infraPath string, env environment.Environment) ([]azdOperationFileShareUpload, error) {
+	model, err := azdOperations(infraPath, env)
+	if err != nil {
+		return nil, err
+	}
+
+	var fileShareUploadOperations []azdOperationFileShareUpload
+	for _, operation := range model.Operations {
+		if operation.Type == fileShareUploadOperation {
+			var fileShareUpload azdOperationFileShareUpload
+			bytes, err := json.Marshal(operation.Config)
+			if err != nil {
+				return nil, err
+			}
+			err = json.Unmarshal(bytes, &fileShareUpload)
+			if err != nil {
+				return nil, err
+			}
+			fileShareUpload.Description = operation.Description
+			fileShareUploadOperations = append(fileShareUploadOperations, fileShareUpload)
+		}
+	}
+	return fileShareUploadOperations, nil
+}
+
+var ErrAzdOperationsNotEnabled = fmt.Errorf(fmt.Sprintf(
+	"azd operations (alpha feature) is required but disabled. You can enable azd operations by running: %s",
+	output.WithGrayFormat(alpha.GetEnableCommand(AzdOperationsFeatureKey))))
+
+var ErrBindMountOperationDisabled = fmt.Errorf(
+	"%sYour project has bind mounts.\n  - %w\n%s\n",
+	output.WithWarningFormat("*Note: "),
+	ErrAzdOperationsNotEnabled,
+	output.WithWarningFormat("Ignoring bind mounts."),
+)
+
+func doBindMountOperation(
+	ctx context.Context,
+	fileShareUploadOperations []azdOperationFileShareUpload,
+	env environment.Environment,
+	console input.Console,
+	fileShareService storage.FileShareService,
+	cloudStorageEndpointSuffix string,
+) error {
+	if len(fileShareUploadOperations) > 0 {
+		console.ShowSpinner(ctx, "uploading files to fileShare", input.StepFailed)
+	}
+	for _, op := range fileShareUploadOperations {
+		if err := bindMountOperation(
+			ctx,
+			fileShareService,
+			cloudStorageEndpointSuffix,
+			env.GetSubscriptionId(),
+			op.StorageAccount,
+			op.FileShareName,
+			op.Path); err != nil {
+			return fmt.Errorf("error binding mount: %w", err)
+		}
+		console.MessageUxItem(ctx, &ux.DisplayedResource{
+			Type:  fileShareUploadOperation,
+			Name:  op.Description,
+			State: ux.SucceededState,
+		})
+	}
+	return nil
+}
+
+func bindMountOperation(
+	ctx context.Context,
+	fileShareService storage.FileShareService,
+	cloud, subId, storageAccount, fileShareName, source string) error {
+
+	shareUrl := fmt.Sprintf("https://%s.file.%s/%s", storageAccount, cloud, fileShareName)
+	return fileShareService.UploadPath(ctx, subId, shareUrl, source)
 }
 
 // Preview generates the list of changes to be applied as part of the provisioning.
@@ -110,7 +269,7 @@ func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
 	}
 
 	for index, result := range deployResult.Preview.Properties.Changes {
-		mappingName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(result.ResourceType))
+		mappingName := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(result.ResourceType))
 		if mappingName == "" {
 			// ignore
 			continue
@@ -228,6 +387,8 @@ func NewManager(
 	env *environment.Environment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
+	fileShareService storage.FileShareService,
+	cloud *cloud.Cloud,
 ) *Manager {
 	return &Manager{
 		serviceLocator:      serviceLocator,
@@ -236,6 +397,8 @@ func NewManager(
 		env:                 env,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
+		fileShareService:    fileShareService,
+		cloud:               cloud,
 	}
 }
 

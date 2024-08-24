@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -176,15 +177,16 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			continue
 		}
 
-		buildTask := ba.serviceManager.Build(ctx, svc, nil)
-		go func() {
-			for buildProgress := range buildTask.Progress() {
+		buildResult, err := async.RunWithProgress(
+			func(buildProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
 				ba.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceBuildResult, error) {
+				return ba.serviceManager.Build(ctx, svc, nil, progress)
+			},
+		)
 
-		buildResult, err := buildTask.Await()
 		if err != nil {
 			ba.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

@@ -15,7 +15,7 @@ var publishWithWorkloadUpdate string
 func Test_getTargetPort(t *testing.T) {
 	mockCtx := mocks.NewMockContext(context.Background())
 
-	cli := &dotNetCli{
+	cli := &Cli{
 		commandRunner: mockCtx.CommandRunner,
 	}
 

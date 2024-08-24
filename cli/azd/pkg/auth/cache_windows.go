@@ -27,10 +27,10 @@ type envelopedData struct {
 
 type encryptionType string
 
-// cCryptProtectDataEncryptionType is the encryption type that uses CryptProtectData/CryptUnprotectData for
+// cryptProtectDataEncryptionType is the encryption type that uses CryptProtectData/CryptUnprotectData for
 // encryption and decryption.  See https://learn.microsoft.com/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
 // for more information on these APIs.
-const cCryptProtectDataEncryptionType encryptionType = "CryptProtectData"
+const cryptProtectDataEncryptionType encryptionType = "CryptProtectData"
 
 func newCache(root string) cache.ExportReplace {
 	return &msalCacheAdapter{
@@ -90,7 +90,7 @@ func (c *encryptedCache) Read(key string) ([]byte, error) {
 		}
 	} else {
 
-		if data.Type != cCryptProtectDataEncryptionType {
+		if data.Type != cryptProtectDataEncryptionType {
 			return nil, fmt.Errorf("unsupported encryption type: %s", data.Type)
 		}
 
@@ -148,7 +148,7 @@ func (c *encryptedCache) Set(key string, val []byte) error {
 	}
 
 	toStore, err := json.Marshal(envelopedData{
-		Type: cCryptProtectDataEncryptionType,
+		Type: cryptProtectDataEncryptionType,
 		Data: base64.StdEncoding.EncodeToString(cs),
 	})
 

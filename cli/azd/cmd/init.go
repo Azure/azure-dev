@@ -104,7 +104,7 @@ type initAction struct {
 	lazyEnvManager  *lazy.Lazy[environment.Manager]
 	console         input.Console
 	cmdRun          exec.CommandRunner
-	gitCli          git.GitCli
+	gitCli          *git.Cli
 	flags           *initFlags
 	repoInitializer *repository.Initializer
 	templateManager *templates.TemplateManager
@@ -116,7 +116,7 @@ func newInitAction(
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	cmdRun exec.CommandRunner,
 	console input.Console,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 	flags *initFlags,
 	repoInitializer *repository.Initializer,
 	templateManager *templates.TemplateManager,

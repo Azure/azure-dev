@@ -12,28 +12,19 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-type NpmCli interface {
-	tools.ExternalTool
-	Install(ctx context.Context, project string) error
+var _ tools.ExternalTool = (*Cli)(nil)
 
-	// RunScript runs the given npm script (if it exists) in the project.
-	//
-	// Returns an error only if the script execution fails. If the script doesn't exist, no error is returned.
-	RunScript(ctx context.Context, projectPath string, scriptName string) error
-	Prune(ctx context.Context, projectPath string, production bool) error
-}
-
-type npmCli struct {
+type Cli struct {
 	commandRunner exec.CommandRunner
 }
 
-func NewNpmCli(commandRunner exec.CommandRunner) NpmCli {
-	return &npmCli{
+func NewCli(commandRunner exec.CommandRunner) *Cli {
+	return &Cli{
 		commandRunner: commandRunner,
 	}
 }
 
-func (cli *npmCli) versionInfoNode() tools.VersionInfo {
+func (cli *Cli) versionInfoNode() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 18,
@@ -43,7 +34,7 @@ func (cli *npmCli) versionInfoNode() tools.VersionInfo {
 	}
 }
 
-func (cli *npmCli) CheckInstalled(ctx context.Context) error {
+func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	err := tools.ToolInPath("npm")
 	if err != nil {
 		return err
@@ -66,15 +57,15 @@ func (cli *npmCli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-func (cli *npmCli) InstallUrl() string {
+func (cli *Cli) InstallUrl() string {
 	return "https://nodejs.org/"
 }
 
-func (cli *npmCli) Name() string {
+func (cli *Cli) Name() string {
 	return "npm CLI"
 }
 
-func (cli *npmCli) Install(ctx context.Context, project string) error {
+func (cli *Cli) Install(ctx context.Context, project string) error {
 	runArgs := exec.
 		NewRunArgs("npm", "install").
 		WithCwd(project)
@@ -87,7 +78,7 @@ func (cli *npmCli) Install(ctx context.Context, project string) error {
 	return nil
 }
 
-func (cli *npmCli) RunScript(ctx context.Context, projectPath string, scriptName string) error {
+func (cli *Cli) RunScript(ctx context.Context, projectPath string, scriptName string) error {
 	runArgs := exec.
 		NewRunArgs("npm", "run", scriptName, "--if-present").
 		WithCwd(projectPath)
@@ -101,7 +92,7 @@ func (cli *npmCli) RunScript(ctx context.Context, projectPath string, scriptName
 	return nil
 }
 
-func (cli *npmCli) Prune(ctx context.Context, projectPath string, production bool) error {
+func (cli *Cli) Prune(ctx context.Context, projectPath string, production bool) error {
 	runArgs := exec.
 		NewRunArgs("npm", "prune").
 		WithCwd(projectPath)

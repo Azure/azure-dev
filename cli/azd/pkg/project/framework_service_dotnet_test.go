@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -47,7 +48,7 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 		RelativePath: "",
 	}
 
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	dp := NewDotNetProject(dotNetCli, environment.New("test")).(*dotnetProject)
 
 	err := dp.setUserSecretsFromOutputs(*mockContext.Context, serviceConfig, ServiceLifecycleEventArgs{
@@ -93,7 +94,7 @@ func Test_DotNetProject_Init(t *testing.T) {
 	})
 
 	env := environment.New("test")
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageDotNet)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
@@ -145,14 +146,14 @@ func Test_DotNetProject_Restore(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	restoreTask := dotnetProject.Restore(*mockContext.Context, serviceConfig)
-	logProgress(restoreTask)
+	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+		return dotnetProject.Restore(*mockContext.Context, serviceConfig, progess)
+	})
 
-	result, err := restoreTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
@@ -185,7 +186,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
 	buildOutputDir := filepath.Join(serviceConfig.Path(), "bin", "Release", "net8.0")
@@ -193,10 +194,12 @@ func Test_DotNetProject_Build(t *testing.T) {
 	require.NoError(t, err)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	buildTask := dotnetProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
+	result, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+			return dotnetProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+		},
+	)
 
-	result, err := buildTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
@@ -243,20 +246,21 @@ func Test_DotNetProject_Package(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api/test3.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	packageTask := dotnetProject.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServiceBuildResult{
-			BuildOutputPath: serviceConfig.Path(),
-		},
-	)
-	logProgress(packageTask)
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+		return dotnetProject.Package(
+			*mockContext.Context,
+			serviceConfig,
+			&ServiceBuildResult{
+				BuildOutputPath: serviceConfig.Path(),
+			},
+			progress,
+		)
+	})
 
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

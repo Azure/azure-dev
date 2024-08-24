@@ -202,7 +202,8 @@ func (cli *CLI) heartbeat(description string, done <-chan struct{}) {
 	for {
 		select {
 		case <-time.After(HeartbeatInterval):
-			cli.T.Logf("[heartbeat] command %s is still running after %s", description, time.Since(start))
+			cli.T.Logf("[heartbeat] command %s is still running after %s",
+				description, time.Since(start).Truncate(time.Second))
 		case <-done:
 			return
 		}

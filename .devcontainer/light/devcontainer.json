@@ -1,0 +1,28 @@
+{
+    "name": "Azure Developer CLI - Contributor",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+        "ghcr.io/devcontainers/features/go:1": {
+            "version": "1.21"
+        },
+        "ghcr.io/guiyomh/features/golangci-lint:0":{},
+        "ghcr.io/devcontainers/features/docker-in-docker:2.11.0": {
+            "version": "latest",
+            "moby": true
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "redhat.vscode-yaml",
+                "streetsidesoftware.code-spell-checker",
+                "golang.go",
+                "ms-azuretools.vscode-bicep",
+                "eamodio.gitlens",
+                "hashicorp.terraform",
+                "jinliming2.vscode-go-template"
+            ]
+        }
+    },
+    "postCreateCommand": "go install gotest.tools/gotestsum@latest"
+}

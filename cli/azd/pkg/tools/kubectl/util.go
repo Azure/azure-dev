@@ -18,7 +18,7 @@ var (
 
 func GetResource[T any](
 	ctx context.Context,
-	cli KubectlCli,
+	cli *Cli,
 	resourceType ResourceType,
 	resourceName string,
 	flags *KubeCliFlags,
@@ -58,7 +58,7 @@ func GetResource[T any](
 
 func GetResources[T any](
 	ctx context.Context,
-	cli KubectlCli,
+	cli *Cli,
 	resourceType ResourceType,
 	flags *KubeCliFlags,
 ) (*List[T], error) {
@@ -99,7 +99,7 @@ type ResourceFilterFn[T comparable] func(resource T) bool
 
 func WaitForResource[T comparable](
 	ctx context.Context,
-	cli KubectlCli,
+	cli *Cli,
 	resourceType ResourceType,
 	resourceFilter ResourceFilterFn[T],
 	readyStatusFilter ResourceFilterFn[T],

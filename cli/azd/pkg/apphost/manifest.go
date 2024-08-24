@@ -91,6 +91,9 @@ type Resource struct {
 
 	// An object that captures properties that control the building of a container image.
 	Build *ContainerV1Build `json:"build,omitempty"`
+
+	// container.v0 uses bind mounts field to define the volumes with initial data of the container.
+	BindMounts []*BindMount `json:"bindMounts,omitempty"`
 }
 
 type ContainerV1Build struct {
@@ -151,6 +154,13 @@ type Volume struct {
 	ReadOnly bool   `json:"readOnly"`
 }
 
+type BindMount struct {
+	Name     string `json:"-"`
+	Source   string `json:"source,omitempty"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"readOnly"`
+}
+
 type Input struct {
 	Type    string        `json:"type"`
 	Secret  bool          `json:"secret"`
@@ -175,7 +185,7 @@ type InputDefault struct {
 
 // ManifestFromAppHost returns the Manifest from the given app host.
 func ManifestFromAppHost(
-	ctx context.Context, appHostProject string, dotnetCli dotnet.DotNetCli, dotnetEnv string,
+	ctx context.Context, appHostProject string, dotnetCli *dotnet.Cli, dotnetEnv string,
 ) (*Manifest, error) {
 	tempDir, err := os.MkdirTemp("", "azd-provision")
 	if err != nil {
@@ -245,6 +255,11 @@ func ManifestFromAppHost(
 		if res.Type == "dockerfile.v0" {
 			if !filepath.IsAbs(*res.Context) {
 				*res.Context = filepath.Join(manifestDir, *res.Context)
+			}
+		}
+		if res.BindMounts != nil {
+			for _, bindMount := range res.BindMounts {
+				bindMount.Source = filepath.Join(manifestDir, bindMount.Source)
 			}
 		}
 		if res.Type == "container.v1" {

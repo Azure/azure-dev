@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,12 +21,12 @@ const AppServiceJavaPackageName = "app"
 
 type mavenProject struct {
 	env      *environment.Environment
-	mavenCli maven.MavenCli
-	javacCli javac.JavacCli
+	mavenCli *maven.Cli
+	javacCli *javac.Cli
 }
 
 // NewMavenProject creates a new instance of a maven project
-func NewMavenProject(env *environment.Environment, mavenCli maven.MavenCli, javaCli javac.JavacCli) FrameworkService {
+func NewMavenProject(env *environment.Environment, mavenCli *maven.Cli, javaCli *javac.Cli) FrameworkService {
 	return &mavenProject{
 		env:      env,
 		mavenCli: mavenCli,
@@ -44,7 +45,7 @@ func (m *mavenProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (m *mavenProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (m *mavenProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{
 		m.mavenCli,
 		m.javacCli,
@@ -61,18 +62,14 @@ func (m *mavenProject) Initialize(ctx context.Context, serviceConfig *ServiceCon
 func (m *mavenProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Resolving maven dependencies"))
-			if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(fmt.Errorf("resolving maven dependencies: %w", err))
-				return
-			}
+	progress *async.Progress[ServiceProgress],
+) (*ServiceRestoreResult, error) {
+	progress.SetProgress(NewServiceProgress("Resolving maven dependencies"))
+	if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
+		return nil, fmt.Errorf("resolving maven dependencies: %w", err)
+	}
 
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	return &ServiceRestoreResult{}, nil
 }
 
 // Builds the maven project
@@ -80,96 +77,153 @@ func (m *mavenProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Compiling maven project"))
-			if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(err)
-				return
-			}
+	progress *async.Progress[ServiceProgress],
+) (*ServiceBuildResult, error) {
+	progress.SetProgress(NewServiceProgress("Compiling maven project"))
+	if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: serviceConfig.Path(),
-			})
-		},
-	)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: serviceConfig.Path(),
+	}, nil
 }
 
 func (m *mavenProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageDest, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating staging directory: %w", err))
-				return
-			}
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	progress.SetProgress(NewServiceProgress("Packaging maven project"))
+	if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
+		return nil, err
+	}
 
-			task.SetProgress(NewServiceProgress("Packaging maven project"))
-			if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(err)
-				return
-			}
-
-			packageSrcPath := buildOutput.BuildOutputPath
-			if packageSrcPath == "" {
-				packageSrcPath = serviceConfig.Path()
-			}
-
-			if serviceConfig.OutputPath != "" {
-				packageSrcPath = filepath.Join(packageSrcPath, serviceConfig.OutputPath)
-			} else {
-				packageSrcPath = filepath.Join(packageSrcPath, "target")
-			}
-
-			packageSrcFileInfo, err := os.Stat(packageSrcPath)
-			if err != nil {
-				if serviceConfig.OutputPath == "" {
-					task.SetError(fmt.Errorf("reading default maven target path %s: %w", packageSrcPath, err))
-				} else {
-					task.SetError(fmt.Errorf("reading dist path %s: %w", packageSrcPath, err))
-				}
-				return
-			}
-
-			archive := ""
-			if packageSrcFileInfo.IsDir() {
-				archive, err = m.discoverArchive(packageSrcPath)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-			} else {
-				archive = packageSrcPath
-				if !isSupportedJavaArchive(archive) {
-					ext := filepath.Ext(archive)
-					task.SetError(
-						fmt.Errorf(
-							//nolint:lll
-							"file %s with extension %s is not a supported java archive file (.ear, .war, .jar)", ext, archive))
-					return
-				}
-			}
-
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
-			ext := strings.ToLower(filepath.Ext(archive))
-			err = copy.Copy(archive, filepath.Join(packageDest, AppServiceJavaPackageName+ext))
-			if err != nil {
-				task.SetError(fmt.Errorf("copying to staging directory failed: %w", err))
-				return
-			}
-
-			task.SetResult(&ServicePackageResult{
+	if serviceConfig.Host == AzureFunctionTarget {
+		if serviceConfig.OutputPath != "" {
+			// If the 'dist' property is specified, we use it directly.
+			return &ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: packageDest,
-			})
-		},
-	)
+				PackagePath: filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath),
+			}, nil
+		}
+
+		funcAppDir, err := m.funcAppDir(ctx, serviceConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ServicePackageResult{
+			Build:       buildOutput,
+			PackagePath: funcAppDir,
+		}, nil
+	}
+
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return nil, fmt.Errorf("creating staging directory: %w", err)
+	}
+
+	packageSrcPath := buildOutput.BuildOutputPath
+	if packageSrcPath == "" {
+		packageSrcPath = serviceConfig.Path()
+	}
+
+	if serviceConfig.OutputPath != "" {
+		packageSrcPath = filepath.Join(packageSrcPath, serviceConfig.OutputPath)
+	} else {
+		packageSrcPath = filepath.Join(packageSrcPath, "target")
+	}
+
+	packageSrcFileInfo, err := os.Stat(packageSrcPath)
+	if err != nil {
+		if serviceConfig.OutputPath == "" {
+			return nil, fmt.Errorf("reading default maven target path %s: %w", packageSrcPath, err)
+		} else {
+			return nil, fmt.Errorf("reading dist path %s: %w", packageSrcPath, err)
+		}
+	}
+
+	archive := ""
+	if packageSrcFileInfo.IsDir() {
+		archive, err = m.discoverArchive(packageSrcPath)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		archive = packageSrcPath
+		if !isSupportedJavaArchive(archive) {
+			ext := filepath.Ext(archive)
+			return nil, fmt.Errorf(
+				"file %s with extension %s is not a supported java archive file (.ear, .war, .jar)", ext, archive)
+		}
+	}
+
+	progress.SetProgress(NewServiceProgress("Copying deployment package"))
+	ext := strings.ToLower(filepath.Ext(archive))
+	err = copy.Copy(archive, filepath.Join(packageDest, AppServiceJavaPackageName+ext))
+	if err != nil {
+		return nil, fmt.Errorf("copying to staging directory failed: %w", err)
+	}
+
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
+}
+
+// funcAppDir returns the directory of the function app packaged by azure-functions-maven-plugin for the given service.
+//
+// The app is typically packaged under target/azure-functions.
+func (m *mavenProject) funcAppDir(ctx context.Context, svc *ServiceConfig) (string, error) {
+	svcPath := svc.Path()
+	// The staging directory for azure-functions-maven-plugin is target/azure-functions.
+	// It isn't configurable, but this may change in the future: https://github.com/microsoft/azure-maven-plugins/issues/1968
+	functionsStagingRel := filepath.Join("target", "azure-functions")
+	functionsStagingDir := filepath.Join(svcPath, functionsStagingRel)
+
+	// A conventional azure-functions-maven-plugin project will have the property 'functionAppName' in pom.xml,
+	// with its property value is passed to azure-functions-maven-plugin as 'appName'.
+	appName, err := m.mavenCli.GetProperty(ctx, "functionAppName", svcPath)
+	if err != nil && !errors.Is(err, maven.ErrPropertyNotFound) {
+		return "", fmt.Errorf("getting 'functionAppName' maven property: %w", err)
+	}
+
+	if appName != "" {
+		funcDir := filepath.Join(functionsStagingDir, appName)
+		if _, err := os.Stat(funcDir); err == nil {
+			return funcDir, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("checking for function app staging directory: %w", err)
+		}
+	}
+
+	entries, err := os.ReadDir(functionsStagingDir)
+	if err != nil {
+		return "", fmt.Errorf("reading azure-functions directory: %w", err)
+	}
+
+	dirs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dirs = append(dirs, entry.Name())
+		}
+	}
+
+	if len(dirs) == 1 {
+		return filepath.Join(functionsStagingDir, dirs[0]), nil
+	}
+
+	for i := range dirs {
+		dirs[i] = filepath.Join(functionsStagingRel, dirs[i])
+	}
+
+	return "", fmt.Errorf(
+		//nolint:lll
+		"multiple staging directories found: %s. Specify 'dist' in azure.yaml to select a specific directory",
+		strings.Join(dirs, ", "))
 }
 
 func isSupportedJavaArchive(archiveFile string) bool {

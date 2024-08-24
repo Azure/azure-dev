@@ -32,7 +32,7 @@ func Test_ApplyFiles(t *testing.T) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	cli := NewKubectl(mockContext.CommandRunner)
+	cli := NewCli(mockContext.CommandRunner)
 
 	err := os.WriteFile("test.yaml", []byte("yaml"), osutil.PermissionFile)
 	require.NoError(t, err)
@@ -53,7 +53,7 @@ func Test_Command_Args(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	cli := NewKubectl(mockContext.CommandRunner)
+	cli := NewCli(mockContext.CommandRunner)
 
 	tests := map[string]*kubeCliTestConfig{
 		"apply-with-stdin": {
@@ -191,9 +191,9 @@ func TestGetClientVersion(t *testing.T) {
 		  }`, ""), nil
 	})
 
-	cli := NewKubectl(mockContext.CommandRunner)
+	cli := NewCli(mockContext.CommandRunner)
 
-	ver, err := (cli.(*kubectlCli)).getClientVersion(context.Background())
+	ver, err := cli.getClientVersion(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "v1.25.4", ver)
 }
@@ -210,7 +210,7 @@ func Test_Apply_Template(t *testing.T) {
 	})
 
 	t.Run("RawYaml", func(t *testing.T) {
-		cli := NewKubectl(mockContext.CommandRunner)
+		cli := NewCli(mockContext.CommandRunner)
 		flags := &KubeCliFlags{
 			Namespace: "test",
 		}
@@ -225,7 +225,7 @@ func Test_Apply_Template(t *testing.T) {
 	})
 
 	t.Run("TemplateYaml", func(t *testing.T) {
-		cli := NewKubectl(mockContext.CommandRunner)
+		cli := NewCli(mockContext.CommandRunner)
 		env := map[string]string{
 			"SERVICE_API_IMAGE_NAME":       "test.azureacr.io/repo/service:latest",
 			"AZURE_AKS_IDENTITY_CLIENT_ID": "EXAMPLE_CLIENT_ID",

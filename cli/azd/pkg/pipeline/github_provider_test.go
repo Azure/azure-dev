@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -121,15 +121,14 @@ func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProv
 	return NewGitHubCiProvider(
 		env,
 		mockContext.SubscriptionCredentialProvider,
-		azcli.NewAdService(
+		entraid.NewEntraIdService(
 			mockContext.SubscriptionCredentialProvider,
 			mockContext.ArmClientOptions,
 			mockContext.CoreClientOptions,
 		),
 		ghCli,
-		git.NewGitCli(mockContext.CommandRunner),
+		git.NewCli(mockContext.CommandRunner),
 		mockContext.Console,
-		mockContext.HttpClient,
 	)
 }
 
@@ -143,6 +142,6 @@ func setupGithubCliMocks(mockContext *mocks.MockContext) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "--version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, fmt.Sprintf("gh version %s", github.GitHubCliVersion), ""), nil
+		return exec.NewRunResult(0, fmt.Sprintf("gh version %s", github.Version), ""), nil
 	})
 }

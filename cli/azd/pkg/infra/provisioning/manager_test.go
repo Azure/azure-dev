@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -52,6 +54,8 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		env,
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -77,6 +81,8 @@ func TestManagerPreview(t *testing.T) {
 		env,
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -104,6 +110,8 @@ func TestManagerGetState(t *testing.T) {
 		env,
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -131,6 +139,8 @@ func TestManagerDeploy(t *testing.T) {
 		env,
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -164,6 +174,8 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		env,
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -198,6 +210,8 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		env,
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
+		nil,
+		cloud.AzurePublic(),
 	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
@@ -218,7 +232,15 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 		return envManager
 	})
 
+	mockContext.Container.MustRegisterSingleton(func() account.SubscriptionCredentialProvider {
+		return mockContext.SubscriptionCredentialProvider
+	})
+	mockContext.Container.MustRegisterSingleton(func() *policy.ClientOptions {
+		return mockContext.ArmClientOptions
+	})
+
 	mockContext.Container.MustRegisterSingleton(prompt.NewDefaultPrompter)
+	mockContext.Container.MustRegisterSingleton(azapi.NewResourceService)
 	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Test), test.NewTestProvider)
 	mockContext.Container.MustRegisterSingleton(func() account.Manager {
 		return &mockaccount.MockAccountManager{
@@ -250,9 +272,6 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 
 	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
 		return cloud.AzurePublic()
-	})
-	mockContext.Container.MustRegisterSingleton(func(cloud *cloud.Cloud) cloud.PortalUrlBase {
-		return cloud.PortalUrlBase
 	})
 }
 

@@ -2,6 +2,8 @@
 
 package osversion
 
-func GetVersion() string {
-	return ""
+import "errors"
+
+func GetVersion() (string, error) {
+	return "", errors.New("unsupported OS")
 }

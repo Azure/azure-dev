@@ -100,7 +100,7 @@ steps:
               # Install azd build
               if [[ $(AzdVersion) == pr/* ]];
               then
-                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --base-url "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/$(AzdVersion)" --skip-verify --version ''
+                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --base-url "$(publish-storage-location)/azd/standalone/$(AzdVersion)" --skip-verify --version ''
               else
                 curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --version $(AzdVersion) --verbose
               fi
@@ -152,41 +152,43 @@ steps:
 
       displayName: Test templates in Devcontainer
 
-    - template: /eng/pipelines/templates/steps/az-login.yml
-      parameters:
-          Condition: always()
-
     # First tag the resource group (if exists) so that it can get cleaned up
     # by the cleanup pipeline. Then attempt to delete the resource group
     # directly. If the delete fails the cleanup pipeline will delete it.
-    - pwsh: |
-          $errOutput = ($( $output = & az group show --resource-group '$(ResourceGroupName)' --query id ) 2>&1) -join [System.Environment]::NewLine
-          if ($LASTEXITCODE) {
-            if ($errOutput -match "ResourceGroupNotFound") {
-              Write-Host "Resource group $(ResourceGroupName) has already been deleted."
-              exit 0
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: azure-sdk-tests
+        keepAzSessionActive: true
+        scriptType: pscore
+        scriptLocation: inlineScript
+        inlineScript: |
+            $errOutput = ($( $output = & az group show --resource-group '$(ResourceGroupName)' --query id ) 2>&1) -join [System.Environment]::NewLine
+            if ($LASTEXITCODE) {
+              if ($errOutput -match "ResourceGroupNotFound") {
+                Write-Host "Resource group $(ResourceGroupName) has already been deleted."
+                exit 0
+              }
+
+              Write-Error "Error querying for resource group. Exit code: $LASTEXITCODE, $errOutput"
+              exit 1
             }
 
-            Write-Error "Error querying for resource group. Exit code: $LASTEXITCODE, $errOutput"
-            exit 1
-          }
+            $resourceGroupId = $output
 
-          $resourceGroupId = $output
+            if ('$(CleanupImmediate)' -eq 'true') {
+              # Tag the resource group so it gets cleaned up later if delete fails
+              az tag create `
+                --resource-id $resourceGroupId `
+                --tags DeleteAfter="$((Get-Date -AsUTC).ToString('o'))"
 
-          if ('$(CleanupImmediate)' -eq 'true') {
-            # Tag the resource group so it gets cleaned up later if delete fails
-            az tag create `
-              --resource-id $resourceGroupId `
-              --tags DeleteAfter="$((Get-Date -AsUTC).ToString('o'))"
-
-            # Attempt to delete the resource group
-            az group delete --resource-group $(ResourceGroupName) --yes --no-wait
-          } else {
-            $delayInHours = [int]'$(CleanupHoursDelay)'
-            # Tag the resource group for delayed cleanup
-            az tag create `
-              --resource-id $resourceGroupId `
-              --tags DeleteAfter="$((Get-Date -AsUTC).AddHours($delayInHours).ToString('o'))"
-          }
+              # Attempt to delete the resource group
+              az group delete --resource-group $(ResourceGroupName) --yes --no-wait
+            } else {
+              $delayInHours = [int]'$(CleanupHoursDelay)'
+              # Tag the resource group for delayed cleanup
+              az tag create `
+                --resource-id $resourceGroupId `
+                --tags DeleteAfter="$((Get-Date -AsUTC).AddHours($delayInHours).ToString('o'))"
+            }
       condition: always()
       displayName: Tag resource group for deletion

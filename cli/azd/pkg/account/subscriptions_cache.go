@@ -15,7 +15,7 @@ import (
 )
 
 // The file name of the cache used for storing subscriptions accessible by local accounts.
-const cSubscriptionsCacheFile = "subscriptions.cache"
+const subscriptionsCacheFile = "subscriptions.cache"
 
 // subscriptionsCache caches the list of subscriptions accessible by local accounts.
 //
@@ -56,7 +56,7 @@ func (s *subscriptionsCache) Load(ctx context.Context, key string) ([]Subscripti
 	defer s.inMemoryLock.Unlock()
 
 	// load cache from disk
-	cacheFile, err := os.ReadFile(filepath.Join(s.cacheDir, cSubscriptionsCacheFile))
+	cacheFile, err := os.ReadFile(filepath.Join(s.cacheDir, subscriptionsCacheFile))
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (s *subscriptionsCache) Save(ctx context.Context, key string, subscriptions
 	defer s.inMemoryLock.Unlock()
 
 	// Read the file if it exists
-	cacheFile, err := os.ReadFile(filepath.Join(s.cacheDir, cSubscriptionsCacheFile))
+	cacheFile, err := os.ReadFile(filepath.Join(s.cacheDir, subscriptionsCacheFile))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -92,7 +92,7 @@ func (s *subscriptionsCache) Save(ctx context.Context, key string, subscriptions
 	if cacheFile != nil {
 		err = json.Unmarshal(cacheFile, &cache)
 		if err != nil {
-			log.Printf("failed to unmarshal %s, ignoring: %v", cSubscriptionsCacheFile, err)
+			log.Printf("failed to unmarshal %s, ignoring: %v", subscriptionsCacheFile, err)
 		}
 	}
 
@@ -105,7 +105,7 @@ func (s *subscriptionsCache) Save(ctx context.Context, key string, subscriptions
 		return fmt.Errorf("failed to marshal subscriptions: %w", err)
 	}
 
-	err = os.WriteFile(filepath.Join(s.cacheDir, cSubscriptionsCacheFile), content, osutil.PermissionFile)
+	err = os.WriteFile(filepath.Join(s.cacheDir, subscriptionsCacheFile), content, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
@@ -119,7 +119,7 @@ func (s *subscriptionsCache) Clear(ctx context.Context) error {
 	s.inMemoryLock.Lock()
 	defer s.inMemoryLock.Unlock()
 
-	err := os.Remove(filepath.Join(s.cacheDir, cSubscriptionsCacheFile))
+	err := os.Remove(filepath.Join(s.cacheDir, subscriptionsCacheFile))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}

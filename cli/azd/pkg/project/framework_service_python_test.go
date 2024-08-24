@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -44,14 +45,14 @@ func Test_PythonProject_Restore(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
+	pythonCli := python.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	restoreTask := pythonProject.Restore(*mockContext.Context, serviceConfig)
-	logProgress(restoreTask)
+	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+		return pythonProject.Restore(*mockContext.Context, serviceConfig, progess)
+	})
 
-	result, err := restoreTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -76,14 +77,16 @@ func Test_PythonProject_Build(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	env := environment.New("test")
-	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
+	pythonCli := python.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	buildTask := pythonProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
+	result, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+			return pythonProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+		},
+	)
 
-	result, err := buildTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -94,7 +97,7 @@ func Test_PythonProject_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	env := environment.New("test")
-	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
+	pythonCli := python.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
 	require.NoError(t, err)
@@ -102,16 +105,18 @@ func Test_PythonProject_Package(t *testing.T) {
 	require.NoError(t, err)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	packageTask := pythonProject.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServiceBuildResult{
-			BuildOutputPath: serviceConfig.Path(),
-		},
-	)
-	logProgress(packageTask)
 
-	result, err := packageTask.Await()
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+		return pythonProject.Package(
+			*mockContext.Context,
+			serviceConfig,
+			&ServiceBuildResult{
+				BuildOutputPath: serviceConfig.Path(),
+			},
+			progress,
+		)
+	})
+
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

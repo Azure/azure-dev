@@ -8,13 +8,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // NewUrlTemplateSource creates a new template source from a URL.
-func NewUrlTemplateSource(ctx context.Context, name string, url string, httpClient httputil.HttpClient) (Source, error) {
+func NewUrlTemplateSource(ctx context.Context, name string, url string, transport policy.Transporter) (Source, error) {
 	pipeline := runtime.NewPipeline("azd-templates", "1.0.0", runtime.PipelineOptions{}, &policy.ClientOptions{
-		Transport: httpClient,
+		Transport: transport,
 	})
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)

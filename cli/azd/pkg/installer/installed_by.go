@@ -6,8 +6,6 @@ import (
 	"strings"
 )
 
-const cInstalledByFileName = ".installed-by.txt"
-
 type InstallType string
 
 const InstallTypeUnknown InstallType = ""
@@ -61,7 +59,7 @@ func RawInstalledBy() string {
 	}
 
 	exeDir := filepath.Dir(resolvedPath)
-	installedByFile := filepath.Join(exeDir, cInstalledByFileName)
+	installedByFile := filepath.Join(exeDir, ".installed-by.txt")
 
 	bytes, err := os.ReadFile(installedByFile)
 	if err != nil {

@@ -64,6 +64,11 @@ azd init --template Azure-Samples/todo-nodejs-mongo-aks
 # Provision and deploy to Azure
 azd up
 ```
+
+> Note: If you are running on an internal sub, then you need to test this from a DevBox. Here's the error you'll receive if you attempt to run outside of a DevBox:
+>
+> !["Screenshot of error page"](assets/errorpage.png)
+
 #### Optional Configuration
 
 To take advantage of `azd` alpha features for **[Helm](https://helm.sh)** or **[Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/)** run the following commands prior to deploying the application.

@@ -18,8 +18,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -28,9 +26,9 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-// PackVersion is the minimum version of pack that we require (and the one we fetch when we fetch pack on behalf of a
+// Version is the minimum version of pack that we require (and the one we fetch when we fetch pack on behalf of a
 // user).
-var PackVersion semver.Version = semver.MustParse("0.30.0")
+var Version semver.Version = semver.MustParse("0.30.0")
 
 var statusCodeFailureRegexp = regexp.MustCompile(`failed with status code: (\d+)`)
 
@@ -54,25 +52,14 @@ func (s *StatusCodeError) Unwrap() error {
 	return s.Err
 }
 
-type PackCli interface {
-	Build(
-		ctx context.Context,
-		cwd string,
-		builder string,
-		imageName string,
-		environ []string,
-		progressWriter io.Writer,
-	) error
-}
-
-// NewPackCli creates a new PackCli. azd manages its own copy of the pack CLI, stored in `$AZD_CONFIG_DIR/bin`. If
+// NewCli creates a new PackCli. azd manages its own copy of the pack CLI, stored in `$AZD_CONFIG_DIR/bin`. If
 // pack is not present at this location, or if it is present but is older than the minimum supported version, it is
 // downloaded.
-func NewPackCli(
+func NewCli(
 	ctx context.Context,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-) (PackCli, error) {
+) (*Cli, error) {
 	return newPackCliImpl(
 		ctx,
 		console,
@@ -84,8 +71,8 @@ func NewPackCli(
 func NewPackCliWithPath(
 	commandRunner exec.CommandRunner,
 	cliPath string,
-) PackCli {
-	return &packCli{
+) *Cli {
+	return &Cli{
 		path:   cliPath,
 		runner: commandRunner,
 	}
@@ -110,11 +97,11 @@ func newPackCliImpl(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	transporter policy.Transporter,
-	extract func(string, string) (string, error)) (PackCli, error) {
+	extract func(string, string) (string, error)) (*Cli, error) {
 	if override := os.Getenv("AZD_PACK_TOOL_PATH"); override != "" {
 		log.Printf("using external pack tool: %s", override)
 
-		return &packCli{
+		return &Cli{
 			path:   override,
 			runner: commandRunner,
 		}, nil
@@ -134,14 +121,14 @@ func newPackCliImpl(
 
 		msg := "Acquiring pack cli"
 		console.ShowSpinner(ctx, msg, input.Step)
-		err := downloadPack(ctx, transporter, PackVersion, extract, cliPath)
+		err := downloadPack(ctx, transporter, Version, extract, cliPath)
 		console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
 			return nil, fmt.Errorf("downloading pack: %w", err)
 		}
 	}
 
-	cli := &packCli{
+	cli := &Cli{
 		path:   cliPath,
 		runner: commandRunner,
 	}
@@ -153,12 +140,12 @@ func newPackCliImpl(
 
 	log.Printf("pack version: %s", ver)
 
-	if ver.LT(PackVersion) {
-		log.Printf("installed pack version %s is older than %s; updating.", ver.String(), PackVersion.String())
+	if ver.LT(Version) {
+		log.Printf("installed pack version %s is older than %s; updating.", ver.String(), Version.String())
 
 		msg := "Upgrading pack"
 		console.ShowSpinner(ctx, msg, input.Step)
-		err := downloadPack(ctx, transporter, PackVersion, extract, cliPath)
+		err := downloadPack(ctx, transporter, Version, extract, cliPath)
 		console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
 			return nil, fmt.Errorf("upgrading pack: %w", err)
@@ -170,12 +157,12 @@ func newPackCliImpl(
 	return cli, nil
 }
 
-type packCli struct {
+type Cli struct {
 	path   string
 	runner exec.CommandRunner
 }
 
-func (cli *packCli) version(ctx context.Context) (semver.Version, error) {
+func (cli *Cli) version(ctx context.Context) (semver.Version, error) {
 	packRes, err := cli.runner.Run(ctx, exec.NewRunArgs(cli.path, "--version"))
 	if err != nil {
 		return semver.Version{}, err
@@ -189,7 +176,7 @@ func (cli *packCli) version(ctx context.Context) (semver.Version, error) {
 	return version, nil
 }
 
-func (cli *packCli) enableExperimental(ctx context.Context) error {
+func (cli *Cli) enableExperimental(ctx context.Context) error {
 	runArgs := exec.NewRunArgs(cli.path, "config", "experimental", "true")
 	runArgs.Interactive = false
 	_, err := cli.runner.Run(ctx, runArgs)
@@ -200,7 +187,7 @@ func (cli *packCli) enableExperimental(ctx context.Context) error {
 	return nil
 }
 
-func (cli *packCli) Build(
+func (cli *Cli) Build(
 	ctx context.Context,
 	cwd string,
 	builder string,
@@ -394,10 +381,7 @@ func downloadPack(
 	ghReleaseUrl := fmt.Sprintf("https://github.com/buildpacks/pack/releases/download/v%s/%s", version, releaseName)
 	log.Printf("downloading pack cli release %s -> %s", ghReleaseUrl, releaseName)
 
-	spanCtx, span := tracing.Start(ctx, events.PackCliInstallEvent)
-	defer span.End()
-
-	req, err := http.NewRequestWithContext(spanCtx, "GET", ghReleaseUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", ghReleaseUrl, nil)
 	if err != nil {
 		return err
 	}

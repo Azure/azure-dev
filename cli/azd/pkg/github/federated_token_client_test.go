@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +30,7 @@ func TestTokenForAudience(t *testing.T) {
 		Body:       io.NopCloser(bytes.NewBufferString(`{ "value": "abc" }`)),
 	})
 
-	client := NewFederatedTokenClient(&policy.ClientOptions{
+	client := NewFederatedTokenClient(&azcore.ClientOptions{
 		Transport: mockContext.HttpClient,
 	})
 
@@ -57,7 +57,7 @@ func TestTokenForAudienceDefault(t *testing.T) {
 		Body:       io.NopCloser(bytes.NewBufferString(`{ "value": "abc" }`)),
 	})
 
-	client := NewFederatedTokenClient(&policy.ClientOptions{
+	client := NewFederatedTokenClient(&azcore.ClientOptions{
 		Transport: mockContext.HttpClient,
 	})
 
@@ -82,7 +82,7 @@ func TestTokenForAudienceFailure(t *testing.T) {
 		Body:       io.NopCloser(bytes.NewBufferString("")),
 	})
 
-	client := NewFederatedTokenClient(&policy.ClientOptions{
+	client := NewFederatedTokenClient(&azcore.ClientOptions{
 		Transport: mockContext.HttpClient,
 	})
 

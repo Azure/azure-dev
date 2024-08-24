@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -78,7 +79,7 @@ type FederatedTokenClient struct {
 	pipeline runtime.Pipeline
 }
 
-func NewFederatedTokenClient(options *policy.ClientOptions) *FederatedTokenClient {
+func NewFederatedTokenClient(options *azcore.ClientOptions) *FederatedTokenClient {
 	pipeline := runtime.NewPipeline("github", "1.0.0", runtime.PipelineOptions{
 		PerRetry: []policy.Policy{
 			&bearerTokenAuthPolicy{},

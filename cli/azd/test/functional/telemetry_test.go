@@ -390,6 +390,8 @@ func verifyResource(
 
 	require.Contains(t, m, fields.ExecutionEnvironmentKey)
 
+	require.Contains(t, m, fields.DevDeviceIdKey)
+
 	env := ""
 	if os.Getenv("BUILD_BUILDID") != "" {
 		env = fields.EnvAzurePipelines

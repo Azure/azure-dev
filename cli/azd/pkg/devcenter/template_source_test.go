@@ -18,7 +18,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
-		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		setupDevCenterSuccessMocks(mockContext, templateSource)
 
 		templateList, err := templateSource.ListTemplates(*mockContext.Context)
 		require.NoError(t, err)
@@ -50,7 +50,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 
 		mockContext := mocks.NewMockContext(context.Background())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
-		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		setupDevCenterSuccessMocks(mockContext, templateSource)
 		mockdevcentersdk.MockListEnvironmentDefinitions(
 			mockContext,
 			"Project1",
@@ -93,7 +93,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 
 		mockContext := mocks.NewMockContext(context.Background())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
-		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		setupDevCenterSuccessMocks(mockContext, templateSource)
 		mockdevcentersdk.MockListEnvironmentDefinitions(
 			mockContext,
 			"Project1",
@@ -127,7 +127,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 
 		mockContext := mocks.NewMockContext(context.Background())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
-		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		setupDevCenterSuccessMocks(mockContext, templateSource)
 		mockdevcentersdk.MockListEnvironmentDefinitions(
 			mockContext,
 			"Project1",
@@ -143,7 +143,7 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 	t.Run("Fail", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
-		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		setupDevCenterSuccessMocks(mockContext, templateSource)
 		// Mock will throw 404 not found for this API call causing a failure
 		mockdevcentersdk.MockListEnvironmentDefinitions(mockContext, "Project2", nil)
 
@@ -157,7 +157,7 @@ func Test_TemplateSource_GetTemplate(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
-		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		setupDevCenterSuccessMocks(mockContext, templateSource)
 
 		template, err := templateSource.GetTemplate(*mockContext.Context, "DEV_CENTER_01/SampleCatalog/EnvDefinition_02")
 		require.NoError(t, err)
@@ -167,7 +167,7 @@ func Test_TemplateSource_GetTemplate(t *testing.T) {
 	t.Run("TemplateNotFound", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
-		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		setupDevCenterSuccessMocks(mockContext, templateSource)
 
 		// Expected to fail because the template path is not found
 		template, err := templateSource.GetTemplate(*mockContext.Context, "DEV_CENTER_01/SampleCatalog/NotFound")
@@ -176,7 +176,7 @@ func Test_TemplateSource_GetTemplate(t *testing.T) {
 	})
 }
 
-func setupDevCenterSuccessMocks(t *testing.T, mockContext *mocks.MockContext, templateSource *TemplateSource) {
+func setupDevCenterSuccessMocks(mockContext *mocks.MockContext, templateSource *TemplateSource) {
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
 	mockdevcentersdk.MockListEnvironmentDefinitions(mockContext, "Project1", mockEnvDefinitions)
 	mockdevcentersdk.MockListEnvironmentDefinitions(mockContext, "Project2", []*devcentersdk.EnvironmentDefinition{})

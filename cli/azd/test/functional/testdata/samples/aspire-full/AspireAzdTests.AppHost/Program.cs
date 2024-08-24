@@ -25,6 +25,9 @@ var apiservice = builder.AddProject<Projects.AspireAzdTests_ApiService>("apiserv
 var cosmos = builder.AddAzureCosmosDB("cosmos");
 var cosmosDb = cosmos.AddDatabase("db3");
 
+// worker with no bindings
+var workerProj = builder.AddProject<Projects.AspireAzdTests_Worker>("worker");
+
 // the front end app
 _ = builder
                         .AddProject<Projects.AspireAzdTests_Web>("webfrontend")
@@ -34,6 +37,7 @@ _ = builder
                             .WithReference(markdownBlobs)
                             .WithReference(messageQueue)
                             .WithReference(apiservice)
-                            .WithReference(cosmosDb);
+                            .WithReference(cosmosDb)
+                            .WithReference(workerProj);
 
 builder.Build().Run();

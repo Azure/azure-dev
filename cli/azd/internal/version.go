@@ -10,9 +10,9 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-// cDevVersionString is the default version that is used when [Version] is not overridden at build time, i.e.
+// devVersionString is the default version that is used when [Version] is not overridden at build time, i.e.
 // a developer building locally using `go install`.
-const cDevVersionString = "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
+const devVersionString = "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
 
 // The version string, as printed by `azd version`.
 //
@@ -32,7 +32,7 @@ const cDevVersionString = "0.0.0-dev.0 (commit 000000000000000000000000000000000
 // directly, use [VersionInfo] which returns a structured version of this value.
 //
 // nolint: lll
-var Version = cDevVersionString
+var Version = devVersionString
 
 func init() {
 	// VersionInfo panics if the version string is malformed, run the code at package startup to
@@ -47,7 +47,7 @@ type AzdVersionInfo struct {
 }
 
 func IsDevVersion() bool {
-	return Version == cDevVersionString
+	return Version == devVersionString
 }
 
 func IsNonProdVersion() bool {
@@ -61,10 +61,10 @@ func IsNonProdVersion() bool {
 	return strings.Contains(VersionInfo().Version.String(), "pr")
 }
 
-var cVersionStringRegexp = regexp.MustCompile(`^(\S+) \(commit ([0-9a-f]{40})\)$`)
+var versionStringRegexp = regexp.MustCompile(`^(\S+) \(commit ([0-9a-f]{40})\)$`)
 
 func VersionInfo() AzdVersionInfo {
-	matches := cVersionStringRegexp.FindStringSubmatch(Version)
+	matches := versionStringRegexp.FindStringSubmatch(Version)
 
 	if len(matches) != 3 {
 		panic("azd version is malformed, ensure github.com/azure/azure-dev/cli/azd/internal.Version is correct")

@@ -161,7 +161,7 @@ func TestNewPackCliInstall(t *testing.T) {
 		return strings.HasSuffix(args.Cmd, packName()) && args.Args[0] == "--version" && len(args.Args) == 1
 	}).Respond(exec.NewRunResult(
 		0,
-		fmt.Sprintf("%s+git-c38f7da.build-4952", PackVersion.String()),
+		fmt.Sprintf("%s+git-c38f7da.build-4952", Version.String()),
 		"",
 	))
 

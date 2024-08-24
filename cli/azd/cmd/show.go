@@ -23,7 +23,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -59,7 +58,7 @@ type showAction struct {
 	console              input.Console
 	formatter            output.Formatter
 	writer               io.Writer
-	azCli                azcli.AzCli
+	resourceService      *azapi.ResourceService
 	envManager           environment.Manager
 	deploymentOperations azapi.DeploymentOperations
 	azdCtx               *azdcontext.AzdContext
@@ -73,7 +72,7 @@ func newShowAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	azCli azcli.AzCli,
+	resourceService *azapi.ResourceService,
 	envManager environment.Manager,
 	deploymentOperations azapi.DeploymentOperations,
 	projectConfig *project.ProjectConfig,
@@ -82,7 +81,7 @@ func newShowAction(
 	flags *showFlags,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
-	portalUrlBase cloud.PortalUrlBase,
+	cloud *cloud.Cloud,
 ) actions.Action {
 	return &showAction{
 		projectConfig:        projectConfig,
@@ -90,14 +89,14 @@ func newShowAction(
 		console:              console,
 		formatter:            formatter,
 		writer:               writer,
-		azCli:                azCli,
+		resourceService:      resourceService,
 		envManager:           envManager,
 		deploymentOperations: deploymentOperations,
 		azdCtx:               azdCtx,
 		flags:                flags,
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
-		portalUrlBase:        string(portalUrlBase),
+		portalUrlBase:        cloud.PortalUrlBase,
 	}
 }
 
@@ -161,8 +160,8 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if subId = env.GetSubscriptionId(); subId == "" {
 			log.Printf("provision has not been run, resource ids will not be available")
 		} else {
-			azureResourceManager := infra.NewAzureResourceManager(s.azCli, s.deploymentOperations)
-			resourceManager := project.NewResourceManager(env, s.azCli, s.deploymentOperations)
+			azureResourceManager := infra.NewAzureResourceManager(s.resourceService, s.deploymentOperations)
+			resourceManager := project.NewResourceManager(env, s.resourceService, s.deploymentOperations)
 			envName := env.Name()
 
 			rgName, err = azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)

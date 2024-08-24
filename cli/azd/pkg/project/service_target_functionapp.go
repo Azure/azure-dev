@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -36,7 +36,7 @@ func NewFunctionAppTarget(
 }
 
 // Gets the required external tools for the Function app
-func (f *functionAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (f *functionAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
@@ -50,26 +50,22 @@ func (f *functionAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
-			zipFilePath, err := createDeployableZip(
-				serviceConfig.Project.Name,
-				serviceConfig.Name,
-				packageOutput.PackagePath,
-			)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetResult(&ServicePackageResult{
-				Build:       packageOutput.Build,
-				PackagePath: zipFilePath,
-			})
-		},
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
+	zipFilePath, err := createDeployableZip(
+		serviceConfig.Project.Name,
+		serviceConfig.Name,
+		packageOutput.PackagePath,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ServicePackageResult{
+		Build:       packageOutput.Build,
+		PackagePath: zipFilePath,
+	}, nil
 }
 
 // Deploys the prepared zip archive using Zip deploy to the Azure App Service resource
@@ -78,62 +74,55 @@ func (f *functionAppTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := f.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
-			}
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	if err := f.validateTargetResource(targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
 
-			zipFile, err := os.Open(packageOutput.PackagePath)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed reading deployment zip file: %w", err))
-				return
-			}
+	zipFile, err := os.Open(packageOutput.PackagePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
+	}
 
-			defer os.Remove(packageOutput.PackagePath)
-			defer zipFile.Close()
+	defer os.Remove(packageOutput.PackagePath)
+	defer zipFile.Close()
 
-			task.SetProgress(NewServiceProgress("Uploading deployment package"))
-			remoteBuild := serviceConfig.Language == ServiceLanguageJavaScript ||
-				serviceConfig.Language == ServiceLanguageTypeScript ||
-				serviceConfig.Language == ServiceLanguagePython
-			res, err := f.cli.DeployFunctionAppUsingZipFile(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				zipFile,
-				remoteBuild,
-			)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Fetching endpoints for function app"))
-			endpoints, err := f.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			sdr := NewServiceDeployResult(
-				azure.WebsiteRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				AzureFunctionTarget,
-				*res,
-				endpoints,
-			)
-			sdr.Package = packageOutput
-
-			task.SetResult(sdr)
-		},
+	progress.SetProgress(NewServiceProgress("Uploading deployment package"))
+	remoteBuild := serviceConfig.Language == ServiceLanguageJavaScript ||
+		serviceConfig.Language == ServiceLanguageTypeScript ||
+		serviceConfig.Language == ServiceLanguagePython
+	res, err := f.cli.DeployFunctionAppUsingZipFile(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		zipFile,
+		remoteBuild,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for function app"))
+	endpoints, err := f.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	sdr := NewServiceDeployResult(
+		azure.WebsiteRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		AzureFunctionTarget,
+		*res,
+		endpoints,
+	)
+	sdr.Package = packageOutput
+
+	return sdr, nil
 }
 
 // Gets the exposed endpoints for the Function App
@@ -162,15 +151,13 @@ func (f *functionAppTarget) Endpoints(
 }
 
 func (f *functionAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
-	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
+	if !strings.EqualFold(targetResource.ResourceType(), string(azapi.AzureResourceTypeWebSite)) {
 		return resourceTypeMismatchError(
 			targetResource.ResourceName(),
 			targetResource.ResourceType(),
-			infra.AzureResourceTypeWebSite,
+			azapi.AzureResourceTypeWebSite,
 		)
 	}
 

@@ -10,7 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
@@ -74,7 +73,7 @@ func registerCommonMocks(mockContext *MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() ioc.ServiceLocator {
 		return mockContext.Container
 	})
-	mockContext.Container.MustRegisterSingleton(func() httputil.HttpClient {
+	mockContext.Container.MustRegisterSingleton(func() policy.Transporter {
 		return mockContext.HttpClient
 	})
 	mockContext.Container.MustRegisterSingleton(func() exec.CommandRunner {

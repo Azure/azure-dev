@@ -22,7 +22,7 @@ func Test_SwaBuild(t *testing.T) {
 
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		swacli := NewSwaCli(mockContext.CommandRunner)
+		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npx")
@@ -31,7 +31,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"build", "-V",
 			}, args.Args)
 
@@ -52,7 +52,7 @@ func Test_SwaBuild(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		swacli := NewSwaCli(mockContext.CommandRunner)
+		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npx")
@@ -61,7 +61,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"build", "-V",
 			}, args.Args)
 
@@ -87,7 +87,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		swacli := NewSwaCli(mockContext.CommandRunner)
+		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npx")
@@ -96,7 +96,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -134,7 +134,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 	t.Run("NoErrorsNoConfig", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		swacli := NewSwaCli(mockContext.CommandRunner)
+		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npx")
@@ -143,7 +143,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -186,7 +186,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		swacli := NewSwaCli(mockContext.CommandRunner)
+		swacli := NewCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npx")
@@ -195,7 +195,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, testPath, args.Cwd)
 			require.Equal(t, []string{
-				"-y", cSwaCliPackage,
+				"-y", swaCliPackage,
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",

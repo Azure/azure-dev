@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 )
 
 // SubscriptionFromRID returns the subscription id component of a resource or panics if the resource id does not
@@ -109,5 +109,5 @@ func GetResourceGroupName(resourceId string) *string {
 		return nil
 	}
 
-	return convert.RefOf(string(matches[1]))
+	return to.Ptr(string(matches[1]))
 }

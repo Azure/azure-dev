@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
 	"github.com/benbjohnson/clock"
@@ -26,7 +26,7 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 		Name:     &appName,
 		Properties: &armappcontainers.ContainerAppProperties{
 			Configuration: &armappcontainers.Configuration{
-				ActiveRevisionsMode: convert.RefOf(armappcontainers.ActiveRevisionsModeSingle),
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Ingress: &armappcontainers.Ingress{
 					Fqdn: &hostName,
 				},
@@ -39,7 +39,6 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 
 	cas := NewContainerAppService(
 		mockContext.SubscriptionCredentialProvider,
-		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
@@ -75,10 +74,10 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		Properties: &armappcontainers.ContainerAppProperties{
 			LatestRevisionName: &originalRevisionName,
 			Configuration: &armappcontainers.Configuration{
-				ActiveRevisionsMode: convert.RefOf(armappcontainers.ActiveRevisionsModeSingle),
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Secrets: []*armappcontainers.Secret{
 					{
-						Name:  convert.RefOf("secret"),
+						Name:  to.Ptr("secret"),
 						Value: nil,
 					},
 				},
@@ -108,8 +107,8 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	secrets := &armappcontainers.SecretsCollection{
 		Value: []*armappcontainers.ContainerAppSecret{
 			{
-				Name:  convert.RefOf("secret"),
-				Value: convert.RefOf("value"),
+				Name:  to.Ptr("secret"),
+				Value: to.Ptr("value"),
 			},
 		},
 	}
@@ -135,7 +134,6 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 
 	cas := NewContainerAppService(
 		mockContext.SubscriptionCredentialProvider,
-		mockContext.HttpClient,
 		clock.NewMock(),
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,

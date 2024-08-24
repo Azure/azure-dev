@@ -1,0 +1,11 @@
+name: webapp
+metadata: 
+  template: azd-test/containerremotebuildapp@v1
+services:
+  app:
+    project: src/app
+    host: containerapp
+    language: js
+    docker:
+      remoteBuild: true
+

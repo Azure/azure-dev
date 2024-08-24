@@ -16,7 +16,7 @@ import (
 
 // appHostServiceForProject returns the ServiceConfig of the service for the AppHost project for the given azd project.
 func appHostForProject(
-	ctx context.Context, pc *project.ProjectConfig, dotnetCli dotnet.DotNetCli,
+	ctx context.Context, pc *project.ProjectConfig, dotnetCli *dotnet.Cli,
 ) (*project.ServiceConfig, error) {
 	for _, service := range pc.Services {
 		if service.Language == project.ServiceLanguageDotNet {

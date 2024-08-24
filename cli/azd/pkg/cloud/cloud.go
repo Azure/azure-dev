@@ -15,8 +15,6 @@ const (
 	AzureUSGovernmentName = "AzureUSGovernment"
 )
 
-type PortalUrlBase = string
-
 type Cloud struct {
 	Configuration cloud.Configuration
 

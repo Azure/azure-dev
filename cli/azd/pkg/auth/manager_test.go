@@ -14,12 +14,13 @@ import (
 
 	_ "embed"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -87,7 +88,7 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 }
 
 //go:embed testdata/certificate.pem
-var cTestClientCertificate []byte
+var testClientCertificate []byte
 
 func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 	credentialCache := &memoryCache{
@@ -102,7 +103,7 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 	}
 
 	cred, err := m.LoginWithServicePrincipalCertificate(
-		context.Background(), "testClientId", "testTenantId", cTestClientCertificate,
+		context.Background(), "testClientId", "testTenantId", testClientCertificate,
 	)
 
 	require.NoError(t, err)
@@ -142,7 +143,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		credentialCache:   credentialCache,
-		ghClient: github.NewFederatedTokenClient(&policy.ClientOptions{
+		ghClient: github.NewFederatedTokenClient(&azcore.ClientOptions{
 			Transport: mockContext.HttpClient,
 			Cloud:     cloud.AzurePublic().Configuration,
 		}),
@@ -176,7 +177,7 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 	cfg, err := mgr.Load()
 	require.NoError(t, err)
 
-	err = cfg.Set(cUseAzCliAuthKey, "true")
+	err = cfg.Set(useAzCliAuthKey, "true")
 	require.NoError(t, err)
 
 	err = mgr.Save(cfg)
@@ -193,7 +194,7 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 }
 
 func TestCloudShellCredentialSupport(t *testing.T) {
-	t.Setenv("AZD_IN_CLOUDSHELL", "1")
+	t.Setenv(runcontext.AzdInCloudShellEnvVar, "1")
 	m := Manager{
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
@@ -267,8 +268,8 @@ func TestAuthFileConfigUpgrade(t *testing.T) {
 	userCfg := config.NewEmptyConfig()
 	userCfgMgr := newMemoryUserConfigManager()
 
-	err := userCfg.Set(cCurrentUserKey, &userProperties{
-		HomeAccountID: convert.RefOf("homeAccountID"),
+	err := userCfg.Set(currentUserKey, &userProperties{
+		HomeAccountID: to.Ptr("homeAccountID"),
 	})
 	require.NoError(t, err)
 
@@ -291,7 +292,7 @@ func TestAuthFileConfigUpgrade(t *testing.T) {
 
 	// as part of running readAuthConfig, we migrated the setting from the user config to the auth config
 	// so the current user key should no longer be set in the user configuration.
-	_, has := userCfgMgr.config.Get(cCurrentUserKey)
+	_, has := userCfgMgr.config.Get(currentUserKey)
 	require.False(t, has)
 }
 

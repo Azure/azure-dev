@@ -14,7 +14,6 @@ import (
 
 // getDefinitionsPager providers a pager to iterate for all the pages from GetDefinitions.
 func getDefinitionsPager(
-	ctx context.Context,
 	client build.Client,
 	projectId *string,
 	pipelineName *string,

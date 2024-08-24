@@ -14,34 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// Executes commands against the Kubernetes CLI
-type KubectlCli interface {
-	tools.ExternalTool
-	// Sets the current working directory
-	Cwd(cwd string)
-	// Sets the env vars available to the CLI
-	SetEnv(env map[string]string)
-	// Sets the KUBECONFIG environment variable
-	SetKubeConfig(kubeConfig string)
-	// Applies one or more files from the specified path
-	Apply(ctx context.Context, path string, flags *KubeCliFlags) error
-	// Applies manifests from the specified input
-	ApplyWithStdIn(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error)
-	// Applies manifests from the specified file path
-	ApplyWithFile(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error)
-	// Views the current k8s configuration including available clusters, contexts & users
-	ConfigView(ctx context.Context, merge bool, flatten bool, flags *KubeCliFlags) (*exec.RunResult, error)
-	// Sets the k8s context to use for future CLI commands
-	ConfigUseContext(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
-	// Creates a new k8s namespace with the specified name
-	CreateNamespace(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
-	// Executes a k8s CLI command from the specified arguments and flags
-	Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error)
-	// Gets the deployment rollout status
-	RolloutStatus(ctx context.Context, deploymentName string, flags *KubeCliFlags) (*exec.RunResult, error)
-	// Applies the manifests at the specified path using kustomize
-	ApplyWithKustomize(ctx context.Context, path string, flags *KubeCliFlags) error
-}
+var _ tools.ExternalTool = (*Cli)(nil)
 
 type OutputType string
 
@@ -77,23 +50,22 @@ type templateRoot struct {
 	Env map[string]string
 }
 
-type kubectlCli struct {
-	tools.ExternalTool
+type Cli struct {
 	commandRunner exec.CommandRunner
 	env           map[string]string
 	cwd           string
 }
 
 // Creates a new K8s CLI instance
-func NewKubectl(commandRunner exec.CommandRunner) KubectlCli {
-	return &kubectlCli{
+func NewCli(commandRunner exec.CommandRunner) *Cli {
+	return &Cli{
 		commandRunner: commandRunner,
 		env:           map[string]string{},
 	}
 }
 
 // Checks whether or not the K8s CLI is installed and available within the PATH
-func (cli *kubectlCli) CheckInstalled(ctx context.Context) error {
+func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	if err := tools.ToolInPath("kubectl"); err != nil {
 		return err
 	}
@@ -110,7 +82,7 @@ func (cli *kubectlCli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-func (cli *kubectlCli) getClientVersion(ctx context.Context) (string, error) {
+func (cli *Cli) getClientVersion(ctx context.Context) (string, error) {
 	versionRes, err := cli.Exec(ctx, &KubeCliFlags{Output: "json"}, "version", "--client=true")
 	if err != nil {
 		return "", fmt.Errorf("fetching kubectl version: %w", err)
@@ -130,34 +102,34 @@ func (cli *kubectlCli) getClientVersion(ctx context.Context) (string, error) {
 }
 
 // Returns the installation URL to install the K8s CLI
-func (cli *kubectlCli) InstallUrl() string {
+func (cli *Cli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/kubectl-install"
 }
 
 // Gets the name of the Tool
-func (cli *kubectlCli) Name() string {
+func (cli *Cli) Name() string {
 	return "kubectl"
 }
 
 // Sets the env vars available to the CLI
-func (cli *kubectlCli) SetEnv(envValues map[string]string) {
+func (cli *Cli) SetEnv(envValues map[string]string) {
 	for key, value := range envValues {
 		cli.env[key] = value
 	}
 }
 
 // Sets the KUBECONFIG environment variable
-func (cli *kubectlCli) SetKubeConfig(kubeConfig string) {
+func (cli *Cli) SetKubeConfig(kubeConfig string) {
 	cli.env[KubeConfigEnvVarName] = kubeConfig
 }
 
 // Sets the current working directory
-func (cli *kubectlCli) Cwd(cwd string) {
+func (cli *Cli) Cwd(cwd string) {
 	cli.cwd = cwd
 }
 
 // Sets the k8s context to use for future CLI commands
-func (cli *kubectlCli) ConfigUseContext(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *Cli) ConfigUseContext(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	res, err := cli.Exec(ctx, flags, "config", "use-context", name)
 	if err != nil {
 		return nil, fmt.Errorf("failed setting kubectl context: %w", err)
@@ -167,7 +139,7 @@ func (cli *kubectlCli) ConfigUseContext(ctx context.Context, name string, flags 
 }
 
 // Views the current k8s configuration including available clusters, contexts & users
-func (cli *kubectlCli) ConfigView(
+func (cli *Cli) ConfigView(
 	ctx context.Context,
 	merge bool,
 	flatten bool,
@@ -197,7 +169,7 @@ func (cli *kubectlCli) ConfigView(
 	return &res, nil
 }
 
-func (cli *kubectlCli) ApplyWithStdIn(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *Cli) ApplyWithStdIn(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("kubectl", "apply", "-f", "-").
 		WithStdIn(strings.NewReader(input))
@@ -210,7 +182,7 @@ func (cli *kubectlCli) ApplyWithStdIn(ctx context.Context, input string, flags *
 	return &res, nil
 }
 
-func (cli *kubectlCli) ApplyWithFile(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *Cli) ApplyWithFile(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("kubectl", "apply", "-f", filePath)
 
 	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
@@ -222,7 +194,7 @@ func (cli *kubectlCli) ApplyWithFile(ctx context.Context, filePath string, flags
 }
 
 // Applies manifests from the specified input
-func (cli *kubectlCli) Apply(ctx context.Context, path string, flags *KubeCliFlags) error {
+func (cli *Cli) Apply(ctx context.Context, path string, flags *KubeCliFlags) error {
 	if err := cli.applyTemplates(ctx, path, flags); err != nil {
 		return fmt.Errorf("failed process templates, %w", err)
 	}
@@ -231,7 +203,7 @@ func (cli *kubectlCli) Apply(ctx context.Context, path string, flags *KubeCliFla
 }
 
 // Applies the manifests at the specified path using kustomize
-func (cli *kubectlCli) ApplyWithKustomize(ctx context.Context, path string, flags *KubeCliFlags) error {
+func (cli *Cli) ApplyWithKustomize(ctx context.Context, path string, flags *KubeCliFlags) error {
 	runArgs := exec.NewRunArgs("kubectl", "apply", "-k", path)
 
 	_, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
@@ -243,7 +215,7 @@ func (cli *kubectlCli) ApplyWithKustomize(ctx context.Context, path string, flag
 }
 
 // Creates a new k8s namespace with the specified name
-func (cli *kubectlCli) CreateNamespace(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *Cli) CreateNamespace(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	args := []string{"create", "namespace", name}
 
 	res, err := cli.Exec(ctx, flags, args...)
@@ -255,7 +227,7 @@ func (cli *kubectlCli) CreateNamespace(ctx context.Context, name string, flags *
 }
 
 // Gets the deployment rollout status
-func (cli *kubectlCli) RolloutStatus(
+func (cli *Cli) RolloutStatus(
 	ctx context.Context,
 	deploymentName string,
 	flags *KubeCliFlags,
@@ -269,7 +241,7 @@ func (cli *kubectlCli) RolloutStatus(
 }
 
 // Executes a k8s CLI command from the specified arguments and flags
-func (cli *kubectlCli) Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error) {
+func (cli *Cli) Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("kubectl").
 		AppendParams(args...)
@@ -277,7 +249,7 @@ func (cli *kubectlCli) Exec(ctx context.Context, flags *KubeCliFlags, args ...st
 	return cli.executeCommandWithArgs(ctx, runArgs, flags)
 }
 
-func (cli *kubectlCli) applyTemplate(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *Cli) applyTemplate(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	k8sTemplate, err := template.ParseFiles(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing template file '%s', %w", filePath, err)
@@ -300,7 +272,7 @@ func (cli *kubectlCli) applyTemplate(ctx context.Context, filePath string, flags
 // Recursively loops through the specified directory and applies all k8s manifests
 // If the file is a *.tmpl file, it will be parsed as a template to support environment injection.
 // Otherwise the actual file contents will be applied.
-func (cli *kubectlCli) applyTemplates(ctx context.Context, directoryPath string, flags *KubeCliFlags) error {
+func (cli *Cli) applyTemplates(ctx context.Context, directoryPath string, flags *KubeCliFlags) error {
 	entries, err := os.ReadDir(directoryPath)
 	if err != nil {
 		return fmt.Errorf("failed reading files in path, '%s', %w", directoryPath, err)
@@ -342,7 +314,7 @@ func (cli *kubectlCli) applyTemplates(ctx context.Context, directoryPath string,
 	return nil
 }
 
-func (cli *kubectlCli) executeCommandWithArgs(
+func (cli *Cli) executeCommandWithArgs(
 	ctx context.Context,
 	args exec.RunArgs,
 	flags *KubeCliFlags,

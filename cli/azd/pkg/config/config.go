@@ -183,11 +183,9 @@ func (c *config) Unset(path string) error {
 			return nil
 		}
 
-		if value != nil {
-			node, ok = value.(map[string]any)
-			if !ok {
-				return fmt.Errorf("failed converting node at path '%s' to map", part)
-			}
+		node, ok = value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("failed converting node at path '%s' to map", part)
 		}
 
 		currentNode[part] = node

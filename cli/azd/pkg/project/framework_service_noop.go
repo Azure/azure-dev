@@ -14,7 +14,7 @@ func NewNoOpProject(env *environment.Environment) FrameworkService {
 	return &noOpProject{}
 }
 
-func (n *noOpProject) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (n *noOpProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
@@ -34,36 +34,27 @@ func (n *noOpProject) Initialize(ctx context.Context, serviceConfig *ServiceConf
 func (n *noOpProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	_ *async.Progress[ServiceProgress],
+) (*ServiceRestoreResult, error) {
+	return &ServiceRestoreResult{}, nil
 }
 
 func (n *noOpProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			task.SetResult(&ServiceBuildResult{})
-		},
-	)
+	progress *async.Progress[ServiceProgress],
+) (*ServiceBuildResult, error) {
+	return &ServiceBuildResult{}, nil
 }
 
 func (n *noOpProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(&ServicePackageResult{})
-		},
-	)
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	return &ServicePackageResult{}, nil
 }
 
 type noOpProject struct{}

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -181,7 +181,7 @@ func (c *ApplicationItemRequestBuilder) AddPassword(ctx context.Context) (*Appli
 	endDateTime := time.Now().Add(time.Hour * 24 * 180)
 	addPasswordRequest := ApplicationAddPasswordRequest{
 		PasswordCredential: ApplicationPasswordCredential{
-			DisplayName: convert.RefOf("Azure Developer CLI"),
+			DisplayName: to.Ptr("Azure Developer CLI"),
 			EndDateTime: &endDateTime,
 		},
 	}

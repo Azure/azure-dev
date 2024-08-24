@@ -51,7 +51,7 @@ type ContainerRegistryService interface {
 
 type containerRegistryService struct {
 	credentialProvider account.SubscriptionCredentialProvider
-	docker             docker.Docker
+	docker             *docker.Cli
 	armClientOptions   *arm.ClientOptions
 	coreClientOptions  *azcore.ClientOptions
 }
@@ -59,7 +59,7 @@ type containerRegistryService struct {
 // Creates a new instance of the ContainerRegistryService
 func NewContainerRegistryService(
 	credentialProvider account.SubscriptionCredentialProvider,
-	docker docker.Docker,
+	docker *docker.Cli,
 	armClientOptions *arm.ClientOptions,
 	coreClientOptions *azcore.ClientOptions,
 ) ContainerRegistryService {

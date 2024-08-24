@@ -16,17 +16,17 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-type PythonCli struct {
+type Cli struct {
 	commandRunner exec.CommandRunner
 }
 
-func NewPythonCli(commandRunner exec.CommandRunner) *PythonCli {
-	return &PythonCli{
+func NewCli(commandRunner exec.CommandRunner) *Cli {
+	return &Cli{
 		commandRunner: commandRunner,
 	}
 }
 
-func (cli *PythonCli) versionInfo() tools.VersionInfo {
+func (cli *Cli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 3,
@@ -36,7 +36,7 @@ func (cli *PythonCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *PythonCli) CheckInstalled(ctx context.Context) error {
+func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	pyString, err := checkPath()
 	if err != nil {
 		return err
@@ -59,15 +59,15 @@ func (cli *PythonCli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-func (cli *PythonCli) InstallUrl() string {
+func (cli *Cli) InstallUrl() string {
 	return "https://wiki.python.org/moin/BeginnersGuide/Download"
 }
 
-func (cli *PythonCli) Name() string {
+func (cli *Cli) Name() string {
 	return "Python CLI"
 }
 
-func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, environment, requirementFile string) error {
+func (cli *Cli) InstallRequirements(ctx context.Context, workingDir, environment, requirementFile string) error {
 	args := []string{"-m", "pip", "install", "-r", requirementFile}
 	_, err := cli.Run(ctx, workingDir, environment, args...)
 	if err != nil {
@@ -77,7 +77,7 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 	return nil
 }
 
-func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name string) error {
+func (cli *Cli) CreateVirtualEnv(ctx context.Context, workingDir, name string) error {
 	pyString, err := checkPath()
 	if err != nil {
 		return err
@@ -98,7 +98,7 @@ func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name str
 	return nil
 }
 
-func (cli *PythonCli) Run(
+func (cli *Cli) Run(
 	ctx context.Context,
 	workingDir string,
 	environment string,

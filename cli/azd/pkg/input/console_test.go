@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +44,7 @@ func (l *lineCapturer) Write(bytes []byte) (n int, err error) {
 func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 	// The underlying spinner relies on non-blocking channels for paint updates.
 	// We need to give it some time to paint.
-	const cSleep = 50 * time.Millisecond
+	const waitTime = 50 * time.Millisecond
 
 	formatter, err := output.NewFormatter(string(output.NoneFormat))
 	require.NoError(t, err)
@@ -67,32 +67,32 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 	require.Len(t, lines.captured, 0)
 	c.ShowSpinner(ctx, "Some title.", Step)
 
-	time.Sleep(cSleep)
+	time.Sleep(waitTime)
 	require.Len(t, lines.captured, 1)
 	require.Equal(t, lines.captured[0], "Some title.")
 
 	c.ShowSpinner(ctx, "Some title 2.", Step)
-	time.Sleep(cSleep)
+	time.Sleep(waitTime)
 	require.Len(t, lines.captured, 2)
 	require.Equal(t, lines.captured[1], "Some title 2.")
 
 	c.StopSpinner(ctx, "", StepDone)
-	time.Sleep(cSleep)
+	time.Sleep(waitTime)
 	require.Len(t, lines.captured, 2)
 	require.Equal(t, lines.captured[1], "Some title 2.")
 
 	c.ShowSpinner(ctx, "Some title 3.", Step)
-	time.Sleep(cSleep)
+	time.Sleep(waitTime)
 	require.Len(t, lines.captured, 3)
 	require.Equal(t, lines.captured[2], "Some title 3.")
 
 	c.Message(ctx, "Some message.")
-	time.Sleep(cSleep)
+	time.Sleep(waitTime)
 	require.Len(t, lines.captured, 4)
 	require.Equal(t, lines.captured[3], "Some message.")
 
 	c.StopSpinner(ctx, "Done.", StepDone)
-	time.Sleep(cSleep)
+	time.Sleep(waitTime)
 	require.Len(t, lines.captured, 5)
 }
 
@@ -250,7 +250,7 @@ func newTestExternalPromptServer(handler func(promptOptions) json.RawMessage) *h
 
 		respBody, _ := json.Marshal(promptResponse{
 			Status: "success",
-			Value:  convert.RefOf(res),
+			Value:  to.Ptr(res),
 		})
 
 		_, _ = w.Write(respBody)

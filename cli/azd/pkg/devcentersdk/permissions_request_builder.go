@@ -6,6 +6,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
@@ -33,10 +36,20 @@ func (c *PermissionListRequestBuilder) Get(ctx context.Context) ([]*armauthoriza
 		return nil, err
 	}
 
-	options := azsdk.NewClientOptionsBuilderFactory(c.client.options.Transport, "azd", c.client.cloud).
-		NewClientOptionsBuilder().
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
-		BuildArmClientOptions()
+	options := &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			PerCallPolicies: []policy.Policy{
+				azsdk.NewMsCorrelationPolicy(),
+				azsdk.NewUserAgentPolicy("azd"),
+			},
+			Logging: policy.LogOptions{
+				AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
+			},
+			Transport: c.client.options.Transport,
+			Cloud:     c.client.cloud.Configuration,
+		},
+	}
+
 	permissionsClient, err := armauthorization.NewPermissionsClient(project.SubscriptionId, c.client.credential, options)
 	if err != nil {
 		return nil, err

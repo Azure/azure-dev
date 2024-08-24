@@ -14,7 +14,7 @@ import (
 )
 
 // helper method to verify that a configuration exists in the .env file or in system environment variables
-func ensureConfigExists(ctx context.Context, env *environment.Environment, key string, label string) (string, error) {
+func ensureConfigExists(env *environment.Environment, key string, label string) (string, error) {
 	value, exists := env.LookupEnv(key)
 	if !exists || value == "" {
 		return value, fmt.Errorf("%s not found in environment variable %s", label, key)
@@ -25,7 +25,7 @@ func ensureConfigExists(ctx context.Context, env *environment.Environment, key s
 // helper method to ensure an Azure DevOps PAT exists either in .env or system environment variables
 func EnsurePatExists(ctx context.Context, env *environment.Environment, console input.Console) (
 	string, bool, error) {
-	value, err := ensureConfigExists(ctx, env, AzDoPatName, "azure devops personal access token")
+	value, err := ensureConfigExists(env, AzDoPatName, "azure devops personal access token")
 	if err != nil {
 		console.Message(ctx, fmt.Sprintf(
 			"You need an %s. Create a PAT by following the instructions here %s",
@@ -58,7 +58,7 @@ func EnsureOrgNameExists(
 	console input.Console,
 ) (
 	string, bool, error) {
-	value, err := ensureConfigExists(ctx, env, AzDoEnvironmentOrgName, "azure devops organization name")
+	value, err := ensureConfigExists(env, AzDoEnvironmentOrgName, "azure devops organization name")
 	if err != nil {
 		orgName, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message:      "Enter an Azure DevOps Organization Name:",

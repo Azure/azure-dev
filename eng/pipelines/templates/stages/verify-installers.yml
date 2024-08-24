@@ -13,7 +13,7 @@ parameters:
           ./test-installer-containers.ps1
           -BaseUrl "http://host.docker.internal:8080"
           -Version ''
-          -ContainerPrefix '$(docker-mirror-tag-prefix)/'
+          -ContainerPrefix 'mcr.microsoft.com/mirror/docker/library/'
           -AdditionalRunArgs '--add-host=host.docker.internal:host-gateway'
     LinuxSh:
       Pool: $(LINUXPOOL)
@@ -319,4 +319,4 @@ stages:
                 pwsh: true
                 workingDirectory: cli/installer/fpm
                 filePath: eng/scripts/Test-LinuxPackages.ps1
-                arguments: -DockerImagePrefix "$(docker-mirror-tag-prefix)/"
+                arguments: -DockerImagePrefix "mcr.microsoft.com/mirror/docker/library/"

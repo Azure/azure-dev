@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -61,7 +62,7 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			env := environment.NewWithValues("dev", map[string]string{})
-			containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, cloud.AzurePublic())
+			containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
 			serviceConfig.Docker = tt.dockerConfig
 
 			tag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
@@ -110,7 +111,7 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	env := environment.NewWithValues("dev", map[string]string{})
-	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, cloud.AzurePublic())
+	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -137,7 +138,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 			environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
 		})
 		envManager := &mockenv.MockEnvManager{}
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, cloud.AzurePublic())
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
@@ -149,7 +150,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.NewWithValues("dev", map[string]string{})
 		envManager := &mockenv.MockEnvManager{}
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, cloud.AzurePublic())
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
@@ -163,7 +164,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		env := environment.NewWithValues("dev", map[string]string{})
 		env.DotenvSet("MY_CUSTOM_REGISTRY", "custom.azurecr.io")
 		envManager := &mockenv.MockEnvManager{}
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, cloud.AzurePublic())
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		serviceConfig.Docker.Registry = osutil.NewExpandableString("${MY_CUSTOM_REGISTRY}")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
@@ -176,7 +177,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.NewWithValues("dev", map[string]string{})
 		envManager := &mockenv.MockEnvManager{}
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, cloud.AzurePublic())
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
@@ -332,7 +333,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
 			mockResults := setupDockerMocks(mockContext)
 			env := environment.NewWithValues("dev", map[string]string{})
-			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			envManager := &mockenv.MockEnvManager{}
 			envManager.On("Save", *mockContext.Context, env).Return(nil)
 
@@ -344,7 +345,9 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				envManager,
 				clock.NewMock(),
 				mockContainerRegistryService,
+				nil,
 				dockerCli,
+				mockContext.Console,
 				cloud.AzurePublic(),
 			)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
@@ -358,9 +361,12 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				PackagePath: tt.packagePath,
 			}
 
-			deployTask := containerHelper.Deploy(*mockContext.Context, serviceConfig, packageOutput, targetResource, true)
-			logProgress(deployTask)
-			deployResult, err := deployTask.Await()
+			deployResult, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+					return containerHelper.Deploy(
+						*mockContext.Context, serviceConfig, packageOutput, targetResource, true, progress)
+				},
+			)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -405,7 +411,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	env := environment.NewWithValues("dev", map[string]string{})
-	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, cloud.AzurePublic())
+	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
 
 	tests := []struct {
 		name                 string
@@ -591,7 +597,7 @@ func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 		defaultCredentialsRetryDelay = 1 * time.Millisecond
 
 		containerHelper := NewContainerHelper(
-			env, envManager, clock.NewMock(), mockContainerService, nil, cloud.AzurePublic())
+			env, envManager, clock.NewMock(), mockContainerService, nil, nil, nil, cloud.AzurePublic())
 
 		serviceConfig := createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageDotNet)
 		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")

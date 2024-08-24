@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -26,14 +26,14 @@ type testInitFunc func(*mocks.MockContext)
 // 4. Resource group tagged with azd-env-name
 func Test_ResourceManager_GetTargetResource(t *testing.T) {
 	taggedResourceGroup := &armresources.ResourceGroup{
-		ID: convert.RefOf(fmt.Sprintf(
+		ID: to.Ptr(fmt.Sprintf(
 			"/subscriptions/%s/resourceGroups/%s",
 			"SUBSCRIPTION_id",
 			"TAGGED_RESOURCE_GROUP",
 		)),
-		Name:     convert.RefOf("TAGGED_RESOURCE_GROUP"),
-		Type:     convert.RefOf("Microsoft.Resources/resourceGroups"),
-		Location: convert.RefOf("eastus2"),
+		Name:     to.Ptr("TAGGED_RESOURCE_GROUP"),
+		Type:     to.Ptr("Microsoft.Resources/resourceGroups"),
+		Location: to.Ptr("eastus2"),
 	}
 
 	fromProjectConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageJavaScript)
@@ -93,7 +93,6 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 			mockDeploymentOperations := &mockDeploymentOperations{}
 
 			if tt.init != nil {
@@ -101,15 +100,19 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 			}
 
 			expectedResource := &armresources.GenericResourceExpanded{
-				ID:       convert.RefOf("RESOURCE_ID"),
-				Name:     convert.RefOf("RESOURCE_NAME"),
-				Type:     convert.RefOf("Microsoft.Web/sites"),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("RESOURCE_ID"),
+				Name:     to.Ptr("RESOURCE_NAME"),
+				Type:     to.Ptr("Microsoft.Web/sites"),
+				Location: to.Ptr("eastus2"),
 			}
 
 			setupGetResourceMock(mockContext, expectedResource)
 
-			resourceManager := NewResourceManager(tt.env, azCli, mockDeploymentOperations)
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			resourceManager := NewResourceManager(tt.env, resourceService, mockDeploymentOperations)
 			targetResource, err := resourceManager.GetTargetResource(
 				*mockContext.Context,
 				tt.env.GetSubscriptionId(),

@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/maps"
 )
 
 var userConfigPath string
@@ -454,8 +456,13 @@ func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult,
 	if err != nil {
 		return nil, err
 	}
+
+	featureKeys := maps.Keys(features)
+	slices.Sort(featureKeys)
+
 	var alphaOutput []string
-	for _, alphaFeature := range features {
+	for _, alphaFeatureKey := range featureKeys {
+		alphaFeature := features[alphaFeatureKey]
 		alphaOutput = append(alphaOutput,
 			strings.Join(
 				[]string{

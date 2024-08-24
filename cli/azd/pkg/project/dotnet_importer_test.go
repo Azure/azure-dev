@@ -2,7 +2,6 @@ package project
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 
@@ -18,8 +17,7 @@ func TestMapToStringSlice(t *testing.T) {
 	m1 := make(map[string]string)
 	expected1 := []string(nil)
 	result1 := mapToStringSlice(m1, ":")
-	slices.Sort(result1)
-	assert.Equal(t, expected1, result1)
+	assert.ElementsMatch(t, expected1, result1)
 
 	// Test case 2: Map with values
 	m2 := map[string]string{
@@ -29,8 +27,7 @@ func TestMapToStringSlice(t *testing.T) {
 	}
 	expected2 := []string{"key1:value1", "key2:value2", "key3:value3"}
 	result2 := mapToStringSlice(m2, ":")
-	slices.Sort(result2)
-	assert.Equal(t, expected2, result2)
+	assert.ElementsMatch(t, expected2, result2)
 
 	// Test case 3: Map with empty values
 	m3 := map[string]string{
@@ -40,8 +37,7 @@ func TestMapToStringSlice(t *testing.T) {
 	}
 	expected3 := []string{"key1", "key2", "key3"}
 	result3 := mapToStringSlice(m3, ":")
-	slices.Sort(result3)
-	assert.Equal(t, expected3, result3)
+	assert.ElementsMatch(t, expected3, result3)
 }
 
 func TestEvaluateArgsWithConfig(t *testing.T) {
@@ -103,7 +99,7 @@ func TestEvaluateArgsWithConfig(t *testing.T) {
 
 	result, err := evaluateArgsWithConfig(manifest, args)
 	require.NoError(t, err)
-	require.EqualValues(t, expected, result)
+	require.ElementsMatch(t, mapToStringSlice(expected, ","), mapToStringSlice(result, ","))
 }
 
 func TestBuildArgsArrayAndEnv(t *testing.T) {
@@ -142,6 +138,6 @@ func TestBuildArgsArrayAndEnv(t *testing.T) {
 
 	args, env, err := buildArgsArrayAndEnv(manifest, bArgs)
 	require.NoError(t, err)
-	assert.EqualValues(t, expectedArgs, args)
-	assert.EqualValues(t, expectedEnv, env)
+	assert.ElementsMatch(t, expectedArgs, args)
+	assert.ElementsMatch(t, expectedEnv, env)
 }

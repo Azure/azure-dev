@@ -200,9 +200,9 @@ func azdFileShareUploadOperations(infraPath string, env environment.Environment)
 	return fileShareUploadOperations, nil
 }
 
-var ErrAzdOperationsNotEnabled = fmt.Errorf(fmt.Sprintf(
+var ErrAzdOperationsNotEnabled = fmt.Errorf(
 	"azd operations (alpha feature) is required but disabled. You can enable azd operations by running: %s",
-	output.WithGrayFormat(alpha.GetEnableCommand(AzdOperationsFeatureKey))))
+	output.WithGrayFormat("%s", alpha.GetEnableCommand(AzdOperationsFeatureKey)))
 
 var ErrBindMountOperationDisabled = fmt.Errorf(
 	"%sYour project has bind mounts.\n  - %w\n%s\n",

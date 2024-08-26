@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 // Source is a source of AZD compatible templates.

@@ -78,6 +78,55 @@ func appendTo(v *valSynced, attr attribute.KeyValue) {
 	v.val.Store(newBaggage)
 }
 
+func appendToUnique(v *valSynced, attr attribute.KeyValue) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	baggage := v.val.Load().(baggage.Baggage)
+	val, ok := baggage.Lookup(attr.Key)
+	if ok && val.Type() == attribute.STRINGSLICE {
+		switch attr.Value.Type() {
+		case attribute.STRING:
+			attrValue := attr.Value.AsString()
+			for _, v := range val.AsStringSlice() {
+				if v == attrValue { // already exists
+					return
+				}
+			}
+
+			attr = attr.Key.StringSlice(append(val.AsStringSlice(), attrValue))
+		case attribute.STRINGSLICE:
+			attrValues := attr.Value.AsStringSlice()
+			adds := make([]string, 0, len(attrValues))
+
+			for _, a := range attrValues {
+				found := false
+				for _, v := range val.AsStringSlice() {
+					if v == a {
+						found = true
+						break
+					}
+				}
+
+				if !found {
+					adds = append(adds, a)
+				}
+			}
+
+			if len(adds) == 0 {
+				return
+			}
+
+			attr = attr.Key.StringSlice(append(val.AsStringSlice(), adds...))
+		}
+	} else if attr.Value.Type() == attribute.STRING {
+		attr = attr.Key.StringSlice([]string{attr.Value.AsString()})
+	}
+
+	newBaggage := baggage.Set(attr)
+	v.val.Store(newBaggage)
+}
+
 func increment(v *valSynced, attr attribute.KeyValue) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -126,6 +175,17 @@ func GetUsageAttributes() []attribute.KeyValue {
 // Otherwise, a strict replacement is performed.
 func AppendUsageAttribute(attr attribute.KeyValue) {
 	appendTo(&usageVal, attr)
+}
+
+// Sets or appends a value to a string slice-type usage attribute that possibly exists,
+// merging on unique elements.
+//
+// The attribute is expected to be a slice-type value, and matches the existing type.
+// For convenience, a string-type value is also treated as a string-slice with a single element.
+//
+// If the types do not match, a strict replacement is performed.
+func AppendUsageAttributeUnique(attr attribute.KeyValue) {
+	appendToUnique(&usageVal, attr)
 }
 
 // Sets or increments a possibly stored usage attribute.

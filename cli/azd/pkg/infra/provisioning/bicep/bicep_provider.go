@@ -33,6 +33,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -1964,6 +1965,10 @@ func (p *BicepProvider) ensureParameters(
 		key   string
 		param azure.ArmTemplateParameterDefinition
 	}
+	currentPrincipalProfile, err := p.curPrincipal.CurrentPrincipalProfile(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetching current principal profile: %w", err)
+	}
 
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
@@ -2006,20 +2011,60 @@ func (p *BicepProvider) ensureParameters(
 		// If the parameter is tagged with {type: "generate"}, skip prompting.
 		// We generate it once, then save to config for next attempts.`.
 		azdMetadata, hasMetadata := param.AzdMetadata()
-		if hasMetadata && parameterType == ParameterTypeString && azdMetadata.Type != nil &&
-			*azdMetadata.Type == azure.AzdMetadataTypeGenerate {
-
-			// - generate once
-			genValue, err := autoGenerate(key, azdMetadata)
-			if err != nil {
-				return nil, err
+		if hasMetadata && parameterType == ParameterTypeString && azdMetadata.Type != nil {
+			azdMetadataType := *azdMetadata.Type
+			switch azdMetadataType {
+			case azure.AzdMetadataTypeGenerate:
+				// - generate once
+				genValue, err := autoGenerate(key, azdMetadata)
+				if err != nil {
+					return nil, err
+				}
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: genValue,
+				}
+				mustSetParamAsConfig(key, genValue, p.env.Config, param.Secure())
+				configModified = true
+				continue
+			// Check metadata for auto-inject values [principalId, principalType, principalLogin]
+			case azure.AzdMetadataTypePrincipalLogin:
+				pLogin := currentPrincipalProfile.PrincipalLoginName
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: pLogin,
+				}
+				mustSetParamAsConfig(key, pLogin, p.env.Config, param.Secure())
+				configModified = true
+				continue
+			case azure.AzdMetadataTypePrincipalId:
+				pLogin := currentPrincipalProfile.PrincipalId
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: pLogin,
+				}
+				mustSetParamAsConfig(key, pLogin, p.env.Config, param.Secure())
+				configModified = true
+				continue
+			case azure.AzdMetadataTypePrincipalType:
+				pLogin := currentPrincipalProfile.PrincipalType
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: pLogin,
+				}
+				mustSetParamAsConfig(key, pLogin, p.env.Config, param.Secure())
+				configModified = true
+				continue
+			case azure.AzdMetadataTypeIpAddress:
+				ipAddress, err := httputil.GetIpAddress()
+				if err != nil {
+					return nil, fmt.Errorf("getting IP address for bicep parameter: %w", err)
+				}
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: ipAddress,
+				}
+				// this metadata type is not saved to config as the IP can be dynamic.
+				continue
+			default:
+				// Do nothing
+				log.Println("Skipping actions for azd unknown metadata bicep parameter with type: ", azdMetadataType)
 			}
-			configuredParameters[key] = azure.ArmParameterValue{
-				Value: genValue,
-			}
-			mustSetParamAsConfig(key, genValue, p.env.Config, param.Secure())
-			configModified = true
-			continue
 		}
 
 		// No saved value for this required parameter, we'll need to prompt for it.

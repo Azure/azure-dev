@@ -9,6 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -317,6 +318,12 @@ func TestPromptForParametersLocation(t *testing.T) {
 }
 
 type mockCurrentPrincipal struct{}
+
+// CurrentPrincipalProfile implements provisioning.CurrentPrincipalIdProvider.
+func (m *mockCurrentPrincipal) CurrentPrincipalProfile(
+	ctx context.Context) (*azureutil.LoggedInPrincipalProfileData, error) {
+	return &azureutil.LoggedInPrincipalProfileData{}, nil
+}
 
 func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
 	return "11111111-1111-1111-1111-111111111111", nil

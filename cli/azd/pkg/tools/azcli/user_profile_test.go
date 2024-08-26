@@ -38,6 +38,7 @@ func Test_GetUserAccessToken(t *testing.T) {
 			Transport: mockContext.HttpClient,
 		},
 		cloud.AzurePublic(),
+		nil,
 	)
 
 	actual, err := userProfile.GetAccessToken(*mockContext.Context, "")
@@ -65,6 +66,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 				Transport: mockContext.HttpClient,
 			},
 			cloud.AzurePublic(),
+			nil,
 		)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
@@ -82,6 +84,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 				Transport: mockContext.HttpClient,
 			},
 			cloud.AzurePublic(),
+			nil,
 		)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")

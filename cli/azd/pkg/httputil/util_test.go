@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"testing"
 
@@ -37,4 +38,13 @@ func TestReadRawResponse(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, *expectedResponse, *actualResponse)
 	})
+}
+
+func TestGetIpAddress(t *testing.T) {
+	ip, err := GetIpAddress()
+
+	require.NoError(t, err)
+	require.NotEmpty(t, ip)
+	validIp := net.ParseIP(ip)
+	require.NotNil(t, validIp)
 }

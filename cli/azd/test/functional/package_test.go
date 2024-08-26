@@ -163,7 +163,7 @@ func Test_CLI_Package(t *testing.T) {
 	require.Contains(t, packageResult.Stdout, fmt.Sprintf("Package Output: %s", os.TempDir()))
 }
 
-func Test_CLI_Package_Azdignore(t *testing.T) {
+func Test_CLI_Package_dotignore(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -178,7 +178,7 @@ func Test_CLI_Package_Azdignore(t *testing.T) {
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
 	// Copy the sample project to the app directory
-	err := copySample(dir, "azdignore")
+	err := copySample(dir, "dotignore")
 	require.NoError(t, err, "failed expanding sample")
 
 	// Run the init command to initialize the project

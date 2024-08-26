@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdignore"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -64,6 +63,7 @@ func (i *Initializer) Initialize(
 	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
 	staging, err := os.MkdirTemp("", "az-dev-template")
+
 	if err != nil {
 		return fmt.Errorf("creating temp folder: %w", err)
 	}
@@ -86,16 +86,6 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
-	ignoreMatcher, err := azdignore.ReadIgnoreFiles(staging)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reading .azdignore file: %w", err)
-	}
-
-	err = azdignore.RemoveIgnoredFiles(staging, ignoreMatcher)
-	if err != nil {
-		return fmt.Errorf("removing ignored files: %w", err)
-	}
-
 	skipStagingFiles, err := i.promptForDuplicates(ctx, staging, target)
 	if err != nil {
 		return err
@@ -112,6 +102,7 @@ func (i *Initializer) Initialize(
 			if _, shouldSkip := skipStagingFiles[src]; shouldSkip {
 				return true, nil
 			}
+
 			return false, nil
 		}
 	}

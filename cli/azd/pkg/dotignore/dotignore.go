@@ -1,4 +1,4 @@
-package azdignore
+package dotignore
 
 import (
 	"fmt"
@@ -9,19 +9,25 @@ import (
 	"github.com/denormal/go-gitignore"
 )
 
-// ReadIgnoreFiles reads all .azdignore files in the directory hierarchy, from the projectDir upwards,
-// and returns a slice of gitignore.GitIgnore structures.
-func ReadIgnoreFiles(projectDir string) ([]gitignore.GitIgnore, error) {
+// ReadIgnoreFiles reads all ignore files (default to ".zipignore") in the directory hierarchy,
+// from the projectDir upwards, and returns a slice of gitignore.GitIgnore structures.
+func ReadIgnoreFiles(projectDir string, ignoreFileName ...string) ([]gitignore.GitIgnore, error) {
 	var ignoreMatchers []gitignore.GitIgnore
+
+	// Set default ignore file name to ".zipignore" if none is provided
+	fileName := ".zipignore"
+	if len(ignoreFileName) > 0 && ignoreFileName[0] != "" {
+		fileName = ignoreFileName[0]
+	}
 
 	// Traverse upwards from the projectDir to the root directory
 	currentDir := projectDir
 	for {
-		ignoreFilePath := filepath.Join(currentDir, ".azdignore")
+		ignoreFilePath := filepath.Join(currentDir, fileName)
 		if _, err := os.Stat(ignoreFilePath); !os.IsNotExist(err) {
 			ignoreMatcher, err := gitignore.NewFromFile(ignoreFilePath)
 			if err != nil {
-				return nil, fmt.Errorf("error reading .azdignore file at %s: %w", ignoreFilePath, err)
+				return nil, fmt.Errorf("error reading %s file at %s: %w", fileName, ignoreFilePath, err)
 			}
 			ignoreMatchers = append([]gitignore.GitIgnore{ignoreMatcher}, ignoreMatchers...)
 		}
@@ -48,10 +54,10 @@ func ShouldIgnore(path string, isDir bool, ignoreMatchers []gitignore.GitIgnore)
 	return false
 }
 
-// RemoveIgnoredFiles removes files and directories based on .azdignore rules using a pre-collected list of paths.
+// RemoveIgnoredFiles removes files and directories based on ignore rules using a pre-collected list of paths.
 func RemoveIgnoredFiles(staging string, ignoreMatchers []gitignore.GitIgnore) error {
 	if len(ignoreMatchers) == 0 {
-		return nil // No .azdignore files, no files to ignore
+		return nil // No ignore files, no files to ignore
 	}
 
 	// Collect all file and directory paths

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdignore"
+	"github.com/azure/azure-dev/cli/azd/pkg/dotignore"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/otiai10/copy"
 )
@@ -24,13 +24,13 @@ func createDeployableZip(projectName string, appName string, path string) (strin
 		return "", fmt.Errorf("failed when creating zip package to deploy %s: %w", appName, err)
 	}
 
-	// Read and honor the .azdignore files
-	ignoreMatchers, err := azdignore.ReadIgnoreFiles(path)
+	// Read and honor the .dotignore files
+	ignoreMatchers, err := dotignore.ReadIgnoreFiles(path)
 	if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("reading .azdignore files: %w", err)
+		return "", fmt.Errorf("reading .dotignore files: %w", err)
 	}
 
-	// Create the zip file, excluding files that match the .azdignore rules
+	// Create the zip file, excluding files that match the .dotignore rules
 	err = rzip.CreateFromDirectoryWithIgnore(path, zipFile, ignoreMatchers)
 	if err != nil {
 		// If we fail here, just do our best to close things out and cleanup
@@ -61,10 +61,10 @@ type buildForZipOptions struct {
 // zipped for packaging. buildForZipOptions provides the specific details for each language regarding which files should
 // not be copied.
 func buildForZip(src, dst string, options buildForZipOptions) error {
-	// Add a global exclude condition for the .azdignore file
-	ignoreMatchers, err := azdignore.ReadIgnoreFiles(src)
+	// Add a global exclude condition for the .dotignore file
+	ignoreMatchers, err := dotignore.ReadIgnoreFiles(src)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reading .azdignore files: %w", err)
+		return fmt.Errorf("reading .dotignore files: %w", err)
 	}
 
 	options.excludeConditions = append(options.excludeConditions, func(path string, file os.FileInfo) bool {
@@ -77,13 +77,13 @@ func buildForZip(src, dst string, options buildForZipOptions) error {
 
 			// Check if the relative path should be ignored
 			isDir := file.IsDir()
-			if azdignore.ShouldIgnore(relativePath, isDir, ignoreMatchers) {
+			if dotignore.ShouldIgnore(relativePath, isDir, ignoreMatchers) {
 				return true
 			}
 		}
 
-		// Always exclude .azdignore files
-		if filepath.Base(path) == ".azdignore" {
+		// Always exclude .dotignore files
+		if filepath.Base(path) == ".dotignore" {
 			return true
 		}
 

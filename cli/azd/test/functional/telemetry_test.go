@@ -369,9 +369,20 @@ func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	require.False(t, helmEnabled)
 
 	usageAttributes := tracing.GetUsageAttributes()
-	require.Equal(t, usageAttributes[0].Key, fields.AlphaFeaturesKey)
 
-	values := usageAttributes[0].Value.AsStringSlice()
+	found := false
+	var alphaFeaturesAttribute attribute.KeyValue
+
+	for _, attrib := range usageAttributes {
+		if attrib.Key == fields.AlphaFeaturesKey {
+			found = true
+			alphaFeaturesAttribute = attrib
+			break
+		}
+	}
+
+	require.True(t, found)
+	values := alphaFeaturesAttribute.Value.AsStringSlice()
 
 	require.Len(t, values, 2)
 	require.Contains(t, values, "infraSynth")

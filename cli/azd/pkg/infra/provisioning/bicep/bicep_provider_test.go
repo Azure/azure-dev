@@ -891,10 +891,6 @@ type mockedScope struct {
 	baseDate string
 }
 
-func (m *mockedScope) Type() infra.ScopeType {
-	return infra.ScopeType("mock")
-}
-
 func (m *mockedScope) SubscriptionId() string {
 	return "sub-id"
 }

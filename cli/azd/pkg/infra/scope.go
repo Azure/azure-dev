@@ -12,13 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
 
-type ScopeType string
-
-const (
-	ScopeTypeSubscription  ScopeType = "subscription"
-	ScopeTypeResourceGroup ScopeType = "resourceGroup"
-)
-
 type Scope interface {
 	// SubscriptionId is the id of the subscription which this deployment targets.
 	SubscriptionId() string

@@ -200,6 +200,18 @@ func getCmdTemplateHelpDescription(*cobra.Command) string {
 		})
 }
 
+func getCmdTemplateSourceAddHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		fmt.Sprintf(
+			"Adds an azd template source with the specified key. %s\nThe key can be any value that uniquely "+
+				"identifies the template source, with the exception of the following:",
+			output.WithWarningFormat("(Beta)")),
+		[]string{
+			formatHelpNote("default: Default templates"),
+			formatHelpNote("awesome-azd: Templates from http://aka.ms/awesome-azd"),
+		})
+}
+
 func getCmdTemplateSourceHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
 		fmt.Sprintf(
@@ -214,6 +226,23 @@ func getCmdTemplateSourceHelpDescription(*cobra.Command) string {
 				" template or select from a template from your registered template sources.",
 				output.WithHighLightFormat("azd init"))),
 		})
+}
+
+func getCmdTemplateSourceAddHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Add templates from awesome-azd source": output.WithHighLightFormat(
+			"azd template source add awesome-azd",
+		),
+		"Add default azd templates source.": output.WithHighLightFormat(
+			"azd template source add default",
+		),
+		"Add templates form a GitHub repository": output.WithHighLightFormat(
+			"azd template source add --type gh --location <GitHub URL>",
+		),
+		"Add templates from a public url": output.WithHighLightFormat(
+			"azd template source add --type url --location https://example.com/templates.json",
+		),
+	})
 }
 
 // templateSourceActions creates the 'source' command group with child actions
@@ -241,6 +270,10 @@ func templateSourceActions(root *actions.ActionDescriptor) *actions.ActionDescri
 		FlagsResolver:  newTemplateSourceAddFlags,
 		OutputFormats:  []output.Format{output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdTemplateSourceAddHelpDescription,
+			Footer:      getCmdTemplateSourceAddHelpFooter,
+		},
 	})
 
 	group.Add("remove", &actions.ActionDescriptorOptions{
@@ -319,14 +352,11 @@ func newTemplateSourceAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "add <key>",
 		Short: fmt.Sprintf(
-			"Adds an azd template source at the provided key %s\n"+
-				"  Use known-keys w/o a type for:\n"+
-				"   ・default: azd built-in template list\n"+
-				"   ・awesome-azd: Includes all templates from http://aka.ms/awesome-azd\n"+
-				"  For custom key, use type and location flags. Supported types:\n"+
-				"   ・file: local file only \n"+
-				"   ・url: public urls, only, to download json source\n"+
-				"   ・gh: path to json file in a GitHub repository (supports private repos)",
+			"Adds an azd template source with the specified key. %s\n"+
+				"The key can be any value that uniquely identifies the template source, with the exception of the following"+
+				" reserved, well-known key values:\n"+
+				"   ・default: Default templates\n"+
+				"   ・awesome-azd: Templates from http://aka.ms/awesome-azd",
 			output.WithWarningFormat("(Beta)")),
 		Args: cobra.ExactArgs(1),
 	}
@@ -341,8 +371,10 @@ type templateSourceAddFlags struct {
 func newTemplateSourceAddFlags(cmd *cobra.Command) *templateSourceAddFlags {
 	flags := &templateSourceAddFlags{}
 
-	cmd.Flags().StringVarP(&flags.kind, "type", "t", "", "Kind of the template source.")
-	cmd.Flags().StringVarP(&flags.location, "location", "l", "", "Location of the template source.")
+	cmd.Flags().StringVarP(&flags.kind, "type", "t", "", "Kind of the template source. Supported types are "+
+		"'file', 'url' and 'gh'.")
+	cmd.Flags().StringVarP(&flags.location, "location", "l", "", "Location of the template source. "+
+		"Required when using type flag.")
 	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Display name of the template source.")
 
 	return flags

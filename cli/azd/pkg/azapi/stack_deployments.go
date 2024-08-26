@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"path/filepath"
 	"time"
@@ -51,9 +52,7 @@ func NewStackDeployments(
 	}
 }
 
-// GenerateDeploymentName creates a name to use for the deployment object for a given environment. It appends the current
-// unix time to the environment name (separated by a hyphen) to provide a unique name for each deployment. If the resulting
-// name is longer than the ARM limit, the longest suffix of the name under the limit is returned.
+// GenerateDeploymentName creates a name to use for the deployment stack from the base name.
 func (d *StackDeployments) GenerateDeploymentName(baseName string) string {
 	return fmt.Sprintf("azd-stack-%s", baseName)
 }
@@ -227,7 +226,8 @@ func (d *StackDeployments) DeployToSubscription(
 		return nil, fmt.Errorf("failed to calculate template hash: %w", err)
 	}
 
-	tags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
+	clonedTags := maps.Clone(tags)
+	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
 
 	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
 	for k, v := range parameters {
@@ -240,7 +240,7 @@ func (d *StackDeployments) DeployToSubscription(
 
 	stack := armdeploymentstacks.DeploymentStack{
 		Location: &location,
-		Tags:     tags,
+		Tags:     clonedTags,
 		Properties: &armdeploymentstacks.DeploymentStackProperties{
 			BypassStackOutOfSyncError: to.Ptr(false),
 			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
@@ -282,6 +282,14 @@ func (d *StackDeployments) DeployToResourceGroup(
 		return nil, err
 	}
 
+	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate template hash: %w", err)
+	}
+
+	clonedTags := maps.Clone(tags)
+	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
+
 	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
 	for k, v := range parameters {
 		stackParams[k] = &armdeploymentstacks.DeploymentParameter{
@@ -292,7 +300,7 @@ func (d *StackDeployments) DeployToResourceGroup(
 	deleteBehavior := armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete
 
 	stack := armdeploymentstacks.DeploymentStack{
-		Tags: tags,
+		Tags: clonedTags,
 		Properties: &armdeploymentstacks.DeploymentStackProperties{
 			BypassStackOutOfSyncError: to.Ptr(false),
 			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{

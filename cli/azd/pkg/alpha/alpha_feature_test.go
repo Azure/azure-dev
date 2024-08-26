@@ -167,7 +167,8 @@ func Test_AlphaFeature_IsEnabled(t *testing.T) {
 	for i := 1; i <= 10; i++ {
 		if i%2 == 0 {
 			featureId := fmt.Sprintf("alpha.category.feature.%d", i)
-			mockConfig.Set(featureId, "on")
+			err := mockConfig.Set(featureId, "on")
+			require.NoError(t, err)
 		}
 	}
 

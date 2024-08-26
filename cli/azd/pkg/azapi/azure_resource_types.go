@@ -3,52 +3,50 @@
 
 package azapi
 
-import "strings"
-
 type AzureResourceType string
 
 const (
-	AzureResourceTypeApim                     AzureResourceType = "Microsoft.ApiManagement/service"
-	AzureResourceTypeAppConfig                AzureResourceType = "Microsoft.AppConfiguration/configurationStores"
-	AzureResourceTypeAppInsightComponent      AzureResourceType = "Microsoft.Insights/components"
-	AzureResourceTypeCacheForRedis            AzureResourceType = "Microsoft.Cache/redis"
-	AzureResourceTypeCDNProfile               AzureResourceType = "Microsoft.Cdn/profiles"
-	AzureResourceTypeCosmosDb                 AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
-	AzureResourceTypeContainerApp             AzureResourceType = "Microsoft.App/containerApps"
-	AzureResourceTypeSpringApp                AzureResourceType = "Microsoft.AppPlatform/Spring"
-	AzureResourceTypeContainerAppEnvironment  AzureResourceType = "Microsoft.App/managedEnvironments"
-	AzureResourceTypeDeployment               AzureResourceType = "Microsoft.Resources/deployments"
-	AzureResourceTypeKeyVault                 AzureResourceType = "Microsoft.KeyVault/vaults"
-	AzureResourceTypeManagedHSM               AzureResourceType = "Microsoft.KeyVault/managedHSMs"
-	AzureResourceTypeLoadTest                 AzureResourceType = "Microsoft.LoadTestService/loadTests"
-	AzureResourceTypeLogAnalyticsWorkspace    AzureResourceType = "Microsoft.OperationalInsights/workspaces"
-	AzureResourceTypePortalDashboard          AzureResourceType = "Microsoft.Portal/dashboards"
-	AzureResourceTypePostgreSqlServer         AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers"
-	AzureResourceTypeMySqlServer              AzureResourceType = "Microsoft.DBforMySQL/flexibleServers"
-	AzureResourceTypeResourceGroup            AzureResourceType = "Microsoft.Resources/resourceGroups"
-	AzureResourceTypeStorageAccount           AzureResourceType = "Microsoft.Storage/storageAccounts"
-	AzureResourceTypeStaticWebSite            AzureResourceType = "Microsoft.Web/staticSites"
-	AzureResourceTypeServiceBusNamespace      AzureResourceType = "Microsoft.ServiceBus/namespaces"
-	AzureResourceTypeServicePlan              AzureResourceType = "Microsoft.Web/serverfarms"
-	AzureResourceTypeSqlServer                AzureResourceType = "Microsoft.Sql/servers"
-	AzureResourceTypeVirtualNetwork           AzureResourceType = "Microsoft.Network/virtualNetworks"
-	AzureResourceTypeWebSite                  AzureResourceType = "Microsoft.Web/sites"
-	AzureResourceTypeContainerRegistry        AzureResourceType = "Microsoft.ContainerRegistry/registries"
-	AzureResourceTypeManagedCluster           AzureResourceType = "Microsoft.ContainerService/managedClusters"
-	AzureResourceTypeAgentPool                AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
-	AzureResourceTypeCognitiveServiceAccount  AzureResourceType = "Microsoft.CognitiveServices/accounts"
-	AzureResourceTypeSearchService            AzureResourceType = "Microsoft.Search/searchServices"
-	AzureResourceTypeVideoIndexer             AzureResourceType = "Microsoft.VideoIndexer/accounts"
-	AzureResourceTypePrivateEndpoint          AzureResourceType = "Microsoft.Network/privateEndpoints"
-	AzureResourceTypeDevCenter                AzureResourceType = "Microsoft.DevCenter/devcenters"
-	AzureResourceTypeDevCenterProject         AzureResourceType = "Microsoft.DevCenter/projects"
-	AzureResourceTypeMachineLearningWorkspace AzureResourceType = "Microsoft.MachineLearningServices/workspaces"
-	//nolint:lll
-	AzureResourceTypeMachineLearningEndpoint   AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
+	AzureResourceTypeApim                      AzureResourceType = "Microsoft.ApiManagement/service"
+	AzureResourceTypeAppConfig                 AzureResourceType = "Microsoft.AppConfiguration/configurationStores"
+	AzureResourceTypeAppInsightComponent       AzureResourceType = "Microsoft.Insights/components"
+	AzureResourceTypeCacheForRedis             AzureResourceType = "Microsoft.Cache/redis"
+	AzureResourceTypeCDNProfile                AzureResourceType = "Microsoft.Cdn/profiles"
+	AzureResourceTypeCosmosDb                  AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
+	AzureResourceTypeContainerApp              AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeSpringApp                 AzureResourceType = "Microsoft.AppPlatform/Spring"
+	AzureResourceTypeContainerAppEnvironment   AzureResourceType = "Microsoft.App/managedEnvironments"
+	AzureResourceTypeDeployment                AzureResourceType = "Microsoft.Resources/deployments"
+	AzureResourceTypeKeyVault                  AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypeManagedHSM                AzureResourceType = "Microsoft.KeyVault/managedHSMs"
+	AzureResourceTypeLoadTest                  AzureResourceType = "Microsoft.LoadTestService/loadTests"
+	AzureResourceTypeLogAnalyticsWorkspace     AzureResourceType = "Microsoft.OperationalInsights/workspaces"
+	AzureResourceTypePortalDashboard           AzureResourceType = "Microsoft.Portal/dashboards"
+	AzureResourceTypePostgreSqlServer          AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers"
+	AzureResourceTypeMySqlServer               AzureResourceType = "Microsoft.DBforMySQL/flexibleServers"
+	AzureResourceTypeResourceGroup             AzureResourceType = "Microsoft.Resources/resourceGroups"
+	AzureResourceTypeStorageAccount            AzureResourceType = "Microsoft.Storage/storageAccounts"
+	AzureResourceTypeStaticWebSite             AzureResourceType = "Microsoft.Web/staticSites"
+	AzureResourceTypeServiceBusNamespace       AzureResourceType = "Microsoft.ServiceBus/namespaces"
+	AzureResourceTypeServicePlan               AzureResourceType = "Microsoft.Web/serverfarms"
+	AzureResourceTypeSqlServer                 AzureResourceType = "Microsoft.Sql/servers"
+	AzureResourceTypeVirtualNetwork            AzureResourceType = "Microsoft.Network/virtualNetworks"
+	AzureResourceTypeWebSite                   AzureResourceType = "Microsoft.Web/sites"
+	AzureResourceTypeContainerRegistry         AzureResourceType = "Microsoft.ContainerRegistry/registries"
+	AzureResourceTypeManagedCluster            AzureResourceType = "Microsoft.ContainerService/managedClusters"
+	AzureResourceTypeAgentPool                 AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
+	AzureResourceTypeCognitiveServiceAccount   AzureResourceType = "Microsoft.CognitiveServices/accounts"
+	AzureResourceTypeSearchService             AzureResourceType = "Microsoft.Search/searchServices"
+	AzureResourceTypeVideoIndexer              AzureResourceType = "Microsoft.VideoIndexer/accounts"
+	AzureResourceTypePrivateEndpoint           AzureResourceType = "Microsoft.Network/privateEndpoints"
+	AzureResourceTypeDevCenter                 AzureResourceType = "Microsoft.DevCenter/devcenters"
+	AzureResourceTypeDevCenterProject          AzureResourceType = "Microsoft.DevCenter/projects"
+	AzureResourceTypeMachineLearningWorkspace  AzureResourceType = "Microsoft.MachineLearningServices/workspaces"
 	AzureResourceTypeMachineLearningConnection AzureResourceType = "Microsoft.MachineLearningServices/workspaces/connections"
-)
 
-const resourceLevelSeparator = "/"
+	//nolint:lll
+	AzureResourceTypeMachineLearningEndpoint           AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
+	AzureResourceTypeCognitiveServiceAccountDeployment AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
+)
 
 // GetResourceTypeDisplayName retrieves the display name for the given resource type.
 // If the display name was not found for the given resource type, an empty string is returned instead.
@@ -108,7 +106,9 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	case AzureResourceTypeAgentPool:
 		return "AKS Agent Pool"
 	case AzureResourceTypeCognitiveServiceAccount:
-		return "Cognitive Service"
+		return "Azure AI Services"
+	case AzureResourceTypeCognitiveServiceAccountDeployment:
+		return "Azure AI Services Model Deployment"
 	case AzureResourceTypeSearchService:
 		return "Search service"
 	case AzureResourceTypeVideoIndexer:
@@ -130,26 +130,4 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	}
 
 	return ""
-}
-
-// IsTopLevelResourceType returns true if the resource type is a top-level resource type, otherwise false.
-// A top-level resource type is of the format of: {ResourceProvider}/{TopLevelResourceType}, i.e.
-// Microsoft.DocumentDB/databaseAccounts
-func IsTopLevelResourceType(resourceType AzureResourceType) bool {
-	// a deployment is not top level, but grouping level
-	if resourceType == AzureResourceTypeDeployment {
-		return false
-	}
-
-	resType := string(resourceType)
-	firstIndex := strings.Index(resType, resourceLevelSeparator)
-
-	if firstIndex == -1 ||
-		firstIndex == 0 ||
-		firstIndex == len(resType)-1 {
-		return false
-	}
-
-	// Should not contain second separator
-	return !strings.Contains(resType[firstIndex+1:], resourceLevelSeparator)
 }

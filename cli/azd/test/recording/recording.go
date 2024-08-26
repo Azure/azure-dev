@@ -475,7 +475,7 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 		}
 
 		if b == '\n' {
-			l.t.Logf(l.sb.String())
+			l.t.Logf("%s", l.sb.String())
 			l.sb.Reset()
 		}
 	}

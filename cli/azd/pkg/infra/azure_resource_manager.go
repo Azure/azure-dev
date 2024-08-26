@@ -7,8 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
+
+	"maps"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -16,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
-	"golang.org/x/exp/maps"
 )
 
 type AzureResourceManager struct {
@@ -74,7 +76,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 		return nil, err
 	}
 
-	return maps.Values(operationMap), nil
+	return slices.Collect(maps.Values(operationMap)), nil
 }
 
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment

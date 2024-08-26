@@ -244,8 +244,8 @@ func (m *manager) LatestArmDeployment(
 	}
 
 	// Sorts the deployments by timestamp in descending order
-	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) int {
-		return x.Properties.Timestamp.Compare(*y.Properties.Timestamp)
+	slices.SortFunc(deployments, func(x, y *azapi.ResourceDeployment) int {
+		return x.Timestamp.Compare(y.Timestamp)
 	})
 
 	latestDeploymentIndex := slices.IndexFunc(deployments, func(d *azapi.ResourceDeployment) bool {

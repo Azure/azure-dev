@@ -177,7 +177,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 		}
 
 		// If the service has hooks defined in azd.hooks.yaml but not in azure.yaml
-		if service.Hooks == nil || len(service.Hooks) == 0 {
+		if len(service.Hooks) == 0 {
 			service.Hooks = hooksDefinedAtServicePath
 		}
 

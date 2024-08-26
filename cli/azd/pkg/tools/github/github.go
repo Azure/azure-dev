@@ -37,7 +37,7 @@ func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec
 
 // Version is the minimum version of GitHub cli that we require (and the one we fetch when we fetch gh on
 // behalf of a user).
-var Version semver.Version = semver.MustParse("2.28.0")
+var Version semver.Version = semver.MustParse("2.55.0")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.
@@ -563,7 +563,7 @@ func downloadGh(
 		return fmt.Errorf("unsupported platform")
 	}
 
-	// example: https://github.com/cli/cli/releases/download/v2.28.0/gh_2.28.0_linux_arm64.rpm
+	// example: https://github.com/cli/cli/releases/download/v2.55.0/gh_2.55.0_linux_arm64.rpm
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)

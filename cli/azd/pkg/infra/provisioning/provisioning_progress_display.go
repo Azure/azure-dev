@@ -96,10 +96,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		if operations[i].Properties.TargetResource != nil {
 			resourceId := *operations[i].Properties.TargetResource.ResourceName
 
-			if !display.displayedResources[resourceId] &&
-				azapi.IsTopLevelResourceType(
-					azapi.AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
-
+			if !display.displayedResources[resourceId] {
 				switch *operations[i].Properties.ProvisioningState {
 				case string(armresources.ProvisioningStateSucceeded):
 					newlyDeployedResources = append(newlyDeployedResources, operations[i])

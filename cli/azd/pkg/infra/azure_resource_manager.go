@@ -308,7 +308,7 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 	} else if strings.Contains(resource.Kind, "FormRecognizer") {
 		return "Document Intelligence", nil
 	} else {
-		return "Cognitive Service", nil
+		return "Azure AI Services", nil
 	}
 }
 

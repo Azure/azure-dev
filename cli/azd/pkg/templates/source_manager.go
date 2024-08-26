@@ -104,7 +104,7 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 
 	allSourceConfigs := []*SourceConfig{}
 
-	if sm.options.DefaultSources != nil && len(sm.options.DefaultSources) > 0 {
+	if len(sm.options.DefaultSources) > 0 {
 		allSourceConfigs = append(allSourceConfigs, sm.options.DefaultSources...)
 	}
 

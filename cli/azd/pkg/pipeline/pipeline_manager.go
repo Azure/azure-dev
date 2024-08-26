@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,7 +33,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
-	"golang.org/x/exp/slices"
 )
 
 type PipelineAuthType string
@@ -866,7 +866,7 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 			pipelineProviderFiles[props.CiProvider].DisplayName,
 			strings.Join(pipelineProviderFiles[props.CiProvider].PipelineDirectories, "\n"))
 		log.Println("Error:", message)
-		return fmt.Errorf(message)
+		return errors.New(message)
 	}
 
 	log.Println("Info:", message)

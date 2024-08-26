@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -14,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
-	"golang.org/x/exp/slices"
 )
 
 // LocalFileDataStore is a DataStore implementation that stores environment data in the local file system.
@@ -71,8 +72,8 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 		}
 	}
 
-	slices.SortFunc(envs, func(a, b *contracts.EnvListEnvironment) bool {
-		return a.Name < b.Name
+	slices.SortFunc(envs, func(a, b *contracts.EnvListEnvironment) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	return envs, nil

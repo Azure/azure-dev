@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -11,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
-	"golang.org/x/exp/slices"
 )
 
 // Description is a metadata description of an environment returned for the `azd env list` command
@@ -123,7 +124,7 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 	if spec.Name != "" && !IsValidEnvironmentName(spec.Name) {
 		errMsg := invalidEnvironmentNameMsg(spec.Name)
 		m.console.Message(ctx, errMsg)
-		return nil, fmt.Errorf(errMsg)
+		return nil, errors.New(errMsg)
 	}
 
 	if err := m.ensureValidEnvironmentName(ctx, &spec); err != nil {
@@ -335,8 +336,8 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 		allEnvs = append(allEnvs, env)
 	}
 
-	slices.SortFunc(allEnvs, func(a, b *Description) bool {
-		return a.Name < b.Name
+	slices.SortFunc(allEnvs, func(a, b *Description) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	return allEnvs, nil

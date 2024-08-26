@@ -379,7 +379,7 @@ func NewRootCmd(
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {
 	return fmt.Sprintf("%s\n%s\n%s\n\n%s\n\n%s",
-		output.WithBold(output.WithUnderline("Deploying a sample application")),
+		output.WithBold("%s", output.WithUnderline("Deploying a sample application")),
 		"Initialize from a sample application by running the "+
 			output.WithHighLightFormat("azd init --template ")+
 			output.WithWarningFormat("[%s]", "template name")+" command in an empty directory.",
@@ -425,7 +425,7 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 	var paragraph []string
 	for _, title := range groups {
 		paragraph = append(paragraph, fmt.Sprintf("  %s\n    %s\n",
-			output.WithBold(string(title)),
+			output.WithBold("%s", string(title)),
 			strings.Join(commandGroups[string(title)], "\n    ")))
 	}
 	return strings.Join(paragraph, "\n")

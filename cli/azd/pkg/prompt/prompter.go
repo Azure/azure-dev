@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -59,7 +60,7 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	}
 
 	if len(subscriptionOptions) == 0 {
-		return "", fmt.Errorf(heredoc.Docf(
+		return "", errors.New(heredoc.Docf(
 			`no subscriptions found.
 			Ensure you have a subscription by visiting %s and search for Subscriptions in the search bar.
 			Once you have a subscription, run 'azd auth login' again to reload subscriptions.`,

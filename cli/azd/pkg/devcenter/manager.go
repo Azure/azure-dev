@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"go.uber.org/multierr"
-	"golang.org/x/exp/slices"
 )
 
 // ADE Bicep deployments have a name of a date like string followed by a number
@@ -263,8 +263,8 @@ func (m *manager) LatestArmDeployment(
 	}
 
 	// Sorts the deployments by timestamp in descending order
-	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) bool {
-		return x.Properties.Timestamp.After(*y.Properties.Timestamp)
+	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) int {
+		return x.Properties.Timestamp.Compare(*y.Properties.Timestamp)
 	})
 
 	latestDeploymentIndex := slices.IndexFunc(deployments, func(d *armresources.DeploymentExtended) bool {

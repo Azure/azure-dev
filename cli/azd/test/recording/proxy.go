@@ -108,7 +108,7 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 
 	resp, err := p.Recorder.RoundTrip(req)
 	if err != nil {
-		p.panic(fmt.Sprintf("%s %s: %s", req.Method, req.URL.String(), err.Error()))
+		p.panic("%s", fmt.Sprintf("%s %s: %s", req.Method, req.URL.String(), err.Error()))
 	}
 
 	if err != nil {
@@ -130,7 +130,7 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 
 	err = resp.Write(conn)
 	if err != nil {
-		p.panic(err.Error())
+		p.panic("%s", err.Error())
 	}
 }
 

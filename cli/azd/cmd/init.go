@@ -146,7 +146,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil,
 			errors.New(
-				"Using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified.")
+				"using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified")
 	}
 
 	// ensure that git is available

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -46,7 +47,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/benbjohnson/clock"
 	"github.com/drone/envsubst"
-	"golang.org/x/exp/maps"
 )
 
 const (
@@ -587,7 +587,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		bicepDeploymentData.CompiledBicep.Template.Parameters, bicepDeploymentData.CompiledBicep.Parameters)
 	if parametersHashErr != nil {
 		// fail to hash parameters won't stop the operation. It only disables deployment state and recording parameters hash
-		logDS(parametersHashErr.Error())
+		logDS("%s", parametersHashErr.Error())
 	}
 
 	if !p.ignoreDeploymentState && parametersHashErr == nil {
@@ -603,7 +603,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 				SkippedReason: DeploymentStateSkipped,
 			}, nil
 		}
-		logDS(err.Error())
+		logDS("%s", err.Error())
 	}
 
 	cancelProgress := make(chan bool)
@@ -931,10 +931,10 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	}
 
 	destroyResult := &DestroyResult{
-		InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
+		InvalidatedEnvKeys: slices.Collect(maps.Keys(p.createOutputParameters(
 			compileResult.Template.Outputs,
 			azapi.CreateDeploymentOutput(deployments[0].Properties.Outputs),
-		)),
+		))),
 	}
 
 	// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
@@ -1099,7 +1099,7 @@ func resourceGroupsToDelete(deployment *armresources.DeploymentExtended) []strin
 		}
 	}
 
-	return maps.Keys(resourceGroups)
+	return slices.Collect(maps.Keys(resourceGroups))
 }
 
 func (p *BicepProvider) getAllResourcesToDelete(
@@ -1955,8 +1955,7 @@ func (p *BicepProvider) ensureParameters(
 	}
 	configuredParameters := make(azure.ArmParameters, len(template.Parameters))
 
-	sortedKeys := maps.Keys(template.Parameters)
-	slices.Sort(sortedKeys)
+	sortedKeys := slices.Sorted(maps.Keys(template.Parameters))
 
 	configModified := false
 

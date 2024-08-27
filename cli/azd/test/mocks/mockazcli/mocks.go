@@ -33,3 +33,14 @@ func NewDeploymentsServiceFromMockContext(
 		clock.NewMock(),
 	)
 }
+
+func NewStandardDeploymentsFromMockContext(
+	mockContext *mocks.MockContext) *azapi.StandardDeployments {
+	return azapi.NewStandardDeployments(
+		mockaccount.SubscriptionCredentialProviderFunc(mockContext.SubscriptionCredentialProvider.CredentialForSubscription),
+		mockContext.ArmClientOptions,
+		azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
+		cloud.AzurePublic(),
+		clock.NewMock(),
+	)
+}

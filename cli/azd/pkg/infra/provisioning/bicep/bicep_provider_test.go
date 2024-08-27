@@ -349,7 +349,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	require.NoError(t, err)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
 	deploymentManager := infra.NewDeploymentManager(deploymentService, resourceManager, mockContext.Console)
 	accountManager := &mockaccount.MockAccountManager{

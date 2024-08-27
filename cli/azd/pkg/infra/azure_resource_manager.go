@@ -23,7 +23,7 @@ import (
 
 type AzureResourceManager struct {
 	resourceService   *azapi.ResourceService
-	deploymentService azapi.DeploymentService
+	deploymentService *azapi.StandardDeployments
 }
 
 type ResourceManager interface {
@@ -49,7 +49,7 @@ type ResourceManager interface {
 
 func NewAzureResourceManager(
 	resourceService *azapi.ResourceService,
-	deploymentService azapi.DeploymentService,
+	deploymentService *azapi.StandardDeployments,
 ) ResourceManager {
 	return &AzureResourceManager{
 		resourceService:   resourceService,

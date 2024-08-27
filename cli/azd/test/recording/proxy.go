@@ -135,11 +135,11 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 }
 
 // panic calls the user-defined Panic function if set, otherwise the default panic function.
-func (p *recorderProxy) panic(req *http.Request, msg string, args ...interface{}) {
+func (p *recorderProxy) panic(req *http.Request, msg string) {
 	if p.Panic != nil {
-		p.Panic(req, fmt.Sprintf(msg, args...))
+		p.Panic(req, msg)
 	} else {
-		panic(fmt.Sprintf(msg, args...))
+		panic(msg)
 	}
 }
 

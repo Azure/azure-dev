@@ -163,8 +163,7 @@ func Test_CLI_Package(t *testing.T) {
 	require.Contains(t, packageResult.Stdout, fmt.Sprintf("Package Output: %s", os.TempDir()))
 }
 
-func Test_CLI_Package_dotignore(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
+func Test_CLI_Package_ZipIgnore(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -192,29 +191,201 @@ func Test_CLI_Package_dotignore(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Verify that the expected files were created during initialization
-	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
+	// Define the scenarios to test
+	scenarios := []struct {
+		name              string
+		description       string
+		enabled           bool
+		rootZipIgnore     string
+		service1ZipIgnore string
+		expectedFiles     map[string]map[string]bool
+	}{
+		{
+			name: "No zipignore",
+			description: "Tests the default behavior when no .zipignore files are present. " +
+				"Verifies that common directories like __pycache__, .venv, and node_modules are excluded.",
+			enabled: true,
+			expectedFiles: map[string]map[string]bool{
+				"service1": {
+					"testfile.py":                            true,
+					"__pycache__/testcache.txt":              false,
+					".venv/pyvenv.cfg":                       false,
+					"node_modules/some_package/package.json": false,
+					"logs/log.txt":                           true,
+				},
+				"service2": {
+					"testfile.js":                            true,
+					"__pycache__/testcache.txt":              false,
+					".venv/pyvenv.cfg":                       false,
+					"node_modules/some_package/package.json": false,
+					"logs/log.txt":                           true,
+				},
+			},
+		},
+		{
+			name: "Root zipignore excluding pycache",
+			description: "Tests the behavior when a root .zipignore excludes __pycache__.  " +
+				"Verifies that __pycache__ is excluded in both services, but other directories are included.",
+			enabled:       true,
+			rootZipIgnore: "__pycache__\n",
+			expectedFiles: map[string]map[string]bool{
+				"service1": {
+					"testfile.py":                            true,
+					"__pycache__/testcache.txt":              false,
+					".venv/pyvenv.cfg":                       true,
+					"node_modules/some_package/package.json": true,
+					"logs/log.txt":                           true,
+				},
+				"service2": {
+					"testfile.js":                            true,
+					"__pycache__/testcache.txt":              false,
+					".venv/pyvenv.cfg":                       true,
+					"node_modules/some_package/package.json": true,
+					"logs/log.txt":                           true,
+				},
+			},
+		},
+		{
+			name: "Root and Service1 zipignore",
+			description: "Tests the behavior when both the root and Service1 have .zipignore files.  " +
+				"Verifies that the root .zipignore affects both services, but Service1's .zipignore " +
+				"takes precedence for its own files.",
+			enabled:           true,
+			rootZipIgnore:     "logs/\n",
+			service1ZipIgnore: "__pycache__\n",
+			expectedFiles: map[string]map[string]bool{
+				"service1": {
+					"testfile.py":                            true,
+					"__pycache__/testcache.txt":              false,
+					".venv/pyvenv.cfg":                       true,
+					"node_modules/some_package/package.json": true,
+					"logs/log.txt":                           false,
+				},
+				"service2": {
+					"testfile.js":                            true,
+					"__pycache__/testcache.txt":              true,
+					".venv/pyvenv.cfg":                       true,
+					"node_modules/some_package/package.json": true,
+					"logs/log.txt":                           false,
+				},
+			},
+		},
+		{
+			name: "Service1 zipignore only",
+			description: "Tests the behavior when only Service1 has a .zipignore file. " +
+				"Verifies that Service1 follows its .zipignore, while Service2 uses the default behavior.",
+			enabled:           true,
+			service1ZipIgnore: "__pycache__\n",
+			expectedFiles: map[string]map[string]bool{
+				"service1": {
+					"testfile.py":                            true,
+					"__pycache__/testcache.txt":              false,
+					".venv/pyvenv.cfg":                       true,
+					"node_modules/some_package/package.json": true,
+					"logs/log.txt":                           true,
+				},
+				"service2": {
+					"testfile.js":                            true,
+					"__pycache__/testcache.txt":              false,
+					".venv/pyvenv.cfg":                       false,
+					"node_modules/some_package/package.json": false,
+					"logs/log.txt":                           true,
+				},
+			},
+		},
+	}
 
-	// Run the package command and specify an output path
-	_, err = cli.RunCommand(ctx, "package", "--output-path", "./dist")
-	require.NoError(t, err)
+	for _, scenario := range scenarios {
+		if !scenario.enabled {
+			continue
+		}
 
-	// Verify that the package was created and the output directory exists
-	distPath := filepath.Join(dir, "dist")
-	files, err := os.ReadDir(distPath)
-	require.NoError(t, err)
-	require.Len(t, files, 1)
+		t.Run(scenario.name, func(t *testing.T) {
+			// Print the scenario description
+			t.Logf("Scenario: %s - %s", scenario.name, scenario.description)
 
-	// Verify that the 'tests' folder is not included in the packaged output
-	zipFilePath := filepath.Join(distPath, files[0].Name())
+			// Set up .zipignore files based on the scenario
+			if scenario.rootZipIgnore != "" {
+				err := os.WriteFile(filepath.Join(dir, ".zipignore"), []byte(scenario.rootZipIgnore), 0600)
+				require.NoError(t, err)
+			}
+			if scenario.service1ZipIgnore != "" {
+				err := os.WriteFile(filepath.Join(dir, "src", "service1", ".zipignore"),
+					[]byte(scenario.service1ZipIgnore), 0600)
+				require.NoError(t, err)
+			}
+
+			// Run the package command and specify an output path
+			outputDir := filepath.Join(dir, "dist_"+strings.ReplaceAll(scenario.name, " ", "_"))
+			err = os.Mkdir(outputDir, 0755) // Ensure the directory exists
+			require.NoError(t, err)
+
+			_, err = cli.RunCommand(ctx, "package", "--output-path", outputDir)
+			require.NoError(t, err)
+
+			// Verify that the package was created and the output directory exists
+			files, err := os.ReadDir(outputDir)
+			require.NoError(t, err)
+			require.Len(t, files, 2)
+
+			// Check contents of Service1 package
+			checkServicePackage(t, outputDir, "service1", scenario.expectedFiles["service1"])
+
+			// Check contents of Service2 package
+			checkServicePackage(t, outputDir, "service2", scenario.expectedFiles["service2"])
+
+			// Clean up .zipignore files and generated zip files
+			os.RemoveAll(outputDir)
+			os.Remove(filepath.Join(dir, ".zipignore"))
+			os.Remove(filepath.Join(dir, "src", "service1", ".zipignore"))
+		})
+	}
+}
+
+// Helper function to check service package contents
+func checkServicePackage(t *testing.T, distPath, serviceName string, expectedFiles map[string]bool) {
+	zipFilePath := findServiceZipFile(t, distPath, serviceName)
 	zipReader, err := zip.OpenReader(zipFilePath)
 	require.NoError(t, err)
 	defer zipReader.Close()
 
+	checkZipContents(t, zipReader, expectedFiles, serviceName)
+}
+
+// Helper function to find the zip file by service name
+func findServiceZipFile(t *testing.T, distPath, serviceName string) string {
+	files, err := os.ReadDir(distPath)
+	require.NoError(t, err)
+
+	for _, file := range files {
+		if filepath.Ext(file.Name()) == ".zip" && strings.Contains(file.Name(), serviceName) {
+			return filepath.Join(distPath, file.Name())
+		}
+	}
+
+	t.Fatalf("Zip file for service '%s' not found", serviceName)
+	return ""
+}
+
+// Helper function to check zip contents against expected files
+func checkZipContents(t *testing.T, zipReader *zip.ReadCloser, expectedFiles map[string]bool, serviceName string) {
+	foundFiles := make(map[string]bool)
+
 	for _, file := range zipReader.File {
-		// Check if the file is in the "tests/" directory or the "testsignoredfromroot/" directory
-		if strings.HasPrefix(file.Name, "tests/") || strings.HasPrefix(file.Name, "testsignoredfromroot/") {
-			t.Errorf("file or folder '%s' should not be included in the package", file.Name)
+		foundFiles[file.Name] = true
+	}
+
+	for expectedFile, shouldExist := range expectedFiles {
+		if shouldExist {
+			if !foundFiles[expectedFile] {
+				t.Errorf("[%s] Expected file '%s' to be included in the package but it was not found",
+					serviceName, expectedFile)
+			}
+		} else {
+			if foundFiles[expectedFile] {
+				t.Errorf("[%s] Expected file '%s' to be excluded from the package but it was found",
+					serviceName, expectedFile)
+			}
 		}
 	}
 }

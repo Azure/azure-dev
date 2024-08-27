@@ -1,0 +1,17 @@
+{
+    "name": "sample-service",
+    "version": "1.0.0",
+    "description": "A sample Node.js service for testing purposes.",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "build": "echo \"Building the project...\"",
+        "start": "node index.js"
+    },
+    "author": "Your Name",
+    "license": "MIT",
+    "dependencies": {
+        "some_package": "^1.0.0"
+    },
+    "devDependencies": {}
+}

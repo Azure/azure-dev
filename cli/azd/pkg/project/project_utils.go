@@ -61,29 +61,35 @@ type buildForZipOptions struct {
 // zipped for packaging. buildForZipOptions provides the specific details for each language regarding which files should
 // not be copied.
 func buildForZip(src, dst string, options buildForZipOptions) error {
-	// Add a global exclude condition for the .dotignore file
-	ignoreMatchers, err := dotignore.ReadIgnoreFiles(src)
+	// Add a global exclude condition for the .zipignore file
+	ignoreMatchers, err := dotignore.ReadIgnoreFiles(src, ".zipignore")
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reading .dotignore files: %w", err)
+		return fmt.Errorf("reading .zipignore files: %w", err)
+	}
+
+	// Determine if the .zipignore file exists at the root of the service
+	zipIgnoreExists := len(ignoreMatchers) > 0
+
+	// Conditionally exclude virtual environments, __pycache__, and node_modules only if .zipignore doesn't exist
+	if !zipIgnoreExists {
+		options.excludeConditions = append(options.excludeConditions, excludeVirtualEnv, excludePyCache, excludeNodeModules)
 	}
 
 	options.excludeConditions = append(options.excludeConditions, func(path string, file os.FileInfo) bool {
+		// Check if the relative path should be ignored based on .zipignore rules
 		if len(ignoreMatchers) > 0 {
-			// Get the relative path from the source directory
 			relativePath, err := filepath.Rel(src, path)
 			if err != nil {
 				return false
 			}
-
-			// Check if the relative path should be ignored
 			isDir := file.IsDir()
 			if dotignore.ShouldIgnore(relativePath, isDir, ignoreMatchers) {
 				return true
 			}
 		}
 
-		// Always exclude .dotignore files
-		if filepath.Base(path) == ".dotignore" {
+		// Always exclude .zipignore files
+		if filepath.Base(path) == ".zipignore" {
 			return true
 		}
 

@@ -130,12 +130,7 @@ func (pp *pythonProject) Package(
 	if err := buildForZip(
 		packageSource,
 		packageDest,
-		buildForZipOptions{
-			excludeConditions: []excludeDirEntryCondition{
-				excludeVirtualEnv,
-				excludePyCache,
-			},
-		}); err != nil {
+		buildForZipOptions{}); err != nil {
 
 		return nil, fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err)
 	}

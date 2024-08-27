@@ -6,4 +6,7 @@ services:
     project: src/service1
     language: python
     host: appservice
-    
+  service2:
+    project: src/service2
+    language: js
+    host: appservice

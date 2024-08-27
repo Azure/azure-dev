@@ -64,6 +64,7 @@ ignoreWords:
     - devcenter
     - devcontainer
     - dnsz
+    - dotignore
     - evgd
     - evgs
     - evgt
@@ -179,7 +180,9 @@ ignoreWords:
     - venv
     - webapprouting
     - zipdeploy
+    - zipignore
     - appinsights
+    - pycache
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases

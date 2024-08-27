@@ -130,11 +130,7 @@ func (np *npmProject) Package(
 	if err := buildForZip(
 		packageSource,
 		packageDest,
-		buildForZipOptions{
-			excludeConditions: []excludeDirEntryCondition{
-				excludeNodeModules,
-			},
-		}); err != nil {
+		buildForZipOptions{}); err != nil {
 		return nil, fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err)
 	}
 

@@ -47,7 +47,7 @@ services:
 			},
 		})
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -95,7 +95,7 @@ services:
 		},
 	)
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -151,7 +151,7 @@ services:
 			},
 		})
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -211,7 +211,7 @@ services:
 			},
 		})
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,

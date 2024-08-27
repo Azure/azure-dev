@@ -80,15 +80,30 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 	m.withSync.Do(m.initConfigCache)
 
 	enabled := false
+	foundEnvVar := false
+	envValue := false
+
+	// There are two supported formats including dot notation and underscore notation.
+	envVarNames := []string{
+		fmt.Sprintf("AZD_ALPHA_ENABLE_%s", strings.ToUpper(string(featureId))),
+		fmt.Sprintf("AZD_ALPHA_ENABLE_%s", strings.ReplaceAll(strings.ToUpper(string(featureId)), ".", "_")),
+	}
 
 	// For testing, and in CI, allow enabling alpha features via the environment.
-	envName := fmt.Sprintf("AZD_ALPHA_ENABLE_%s", strings.ReplaceAll(strings.ToUpper(string(featureId)), ".", "_"))
-	if v, has := os.LookupEnv(envName); has {
-		if b, err := strconv.ParseBool(v); err == nil {
-			enabled = b
-		} else {
-			log.Printf("could not parse %s as a bool when considering %s", v, envName)
+	for _, envName := range envVarNames {
+		if value, has := os.LookupEnv(envName); has {
+			if boolVal, err := strconv.ParseBool(value); err == nil {
+				envValue = boolVal
+				foundEnvVar = true
+				break
+			} else {
+				log.Printf("could not parse %s as a bool when considering %s", value, envName)
+			}
 		}
+	}
+
+	if foundEnvVar {
+		enabled = envValue
 	} else if allOn := isEnabled(m.userConfigCache, AllId); allOn {
 		//check if all features is ON
 		enabled = true

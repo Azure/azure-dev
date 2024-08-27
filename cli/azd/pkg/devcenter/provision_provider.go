@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"golang.org/x/exp/maps"
 )
 
 const (
@@ -334,7 +335,7 @@ func (p *ProvisionProvider) Destroy(
 	p.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
 	result := &provisioning.DestroyResult{
-		InvalidatedEnvKeys: maps.Keys(outputs),
+		InvalidatedEnvKeys: slices.Collect(maps.Keys(outputs)),
 	}
 
 	return result, nil

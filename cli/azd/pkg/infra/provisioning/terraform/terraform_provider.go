@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -19,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/drone/envsubst"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/exp/maps"
 )
 
 const (
@@ -262,7 +263,7 @@ func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions)
 	}
 
 	return &DestroyResult{
-		InvalidatedEnvKeys: maps.Keys(outputs),
+		InvalidatedEnvKeys: slices.Collect(maps.Keys(outputs)),
 	}, nil
 }
 

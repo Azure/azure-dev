@@ -659,13 +659,13 @@ func (m *Manager) LoginWithDeviceCode(
 				"Cloud Shell is automatically authenticated under the initial account used to sign in. Run 'azd auth login' only if you need to use a different account.",
 				fmt.Sprintf(
 					"To sign in, use a web browser to open the page %s and enter the code %s to authenticate.",
-					output.WithUnderline(url),
-					output.WithBold(code.UserCode()),
+					output.WithUnderline("%s", url),
+					output.WithBold("%s", code.UserCode()),
 				),
 			},
 		})
 	} else {
-		m.console.Message(ctx, fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())))
+		m.console.Message(ctx, fmt.Sprintf("Start by copying the next code: %s", output.WithBold("%s", code.UserCode())))
 
 		if err := withOpenUrl(url); err != nil {
 			log.Println("error launching browser: ", err.Error())

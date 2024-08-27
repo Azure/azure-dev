@@ -43,9 +43,10 @@ func (tq *InMemoryTelemetryQueue) EnqueueWithDelay(message []byte, delayDuration
 }
 
 func (tq *InMemoryTelemetryQueue) save(message []byte, delayDuration time.Duration, retryCount int) error {
-	/* #nosec G404 - Use of weak random number generator - false positive in test */
+	//nolint:gosec // G404 - Use of weak random number generator - false positive in test
 	fileName := strconv.FormatUint(rand.Uint64(), 10)
-	/* #nosec G404 - Use of weak random number generator - false positive in test */
+
+	//nolint:gosec // G404 - Use of weak random number generator - false positive in test
 	for _, exists := tq.itemMap[fileName]; exists; fileName = strconv.FormatUint(rand.Uint64(), 10) {
 	}
 

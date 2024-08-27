@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -240,7 +241,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		env := environment.New("test")
 		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
-		serviceConfig.Image = "nginx"
+		serviceConfig.Image = osutil.NewExpandableString("nginx")
 
 		framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)

@@ -197,11 +197,16 @@ func (cli *Cli) Login(ctx context.Context, hostname string) error {
 	return nil
 }
 
+// ApiCallOptions represent the options for the ApiCall method.
+type ApiCallOptions struct {
+	Headers []string
+}
+
 // ApiCall uses gh cli to call https://api.<hostname>/<path>.
-func (cli *Cli) ApiCall(ctx context.Context, hostname, path string, headers []string) (string, error) {
+func (cli *Cli) ApiCall(ctx context.Context, hostname, path string, options ApiCallOptions) (string, error) {
 	url := fmt.Sprintf("https://api.%s%s", hostname, path)
 	args := []string{"api", url}
-	for _, header := range headers {
+	for _, header := range options.Headers {
 		args = append(args, "-H", header)
 	}
 	// application/vnd.github.raw makes the API return the raw content of the file

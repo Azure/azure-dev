@@ -86,7 +86,9 @@ func newGhTemplateSource(
 		console.ShowSpinner(ctx, "Validating template source", input.Step)
 	}
 
-	content, err := ghCli.ApiCall(ctx, hostname, apiPath, []string{"Accept: application/vnd.github.v3.raw"})
+	content, err := ghCli.ApiCall(ctx, hostname, apiPath, github.ApiCallOptions{
+		Headers: []string{"Accept: application/vnd.github.v3.raw"}
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get content: %w", err)
 	}

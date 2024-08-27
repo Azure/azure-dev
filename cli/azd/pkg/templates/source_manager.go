@@ -235,9 +235,6 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 			source, err = newGhTemplateSource(ctx, config.Name, config.Location, ghCli, console)
 			return err
 		})
-		if err != nil {
-			return nil, fmt.Errorf("unable to resolve dependencies: %w", err)
-		}
 	default:
 		err = sm.serviceLocator.ResolveNamed(string(config.Type), &source)
 		if err != nil {

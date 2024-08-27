@@ -126,13 +126,15 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	// Project level hooks
+	projectHooks := hra.projectConfig.Hooks[hookName]
+
 	if err := hra.processHooks(
 		ctx,
 		hra.projectConfig.Path,
 		hookName,
-		fmt.Sprintf("Running %s command hook for project", hookName),
+		fmt.Sprintf("Running %d %s command hook(s) for project", len(projectHooks), hookName),
 		fmt.Sprintf("Project: %s Hook Output", hookName),
-		hra.projectConfig.Hooks,
+		projectHooks,
 		false,
 	); err != nil {
 		return nil, err
@@ -145,15 +147,16 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 	// Service level hooks
 	for _, service := range stableServices {
+		serviceHooks := service.Hooks[hookName]
 		skip := hra.flags.service != "" && service.Name != hra.flags.service
 
 		if err := hra.processHooks(
 			ctx,
 			service.RelativePath,
 			hookName,
-			fmt.Sprintf("Running %s service hook for %s", hookName, service.Name),
+			fmt.Sprintf("Running %d %s service hook(s) for %s", len(serviceHooks), hookName, service.Name),
 			fmt.Sprintf("%s: %s hook output", service.Name, hookName),
-			service.Hooks,
+			serviceHooks,
 			skip,
 		); err != nil {
 			return nil, err
@@ -173,7 +176,7 @@ func (hra *hooksRunAction) processHooks(
 	hookName string,
 	spinnerMessage string,
 	previewMessage string,
-	hooksMap map[string][]*ext.HookConfig,
+	hooks []*ext.HookConfig,
 	skip bool,
 ) error {
 	hra.console.ShowSpinner(ctx, spinnerMessage, input.Step)
@@ -183,8 +186,7 @@ func (hra *hooksRunAction) processHooks(
 		return nil
 	}
 
-	hooks, ok := hooksMap[hookName]
-	if !ok {
+	if len(hooks) == 0 {
 		hra.console.StopSpinner(ctx, spinnerMessage+noHookFoundMessage, input.StepWarning)
 		return nil
 	}
@@ -220,7 +222,7 @@ func (hra *hooksRunAction) execHook(
 	hookName := string(hookType) + commandName
 
 	hooksMap := map[string][]*ext.HookConfig{
-		hookName: []*ext.HookConfig{hook},
+		hookName: {hook},
 	}
 
 	hooksManager := ext.NewHooksManager(cwd)

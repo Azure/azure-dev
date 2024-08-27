@@ -420,6 +420,27 @@ metadata:
 }
 
 func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
+	t.Run("No hooks", func(t *testing.T) {
+		expected := &ProjectConfig{
+			Name: "test-proj",
+			Services: map[string]*ServiceConfig{
+				"api": {
+					Host:         ContainerAppTarget,
+					Language:     ServiceLanguageTypeScript,
+					RelativePath: "src/api",
+				},
+			},
+		}
+
+		yamlBytes, err := yaml.Marshal(expected)
+		require.NoError(t, err)
+		snapshot.SnapshotT(t, string(yamlBytes))
+
+		actual, err := Parse(context.Background(), string(yamlBytes))
+		require.NoError(t, err)
+		require.Equal(t, expected.Hooks, actual.Hooks)
+	})
+
 	t.Run("Single hooks per event", func(t *testing.T) {
 		expected := &ProjectConfig{
 			Name: "test-proj",

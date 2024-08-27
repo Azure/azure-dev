@@ -66,6 +66,8 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	deployment Deployment,
 	queryStart *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
+	allOperations := []*armresources.DeploymentOperation{}
+
 	rootDeploymentOperations, err := deployment.Operations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting root deployment operations: %w", err)
@@ -76,7 +78,10 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 		return nil, err
 	}
 
-	return slices.Collect(maps.Values(operationMap)), nil
+	recursiveOperations := slices.Collect(maps.Values(operationMap))
+	allOperations = append(allOperations, recursiveOperations...)
+
+	return allOperations, nil
 }
 
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment

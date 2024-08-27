@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // RemoteCredential implements azcore.TokenCredential by using the remote credential protocol.
@@ -21,16 +21,16 @@ type RemoteCredential struct {
 	key string
 	// Tenant ID to use to authenticate, instead of the default. Optional.
 	tenantID string
-	// The HTTP client to use to make requests.
-	httpClient httputil.HttpClient
+	// The transport to use to make requests.
+	transporter policy.Transporter
 }
 
-func newRemoteCredential(endpoint, key, tenantID string, httpClient httputil.HttpClient) *RemoteCredential {
+func newRemoteCredential(endpoint, key, tenantID string, transporter policy.Transporter) *RemoteCredential {
 	return &RemoteCredential{
-		endpoint:   endpoint,
-		key:        key,
-		tenantID:   tenantID,
-		httpClient: httpClient,
+		endpoint:    endpoint,
+		key:         key,
+		tenantID:    tenantID,
+		transporter: transporter,
 	}
 }
 
@@ -65,7 +65,7 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", rc.key))
 
-	res, err := rc.httpClient.Do(req)
+	res, err := rc.transporter.Do(req)
 	if err != nil {
 		return azcore.AccessToken{}, remoteCredentialError("making request", err)
 	}
@@ -101,7 +101,7 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 			*tokenResp.Code,
 			*tokenResp.Message))
 	default:
-		return azcore.AccessToken{}, remoteCredentialError("unexpected status", fmt.Errorf(tokenResp.Status))
+		return azcore.AccessToken{}, remoteCredentialError("unexpected status", errors.New(tokenResp.Status))
 	}
 }
 

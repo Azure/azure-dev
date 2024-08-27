@@ -197,7 +197,7 @@ type InputDefault struct {
 
 // ManifestFromAppHost returns the Manifest from the given app host.
 func ManifestFromAppHost(
-	ctx context.Context, appHostProject string, dotnetCli dotnet.DotNetCli, dotnetEnv string,
+	ctx context.Context, appHostProject string, dotnetCli *dotnet.Cli, dotnetEnv string,
 ) (*Manifest, error) {
 	tempDir, err := os.MkdirTemp("", "azd-provision")
 	if err != nil {

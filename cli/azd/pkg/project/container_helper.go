@@ -5,14 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -23,9 +29,11 @@ import (
 type ContainerHelper struct {
 	env                      *environment.Environment
 	envManager               environment.Manager
+	remoteBuildManager       *containerregistry.RemoteBuildManager
 	containerRegistryService azcli.ContainerRegistryService
-	docker                   docker.Docker
+	docker                   *docker.Cli
 	clock                    clock.Clock
+	console                  input.Console
 	cloud                    *cloud.Cloud
 }
 
@@ -34,15 +42,19 @@ func NewContainerHelper(
 	envManager environment.Manager,
 	clock clock.Clock,
 	containerRegistryService azcli.ContainerRegistryService,
-	docker docker.Docker,
+	remoteBuildManager *containerregistry.RemoteBuildManager,
+	docker *docker.Cli,
+	console input.Console,
 	cloud *cloud.Cloud,
 ) *ContainerHelper {
 	return &ContainerHelper{
 		env:                      env,
 		envManager:               envManager,
+		remoteBuildManager:       remoteBuildManager,
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
 		clock:                    clock,
+		console:                  console,
 		cloud:                    cloud,
 	}
 }
@@ -177,7 +189,11 @@ func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *Ser
 	return configuredImage.Local(), nil
 }
 
-func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	if serviceConfig.Docker.RemoteBuild {
+		return []tools.ExternalTool{}
+	}
+
 	return []tools.ExternalTool{ch.docker}
 }
 
@@ -247,111 +263,214 @@ func (ch *ContainerHelper) Deploy(
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
 	writeImageToEnv bool,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			// Get ACR Login Server
-			registryName, err := ch.RegistryName(ctx, serviceConfig)
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	var remoteImage string
+	var err error
+
+	if serviceConfig.Docker.RemoteBuild {
+		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress)
+	} else {
+		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if writeImageToEnv {
+		// Save the name of the image we pushed into the environment with a well known key.
+		log.Printf("writing image name to environment")
+		ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
+
+		if err := ch.envManager.Save(ctx, ch.env); err != nil {
+			return nil, fmt.Errorf("saving image name to environment: %w", err)
+		}
+	}
+
+	return &ServiceDeployResult{
+		Package: packageOutput,
+		Details: &dockerDeployResult{
+			RemoteImageTag: remoteImage,
+		},
+	}, nil
+}
+
+// runLocalBuild builds the image locally and pushes it to the remote registry, it returns the full remote image name.
+func (ch *ContainerHelper) runLocalBuild(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	progress *async.Progress[ServiceProgress],
+) (string, error) {
+	// Get ACR Login Server
+	registryName, err := ch.RegistryName(ctx, serviceConfig)
+	if err != nil {
+		return "", err
+	}
+
+	var sourceImage string
+	targetImage := packageOutput.PackagePath
+
+	packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
+	if ok && packageDetails != nil {
+		sourceImage = packageDetails.SourceImage
+		targetImage = packageDetails.TargetImage
+	}
+
+	// Default to the local image tag
+	remoteImage := targetImage
+
+	// If we don't have a registry specified and the service does not reference a project path
+	// then we are referencing a public/pre-existing image and don't have anything to tag or push
+	if registryName == "" && serviceConfig.RelativePath == "" && sourceImage != "" {
+		remoteImage = sourceImage
+	} else {
+		if targetImage == "" {
+			return "", errors.New("failed retrieving package result details")
+		}
+
+		// If a registry has not been defined then there is no need to tag or push any images
+		if registryName != "" {
+			// When the project does not contain source and we are using an external image we first need to pull the
+			// image before we're able to push it to a remote registry
+			// In most cases this pull will have already been part of the package step
+			if packageDetails != nil && serviceConfig.RelativePath == "" {
+				progress.SetProgress(NewServiceProgress("Pulling container image"))
+				err = ch.docker.Pull(ctx, sourceImage)
+				if err != nil {
+					return "", fmt.Errorf("pulling image: %w", err)
+				}
+			}
+
+			// Tag image
+			// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
+			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage)
 			if err != nil {
-				task.SetError(err)
-				return
+				return "", fmt.Errorf("getting remote image tag: %w", err)
 			}
 
-			var sourceImage string
-			targetImage := packageOutput.PackagePath
+			remoteImage = remoteImageWithTag
 
-			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
-			if ok && packageDetails != nil {
-				sourceImage = packageDetails.SourceImage
-				targetImage = packageDetails.TargetImage
+			progress.SetProgress(NewServiceProgress("Tagging container image"))
+			if err := ch.docker.Tag(ctx, serviceConfig.Path(), targetImage, remoteImage); err != nil {
+				return "", err
 			}
 
-			// Default to the local image tag
-			remoteImage := targetImage
+			log.Printf("logging into container registry '%s'\n", registryName)
+			progress.SetProgress(NewServiceProgress("Logging into container registry"))
 
-			// If we don't have a registry specified and the service does not reference a project path
-			// then we are referencing a public/pre-existing image and don't have anything to tag or push
-			if registryName == "" && serviceConfig.RelativePath == "" && sourceImage != "" {
-				remoteImage = sourceImage
-			} else {
-				if targetImage == "" {
-					task.SetError(errors.New("failed retrieving package result details"))
-					return
+			_, err = ch.Login(ctx, serviceConfig)
+			if err != nil {
+				return "", err
+			}
+
+			// Push image.
+			log.Printf("pushing %s to registry", remoteImage)
+			progress.SetProgress(NewServiceProgress("Pushing container image"))
+			if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteImage); err != nil {
+				errSuggestion := &internal.ErrorWithSuggestion{
+					Err: err,
+					//nolint:lll
+					Suggestion: "When pushing to an external registry, ensure you have successfully authenticated by calling 'docker login' and run 'azd deploy' again",
 				}
 
-				// If a registry has not been defined then there is no need to tag or push any images
-				if registryName != "" {
-					// When the project does not contain source and we are using an external image we first need to pull the image
-					// before we're able to push it to a remote registry
-					// In most cases this pull will have already been part of the package step
-					if packageDetails != nil && serviceConfig.RelativePath == "" {
-						task.SetProgress(NewServiceProgress("Pulling container image"))
-						err = ch.docker.Pull(ctx, sourceImage)
-						if err != nil {
-							task.SetError(fmt.Errorf("pulling image: %w", err))
-							return
-						}
-					}
-
-					// Tag image
-					// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
-					remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage)
-					if err != nil {
-						task.SetError(fmt.Errorf("getting remote image tag: %w", err))
-						return
-					}
-
-					remoteImage = remoteImageWithTag
-
-					task.SetProgress(NewServiceProgress("Tagging container image"))
-					if err := ch.docker.Tag(ctx, serviceConfig.Path(), targetImage, remoteImage); err != nil {
-						task.SetError(err)
-						return
-					}
-
-					log.Printf("logging into container registry '%s'\n", registryName)
-					task.SetProgress(NewServiceProgress("Logging into container registry"))
-
-					_, err = ch.Login(ctx, serviceConfig)
-					if err != nil {
-						task.SetError(err)
-						return
-					}
-
-					// Push image.
-					log.Printf("pushing %s to registry", remoteImage)
-					task.SetProgress(NewServiceProgress("Pushing container image"))
-					if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteImage); err != nil {
-						errSuggestion := &internal.ErrorWithSuggestion{
-							Err: err,
-							//nolint:lll
-							Suggestion: "When pushing to an external registry, ensure you have successfully authenticated by calling 'docker login' and run 'azd deploy' again",
-						}
-
-						task.SetError(errSuggestion)
-						return
-					}
-				}
+				return "", errSuggestion
 			}
+		}
+	}
 
-			if writeImageToEnv {
-				// Save the name of the image we pushed into the environment with a well known key.
-				log.Printf("writing image name to environment")
-				ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
+	return remoteImage, nil
+}
 
-				if err := ch.envManager.Save(ctx, ch.env); err != nil {
-					task.SetError(fmt.Errorf("saving image name to environment: %w", err))
-					return
-				}
-			}
+// runLocalBuild builds the image using a remote azure container registry and tags it. It returns the full remote image name.
+func (ch *ContainerHelper) runRemoteBuild(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	target *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (string, error) {
+	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
-			task.SetResult(&ServiceDeployResult{
-				Package: packageOutput,
-				Details: &dockerDeployResult{
-					RemoteImageTag: remoteImage,
-				},
-			})
+	if !filepath.IsAbs(dockerOptions.Path) {
+		dockerOptions.Path = filepath.Join(serviceConfig.Path(), dockerOptions.Path)
+	}
+
+	if !filepath.IsAbs(dockerOptions.Context) {
+		dockerOptions.Context = filepath.Join(serviceConfig.Path(), dockerOptions.Context)
+	}
+
+	if dockerOptions.Platform != "linux/amd64" {
+		return "", fmt.Errorf("remote build only supports the linux/amd64 platform")
+	}
+
+	progress.SetProgress(NewServiceProgress("Packing remote build context"))
+
+	contextPath, dockerPath, err := containerregistry.PackRemoteBuildSource(ctx, dockerOptions.Context, dockerOptions.Path)
+	if contextPath != "" {
+		defer os.Remove(contextPath)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	progress.SetProgress(NewServiceProgress("Uploading remote build context"))
+
+	registryName, err := ch.RegistryName(ctx, serviceConfig)
+	if err != nil {
+		return "", err
+	}
+
+	acrRegistryDomain := "." + ch.cloud.ContainerRegistryEndpointSuffix
+
+	if !strings.HasSuffix(registryName, acrRegistryDomain) {
+		return "", fmt.Errorf("remote build is only supported when the target registry is an Azure Container Registry")
+	}
+
+	registryResourceName := strings.TrimSuffix(registryName, acrRegistryDomain)
+
+	source, err := ch.remoteBuildManager.UploadBuildSource(
+		ctx, target.SubscriptionId(), target.ResourceGroupName(), registryResourceName, contextPath)
+	if err != nil {
+		return "", err
+	}
+
+	localImageTag, err := ch.LocalImageTag(ctx, serviceConfig)
+	if err != nil {
+		return "", err
+	}
+
+	imageName, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag)
+	if err != nil {
+		return "", err
+	}
+
+	progress.SetProgress(NewServiceProgress("Running remote build"))
+
+	buildRequest := &armcontainerregistry.DockerBuildRequest{
+		SourceLocation: source.RelativePath,
+		DockerFilePath: to.Ptr(dockerPath),
+		IsPushEnabled:  to.Ptr(true),
+		ImageNames:     []*string{to.Ptr(imageName)},
+		Platform: &armcontainerregistry.PlatformProperties{
+			OS:           to.Ptr(armcontainerregistry.OSLinux),
+			Architecture: to.Ptr(armcontainerregistry.ArchitectureAmd64),
+		},
+	}
+
+	previewerWriter := ch.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Docker Output",
 		})
+	err = ch.remoteBuildManager.RunDockerBuildRequestWithLogs(
+		ctx, target.SubscriptionId(), target.ResourceGroupName(), registryResourceName, buildRequest, previewerWriter)
+	ch.console.StopPreviewer(ctx, false)
+	if err != nil {
+		return "", err
+	}
+
+	return imageName, nil
 }
 
 type dockerDeployResult struct {

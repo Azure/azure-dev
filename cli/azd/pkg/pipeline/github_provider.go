@@ -12,23 +12,22 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"golang.org/x/exp/slices"
 )
 
 // GitHubScmProvider implements ScmProvider using GitHub as the provider
@@ -36,14 +35,14 @@ import (
 type GitHubScmProvider struct {
 	newGitHubRepoCreated bool
 	console              input.Console
-	ghCli                github.GitHubCli
-	gitCli               git.GitCli
+	ghCli                *github.Cli
+	gitCli               *git.Cli
 }
 
 func NewGitHubScmProvider(
 	console input.Console,
-	ghCli github.GitHubCli,
-	gitCli git.GitCli,
+	ghCli *github.Cli,
+	gitCli *git.Cli,
 ) ScmProvider {
 	return &GitHubScmProvider{
 		console: console,
@@ -133,10 +132,10 @@ func (p *GitHubScmProvider) configureGitRemote(
 }
 
 // defines the structure of an ssl git remote
-var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@github\.com:(.*?)(?:\.git)?$`)
+var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:(.*?)(?:\.git)?$`)
 
 // defines the structure of an HTTPS git remote
-var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?github\.com/(.*?)(?:\.git)?$`)
+var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(.*?)(?:\.git)?$`)
 
 // ErrRemoteHostIsNotGitHub the error used when a non GitHub remote is found
 var ErrRemoteHostIsNotGitHub = errors.New("not a github host")
@@ -179,7 +178,7 @@ func (p *GitHubScmProvider) preventGitPush(
 	// Only check when using an existing repo in case github actions are disabled
 	if !p.newGitHubRepoCreated {
 		slug := gitRepo.owner + "/" + gitRepo.repoName
-		return p.notifyWhenGitHubActionsAreDisabled(ctx, gitRepo.gitProjectPath, slug, remoteName, branchName)
+		return p.notifyWhenGitHubActionsAreDisabled(ctx, gitRepo.gitProjectPath, slug)
 	}
 	return false, nil
 }
@@ -219,8 +218,6 @@ func (p *GitHubScmProvider) notifyWhenGitHubActionsAreDisabled(
 	ctx context.Context,
 	gitProjectPath,
 	repoSlug string,
-	origin string,
-	branch string,
 ) (bool, error) {
 	ghActionsInUpstreamRepo, err := p.ghCli.GitHubActionsExists(ctx, repoSlug)
 	if err != nil {
@@ -314,29 +311,26 @@ const (
 type GitHubCiProvider struct {
 	env                *environment.Environment
 	credentialProvider account.SubscriptionCredentialProvider
-	adService          azcli.AdService
-	ghCli              github.GitHubCli
-	gitCli             git.GitCli
+	entraIdService     entraid.EntraIdService
+	ghCli              *github.Cli
+	gitCli             *git.Cli
 	console            input.Console
-	httpClient         httputil.HttpClient
 }
 
 func NewGitHubCiProvider(
 	env *environment.Environment,
 	credentialProvider account.SubscriptionCredentialProvider,
-	adService azcli.AdService,
-	ghCli github.GitHubCli,
-	gitCli git.GitCli,
-	console input.Console,
-	httpClient httputil.HttpClient) CiProvider {
+	entraIdService entraid.EntraIdService,
+	ghCli *github.Cli,
+	gitCli *git.Cli,
+	console input.Console) CiProvider {
 	return &GitHubCiProvider{
 		env:                env,
 		credentialProvider: credentialProvider,
-		adService:          adService,
+		entraIdService:     entraIdService,
 		ghCli:              ghCli,
 		gitCli:             gitCli,
 		console:            console,
-		httpClient:         httpClient,
 	}
 }
 
@@ -397,7 +391,7 @@ func (p *GitHubCiProvider) credentialOptions(
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	authType PipelineAuthType,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) (*CredentialOptions, error) {
 	// Default auth type to client-credentials for terraform
 	if infraOptions.Provider == provisioning.Terraform && authType == "" {
@@ -426,7 +420,7 @@ func (p *GitHubCiProvider) credentialOptions(
 				Name:        url.PathEscape(fmt.Sprintf("%s-pull_request", credentialSafeName)),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
-				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Description: to.Ptr("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 		}
@@ -436,7 +430,7 @@ func (p *GitHubCiProvider) credentialOptions(
 				Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, branch)),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
-				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Description: to.Ptr("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			}
 
@@ -466,7 +460,7 @@ func (p *GitHubCiProvider) configureConnection(
 	infraOptions provisioning.Options,
 	servicePrincipal *graphsdk.ServicePrincipal,
 	authType PipelineAuthType,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) error {
 	// Default auth type to client-credentials for terraform
 	if infraOptions.Provider == provisioning.Terraform && authType == "" {
@@ -475,7 +469,7 @@ func (p *GitHubCiProvider) configureConnection(
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	if authType == AuthTypeClientCredentials {
-		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, servicePrincipal, credentials)
+		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, credentials)
 		if err != nil {
 			return fmt.Errorf("configuring client credentials auth: %w", err)
 		}
@@ -562,8 +556,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	ctx context.Context,
 	infraOptions provisioning.Options,
 	repoSlug string,
-	servicePrincipal *graphsdk.ServicePrincipal,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 ) error {
 	/* #nosec G101 - Potential hardcoded credentials - false positive */
 	secretName := "AZURE_CREDENTIALS"
@@ -652,7 +645,8 @@ func (p *GitHubCiProvider) configurePipeline(
 			p.console.MessageUxItem(ctx, &ux.MultilineMessage{
 				Lines: []string{
 					"",
-					"GitHub Action secrets are now configured. You can view GitHub action secrets that were created at this link:",
+					"GitHub Action secrets are now configured. You can view GitHub action secrets that were " +
+						"created at this link:",
 					output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
 					""},
 			})
@@ -736,8 +730,8 @@ func (w *workflow) url() string {
 func ensureGitHubLogin(
 	ctx context.Context,
 	projectPath string,
-	ghCli github.GitHubCli,
-	gitCli git.GitCli,
+	ghCli *github.Cli,
+	gitCli *git.Cli,
 	hostname string,
 	console input.Console) (bool, error) {
 	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
@@ -787,7 +781,7 @@ func ensureGitHubLogin(
 
 // getRemoteUrlFromExisting let user to select an existing repository from his/her account and
 // returns the remote url for that repository.
-func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, console input.Console) (string, error) {
+func getRemoteUrlFromExisting(ctx context.Context, ghCli *github.Cli, console input.Console) (string, error) {
 	repos, err := ghCli.ListRepositories(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listing existing repositories: %w", err)
@@ -816,7 +810,7 @@ func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, conso
 
 // selectRemoteUrl let user to type and enter the url from an existing GitHub repo.
 // If the url is valid, the remote url is returned. Otherwise an error is returned.
-func selectRemoteUrl(ctx context.Context, ghCli github.GitHubCli, repo github.GhCliRepository) (string, error) {
+func selectRemoteUrl(ctx context.Context, ghCli *github.Cli, repo github.GhCliRepository) (string, error) {
 	protocolType, err := ghCli.GetGitProtocolType(ctx)
 	if err != nil {
 		return "", fmt.Errorf("detecting default protocol: %w", err)
@@ -835,7 +829,7 @@ func selectRemoteUrl(ctx context.Context, ghCli github.GitHubCli, repo github.Gh
 // getRemoteUrlFromNewRepository creates a new repository on GitHub and returns its remote url
 func getRemoteUrlFromNewRepository(
 	ctx context.Context,
-	ghCli github.GitHubCli,
+	ghCli *github.Cli,
 	currentPathName string,
 	console input.Console,
 ) (string, error) {

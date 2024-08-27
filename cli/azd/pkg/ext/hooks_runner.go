@@ -172,7 +172,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 
 		// If an error occurred log the failure but continue
 		if hookConfig.ContinueOnError {
-			h.console.Message(ctx, output.WithBold(output.WithWarningFormat("WARNING: %s", execErr.Error())))
+			h.console.Message(ctx, output.WithBold("%s", output.WithWarningFormat("WARNING: %s", execErr.Error())))
 			h.console.Message(
 				ctx,
 				output.WithWarningFormat("Execution will continue since ContinueOnError has been set to true."),

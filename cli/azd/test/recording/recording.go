@@ -217,6 +217,21 @@ func Start(t *testing.T, opts ...Options) *Session {
 			log.Error("failed to sanitize container app update", "error", err)
 		}
 
+		err = sanitizeBlobStorageSasSig(i)
+		if err != nil {
+			log.Error("failed to sanitize blob storage SAS signature", "error", err)
+		}
+
+		err = sanitizeContainerRegistryListBuildSourceUploadUrl(i)
+		if err != nil {
+			log.Error("failed to sanitize list build source upload url sas signature", "error", err)
+		}
+
+		err = sanitizeContainerRegistryListLogSasUrl(i)
+		if err != nil {
+			log.Error("failed to sanitize list log sas url sas signature", "error", err)
+		}
+
 		return nil
 	}, recorder.BeforeSaveHook)
 
@@ -460,7 +475,7 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 		}
 
 		if b == '\n' {
-			l.t.Logf(l.sb.String())
+			l.t.Logf("%s", l.sb.String())
 			l.sb.Reset()
 		}
 	}

@@ -2,6 +2,7 @@ package azsdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -187,6 +188,11 @@ func logWebAppDeploymentStatus(
 	traceId string,
 	progressLog func(string),
 ) error {
+	if (res == armappservice.WebAppsClientGetProductionSiteDeploymentStatusResponse{} ||
+		res.CsmDeploymentStatus == armappservice.CsmDeploymentStatus{} ||
+		res.CsmDeploymentStatus.Properties == nil) {
+		return fmt.Errorf("response or its properties are empty")
+	}
 	properties := res.CsmDeploymentStatus.Properties
 	inProgressNumber := int(*properties.NumberOfInstancesInProgress)
 	successNumber := int(*properties.NumberOfInstancesSuccessful)
@@ -234,11 +240,11 @@ func logWebAppDeploymentStatus(
 		}
 
 		logErrorFunction(properties, "runtime ")
-		return fmt.Errorf(errorString)
+		return errors.New(errorString)
 	case armappservice.DeploymentBuildStatusBuildFailed:
 		errorString += "Deployment failed because the build process failed\n"
 		logErrorFunction(properties, "build ")
-		return fmt.Errorf(errorString)
+		return errors.New(errorString)
 	// Progress Log for other states
 	default:
 		if len(status) > 0 {

@@ -11,7 +11,7 @@ import (
 )
 
 type dotNetAppHostDetector struct {
-	dotnetCli dotnet.DotNetCli
+	dotnetCli *dotnet.Cli
 }
 
 func (ad *dotNetAppHostDetector) Language() Language {

@@ -7,22 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
-
-// Telemetry notice text displayed to the user in some scenarios
-//
-//nolint:lll
-const cTelemetryNoticeText = `The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience.
-You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use.
-
-Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-dev#data-collection`
-
-// The name of the file created in the azd configuration directory after the
-// first run of the CLI. It's presence is used to determine if this is the
-// first run of the CLI.
-const cFirstRunFileName = "first-run"
 
 func FirstNotice() string {
 	// If the AZURE_DEV_COLLECT_TELEMETRY environment variable is set to any
@@ -39,7 +27,12 @@ func FirstNotice() string {
 			log.Printf("failed to setup first run: %v", err)
 		}
 
-		return cTelemetryNoticeText
+		//nolint:lll
+		return heredoc.Doc(`
+The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience.
+You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use.
+
+Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-dev#data-collection`)
 	}
 
 	return ""
@@ -73,7 +66,7 @@ func getFirstRunFilePath() (string, error) {
 		return "", err
 	}
 
-	return filepath.Join(configDir, cFirstRunFileName), nil
+	return filepath.Join(configDir, "first-run"), nil
 }
 
 func SetupFirstRun() error {

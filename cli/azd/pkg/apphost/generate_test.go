@@ -24,17 +24,11 @@ import (
 //go:embed testdata/aspire-docker.json
 var aspireDockerManifest []byte
 
-//go:embed testdata/aspire-storage.json
-var aspireStorageManifest []byte
-
 //go:embed testdata/aspire-args.json
 var aspireArgsManifest []byte
 
 //go:embed testdata/aspire-bicep.json
 var aspireBicepManifest []byte
-
-//go:embed testdata/aspire-escaping.json
-var aspireEscapingManifest []byte
 
 //go:embed testdata/aspire-container.json
 var aspireContainerManifest []byte
@@ -65,63 +59,6 @@ func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[
 	})
 }
 
-func TestAspireEscaping(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping due to EOL issues on Windows with the baselines")
-	}
-
-	ctx := context.Background()
-	mockCtx := mocks.NewMockContext(ctx)
-	mockPublishManifest(mockCtx, aspireEscapingManifest, nil)
-
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
-
-	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
-	require.NoError(t, err)
-	for _, name := range []string{"api"} {
-		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
-			require.NoError(t, err)
-			snapshot.SnapshotT(t, tmpl)
-		})
-	}
-}
-
-func TestAspireStorageGeneration(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping due to EOL issues on Windows with the baselines")
-	}
-
-	ctx := context.Background()
-	mockCtx := mocks.NewMockContext(ctx)
-	mockPublishManifest(mockCtx, aspireStorageManifest, nil)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
-
-	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
-	require.NoError(t, err)
-
-	files, err := BicepTemplate("main", m, AppHostOptions{})
-	require.NoError(t, err)
-
-	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		contents, err := fs.ReadFile(files, path)
-		if err != nil {
-			return err
-		}
-		t.Run(path, func(t *testing.T) {
-			snapshot.SnapshotT(t, string(contents))
-		})
-		return nil
-	})
-	require.NoError(t, err)
-}
-
 func TestAspireBicepGeneration(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping due to EOL issues on Windows with the baselines")
@@ -137,7 +74,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	filesFromManifest["aspire.hosting.azure.bicep.appinsights.bicep"] = ignoredBicepContent
 	filesFromManifest["aspire.hosting.azure.bicep.sql.bicep"] = ignoredBicepContent
 	mockPublishManifest(mockCtx, aspireBicepManifest, filesFromManifest)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -180,7 +117,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -223,7 +160,7 @@ func TestAspireDashboardGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -258,7 +195,7 @@ func TestAspireArgsGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireArgsManifest, nil)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireArgs.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -277,7 +214,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireContainerManifest, nil)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -319,80 +256,6 @@ func TestAspireContainerGeneration(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
-}
-
-func TestBuildEnvResolveServiceToConnectionString(t *testing.T) {
-	// Create a mock infraGenerator instance
-	mockGenerator := &infraGenerator{
-		resourceTypes: map[string]string{
-			"service": "postgres.database.v0",
-		},
-	}
-
-	// Define test input
-	env := map[string]string{
-		"VAR1": "value1",
-		"VAR2": "value2",
-		"VAR3": `complex {service.connectionString} expression`,
-	}
-
-	expected := map[string]string{
-		"VAR1": "value1",
-		"VAR2": "value2",
-	}
-
-	expectedSecrets := map[string]string{
-		"VAR3": `complex {{ connectionString "service" }} expression`,
-	}
-
-	manifestCtx := &genContainerAppManifestTemplateContext{
-		Env:             make(map[string]string),
-		Secrets:         make(map[string]string),
-		KeyVaultSecrets: make(map[string]string),
-	}
-
-	// Call the method being tested
-	err := mockGenerator.buildEnvBlock(env, manifestCtx)
-	require.NoError(t, err)
-	require.Equal(t, expected, manifestCtx.Env)
-	require.Equal(t, expectedSecrets, manifestCtx.Secrets)
-}
-
-func TestAddContainerAppService(t *testing.T) {
-	// Create a mock infraGenerator instance
-	mockGenerator := &infraGenerator{
-		bicepContext: genBicepTemplateContext{
-			StorageAccounts: make(map[string]genStorageAccount),
-		},
-	}
-
-	// Call the method being tested
-	mockGenerator.addStorageBlob("storage", "blob")
-	mockGenerator.addStorageAccount("storage")
-	mockGenerator.addStorageQueue("storage", "quue")
-	mockGenerator.addStorageAccount("storage")
-	mockGenerator.addStorageTable("storage", "table")
-	mockGenerator.addStorageAccount("storage2")
-	mockGenerator.addStorageAccount("storage3")
-	mockGenerator.addStorageTable("storage4", "table")
-	mockGenerator.addStorageTable("storage2", "table")
-	mockGenerator.addStorageQueue("storage", "quue2")
-
-	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage"].Blobs))
-	require.Equal(t, 2, len(mockGenerator.bicepContext.StorageAccounts["storage"].Queues))
-	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage"].Tables))
-
-	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage2"].Blobs))
-	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage2"].Queues))
-	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage2"].Tables))
-
-	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage3"].Blobs))
-	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage3"].Queues))
-	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage3"].Tables))
-
-	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Blobs))
-	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Queues))
-	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Tables))
 }
 
 func TestEvaluateForOutputs(t *testing.T) {

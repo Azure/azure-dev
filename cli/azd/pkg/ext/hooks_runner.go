@@ -23,7 +23,7 @@ type HooksRunner struct {
 	commandRunner exec.CommandRunner
 	console       input.Console
 	cwd           string
-	hooks         map[string]*HookConfig
+	hooks         map[string][]*HookConfig
 	env           *environment.Environment
 	envManager    environment.Manager
 }
@@ -36,7 +36,7 @@ func NewHooksRunner(
 	envManager environment.Manager,
 	console input.Console,
 	cwd string,
-	hooks map[string]*HookConfig,
+	hooks map[string][]*HookConfig,
 	env *environment.Environment,
 ) *HooksRunner {
 	if cwd == "" {

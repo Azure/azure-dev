@@ -173,7 +173,7 @@ func (hra *hooksRunAction) processHooks(
 	hookName string,
 	spinnerMessage string,
 	previewMessage string,
-	hooks map[string]*ext.HookConfig,
+	hooksMap map[string][]*ext.HookConfig,
 	skip bool,
 ) error {
 	hra.console.ShowSpinner(ctx, spinnerMessage, input.Step)
@@ -183,7 +183,7 @@ func (hra *hooksRunAction) processHooks(
 		return nil
 	}
 
-	hook, ok := hooks[hookName]
+	hooks, ok := hooksMap[hookName]
 	if !ok {
 		hra.console.StopSpinner(ctx, spinnerMessage+noHookFoundMessage, input.StepWarning)
 		return nil
@@ -191,18 +191,20 @@ func (hra *hooksRunAction) processHooks(
 
 	hookType, commandName := ext.InferHookType(hookName)
 
-	if err := hra.prepareHook(hookName, hook); err != nil {
-		return err
-	}
+	for _, hook := range hooks {
+		if err := hra.prepareHook(hookName, hook); err != nil {
+			return err
+		}
 
-	err := hra.execHook(ctx, previewMessage, cwd, hookType, commandName, hook)
-	if err != nil {
-		hra.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
-		return fmt.Errorf("failed running hook %s, %w", hookName, err)
-	}
+		err := hra.execHook(ctx, previewMessage, cwd, hookType, commandName, hook)
+		if err != nil {
+			hra.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+			return fmt.Errorf("failed running hook %s, %w", hookName, err)
+		}
 
-	// The previewer cancels the previous spinner so we need to restart/show it again.
-	hra.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+		// The previewer cancels the previous spinner so we need to restart/show it again.
+		hra.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+	}
 
 	return nil
 }
@@ -217,12 +219,12 @@ func (hra *hooksRunAction) execHook(
 ) error {
 	hookName := string(hookType) + commandName
 
-	hooks := map[string]*ext.HookConfig{
-		hookName: hook,
+	hooksMap := map[string][]*ext.HookConfig{
+		hookName: []*ext.HookConfig{hook},
 	}
 
 	hooksManager := ext.NewHooksManager(cwd)
-	hooksRunner := ext.NewHooksRunner(hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooks, hra.env)
+	hooksRunner := ext.NewHooksRunner(hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env)
 
 	previewer := hra.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
 		Prefix:       "  ",

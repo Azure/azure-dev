@@ -9,8 +9,11 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // Tests invalid project configurations.
@@ -413,5 +416,91 @@ metadata:
 
 		_, err = Parse(context.Background(), testProjWithoutVersion)
 		require.NoError(t, err)
+	})
+}
+
+func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
+	t.Run("Single hooks per event", func(t *testing.T) {
+		expected := &ProjectConfig{
+			Name: "test-proj",
+			Hooks: HooksConfig{
+				"postprovision": {
+					{
+						Shell: ext.ShellTypeBash,
+						Run:   "scripts/postprovision.sh",
+					},
+				},
+			},
+			Services: map[string]*ServiceConfig{
+				"api": {
+					Host:         ContainerAppTarget,
+					Language:     ServiceLanguageTypeScript,
+					RelativePath: "src/api",
+					Hooks: HooksConfig{
+						"postprovision": {
+							{
+								Shell: ext.ShellTypeBash,
+								Run:   "scripts/postprovision.sh",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		yamlBytes, err := yaml.Marshal(expected)
+		require.NoError(t, err)
+		snapshot.SnapshotT(t, string(yamlBytes))
+
+		actual, err := Parse(context.Background(), string(yamlBytes))
+		require.NoError(t, err)
+		require.Equal(t, expected.Hooks, actual.Hooks)
+		require.Equal(t, expected.Services["api"].Hooks, actual.Services["api"].Hooks)
+	})
+
+	t.Run("Multiple hooks per event", func(t *testing.T) {
+		expected := &ProjectConfig{
+			Name: "test-proj",
+			Hooks: map[string][]*ext.HookConfig{
+				"postprovision": {
+					{
+						Shell: ext.ShellTypeBash,
+						Run:   "scripts/postprovision1.sh",
+					},
+					{
+						Shell: ext.ShellTypeBash,
+						Run:   "scripts/postprovision2.sh",
+					},
+				},
+			},
+			Services: map[string]*ServiceConfig{
+				"api": {
+					Host:         ContainerAppTarget,
+					Language:     ServiceLanguageTypeScript,
+					RelativePath: "src/api",
+					Hooks: HooksConfig{
+						"postprovision": {
+							{
+								Shell: ext.ShellTypeBash,
+								Run:   "scripts/postprovision1.sh",
+							},
+							{
+								Shell: ext.ShellTypeBash,
+								Run:   "scripts/postprovision2.sh",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		yamlBytes, err := yaml.Marshal(expected)
+		require.NoError(t, err)
+		snapshot.SnapshotT(t, string(yamlBytes))
+
+		actual, err := Parse(context.Background(), string(yamlBytes))
+		require.NoError(t, err)
+		require.Equal(t, expected.Hooks, actual.Hooks)
+		require.Equal(t, expected.Services["api"].Hooks, actual.Services["api"].Hooks)
 	})
 }

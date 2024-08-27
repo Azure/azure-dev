@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
@@ -100,15 +101,7 @@ func appendToUnique(v *valSynced, attr attribute.KeyValue) {
 			adds := make([]string, 0, len(attrValues))
 
 			for _, a := range attrValues {
-				found := false
-				for _, v := range val.AsStringSlice() {
-					if v == a {
-						found = true
-						break
-					}
-				}
-
-				if !found {
+				if !slices.Contains(val.AsStringSlice(), a) {
 					adds = append(adds, a)
 				}
 			}

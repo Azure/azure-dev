@@ -355,9 +355,9 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
-	os.Setenv("AZD_ALPHA_ENABLE_INFRASYNTH", "true")
-	os.Setenv("AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS", "true")
-	os.Setenv("AZD_ALPHA_ENABLE_AKS_HELM", "false")
+	t.Setenv("AZD_ALPHA_ENABLE_INFRASYNTH", "true")
+	t.Setenv("AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS", "true")
+	t.Setenv("AZD_ALPHA_ENABLE_AKS_HELM", "false")
 
 	infraSyncEnabled := mockContext.AlphaFeaturesManager.IsEnabled("infraSynth")
 	require.True(t, infraSyncEnabled)

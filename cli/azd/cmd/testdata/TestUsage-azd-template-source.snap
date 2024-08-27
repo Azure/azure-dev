@@ -8,14 +8,10 @@ Usage
   azd template source [command]
 
 Available Commands
-  add   	: Adds an azd template source at the provided key (Beta)
-  Use known-keys w/o a type for:
-   ・default: azd built-in template list
-   ・awesome-azd: Includes all templates from http://aka.ms/awesome-azd
-  For custom key, use type and location flags. Supported types:
-   ・file: local file only 
-   ・url: public urls, only, to download json source
-   ・gh: path to json file in a GitHub repository (supports private repos)
+  add   	: Adds an azd template source with the specified key. (Beta)
+The key can be any value that uniquely identifies the template source, with the exception of the following reserved, well-known key values:
+   ・default: Default templates
+   ・awesome-azd: Templates from http://aka.ms/awesome-azd
   list  	: Lists the configured azd template sources. (Beta)
   remove	: Removes the specified azd template source (Beta)
 

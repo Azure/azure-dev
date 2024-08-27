@@ -69,7 +69,7 @@ type ProjectMetadata struct {
 // and new multiple hook configurations
 type HooksConfig map[string][]*ext.HookConfig
 
-// UnmarshalYAML unmarshals the hooks configuration from YAML supporting both legacy single hook configurations
+// UnmarshalYAML converts the hooks configuration from YAML supporting both legacy single hook configurations
 // and new multiple hook configurations
 func (ch *HooksConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var legacyConfig map[string]*ext.HookConfig

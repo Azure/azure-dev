@@ -34,7 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -64,14 +64,14 @@ type BicepProvider struct {
 	env                   *environment.Environment
 	envManager            environment.Manager
 	projectPath           string
-	options               Options
+	options               provisioning.Options
 	console               input.Console
 	bicepCli              *bicep.Cli
 	azCli                 azcli.AzCli
 	resourceService       *azapi.ResourceService
 	deploymentManager     *infra.DeploymentManager
 	prompters             prompt.Prompter
-	curPrincipal          CurrentPrincipalIdProvider
+	curPrincipal          provisioning.CurrentPrincipalIdProvider
 	alphaFeatureManager   *alpha.FeatureManager
 	ignoreDeploymentState bool
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
@@ -98,7 +98,7 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
-func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
+func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
 	p.projectPath = projectPath
 	p.options = options
 	if p.options.Module == "" {
@@ -130,7 +130,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
 	if isBicepParamFile(modulePath) {
-		if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {
+		if err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {
 			return err
 		}
 	}
@@ -154,7 +154,8 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			return true
 		}
 
-		if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation); err != nil {
+		err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation)
+		if err != nil {
 			return err
 		}
 
@@ -206,9 +207,9 @@ func (p *BicepProvider) LastDeployment(ctx context.Context) (*azapi.ResourceDepl
 	return p.latestDeploymentResult(ctx, scope)
 }
 
-func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
+func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOptions) (*provisioning.StateResult, error) {
 	if options == nil {
-		options = &StateOptions{}
+		options = &provisioning.StateOptions{}
 	}
 
 	var err error
@@ -296,11 +297,11 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 		Message: fmt.Sprintf("Retrieving Azure deployment (%s)", output.WithHighLightFormat(deployment.Name)),
 	})
 
-	state := State{}
-	state.Resources = make([]Resource, len(deployment.Resources))
+	state := provisioning.State{}
+	state.Resources = make([]provisioning.Resource, len(deployment.Resources))
 
 	for idx, res := range deployment.Resources {
-		state.Resources[idx] = Resource{
+		state.Resources[idx] = provisioning.Resource{
 			Id: *res.ID,
 		}
 	}
@@ -324,7 +325,7 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 		output.WithHyperlink(outputsUrl, deployment.Name),
 	))
 
-	return &StateResult{
+	return &provisioning.StateResult{
 		State: &state,
 	}, nil
 }
@@ -444,7 +445,7 @@ func (p *BicepProvider) deploymentState(
 		return nil, fmt.Errorf("can't get hash from current template: %w", err)
 	}
 
-	if !prevDeploymentEqualToCurrent(ctx, prevDeploymentResult, templateHash, currentParamsHash) {
+	if !prevDeploymentEqualToCurrent(prevDeploymentResult, templateHash, currentParamsHash) {
 		return nil, fmt.Errorf("deployment state has changed")
 	}
 
@@ -498,8 +499,7 @@ func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, pa
 }
 
 // prevDeploymentEqualToCurrent compares the template hash from a previous deployment against a current template.
-func prevDeploymentEqualToCurrent(
-	ctx context.Context, prev *azapi.ResourceDeployment, templateHash, paramsHash string) bool {
+func prevDeploymentEqualToCurrent(prev *azapi.ResourceDeployment, templateHash, paramsHash string) bool {
 	if prev == nil {
 		logDS("No previous deployment.")
 		return false
@@ -536,7 +536,7 @@ func logDS(msg string, v ...any) {
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
+func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
 	if p.ignoreDeploymentState {
 		logDS("Azure Deployment State is disabled by --no-state arg.")
 	}
@@ -568,9 +568,9 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 				azapi.CreateDeploymentOutput(deploymentState.Outputs),
 			)
 
-			return &DeployResult{
+			return &provisioning.DeployResult{
 				Deployment:    deployment,
-				SkippedReason: DeploymentStateSkipped,
+				SkippedReason: provisioning.DeploymentStateSkipped,
 			}, nil
 		}
 		logDS("%s", err.Error())
@@ -635,13 +635,13 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		azapi.CreateDeploymentOutput(deployResult.Outputs),
 	)
 
-	return &DeployResult{
+	return &provisioning.DeployResult{
 		Deployment: deployment,
 	}, nil
 }
 
 // Preview runs deploy using the what-if argument
-func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
 	bicepDeploymentData, err := p.plan(ctx)
 	if err != nil {
 		return nil, err
@@ -682,13 +682,13 @@ func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, erro
 		)
 	}
 
-	var changes []*DeploymentPreviewChange
+	var changes []*provisioning.DeploymentPreviewChange
 	for _, change := range deployPreviewResult.Properties.Changes {
 		resourceAfter := change.After.(map[string]interface{})
 
-		changes = append(changes, &DeploymentPreviewChange{
-			ChangeType: ChangeType(*change.ChangeType),
-			ResourceId: Resource{
+		changes = append(changes, &provisioning.DeploymentPreviewChange{
+			ChangeType: provisioning.ChangeType(*change.ChangeType),
+			ResourceId: provisioning.Resource{
 				Id: *change.ResourceID,
 			},
 			ResourceType: resourceAfter["type"].(string),
@@ -696,10 +696,10 @@ func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, erro
 		})
 	}
 
-	return &DeployPreviewResult{
-		Preview: &DeploymentPreview{
+	return &provisioning.DeployPreviewResult{
+		Preview: &provisioning.DeploymentPreview{
 			Status: *deployPreviewResult.Status,
-			Properties: &DeploymentPreviewProperties{
+			Properties: &provisioning.DeploymentPreviewProperties{
 				Changes: changes,
 			},
 		},
@@ -740,7 +740,10 @@ func (p *BicepProvider) inferScopeFromEnv() (infra.Scope, error) {
 }
 
 // Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
-func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
+func (p *BicepProvider) Destroy(
+	ctx context.Context,
+	options provisioning.DestroyOptions,
+) (*provisioning.DestroyResult, error) {
 	modulePath := p.modulePath()
 	// TODO: Report progress, "Compiling Bicep template"
 	compileResult, err := p.compileBicep(ctx, modulePath)
@@ -868,7 +871,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, fmt.Errorf("purging resources: %w", err)
 	}
 
-	destroyResult := &DestroyResult{
+	destroyResult := &provisioning.DestroyResult{
 		InvalidatedEnvKeys: slices.Collect(maps.Keys(p.createOutputParameters(
 			compileResult.Template.Outputs,
 			azapi.CreateDeploymentOutput(mostRecentDeployment.Outputs),
@@ -1006,7 +1009,7 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 // Deletes the azure resources within the deployment
 func (p *BicepProvider) destroyDeploymentWithConfirmation(
 	ctx context.Context,
-	options DestroyOptions,
+	options provisioning.DestroyOptions,
 	deployment infra.Deployment,
 	groupedResources map[string][]*azapi.Resource,
 	resourceCount int,
@@ -1076,7 +1079,7 @@ func itemsCountAsText(items []itemToPurge) string {
 func (p *BicepProvider) purgeItems(
 	ctx context.Context,
 	items []itemToPurge,
-	options DestroyOptions,
+	options provisioning.DestroyOptions,
 ) error {
 	if len(items) == 0 {
 		// nothing to purge
@@ -1429,18 +1432,18 @@ func (p *BicepProvider) purgeAPIManagement(
 	return nil
 }
 
-func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
+func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) provisioning.ParameterType {
 	switch s {
 	case "String", "string", "secureString", "securestring":
-		return ParameterTypeString
+		return provisioning.ParameterTypeString
 	case "Bool", "bool":
-		return ParameterTypeBoolean
+		return provisioning.ParameterTypeBoolean
 	case "Int", "int":
-		return ParameterTypeNumber
+		return provisioning.ParameterTypeNumber
 	case "Object", "object", "secureObject", "secureobject":
-		return ParameterTypeObject
+		return provisioning.ParameterTypeObject
 	case "Array", "array":
-		return ParameterTypeArray
+		return provisioning.ParameterTypeArray
 	default:
 		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))
 	}
@@ -1451,14 +1454,14 @@ func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 func (p *BicepProvider) createOutputParameters(
 	templateOutputs azure.ArmTemplateOutputs,
 	azureOutputParams map[string]azapi.AzCliDeploymentOutput,
-) map[string]OutputParameter {
+) map[string]provisioning.OutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
 
 	for key := range templateOutputs {
 		canonicalOutputCasings[strings.ToLower(key)] = key
 	}
 
-	outputParams := make(map[string]OutputParameter, len(azureOutputParams))
+	outputParams := make(map[string]provisioning.OutputParameter, len(azureOutputParams))
 
 	for key, azureParam := range azureOutputParams {
 		var paramName string
@@ -1472,7 +1475,7 @@ func (p *BicepProvider) createOutputParameters(
 			paramName = strings.ToUpper(key)
 		}
 
-		outputParams[paramName] = OutputParameter{
+		outputParams[paramName] = provisioning.OutputParameter{
 			Type:  p.mapBicepTypeToInterfaceType(azureParam.Type),
 			Value: azureParam.Value,
 		}
@@ -1692,20 +1695,20 @@ func definitionName(typeDefinitionRef string) (string, error) {
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
-func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*Deployment, error) {
-	template := Deployment{}
-	parameters := make(map[string]InputParameter)
-	outputs := make(map[string]OutputParameter)
+func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*provisioning.Deployment, error) {
+	template := provisioning.Deployment{}
+	parameters := make(map[string]provisioning.InputParameter)
+	outputs := make(map[string]provisioning.OutputParameter)
 
 	for key, param := range bicepTemplate.Parameters {
-		parameters[key] = InputParameter{
+		parameters[key] = provisioning.InputParameter{
 			Type:         string(p.mapBicepTypeToInterfaceType(param.Type)),
 			DefaultValue: param.DefaultValue,
 		}
 	}
 
 	for key, param := range bicepTemplate.Outputs {
-		outputs[key] = OutputParameter{
+		outputs[key] = provisioning.OutputParameter{
 			Type:  p.mapBicepTypeToInterfaceType(param.Type),
 			Value: param.Value,
 		}
@@ -1866,7 +1869,7 @@ func (p *BicepProvider) ensureParameters(
 		// If the parameter is tagged with {type: "generate"}, skip prompting.
 		// We generate it once, then save to config for next attempts.`.
 		azdMetadata, hasMetadata := param.AzdMetadata()
-		if hasMetadata && parameterType == ParameterTypeString && azdMetadata.Type != nil &&
+		if hasMetadata && parameterType == provisioning.ParameterTypeString && azdMetadata.Type != nil &&
 			*azdMetadata.Type == azure.AzdMetadataTypeGenerate {
 
 			// - generate once
@@ -1973,7 +1976,7 @@ func mustSetParamAsConfig(key string, value any, config config.Config, isSecured
 }
 
 // Convert the ARM parameters file value into a value suitable for deployment
-func armParameterFileValue(paramType ParameterType, value any, defaultValue any) any {
+func armParameterFileValue(paramType provisioning.ParameterType, value any, defaultValue any) any {
 	// Quick return if the value being converted is not a string
 	if value == nil || reflect.TypeOf(value).Kind() != reflect.String {
 		return value
@@ -1981,19 +1984,19 @@ func armParameterFileValue(paramType ParameterType, value any, defaultValue any)
 
 	// Relax the handling of bool and number types to accept convertible strings
 	switch paramType {
-	case ParameterTypeBoolean:
+	case provisioning.ParameterTypeBoolean:
 		if val, ok := value.(string); ok {
 			if boolVal, err := strconv.ParseBool(val); err == nil {
 				return boolVal
 			}
 		}
-	case ParameterTypeNumber:
+	case provisioning.ParameterTypeNumber:
 		if val, ok := value.(string); ok {
 			if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
 				return intVal
 			}
 		}
-	case ParameterTypeString:
+	case provisioning.ParameterTypeString:
 		// Use Cases
 		// 1. Non-empty input value, return input value (no prompt)
 		// 2. Empty input value and no default - return nil (prompt user)
@@ -2014,15 +2017,15 @@ func armParameterFileValue(paramType ParameterType, value any, defaultValue any)
 	return nil
 }
 
-func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
+func isValueAssignableToParameterType(paramType provisioning.ParameterType, value any) bool {
 	switch paramType {
-	case ParameterTypeArray:
+	case provisioning.ParameterTypeArray:
 		_, ok := value.([]any)
 		return ok
-	case ParameterTypeBoolean:
+	case provisioning.ParameterTypeBoolean:
 		_, ok := value.(bool)
 		return ok
-	case ParameterTypeNumber:
+	case provisioning.ParameterTypeNumber:
 		switch t := value.(type) {
 		case int, int8, int16, int32, int64:
 			return true
@@ -2038,10 +2041,10 @@ func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
 		default:
 			return false
 		}
-	case ParameterTypeObject:
+	case provisioning.ParameterTypeObject:
 		_, ok := value.(map[string]any)
 		return ok
-	case ParameterTypeString:
+	case provisioning.ParameterTypeString:
 		_, ok := value.(string)
 		return ok
 	default:
@@ -2059,11 +2062,11 @@ func NewBicepProvider(
 	env *environment.Environment,
 	console input.Console,
 	prompters prompt.Prompter,
-	curPrincipal CurrentPrincipalIdProvider,
+	curPrincipal provisioning.CurrentPrincipalIdProvider,
 	alphaFeatureManager *alpha.FeatureManager,
 	keyvaultService keyvault.KeyVaultService,
 	cloud *cloud.Cloud,
-) Provider {
+) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
 		env:                 env,

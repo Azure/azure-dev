@@ -29,7 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -148,7 +148,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		infraProvider := createBicepProvider(t, mockContext)
 
-		destroyOptions := NewDestroyOptions(false, false)
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		require.Nil(t, err)
@@ -167,7 +167,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		infraProvider := createBicepProvider(t, mockContext)
 
-		destroyOptions := NewDestroyOptions(true, true)
+		destroyOptions := provisioning.NewDestroyOptions(true, true)
 		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		require.Nil(t, err)
@@ -303,12 +303,12 @@ func TestPlanForResourceGroup(t *testing.T) {
 }
 
 func TestIsValueAssignableToParameterType(t *testing.T) {
-	cases := map[ParameterType]any{
-		ParameterTypeNumber:  1,
-		ParameterTypeBoolean: true,
-		ParameterTypeString:  "hello",
-		ParameterTypeArray:   []any{},
-		ParameterTypeObject:  map[string]any{},
+	cases := map[provisioning.ParameterType]any{
+		provisioning.ParameterTypeNumber:  1,
+		provisioning.ParameterTypeBoolean: true,
+		provisioning.ParameterTypeString:  "hello",
+		provisioning.ParameterTypeArray:   []any{},
+		provisioning.ParameterTypeObject:  map[string]any{},
 	}
 
 	for k := range cases {
@@ -323,15 +323,15 @@ func TestIsValueAssignableToParameterType(t *testing.T) {
 		}
 	}
 
-	assert.True(t, isValueAssignableToParameterType(ParameterTypeNumber, 1.0))
-	assert.True(t, isValueAssignableToParameterType(ParameterTypeNumber, json.Number("1")))
-	assert.False(t, isValueAssignableToParameterType(ParameterTypeNumber, 1.5))
-	assert.False(t, isValueAssignableToParameterType(ParameterTypeNumber, json.Number("1.5")))
+	assert.True(t, isValueAssignableToParameterType(provisioning.ParameterTypeNumber, 1.0))
+	assert.True(t, isValueAssignableToParameterType(provisioning.ParameterTypeNumber, json.Number("1")))
+	assert.False(t, isValueAssignableToParameterType(provisioning.ParameterTypeNumber, 1.5))
+	assert.False(t, isValueAssignableToParameterType(provisioning.ParameterTypeNumber, json.Number("1.5")))
 }
 
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
-	options := Options{
+	options := provisioning.Options{
 		Path:   "infra",
 		Module: "main",
 	}
@@ -1075,71 +1075,71 @@ func TestUserDefinedTypes(t *testing.T) {
 
 func Test_armParameterFileValue(t *testing.T) {
 	t.Run("NilValue", func(t *testing.T) {
-		actual := armParameterFileValue(ParameterTypeString, nil, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeString, nil, nil)
 		require.Nil(t, actual)
 	})
 
 	t.Run("StringWithValue", func(t *testing.T) {
 		expected := "value"
-		actual := armParameterFileValue(ParameterTypeString, expected, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeString, expected, nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("EmptyString", func(t *testing.T) {
 		input := ""
-		actual := armParameterFileValue(ParameterTypeString, input, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeString, input, nil)
 		require.Nil(t, actual)
 	})
 
 	t.Run("EmptyStringWithNonEmptyDefault", func(t *testing.T) {
 		expected := ""
-		actual := armParameterFileValue(ParameterTypeString, expected, "not-empty")
+		actual := armParameterFileValue(provisioning.ParameterTypeString, expected, "not-empty")
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("EmptyStringWithEmptyDefault", func(t *testing.T) {
 		input := ""
-		actual := armParameterFileValue(ParameterTypeString, input, "")
+		actual := armParameterFileValue(provisioning.ParameterTypeString, input, "")
 		require.Nil(t, actual)
 	})
 
 	t.Run("ValidBool", func(t *testing.T) {
 		expected := true
-		actual := armParameterFileValue(ParameterTypeBoolean, expected, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeBoolean, expected, nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("ActualBool", func(t *testing.T) {
 		expected := true
-		actual := armParameterFileValue(ParameterTypeBoolean, "true", nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeBoolean, "true", nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("InvalidBool", func(t *testing.T) {
-		actual := armParameterFileValue(ParameterTypeBoolean, "NotABool", nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeBoolean, "NotABool", nil)
 		require.Nil(t, actual)
 	})
 
 	t.Run("ValidInt", func(t *testing.T) {
 		var expected int64 = 42
-		actual := armParameterFileValue(ParameterTypeNumber, "42", nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeNumber, "42", nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("ActualInt", func(t *testing.T) {
 		var expected int64 = 42
-		actual := armParameterFileValue(ParameterTypeNumber, expected, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeNumber, expected, nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("InvalidInt", func(t *testing.T) {
-		actual := armParameterFileValue(ParameterTypeNumber, "NotAnInt", nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeNumber, "NotAnInt", nil)
 		require.Nil(t, actual)
 	})
 
 	t.Run("Array", func(t *testing.T) {
 		expected := []string{"a", "b", "c"}
-		actual := armParameterFileValue(ParameterTypeArray, expected, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeArray, expected, nil)
 		require.Equal(t, expected, actual)
 	})
 }

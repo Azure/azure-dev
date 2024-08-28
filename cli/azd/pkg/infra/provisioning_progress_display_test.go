@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package provisioning
+package infra
 
 import (
 	"bytes"
@@ -17,8 +17,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +29,7 @@ type mockResourceManager struct {
 
 func (mock *mockResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
-	target infra.Deployment,
+	target Deployment,
 	startTime *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
 	return mock.operations, nil
@@ -44,6 +42,22 @@ func (mock *mockResourceManager) GetResourceTypeDisplayName(
 	resourceType azapi.AzureResourceType,
 ) (string, error) {
 	return string(resourceType), nil
+}
+
+func (mock *mockResourceManager) GetResourceGroupsForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) ([]*azapi.Resource, error) {
+	return []*azapi.Resource{}, nil
+}
+
+func (mock *mockResourceManager) FindResourceGroupForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) (string, error) {
+	return fmt.Sprintf("rg-%s", envName), nil
 }
 
 func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
@@ -82,7 +96,17 @@ func (mock *mockResourceManager) MarkComplete(i int) {
 }
 
 func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
-	deployment := armresources.DeploymentExtended{}
+	deployment := armresources.DeploymentExtended{
+		ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME"),
+		Location: to.Ptr("eastus2"),
+		Properties: &armresources.DeploymentPropertiesExtended{
+			ProvisioningState: to.Ptr(armresources.ProvisioningStateCreated),
+			Timestamp:         to.Ptr(time.Now().UTC()),
+		},
+		Tags: map[string]*string{},
+		Name: to.Ptr("DEPLOYMENT_NAME"),
+		Type: to.Ptr("Microsoft.Resources/deployments"),
+	}
 	deploymentJson, err := json.Marshal(deployment)
 	require.NoError(t, err)
 	m.HttpClient.When(func(request *http.Request) bool {
@@ -103,23 +127,19 @@ func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
 
 func TestReportProgress(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
-	scope := infra.NewSubscriptionDeployment(
-		depService,
-		depOpService,
-		"eastus2",
-		"SUBSCRIPTION_ID",
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
+	deployment := NewSubscriptionDeployment(
+		scope,
 		"DEPLOYMENT_NAME",
-		cloud.AzurePublic().PortalUrlBase,
 	)
 	mockAzDeploymentShow(t, *mockContext)
 
 	startTime := time.Now()
 	outputLength := 0
 	mockResourceManager := mockResourceManager{}
-	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, scope)
+	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, deployment)
 	err := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
 	require.NoError(t, err)
 

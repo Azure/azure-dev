@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -27,7 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"golang.org/x/exp/slices"
 )
 
 // GitHubScmProvider implements ScmProvider using GitHub as the provider
@@ -132,10 +132,10 @@ func (p *GitHubScmProvider) configureGitRemote(
 }
 
 // defines the structure of an ssl git remote
-var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@github\.com:(.*?)(?:\.git)?$`)
+var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:(.*?)(?:\.git)?$`)
 
 // defines the structure of an HTTPS git remote
-var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?github\.com/(.*?)(?:\.git)?$`)
+var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(.*?)(?:\.git)?$`)
 
 // ErrRemoteHostIsNotGitHub the error used when a non GitHub remote is found
 var ErrRemoteHostIsNotGitHub = errors.New("not a github host")

@@ -20,8 +20,8 @@ type awesomeAzdTemplate struct {
 	Tags        []string `json:"tags"`
 }
 
-// NewAwesomeAzdTemplateSource creates a new template source from the awesome-azd templates json file.
-func NewAwesomeAzdTemplateSource(
+// newAwesomeAzdTemplateSource creates a new template source from the awesome-azd templates json file.
+func newAwesomeAzdTemplateSource(
 	ctx context.Context,
 	name string,
 	url string,
@@ -75,5 +75,5 @@ func NewAwesomeAzdTemplateSource(
 		})
 	}
 
-	return NewTemplateSource(name, awesomeAzdTemplates)
+	return newTemplateSource(name, awesomeAzdTemplates)
 }

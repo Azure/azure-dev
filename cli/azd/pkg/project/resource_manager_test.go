@@ -13,7 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/stretchr/testify/mock"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -93,7 +93,11 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
-			mockDeploymentOperations := &mockDeploymentOperations{}
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 
 			if tt.init != nil {
 				tt.init(mockContext)
@@ -108,11 +112,7 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 
 			setupGetResourceMock(mockContext, expectedResource)
 
-			resourceService := azapi.NewResourceService(
-				mockContext.SubscriptionCredentialProvider,
-				mockContext.ArmClientOptions,
-			)
-			resourceManager := NewResourceManager(tt.env, resourceService, mockDeploymentOperations)
+			resourceManager := NewResourceManager(tt.env, deploymentService, resourceService)
 			targetResource, err := resourceManager.GetTargetResource(
 				*mockContext.Context,
 				tt.env.GetSubscriptionId(),
@@ -126,10 +126,6 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 			require.Equal(t, tt.env.GetSubscriptionId(), targetResource.SubscriptionId())
 		})
 	}
-}
-
-type mockDeploymentOperations struct {
-	mock.Mock
 }
 
 func setupGetResourceGroupMock(mockContext *mocks.MockContext, resourceGroup *armresources.ResourceGroup) {
@@ -158,23 +154,4 @@ func setupGetResourceMock(mockContext *mocks.MockContext, resource *armresources
 
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
 	})
-}
-
-func (m *mockDeploymentOperations) ListSubscriptionDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	deploymentName string,
-) ([]*armresources.DeploymentOperation, error) {
-	args := m.Called(ctx, subscriptionId, deploymentName)
-	return args.Get(0).([]*armresources.DeploymentOperation), args.Error(1)
-}
-
-func (m *mockDeploymentOperations) ListResourceGroupDeploymentOperations(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	deploymentName string,
-) ([]*armresources.DeploymentOperation, error) {
-	args := m.Called(ctx, subscriptionId, resourceGroupName, deploymentName)
-	return args.Get(0).([]*armresources.DeploymentOperation), args.Error(1)
 }

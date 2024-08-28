@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -22,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
@@ -348,6 +350,44 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	require.True(t, packageCmdFound, "cmd.package not found")
 	require.True(t, provisionCmdFound, "cmd.provision not found")
 	require.True(t, upCmdFound, "cmd.up not found")
+}
+
+func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	t.Setenv("AZD_ALPHA_ENABLE_INFRASYNTH", "true")
+	t.Setenv("AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS", "true")
+	t.Setenv("AZD_ALPHA_ENABLE_AKS_HELM", "false")
+
+	infraSyncEnabled := mockContext.AlphaFeaturesManager.IsEnabled("infraSynth")
+	require.True(t, infraSyncEnabled)
+
+	resourceGroupDeploymentsEnabled := mockContext.AlphaFeaturesManager.IsEnabled("resourceGroupDeployments")
+	require.True(t, resourceGroupDeploymentsEnabled)
+
+	helmEnabled := mockContext.AlphaFeaturesManager.IsEnabled("aks.helm")
+	require.False(t, helmEnabled)
+
+	usageAttributes := tracing.GetUsageAttributes()
+
+	found := false
+	var alphaFeaturesAttribute attribute.KeyValue
+
+	for _, attrib := range usageAttributes {
+		if attrib.Key == fields.AlphaFeaturesKey {
+			found = true
+			alphaFeaturesAttribute = attrib
+			break
+		}
+	}
+
+	require.True(t, found)
+	values := alphaFeaturesAttribute.Value.AsStringSlice()
+
+	require.Len(t, values, 2)
+	require.Contains(t, values, "infraSynth")
+	require.Contains(t, values, "resourceGroupDeployments")
+	require.NotContains(t, values, "aks.helm")
 }
 
 func attributesMap(attributes []Attribute) map[attribute.Key]interface{} {

@@ -108,6 +108,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000000",
 	})
 
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	accountManager := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{
 			{
@@ -126,7 +127,6 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
-	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 
 	provider := NewTerraformProvider(
 		terraformTools.NewCli(mockContext.CommandRunner),

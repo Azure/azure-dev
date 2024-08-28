@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
-	"golang.org/x/exp/maps"
 	"gopkg.in/yaml.v3"
 )
 
@@ -269,9 +269,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	var mapToResourceParams []genInput
 
 	// order to be deterministic when writing bicep
-	genParametersKeys := maps.Keys(generator.bicepContext.InputParameters)
-	slices.Sort(genParametersKeys)
-
+	genParametersKeys := slices.Sorted(maps.Keys(generator.bicepContext.InputParameters))
 	for _, key := range genParametersKeys {
 		parameter := generator.bicepContext.InputParameters[key]
 		parameterMetadata := ""

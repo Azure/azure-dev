@@ -99,6 +99,12 @@ const (
 	PlatformTypeKey = attribute.Key("platform.type")
 )
 
+// Machine-level configuration related attribute.
+const (
+	// Tracks what alpha features are enabled on each command
+	AlphaFeaturesKey = attribute.Key("config.features")
+)
+
 // Environment related attributes
 const (
 	// Hashed environment name
@@ -245,6 +251,11 @@ const (
 
 	// The last step recorded during the app init process.
 	AppInitLastStep = attribute.Key("appinit.lastStep")
+)
+
+// Remote docker build related fields
+const (
+	RemoteBuildCount = attribute.Key("container.remoteBuild.count")
 )
 
 // JSON-RPC related fields

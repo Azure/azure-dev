@@ -168,6 +168,9 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
+	// Set this to true if you want to print the directory and zip contents for debugging
+	printDebug := false
+
 	// Create a temporary directory for the project
 	dir := tempDirWithDiagnostics(t)
 
@@ -180,9 +183,11 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 	err := copySample(dir, "dotignore")
 	require.NoError(t, err, "failed expanding sample")
 
-	// Print directory contents for debugging
-	printDirContents(t, "service1", filepath.Join(dir, "src", "service1"))
-	printDirContents(t, "service2", filepath.Join(dir, "src", "service2"))
+	// Print directory contents for debugging if printDebug is true
+	if printDebug {
+		printDirContents(t, "service1", filepath.Join(dir, "src", "service1"))
+		printDirContents(t, "service2", filepath.Join(dir, "src", "service2"))
+	}
 
 	// Run the init command to initialize the project
 	_, err = cli.RunCommandWithStdIn(
@@ -319,8 +324,10 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			// Print directory contents after writing .zipignore
-			printDirContents(t, "service1", filepath.Join(dir, "src", "service1"))
+			// Print directory contents after writing .zipignore if printDebug is true
+			if printDebug {
+				printDirContents(t, "service1", filepath.Join(dir, "src", "service1"))
+			}
 
 			// Run the package command and specify an output path
 			outputDir := filepath.Join(dir, "dist_"+strings.ReplaceAll(scenario.name, " ", "_"))
@@ -330,8 +337,10 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 			_, err = cli.RunCommand(ctx, "package", "--output-path", outputDir)
 			require.NoError(t, err)
 
-			// Print directory contents of the output directory
-			printDirContents(t, scenario.name+" output", outputDir)
+			// Print directory contents of the output directory if printDebug is true
+			if printDebug {
+				printDirContents(t, scenario.name+" output", outputDir)
+			}
 
 			// Verify that the package was created and the output directory exists
 			files, err := os.ReadDir(outputDir)
@@ -339,10 +348,10 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 			require.Len(t, files, 2)
 
 			// Check contents of Service1 package
-			checkServicePackage(t, outputDir, "service1", scenario.expectedFiles["service1"])
+			checkServicePackage(t, outputDir, "service1", scenario.expectedFiles["service1"], printDebug)
 
 			// Check contents of Service2 package
-			checkServicePackage(t, outputDir, "service2", scenario.expectedFiles["service2"])
+			checkServicePackage(t, outputDir, "service2", scenario.expectedFiles["service2"], printDebug)
 
 			// Clean up .zipignore files and generated zip files
 			os.RemoveAll(outputDir)
@@ -353,9 +362,11 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 }
 
 // Helper function to check service package contents
-func checkServicePackage(t *testing.T, distPath, serviceName string, expectedFiles map[string]bool) {
+func checkServicePackage(t *testing.T, distPath, serviceName string, expectedFiles map[string]bool, printDebug bool) {
 	zipFilePath := findServiceZipFile(t, distPath, serviceName)
-	printZipContents(t, serviceName, zipFilePath) // Print the contents of the zip file
+	if printDebug {
+		printZipContents(t, serviceName, zipFilePath) // Print the contents of the zip file if printDebug is true
+	}
 	zipReader, err := zip.OpenReader(zipFilePath)
 	require.NoError(t, err)
 	defer zipReader.Close()

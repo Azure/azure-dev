@@ -132,7 +132,7 @@ func (p *GitHubScmProvider) configureGitRemote(
 }
 
 // defines the structure of an ssl git remote
-var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:(.*?)(?:\.git)?$`)
+var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@[a-zA-Z0-9.-_]+:(.*?)(?:\.git)?$`)
 
 // defines the structure of an HTTPS git remote
 var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(.*?)(?:\.git)?$`)

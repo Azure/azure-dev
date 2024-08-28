@@ -29,10 +29,12 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"precommand": {
-				Run:   "echo 'hello'",
-				Shell: ext.ShellTypeBash,
+				{
+					Run:   "echo 'hello'",
+					Shell: ext.ShellTypeBash,
+				},
 			},
 		},
 	}
@@ -61,10 +63,12 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"precommand": {
-				Run:   "echo 'hello'",
-				Shell: ext.ShellTypeBash,
+				{
+					Run:   "echo 'hello'",
+					Shell: ext.ShellTypeBash,
+				},
 			},
 		},
 	}
@@ -119,10 +123,12 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"precommand": {
-				Run:   "exit 1",
-				Shell: ext.ShellTypeBash,
+				{
+					Run:   "exit 1",
+					Shell: ext.ShellTypeBash,
+				},
 			},
 		},
 	}
@@ -154,11 +160,13 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"precommand": {
-				Run:             "exit 1",
-				Shell:           ext.ShellTypeBash,
-				ContinueOnError: true,
+				{
+					Run:             "exit 1",
+					Shell:           ext.ShellTypeBash,
+					ContinueOnError: true,
+				},
 			},
 		},
 	}
@@ -190,10 +198,12 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"prealias": {
-				Run:   "echo 'hello'",
-				Shell: ext.ShellTypeBash,
+				{
+					Run:   "echo 'hello'",
+					Shell: ext.ShellTypeBash,
+				},
 			},
 		},
 	}
@@ -230,10 +240,12 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 		Language:        "ts",
 		RelativePath:    "./src/api",
 		Host:            "appservice",
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"predeploy": {
-				Shell: ext.ShellTypeBash,
-				Run:   "echo 'Hello'",
+				{
+					Shell: ext.ShellTypeBash,
+					Run:   "echo 'Hello'",
+				},
 			},
 		},
 	}

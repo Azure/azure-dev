@@ -37,7 +37,7 @@ type ServiceConfig struct {
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra,omitempty"`
 	// Hook configuration for service
-	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+	Hooks HooksConfig `yaml:"hooks,omitempty"`
 	// Options specific to the DotNetContainerApp target. These are set by the importer and
 	// can not be controlled via the project file today.
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`

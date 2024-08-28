@@ -160,7 +160,7 @@ type AskerConsole struct {
 	currentIndent *atomic.String
 	// consoleWidth is the width of the underlying console window. The value is updated as the window resized. Nil when
 	// isTerminal is false.
-	consoleWidth *atomic.Int32
+	consoleWidth *atomic.Int64
 	// holds the last 2 bytes written by message or messageUX. This is used to detect when there is already an empty
 	// line (\n\n)
 	last2Byte [2]byte
@@ -925,13 +925,13 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 }
 
 // consoleWidth the number of columns in the active console window
-func consoleWidth() int {
+func consoleWidth() int64 {
 	width, _ := consolesize.GetConsoleSize()
-	return width
+	return int64(width)
 }
 
-func (c *AskerConsole) handleResize(width int) {
-	c.consoleWidth.Store(int32(width))
+func (c *AskerConsole) handleResize(width int64) {
+	c.consoleWidth.Store(width)
 
 	c.spinnerLineMu.Lock()
 	if c.spinner.Status() == yacspin.SpinnerRunning {
@@ -1045,7 +1045,7 @@ func NewConsole(
 	c.spinner, _ = yacspin.New(spinnerConfig)
 	c.spinnerTerminalMode = spinnerConfig.TerminalMode
 	if isTerminal {
-		c.consoleWidth = atomic.NewInt32(int32(consoleWidth()))
+		c.consoleWidth = atomic.NewInt64(consoleWidth())
 		watchTerminalResize(c)
 		watchTerminalInterrupt(c)
 	}

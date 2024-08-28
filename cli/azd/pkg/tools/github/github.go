@@ -517,7 +517,7 @@ func extractFromTar(src, dst string) (string, error) {
 		// cspell: disable-next-line `Typeflag` is comming fron *tar.Header
 		if fileHeader.Typeflag == tar.TypeReg && fileName == "gh" {
 			filePath := filepath.Join(dst, fileName)
-			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(fileHeader.Mode))
+			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fileHeader.FileInfo().Mode())
 			if err != nil {
 				return extractedAt, err
 			}

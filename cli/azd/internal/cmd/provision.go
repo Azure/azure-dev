@@ -13,6 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -93,19 +95,20 @@ func NewProvisionCmd() *cobra.Command {
 }
 
 type ProvisionAction struct {
-	flags            *ProvisionFlags
-	provisionManager *provisioning.Manager
-	projectManager   project.ProjectManager
-	resourceManager  project.ResourceManager
-	env              *environment.Environment
-	envManager       environment.Manager
-	formatter        output.Formatter
-	projectConfig    *project.ProjectConfig
-	writer           io.Writer
-	console          input.Console
-	subManager       *account.SubscriptionsManager
-	importManager    *project.ImportManager
-	portalUrlBase    string
+	flags               *ProvisionFlags
+	provisionManager    *provisioning.Manager
+	projectManager      project.ProjectManager
+	resourceManager     project.ResourceManager
+	env                 *environment.Environment
+	envManager          environment.Manager
+	formatter           output.Formatter
+	projectConfig       *project.ProjectConfig
+	writer              io.Writer
+	console             input.Console
+	subManager          *account.SubscriptionsManager
+	importManager       *project.ImportManager
+	alphaFeatureManager *alpha.FeatureManager
+	portalUrlBase       string
 }
 
 func NewProvisionAction(
@@ -121,22 +124,24 @@ func NewProvisionAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	subManager *account.SubscriptionsManager,
+	alphaFeatureManager *alpha.FeatureManager,
 	cloud *cloud.Cloud,
 ) actions.Action {
 	return &ProvisionAction{
-		flags:            flags,
-		provisionManager: provisionManager,
-		projectManager:   projectManager,
-		resourceManager:  resourceManager,
-		env:              env,
-		envManager:       envManager,
-		formatter:        formatter,
-		projectConfig:    projectConfig,
-		writer:           writer,
-		console:          console,
-		subManager:       subManager,
-		importManager:    importManager,
-		portalUrlBase:    cloud.PortalUrlBase,
+		flags:               flags,
+		provisionManager:    provisionManager,
+		projectManager:      projectManager,
+		resourceManager:     resourceManager,
+		env:                 env,
+		envManager:          envManager,
+		formatter:           formatter,
+		projectConfig:       projectConfig,
+		writer:              writer,
+		console:             console,
+		subManager:          subManager,
+		importManager:       importManager,
+		alphaFeatureManager: alphaFeatureManager,
+		portalUrlBase:       cloud.PortalUrlBase,
 	}
 }
 
@@ -231,6 +236,10 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		Args: map[string]any{
 			"preview": previewMode,
 		},
+	}
+
+	if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
+		p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
 	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {

@@ -42,9 +42,9 @@ func createServiceManager(
 	env *environment.Environment,
 	operationCache ServiceOperationCache,
 ) ServiceManager {
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	resourceManager := NewResourceManager(env, resourceService, depOpService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService)
 
 	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(
 		map[string]any{

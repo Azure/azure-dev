@@ -409,19 +409,23 @@ func checkZipContents(t *testing.T, zipReader *zip.ReadCloser, expectedFiles map
 	foundFiles := make(map[string]bool)
 
 	for _, file := range zipReader.File {
-		foundFiles[file.Name] = true
+		// Normalize the file name to use forward slashes
+		normalizedFileName := strings.ReplaceAll(file.Name, "\\", "/")
+		foundFiles[normalizedFileName] = true
 	}
 
 	for expectedFile, shouldExist := range expectedFiles {
+		// Normalize the expected file name to use forward slashes
+		normalizedExpectedFile := strings.ReplaceAll(expectedFile, "\\", "/")
 		if shouldExist {
-			if !foundFiles[expectedFile] {
+			if !foundFiles[normalizedExpectedFile] {
 				t.Errorf("[%s] Expected file '%s' to be included in the package but it was not found",
-					serviceName, expectedFile)
+					serviceName, normalizedExpectedFile)
 			}
 		} else {
-			if foundFiles[expectedFile] {
+			if foundFiles[normalizedExpectedFile] {
 				t.Errorf("[%s] Expected file '%s' to be excluded from the package but it was found",
-					serviceName, expectedFile)
+					serviceName, normalizedExpectedFile)
 			}
 		}
 	}

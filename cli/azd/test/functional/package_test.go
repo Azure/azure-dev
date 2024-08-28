@@ -180,6 +180,10 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 	err := copySample(dir, "dotignore")
 	require.NoError(t, err, "failed expanding sample")
 
+	// Print directory contents for debugging
+	printDirContents(t, "service1", filepath.Join(dir, "src", "service1"))
+	printDirContents(t, "service2", filepath.Join(dir, "src", "service2"))
+
 	// Run the init command to initialize the project
 	_, err = cli.RunCommandWithStdIn(
 		ctx,
@@ -315,6 +319,9 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			// Print directory contents after writing .zipignore
+			printDirContents(t, "service1", filepath.Join(dir, "src", "service1"))
+
 			// Run the package command and specify an output path
 			outputDir := filepath.Join(dir, "dist_"+strings.ReplaceAll(scenario.name, " ", "_"))
 			err = os.Mkdir(outputDir, 0755) // Ensure the directory exists
@@ -322,6 +329,9 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 
 			_, err = cli.RunCommand(ctx, "package", "--output-path", outputDir)
 			require.NoError(t, err)
+
+			// Print directory contents of the output directory
+			printDirContents(t, scenario.name+" output", outputDir)
 
 			// Verify that the package was created and the output directory exists
 			files, err := os.ReadDir(outputDir)
@@ -345,6 +355,7 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 // Helper function to check service package contents
 func checkServicePackage(t *testing.T, distPath, serviceName string, expectedFiles map[string]bool) {
 	zipFilePath := findServiceZipFile(t, distPath, serviceName)
+	printZipContents(t, serviceName, zipFilePath) // Print the contents of the zip file
 	zipReader, err := zip.OpenReader(zipFilePath)
 	require.NoError(t, err)
 	defer zipReader.Close()
@@ -365,6 +376,32 @@ func findServiceZipFile(t *testing.T, distPath, serviceName string) string {
 
 	t.Fatalf("Zip file for service '%s' not found", serviceName)
 	return ""
+}
+
+// Helper function to print directory contents for debugging
+func printDirContents(t *testing.T, serviceName, dir string) {
+	t.Logf("[%s] Listing directory: %s", serviceName, dir)
+	files, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	for _, file := range files {
+		t.Logf("[%s] Found: %s", serviceName, file.Name())
+		if file.IsDir() {
+			printDirContents(t, serviceName,
+				filepath.Join(dir, file.Name())) // Recursive call to list sub-directory contents
+		}
+	}
+}
+
+// Helper function to print the contents of a zip file
+func printZipContents(t *testing.T, serviceName, zipFilePath string) {
+	t.Logf("[%s] Listing contents of zip file: %s", serviceName, zipFilePath)
+	zipReader, err := zip.OpenReader(zipFilePath)
+	require.NoError(t, err)
+	defer zipReader.Close()
+
+	for _, file := range zipReader.File {
+		t.Logf("[%s] Found in zip: %s", serviceName, file.Name)
+	}
 }
 
 // Helper function to check zip contents against expected files

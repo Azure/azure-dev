@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -310,4 +312,28 @@ func TestMinimalYaml(t *testing.T) {
 			snapshot.SnapshotT(t, string(contents))
 		})
 	}
+}
+
+// Test_WindowsStylePathsFromYaml ensures that paths using a backslash are a seperator are correctly parsed from yaml.
+// `azd` prefers forward slashes as path separators, to allow for consistent handling across platforms, but supports
+// backslashes in yaml files, and treats them as if the user had used forward slashes instead.
+func Test_WindowsStylePathsFromYaml(t *testing.T) {
+	const testProj = `
+name: test-proj
+infra:
+  path: .\iac
+services:
+  api:
+    host: containerapp
+    language: js
+    project: src\api
+    dist: bin\api
+`
+
+	projectConfig, err := Parse(context.Background(), testProj)
+	require.NoError(t, err)
+
+	assert.Equal(t, filepath.FromSlash("./iac"), projectConfig.Infra.Path)
+	assert.Equal(t, filepath.FromSlash("src/api"), projectConfig.Services["api"].RelativePath)
+	assert.Equal(t, filepath.FromSlash("bin/api"), projectConfig.Services["api"].OutputPath)
 }

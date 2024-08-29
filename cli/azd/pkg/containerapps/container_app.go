@@ -337,7 +337,10 @@ func (cas *containerAppService) AddRevision(
 		return fmt.Errorf("getting revision template: %w", err)
 	}
 
-	containerApp.Set(pathTemplate, revisionTemplate)
+	if err := containerApp.Set(pathTemplate, revisionTemplate); err != nil {
+		return fmt.Errorf("setting template: %w", err)
+	}
+
 	containerApp, err = cas.syncSecrets(ctx, subscriptionId, resourceGroupName, appName, containerApp)
 	if err != nil {
 		return fmt.Errorf("syncing secrets: %w", err)
@@ -369,25 +372,6 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	return nil
-}
-
-func (cas *containerAppService) listSecrets(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	appName string,
-) ([]*armappcontainers.ContainerAppSecret, error) {
-	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	secretsResponse, err := appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("listing secrets: %w", err)
-	}
-
-	return secretsResponse.Value, nil
 }
 
 func (cas *containerAppService) syncSecrets(

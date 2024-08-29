@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
+	"time"
 )
 
 // Converts a pointer to a value type
@@ -18,11 +20,6 @@ func ToValueWithDefault[T any](ptr *T, defaultValue T) T {
 	}
 
 	return *ptr
-}
-
-// Returns a pointer for the specified value
-func RefOf[T any](value T) *T {
-	return &value
 }
 
 // Attempts to convert the specified value to a string, otherwise returns the default value
@@ -63,4 +60,11 @@ func ToMap(value any) (map[string]any, error) {
 	}
 
 	return mapValue, nil
+}
+
+func ParseDuration(value string) (time.Duration, error) {
+	value = strings.ReplaceAll(value, "PT", "")
+	value = strings.ToLower(value)
+
+	return time.ParseDuration(value)
 }

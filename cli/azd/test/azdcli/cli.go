@@ -10,11 +10,12 @@ package azdcli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
+	osexec "os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -23,6 +24,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 )
@@ -127,7 +132,7 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 	description := "azd " + strings.Join(args, " ") + " in " + cli.WorkingDirectory
 
 	/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
-	cmd := exec.CommandContext(ctx, cli.AzdPath, args...)
+	cmd := osexec.CommandContext(ctx, cli.AzdPath, args...)
 	if cli.WorkingDirectory != "" {
 		cmd.Dir = cli.WorkingDirectory
 	}
@@ -202,7 +207,8 @@ func (cli *CLI) heartbeat(description string, done <-chan struct{}) {
 	for {
 		select {
 		case <-time.After(HeartbeatInterval):
-			cli.T.Logf("[heartbeat] command %s is still running after %s", description, time.Since(start))
+			cli.T.Logf("[heartbeat] command %s is still running after %s",
+				description, time.Since(start).Truncate(time.Second))
 		case <-done:
 			return
 		}
@@ -223,11 +229,14 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 			return i, err
 		}
 
+		output := exec.RedactSensitiveData(l.sb.String())
+
 		if b == '\n' {
-			l.t.Logf("%s %s%s", time.Since(l.initialTime).Round(1*time.Millisecond), l.prefix, l.sb.String())
+			l.t.Logf("%s %s%s", time.Since(l.initialTime).Round(1*time.Millisecond), l.prefix, output)
 			l.sb.Reset()
 		}
 	}
+
 	return len(bytes), nil
 }
 
@@ -238,7 +247,7 @@ func GetSourcePath() string {
 
 func build(t *testing.T, pkgPath string, args ...string) {
 	startTime := time.Now()
-	cmd := exec.Command("go", "build")
+	cmd := osexec.Command("go", "build")
 	cmd.Dir = pkgPath
 	cmd.Args = append(cmd.Args, args...)
 
@@ -280,4 +289,31 @@ func environ(session *recording.Session) []string {
 		}
 	}
 	return env
+}
+
+// TestCredential Used to used the auth strategy already used to create the Cli instance
+type TestCredential struct {
+	cli *CLI
+}
+
+// NewTestCredential Creates a new TestCredential
+func NewTestCredential(azCli *CLI) *TestCredential {
+	return &TestCredential{
+		cli: azCli,
+	}
+}
+
+// GetToken Gets the token from the CLI instance
+func (cred *TestCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	result, err := cred.cli.RunCommand(ctx, "auth", "token", "-o", "json")
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	var accessToken azcore.AccessToken
+	if err := json.Unmarshal([]byte(result.Stdout), &accessToken); err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	return accessToken, nil
 }

@@ -15,10 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -56,7 +55,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	t.Logf("Running show\n")
@@ -130,7 +129,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	contain = strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
 	require.True(t, contain)
 
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Running show (again)\n")
@@ -173,7 +172,7 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--cwd", dir)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting deploy\n")
@@ -213,7 +212,7 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")
@@ -248,7 +247,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "dotnet"))
@@ -274,7 +273,70 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+
+	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
+	// have been removed from the environment.
+	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	_, has = env["WEBSITE_URL"]
+	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
+}
+
+func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "containerremotebuildapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "app"))
+	require.NoError(t, err)
+
+	// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
+	// (without the quotes). Validate that the application is working.
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	url, has := env["WEBSITE_URL"]
+	require.True(t, has, "WEBSITE_URL should be in environment after deploy")
+
+	if session == nil {
+		err = probeServiceHealth(
+			t, ctx, http.DefaultClient, retry.NewConstant(5*time.Second), url, expectedTestAppResponse)
+		require.NoError(t, err)
+	} else {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+
+		err = probeServiceHealth(
+			t, ctx, session.ProxyClient, retry.NewConstant(1*time.Millisecond), url, expectedTestAppResponse)
+		require.NoError(t, err)
+	}
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 
 	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
@@ -315,11 +377,17 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 
 	resourceGroupName := fmt.Sprintf("rg-%s", envName)
 
-	cred, err := azidentity.NewAzureCLICredential(nil)
-	require.NoError(t, err)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env,
+		"AZURE_LOCATION=eastus2",
+		"AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS=true")
+
+	cred := azdcli.NewTestCredential(cli)
 
 	rgClient, err := armresources.NewResourceGroupsClient(subscriptionId, cred, &arm.ClientOptions{
-		ClientOptions: policy.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
 			Transport: client,
 		},
 	})
@@ -335,13 +403,6 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 
 	require.NoError(t, err)
 
-	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
-	cli.WorkingDirectory = dir
-	cli.Env = append(cli.Env, os.Environ()...)
-	cli.Env = append(cli.Env,
-		"AZURE_LOCATION=eastus2",
-		"AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS=true")
-
 	err = copySample(dir, "storage-rg")
 	require.NoError(t, err, "failed expanding sample")
 
@@ -351,7 +412,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_RESOURCE_GROUP", resourceGroupName)
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	// The sample outputs the ID of the storage account it created, let's make sure that resource is in the resource
@@ -368,7 +429,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
 	}
 
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
 

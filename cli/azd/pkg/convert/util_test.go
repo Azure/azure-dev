@@ -3,6 +3,7 @@ package convert
 import (
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,12 +37,12 @@ func Test_ToStringWithDefault(t *testing.T) {
 		},
 		{
 			name:     "StringPointer",
-			input:    RefOf("apple"),
+			input:    to.Ptr("apple"),
 			expected: "apple",
 		},
 		{
 			name:     "NotStringPointer",
-			input:    RefOf(1),
+			input:    to.Ptr(1),
 			expected: "default",
 		},
 	}
@@ -56,12 +57,12 @@ func Test_ToStringWithDefault(t *testing.T) {
 
 func Test_ToValueWithDefault(t *testing.T) {
 	t.Run("String", func(t *testing.T) {
-		value := ToValueWithDefault(RefOf("apple"), "default")
+		value := ToValueWithDefault(to.Ptr("apple"), "default")
 		require.Equal(t, "apple", value)
 	})
 
 	t.Run("Int", func(t *testing.T) {
-		value := ToValueWithDefault(RefOf(1), 0)
+		value := ToValueWithDefault(to.Ptr(1), 0)
 		require.Equal(t, 1, value)
 	})
 
@@ -71,20 +72,8 @@ func Test_ToValueWithDefault(t *testing.T) {
 	})
 
 	t.Run("EmptyString", func(t *testing.T) {
-		value := ToValueWithDefault(RefOf(""), "default")
+		value := ToValueWithDefault(to.Ptr(""), "default")
 		require.Equal(t, "default", value)
-	})
-}
-
-func Test_RefOf(t *testing.T) {
-	t.Run("String", func(t *testing.T) {
-		value := RefOf("apple")
-		require.Equal(t, "apple", *value)
-	})
-
-	t.Run("Int", func(t *testing.T) {
-		value := RefOf(1)
-		require.Equal(t, 1, *value)
 	})
 }
 
@@ -115,4 +104,12 @@ func Test_ToMap(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expected, actual)
 	})
+}
+
+func Test_ParseDuration(t *testing.T) {
+	value := "PT0.3848S"
+
+	duration, err := ParseDuration(value)
+	require.NoError(t, err)
+	require.NotNil(t, duration)
 }

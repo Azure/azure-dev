@@ -74,7 +74,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	projectConfig *project.ProjectConfig,
 	next NextFn,
 ) (*actions.ActionResult, error) {
-	if projectConfig.Hooks == nil || len(projectConfig.Hooks) == 0 {
+	if len(projectConfig.Hooks) == 0 {
 		log.Println(
 			"azd project is not available or does not contain any command hooks, skipping command hook registrations.",
 		)
@@ -139,7 +139,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 	for _, service := range stableServices {
 		serviceName := service.Name
 		// If the service hasn't configured any hooks we can continue on.
-		if service.Hooks == nil || len(service.Hooks) == 0 {
+		if len(service.Hooks) == 0 {
 			log.Printf("service '%s' does not require any command hooks.\n", serviceName)
 			continue
 		}
@@ -164,7 +164,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 
 			if err := service.AddHandler(
 				ext.Event(hookName),
-				m.createServiceEventHandler(ctx, hookType, eventName, serviceHooksRunner),
+				m.createServiceEventHandler(hookType, eventName, serviceHooksRunner),
 			); err != nil {
 				return fmt.Errorf(
 					"failed registering event handler for service '%s' and event '%s', %w",
@@ -181,7 +181,6 @@ func (m *HooksMiddleware) registerServiceHooks(
 
 // Creates an event handler for the specified service config and event name
 func (m *HooksMiddleware) createServiceEventHandler(
-	ctx context.Context,
 	hookType ext.HookType,
 	hookName string,
 	hooksRunner *ext.HooksRunner,

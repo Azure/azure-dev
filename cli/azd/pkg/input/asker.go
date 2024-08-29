@@ -113,7 +113,7 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 			opts = append(opts, withShowCursor)
 		}
 
-		survey.InputQuestionTemplate = cInputQuestionTemplate
+		survey.InputQuestionTemplate = inputQuestionTemplate
 
 		opts = append(opts, survey.WithIcons(func(icons *survey.IconSet) {
 			// use bold blue question mark for all questions
@@ -249,7 +249,7 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 // - Use color blue instead of cyan
 //
 //nolint:lll
-const cInputQuestionTemplate = `
+const inputQuestionTemplate = `
 {{- if .ShowHelp }}{{- color .Config.Icons.Help.Format }}{{ .Config.Icons.Help.Text }} {{ .Help }}{{color "reset"}}{{"\n"}}{{end}}
 {{- color .Config.Icons.Question.Format }}{{ .Config.Icons.Question.Text }} {{color "reset"}}
 {{- color "default+hb"}}{{ .Message }} {{color "reset"}}

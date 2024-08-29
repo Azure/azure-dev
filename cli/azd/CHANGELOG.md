@@ -10,6 +10,21 @@
 
 ### Other Changes
 
+## 1.9.6 (2024-08-13)
+
+### Features Added
+
+- [[4115]](https://github.com/Azure/azure-dev/pull/4115) Adding `alpha` feature `alpha.aca.persistIngressSessionAffinity`.
+
+### Bugs Fixed
+
+- [[4111]](https://github.com/Azure/azure-dev/pull/4111) Container Apps: Fail when explicit Dockerfile path not found.
+- [[4149]](https://github.com/Azure/azure-dev/pull/4149) Remove Admin Access as default for all .Net Aspire services.
+- [[4104]](https://github.com/Azure/azure-dev/pull/4104) Remove Azure Dev Ops git remote constraint for dev.azure.com only.
+- [[4160]](https://github.com/Azure/azure-dev/pull/4160) Fix automatic generation of CI/CD files for .Net Aspire projects.
+- [[4182]](https://github.com/Azure/azure-dev/pull/4182) Allow `.yaml` and `.yml` extension for azure-dev pipeline files.
+- [[4187]](https://github.com/Azure/azure-dev/pull/4187) Fix panic during deployment progress rendering.
+
 ## 1.9.5 (2024-07-10)
 
 ### Features Added

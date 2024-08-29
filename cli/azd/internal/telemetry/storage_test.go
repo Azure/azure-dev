@@ -347,7 +347,8 @@ func TestStorageQueue_Cleanup(t *testing.T) {
 						assert.Fail(
 							t,
 							fmt.Sprintf(
-								"Unknown remaining file found. Filename: %s, content: %s. Expected filenames: %v, expected content: %v. ",
+								"Unknown remaining file found. Filename: %s, content: %s. Expected filenames: %v, "+
+									"expected content: %v. ",
 								remainingFile.Name(),
 								string(content),
 								tt.expectedFilesRemaining,

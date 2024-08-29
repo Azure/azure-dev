@@ -26,7 +26,7 @@ func Test_Python_Run(t *testing.T) {
 		return strings.Contains(command, pyString)
 	}).Respond(exec.NewRunResult(0, "", ""))
 
-	cli := NewPythonCli(mockContext.CommandRunner)
+	cli := NewCli(mockContext.CommandRunner)
 
 	runResult, err := cli.Run(*mockContext.Context, tempDir, ".venv", "pf_client.py", "arg1", "arg2", "arg3")
 	require.NoError(t, err)
@@ -54,7 +54,7 @@ func Test_Python_InstallRequirements(t *testing.T) {
 		return strings.Contains(command, "requirements.txt")
 	}).Respond(exec.NewRunResult(0, "", ""))
 
-	cli := NewPythonCli(mockContext.CommandRunner)
+	cli := NewCli(mockContext.CommandRunner)
 
 	err = cli.InstallRequirements(*mockContext.Context, tempDir, ".venv", "requirements.txt")
 	require.NoError(t, err)
@@ -80,7 +80,7 @@ func Test_Python_CreateVirtualEnv(t *testing.T) {
 		return strings.Contains(command, "-m venv .venv")
 	}).Respond(exec.NewRunResult(0, "", ""))
 
-	cli := NewPythonCli(mockContext.CommandRunner)
+	cli := NewCli(mockContext.CommandRunner)
 
 	err = cli.CreateVirtualEnv(*mockContext.Context, tempDir, ".venv")
 	require.NoError(t, err)

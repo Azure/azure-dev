@@ -13,6 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -34,8 +36,9 @@ type ProvisionFlags struct {
 }
 
 const (
-	AINotValid                      = "is not valid according to the validation procedure"
-	openAIsubscriptionNoQuotaId     = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
+	AINotValid                  = "is not valid according to the validation procedure"
+	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' " +
+		"from kind 'OpenAI'"
 	responsibleAITerms              = "until you agree to Responsible AI terms for this resource"
 	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
 )
@@ -92,19 +95,20 @@ func NewProvisionCmd() *cobra.Command {
 }
 
 type ProvisionAction struct {
-	flags            *ProvisionFlags
-	provisionManager *provisioning.Manager
-	projectManager   project.ProjectManager
-	resourceManager  project.ResourceManager
-	env              *environment.Environment
-	envManager       environment.Manager
-	formatter        output.Formatter
-	projectConfig    *project.ProjectConfig
-	writer           io.Writer
-	console          input.Console
-	subManager       *account.SubscriptionsManager
-	importManager    *project.ImportManager
-	portalUrlBase    string
+	flags               *ProvisionFlags
+	provisionManager    *provisioning.Manager
+	projectManager      project.ProjectManager
+	resourceManager     project.ResourceManager
+	env                 *environment.Environment
+	envManager          environment.Manager
+	formatter           output.Formatter
+	projectConfig       *project.ProjectConfig
+	writer              io.Writer
+	console             input.Console
+	subManager          *account.SubscriptionsManager
+	importManager       *project.ImportManager
+	alphaFeatureManager *alpha.FeatureManager
+	portalUrlBase       string
 }
 
 func NewProvisionAction(
@@ -120,22 +124,24 @@ func NewProvisionAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	subManager *account.SubscriptionsManager,
-	portalUrlBase cloud.PortalUrlBase,
+	alphaFeatureManager *alpha.FeatureManager,
+	cloud *cloud.Cloud,
 ) actions.Action {
 	return &ProvisionAction{
-		flags:            flags,
-		provisionManager: provisionManager,
-		projectManager:   projectManager,
-		resourceManager:  resourceManager,
-		env:              env,
-		envManager:       envManager,
-		formatter:        formatter,
-		projectConfig:    projectConfig,
-		writer:           writer,
-		console:          console,
-		subManager:       subManager,
-		importManager:    importManager,
-		portalUrlBase:    string(portalUrlBase),
+		flags:               flags,
+		provisionManager:    provisionManager,
+		projectManager:      projectManager,
+		resourceManager:     resourceManager,
+		env:                 env,
+		envManager:          envManager,
+		formatter:           formatter,
+		projectConfig:       projectConfig,
+		writer:              writer,
+		console:             console,
+		subManager:          subManager,
+		importManager:       importManager,
+		alphaFeatureManager: alphaFeatureManager,
+		portalUrlBase:       cloud.PortalUrlBase,
 	}
 }
 
@@ -232,6 +238,10 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		},
 	}
 
+	if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
+		p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
+	}
+
 	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
 		var err error
 		if previewMode {
@@ -267,19 +277,19 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
 			return nil, &internal.ErrorWithSuggestion{
 				Err: err,
-				Suggestion: fmt.Sprintf("\nSuggested Action: The selected subscription does not have access to" +
-					" Azure OpenAI Services. Please visit " + output.WithLinkFormat(requestAccessLink) +
-					" to request access."),
+				Suggestion: "\nSuggested Action: The selected subscription does not have access to" +
+					" Azure OpenAI Services. Please visit " + output.WithLinkFormat("%s", requestAccessLink) +
+					" to request access.",
 			}
 		}
 
 		if strings.Contains(errorMsg, AINotValid) &&
 			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
 			return nil, &internal.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
+				Suggestion: "\nSuggested Action: The selected " +
 					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-					"any pricing tiers. Please visit " + output.WithLinkFormat(p.portalUrlBase) +
-					" and select 'Create' on specific services to request access."),
+					"any pricing tiers. Please visit " + output.WithLinkFormat("%s", p.portalUrlBase) +
+					" and select 'Create' on specific services to request access.",
 				Err: err,
 			}
 		}
@@ -287,10 +297,10 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		//if user haven't agree to Responsible AI terms
 		if strings.Contains(errorMsg, responsibleAITerms) {
 			return nil, &internal.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
-					output.WithLinkFormat(p.portalUrlBase) + ". Create the resource in azure portal " +
+				Suggestion: "\nSuggested Action: Please visit azure portal in " +
+					output.WithLinkFormat("%s", p.portalUrlBase) + ". Create the resource in azure portal " +
 					"to go through Responsible AI terms, and then delete it. " +
-					"After that, run 'azd provision' again"),
+					"After that, run 'azd provision' again",
 				Err: err,
 			}
 		}

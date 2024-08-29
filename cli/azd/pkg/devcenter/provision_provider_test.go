@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockdevcentersdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -463,16 +462,22 @@ func newProvisionProviderForTest(
 
 	require.NoError(t, err)
 
-	azCli := azcli.NewAzCli(
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+
+	deploymentService := azapi.NewStandardDeployments(
 		mockContext.SubscriptionCredentialProvider,
-		mockContext.HttpClient,
-		azcli.NewAzCliArgs{},
 		mockContext.ArmClientOptions,
+		resourceService,
+		cloud.AzurePublic(),
+		mockContext.Clock,
 	)
+
 	resourceManager := infra.NewAzureResourceManager(
-		azCli,
-		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions),
+		resourceService,
+		deploymentService,
 	)
+
+	deploymentManager := infra.NewDeploymentManager(deploymentService, resourceManager, mockContext.Console)
 
 	if manager == nil {
 		manager = &mockDevCenterManager{}
@@ -489,7 +494,7 @@ func newProvisionProviderForTest(
 		envManager,
 		config,
 		devCenterClient,
-		resourceManager,
+		deploymentManager,
 		manager,
 		prompter,
 	)

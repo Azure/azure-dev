@@ -32,7 +32,8 @@ import (
 )
 
 type recordOptions struct {
-	mode recorder.Mode
+	mode        recorder.Mode
+	hostMapping map[string]string
 }
 
 type Options interface {
@@ -49,6 +50,28 @@ type modeOption struct {
 
 func (in modeOption) Apply(out recordOptions) recordOptions {
 	out.mode = in.mode
+	return out
+}
+
+// WithHostMapping allows mapping one host to another in a recording. This is useful in cases where you are using
+// [httptest.NewServer] in a recorded test, since the host for the server differs across runs due to the randomly assigned
+// port. In this case you can call WithHostMapping(strings.TrimPrefix(server.URL, "http://"), "127.0.0.1:80") to ensure
+// that in the recording the host is always set to the same value.
+func WithHostMapping(from, to string) Options {
+	return hostMappingOption{from: from, to: to}
+}
+
+type hostMappingOption struct {
+	from string
+	to   string
+}
+
+func (in hostMappingOption) Apply(out recordOptions) recordOptions {
+	if out.hostMapping == nil {
+		out.hostMapping = map[string]string{}
+	}
+
+	out.hostMapping[in.from] = in.to
 	return out
 }
 
@@ -186,6 +209,12 @@ func Start(t *testing.T, opts ...Options) *Session {
 			return r.Method == i.Method && r.URL.String() == recorded.String()
 		}
 
+		if opt.hostMapping != nil {
+			if to, has := opt.hostMapping[r.URL.Host]; has {
+				r.URL.Host = to
+			}
+		}
+
 		return cassette.DefaultMatcher(r, i)
 	})
 
@@ -197,6 +226,23 @@ func Start(t *testing.T, opts ...Options) *Session {
 	vcr.AddHook(func(i *cassette.Interaction) error {
 		return TrimSubscriptionsDeployment(i, session.Variables)
 	}, recorder.BeforeSaveHook)
+
+	vcr.AddHook(func(i *cassette.Interaction) error {
+		if opt.hostMapping == nil {
+			return nil
+		}
+
+		if to, has := opt.hostMapping[i.Request.Host]; has {
+			oldHost := i.Request.Host
+
+			i.Request.Host = to
+			i.Request.RemoteAddr = to
+			i.Request.URL = strings.Replace(i.Request.URL, oldHost, to, 1)
+			i.Request.RequestURI = strings.Replace(i.Request.RequestURI, oldHost, to, 1)
+		}
+
+		return nil
+	}, recorder.AfterCaptureHook)
 
 	// Sanitize
 	vcr.AddHook(func(i *cassette.Interaction) error {
@@ -215,6 +261,21 @@ func Start(t *testing.T, opts ...Options) *Session {
 		err = sanitizeContainerAppUpdate(i)
 		if err != nil {
 			log.Error("failed to sanitize container app update", "error", err)
+		}
+
+		err = sanitizeBlobStorageSasSig(i)
+		if err != nil {
+			log.Error("failed to sanitize blob storage SAS signature", "error", err)
+		}
+
+		err = sanitizeContainerRegistryListBuildSourceUploadUrl(i)
+		if err != nil {
+			log.Error("failed to sanitize list build source upload url sas signature", "error", err)
+		}
+
+		err = sanitizeContainerRegistryListLogSasUrl(i)
+		if err != nil {
+			log.Error("failed to sanitize list log sas url sas signature", "error", err)
 		}
 
 		return nil
@@ -460,7 +521,7 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 		}
 
 		if b == '\n' {
-			l.t.Logf(l.sb.String())
+			l.t.Logf("%s", l.sb.String())
 			l.sb.Reset()
 		}
 	}

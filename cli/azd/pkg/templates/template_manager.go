@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"golang.org/x/exp/slices"
 )
 
 var (
@@ -88,16 +88,16 @@ func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptio
 		}
 
 		// Sort by source, then repository path and finally name
-		slices.SortFunc(filteredTemplates, func(a *Template, b *Template) bool {
+		slices.SortFunc(filteredTemplates, func(a *Template, b *Template) int {
 			if a.Source != b.Source {
-				return a.Source < b.Source
+				return strings.Compare(a.Source, b.Source)
 			}
 
 			if a.RepositoryPath != b.RepositoryPath {
-				return a.RepositoryPath < b.RepositoryPath
+				return strings.Compare(a.RepositoryPath, b.RepositoryPath)
 			}
 
-			return a.Name < b.Name
+			return strings.Compare(a.Name, b.Name)
 		})
 
 		allTemplates = append(allTemplates, filteredTemplates...)

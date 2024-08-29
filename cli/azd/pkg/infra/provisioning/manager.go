@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -200,9 +200,9 @@ func azdFileShareUploadOperations(infraPath string, env environment.Environment)
 	return fileShareUploadOperations, nil
 }
 
-var ErrAzdOperationsNotEnabled = fmt.Errorf(fmt.Sprintf(
+var ErrAzdOperationsNotEnabled = fmt.Errorf(
 	"azd operations (alpha feature) is required but disabled. You can enable azd operations by running: %s",
-	output.WithGrayFormat(alpha.GetEnableCommand(AzdOperationsFeatureKey))))
+	output.WithGrayFormat("%s", alpha.GetEnableCommand(AzdOperationsFeatureKey)))
 
 var ErrBindMountOperationDisabled = fmt.Errorf(
 	"%sYour project has bind mounts.\n  - %w\n%s\n",
@@ -269,7 +269,7 @@ func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
 	}
 
 	for index, result := range deployResult.Preview.Properties.Changes {
-		mappingName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(result.ResourceType))
+		mappingName := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(result.ResourceType))
 		if mappingName == "" {
 			// ignore
 			continue

@@ -88,9 +88,9 @@ output SERVICE_{{alphaSnakeUpper $name}}_FILE_SHARE_{{removeDot $bMount.Name | a
 {{range $name, $value := .KeyVaults -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
 {{end -}}
-{{- range $param, $value := .OutputParameters}}
+{{range $param, $value := .OutputParameters -}}
 output {{bicepParameterName $param}} {{$value.Type}} = {{bicepParameterName $value.Value}}
-{{- end -}}
+{{end -}}
 {{if .RequiresStorageVolume -}}
 output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
 {{end -}}

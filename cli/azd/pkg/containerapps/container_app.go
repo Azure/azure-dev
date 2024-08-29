@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/benbjohnson/clock"
 	"gopkg.in/yaml.v3"
 )
@@ -92,11 +93,9 @@ func (cas *containerAppService) GetIngressConfiguration(
 	}
 
 	var hostNames []string
-	if containerApp.Properties != nil &&
-		containerApp.Properties.Configuration != nil &&
-		containerApp.Properties.Configuration.Ingress != nil &&
-		containerApp.Properties.Configuration.Ingress.Fqdn != nil {
-		hostNames = []string{*containerApp.Properties.Configuration.Ingress.Fqdn}
+	fqdn, has := containerApp.GetString("properties.configuration.ingress.fqdn")
+	if has {
+		hostNames = []string{fqdn}
 	} else {
 		hostNames = []string{}
 	}
@@ -131,19 +130,17 @@ func (cas *containerAppService) persistSettings(
 		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
 	}
 
-	if aca == nil ||
-		aca.Properties == nil ||
-		aca.Properties.Configuration == nil ||
-		aca.Properties.Configuration.Ingress == nil {
-		// no settings to persist
+	var ingress *armappcontainers.Ingress
+	has, err := aca.GetSection("properties.configuration.ingress", &ingress)
+	if !has {
 		return obj, nil
 	}
 
 	if shouldPersistDomains &&
-		aca.Properties.Configuration.Ingress.CustomDomains != nil {
+		ingress.CustomDomains != nil {
 		acaAsConfig := config.NewConfig(obj)
 		err := acaAsConfig.Set(
-			"properties.configuration.ingress.customDomains", aca.Properties.Configuration.Ingress.CustomDomains)
+			"properties.configuration.ingress.customDomains", ingress.CustomDomains)
 		if err != nil {
 			return nil, fmt.Errorf("failed to persist custom domains: %w", err)
 		}
@@ -151,10 +148,10 @@ func (cas *containerAppService) persistSettings(
 	}
 
 	if shouldPersistIngressSessionAffinity &&
-		aca.Properties.Configuration.Ingress.StickySessions != nil {
+		ingress.StickySessions != nil {
 		acaAsConfig := config.NewConfig(obj)
 		err := acaAsConfig.Set(
-			"properties.configuration.ingress.stickySessions", aca.Properties.Configuration.Ingress.StickySessions)
+			"properties.configuration.ingress.stickySessions", ingress.StickySessions)
 		if err != nil {
 			return nil, fmt.Errorf("failed to persist session affinity: %w", err)
 		}
@@ -272,24 +269,44 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	// Get the latest revision name
-	currentRevisionName := *containerApp.Properties.LatestRevisionName
+	currentRevisionName, has := containerApp.GetString("properties.latestRevisionName")
+	if !has {
+		return fmt.Errorf("getting latest revision name: %w", err)
+	}
+
 	revisionsClient, err := cas.createRevisionsClient(ctx, subscriptionId)
 	if err != nil {
 		return err
 	}
 
-	revisionResponse, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, currentRevisionName, nil)
-	if err != nil {
+	var revisionResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &revisionResponse)
+
+	if _, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, currentRevisionName, nil); err != nil {
 		return fmt.Errorf("getting revision '%s': %w", currentRevisionName, err)
 	}
 
+	var revisionMap map[string]any
+	if err := convert.FromHttpResponse(revisionResponse, revisionMap); err != nil {
+		return err
+	}
+
+	revision := config.NewConfig(revisionMap)
+
 	// Update the revision with the new image name and suffix
-	revision := revisionResponse.Revision
-	revision.Properties.Template.RevisionSuffix = to.Ptr(fmt.Sprintf("azd-%d", cas.clock.Now().Unix()))
-	revision.Properties.Template.Containers[0].Image = to.Ptr(imageName)
+	revision.Set("properties.template.revisionSuffix", fmt.Sprintf("azd-%d", cas.clock.Now().Unix()))
+
+	var containers []map[string]any
+	has, err = revision.GetSection("properties.template.containers", &containers)
+	if !has || err != nil {
+		return fmt.Errorf("getting containers: %w", err)
+	}
+
+	containers[0]["image"] = imageName
+	revision.Set("properties.template.containers", containers)
 
 	// Update the container app with the new revision
-	containerApp.Properties.Template = revision.Properties.Template
+	containerApp.Set("properties.template", revision.Raw())
 	containerApp, err = cas.syncSecrets(ctx, subscriptionId, resourceGroupName, appName, containerApp)
 	if err != nil {
 		return fmt.Errorf("syncing secrets: %w", err)
@@ -301,9 +318,19 @@ func (cas *containerAppService) AddRevision(
 		return fmt.Errorf("updating container app revision: %w", err)
 	}
 
+	revisionMode, has := containerApp.GetString("properties.configuration.activeRevisionsMode")
+	if !has {
+		return fmt.Errorf("getting active revisions mode: %w", err)
+	}
+
 	// If the container app is in multiple revision mode, update the traffic to point to the new revision
-	if *containerApp.Properties.Configuration.ActiveRevisionsMode == armappcontainers.ActiveRevisionsModeMultiple {
-		newRevisionName := fmt.Sprintf("%s--%s", appName, *revision.Properties.Template.RevisionSuffix)
+	if revisionMode == string(armappcontainers.ActiveRevisionsModeMultiple) {
+		revisionSuffix, has := revision.GetString("properties.template.revisionSuffix")
+		if !has {
+			return fmt.Errorf("getting revision suffix: %w", err)
+		}
+		newRevisionName := fmt.Sprintf("%s--%s", appName, revisionSuffix)
+
 		err = cas.setTrafficWeights(ctx, subscriptionId, resourceGroupName, appName, containerApp, newRevisionName)
 		if err != nil {
 			return fmt.Errorf("setting traffic weights: %w", err)
@@ -337,10 +364,12 @@ func (cas *containerAppService) syncSecrets(
 	subscriptionId string,
 	resourceGroupName string,
 	appName string,
-	containerApp *armappcontainers.ContainerApp,
-) (*armappcontainers.ContainerApp, error) {
-	// If the container app doesn't have any secrets, we don't need to do anything
-	if len(containerApp.Properties.Configuration.Secrets) == 0 {
+	containerApp config.Config,
+) (config.Config, error) {
+	// If the container app doesn't have any existingSecrets, we don't need to do anything
+	var existingSecrets []any
+	has, err := containerApp.GetSection("properties.configuration.secrets", &existingSecrets)
+	if !has || len(existingSecrets) == 0 {
 		return containerApp, nil
 	}
 
@@ -359,7 +388,7 @@ func (cas *containerAppService) syncSecrets(
 
 	secrets := []*armappcontainers.Secret{}
 	for _, secret := range secretsResponse.SecretsCollection.Value {
-		secrets = append(secrets, &armappcontainers.Secret{
+		existingSecrets = append(existingSecrets, &armappcontainers.Secret{
 			Name:        secret.Name,
 			Value:       secret.Value,
 			Identity:    secret.Identity,
@@ -367,7 +396,10 @@ func (cas *containerAppService) syncSecrets(
 		})
 	}
 
-	containerApp.Properties.Configuration.Secrets = secrets
+	err = containerApp.Set("properties.configuration.secrets", secrets)
+	if err != nil {
+		return nil, fmt.Errorf("setting secrets: %w", err)
+	}
 
 	return containerApp, nil
 }
@@ -377,14 +409,18 @@ func (cas *containerAppService) setTrafficWeights(
 	subscriptionId string,
 	resourceGroupName string,
 	appName string,
-	containerApp *armappcontainers.ContainerApp,
+	containerApp config.Config,
 	revisionName string,
 ) error {
-	containerApp.Properties.Configuration.Ingress.Traffic = []*armappcontainers.TrafficWeight{
+	trafficWeights := []*armappcontainers.TrafficWeight{
 		{
 			RevisionName: &revisionName,
 			Weight:       to.Ptr[int32](100),
 		},
+	}
+
+	if err := containerApp.Set("properties.configuration.ingress.traffic", trafficWeights); err != nil {
+		return fmt.Errorf("setting traffic weights: %w", err)
 	}
 
 	err := cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp)
@@ -400,18 +436,29 @@ func (cas *containerAppService) getContainerApp(
 	subscriptionId string,
 	resourceGroupName string,
 	appName string,
-) (*armappcontainers.ContainerApp, error) {
+) (config.Config, error) {
 	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	containerAppResponse, err := appClient.Get(ctx, resourceGroupName, appName, nil)
+	var res *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &res)
+
+	_, err = appClient.Get(ctx, resourceGroupName, appName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting container app: %w", err)
 	}
 
-	return &containerAppResponse.ContainerApp, nil
+	var containAppMap map[string]any
+	err = convert.FromHttpResponse(res, &containAppMap)
+	if err != nil {
+		return nil, err
+	}
+
+	containAppConfig := config.NewConfig(containAppMap)
+
+	return containAppConfig, nil
 }
 
 func (cas *containerAppService) updateContainerApp(

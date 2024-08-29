@@ -3,6 +3,8 @@ package convert
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"reflect"
 	"strings"
 	"time"
@@ -67,4 +69,19 @@ func ParseDuration(value string) (time.Duration, error) {
 	value = strings.ToLower(value)
 
 	return time.ParseDuration(value)
+}
+
+func FromHttpResponse(res *http.Response, v any) error {
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	err = json.Unmarshal(body, &v)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal response body: %w", err)
+	}
+
+	return nil
 }

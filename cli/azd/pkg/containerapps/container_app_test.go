@@ -43,7 +43,7 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
 	)
-	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, subscriptionId, resourceGroup, appName)
+	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, subscriptionId, resourceGroup, appName, nil)
 	require.NoError(t, err)
 	require.NotNil(t, ingressConfig)
 
@@ -138,7 +138,7 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
 	)
-	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName)
+	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName, nil)
 	require.NoError(t, err)
 
 	// Verify lastest revision is read

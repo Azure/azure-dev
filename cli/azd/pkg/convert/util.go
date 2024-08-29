@@ -56,12 +56,30 @@ func ToMap(value any) (map[string]any, error) {
 		return nil, fmt.Errorf("failed to convert value to json: %w", err)
 	}
 
-	mapValue := map[string]any{}
+	var mapValue map[string]any
 	if err := json.Unmarshal(jsonValue, &mapValue); err != nil {
 		return nil, fmt.Errorf("failed to convert value to map: %w", err)
 	}
 
 	return mapValue, nil
+}
+
+func ToJsonArray(value any) ([]any, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	jsonValue, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert value to json: %w", err)
+	}
+
+	var sliceValue []any
+	if err := json.Unmarshal(jsonValue, &sliceValue); err != nil {
+		return nil, fmt.Errorf("failed to convert value to slice: %w", err)
+	}
+
+	return sliceValue, nil
 }
 
 func ParseDuration(value string) (time.Duration, error) {

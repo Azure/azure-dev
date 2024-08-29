@@ -55,6 +55,7 @@ type excludeDirEntryCondition func(path string, file os.FileInfo) bool
 // buildForZipOptions provides a set of options for doing build for zip
 type buildForZipOptions struct {
 	excludeConditions []excludeDirEntryCondition
+	excludeCallback   func(src string) ([]excludeDirEntryCondition, error)
 }
 
 // buildForZip is used by projects whose build strategy is to only copy the source code into a folder, which is later
@@ -72,7 +73,13 @@ func buildForZip(src, dst string, options buildForZipOptions) error {
 
 	// Conditionally exclude virtual environments, __pycache__, and node_modules only if .zipignore doesn't exist
 	if !zipIgnoreExists {
-		options.excludeConditions = append(options.excludeConditions, excludeVirtualEnv, excludePyCache, excludeNodeModules)
+		if options.excludeCallback != nil {
+			callbackExcludes, err := options.excludeCallback(src)
+			if err != nil {
+				return fmt.Errorf("applying exclude callback: %w", err)
+			}
+			options.excludeConditions = append(options.excludeConditions, callbackExcludes...)
+		}
 	}
 
 	options.excludeConditions = append(options.excludeConditions, func(path string, file os.FileInfo) bool {

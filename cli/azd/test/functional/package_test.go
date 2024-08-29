@@ -216,16 +216,13 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 			enabled: true,
 			expectedFiles: map[string]map[string]bool{
 				"service1": {
-					"testfile.py":                            true,
-					"__pycache__/testcache.txt":              false,
-					".venv/pyvenv.cfg":                       false,
-					"node_modules/some_package/package.json": false,
-					"logs/log.txt":                           true,
+					"testfile.py":               true,
+					"__pycache__/testcache.txt": false,
+					".venv/pyvenv.cfg":          false,
+					"logs/log.txt":              true,
 				},
 				"service2": {
 					"testfile.js":                            true,
-					"__pycache__/testcache.txt":              false,
-					".venv/pyvenv.cfg":                       false,
 					"node_modules/some_package/package.json": false,
 					"logs/log.txt":                           true,
 				},
@@ -239,16 +236,13 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 			rootZipIgnore: "__pycache__\n",
 			expectedFiles: map[string]map[string]bool{
 				"service1": {
-					"testfile.py":                            true,
-					"__pycache__/testcache.txt":              false,
-					".venv/pyvenv.cfg":                       true,
-					"node_modules/some_package/package.json": true,
-					"logs/log.txt":                           true,
+					"testfile.py":               true,
+					"__pycache__/testcache.txt": false,
+					".venv/pyvenv.cfg":          true,
+					"logs/log.txt":              true,
 				},
 				"service2": {
 					"testfile.js":                            true,
-					"__pycache__/testcache.txt":              false,
-					".venv/pyvenv.cfg":                       true,
 					"node_modules/some_package/package.json": true,
 					"logs/log.txt":                           true,
 				},
@@ -264,16 +258,13 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 			service1ZipIgnore: "__pycache__\n",
 			expectedFiles: map[string]map[string]bool{
 				"service1": {
-					"testfile.py":                            true,
-					"__pycache__/testcache.txt":              false,
-					".venv/pyvenv.cfg":                       true,
-					"node_modules/some_package/package.json": true,
-					"logs/log.txt":                           false,
+					"testfile.py":               true,
+					"__pycache__/testcache.txt": false,
+					".venv/pyvenv.cfg":          true,
+					"logs/log.txt":              false,
 				},
 				"service2": {
 					"testfile.js":                            true,
-					"__pycache__/testcache.txt":              true,
-					".venv/pyvenv.cfg":                       true,
 					"node_modules/some_package/package.json": true,
 					"logs/log.txt":                           false,
 				},
@@ -287,16 +278,13 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 			service1ZipIgnore: "__pycache__\n",
 			expectedFiles: map[string]map[string]bool{
 				"service1": {
-					"testfile.py":                            true,
-					"__pycache__/testcache.txt":              false,
-					".venv/pyvenv.cfg":                       true,
-					"node_modules/some_package/package.json": true,
-					"logs/log.txt":                           true,
+					"testfile.py":               true,
+					"__pycache__/testcache.txt": false,
+					".venv/pyvenv.cfg":          true,
+					"logs/log.txt":              true,
 				},
 				"service2": {
 					"testfile.js":                            true,
-					"__pycache__/testcache.txt":              false,
-					".venv/pyvenv.cfg":                       false,
 					"node_modules/some_package/package.json": false,
 					"logs/log.txt":                           true,
 				},

@@ -897,10 +897,13 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 
 	// Confirm with the user before adding the default file
 	pm.console.Message(ctx, "")
-	pm.console.Message(ctx,
+	pm.console.Message(
+		ctx,
 		fmt.Sprintf(
 			"The default %s file, which contains a basic workflow to help you get started, is missing from your project.",
-			output.WithHighLightFormat("azure-dev.yml")))
+			output.WithHighLightFormat("azure-dev.yml"),
+		),
+	)
 	pm.console.Message(ctx, "")
 
 	// Prompt the user for confirmation

@@ -16,7 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	terraformTools "github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -66,7 +66,7 @@ func TestTerraformDestroy(t *testing.T) {
 	prepareDestroyMocks(mockContext.CommandRunner)
 
 	infraProvider := createTerraformProvider(t, mockContext)
-	destroyOptions := NewDestroyOptions(false, false)
+	destroyOptions := provisioning.NewDestroyOptions(false, false)
 	destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 	require.Nil(t, err)
@@ -99,7 +99,7 @@ func TestTerraformState(t *testing.T) {
 
 func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *TerraformProvider {
 	projectDir := "../../../../test/functional/testdata/samples/resourcegroupterraform"
-	options := Options{
+	options := provisioning.Options{
 		Module: "main",
 	}
 
@@ -108,6 +108,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000000",
 	})
 
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	accountManager := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{
 			{
@@ -126,7 +127,6 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
-	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 
 	provider := NewTerraformProvider(
 		terraformTools.NewCli(mockContext.CommandRunner),

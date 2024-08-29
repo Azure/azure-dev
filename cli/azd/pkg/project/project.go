@@ -106,7 +106,7 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		// TODO: Move parsing/validation requirements for service targets into their respective components.
 		// When working within container based applications users may be using external/pre-built images instead of source
 		// In this case it is valid to have not specified a language but would be required to specify a source image
-		if svc.Host == ContainerAppTarget && svc.Language == ServiceLanguageNone && svc.Image == "" {
+		if svc.Host == ContainerAppTarget && svc.Language == ServiceLanguageNone && svc.Image.Empty() {
 			return nil, fmt.Errorf("parsing service %s: must specify language or image", svc.Name)
 		}
 	}

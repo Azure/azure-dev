@@ -27,7 +27,7 @@ type ServiceConfig struct {
 	// The output path for build artifacts
 	OutputPath string `yaml:"dist,omitempty"`
 	// The source image to use for container based applications
-	Image string `yaml:"image,omitempty"`
+	Image osutil.ExpandableString `yaml:"image,omitempty"`
 	// The optional docker options for configuring the output image
 	Docker DockerProjectOptions `yaml:"docker,omitempty"`
 	// The optional K8S / AKS options
@@ -37,7 +37,7 @@ type ServiceConfig struct {
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra,omitempty"`
 	// Hook configuration for service
-	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+	Hooks HooksConfig `yaml:"hooks,omitempty"`
 	// Options specific to the DotNetContainerApp target. These are set by the importer and
 	// can not be controlled via the project file today.
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`

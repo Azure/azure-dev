@@ -551,28 +551,35 @@ type location struct {
 func parseEnvSubtVariables(s string) (names []string, expressions []location) {
 	i := 0
 	inVar := false
+	inVarName := false
 	name := ""
 	start := 0
 
 	for i < len(s) {
 		if s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
 			inVar = true
+			inVarName = true
 			start = i
 			i += len("${")
 			continue
 		}
 
-		if inVar {
+		if inVar && inVarName {
+			// a variable name can contain letters, digits, and underscores, and nothing else.
 			if unicode.IsLetter(rune(s[i])) || unicode.IsDigit(rune(s[i])) || s[i] == '_' {
 				name += string(s[i])
-			} else if s[i] == '}' {
-				inVar = false
-				names = append(names, name)
-				name = ""
-
-				expressions = append(expressions, location{start, i})
+			} else { // a non-matching character means we've reached the end of the name
+				inVarName = false
 			}
 		}
+
+		if inVar && s[i] == '}' {
+			inVar = false
+			names = append(names, name)
+			name = ""
+			expressions = append(expressions, location{start, i})
+		}
+
 		i++
 	}
 	return

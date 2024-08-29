@@ -130,6 +130,22 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project file: %w", err)
 	}
 
+	// complement the project config with azd.hooks files if they exist
+	hooksDefinedAtInfraPath, err := ext.HooksFromFolderPath(filepath.Join(projectConfig.Path, projectConfig.Infra.Path))
+	if err != nil {
+		return nil, fmt.Errorf("failed getting hooks from infra path, %w", err)
+	}
+	if len(hooksDefinedAtInfraPath) > 0 && len(projectConfig.Hooks) > 0 {
+		return nil, fmt.Errorf(
+			"project hooks defined in both %s and azure.yaml configuration,"+
+				" please remove one of them",
+			filepath.Join(projectConfig.Infra.Path, "azd.hooks.yaml"),
+		)
+	}
+	if projectConfig.Hooks == nil {
+		projectConfig.Hooks = hooksDefinedAtInfraPath
+	}
+
 	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {
 		template := strings.Split(projectConfig.Metadata.Template, "@")
 		if len(template) == 1 { // no version specifier, just the template ID

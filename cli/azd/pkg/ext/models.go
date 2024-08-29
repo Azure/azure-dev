@@ -222,7 +222,7 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 
 // HooksFromFolderPath check if there is file named azd.hooks.yaml in the service path
 // and return the hooks configuration.
-func HooksFromFolderPath(servicePath string) (map[string]*HookConfig, error) {
+func HooksFromFolderPath(servicePath string) (map[string][]*HookConfig, error) {
 	hooksPath := filepath.Join(servicePath, "azd.hooks.yaml")
 	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
 		hooksPath = filepath.Join(servicePath, "azd.hooks.yml")
@@ -237,7 +237,7 @@ func HooksFromFolderPath(servicePath string) (map[string]*HookConfig, error) {
 	}
 
 	// open hooksPath into a byte array and unmarshal it into a map[string]*ext.HookConfig
-	hooks := make(map[string]*HookConfig)
+	hooks := make(map[string][]*HookConfig)
 	if err := yaml.Unmarshal(hooksFile, &hooks); err != nil {
 		return nil, fmt.Errorf("failed unmarshalling hooks from '%s', %w", hooksPath, err)
 	}

@@ -242,10 +242,6 @@ func (cas *containerAppService) DeployYaml(
 			return fmt.Errorf("applying manifest: %w", err)
 		}
 		poller = p
-
-		// Now that we've sent the request, clear the body so it is not injected on any subsequent requests (e.g. ones made
-		// by the poller when we poll).
-		customPolicy.body = nil
 	} else {
 		// When the apiVersion field is unset in the YAML, we can use the standard SDK to build the request and send it
 		// like normal.
@@ -534,10 +530,6 @@ func (cas *containerAppService) updateContainerApp(
 		return fmt.Errorf("begin updating ingress traffic: %w", err)
 	}
 
-	if apiVersionPolicy != nil {
-		apiVersionPolicy.body = nil
-	}
-
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("polling for container app update completion: %w", err)
@@ -616,6 +608,9 @@ func (p *containerAppCustomApiVersionAndBodyPolicy) Do(req *policy.Request) (*ht
 		if err := req.SetBody(streaming.NopCloser(bytes.NewReader(*p.body)), "application/json"); err != nil {
 			return nil, fmt.Errorf("updating request body: %w", err)
 		}
+
+		// Reset the body on the policy so it doesn't get reused on the next request
+		p.body = nil
 	}
 
 	return req.Next()

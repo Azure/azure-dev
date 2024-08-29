@@ -981,6 +981,10 @@ func cognitiveAccountsByKind(
 	for resourceGroup, cogAccounts := range accountsByResourceGroup {
 		for _, cogAccount := range cogAccounts {
 			kindName := *cogAccount.Kind
+			// Replace "FormRecognizer" with "DocumentIntelligence"
+			if kindName == "FormRecognizer" {
+				kindName = "DocumentIntelligence"
+			}
 			_, exists := result[kindName]
 			if exists {
 				result[kindName] = append(result[kindName], cognitiveAccount{

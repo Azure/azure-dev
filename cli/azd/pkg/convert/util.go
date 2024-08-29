@@ -64,6 +64,7 @@ func ToMap(value any) (map[string]any, error) {
 	return mapValue, nil
 }
 
+// ToJsonArray converts the specified value (slice) to a json array
 func ToJsonArray(value any) ([]any, error) {
 	if value == nil {
 		return nil, nil
@@ -89,6 +90,7 @@ func ParseDuration(value string) (time.Duration, error) {
 	return time.ParseDuration(value)
 }
 
+// FromHttpResponse reads the response body from the specified http response and converts it into the specified value
 func FromHttpResponse(res *http.Response, v any) error {
 	defer res.Body.Close()
 	body, err := io.ReadAll(res.Body)

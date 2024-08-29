@@ -96,8 +96,7 @@ func FromHttpResponse(res *http.Response, v any) error {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	err = json.Unmarshal(body, &v)
-	if err != nil {
+	if err := json.Unmarshal(body, &v); err != nil {
 		return fmt.Errorf("failed to unmarshal response body: %w", err)
 	}
 

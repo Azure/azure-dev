@@ -905,7 +905,7 @@ func cognitiveAccountsByKind(
 			kindName := *cogAccount.Kind
 			// Replace "FormRecognizer" with "DocumentIntelligence"
 			if kindName == "FormRecognizer" {
-				kindName = "DocumentIntelligence"
+				kindName = "Document Intelligence"
 			}
 			_, exists := result[kindName]
 			if exists {

@@ -130,8 +130,10 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project file: %w", err)
 	}
 
+	projectConfig.Path = filepath.Dir(projectFilePath)
+
 	// complement the project config with azd.hooks files if they exist
-	hooksDefinedAtInfraPath, err := ext.HooksFromFolderPath(filepath.Join(projectConfig.Path, projectConfig.Infra.Path))
+	hooksDefinedAtInfraPath, err := hooksFromFolderPath(filepath.Join(projectConfig.Path, projectConfig.Infra.Path))
 	if err != nil {
 		return nil, fmt.Errorf("failed getting hooks from infra path, %w", err)
 	}
@@ -169,6 +171,20 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		for _, svcConfig := range projectConfig.Services {
 			hosts[i] = string(svcConfig.Host)
 			languages[i] = string(svcConfig.Language)
+
+			// complement service level hooks
+			hooksDefinedAtServicePath, err := hooksFromFolderPath(svcConfig.RelativePath)
+			if err != nil {
+				return nil, err
+			}
+			if svcConfig.Hooks != nil && hooksDefinedAtServicePath != nil {
+				return nil, fmt.Errorf("service %s has hooks defined in both azd.hooks.yaml and azure.yaml, "+
+					"please remove one of them.", svcConfig.Name)
+			}
+			if svcConfig.Hooks == nil {
+				svcConfig.Hooks = hooksDefinedAtServicePath
+			}
+
 			i++
 		}
 
@@ -179,7 +195,6 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		tracing.SetUsageAttributes(fields.ProjectServiceHostsKey.StringSlice(hosts))
 	}
 
-	projectConfig.Path = filepath.Dir(projectFilePath)
 	return projectConfig, nil
 }
 
@@ -240,4 +255,29 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 	projectConfig.Path = filepath.Dir(projectFilePath)
 
 	return nil
+}
+
+// hooksFromFolderPath check if there is file named azd.hooks.yaml in the service path
+// and return the hooks configuration.
+func hooksFromFolderPath(servicePath string) (HooksConfig, error) {
+	hooksPath := filepath.Join(servicePath, "azd.hooks.yaml")
+	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+		hooksPath = filepath.Join(servicePath, "azd.hooks.yml")
+		if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+			return nil, nil
+		}
+	}
+
+	hooksFile, err := os.ReadFile(hooksPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading hooks from '%s', %w", hooksPath, err)
+	}
+
+	// open hooksPath into a byte array and unmarshal it into a map[string]*ext.HookConfig
+	hooks := make(HooksConfig)
+	if err := yaml.Unmarshal(hooksFile, &hooks); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling hooks from '%s', %w", hooksPath, err)
+	}
+
+	return hooks, nil
 }

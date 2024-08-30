@@ -5,6 +5,8 @@ package project
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -12,6 +14,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -310,4 +314,215 @@ func TestMinimalYaml(t *testing.T) {
 			snapshot.SnapshotT(t, string(contents))
 		})
 	}
+}
+
+func Test_HooksFromFolderPath(t *testing.T) {
+	t.Run("ProjectInfraHooks", func(t *testing.T) {
+		prj := &ProjectConfig{
+			Name:     "minimal",
+			Services: map[string]*ServiceConfig{},
+		}
+		contents, err := yaml.Marshal(prj)
+		require.NoError(t, err)
+
+		tempDir := t.TempDir()
+
+		azureYamlPath := filepath.Join(tempDir, "azure.yaml")
+		err = os.WriteFile(azureYamlPath, contents, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		infraPath := filepath.Join(tempDir, "infra")
+		err = os.Mkdir(infraPath, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		hooksPath := filepath.Join(infraPath, "azd.hooks.yaml")
+		hooksContent := []byte(`
+pre-build:
+  shell: sh
+  run: ./pre-build.sh
+post-build:
+  shell: pwsh
+  run: ./post-build.ps1
+`)
+
+		err = os.WriteFile(hooksPath, hooksContent, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		expectedHooks := HooksConfig{
+			"pre-build": {{
+				Name:            "",
+				Shell:           ext.ShellTypeBash,
+				Run:             "./pre-build.sh",
+				ContinueOnError: false,
+				Interactive:     false,
+				Windows:         nil,
+				Posix:           nil,
+			}},
+			"post-build": {{
+				Name:            "",
+				Shell:           ext.ShellTypePowershell,
+				Run:             "./post-build.ps1",
+				ContinueOnError: false,
+				Interactive:     false,
+				Windows:         nil,
+				Posix:           nil,
+			},
+			}}
+
+		project, err := Load(context.Background(), azureYamlPath)
+		require.NoError(t, err)
+		require.Equal(t, expectedHooks, project.Hooks)
+	})
+
+	t.Run("ErrorDoubleDefintionHooks", func(t *testing.T) {
+		prj := &ProjectConfig{
+			Name:     "minimal",
+			Services: map[string]*ServiceConfig{},
+			Hooks: HooksConfig{
+				"prebuild": {{
+					Run: "./pre-build.sh",
+				}},
+			},
+		}
+		contents, err := yaml.Marshal(prj)
+		require.NoError(t, err)
+
+		tempDir := t.TempDir()
+
+		azureYamlPath := filepath.Join(tempDir, "azure.yaml")
+		err = os.WriteFile(azureYamlPath, contents, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		infraPath := filepath.Join(tempDir, "infra")
+		err = os.Mkdir(infraPath, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		hooksPath := filepath.Join(infraPath, "azd.hooks.yaml")
+		hooksContent := []byte(`
+pre-build:
+  shell: sh
+  run: ./pre-build.sh
+post-build:
+  shell: pwsh
+  run: ./post-build.ps1
+`)
+
+		err = os.WriteFile(hooksPath, hooksContent, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		project, err := Load(context.Background(), azureYamlPath)
+		require.Error(t, err)
+		var expectedProject *ProjectConfig
+		require.Equal(t, expectedProject, project)
+	})
+
+	t.Run("ServiceInfraHooks", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		prj := &ProjectConfig{
+			Name: "minimal",
+			Services: map[string]*ServiceConfig{
+				"api": {
+					Name:         "api",
+					Host:         AppServiceTarget,
+					RelativePath: filepath.Join(tempDir, "api"),
+				},
+			},
+		}
+		contents, err := yaml.Marshal(prj)
+		require.NoError(t, err)
+
+		azureYamlPath := filepath.Join(tempDir, "azure.yaml")
+		err = os.WriteFile(azureYamlPath, contents, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		servicePath := filepath.Join(tempDir, "api")
+		err = os.Mkdir(servicePath, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		hooksPath := filepath.Join(servicePath, "azd.hooks.yaml")
+		hooksContent := []byte(`
+pre-build:
+  shell: sh
+  run: ./pre-build.sh
+post-build:
+  shell: pwsh
+  run: ./post-build.ps1
+`)
+
+		err = os.WriteFile(hooksPath, hooksContent, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		expectedHooks := HooksConfig{
+			"pre-build": {{
+				Name:            "",
+				Shell:           ext.ShellTypeBash,
+				Run:             "./pre-build.sh",
+				ContinueOnError: false,
+				Interactive:     false,
+				Windows:         nil,
+				Posix:           nil,
+			}},
+			"post-build": {{
+				Name:            "",
+				Shell:           ext.ShellTypePowershell,
+				Run:             "./post-build.ps1",
+				ContinueOnError: false,
+				Interactive:     false,
+				Windows:         nil,
+				Posix:           nil,
+			},
+			}}
+
+		project, err := Load(context.Background(), azureYamlPath)
+		require.NoError(t, err)
+		require.Equal(t, expectedHooks, project.Services["api"].Hooks)
+	})
+
+	t.Run("ErrorDoubleDefintionServiceHooks", func(t *testing.T) {
+		tempDir := t.TempDir()
+		prj := &ProjectConfig{
+			Name: "minimal",
+			Services: map[string]*ServiceConfig{
+				"api": {
+					Name: "api",
+					Host: AppServiceTarget,
+					Hooks: HooksConfig{
+						"prebuild": {{
+							Run: "./pre-build.sh",
+						}},
+					},
+					RelativePath: filepath.Join(tempDir, "api"),
+				},
+			},
+		}
+		contents, err := yaml.Marshal(prj)
+		require.NoError(t, err)
+
+		azureYamlPath := filepath.Join(tempDir, "azure.yaml")
+		err = os.WriteFile(azureYamlPath, contents, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		servicePath := filepath.Join(tempDir, "api")
+		err = os.Mkdir(servicePath, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		hooksPath := filepath.Join(servicePath, "azd.hooks.yaml")
+		hooksContent := []byte(`
+pre-build:
+  shell: sh
+  run: ./pre-build.sh
+post-build:
+  shell: pwsh
+  run: ./post-build.ps1
+`)
+
+		err = os.WriteFile(hooksPath, hooksContent, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		project, err := Load(context.Background(), azureYamlPath)
+		require.Error(t, err)
+		var expectedProject *ProjectConfig
+		require.Equal(t, expectedProject, project)
+	})
 }

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -126,22 +125,6 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		}
 	}
 
-	hooksDefinedAtInfraPath, err := ext.HooksFromFolderPath(
-		filepath.Join(hra.projectConfig.Path, hra.projectConfig.Infra.Path))
-	if err != nil {
-		return nil, fmt.Errorf("failed getting hooks from infra path, %w", err)
-	}
-	if len(hooksDefinedAtInfraPath) > 0 && len(hra.projectConfig.Hooks) > 0 {
-		return nil, fmt.Errorf(
-			"project hooks defined in both %s and azure.yaml configuration,"+
-				" please remove one of them",
-			filepath.Join(hra.projectConfig.Infra.Path, "azd.hooks.yaml"),
-		)
-	}
-	if hra.projectConfig.Hooks == nil {
-		hra.projectConfig.Hooks = hooksDefinedAtInfraPath
-	}
-
 	// Project level hooks
 	projectHooks := hra.projectConfig.Hooks[hookName]
 
@@ -166,17 +149,6 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	for _, service := range stableServices {
 		serviceHooks := service.Hooks[hookName]
 		skip := hra.flags.service != "" && service.Name != hra.flags.service
-		hooksDefinedAtServicePath, err := ext.HooksFromFolderPath(service.Path())
-		if err != nil {
-			return nil, err
-		}
-		if service.Hooks != nil && hooksDefinedAtServicePath != nil {
-			return nil, fmt.Errorf("service %s has hooks defined in both azd.hooks.yaml and azure.yaml, "+
-				"please remove one of them.", service.Name)
-		}
-		if service.Hooks == nil {
-			service.Hooks = hooksDefinedAtServicePath
-		}
 
 		if err := hra.processHooks(
 			ctx,

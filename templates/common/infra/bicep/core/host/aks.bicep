@@ -47,19 +47,19 @@ param addOns object = {
 }
 
 @description('The managed cluster SKU.')
-@allowed(['Free', 'Paid', 'Standard'])
+@allowed([ 'Free', 'Paid', 'Standard' ])
 param sku string = 'Free'
 
 @description('The load balancer SKU to use for ingress into the AKS cluster')
-@allowed(['basic', 'standard'])
+@allowed([ 'basic', 'standard' ])
 param loadBalancerSku string = 'standard'
 
 @description('Network plugin used for building the Kubernetes network.')
-@allowed(['azure', 'kubenet', 'none'])
+@allowed([ 'azure', 'kubenet', 'none' ])
 param networkPlugin string = 'azure'
 
 @description('Network policy used for building the Kubernetes network.')
-@allowed(['azure', 'calico'])
+@allowed([ 'azure', 'calico' ])
 param networkPolicy string = 'azure'
 
 @description('The DNS prefix to associate with the AKS cluster')
@@ -97,11 +97,11 @@ param agentPoolConfig object = {}
 param principalId string = ''
 
 @description('The type of principal to assign application roles')
-@allowed(['Device', 'ForeignGroup', 'Group', 'ServicePrincipal', 'User'])
+@allowed(['Device','ForeignGroup','Group','ServicePrincipal','User'])
 param principalType string = 'User'
 
 @description('Kubernetes Version')
-param kubernetesVersion string = '1.28'
+param kubernetesVersion string = '1.29'
 
 @description('The Tenant ID associated to the Azure Active Directory')
 param aadTenantId string = tenant().tenantId
@@ -119,29 +119,22 @@ param enableAzureRbac bool = false
 @description('Whether web app routing (preview) add-on is enabled')
 param webAppRoutingAddon bool = true
 
-@description('The object IDs of the Azure AD groups that will have admin access to the AKS cluster')
-param adminGroupObjectIDs array = []
-
-@description('Whether or not to use AKS Automatic mode')
-param automatic bool = false
-
 // Configure AKS add-ons
-var omsAgentConfig = (!empty(logAnalyticsName) && !empty(addOns.omsAgent) && addOns.omsAgent.enabled)
-  ? union(addOns.omsAgent, {
-      config: {
-        logAnalyticsWorkspaceResourceID: logAnalytics.id
-      }
-    })
-  : {}
+var omsAgentConfig = (!empty(logAnalyticsName) && !empty(addOns.omsAgent) && addOns.omsAgent.enabled) ? union(
+  addOns.omsAgent,
+  {
+    config: {
+      logAnalyticsWorkspaceResourceID: logAnalytics.id
+    }
+  }
+) : {}
 
 var addOnsConfig = union(
   (!empty(addOns.azurePolicy) && addOns.azurePolicy.enabled) ? { azurepolicy: addOns.azurePolicy } : {},
   (!empty(addOns.keyVault) && addOns.keyVault.enabled) ? { azureKeyvaultSecretsProvider: addOns.keyVault } : {},
   (!empty(addOns.openServiceMesh) && addOns.openServiceMesh.enabled) ? { openServiceMesh: addOns.openServiceMesh } : {},
   (!empty(addOns.omsAgent) && addOns.omsAgent.enabled) ? { omsagent: omsAgentConfig } : {},
-  (!empty(addOns.applicationGateway) && addOns.applicationGateway.enabled)
-    ? { ingressApplicationGateway: addOns.applicationGateway }
-    : {}
+  (!empty(addOns.applicationGateway) && addOns.applicationGateway.enabled) ? { ingressApplicationGateway: addOns.applicationGateway } : {}
 )
 
 // Link to existing log analytics workspace when available
@@ -152,13 +145,17 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-12-01-previ
 var systemPoolSpec = !empty(systemPoolConfig) ? systemPoolConfig : nodePoolPresets[systemPoolType]
 
 // Create the primary AKS cluster resources and system node pool
-module managedCluster 'aks-managed-cluster.bicep' = if (!automatic) {
+module managedCluster 'aks-managed-cluster.bicep' = {
   name: 'managed-cluster'
   params: {
     name: name
     location: location
     tags: tags
-    systemPoolConfig: union({ name: 'npsystem', mode: 'System' }, nodePoolBase, systemPoolSpec)
+    systemPoolConfig: union(
+      { name: 'npsystem', mode: 'System' },
+      nodePoolBase,
+      systemPoolSpec
+    )
     nodeResourceGroupName: nodeResourceGroupName
     sku: sku
     dnsPrefix: dnsPrefix
@@ -177,29 +174,14 @@ module managedCluster 'aks-managed-cluster.bicep' = if (!automatic) {
   }
 }
 
-module automaticCluster 'aks-automatic-cluster.bicep' = if (automatic) {
-  name: 'automatic-cluster'
-  params: {
-    name: name
-    location: location
-    tags: tags
-    dnsPrefix: dnsPrefix
-    adminGroupObjectIDs: adminGroupObjectIDs
-    kubernetesVersion: kubernetesVersion
-    nodeResourceGroupName: nodeResourceGroupName
-  }
-}
-
 var hasAgentPool = !empty(agentPoolConfig) || !empty(agentPoolType)
-var agentPoolSpec = hasAgentPool && !empty(agentPoolConfig)
-  ? agentPoolConfig
-  : empty(agentPoolType) ? {} : nodePoolPresets[agentPoolType]
+var agentPoolSpec = hasAgentPool && !empty(agentPoolConfig) ? agentPoolConfig : empty(agentPoolType) ? {} : nodePoolPresets[agentPoolType]
 
 // Create additional user agent pool when specified
 module agentPool 'aks-agent-pool.bicep' = if (hasAgentPool) {
   name: 'aks-node-pool'
   params: {
-    clusterName: automatic ? automaticCluster.outputs.clusterName : managedCluster.outputs.clusterName
+    clusterName: managedCluster.outputs.clusterName
     name: 'npuserpool'
     config: union({ name: 'npuser', mode: 'User' }, nodePoolBase, agentPoolSpec)
   }
@@ -221,15 +203,15 @@ module containerRegistryAccess '../security/registry-access.bicep' = {
   name: 'cluster-container-registry-access'
   params: {
     containerRegistryName: containerRegistry.outputs.name
-    principalId: automatic ? automaticCluster.outputs.clusterIdentity.objectId : managedCluster.outputs.clusterIdentity.objectId
+    principalId: managedCluster.outputs.clusterIdentity.objectId
   }
 }
 
 // Give AKS cluster access to the specified principal
-module clusterAccess '../security/aks-managed-cluster-access.bicep' = if (!empty(principalId) && (automatic || (enableAzureRbac || disableLocalAccounts))) {
+module clusterAccess '../security/aks-managed-cluster-access.bicep' = if (!empty(principalId) && (enableAzureRbac || disableLocalAccounts)) {
   name: 'cluster-access'
   params: {
-    clusterName: automatic ? automaticCluster.outputs.clusterName : managedCluster.outputs.clusterName
+    clusterName: managedCluster.outputs.clusterName
     principalId: principalId
     principalType: principalType
   }
@@ -240,7 +222,7 @@ module clusterKeyVaultAccess '../security/keyvault-access.bicep' = {
   name: 'cluster-keyvault-access'
   params: {
     keyVaultName: keyVaultName
-    principalId: automatic ? automaticCluster.outputs.clusterIdentity.objectId : managedCluster.outputs.clusterIdentity.objectId
+    principalId: managedCluster.outputs.clusterIdentity.objectId
   }
 }
 
@@ -291,10 +273,10 @@ var nodePoolPresets = {
 
 // Module outputs
 @description('The resource name of the AKS cluster')
-output clusterName string = automatic ? automaticCluster.outputs.clusterName : managedCluster.outputs.clusterName
+output clusterName string = managedCluster.outputs.clusterName
 
 @description('The AKS cluster identity')
-output clusterIdentity object = automatic ? automaticCluster.outputs.clusterIdentity : managedCluster.outputs.clusterIdentity
+output clusterIdentity object = managedCluster.outputs.clusterIdentity
 
 @description('The resource name of the ACR')
 output containerRegistryName string = containerRegistry.outputs.name

@@ -507,9 +507,15 @@ func (cas *containerAppService) updateContainerApp(
 		return err
 	}
 
-	emptyApp := armappcontainers.ContainerApp{}
+	// This container app BODY will be replaced by the custom policy when configured
+	var containerAppResource armappcontainers.ContainerApp
+	if apiVersionPolicy == nil {
+		if err := json.Unmarshal(containerAppJson, &containerAppResource); err != nil {
+			return fmt.Errorf("failed to unmarshal container app: %w", err)
+		}
+	}
 
-	poller, err := appClient.BeginUpdate(ctx, resourceGroupName, appName, emptyApp, nil)
+	poller, err := appClient.BeginUpdate(ctx, resourceGroupName, appName, containerAppResource, nil)
 	if err != nil {
 		return fmt.Errorf("begin updating ingress traffic: %w", err)
 	}
@@ -525,7 +531,7 @@ func (cas *containerAppService) updateContainerApp(
 func (cas *containerAppService) createContainerAppsClient(
 	ctx context.Context,
 	subscriptionId string,
-	policy policy.Policy,
+	customPolicy *containerAppCustomApiVersionAndBodyPolicy,
 ) (*armappcontainers.ContainerAppsClient, error) {
 	credential, err := cas.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
@@ -534,9 +540,9 @@ func (cas *containerAppService) createContainerAppsClient(
 
 	options := *cas.armClientOptions
 
-	if policy != nil {
+	if customPolicy != nil {
 		// Clone the options so we don't modify the original - we don't want to inject this custom policy into every request.
-		options.PerCallPolicies = append(slices.Clone(options.PerCallPolicies), policy)
+		options.PerCallPolicies = append(slices.Clone(options.PerCallPolicies), customPolicy)
 	}
 
 	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, &options)
@@ -550,7 +556,7 @@ func (cas *containerAppService) createContainerAppsClient(
 func (cas *containerAppService) createRevisionsClient(
 	ctx context.Context,
 	subscriptionId string,
-	policy policy.Policy,
+	customPolicy *containerAppCustomApiVersionAndBodyPolicy,
 ) (*armappcontainers.ContainerAppsRevisionsClient, error) {
 	credential, err := cas.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
@@ -559,9 +565,9 @@ func (cas *containerAppService) createRevisionsClient(
 
 	options := *cas.armClientOptions
 
-	if policy != nil {
+	if customPolicy != nil {
 		// Clone the options so we don't modify the original - we don't want to inject this custom policy into every request.
-		options.PerCallPolicies = append(slices.Clone(options.PerCallPolicies), policy)
+		options.PerCallPolicies = append(slices.Clone(options.PerCallPolicies), customPolicy)
 	}
 
 	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, &options)

@@ -639,7 +639,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.MustRegisterSingleton(azapi.NewStandardDeployments)
 	container.MustRegisterSingleton(azapi.NewStackDeployments)
-	container.MustRegisterSingleton(infra.NewDeploymentManager)
+	container.MustRegisterScoped(infra.NewDeploymentManager)
 	container.MustRegisterSingleton(infra.NewAzureResourceManager)
 	container.MustRegisterScoped(provisioning.NewManager)
 	container.MustRegisterScoped(provisioning.NewPrincipalIdProvider)

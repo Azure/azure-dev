@@ -261,9 +261,17 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 // and return the hooks configuration.
 func hooksFromFolderPath(servicePath string) (HooksConfig, error) {
 	hooksPath := filepath.Join(servicePath, "azd.hooks.yaml")
-	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+
+	// due to projects depending on a ProjectImporter like Aspire, we need to ignore all type of errors related to
+	// the path is either not found, not accessible or any other error that might occur.
+	// In case of Aspire, the servicePath points out to the C# project, and not to the directory.
+	// We could handle Aspire Project here but that's not the purpose of this function.
+	// The right thing might be to use the ProjectImporter and get the list of services from Aspire and check for hooks at
+	// each path, but hooks for Aspire services are not even supported on azure.yaml.
+	if _, err := os.Stat(hooksPath); err != nil {
 		hooksPath = filepath.Join(servicePath, "azd.hooks.yml")
-		if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+		if _, err := os.Stat(hooksPath); err != nil {
+			log.Println("error trying to read hooks file for service in path: ", servicePath, ". Error:", err)
 			return nil, nil
 		}
 	}

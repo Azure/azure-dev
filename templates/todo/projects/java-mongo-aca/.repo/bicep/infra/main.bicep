@@ -242,7 +242,7 @@ module api 'br/public:avm/res/app/container-app:0.2.0' = {
 }
 
 // The application database
-module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
+module cosmos 'br/public:avm/res/document-db/database-account:0.6.0' = {
   name: 'cosmos'
   scope: rg
   params: {
@@ -262,8 +262,8 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
         collections: collections
       }
     ]
-    secretsKeyVault: {
-      keyVaultName: keyVault.outputs.name
+    secretsExportConfiguration: {
+      keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: connectionStringKey
     }
   }

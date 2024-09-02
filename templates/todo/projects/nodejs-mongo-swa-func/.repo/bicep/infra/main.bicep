@@ -77,7 +77,6 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 var tags = { 'azd-env-name': environmentName }
 var defaultDatabaseName = 'Todo'
 var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : defaultDatabaseName
-var apiUri = 'https://${api.outputs.defaultHostname}'
 var webUri = 'https://${web.outputs.defaultHostname}'
 var apimApiUri = 'https://${apim.outputs.name}.azure-api.net/todo'
 var apimServiceId = useAPIM ? apim.outputs.resourceId : ''
@@ -102,28 +101,16 @@ module web 'br/public:avm/res/web/static-site:0.3.0' = {
 }
 
 // The application backend
-module api 'br/public:avm/res/web/site:0.3.9' = {
+module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
   name: 'api'
   scope: rg
   params: {
-    kind: 'functionapp'
-    name: !empty(apiServiceName) ? apiServiceName : '${abbrs.webSitesFunctions}api-${resourceToken}'
-    serverFarmResourceId: appServicePlan.outputs.resourceId
-    tags: union(tags, { 'azd-service-name': 'api' })
+    name: !empty(apiServiceName) ? apiServiceName : '${abbrs.webSitesAppService}api-${resourceToken}'
     location: location
-    appInsightResourceId: applicationInsights.outputs.resourceId
-    managedIdentities: {
-      systemAssigned: true
-    }
-    clientAffinityEnabled: false
-    siteConfig: {
-      cors: {
-        allowedOrigins: [ 'https://portal.azure.com', 'https://ms.portal.azure.com' , webUri ]
-      }
-      linuxFxVersion: 'node|20'
-      use32BitWorkerProcess: false
-    }
-    appSettingsKeyValuePairs: {
+    tags: tags
+    kind: 'functionapp'
+    appServicePlanId: appServicePlan.outputs.resourceId
+    appSettings: {
       API_ALLOW_ORIGINS: webUri
       AZURE_COSMOS_CONNECTION_STRING_KEY: connectionStringKey
       AZURE_COSMOS_DATABASE_NAME: actualDatabaseName
@@ -131,16 +118,13 @@ module api 'br/public:avm/res/web/site:0.3.9' = {
       AZURE_COSMOS_ENDPOINT: 'https://${cosmos.outputs.name}.documents.azure.com:443/'
       FUNCTIONS_EXTENSION_VERSION: '~4'
       FUNCTIONS_WORKER_RUNTIME: 'node'
-      SCM_DO_BUILD_DURING_DEPLOYMENT: 'True'
-      ENABLE_ORYX_BUILD: 'True'
+      SCM_DO_BUILD_DURING_DEPLOYMENT: true
     }
-    logsConfiguration: {
-      applicationLogs: { fileSystem: { level: 'Verbose' } }
-      detailedErrorMessages: { enabled: true }
-      failedRequestsTracing: { enabled: true }
-      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
-    }
+    appInsightResourceId: applicationInsights.outputs.resourceId
+    linuxFxVersion: 'node|20'
+    allowedOrigins: [ webUri ]
     storageAccountResourceId: storage.outputs.resourceId
+    clientAffinityEnabled: false
   }
 }
 
@@ -157,7 +141,7 @@ module accessKeyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
     sku: 'standard'
     accessPolicies: [
       {
-        objectId: api.outputs.systemAssignedMIPrincipalId
+        objectId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
         permissions: {
           secrets: [ 'get', 'list' ]
         }
@@ -173,7 +157,7 @@ module accessKeyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
 }
 
 // The application database
-module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
+module cosmos 'br/public:avm/res/document-db/database-account:0.6.0' = {
   name: 'cosmos'
   scope: rg
   params: {
@@ -193,8 +177,8 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
         collections: collections
       }
     ]
-    secretsKeyVault: {
-      keyVaultName: keyVault.outputs.name
+    secretsExportConfiguration:{
+      keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: connectionStringKey
     }
   }
@@ -352,7 +336,7 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
         path: 'todo'
         displayName: 'Simple Todo API'
         apiDescription: 'This is a simple Todo API'
-        serviceUrl: apiUri
+        serviceUrl: api.outputs.SERVICE_API_URI
         subscriptionRequired: false
         protocols: [ 'https' ]
         type: 'http'
@@ -374,7 +358,7 @@ module apiConfig 'br/public:avm/res/web/site:0.3.9' = if (useAPIM) {
   scope: rg
   params: {
     kind: 'functionapp'
-    name: api.outputs.name
+    name: api.outputs.SERVICE_API_NAME
     tags: union(tags, { 'azd-service-name': 'api' })
     siteConfig: {
       cors: {
@@ -403,7 +387,7 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output API_BASE_URL string = useAPIM ? apimApiUri : apiUri
+output API_BASE_URL string = useAPIM ? apimApiUri : api.outputs.SERVICE_API_URI
 output REACT_APP_WEB_BASE_URL string = webUri
 output USE_APIM bool = useAPIM
-output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApiUri, apiUri ]: []
+output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApiUri, api.outputs.SERVICE_API_URI ]: []

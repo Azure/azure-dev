@@ -51,8 +51,6 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 var tags = { 'azd-env-name': environmentName }
 var defaultDatabaseName = 'Todo'
 var actualDatabaseName = !empty(sqlDatabaseName) ? sqlDatabaseName : defaultDatabaseName
-var webUri = 'https://${web.outputs.defaultHostname}'
-var apiUri = 'https://${api.outputs.defaultHostname}'
 var apimApiUri = 'https://${apim.outputs.name}.azure-api.net/todo'
 var apimServiceId = useAPIM ? apim.outputs.resourceId : ''
 
@@ -64,64 +62,40 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 }
 
 // The application frontend
-module web 'br/public:avm/res/web/site:0.3.9' = {
+module web '../../../../../common/infra/bicep/app/web-avm.bicep' = {
   name: 'web'
   scope: rg
   params: {
-    kind: 'app'
     name: !empty(webServiceName) ? webServiceName : '${abbrs.webSitesAppService}web-${resourceToken}'
-    serverFarmResourceId: appServicePlan.outputs.resourceId
-    tags: union(tags, { 'azd-service-name': 'web' })
     location: location
+    tags: tags
+    appServicePlanId: appServicePlan.outputs.resourceId
     appInsightResourceId: applicationInsights.outputs.resourceId
-    siteConfig: {
-      appCommandLine: 'pm2 serve /home/site/wwwroot --no-daemon --spa'
-      linuxFxVersion: 'node|20-lts'
-      alwaysOn: true
-    }
-    logsConfiguration: {
-      applicationLogs: { fileSystem: { level: 'Verbose' } }
-      detailedErrorMessages: { enabled: true }
-      failedRequestsTracing: { enabled: true }
-      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
-    }
+    linuxFxVersion: 'node|20-lts'
   }
 }
 
 // The application backend
-module api 'br/public:avm/res/web/site:0.3.9' = {
+module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
   name: 'api'
   scope: rg
   params: {
-    kind: 'app'
     name: !empty(apiServiceName) ? apiServiceName : '${abbrs.webSitesAppService}api-${resourceToken}'
-    serverFarmResourceId: appServicePlan.outputs.resourceId
-    tags: union(tags, { 'azd-service-name': 'api' })
     location: location
-    appInsightResourceId: applicationInsights.outputs.resourceId
-    managedIdentities: {
-      systemAssigned: true
-    }
+    tags: tags
+    kind: 'app'
+    appServicePlanId: appServicePlan.outputs.resourceId
     siteConfig: {
-      cors: {
-        allowedOrigins: [ 'https://portal.azure.com', 'https://ms.portal.azure.com' , webUri ]
-      }
-      linuxFxVersion: 'dotnetcore|8.0'
       alwaysOn: true
-      appCommandLine: ''
     }
-    appSettingsKeyValuePairs: {
-      AZURE_SQL_CONNECTION_STRING_KEY: connectionStringKey
+    appSettings: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
-      SCM_DO_BUILD_DURING_DEPLOYMENT: 'False'
-      ENABLE_ORYX_BUILD: 'True'
+      AZURE_COSMOS_CONNECTION_STRING_KEY: connectionStringKey
+      SCM_DO_BUILD_DURING_DEPLOYMENT: false
     }
-    logsConfiguration: {
-      applicationLogs: { fileSystem: { level: 'Verbose' } }
-      detailedErrorMessages: { enabled: true }
-      failedRequestsTracing: { enabled: true }
-      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
-    }
+    appInsightResourceId: applicationInsights.outputs.resourceId
+    linuxFxVersion: 'dotnetcore|8.0'
+    allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
   }
 }
 
@@ -144,7 +118,7 @@ module accessKeyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
         }
       }
       {
-        objectId: api.outputs.systemAssignedMIPrincipalId
+        objectId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
         permissions: {
           secrets: [ 'get', 'list' ]
         }
@@ -342,14 +316,14 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
         path: 'todo'
         displayName: 'Simple Todo API'
         apiDescription: 'This is a simple Todo API'
-        serviceUrl: apiUri
+        serviceUrl: api.outputs.SERVICE_API_URI
         subscriptionRequired: false
         protocols: [ 'https' ]
         type: 'http'
         value: loadTextContent('../../../../../api/common/openapi.yaml')
         policies: [
           {
-            value: replace(loadTextContent('../../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml'), '{origin}', webUri)
+            value: replace(loadTextContent('../../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml'), '{origin}', web.outputs.SERVICE_WEB_URI)
             format: 'rawxml'
           }
         ]
@@ -364,7 +338,7 @@ module apiConfig 'br/public:avm/res/web/site:0.3.9' = if (useAPIM) {
   scope: rg
   params: {
     kind: 'app'
-    name: api.outputs.name
+    name: api.outputs.SERVICE_API_NAME
     tags: union(tags, { 'azd-service-name': 'api' })
     serverFarmResourceId: appServicePlan.outputs.resourceId
     location: location
@@ -385,7 +359,7 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output API_BASE_URL string = useAPIM ? apimApiUri : apiUri
-output REACT_APP_WEB_BASE_URL string = webUri
+output API_BASE_URL string = useAPIM ? apimApiUri : api.outputs.SERVICE_API_URI
+output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
 output USE_APIM bool = useAPIM
-output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApiUri, apiUri ]: []
+output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApiUri, api.outputs.SERVICE_API_URI ]: []

@@ -26,9 +26,6 @@ param resourceGroupName string = ''
 param webContainerAppName string = ''
 param apimServiceName string = ''
 param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
-param primaryReadonlyConnectionStringSecretName string= 'PRIMARY-READONLY-CONNECTION-STRING'
-param secondaryWriteConnectionStringSecretName string = 'SECONDARY-WRITE-CONNECTION-STRING'
-param secondaryReadonlyConnectionStringSecretName string = 'SECONDARY-READONLY-CONNECTION-STRING'
 param apimApiName string = 'todo-api'
 param apimLoggerName string = 'app-insights-logger'
 param collections array = [
@@ -245,7 +242,7 @@ module api 'br/public:avm/res/app/container-app:0.2.0' = {
 }
 
 // The application database
-module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
+module cosmos 'br/public:avm/res/document-db/database-account:0.6.0' = {
   name: 'cosmos'
   scope: rg
   params: {
@@ -265,12 +262,9 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
         collections: collections
       }
     ]
-    secretsKeyVault: {
-      keyVaultName: keyVault.outputs.name
+    secretsExportConfiguration:{
+      keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: connectionStringKey
-      primaryReadonlyConnectionStringSecretName: primaryReadonlyConnectionStringSecretName
-      secondaryWriteConnectionStringSecretName: secondaryWriteConnectionStringSecretName
-      secondaryReadonlyConnectionStringSecretName: secondaryReadonlyConnectionStringSecretName
     }
   }
 }

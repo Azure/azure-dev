@@ -31,13 +31,6 @@ class Settings(BaseSettings):
     AZURE_KEY_VAULT_ENDPOINT: Optional[str] = None
     APPLICATIONINSIGHTS_CONNECTION_STRING: Optional[str] = None
     APPLICATIONINSIGHTS_ROLENAME: Optional[str] = "API"
-    PRIMARY_WRITE_KEY: str = ""
-    PRIMARY_READONLY_KEY: str = ""
-    SECONDARY_WRITE_CONNECTION_STRING: str = ""
-    PRIMARY_READONLY_CONNECTION_STRING: str = ""
-    SECONDARY_WRITE_KEY: str = ""
-    SECONDARY_READONLY_KEY: str = ""
-    SECONDARY_READONLY_CONNECTION_STRING: str = ""
 
     class Config:
         env_file = ".env"

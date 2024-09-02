@@ -122,6 +122,12 @@ repo:
     - from: ../../../../common/infra/bicep/app/sql-deployment-script.bicep
       to: ./infra/app/sql-deployment-script.bicep
 
+    - from: ../../../../common/infra/bicep/app/web-avm.bicep
+      to: ./infra/app/web-avm.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-avm.bicep
+      to: ./infra/app/api-avm.bicep
+
     - from: ./../../
       to: ./
       ignore:

@@ -128,6 +128,12 @@ repo:
     - from: ../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep
       to: ./infra/app/applicationinsights-dashboard.bicep
 
+    - from: ../../../../common/infra/bicep/app/web-avm.bicep
+      to: ./infra/app/web-avm.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-avm.bicep
+      to: ./infra/app/api-avm.bicep
+
     - from: ./../../
       to: ./
       ignore:

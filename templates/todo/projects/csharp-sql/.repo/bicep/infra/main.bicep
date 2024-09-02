@@ -90,7 +90,7 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
     }
     appSettings: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
-      AZURE_COSMOS_CONNECTION_STRING_KEY: connectionStringKey
+      AZURE_SQL_CONNECTION_STRING_KEY: connectionStringKey
       SCM_DO_BUILD_DURING_DEPLOYMENT: false
     }
     appInsightResourceId: applicationInsights.outputs.resourceId

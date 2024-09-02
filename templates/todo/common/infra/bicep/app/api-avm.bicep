@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param allowedOrigins array = []
-param appCommandLine string = ''
+param appCommandLine string?
 param appInsightResourceId string
 param appServicePlanId string
 @secure()

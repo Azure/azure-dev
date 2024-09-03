@@ -380,7 +380,7 @@ func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	require.True(t, found)
 	values := alphaFeaturesAttribute.Value.AsStringSlice()
 
-	require.Len(t, values, 2)
+	require.Len(t, values, 1)
 	require.Contains(t, values, "infraSynth")
 	require.NotContains(t, values, "aks.helm")
 }

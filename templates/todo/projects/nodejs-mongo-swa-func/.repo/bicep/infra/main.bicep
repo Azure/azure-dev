@@ -120,8 +120,10 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
       FUNCTIONS_WORKER_RUNTIME: 'node'
       SCM_DO_BUILD_DURING_DEPLOYMENT: true
     }
+    siteConfig: {
+      linuxFxVersion: 'node|20'
+    }
     appInsightResourceId: applicationInsights.outputs.resourceId
-    linuxFxVersion: 'node|20'
     allowedOrigins: [ webUri ]
     storageAccountResourceId: storage.outputs.resourceId
     clientAffinityEnabled: false

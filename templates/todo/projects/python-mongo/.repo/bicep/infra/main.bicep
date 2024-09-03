@@ -112,6 +112,7 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
     appServicePlanId: appServicePlan.outputs.resourceId
     siteConfig: {
       alwaysOn: true
+      linuxFxVersion: 'python|3.10'
       appCommandLine: 'gunicorn --workers 4 --threads 2 --timeout 60 --access-logfile "-" --error-logfile "-" --bind=0.0.0.0:8000 -k uvicorn.workers.UvicornWorker todo.app:app'
     }
     appSettings: {
@@ -123,7 +124,6 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
       SCM_DO_BUILD_DURING_DEPLOYMENT: true
     }
     appInsightResourceId: applicationInsights.outputs.resourceId
-    linuxFxVersion: 'python|3.10'
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
   }
 }

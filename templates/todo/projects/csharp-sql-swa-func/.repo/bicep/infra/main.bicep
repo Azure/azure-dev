@@ -94,8 +94,10 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
       FUNCTIONS_WORKER_RUNTIME: 'dotnet-isolated'
       SCM_DO_BUILD_DURING_DEPLOYMENT: false
     }
+    siteConfig: {
+      linuxFxVersion: 'dotnet-isolated|8.0'
+    }
     appInsightResourceId: applicationInsights.outputs.resourceId
-    linuxFxVersion: 'dotnet-isolated|8.0'
     allowedOrigins: [ webUri ]
     storageAccountResourceId: storage.outputs.resourceId
     clientAffinityEnabled: false

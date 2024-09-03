@@ -121,7 +121,9 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
       SCM_DO_BUILD_DURING_DEPLOYMENT: true
     }
     appInsightResourceId: applicationInsights.outputs.resourceId
-    linuxFxVersion: 'python|3.10'
+    siteConfig: {
+      linuxFxVersion: 'python|3.10'
+    }
     allowedOrigins: [ webUri ]
     storageAccountResourceId: storage.outputs.resourceId
     clientAffinityEnabled: false

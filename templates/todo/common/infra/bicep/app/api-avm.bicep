@@ -10,7 +10,6 @@ param appServicePlanId string
 param appSettings object = {}
 param siteConfig object = {}
 param serviceName string = 'api'
-param linuxFxVersion string
 
 @description('Required. Type of site to deploy.')
 param kind string
@@ -39,7 +38,6 @@ module api 'br/public:avm/res/web/site:0.6.0' = {
       cors: {
         allowedOrigins: union(['https://portal.azure.com', 'https://ms.portal.azure.com'], allowedOrigins)
       }
-      linuxFxVersion: linuxFxVersion
       appCommandLine: appCommandLine
     })
     appSettingsKeyValuePairs: union(appSettings, { ENABLE_ORYX_BUILD: true })

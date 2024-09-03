@@ -116,6 +116,7 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
     appServicePlanId: appServicePlan.outputs.resourceId
     siteConfig: {
       alwaysOn: true
+      linuxFxVersion: 'java|17-java17'
     }
     appSettings: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
@@ -127,7 +128,6 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
       SCM_DO_BUILD_DURING_DEPLOYMENT: true
     }
     appInsightResourceId: applicationInsights.outputs.resourceId
-    linuxFxVersion: 'java|17-java17'
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
   }
 }

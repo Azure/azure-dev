@@ -87,6 +87,7 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
     appServicePlanId: appServicePlan.outputs.resourceId
     siteConfig: {
       alwaysOn: true
+      linuxFxVersion: 'dotnetcore|8.0'
     }
     appSettings: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
@@ -94,7 +95,6 @@ module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
       SCM_DO_BUILD_DURING_DEPLOYMENT: false
     }
     appInsightResourceId: applicationInsights.outputs.resourceId
-    linuxFxVersion: 'dotnetcore|8.0'
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
   }
 }

@@ -23,7 +23,7 @@ type HooksRunner struct {
 	commandRunner exec.CommandRunner
 	console       input.Console
 	cwd           string
-	hooks         map[string]*HookConfig
+	hooks         map[string][]*HookConfig
 	env           *environment.Environment
 	envManager    environment.Manager
 }
@@ -36,7 +36,7 @@ func NewHooksRunner(
 	envManager environment.Manager,
 	console input.Console,
 	cwd string,
-	hooks map[string]*HookConfig,
+	hooks map[string][]*HookConfig,
 	env *environment.Environment,
 ) *HooksRunner {
 	if cwd == "" {
@@ -172,7 +172,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 
 		// If an error occurred log the failure but continue
 		if hookConfig.ContinueOnError {
-			h.console.Message(ctx, output.WithBold(output.WithWarningFormat("WARNING: %s", execErr.Error())))
+			h.console.Message(ctx, output.WithBold("%s", output.WithWarningFormat("WARNING: %s", execErr.Error())))
 			h.console.Message(
 				ctx,
 				output.WithWarningFormat("Execution will continue since ContinueOnError has been set to true."),

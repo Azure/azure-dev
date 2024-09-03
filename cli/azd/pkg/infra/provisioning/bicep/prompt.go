@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -13,9 +14,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
-	"golang.org/x/exp/slices"
 
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
 // promptDialogItemForParameter builds the input.PromptDialogItem for the given required parameter.
@@ -35,7 +35,7 @@ func (p *BicepProvider) promptDialogItemForParameter(
 		dialogItem.Description = to.Ptr(help)
 	}
 
-	if paramType == ParameterTypeBoolean {
+	if paramType == provisioning.ParameterTypeBoolean {
 		dialogItem.Kind = "select"
 		dialogItem.Choices = []input.PromptDialogChoice{{Value: "true"}, {Value: "false"}}
 	} else if param.AllowedValues != nil {
@@ -91,7 +91,10 @@ func (p *BicepProvider) PromptForParameter(
 
 	var value any
 
-	if paramType == ParameterTypeString && azdMetadata.Type != nil && *azdMetadata.Type == azure.AzdMetadataTypeLocation {
+	if paramType == provisioning.ParameterTypeString &&
+		azdMetadata.Type != nil &&
+		*azdMetadata.Type == azure.AzdMetadataTypeLocation {
+
 		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
 			if param.AllowedValues == nil {
 				return true
@@ -107,7 +110,7 @@ func (p *BicepProvider) PromptForParameter(
 			return nil, err
 		}
 		value = location
-	} else if paramType == ParameterTypeString &&
+	} else if paramType == provisioning.ParameterTypeString &&
 		azdMetadata.Type != nil &&
 		*azdMetadata.Type == azure.AzdMetadataTypeGenerateOrManual {
 
@@ -163,7 +166,7 @@ func (p *BicepProvider) PromptForParameter(
 		value = (*param.AllowedValues)[choice]
 	} else {
 		switch paramType {
-		case ParameterTypeBoolean:
+		case provisioning.ParameterTypeBoolean:
 			options := []string{"False", "True"}
 			choice, err := p.console.Select(ctx, input.ConsoleOptions{
 				Message: msg,
@@ -174,7 +177,7 @@ func (p *BicepProvider) PromptForParameter(
 				return nil, err
 			}
 			value = (options[choice] == "True")
-		case ParameterTypeNumber:
+		case provisioning.ParameterTypeNumber:
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
 				Message: msg,
 				Help:    help,
@@ -183,7 +186,7 @@ func (p *BicepProvider) PromptForParameter(
 				return nil, err
 			}
 			value = userValue
-		case ParameterTypeString:
+		case provisioning.ParameterTypeString:
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
 				Message:    msg,
 				Help:       help,
@@ -193,7 +196,7 @@ func (p *BicepProvider) PromptForParameter(
 				return nil, err
 			}
 			value = userValue
-		case ParameterTypeArray:
+		case provisioning.ParameterTypeArray:
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
 				Message: msg,
 				Help:    help,
@@ -202,7 +205,7 @@ func (p *BicepProvider) PromptForParameter(
 				return nil, err
 			}
 			value = userValue
-		case ParameterTypeObject:
+		case provisioning.ParameterTypeObject:
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
 				Message: msg,
 				Help:    help,

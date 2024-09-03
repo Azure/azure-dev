@@ -85,7 +85,7 @@
                     },
                     "image": {
                         "type": "string",
-                        "title": "Optional. The source image to be used for the container image instead of building from source.",
+                        "title": "Optional. The source image to be used for the container image instead of building from source. Supports environment variable substitution.",
                         "description": "If omitted, container image will be built from source specified in the 'project' property. Setting both 'project' and 'image' is invalid."
                     },
                     "host": {

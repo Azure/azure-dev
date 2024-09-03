@@ -36,14 +36,14 @@ func NewHooksManager(
 
 // Gets an array of all hook configurations
 // Will return an error if any configuration errors are found
-func (h *HooksManager) GetAll(hooks map[string]*HookConfig) ([]*HookConfig, error) {
+func (h *HooksManager) GetAll(hooks map[string][]*HookConfig) ([]*HookConfig, error) {
 	return h.filterConfigs(hooks, nil)
 }
 
 // Gets an array of hook configurations matching the specified hook type and commands
 // Will return an error if any configuration errors are found
 func (h *HooksManager) GetByParams(
-	hooks map[string]*HookConfig,
+	hooks map[string][]*HookConfig,
 	prefix HookType,
 	commands ...string,
 ) ([]*HookConfig, error) {
@@ -69,36 +69,39 @@ func (h *HooksManager) GetByParams(
 // Filters the specified hook configurations based on the predicate
 // Will return an error if any configuration errors are found
 func (h *HooksManager) filterConfigs(
-	hooks map[string]*HookConfig,
+	hooksMap map[string][]*HookConfig,
 	predicate HookFilterPredicateFn,
 ) ([]*HookConfig, error) {
 	matchingHooks := []*HookConfig{}
 
 	// Find explicitly configured hooks from azure.yaml
-	for scriptName, hookConfig := range hooks {
-		if hookConfig == nil {
+	for scriptName, hooks := range hooksMap {
+		if hooks == nil {
 			continue
 		}
 
-		if predicate != nil && !predicate(scriptName, hookConfig) {
-			continue
+		for _, hook := range hooks {
+
+			if predicate != nil && !predicate(scriptName, hook) {
+				continue
+			}
+
+			// If the hook config includes an OS specific configuration use that instead
+			if runtime.GOOS == "windows" && hook.Windows != nil {
+				hook = hook.Windows
+			} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && hook.Posix != nil {
+				hook = hook.Posix
+			}
+
+			hook.Name = scriptName
+			hook.cwd = h.cwd
+
+			if err := hook.validate(); err != nil {
+				return nil, fmt.Errorf("hook configuration for '%s' is invalid, %w", scriptName, err)
+			}
+
+			matchingHooks = append(matchingHooks, hook)
 		}
-
-		// If the hook config includes an OS specific configuration use that instead
-		if runtime.GOOS == "windows" && hookConfig.Windows != nil {
-			hookConfig = hookConfig.Windows
-		} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && hookConfig.Posix != nil {
-			hookConfig = hookConfig.Posix
-		}
-
-		hookConfig.Name = scriptName
-		hookConfig.cwd = h.cwd
-
-		if err := hookConfig.validate(); err != nil {
-			return nil, fmt.Errorf("hook configuration for '%s' is invalid, %w", scriptName, err)
-		}
-
-		matchingHooks = append(matchingHooks, hookConfig)
 	}
 
 	return matchingHooks, nil

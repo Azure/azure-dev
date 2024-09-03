@@ -101,7 +101,7 @@ param principalId string = ''
 param principalType string = 'User'
 
 @description('Kubernetes Version')
-param kubernetesVersion string = '1.27'
+param kubernetesVersion string = '1.29'
 
 @description('The Tenant ID associated to the Azure Active Directory')
 param aadTenantId string = tenant().tenantId

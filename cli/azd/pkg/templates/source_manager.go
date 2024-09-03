@@ -9,7 +9,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
@@ -104,7 +106,7 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 
 	allSourceConfigs := []*SourceConfig{}
 
-	if sm.options.DefaultSources != nil && len(sm.options.DefaultSources) > 0 {
+	if len(sm.options.DefaultSources) > 0 {
 		allSourceConfigs = append(allSourceConfigs, sm.options.DefaultSources...)
 	}
 
@@ -221,13 +223,18 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 
 	switch config.Type {
 	case SourceKindFile:
-		source, err = NewFileTemplateSource(config.Name, config.Location)
+		source, err = newFileTemplateSource(config.Name, config.Location)
 	case SourceKindUrl:
-		source, err = NewUrlTemplateSource(ctx, config.Name, config.Location, sm.transport)
+		source, err = newUrlTemplateSource(ctx, config.Name, config.Location, sm.transport)
 	case SourceKindAwesomeAzd:
-		source, err = NewAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.transport)
+		source, err = newAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.transport)
 	case SourceKindResource:
-		source, err = NewJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
+		source, err = newJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
+	case SourceKindGh:
+		err = sm.serviceLocator.Invoke(func(ghCli *github.Cli, console input.Console) error {
+			source, err = newGhTemplateSource(ctx, config.Name, config.Location, ghCli, console)
+			return err
+		})
 	default:
 		err = sm.serviceLocator.ResolveNamed(string(config.Type), &source)
 		if err != nil {

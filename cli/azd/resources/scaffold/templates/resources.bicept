@@ -154,6 +154,43 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.6
 }
 {{- end}}
 
+{{- if .AIModels}}
+module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
+  name: 'accountDeployment'
+  params: {
+    kind: 'OpenAI'
+    name: '${abbrs.cognitiveServicesAccounts}-${resourceToken}'
+    deployments: [
+      {{- range .AIModels}}
+      {
+        name: '{{.Name}}'
+        model: {
+          format: 'OpenAI'
+          name: '{{.Model}}'
+          version: '{{.Version}}'
+        }
+        sku: {
+          capacity: 20
+          name: 'Standard'
+        }
+      }
+      {{- end}}
+    ]
+    location: location
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+module cognitiveConn './modules/set-cognitive-conn.bicep' = {
+  name: 'cognitiveConn'
+  params: {
+    name: account.outputs.name
+    secretName: 'AZURE-OPENAI-API-KEY'
+    keyVaultName: keyVault.outputs.name
+  }
+}
+{{- end}}
+
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
@@ -205,6 +242,13 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           name: 'redis-pass'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
           keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
+        }
+        {{- end}}
+        {{- if .AIModels}}
+        {
+          name: 'openai-api-key'
+          identity:{{bicepName .Name}}Identity.outputs.resourceId
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/AZURE-OPENAI-API-KEY'
         }
         {{- end}}
       ]
@@ -272,6 +316,16 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             secretRef: 'redis-pass'
           }
           {{- end}}
+          {{- if .AIModels}}
+          {
+            name: 'AZURE_OPENAPI_API_KEY'
+            secretRef: 'openapi-api-key'
+          }
+          {
+            name: 'AZURE_OPENAPI_ENDPOINT'
+            value: account.outputs.endpoint
+          }
+          {{- end}}
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
           {
@@ -289,7 +343,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- range $name, $value := .Env}}
           {
             name: '{{$name}}'
-            value: '{{$value}}'
+            value: {{$value}}
           }
           {{- end}}
         ]

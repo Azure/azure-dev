@@ -627,6 +627,21 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 
 				Parameters: parameters,
 			}
+		case ResourceTypeAiModel:
+			props := res.Props.(AIModelProps)
+			if len(props.Model) == 0 {
+				return nil, fmt.Errorf("resources.%s.model is required", res.Name)
+			}
+
+			if len(props.Version) == 0 {
+				return nil, fmt.Errorf("resources.%s.version is required", res.Name)
+			}
+
+			infraSpec.AIModels = append(infraSpec.AIModels, scaffold.AIModel{
+				Name:    res.Name,
+				Model:   props.Model,
+				Version: props.Version,
+			})
 		case ResourceTypeHostContainerApp:
 			props := res.Props.(ContainerAppProps)
 			svcSpec := scaffold.ServiceSpec{
@@ -710,6 +725,10 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 						svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 					case ResourceTypeDbRedis:
 						svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+					case ResourceTypeAiModel:
+						svcSpec.AIModels = append(
+							svcSpec.AIModels,
+							scaffold.AIModelReference{Name: useRes.Name})
 					}
 					continue
 				}

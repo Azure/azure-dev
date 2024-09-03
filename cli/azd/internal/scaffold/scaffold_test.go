@@ -125,6 +125,37 @@ func TestExecInfra(t *testing.T) {
 				},
 			},
 		},
+		{
+			"AI model",
+			InfraSpec{
+				AIModels: []AIModel{
+					{
+						Name:    "pre-trained-model",
+						Model:   "base-model",
+						Version: "1.0",
+					},
+					{
+						Name:    "pre-trained-model-2",
+						Model:   "base-model",
+						Version: "1.0",
+					},
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						AIModels: []AIModelReference{
+							{
+								Name: "pre-trained-model",
+							},
+							{
+								Name: "pre-trained-model-2",
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -9,12 +9,21 @@ import (
 type Resources map[string]*ResourceConfig
 
 type ResourceType string
+type ResourceCategories string
+
+const (
+	CategoryDatabase  ResourceCategories = "Database"
+	CategoryStorage   ResourceCategories = "Storage"
+	CategoryMessaging ResourceCategories = "Messaging"
+	CategoryAI        ResourceCategories = "AI Services"
+)
 
 const (
 	ResourceTypeDbRedis          ResourceType = "db.redis"
 	ResourceTypeDbPostgres       ResourceType = "db.postgres"
 	ResourceTypeDbMongo          ResourceType = "db.mongo"
 	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
+	ResourceTypeAiModel          ResourceType = "ai.model"
 )
 
 func (r ResourceType) String() string {
@@ -27,9 +36,24 @@ func (r ResourceType) String() string {
 		return "MongoDB"
 	case ResourceTypeHostContainerApp:
 		return "Container App"
+	case ResourceTypeAiModel:
+		return "AI Model (Pre-trained)"
 	}
 
 	return ""
+}
+
+func AllCategories() map[ResourceCategories][]ResourceType {
+	return map[ResourceCategories][]ResourceType{
+		CategoryDatabase: {
+			ResourceTypeDbRedis,
+			ResourceTypeDbPostgres,
+			ResourceTypeDbMongo,
+		},
+		CategoryStorage:   {},
+		CategoryMessaging: {},
+		CategoryAI:        {ResourceTypeAiModel},
+	}
 }
 
 func AllResources() []ResourceType {
@@ -38,6 +62,7 @@ func AllResources() []ResourceType {
 		ResourceTypeDbPostgres,
 		ResourceTypeDbMongo,
 		ResourceTypeHostContainerApp,
+		ResourceTypeAiModel,
 	}
 }
 
@@ -76,6 +101,11 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 	}
 
 	switch raw.Type {
+	case ResourceTypeAiModel:
+		err := marshalRawProps(raw.Props.(AIModelProps))
+		if err != nil {
+			return nil, err
+		}
 	case ResourceTypeHostContainerApp:
 		err := marshalRawProps(raw.Props.(ContainerAppProps))
 		if err != nil {
@@ -108,6 +138,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 
 	// Unmarshal props based on type
 	switch raw.Type {
+	case ResourceTypeAiModel:
+		amp := AIModelProps{}
+		if err := unmarshalProps(&amp); err != nil {
+			return err
+		}
+		raw.Props = amp
 	case ResourceTypeHostContainerApp:
 		cap := ContainerAppProps{}
 		if err := unmarshalProps(&cap); err != nil {
@@ -134,6 +170,9 @@ func (r *ResourceConfig) DefaultModule() (bicepModule string, bicepVersion strin
 	case ResourceTypeHostContainerApp:
 		bicepModule = "avm/res/app/container-app"
 		bicepVersion = "0.8.0"
+	case ResourceTypeAiModel:
+		bicepModule = "avm/res/cognitive-services/account"
+		bicepVersion = "0.7.0"
 	default:
 		panic(fmt.Sprintf("unsupported resource type %s", r.Type))
 	}
@@ -148,4 +187,9 @@ type ContainerAppResource struct {
 type ContainerAppProps struct {
 	Port int             `yaml:"port,omitempty"`
 	Env  []ServiceEnvVar `yaml:"env,omitempty"`
+}
+
+type AIModelProps struct {
+	Model   string `yaml:"model,omitempty"`
+	Version string `yaml:"version,omitempty"`
 }

@@ -356,33 +356,35 @@
                 "required": [
                     "type"
                 ],
-"properties": {
-                "type": {
-                    "type": "string",
-                    "title": "Type of resource",
-                    "description": "The type of resource to be created. (Example: db.postgres)",
-                    "enum": [
-                        "db.postgres",
-                        "db.redis",
-                        "db.mongo",
-                        "host.containerapp"
-                    ]
-                },
-                "module": {
-                    "type": "string",
-                    "title": "Path of the infrastructure module used to deploy the resource"
-                },
-                "uses": {
-                    "type": "array",
-                    "title": "List of services/resources that this service uses",
-                    "items": {
-                        "type": "string"
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "title": "Type of resource",
+                        "description": "The type of resource to be created. (Example: db.postgres)",
+                        "enum": [
+                            "db.postgres",
+                            "db.redis",
+                            "db.mongo",
+                            "ai.model",
+                            "host.containerapp"
+                        ]
                     },
-                    "uniqueItems": true
-                }
-            },
+                    "module": {
+                        "type": "string",
+                        "title": "Path of the infrastructure module used to deploy the resource"
+                    },
+                    "uses": {
+                        "type": "array",
+                        "title": "List of services/resources that this service uses",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true
+                    }
+                },
                 "allOf": [
                     { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
+                    { "if": { "properties": { "type": { "const": "ai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
                     { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} }
@@ -1105,7 +1107,8 @@
                         "db.postgres",
                         "db.redis",
                         "db.mongo",
-                        "host.containerapp"
+                        "host.containerapp",
+                        "ai.model"
                     ]
                 },
                 "module": {
@@ -1153,6 +1156,30 @@
                             }
                         }
                     }
+                }
+            }
+        },
+        "aiModelResource": {
+            "type": "object",
+            "description": "A pre-trained AI model.",
+            "additionalProperties": false,
+            "required": [
+                "model",
+                "version"
+            ],
+            "properties": {
+                "type": true,
+                "module": true,
+                "uses": true,
+                "model": {
+                    "type": "string",
+                    "title": "The name of the AI model.",
+                    "description": "Required. The name of the AI model."
+                },
+                "version": {
+                    "type": "string",
+                    "title": "The version of the AI model.",
+                    "description": "Required. The version of the AI model."
                 }
             }
         }

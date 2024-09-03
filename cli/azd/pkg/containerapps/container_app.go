@@ -30,7 +30,6 @@ const (
 	pathTemplateContainers                 = "properties.template.containers"
 	pathConfigurationActiveRevisionsMode   = "properties.configuration.activeRevisionsMode"
 	pathConfigurationSecrets               = "properties.configuration.secrets"
-	pathConfigurationIngress               = "properties.configuration.ingress"
 	pathConfigurationIngressTraffic        = "properties.configuration.ingress.traffic"
 	pathConfigurationIngressFqdn           = "properties.configuration.ingress.fqdn"
 	pathConfigurationIngressCustomDomains  = "properties.configuration.ingress.customDomains"
@@ -149,40 +148,23 @@ func (cas *containerAppService) persistSettings(
 		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
 	}
 
-	var ingress *armappcontainers.Ingress
-	if has, err := aca.GetSection(pathConfigurationIngress, &ingress); !has || err != nil {
-		return obj, err
+	objConfig := config.NewConfig(obj)
+
+	if shouldPersistDomains {
+		customDomains, ok := aca.GetSlice(pathConfigurationIngressCustomDomains)
+		if ok {
+			objConfig.Set(pathConfigurationIngressCustomDomains, customDomains)
+		}
 	}
 
-	if shouldPersistDomains &&
-		ingress.CustomDomains != nil {
-		acaAsConfig := config.NewConfig(obj)
-		customDomainsJson, err := convert.ToJsonArray(ingress.CustomDomains)
-		if err != nil {
-			return nil, fmt.Errorf("converting custom domains to JSON: %w", err)
+	if shouldPersistIngressSessionAffinity {
+		stickySessions, has := aca.Get(pathConfigurationIngressStickySessions)
+		if has {
+			objConfig.Set(pathConfigurationIngressStickySessions, stickySessions)
 		}
-
-		if err := acaAsConfig.Set(pathConfigurationIngressCustomDomains, customDomainsJson); err != nil {
-			return nil, fmt.Errorf("failed to persist custom domains: %w", err)
-		}
-		obj = acaAsConfig.Raw()
 	}
 
-	if shouldPersistIngressSessionAffinity &&
-		ingress.StickySessions != nil {
-		acaAsConfig := config.NewConfig(obj)
-		stickySessionsJson, err := convert.ToJsonArray(ingress.StickySessions)
-		if err != nil {
-			return nil, fmt.Errorf("converting sticky sessions to JSON: %w", err)
-		}
-
-		if err := acaAsConfig.Set(pathConfigurationIngressStickySessions, stickySessionsJson); err != nil {
-			return nil, fmt.Errorf("failed to persist session affinity: %w", err)
-		}
-		obj = acaAsConfig.Raw()
-	}
-
-	return obj, nil
+	return objConfig.Raw(), nil
 }
 
 func (cas *containerAppService) DeployYaml(
@@ -322,7 +304,7 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	var containers []map[string]any
-	if has, err = revision.GetSection(pathTemplateContainers, &containers); !has || err != nil {
+	if ok, err := revision.GetSection(pathTemplateContainers, &containers); !ok || err != nil {
 		return fmt.Errorf("getting containers: %w", err)
 	}
 
@@ -332,8 +314,8 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	// Update the container app with the new revision
-	var revisionTemplate map[string]any
-	if has, err := revision.GetSection(pathTemplate, &revisionTemplate); !has || err != nil {
+	revisionTemplate, ok := revision.GetMap(pathTemplate)
+	if !ok {
 		return fmt.Errorf("getting revision template: %w", err)
 	}
 
@@ -352,15 +334,15 @@ func (cas *containerAppService) AddRevision(
 		return fmt.Errorf("updating container app revision: %w", err)
 	}
 
-	revisionMode, has := containerApp.GetString(pathConfigurationActiveRevisionsMode)
-	if !has {
+	revisionMode, ok := containerApp.GetString(pathConfigurationActiveRevisionsMode)
+	if !ok {
 		return fmt.Errorf("getting active revisions mode: %w", err)
 	}
 
 	// If the container app is in multiple revision mode, update the traffic to point to the new revision
 	if revisionMode == string(armappcontainers.ActiveRevisionsModeMultiple) {
-		revisionSuffix, has := revision.GetString(pathTemplateRevisionSuffix)
-		if !has {
+		revisionSuffix, ok := revision.GetString(pathTemplateRevisionSuffix)
+		if !ok {
 			return fmt.Errorf("getting revision suffix: %w", err)
 		}
 		newRevisionName := fmt.Sprintf("%s--%s", appName, revisionSuffix)
@@ -382,12 +364,8 @@ func (cas *containerAppService) syncSecrets(
 	containerApp config.Config,
 ) (config.Config, error) {
 	// If the container app doesn't have any existingSecrets, we don't need to do anything
-	var existingSecrets []any
-	if has, err := containerApp.GetSection(pathConfigurationSecrets, &existingSecrets); !has || err != nil {
-		return containerApp, err
-	}
-
-	if len(existingSecrets) == 0 {
+	existingSecrets, ok := containerApp.GetSlice(pathConfigurationSecrets)
+	if !ok || len(existingSecrets) == 0 {
 		return containerApp, nil
 	}
 

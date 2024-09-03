@@ -356,14 +356,10 @@ func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	t.Setenv("AZD_ALPHA_ENABLE_INFRASYNTH", "true")
-	t.Setenv("AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS", "true")
 	t.Setenv("AZD_ALPHA_ENABLE_AKS_HELM", "false")
 
 	infraSyncEnabled := mockContext.AlphaFeaturesManager.IsEnabled("infraSynth")
 	require.True(t, infraSyncEnabled)
-
-	resourceGroupDeploymentsEnabled := mockContext.AlphaFeaturesManager.IsEnabled("resourceGroupDeployments")
-	require.True(t, resourceGroupDeploymentsEnabled)
 
 	helmEnabled := mockContext.AlphaFeaturesManager.IsEnabled("aks.helm")
 	require.False(t, helmEnabled)
@@ -386,7 +382,6 @@ func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 
 	require.Len(t, values, 2)
 	require.Contains(t, values, "infraSynth")
-	require.Contains(t, values, "resourceGroupDeployments")
 	require.NotContains(t, values, "aks.helm")
 }
 

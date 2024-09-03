@@ -96,7 +96,6 @@ func Test_DeploymentStacks(t *testing.T) {
 			fmt.Sprintf("AZURE_LOCATION=%s", location),
 			fmt.Sprintf("AZURE_RESOURCE_GROUP=%s", resourceGroupName),
 			"AZD_ALPHA_ENABLE_DEPLOYMENT_STACKS=true",
-			"AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS=true",
 		)
 
 		cred := azdcli.NewTestCredential(cli)

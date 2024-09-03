@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -72,7 +71,6 @@ type BicepProvider struct {
 	deploymentManager     *infra.DeploymentManager
 	prompters             prompt.Prompter
 	curPrincipal          provisioning.CurrentPrincipalIdProvider
-	alphaFeatureManager   *alpha.FeatureManager
 	ignoreDeploymentState bool
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
@@ -81,11 +79,6 @@ type BicepProvider struct {
 	keyvaultService           keyvault.KeyVaultService
 	portalUrlBase             string
 }
-
-var ErrResourceGroupScopeNotSupported = fmt.Errorf(
-	"resource group scoped deployments are currently under alpha support and need to be explicitly enabled."+
-		" Run `%s` to enable this feature.", alpha.GetEnableCommand(ResourceGroupDeploymentFeature),
-)
 
 // Name gets the name of the infra provider
 func (p *BicepProvider) Name() string {
@@ -170,12 +163,6 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	}
 
 	if scope == azure.DeploymentScopeResourceGroup {
-		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
-			return ErrResourceGroupScopeNotSupported
-		}
-
-		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
-
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
 			rgName, err := p.prompters.PromptResourceGroup(ctx)
 			if err != nil {
@@ -346,8 +333,6 @@ func (p *BicepProvider) createDeploymentFromArmDeployment(
 
 	return nil, errors.New("unsupported deployment scope")
 }
-
-var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
 
 const bicepFileExtension = ".bicep"
 const bicepparamFileExtension = ".bicepparam"
@@ -2067,22 +2052,20 @@ func NewBicepProvider(
 	console input.Console,
 	prompters prompt.Prompter,
 	curPrincipal provisioning.CurrentPrincipalIdProvider,
-	alphaFeatureManager *alpha.FeatureManager,
 	keyvaultService keyvault.KeyVaultService,
 	cloud *cloud.Cloud,
 ) provisioning.Provider {
 	return &BicepProvider{
-		envManager:          envManager,
-		env:                 env,
-		console:             console,
-		azCli:               azCli,
-		bicepCli:            bicepCli,
-		resourceService:     resourceService,
-		deploymentManager:   deploymentManager,
-		prompters:           prompters,
-		curPrincipal:        curPrincipal,
-		alphaFeatureManager: alphaFeatureManager,
-		keyvaultService:     keyvaultService,
-		portalUrlBase:       cloud.PortalUrlBase,
+		envManager:        envManager,
+		env:               env,
+		console:           console,
+		azCli:             azCli,
+		bicepCli:          bicepCli,
+		resourceService:   resourceService,
+		deploymentManager: deploymentManager,
+		prompters:         prompters,
+		curPrincipal:      curPrincipal,
+		keyvaultService:   keyvaultService,
+		portalUrlBase:     cloud.PortalUrlBase,
 	}
 }

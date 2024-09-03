@@ -226,6 +226,49 @@ func ContainerAppManifestTemplateForProject(
 	return buf.String(), nil
 }
 
+// BicepModuleForProject returns the bicep module for the container app manifest for a given project.
+// It can be used (after evaluation) to deploy the service to a container app environment.
+func BicepModuleForProject(
+	manifest *Manifest, projectName string, options AppHostOptions) (string, error) {
+	generator := newInfraGenerator()
+	generator.skipAsYamlString = true
+
+	if err := generator.LoadManifest(manifest); err != nil {
+		return "", err
+	}
+
+	if err := generator.Compile(); err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+
+	type yamlTemplateCtx struct {
+		genContainerAppManifestTemplateContext
+		TargetPortExpression string
+	}
+	tCtx := generator.containerAppTemplateContexts[projectName]
+	tmplCtx := yamlTemplateCtx{
+		genContainerAppManifestTemplateContext: tCtx,
+	}
+
+	if tCtx.Ingress != nil {
+		if tCtx.Ingress.TargetPort != 0 && !tCtx.Ingress.UsingDefaultPort {
+			// not using default port makes this to be a non-changing value
+			tmplCtx.TargetPortExpression = fmt.Sprintf("%d", tCtx.Ingress.TargetPort)
+		} else {
+			tmplCtx.TargetPortExpression = fmt.Sprintf("{{ targetPortOrDefault %d }}", tCtx.Ingress.TargetPort)
+		}
+	}
+
+	err := genTemplates.ExecuteTemplate(&buf, "containerApp.bicep", tmplCtx)
+	if err != nil {
+		return "", fmt.Errorf("executing template: %w", err)
+	}
+
+	return buf.String(), nil
+}
+
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
 func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*memfs.FS, error) {
@@ -430,6 +473,8 @@ func GenerateProjectArtifacts(
 }
 
 type infraGenerator struct {
+	skipAsYamlString bool
+
 	containers        map[string]genContainer
 	dapr              map[string]genDapr
 	dockerfiles       map[string]genDockerfile
@@ -1147,13 +1192,14 @@ func (b *infraGenerator) Compile() error {
 		b.bicepContext.ContainerApps[resourceName] = cs
 
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:            resourceName,
-			Env:             make(map[string]string),
-			Secrets:         make(map[string]string),
-			KeyVaultSecrets: make(map[string]string),
-			Ingress:         b.allServicesIngress[resourceName].ingress,
-			Volumes:         container.Volumes,
-			BindMounts:      bMounts,
+			Name:               resourceName,
+			Env:                make(map[string]string),
+			Secrets:            make(map[string]string),
+			KeyVaultSecrets:    make(map[string]string),
+			BindingExpressions: make(map[string]string),
+			Ingress:            b.allServicesIngress[resourceName].ingress,
+			Volumes:            container.Volumes,
+			BindMounts:         bMounts,
 		}
 
 		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
@@ -1175,12 +1221,13 @@ func (b *infraGenerator) Compile() error {
 		b.bicepContext.ContainerApps[resourceName] = cs
 
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:            resourceName,
-			Env:             make(map[string]string),
-			Secrets:         make(map[string]string),
-			KeyVaultSecrets: make(map[string]string),
-			Ingress:         b.allServicesIngress[resourceName].ingress,
-			Volumes:         bc.Volumes,
+			Name:               resourceName,
+			Env:                make(map[string]string),
+			Secrets:            make(map[string]string),
+			KeyVaultSecrets:    make(map[string]string),
+			BindingExpressions: make(map[string]string),
+			Ingress:            b.allServicesIngress[resourceName].ingress,
+			Volumes:            bc.Volumes,
 		}
 
 		if err := b.buildEnvBlock(bc.Env, &projectTemplateCtx); err != nil {
@@ -1196,11 +1243,12 @@ func (b *infraGenerator) Compile() error {
 
 	for resourceName, docker := range b.dockerfiles {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:            resourceName,
-			Env:             make(map[string]string),
-			Secrets:         make(map[string]string),
-			KeyVaultSecrets: make(map[string]string),
-			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Name:               resourceName,
+			Env:                make(map[string]string),
+			Secrets:            make(map[string]string),
+			KeyVaultSecrets:    make(map[string]string),
+			BindingExpressions: make(map[string]string),
+			Ingress:            b.allServicesIngress[resourceName].ingress,
 		}
 
 		if err := b.buildEnvBlock(docker.Env, &projectTemplateCtx); err != nil {
@@ -1216,11 +1264,12 @@ func (b *infraGenerator) Compile() error {
 
 	for resourceName, project := range b.projects {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:            resourceName,
-			Env:             make(map[string]string),
-			Secrets:         make(map[string]string),
-			KeyVaultSecrets: make(map[string]string),
-			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Name:               resourceName,
+			Env:                make(map[string]string),
+			Secrets:            make(map[string]string),
+			KeyVaultSecrets:    make(map[string]string),
+			BindingExpressions: make(map[string]string),
+			Ingress:            b.allServicesIngress[resourceName].ingress,
 		}
 
 		for _, dapr := range b.dapr {
@@ -1594,7 +1643,11 @@ func urlPortFromTargetPort(binding *Binding, bindingMappedToMainIngress bool) (s
 }
 
 // asYamlString converts a string to the YAML representation of the string, ensuring that it is quoted and escaped as needed.
-func asYamlString(s string) (string, error) {
+func (b *infraGenerator) asYamlString(s string) (string, error) {
+	if b.skipAsYamlString {
+		return s, nil
+	}
+
 	// We want to ensure that we render these values in the YAML as strings.  If `res` was the string "true"
 	// (without the quotes), we would naturally create a value directive in yaml that looks like this:
 	//
@@ -1620,6 +1673,31 @@ func asYamlString(s string) (string, error) {
 }
 
 func (b *infraGenerator) buildArgsBlock(args []string, manifestCtx *genContainerAppManifestTemplateContext) error {
+	// TODO(ellismg): This needs to consider secrets and stuff like the regular version does.
+	if b.skipAsYamlString {
+		for argN, arg := range args {
+			res, err := EvalString(arg, func(s string) (string, error) {
+				resolved, err := b.evalBindingRef(s, inputEmitTypeYaml)
+				if err != nil {
+					return "", err
+				}
+
+				bindingName := strings.Replace(s, ".", "_", -1)
+
+				manifestCtx.BindingExpressions[bindingName] = resolved
+				return fmt.Sprintf("${%s}", bindingName), nil
+
+			})
+			if err != nil {
+				return fmt.Errorf("evaluating value for argument %d: %w", argN, err)
+			}
+
+			manifestCtx.Args = append(manifestCtx.Args, res)
+		}
+
+		return nil
+	}
+
 	for argN, arg := range args {
 		resolvedArg, err := EvalString(arg, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
 		if err != nil {
@@ -1640,7 +1718,7 @@ func (b *infraGenerator) buildArgsBlock(args []string, manifestCtx *genContainer
 				"environment variables instead", argN)
 		}
 
-		yamlString, err := asYamlString(resolvedArg)
+		yamlString, err := b.asYamlString(resolvedArg)
 		if err != nil {
 			return fmt.Errorf("marshalling arg value: %w", err)
 		}
@@ -1654,13 +1732,37 @@ func (b *infraGenerator) buildArgsBlock(args []string, manifestCtx *genContainer
 // evaluating any binding expressions that are present. It writes the result of the evaluation after calling json.Marshal
 // so the values may be emitted into YAML as is without worrying about escaping.
 func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genContainerAppManifestTemplateContext) error {
+	// TODO(ellismg): This needs to consider secrets and stuff like the regular version does.
+	if b.skipAsYamlString {
+		for k, value := range env {
+			res, err := EvalString(value, func(s string) (string, error) {
+				resolved, err := b.evalBindingRef(s, inputEmitTypeYaml)
+				if err != nil {
+					return "", err
+				}
+
+				bindingName := strings.Replace(s, ".", "_", -1)
+
+				manifestCtx.BindingExpressions[bindingName] = resolved
+				return fmt.Sprintf("${%s}", bindingName), nil
+			})
+			if err != nil {
+				return fmt.Errorf("evaluating value for %s: %w", k, err)
+			}
+
+			manifestCtx.Env[k] = res
+		}
+
+		return nil
+	}
+
 	for k, value := range env {
 		res, err := EvalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
 		if err != nil {
 			return fmt.Errorf("evaluating value for %s: %w", k, err)
 		}
 
-		resolvedValue, err := asYamlString(res)
+		resolvedValue, err := b.asYamlString(res)
 		if err != nil {
 			return fmt.Errorf("marshalling env value: %w", err)
 		}
@@ -1698,6 +1800,7 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 			manifestCtx.Secrets[k] = resolvedValue
 			continue
 		}
+
 		manifestCtx.Env[k] = resolvedValue
 	}
 

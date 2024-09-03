@@ -1,0 +1,209 @@
+{{define "containerApp.bicep" -}}
+@description('')
+param location string = resourceGroup().location
+
+@metadata({azd: { defaultValueExpr: '{{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}' } })
+param principalId string
+
+@metadata({azd : { defaultValueExpr: '{{ "{{ .Env.MANAGED_IDENTITY_CLIENT_ID }}" }}' } })
+param principalClientId string
+
+@metadata({azd: { defaultValueExpr: '{{ "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}" }}' } })
+param environmentId string
+
+@metadata({azd: { defaultValueExpr: '{{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}' } })
+param containerRegistryEndpoint string
+
+@metadata({azd: { defaultValueExpr: '{{ "{{ .Image }}" }}' } })
+param image string
+
+@metadata({azd: { defaultValueExpr: '{{ .TargetPortExpression }}' } })
+param targetPort int
+
+{{- range $volume := .Volumes }}
+@metadata({azd: { defaultValueExpr: '{{ "{{ .Env.SERVICE_" }}{{ alphaSnakeUpper $.Name}}_VOLUME_{{ removeDot $volume.Name | alphaSnakeUpper }}{{ "_NAME }}"}}' } })
+param volume_{{ $volume.Name }} string
+
+{{- end}}
+{{- range $bMount := .BindMounts}}
+@metadata({azd: { defaultValueExpr: '{{ "{{ .Env.SERVICE_" }}{{ alphaSnakeUpper $.Name}}_VOLUME_{{ removeDot $bMount.Name | alphaSnakeUpper }}{{ "_NAME }}"}}' } })
+param bindMount_{{ $bMount.Name }} string
+
+{{- end}}
+
+{{- range $key, $value := .BindingExpressions}}
+@metadata({azd: { defaultValueExpr: '{{ $value }}' } })
+param {{ $key }} string
+
+{{- end}}
+
+resource app 'Microsoft.App/containerApps@2024-02-02-preview' = {
+  name: '{{ .Name }}'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${principalId}': {}
+    }
+  }
+  properties: {
+    environmentId: environmentId
+    configuration: {
+      activeRevisionsMode: 'Single'
+      runtime: {
+        dotnet: {
+          autoConfigureDataProtection: true
+        }
+      }
+{{- if .Dapr}}        
+      dapr: {
+        appId: '{{ .Dapr.AppId }}'
+{{- if .Dapr.AppPort}}
+        appPort: {{ .Dapr.AppPort }}
+{{- end}}
+{{- if .Dapr.AppProtocol}}
+        appProtocol: '{{ .Dapr.AppProtocol }}'
+{{- end}}
+{{- if .Dapr.EnableApiLogging}}
+        enableApiLogging: {{ .Dapr.EnableApiLogging }}
+{{- end}}
+        enabled: true
+{{- if .Dapr.HttpMaxRequestSize}}
+        httpMaxRequestSize: {{ .Dapr.HttpMaxRequestSize }}
+{{- end}}
+{{- if .Dapr.HttpReadBufferSize}}
+        httpReadBufferSize: {{ .Dapr.HttpReadBufferSize }}
+{{- end}}
+{{- if .Dapr.LogLevel}}
+        logLevel: '{{ .Dapr.LogLevel }}'
+{{- end}}
+      }
+{{- end}}
+{{- if .Ingress}}
+      ingress: {
+{{- if .Ingress.AdditionalPortMappings }}
+        additionalPortMappings: [
+{{- range $additionalPort := .Ingress.AdditionalPortMappings }}
+          {
+            targetPort: {{ $additionalPort.TargetPort }}
+            external: {{ $additionalPort.External }}
+          }
+{{- end}}
+        ]
+{{- end}}
+        external: {{ .Ingress.External }}
+        targetPort: targetPort
+{{- if gt .Ingress.ExposedPort 0 }}
+        exposedPort: {{ .Ingress.ExposedPort }}
+{{- end}}
+        transport: '{{ .Ingress.Transport }}'
+        allowInsecure: {{ .Ingress.AllowInsecure }}
+      }
+{{- end }}
+      registries: [
+          {
+            server: containerRegistryEndpoint
+            identity: principalId
+          }
+      ]
+{{- if or (gt (len .Secrets) 0) (gt (len .KeyVaultSecrets) 0) }}
+      secrets: [
+{{- range $name, $value := .Secrets}}
+        {
+          name: '{{containerAppSecretName $name}}'
+          value: '{{$value}}'
+        }
+{{- end}}
+{{- range $name, $value := .KeyVaultSecrets}}
+        {
+          name: '{{containerAppSecretName $name}}'
+          keyVaultUrl: '{{$value}}'
+          identity: principalId
+        }
+{{- end}}
+      ]
+{{- end}}
+    }
+    template: {
+{{- if or (.Volumes) (.BindMounts) }}
+      volumes: [
+{{- range $volume := .Volumes }}
+        {
+          name: {{ toLower $.Name}}-{{ removeDot $volume.Name | toLower }}
+          storageType: AzureFile
+          storageName: volume_{{ $volume.Name }}
+        }
+{{- end}}
+{{- range $bMount := .BindMounts}}
+        {
+          name: {{ toLower $.Name}}-{{ removeDot $bMount.Name | toLower }}
+          storageType: AzureFile
+          storageName: bindMount_{{ $bMount.Name }} 
+        }
+{{- end}}
+      ]
+{{- end}}
+      containers: [
+        {
+          image: image
+          name: '{{ .Name }}'
+{{- if .Args }}
+          args: [
+{{- range $arg := .Args}}
+            '{{$arg}}'
+{{- end}}
+          ]
+{{- end}}
+          env: [
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: principalClientId
+            }
+{{- range $name, $value := .Env}}
+            {
+              name: '{{$name}}'
+              value: '{{$value}}'
+            }            
+{{- end}}
+{{- range $name, $value := .Secrets}}
+            {
+              name: '{{$name}}'
+              secretRef: '{{containerAppSecretName $name}}'
+            }
+{{- end}}
+{{- range $name, $value := .KeyVaultSecrets}}
+            {
+              name: '{{$name}}'
+              secretRef: '{{containerAppSecretName $name}}'
+            }
+{{- end}}
+          ]
+{{- if or (.Volumes) (.BindMounts) }}
+          volumeMounts: [
+{{- range $volume := .Volumes }}
+            {
+              volumeName: '{{ toLower $.Name}}-{{ removeDot $volume.Name | toLower }}'
+              mountPath: '{{ $volume.Target }}'
+            }
+{{- end}}
+{{- range $bMount := .BindMounts }}
+            { 
+              volumeName: '{{ toLower $.Name}}-{{ removeDot $bMount.Name | toLower }}'
+              mountPath: '{{ $bMount.Target }}'
+            }
+{{- end}}
+          ]
+{{- end}}
+        }
+      ]
+      scale: {
+        minReplicas: 1
+      }
+    }
+  }
+  tags: {
+    'azd-service-name': '{{ .Name }}'
+    'aspire-resource-name': '{{ .Name }}'
+  }
+}
+{{end}}

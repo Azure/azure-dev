@@ -147,6 +147,9 @@ type genContainerAppManifestTemplateContext struct {
 	Args            []string
 	Volumes         []*Volume
 	BindMounts      []*BindMount
+
+	// BindingExpressions are a map of of binding expression paths to their corresponding values (as go templates)
+	BindingExpressions map[string]string
 }
 
 type genProjectFileContext struct {

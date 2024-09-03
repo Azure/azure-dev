@@ -517,6 +517,11 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}
 
+		bicepManifest, err := apphost.BicepModuleForProject(manifest, name, apphost.AppHostOptions{})
+		if err != nil {
+			return fmt.Errorf("generating bicep module for resource %s: %w", name, err)
+		}
+
 		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
 		if err != nil {
 			return err
@@ -528,12 +533,18 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		}
 
 		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.tmpl.yaml", name))
+		bicepPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.bicep", name))
 
 		if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
 			return err
 		}
 
-		return generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		err = generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		if err != nil {
+			return err
+		}
+
+		return generatedFS.WriteFile(bicepPath, []byte(bicepManifest), osutil.PermissionFileOwnerOnly)
 	}
 
 	for name := range apphost.ProjectPaths(manifest) {

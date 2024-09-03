@@ -3,13 +3,13 @@ package devcenter
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"go.uber.org/multierr"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -112,7 +112,7 @@ func (s *TemplateSource) ListTemplates(ctx context.Context) ([]*templates.Templa
 
 						// Repo url parameter can support multiple values
 						// Values can either have a default or multiple allowed values but not both
-						if p.Allowed != nil && len(p.Allowed) > 0 {
+						if len(p.Allowed) > 0 {
 							repoUrls = append(repoUrls, p.Allowed...)
 						} else if p.Default != nil {
 							defaultValue, ok := p.Default.(string)

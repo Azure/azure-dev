@@ -44,6 +44,7 @@ type genContainer struct {
 	Inputs     map[string]Input
 	Volumes    []*Volume
 	BindMounts []*BindMount
+	Args       []string
 }
 
 type genDockerfile struct {

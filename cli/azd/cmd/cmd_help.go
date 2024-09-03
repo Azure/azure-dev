@@ -82,7 +82,7 @@ func getCmdHelpDefaultDescription(cmd *cobra.Command) string {
 // getCmdHelpDefaultUsage provides the default implementation for displaying the help usage section.
 func getCmdHelpDefaultUsage(cmd *cobra.Command) string {
 	return fmt.Sprintf("%s\n  %s\n\n",
-		output.WithBold(output.WithUnderline("Usage")),
+		output.WithBold("%s", output.WithUnderline("Usage")),
 		"{{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}",
 	)
 }
@@ -97,13 +97,13 @@ func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
 	if cmd.HasAvailableLocalFlags() {
 		flags := getFlagsDetails(cmd.LocalFlags())
 		result = fmt.Sprintf("%s\n%s\n",
-			output.WithBold(output.WithUnderline("Flags")),
+			output.WithBold("%s", output.WithUnderline("Flags")),
 			flags)
 	}
 	if cmd.HasAvailableInheritedFlags() {
 		globalFlags := getFlagsDetails(cmd.InheritedFlags())
 		result += fmt.Sprintf("%s\n%s\n",
-			output.WithBold(output.WithUnderline("Global Flags")),
+			output.WithBold("%s", output.WithUnderline("Global Flags")),
 			globalFlags)
 	}
 	return result
@@ -128,7 +128,7 @@ func getCmdHelpCommands(title string, commands string) string {
 	if commands == "" {
 		return commands
 	}
-	return fmt.Sprintf("%s\n%s\n", output.WithBold(output.WithUnderline(title)), commands)
+	return fmt.Sprintf("%s\n%s\n", output.WithBold("%s", output.WithUnderline("%s", title)), commands)
 }
 
 // getCmdHelpGroupedCommands generates {{ commands - description }} where sub-commands are grouped.
@@ -280,7 +280,7 @@ func generateCmdHelpSamplesBlock(samples map[string]string) string {
 	// sorting lines to keep a deterministic output, as map[string]string is not ordered
 	slices.Sort(lines)
 	return fmt.Sprintf("%s\n%s\n",
-		output.WithBold(output.WithUnderline("Examples")),
+		output.WithBold("%s", output.WithUnderline("Examples")),
 		strings.Join(lines, "\n\n"),
 	)
 }

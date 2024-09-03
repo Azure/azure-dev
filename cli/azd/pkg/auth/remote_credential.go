@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -100,7 +101,7 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 			*tokenResp.Code,
 			*tokenResp.Message))
 	default:
-		return azcore.AccessToken{}, remoteCredentialError("unexpected status", fmt.Errorf(tokenResp.Status))
+		return azcore.AccessToken{}, remoteCredentialError("unexpected status", errors.New(tokenResp.Status))
 	}
 }
 

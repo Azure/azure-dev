@@ -84,7 +84,7 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	if !a.alphaManager.IsEnabled(infraSynthFeature) {
 		return nil, fmt.Errorf(
 			"infrastructure synthesis is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature.", alpha.GetEnableCommand(infraSynthFeature),
+				" Run `%s` to enable this feature", alpha.GetEnableCommand(infraSynthFeature),
 		)
 	}
 

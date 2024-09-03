@@ -36,7 +36,7 @@ func generateCmdHelpSamplesBlock(samples map[string]string) string {
 	// sorting lines to keep a deterministic output, as map[string]string is not ordered
 	slices.Sort(lines)
 	return fmt.Sprintf("%s\n%s\n",
-		output.WithBold(output.WithUnderline("Examples")),
+		output.WithBold("%s", output.WithUnderline("Examples")),
 		strings.Join(lines, "\n\n"),
 	)
 }

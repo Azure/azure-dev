@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -30,7 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -39,7 +38,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
-	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -150,7 +148,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		infraProvider := createBicepProvider(t, mockContext)
 
-		destroyOptions := NewDestroyOptions(false, false)
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		require.Nil(t, err)
@@ -158,15 +156,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 8)
-		require.Contains(t, consoleOutput[0], "Resource group(s) to be deleted")
-		require.Contains(t, consoleOutput[1], "Total resources to delete")
-		require.Contains(t, consoleOutput[2], "Deleting your resources can take some time")
-		require.Contains(t, consoleOutput[3], "")
-		require.Contains(t, consoleOutput[4], "Warning: The following operation will delete")
-		require.Contains(t, consoleOutput[5], "These resources have soft delete enabled allowing")
-		require.Contains(t, consoleOutput[6], "Would you like to permanently delete these resources instead")
-		require.Contains(t, consoleOutput[7], "")
+		require.Len(t, consoleOutput, 4)
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -177,7 +167,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		infraProvider := createBicepProvider(t, mockContext)
 
-		destroyOptions := NewDestroyOptions(true, true)
+		destroyOptions := provisioning.NewDestroyOptions(true, true)
 		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		require.Nil(t, err)
@@ -313,12 +303,12 @@ func TestPlanForResourceGroup(t *testing.T) {
 }
 
 func TestIsValueAssignableToParameterType(t *testing.T) {
-	cases := map[ParameterType]any{
-		ParameterTypeNumber:  1,
-		ParameterTypeBoolean: true,
-		ParameterTypeString:  "hello",
-		ParameterTypeArray:   []any{},
-		ParameterTypeObject:  map[string]any{},
+	cases := map[provisioning.ParameterType]any{
+		provisioning.ParameterTypeNumber:  1,
+		provisioning.ParameterTypeBoolean: true,
+		provisioning.ParameterTypeString:  "hello",
+		provisioning.ParameterTypeArray:   []any{},
+		provisioning.ParameterTypeObject:  map[string]any{},
 	}
 
 	for k := range cases {
@@ -333,15 +323,15 @@ func TestIsValueAssignableToParameterType(t *testing.T) {
 		}
 	}
 
-	assert.True(t, isValueAssignableToParameterType(ParameterTypeNumber, 1.0))
-	assert.True(t, isValueAssignableToParameterType(ParameterTypeNumber, json.Number("1")))
-	assert.False(t, isValueAssignableToParameterType(ParameterTypeNumber, 1.5))
-	assert.False(t, isValueAssignableToParameterType(ParameterTypeNumber, json.Number("1.5")))
+	assert.True(t, isValueAssignableToParameterType(provisioning.ParameterTypeNumber, 1.0))
+	assert.True(t, isValueAssignableToParameterType(provisioning.ParameterTypeNumber, json.Number("1")))
+	assert.False(t, isValueAssignableToParameterType(provisioning.ParameterTypeNumber, 1.5))
+	assert.False(t, isValueAssignableToParameterType(provisioning.ParameterTypeNumber, json.Number("1.5")))
 }
 
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
-	options := Options{
+	options := provisioning.Options{
 		Path:   "infra",
 		Module: "main",
 	}
@@ -358,9 +348,10 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	deploymentManager := infra.NewDeploymentManager(deploymentService, resourceManager, mockContext.Console)
 	accountManager := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{
 			{
@@ -378,18 +369,16 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	}
 
 	provider := NewBicepProvider(
-		bicepCli,
 		azCli,
+		bicepCli,
 		resourceService,
-		depService,
-		depOpService,
+		deploymentManager,
 		envManager,
 		env,
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
-		clock.NewMock(),
 		keyvault.NewKeyVaultService(
 			mockaccount.SubscriptionCredentialProviderFunc(
 				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
@@ -440,8 +429,13 @@ func prepareBicepMocks(
 }
 
 var testEnvDeployment armresources.DeploymentExtended = armresources.DeploymentExtended{
-	ID:   to.Ptr("DEPLOYMENT_ID"),
-	Name: to.Ptr("test-env"),
+	ID:       to.Ptr("DEPLOYMENT_ID"),
+	Name:     to.Ptr("test-env"),
+	Location: to.Ptr("eastus2"),
+	Tags: map[string]*string{
+		"azd-env-name": to.Ptr("test-env"),
+	},
+	Type: to.Ptr("Microsoft.Resources/deployments"),
 	Properties: &armresources.DeploymentPropertiesExtended{
 		Outputs: map[string]interface{}{
 			"WEBSITE_URL": map[string]interface{}{"value": "http://myapp.azurewebsites.net", "type": "string"},
@@ -495,7 +489,7 @@ func prepareStateMocks(mockContext *mocks.MockContext) {
 
 func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	makeItem := func(resourceType azapi.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
-		id := fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+		id := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 			string(resourceType), resourceName)
 
 		return &armresources.GenericResourceExpanded{
@@ -520,16 +514,34 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		},
 	}
 
+	resourceGroup := &armresources.ResourceGroup{
+		ID:       to.Ptr(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
+		Location: to.Ptr("eastus2"),
+		Name:     to.Ptr("RESOURCE_GROUP"),
+		Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
+		Tags: map[string]*string{
+			"azd-env-name": to.Ptr("test-env"),
+		},
+	}
+
+	// Get resource group
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasSuffix(request.URL.Path, "/resourcegroups") && strings.Contains(request.URL.RawQuery, "filter=")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := armresources.ResourceGroupListResult{
+			Value: []*armresources.ResourceGroup{
+				resourceGroup,
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
+
 	// Get list of resources to delete
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/resources")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		resourceListBytes, _ := json.Marshal(resourceList)
-
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(resourceListBytes)),
-		}, nil
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resourceList)
 	})
 
 	// Get Key Vault
@@ -610,7 +622,25 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPut &&
 			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
-	}).RespondFn(httpRespondFn)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armresources.DeploymentExtended{
+				ID:       to.Ptr("DEPLOYMENT_ID"),
+				Name:     to.Ptr("test-env"),
+				Location: to.Ptr("eastus2"),
+				Tags: map[string]*string{
+					"azd-env-name": to.Ptr("test-env"),
+				},
+				Type: to.Ptr("Microsoft.Resources/deployments"),
+				Properties: &armresources.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					Timestamp:         to.Ptr(time.Now()),
+				},
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
 }
 
 func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {
@@ -731,45 +761,69 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 	t.Parallel()
 
 	t.Run("references used when no output resources", func(t *testing.T) {
-		var deployment armresources.DeploymentExtended
+		mockDeployment := &azapi.ResourceDeployment{
+			//nolint:lll
+			Id: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
+			//nolint:lll
+			DeploymentId: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
+			Name:         "matell-2508",
+			Type:         "Microsoft.Resources/deployments",
+			Tags: map[string]*string{
+				"azd-env-name": to.Ptr("matell-2508"),
+			},
+			ProvisioningState: azapi.DeploymentProvisioningStateFailed,
+			Timestamp:         time.Now(),
+			Dependencies: []*armresources.Dependency{
+				{
+					//nolint:lll
+					ID: to.Ptr(
+						"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg/providers/Microsoft.Resources/deployments/resources",
+					),
+					ResourceName: to.Ptr("resources"),
+					ResourceType: to.Ptr("Microsoft.Resources/deployments"),
+					DependsOn: []*armresources.BasicDependency{
+						{
+							//nolint:lll
+							ID: to.Ptr(
+								"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg",
+							),
+							ResourceName: to.Ptr("matell-2508-rg"),
+							ResourceType: to.Ptr("Microsoft.Resources/resourceGroups"),
+						},
+					},
+				},
+			},
+		}
 
-		f, err := os.ReadFile("testdata/failed-subscription-deployment.json")
-		require.NoError(t, err)
-
-		err = json.Unmarshal(f, &deployment)
-		require.NoError(t, err)
-
-		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsToDelete(&deployment))
+		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsToDelete(mockDeployment))
 	})
 
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
 
-		mockDeployment := armresources.DeploymentExtended{
-			ID:   to.Ptr("DEPLOYMENT_ID"),
-			Name: to.Ptr("test-env"),
-			Properties: &armresources.DeploymentPropertiesExtended{
-				OutputResources: []*armresources.ResourceReference{
-					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupA"),
-					},
-					{
-						ID: to.Ptr(
-							"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
-						),
-					},
-					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB"),
-					},
-					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
-					},
-					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupC"),
-					},
+		mockDeployment := azapi.ResourceDeployment{
+			Id:   "DEPLOYMENT_ID",
+			Name: "test-env",
+			Resources: []*armresources.ResourceReference{
+				{
+					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupA"),
 				},
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-				Timestamp:         to.Ptr(time.Now()),
+				{
+					ID: to.Ptr(
+						"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
+					),
+				},
+				{
+					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB"),
+				},
+				{
+					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
+				},
+				{
+					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupC"),
+				},
 			},
+			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+			Timestamp:         time.Now(),
 		}
 
 		groups := resourceGroupsToDelete(&mockDeployment)
@@ -777,31 +831,6 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 		sort.Strings(groups)
 		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
 	})
-}
-
-func TestDeploymentNameForEnv(t *testing.T) {
-	clock := clock.NewMock()
-	clock.Set(time.Unix(1683303710, 0))
-
-	tcs := []struct {
-		envName  string
-		expected string
-	}{
-		{
-			envName:  "simple-name",
-			expected: "simple-name-1683303710",
-		},
-		{
-			envName:  "azd-template-test-apim-todo-csharp-sql-swa-func-2750207-2",
-			expected: "template-test-apim-todo-csharp-sql-swa-func-2750207-2-1683303710",
-		},
-	}
-
-	for _, tc := range tcs {
-		deploymentName := deploymentNameForEnv(tc.envName, clock)
-		assert.Equal(t, tc.expected, deploymentName)
-		assert.LessOrEqual(t, len(deploymentName), 64)
-	}
 }
 
 // From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most
@@ -841,11 +870,11 @@ func TestFindCompletedDeployments(t *testing.T) {
 	baseDate := "1989-10-31"
 	envTag := "env-tag"
 
-	deployments, err := bicepProvider.findCompletedDeployments(
-		*mockContext.Context, envTag, &mockedScope{
+	deployments, err := bicepProvider.deploymentManager.CompletedDeployments(
+		*mockContext.Context, &mockedScope{
 			baseDate: baseDate,
 			envTag:   envTag,
-		}, "")
+		}, envTag, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(deployments))
 	// should take the base date + 2 years
@@ -853,7 +882,7 @@ func TestFindCompletedDeployments(t *testing.T) {
 	require.NoError(t, err)
 	expectedDate = expectedDate.Add(time.Hour * 24 * 365 * 2)
 
-	deploymentDate := *deployments[0].Properties.Timestamp
+	deploymentDate := deployments[0].Timestamp
 	require.Equal(t, expectedDate, deploymentDate)
 }
 
@@ -866,8 +895,12 @@ func (m *mockedScope) SubscriptionId() string {
 	return "sub-id"
 }
 
+func (m *mockedScope) Deployment(deploymentName string) infra.Deployment {
+	return &infra.SubscriptionDeployment{}
+}
+
 // Return 3 deployments with the expected tag with one year difference each
-func (m *mockedScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
+func (m *mockedScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error) {
 	tags := map[string]*string{
 		azure.TagKeyAzdEnvName: &m.envTag,
 	}
@@ -879,27 +912,21 @@ func (m *mockedScope) ListDeployments(ctx context.Context) ([]*armresources.Depl
 	secondDate := baseDate.Add(time.Hour * 24 * 365)
 	thirdDate := secondDate.Add(time.Hour * 24 * 365)
 
-	return []*armresources.DeploymentExtended{
+	return []*azapi.ResourceDeployment{
 		{
-			Tags: tags,
-			Properties: &armresources.DeploymentPropertiesExtended{
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-				Timestamp:         to.Ptr(baseDate),
-			},
+			Tags:              tags,
+			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+			Timestamp:         baseDate,
 		},
 		{
-			Tags: tags,
-			Properties: &armresources.DeploymentPropertiesExtended{
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-				Timestamp:         to.Ptr(secondDate),
-			},
+			Tags:              tags,
+			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+			Timestamp:         secondDate,
 		},
 		{
-			Tags: tags,
-			Properties: &armresources.DeploymentPropertiesExtended{
-				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-				Timestamp:         to.Ptr(thirdDate),
-			},
+			Tags:              tags,
+			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+			Timestamp:         thirdDate,
 		},
 	}, nil
 }
@@ -913,6 +940,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		Stderr: "",
 	})
 
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	env := environment.NewWithValues("test-env", map[string]string{})
@@ -926,9 +954,8 @@ func TestUserDefinedTypes(t *testing.T) {
 
 	// super basic provider to mock the compileBicep method
 	provider := NewBicepProvider(
+		azCli,
 		bicepCli,
-		nil,
-		nil,
 		nil,
 		nil,
 		&mockenv.MockEnvManager{},
@@ -937,7 +964,6 @@ func TestUserDefinedTypes(t *testing.T) {
 		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
-		clock.NewMock(),
 		keyvault.NewKeyVaultService(
 			mockaccount.SubscriptionCredentialProviderFunc(
 				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
@@ -1049,71 +1075,71 @@ func TestUserDefinedTypes(t *testing.T) {
 
 func Test_armParameterFileValue(t *testing.T) {
 	t.Run("NilValue", func(t *testing.T) {
-		actual := armParameterFileValue(ParameterTypeString, nil, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeString, nil, nil)
 		require.Nil(t, actual)
 	})
 
 	t.Run("StringWithValue", func(t *testing.T) {
 		expected := "value"
-		actual := armParameterFileValue(ParameterTypeString, expected, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeString, expected, nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("EmptyString", func(t *testing.T) {
 		input := ""
-		actual := armParameterFileValue(ParameterTypeString, input, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeString, input, nil)
 		require.Nil(t, actual)
 	})
 
 	t.Run("EmptyStringWithNonEmptyDefault", func(t *testing.T) {
 		expected := ""
-		actual := armParameterFileValue(ParameterTypeString, expected, "not-empty")
+		actual := armParameterFileValue(provisioning.ParameterTypeString, expected, "not-empty")
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("EmptyStringWithEmptyDefault", func(t *testing.T) {
 		input := ""
-		actual := armParameterFileValue(ParameterTypeString, input, "")
+		actual := armParameterFileValue(provisioning.ParameterTypeString, input, "")
 		require.Nil(t, actual)
 	})
 
 	t.Run("ValidBool", func(t *testing.T) {
 		expected := true
-		actual := armParameterFileValue(ParameterTypeBoolean, expected, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeBoolean, expected, nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("ActualBool", func(t *testing.T) {
 		expected := true
-		actual := armParameterFileValue(ParameterTypeBoolean, "true", nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeBoolean, "true", nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("InvalidBool", func(t *testing.T) {
-		actual := armParameterFileValue(ParameterTypeBoolean, "NotABool", nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeBoolean, "NotABool", nil)
 		require.Nil(t, actual)
 	})
 
 	t.Run("ValidInt", func(t *testing.T) {
 		var expected int64 = 42
-		actual := armParameterFileValue(ParameterTypeNumber, "42", nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeNumber, "42", nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("ActualInt", func(t *testing.T) {
 		var expected int64 = 42
-		actual := armParameterFileValue(ParameterTypeNumber, expected, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeNumber, expected, nil)
 		require.Equal(t, expected, actual)
 	})
 
 	t.Run("InvalidInt", func(t *testing.T) {
-		actual := armParameterFileValue(ParameterTypeNumber, "NotAnInt", nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeNumber, "NotAnInt", nil)
 		require.Nil(t, actual)
 	})
 
 	t.Run("Array", func(t *testing.T) {
 		expected := []string{"a", "b", "c"}
-		actual := armParameterFileValue(ParameterTypeArray, expected, nil)
+		actual := armParameterFileValue(provisioning.ParameterTypeArray, expected, nil)
 		require.Equal(t, expected, actual)
 	})
 }

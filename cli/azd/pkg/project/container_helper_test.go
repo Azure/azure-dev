@@ -352,7 +352,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
-			serviceConfig.Image = tt.image
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 			serviceConfig.RelativePath = tt.project
 			serviceConfig.Docker.Registry = tt.registry
 
@@ -521,7 +521,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			if tt.serviceName != "" {
 				serviceConfig.Name = tt.serviceName
 			}
-			serviceConfig.Image = tt.sourceImage
+			serviceConfig.Image = osutil.NewExpandableString(tt.sourceImage)
 			serviceConfig.Docker.Registry = tt.registry
 			serviceConfig.Docker.Image = tt.image
 			serviceConfig.Docker.Tag = tt.tag

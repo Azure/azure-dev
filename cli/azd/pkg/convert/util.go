@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
+	"time"
 )
 
 // Converts a pointer to a value type
@@ -58,4 +60,11 @@ func ToMap(value any) (map[string]any, error) {
 	}
 
 	return mapValue, nil
+}
+
+func ParseDuration(value string) (time.Duration, error) {
+	value = strings.ReplaceAll(value, "PT", "")
+	value = strings.ToLower(value)
+
+	return time.ParseDuration(value)
 }

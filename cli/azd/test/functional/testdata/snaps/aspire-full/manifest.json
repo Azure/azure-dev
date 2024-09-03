@@ -1,9 +1,10 @@
 {
+  "$schema": "https://json.schemastore.org/aspire-8.0.json",
   "resources": {
     "pubsub": {
       "type": "container.v0",
       "connectionString": "{pubsub.bindings.tcp.host}:{pubsub.bindings.tcp.port}",
-      "image": "docker.io/library/redis:7.2.4",
+      "image": "docker.io/library/redis:7.4",
       "bindings": {
         "tcp": {
           "scheme": "tcp",
@@ -40,7 +41,8 @@
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY": "in_memory",
-        "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true"
+        "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true",
+        "HTTP_PORTS": "{apiservice.bindings.http.targetPort}"
       },
       "bindings": {
         "http": {
@@ -80,6 +82,7 @@
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY": "in_memory",
         "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true",
+        "HTTP_PORTS": "{webfrontend.bindings.http.targetPort}",
         "ConnectionStrings__pubsub": "{pubsub.connectionString}",
         "ConnectionStrings__requestlog": "{requestlog.connectionString}",
         "ConnectionStrings__markdown": "{markdown.connectionString}",

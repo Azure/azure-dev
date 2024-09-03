@@ -8,8 +8,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
-// NewFileTemplateSource creates a new template source from a file.
-func NewFileTemplateSource(name string, path string) (Source, error) {
+// newFileTemplateSource creates a new template source from a file.
+func newFileTemplateSource(name string, path string) (Source, error) {
 	absolutePath, err := getAbsolutePath(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed converting path '%s' to absolute path, %w", path, err)
@@ -20,7 +20,7 @@ func NewFileTemplateSource(name string, path string) (Source, error) {
 		return nil, fmt.Errorf("failed reading file '%s', %w", path, err)
 	}
 
-	return NewJsonTemplateSource(name, string(templateBytes))
+	return newJsonTemplateSource(name, string(templateBytes))
 }
 
 func getAbsolutePath(filePath string) (string, error) {

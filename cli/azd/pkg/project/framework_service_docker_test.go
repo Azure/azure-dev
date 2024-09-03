@@ -392,7 +392,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, tt.language)
 			serviceConfig.Project.Path = temp
 			serviceConfig.Docker = tt.dockerOptions
-			serviceConfig.Image = tt.image
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 
 			if tt.hasDockerFile {
 				err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
@@ -536,7 +536,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			// Set the custom test options
 			serviceConfig.Docker = tt.docker
 			serviceConfig.RelativePath = tt.project
-			serviceConfig.Image = tt.image
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 
 			if serviceConfig.RelativePath != "" {
 				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env)
@@ -544,7 +544,10 @@ func Test_DockerProject_Package(t *testing.T) {
 			}
 
 			buildOutputPath := ""
-			if serviceConfig.Image == "" && serviceConfig.RelativePath != "" {
+			sourceImage, err := serviceConfig.Image.Envsubst(env.Getenv)
+			require.NoError(t, err)
+
+			if sourceImage == "" && serviceConfig.RelativePath != "" {
 				buildOutputPath = "IMAGE_ID"
 			}
 

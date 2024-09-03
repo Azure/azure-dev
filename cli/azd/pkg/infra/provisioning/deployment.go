@@ -3,12 +3,6 @@
 
 package provisioning
 
-import "errors"
-
-var (
-	ErrDeploymentsNotFound = errors.New("no deployments found")
-)
-
 type Deployment struct {
 	Parameters map[string]InputParameter
 	Outputs    map[string]OutputParameter

@@ -4,7 +4,8 @@
 package baggage
 
 import (
-	"golang.org/x/exp/maps"
+	"maps"
+	"slices"
 
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -73,7 +74,7 @@ func (mb Baggage) Get(key attribute.Key) attribute.Value {
 
 // Keys returns a copy of the keys contained.
 func (mb Baggage) Keys() []attribute.Key {
-	return maps.Keys(mb.m)
+	return slices.Collect(maps.Keys(mb.m))
 }
 
 // Attributes returns a copy of the key-value attributes contained.

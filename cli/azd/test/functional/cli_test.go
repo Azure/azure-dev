@@ -27,7 +27,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -43,6 +42,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
+	"github.com/benbjohnson/clock"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -241,10 +241,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
-	cred, err := azidentity.NewAzureCLICredential(nil)
-	if err != nil {
-		t.Fatal("could not create credential")
-	}
+	cred := azdcli.NewTestCredential(cli)
 
 	var client *http.Client
 	if session != nil {
@@ -259,18 +256,21 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 			Cloud:     cloud.AzurePublic().Configuration,
 		},
 	}
-	resourceService := azapi.NewResourceService(mockaccount.SubscriptionCredentialProviderFunc(
+
+	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
-		}),
-		armClientOptions,
+		},
 	)
-	deploymentOperations := azapi.NewDeploymentOperations(
-		mockaccount.SubscriptionCredentialProviderFunc(
-			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
-				return cred, nil
-			}),
+
+	resourceService := azapi.NewResourceService(credentialProvider, armClientOptions)
+
+	deploymentOperations := azapi.NewStandardDeployments(
+		credentialProvider,
 		armClientOptions,
+		resourceService,
+		cloud.AzurePublic(),
+		clock.NewMock(),
 	)
 
 	// Verify that resource groups are created with tag
@@ -383,7 +383,7 @@ func Test_CLI_ProvisionStateWithDown(t *testing.T) {
 	require.Contains(t, secondProvisionOutput.Stdout, expectedOutputContains)
 
 	// down to delete resources
-	_, err = cli.RunCommandWithStdIn(ctx, "", "down", "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 
 	// use flag to force provision
@@ -438,7 +438,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.NoError(t, err)
 
 	// test 'infra create' alias
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--output", "json")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--output", "json")
 	require.NoError(t, err)
 
 	env, err := envFromAzdRoot(ctx, dir, envName)
@@ -463,10 +463,9 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	} else {
 		client = http.DefaultClient
 	}
-	cred, err := azidentity.NewAzureCLICredential(nil)
-	if err != nil {
-		t.Fatal("could not create credential")
-	}
+
+	cred := azdcli.NewTestCredential(cli)
+
 	armClientOptions := &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: client,
@@ -474,19 +473,20 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		},
 	}
 
-	resourceService := azapi.NewResourceService(mockaccount.SubscriptionCredentialProviderFunc(
+	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
-		}),
-		armClientOptions,
+		},
 	)
 
-	deploymentOperations := azapi.NewDeploymentOperations(
-		mockaccount.SubscriptionCredentialProviderFunc(
-			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
-				return cred, nil
-			}),
+	resourceService := azapi.NewResourceService(credentialProvider, armClientOptions)
+
+	deploymentOperations := azapi.NewStandardDeployments(
+		credentialProvider,
 		armClientOptions,
+		resourceService,
+		cloud.AzurePublic(),
+		clock.NewMock(),
 	)
 
 	// Verify that resource groups are created with tag
@@ -496,7 +496,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.NotNil(t, rgs)
 
 	// test 'infra delete' alias
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge", "--output", "json")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge", "--output", "json")
 	require.NoError(t, err)
 }
 
@@ -893,11 +893,11 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--cwd", dir)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")

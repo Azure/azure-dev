@@ -3,13 +3,13 @@ package devcenter
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"golang.org/x/exp/slices"
 )
 
 // Prompter provides a common set of methods for prompting the user for devcenter configuration values
@@ -67,8 +67,8 @@ func (p *Prompter) PromptProject(ctx context.Context, devCenterName string) (*de
 		return nil, fmt.Errorf("no dev center projects found")
 	}
 
-	slices.SortFunc(writeableProjects, func(x, y *devcentersdk.Project) bool {
-		return x.Name < y.Name
+	slices.SortFunc(writeableProjects, func(x, y *devcentersdk.Project) int {
+		return strings.Compare(x.Name, y.Name)
 	})
 
 	// Filter to only projects that match the specified devcenter
@@ -132,8 +132,8 @@ func (p *Prompter) PromptEnvironmentType(
 	}
 
 	envTypes := envTypesResponse.Value
-	slices.SortFunc(envTypes, func(x, y *devcentersdk.EnvironmentType) bool {
-		return x.Name < y.Name
+	slices.SortFunc(envTypes, func(x, y *devcentersdk.EnvironmentType) int {
+		return strings.Compare(x.Name, y.Name)
 	})
 
 	if len(envTypes) == 0 {
@@ -177,8 +177,8 @@ func (p *Prompter) PromptEnvironmentDefinition(
 	}
 
 	environmentDefinitions := envDefinitionsResponse.Value
-	slices.SortFunc(environmentDefinitions, func(x, y *devcentersdk.EnvironmentDefinition) bool {
-		return x.Name < y.Name
+	slices.SortFunc(environmentDefinitions, func(x, y *devcentersdk.EnvironmentDefinition) int {
+		return strings.Compare(x.Name, y.Name)
 	})
 
 	if len(environmentDefinitions) == 0 {
@@ -273,7 +273,7 @@ func (p *Prompter) PromptParameters(
 			}
 			paramValue = confirmValue
 		case devcentersdk.ParameterTypeString:
-			if param.Allowed != nil && len(param.Allowed) > 0 {
+			if len(param.Allowed) > 0 {
 				selectedIndex, err := p.console.Select(ctx, promptOptions)
 				if err != nil {
 					return nil, fmt.Errorf("failed to prompt for %s: %w", param.Name, err)

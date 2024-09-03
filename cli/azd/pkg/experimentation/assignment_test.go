@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
 )
@@ -143,7 +144,7 @@ func TestCache(t *testing.T) {
 	cacheFile.ExpiresOn = time.Now().UTC().Add(-1 * time.Hour)
 	cacheData, err = json.Marshal(cacheFile)
 	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(cacheRoot, cacheEntries[0].Name()), cacheData, os.ModePerm)
+	err = os.WriteFile(filepath.Join(cacheRoot, cacheEntries[0].Name()), cacheData, osutil.PermissionFileOwnerOnly)
 	require.NoError(t, err)
 
 	// We'll return a new assigment context from the mock HTTP server, to simulate the

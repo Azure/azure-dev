@@ -21,6 +21,7 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 armcosmos
+armdeploymentstacks
 armmachinelearning
 armresourcegraph
 armsql
@@ -145,6 +146,7 @@ notrail
 omitempty
 oneauth
 oneline
+onmicrosoft
 opentelemetry
 ostest
 osutil
@@ -209,6 +211,7 @@ trafficmanager
 Truef
 typeflag
 unhide
+unmanage
 unmarshaled
 unmarshalled
 unmarshalling

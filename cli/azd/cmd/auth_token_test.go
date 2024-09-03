@@ -140,7 +140,7 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
 		&mockSubscriptionTenantResolver{
-			Err: fmt.Errorf(expectedError),
+			Err: errors.New(expectedError),
 		},
 		cloud.AzurePublic(),
 	)
@@ -184,7 +184,7 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 			}), nil
 		},
 		&mockSubscriptionTenantResolver{
-			Err: fmt.Errorf(expectedError),
+			Err: errors.New(expectedError),
 		},
 		cloud.AzurePublic(),
 	)

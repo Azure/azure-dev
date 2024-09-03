@@ -1,0 +1,7 @@
+name: test-proj
+services:
+    api:
+        project: src/api
+        host: containerapp
+        language: ts
+

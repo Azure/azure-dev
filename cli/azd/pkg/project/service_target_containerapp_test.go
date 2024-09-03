@@ -165,9 +165,9 @@ func createContainerAppServiceTarget(
 		mockContext.Console,
 		cloud.AzurePublic(),
 	)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	resourceManager := NewResourceManager(env, resourceService, depOpService)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(credentialProvider, mockContext.ArmClientOptions)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService)
 
 	return NewContainerAppTarget(
 		env,

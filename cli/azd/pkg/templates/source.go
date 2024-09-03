@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 // Source is a source of AZD compatible templates.
@@ -23,7 +22,8 @@ type SourceKind string
 const (
 	SourceKindFile       SourceKind = "file"
 	SourceKindUrl        SourceKind = "url"
-	SourceKindResource   SourceKind = "resource"
+	SourceKindGh         SourceKind = "gh"
+	SourceKindResource   SourceKind = "default"
 	SourceKindAwesomeAzd SourceKind = "awesome-azd"
 )
 
@@ -40,7 +40,7 @@ type templateSource struct {
 }
 
 // NewJsonTemplateSource creates a new template source from a JSON string.
-func NewTemplateSource(name string, templates []*Template) (Source, error) {
+func newTemplateSource(name string, templates []*Template) (Source, error) {
 	return &templateSource{
 		name:      name,
 		templates: templates,

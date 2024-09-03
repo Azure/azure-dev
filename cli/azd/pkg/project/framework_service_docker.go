@@ -345,7 +345,12 @@ func (p *dockerProject) Package(
 
 	// If we don't have an image ID from a docker build then an external source image is being used
 	if imageId == "" {
-		sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
+		sourceImageValue, err := serviceConfig.Image.Envsubst(p.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("substituting environment variables in image: %w", err)
+		}
+
+		sourceImage, err := docker.ParseContainerImage(sourceImageValue)
 		if err != nil {
 			return nil, fmt.Errorf("parsing source container image: %w", err)
 		}

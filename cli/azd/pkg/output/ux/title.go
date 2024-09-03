@@ -24,10 +24,10 @@ func (t *MessageTitle) ToString(currentIndentation string) string {
 		}
 
 		return fmt.Sprintf("\n%s\n%s\n",
-			output.WithBold(t.Title),
-			output.WithGrayFormat(t.TitleNote))
+			output.WithBold("%s", t.Title),
+			output.WithGrayFormat("%s", t.TitleNote))
 	}
-	return fmt.Sprintf("\n%s\n", output.WithBold(t.Title))
+	return fmt.Sprintf("\n%s\n", output.WithBold("%s", t.Title))
 }
 
 func (t *MessageTitle) MarshalJSON() ([]byte, error) {

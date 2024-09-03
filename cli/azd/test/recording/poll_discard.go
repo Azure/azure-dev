@@ -237,10 +237,9 @@ type bodyPoller struct {
 
 // the well-known set of LRO status/provisioning state values.
 const (
-	statusSucceeded  = "Succeeded"
-	statusCanceled   = "Canceled"
-	statusFailed     = "Failed"
-	statusInProgress = "InProgress"
+	statusSucceeded = "succeeded"
+	statusCanceled  = "canceled"
+	statusFailed    = "failed"
 )
 
 func isBodyPoll(i *cassette.Interaction) bool {
@@ -349,7 +348,7 @@ func status(jsonBody map[string]any) string {
 }
 
 func isTerminalState(status string) bool {
-	return status == statusSucceeded || status == statusFailed || status == statusCanceled
+	return strings.ToLower(status) == statusSucceeded || status == statusFailed || status == statusCanceled
 }
 
 func parseLocationUrl(loc string) (*url.URL, error) {

@@ -5,18 +5,30 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
+func addGhMocks(mockContext *mocks.MockContext) {
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+}
+
 func Test_sourceManager_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
@@ -39,6 +51,7 @@ func Test_sourceManager_List(t *testing.T) {
 func Test_sourceManager_List_EmptySources(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
@@ -56,6 +69,7 @@ func Test_sourceManager_List_EmptySources(t *testing.T) {
 func Test_sourceManager_List_UndefinedSources(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
@@ -73,6 +87,7 @@ func Test_sourceManager_List_UndefinedSources(t *testing.T) {
 func Test_sourceManager_Get(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
@@ -94,6 +109,7 @@ func Test_sourceManager_Get(t *testing.T) {
 func Test_sourceManager_Add(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(defaultTemplateSourceData)
@@ -112,6 +128,7 @@ func Test_sourceManager_Add(t *testing.T) {
 func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	key := "test"
@@ -131,6 +148,7 @@ func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 func Test_sourceManager_Remove(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	key := "test"
@@ -146,6 +164,7 @@ func Test_sourceManager_Remove(t *testing.T) {
 func Test_sourceManager_Remove_SourceNotFound(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	key := "invalid"
@@ -162,6 +181,7 @@ func Test_sourceManager_CreateSource(t *testing.T) {
 	mockAwesomeAzdTemplateSource(mockContext)
 
 	configManager := &mockUserConfigManager{}
+	addGhMocks(mockContext)
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	configDir, err := config.GetUserConfigDir()

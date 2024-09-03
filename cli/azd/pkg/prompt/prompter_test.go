@@ -20,6 +20,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.New("test")
+		resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 		mockAccount := &mockaccount.MockAccountManager{
 			Subscriptions: []account.Subscription{
 				{
@@ -32,12 +33,11 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			},
 		}
 
-		resourceSerivce := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 		prompter := NewDefaultPrompter(
 			env,
 			mockContext.Console,
 			mockAccount,
-			resourceSerivce,
+			resourceService,
 			cloud.AzurePublic(),
 		).(*DefaultPrompter)
 		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
@@ -53,7 +53,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		defaultSubId := "SUBSCRIPTION_DEFAULT"
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.New("test")
-		resourceSerivce := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+		resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 		mockAccount := &mockaccount.MockAccountManager{
 			DefaultLocation:     "location",
 			DefaultSubscription: defaultSubId,
@@ -80,7 +80,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			env,
 			mockContext.Console,
 			mockAccount,
-			resourceSerivce,
+			resourceService,
 			cloud.AzurePublic(),
 		).(*DefaultPrompter)
 		subList, subs, result, err := prompter.getSubscriptionOptions(*mockContext.Context)

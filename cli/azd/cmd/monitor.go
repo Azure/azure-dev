@@ -64,8 +64,8 @@ type monitorAction struct {
 	azdCtx               *azdcontext.AzdContext
 	env                  *environment.Environment
 	subResolver          account.SubscriptionTenantResolver
+	resourceManager      infra.ResourceManager
 	resourceService      *azapi.ResourceService
-	deploymentOperations azapi.DeploymentOperations
 	console              input.Console
 	flags                *monitorFlags
 	portalUrlBase        string
@@ -76,8 +76,8 @@ func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	subResolver account.SubscriptionTenantResolver,
+	resourceManager infra.ResourceManager,
 	resourceService *azapi.ResourceService,
-	deploymentOperations azapi.DeploymentOperations,
 	console input.Console,
 	flags *monitorFlags,
 	cloud *cloud.Cloud,
@@ -86,8 +86,8 @@ func newMonitorAction(
 	return &monitorAction{
 		azdCtx:               azdCtx,
 		env:                  env,
+		resourceManager:      resourceManager,
 		resourceService:      resourceService,
-		deploymentOperations: deploymentOperations,
 		console:              console,
 		flags:                flags,
 		subResolver:          subResolver,
@@ -113,15 +113,13 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, nil
 	}
 
-	resourceManager := infra.NewAzureResourceManager(m.resourceService, m.deploymentOperations)
-	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(
-		ctx, m.env.GetSubscriptionId(), m.env.Name())
+	resourceGroups, err := m.resourceManager.GetResourceGroupsForEnvironment(ctx, m.env.GetSubscriptionId(), m.env.Name())
 	if err != nil {
 		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
 
-	var insightsResources []azapi.Resource
-	var portalResources []azapi.Resource
+	var insightsResources []*azapi.Resource
+	var portalResources []*azapi.Resource
 
 	for _, resourceGroup := range resourceGroups {
 		resources, err := m.resourceService.ListResourceGroupResources(

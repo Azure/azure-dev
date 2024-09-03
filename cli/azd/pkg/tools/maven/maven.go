@@ -125,7 +125,7 @@ func getMavenWrapperPath(projectPath string, rootProjectPath string) (string, er
 			return mvnw, nil
 		}
 
-		if !errors.Is(err, os.ErrNotExist) {
+		if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, osexec.ErrNotFound) {
 			return "", err
 		}
 

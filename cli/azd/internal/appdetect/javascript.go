@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
-
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 )
 
 type PackagesJson struct {
@@ -90,14 +89,14 @@ func (nd *javaScriptDetector) DetectProject(ctx context.Context, path string, en
 			}
 
 			if len(databaseDepMap) > 0 {
-				project.DatabaseDeps = maps.Keys(databaseDepMap)
-				slices.SortFunc(project.DatabaseDeps, func(a, b DatabaseDep) bool {
-					return string(a) < string(b)
-				})
+				project.DatabaseDeps = slices.SortedFunc(maps.Keys(databaseDepMap),
+					func(a, b DatabaseDep) int {
+						return strings.Compare(string(a), string(b))
+					})
 			}
 
-			slices.SortFunc(project.Dependencies, func(a, b Dependency) bool {
-				return string(a) < string(b)
+			slices.SortFunc(project.Dependencies, func(a, b Dependency) int {
+				return strings.Compare(string(a), string(b))
 			})
 
 			tsFiles := 0

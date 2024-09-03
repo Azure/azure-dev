@@ -40,7 +40,7 @@ func Test_gitHub_provider_getRepoDetails(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		provider := &GitHubScmProvider{}
 		ctx := context.Background()
-		details, e := provider.gitRepoDetails(ctx, "git@other.com:Azure/azure-dev.git")
+		details, e := provider.gitRepoDetails(ctx, "gt@other.com:Azure/azure-dev.git")
 		require.Error(t, e, ErrRemoteHostIsNotGitHub)
 		require.EqualValues(t, (*gitRepositoryDetails)(nil), details)
 	})

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -16,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
-	"golang.org/x/exp/slices"
 )
 
 var (
@@ -83,8 +84,8 @@ func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvList
 		envs = append(envs, env)
 	}
 
-	slices.SortFunc(envs, func(a, b *contracts.EnvListEnvironment) bool {
-		return a.Name < b.Name
+	slices.SortFunc(envs, func(a, b *contracts.EnvListEnvironment) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	return envs, nil

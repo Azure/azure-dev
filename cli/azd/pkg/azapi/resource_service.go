@@ -85,7 +85,7 @@ func (rs *ResourceService) ListResourceGroupResources(
 	subscriptionId string,
 	resourceGroupName string,
 	listOptions *ListResourceGroupResourcesOptions,
-) ([]Resource, error) {
+) ([]*Resource, error) {
 	client, err := rs.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (rs *ResourceService) ListResourceGroupResources(
 		options.Filter = listOptions.Filter
 	}
 
-	resources := []Resource{}
+	resources := []*Resource{}
 	pager := client.NewListByResourceGroupPager(resourceGroupName, &options)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -107,7 +107,7 @@ func (rs *ResourceService) ListResourceGroupResources(
 		}
 
 		for _, resource := range page.ResourceListResult.Value {
-			resources = append(resources, Resource{
+			resources = append(resources, &Resource{
 				Id:       *resource.ID,
 				Name:     *resource.Name,
 				Type:     *resource.Type,
@@ -123,7 +123,7 @@ func (rs *ResourceService) ListResourceGroup(
 	ctx context.Context,
 	subscriptionId string,
 	listOptions *ListResourceGroupOptions,
-) ([]Resource, error) {
+) ([]*Resource, error) {
 	client, err := rs.createResourceGroupClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -145,7 +145,7 @@ func (rs *ResourceService) ListResourceGroup(
 		}
 	}
 
-	groups := []Resource{}
+	groups := []*Resource{}
 	pager := client.NewListPager(&options)
 
 	for pager.More() {
@@ -155,7 +155,7 @@ func (rs *ResourceService) ListResourceGroup(
 		}
 
 		for _, group := range page.ResourceGroupListResult.Value {
-			groups = append(groups, Resource{
+			groups = append(groups, &Resource{
 				Id:       *group.ID,
 				Name:     *group.Name,
 				Type:     *group.Type,
@@ -237,7 +237,9 @@ func (rs *ResourceService) createResourceGroupClient(
 	return client, nil
 }
 
-func (rs *ResourceService) MapResources(resources []*armresources.ResourceReference) (map[string][]*Resource, error) {
+// GroupByResourceGroup creates a map of resources group by their resource group name.
+// The key is the resource group name and the value is a list of resources in that group.
+func GroupByResourceGroup(resources []*armresources.ResourceReference) (map[string][]*Resource, error) {
 	resourceMap := map[string][]*Resource{}
 
 	for _, resource := range resources {
@@ -255,12 +257,15 @@ func (rs *ResourceService) MapResources(resources []*armresources.ResourceRefere
 			groupResources = []*Resource{}
 		}
 
-		groupResources = append(groupResources, &Resource{
-			Id:       *resource.ID,
-			Name:     resourceId.Name,
-			Type:     resourceId.ResourceType.String(),
-			Location: resourceId.Location,
-		})
+		resourceType := resourceId.ResourceType.String()
+		if resourceType != string(AzureResourceTypeResourceGroup) {
+			groupResources = append(groupResources, &Resource{
+				Id:       *resource.ID,
+				Name:     resourceId.Name,
+				Type:     resourceType,
+				Location: resourceId.Location,
+			})
+		}
 
 		resourceMap[resourceId.ResourceGroupName] = groupResources
 	}

@@ -34,6 +34,9 @@ func PromptLocationWithFilter(
 	locations := make([]account.Location, 0, len(allLocations))
 
 	for _, location := range allLocations {
+		if strings.Contains(location.RegionalDisplayName, "STG") {
+			continue
+		}
 		if shouldDisplay == nil || shouldDisplay(location) {
 			locations = append(locations, location)
 		}

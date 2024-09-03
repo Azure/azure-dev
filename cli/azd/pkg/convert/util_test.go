@@ -105,3 +105,11 @@ func Test_ToMap(t *testing.T) {
 		require.Equal(t, expected, actual)
 	})
 }
+
+func Test_ParseDuration(t *testing.T) {
+	value := "PT0.3848S"
+
+	duration, err := ParseDuration(value)
+	require.NoError(t, err)
+	require.NotNil(t, duration)
+}

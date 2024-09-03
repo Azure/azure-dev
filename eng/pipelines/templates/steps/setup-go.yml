@@ -1,5 +1,5 @@
 parameters:
-  GoVersion: 1.21.0
+  GoVersion: 1.23.0
   Condition: succeeded()
 
 steps:

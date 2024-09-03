@@ -11,6 +11,8 @@ const (
 	// TagKeyAzdDeploymentStateParamHashName is the name of the key in the tags map of a deployment
 	// used to store the parameters hash.
 	TagKeyAzdDeploymentStateParamHashName = "azd-provision-param-hash"
+	// Used for stack deployments
+	TagKeyAzdDeploymentTemplateHashName = "azd-provision-template-hash"
 	// TagKeyAzdServiceName is the name of the key in the tags map of a resource
 	// used to store the azd service a resource is associated with.
 	TagKeyAzdServiceName = "azd-service-name"

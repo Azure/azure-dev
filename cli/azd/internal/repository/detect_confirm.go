@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2/terminal"
@@ -18,8 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/fatih/color"
 	"go.opentelemetry.io/otel/attribute"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 )
 
 func projectDisplayName(p appdetect.Project) string {
@@ -244,7 +245,7 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 			modifyOptions, fmt.Sprintf("%s in %s", projectDisplayName(svc), relSafe(d.root, svc.Path)))
 	}
 
-	displayDbs := maps.Keys(d.Databases)
+	displayDbs := slices.Collect(maps.Keys(d.Databases))
 	for _, db := range displayDbs {
 		modifyOptions = append(modifyOptions, db.Display())
 	}
@@ -307,26 +308,26 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 }
 
 func (d *detectConfirm) add(ctx context.Context) error {
-	languages := maps.Keys(languageMap)
-	slices.SortFunc(languages, func(a, b appdetect.Language) bool {
-		return a.Display() < b.Display()
-	})
+	languages := slices.SortedFunc(maps.Keys(languageMap),
+		func(a, b appdetect.Language) int {
+			return strings.Compare(a.Display(), b.Display())
+		})
 
-	frameworks := maps.Keys(appdetect.WebUIFrameworks)
-	slices.SortFunc(frameworks, func(a, b appdetect.Dependency) bool {
-		return a.Display() < b.Display()
-	})
+	frameworks := slices.SortedFunc(maps.Keys(appdetect.WebUIFrameworks),
+		func(a, b appdetect.Dependency) int {
+			return strings.Compare(a.Display(), b.Display())
+		})
 
 	// only include databases not already added
-	allDbs := maps.Keys(dbMap)
+	allDbs := slices.Collect(maps.Keys(dbMap))
 	databases := make([]appdetect.DatabaseDep, 0, len(allDbs))
 	for _, db := range allDbs {
 		if _, ok := d.Databases[db]; !ok {
 			databases = append(databases, db)
 		}
 	}
-	slices.SortFunc(databases, func(a, b appdetect.DatabaseDep) bool {
-		return a.Display() < b.Display()
+	slices.SortFunc(databases, func(a, b appdetect.DatabaseDep) int {
+		return strings.Compare(a.Display(), b.Display())
 	})
 
 	selections := make([]string, 0, len(languages)+len(frameworks)+len(databases))

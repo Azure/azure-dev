@@ -151,16 +151,20 @@ func (cas *containerAppService) persistSettings(
 	objConfig := config.NewConfig(obj)
 
 	if shouldPersistDomains {
-		customDomains, ok := aca.GetSlice(pathConfigurationIngressCustomDomains)
-		if ok {
-			objConfig.Set(pathConfigurationIngressCustomDomains, customDomains)
+		customDomains, has := aca.GetSlice(pathConfigurationIngressCustomDomains)
+		if has {
+			if err := objConfig.Set(pathConfigurationIngressCustomDomains, customDomains); err != nil {
+				return nil, fmt.Errorf("setting custom domains: %w", err)
+			}
 		}
 	}
 
 	if shouldPersistIngressSessionAffinity {
 		stickySessions, has := aca.Get(pathConfigurationIngressStickySessions)
 		if has {
-			objConfig.Set(pathConfigurationIngressStickySessions, stickySessions)
+			if err := objConfig.Set(pathConfigurationIngressStickySessions, stickySessions); err != nil {
+				return nil, fmt.Errorf("setting sticky sessions: %w", err)
+			}
 		}
 	}
 

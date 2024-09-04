@@ -1,14 +1,28 @@
 # Release History
 
-## 1.10.0-beta.1 (Unreleased)
+## 1.10.0 (2024-09-03)
 
 ### Features Added
 
-### Breaking Changes
+- [[4165]](https://github.com/Azure/azure-dev/pull/4165) Add support for Azure Deployment stacks.
+- [[4236]](https://github.com/Azure/azure-dev/pull/4236) Support `args` on `container.{v0,v1}`.
+- [[4257]](https://github.com/Azure/azure-dev/pull/4257) Add support for multiple hooks per event.
+- [[4190]](https://github.com/Azure/azure-dev/pull/4190) Add support for `.azuredevops` folder.
+- [[4161]](https://github.com/Azure/azure-dev/pull/4161) Support Azure Container Registry remote builds.
+- [[4254]](https://github.com/Azure/azure-dev/pull/4254) Add support for environment variable substitution for source container image.
+- [[4203]](https://github.com/Azure/azure-dev/pull/4203) Support new type `gh` for template source.
 
 ### Bugs Fixed
 
+- [[4208]](https://github.com/Azure/azure-dev/pull/4208) Fix Java Azure functions not deployed bug. 
+- [[4237]](https://github.com/Azure/azure-dev/pull/4237) Fix pipeline config failing bug.
+- [[4263]](https://github.com/Azure/azure-dev/pull/4263) Fix `azd infra synth` ignored by `azd deploy` in azdo CI/CD pipeline bug.
+- [[4281]](https://github.com/Azure/azure-dev/pull/4281) Fix failed provision with the STG location.
+
 ### Other Changes
+
+- [[4238]](https://github.com/Azure/azure-dev/pull/4238) Update minimum requirement of GitHub CLI version to `2.55.0`.
+- [[4243]](https://github.com/Azure/azure-dev/pull/4243) Add AI services model deployments to provisioning display.
 
 ## 1.9.6 (2024-08-13)
 

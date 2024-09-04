@@ -15,9 +15,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func NewInfraAddCmd() *cobra.Command {
@@ -48,19 +48,25 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		infraDirExists = true
 	}
 
+	resources := project.AllCategories()
+	displayOptions := []string{}
+	for category := range resources {
+		displayOptions = append(displayOptions, string(category))
+	}
+	slices.Sort(displayOptions)
+
 	continueOption, err := a.console.Select(ctx, input.ConsoleOptions{
 		Message: "What would you like to add?",
-		Options: []string{"Database", "Storage", "Messaging", "AI Service"},
+		Options: displayOptions,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if continueOption != 0 {
-		return nil, fmt.Errorf("not implemented")
-	}
+	selectedCategory := project.ResourceCategory(displayOptions[continueOption])
 
-	resourceTypes := project.AllResources()
+	// Get the resource types for the selected category
+	resourceTypes := resources[selectedCategory]
 	resourceTypesDisplay := make([]string, 0, len(resourceTypes))
 	resourceTypesDisplayMap := make(map[string]project.ResourceType)
 	for _, resourceType := range resourceTypes {
@@ -69,16 +75,53 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	slices.Sort(resourceTypesDisplay)
 
-	dbOption, err := a.console.Select(ctx, input.ConsoleOptions{
-		Message: "Which type of database?",
-		Options: resourceTypesDisplay,
-	})
-	if err != nil {
-		return nil, err
-	}
+	resourceToAdd := &project.ResourceConfig{}
+	switch selectedCategory {
+	case project.ResourceCategoryDatabase:
+		dbOption, err := a.console.Select(ctx, input.ConsoleOptions{
+			Message: "Which type of database?",
+			Options: resourceTypesDisplay,
+		})
+		if err != nil {
+			return nil, err
+		}
 
-	resourceToAdd := &project.ResourceConfig{
-		Type: resourceTypesDisplayMap[resourceTypesDisplay[dbOption]],
+		resourceToAdd.Type = resourceTypesDisplayMap[resourceTypesDisplay[dbOption]]
+	case project.ResourceCategoryAI:
+		aiOption, err := a.console.Select(ctx, input.ConsoleOptions{
+			Message: "Which type of AI service?",
+			Options: []string{
+				"Chat (ChatGPT)",
+				"Embeddings (Document search)",
+				"Image generation (DALL-E)",
+				"Speech transcription/translation",
+				"Text to speech",
+			}})
+		if err != nil {
+			return nil, err
+		}
+		resourceToAdd.Type = project.ResourceTypeAiModel
+		if aiOption == 0 {
+			// we should be able to fetch the models available.
+			// however, the catch-22 is that the models are not available until the AI resource is created.
+			resourceToAdd.Props = project.AIModelProps{
+				Model:   "gpt-4o",
+				Version: "2024-08-06",
+			}
+
+			resourceToAdd.Name = "gpt-4o"
+			i := 1
+			for {
+				if _, exists := prjConfig.Resources[resourceToAdd.Name]; exists {
+					i++
+					resourceToAdd.Name = fmt.Sprintf("gpt-4o-%d", i)
+				} else {
+					break
+				}
+			}
+		}
+	default:
+		return nil, fmt.Errorf("not implemented")
 	}
 
 	svc := make([]string, 0, len(prjConfig.Services))
@@ -88,7 +131,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	slices.Sort(svc)
 
 	svcOptions, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
-		Message: "Select the service(s) that uses this database",
+		Message: "Select the service(s) that uses this resource",
 		Options: svc,
 	})
 	if err != nil {
@@ -215,17 +258,19 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 		}, nil
 	}
 
-	dbName, err := a.console.Prompt(ctx, input.ConsoleOptions{
-		Message: fmt.Sprintf("Input the name of the app database (%s)", r.Type.String()),
-		Help: "Hint: App database name\n\n" +
-			"Name of the database that the app connects to. " +
-			"This database will be created after running azd provision or azd up.",
-	})
-	if err != nil {
-		return configureResult{}, err
-	}
+	if r.Name == "" {
+		dbName, err := a.console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the name of the app database (%s)", r.Type.String()),
+			Help: "Hint: App database name\n\n" +
+				"Name of the database that the app connects to. " +
+				"This database will be created after running azd provision or azd up.",
+		})
+		if err != nil {
+			return configureResult{}, err
+		}
 
-	r.Name = dbName
+		r.Name = dbName
+	}
 
 	res := configureResult{}
 	switch r.Type {
@@ -240,6 +285,11 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 	case project.ResourceTypeDbMongo:
 		res.ConnectionEnvVars = []string{
 			"AZURE_COSMOS_MONGODB_CONNECTION_STRING",
+		}
+	case project.ResourceTypeAiModel:
+		res.ConnectionEnvVars = []string{
+			"AZURE_OPENAI_ENDPOINT",
+			"AZURE_OPENAI_API_KEY",
 		}
 	}
 	return res, nil

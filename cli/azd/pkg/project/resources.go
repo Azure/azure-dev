@@ -9,13 +9,13 @@ import (
 type Resources map[string]*ResourceConfig
 
 type ResourceType string
-type ResourceCategories string
+type ResourceCategory string
 
 const (
-	CategoryDatabase  ResourceCategories = "Database"
-	CategoryStorage   ResourceCategories = "Storage"
-	CategoryMessaging ResourceCategories = "Messaging"
-	CategoryAI        ResourceCategories = "AI Services"
+	ResourceCategoryDatabase  ResourceCategory = "Database"
+	ResourceCategoryStorage   ResourceCategory = "Storage"
+	ResourceCategoryMessaging ResourceCategory = "Messaging"
+	ResourceCategoryAI        ResourceCategory = "AI Services"
 )
 
 const (
@@ -43,16 +43,16 @@ func (r ResourceType) String() string {
 	return ""
 }
 
-func AllCategories() map[ResourceCategories][]ResourceType {
-	return map[ResourceCategories][]ResourceType{
-		CategoryDatabase: {
+func AllCategories() map[ResourceCategory][]ResourceType {
+	return map[ResourceCategory][]ResourceType{
+		ResourceCategoryDatabase: {
 			ResourceTypeDbRedis,
 			ResourceTypeDbPostgres,
 			ResourceTypeDbMongo,
 		},
-		CategoryStorage:   {},
-		CategoryMessaging: {},
-		CategoryAI:        {ResourceTypeAiModel},
+		ResourceCategoryStorage:   {},
+		ResourceCategoryMessaging: {},
+		ResourceCategoryAI:        {ResourceTypeAiModel},
 	}
 }
 

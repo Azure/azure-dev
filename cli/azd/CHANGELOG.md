@@ -18,11 +18,9 @@
 - [[4237]](https://github.com/Azure/azure-dev/pull/4237) Fix pipeline config failing bug.
 - [[4263]](https://github.com/Azure/azure-dev/pull/4263) Fix `azd infra synth` ignored by `azd deploy` in azdo CI/CD pipeline bug.
 - [[4281]](https://github.com/Azure/azure-dev/pull/4281) Fix failed provision with the STG location.
-- [[4269]](https://github.com/Azure/azure-dev/pull/4269) Fix blinking provisioning output.
 
 ### Other Changes
 
-- [[4238]](https://github.com/Azure/azure-dev/pull/4238) Update minimum requirement of GitHub CLI version to `2.55.0`.
 - [[4243]](https://github.com/Azure/azure-dev/pull/4243) Add AI services model deployments to provisioning display.
 
 ## 1.9.6 (2024-08-13)

@@ -19,7 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/benbjohnson/clock"
-	"gopkg.in/yaml.v3"
+	"github.com/braydonk/yaml"
 )
 
 // ContainerAppService exposes operations for managing Azure Container Apps

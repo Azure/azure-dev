@@ -5,14 +5,17 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -24,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
@@ -33,10 +37,12 @@ type dotnetContainerAppTarget struct {
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
 	dotNetCli           *dotnet.Cli
+	bicepCli            *bicep.Cli
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
 	keyvaultService     keyvault.KeyVaultService
 	alphaFeatureManager *alpha.FeatureManager
+	deploymentService   azapi.DeploymentService
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -53,10 +59,12 @@ func NewDotNetContainerAppTarget(
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
 	dotNetCli *dotnet.Cli,
+	bicepCli *bicep.Cli,
 	cosmosDbService cosmosdb.CosmosDbService,
 	sqlDbService sqldb.SqlDbService,
 	keyvaultService keyvault.KeyVaultService,
 	alphaFeatureManager *alpha.FeatureManager,
+	deploymentService azapi.DeploymentService,
 ) ServiceTarget {
 	return &dotnetContainerAppTarget{
 		env:                 env,
@@ -64,10 +72,12 @@ func NewDotNetContainerAppTarget(
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
 		dotNetCli:           dotNetCli,
+		bicepCli:            bicepCli,
 		cosmosDbService:     cosmosDbService,
 		sqlDbService:        sqlDbService,
 		keyvaultService:     keyvaultService,
 		alphaFeatureManager: alphaFeatureManager,
+		deploymentService:   deploymentService,
 	}
 }
 
@@ -165,6 +175,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 	progress.SetProgress(NewServiceProgress("Updating container app"))
 
 	var manifest string
+	var bicepTemplate *azure.RawArmTemplate
 
 	appHostRoot := serviceConfig.DotNetContainerApp.AppHostPath
 	if f, err := os.Stat(appHostRoot); err == nil && !f.IsDir() {
@@ -173,7 +184,17 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 	manifestPath := filepath.Join(
 		appHostRoot, "infra", fmt.Sprintf("%s.tmpl.yaml", serviceConfig.DotNetContainerApp.ProjectName))
-	if _, err := os.Stat(manifestPath); err == nil {
+
+	bicepPath := filepath.Join(appHostRoot, "infra", fmt.Sprintf("%s.bicep", serviceConfig.DotNetContainerApp.ProjectName))
+
+	if _, err := os.Stat(bicepPath); err == nil {
+		log.Printf("using container app manifest from %s", bicepPath)
+		res, err := at.bicepCli.Build(ctx, bicepPath)
+		if err != nil {
+			return nil, fmt.Errorf("building container app bicep: %w", err)
+		}
+		bicepTemplate = to.Ptr(azure.RawArmTemplate(res.Compiled))
+	} else if _, err := os.Stat(manifestPath); err == nil {
 		log.Printf("using container app manifest from %s", manifestPath)
 
 		contents, err := os.ReadFile(manifestPath)
@@ -209,27 +230,21 @@ func (at *dotnetContainerAppTarget) Deploy(
 		keyvaultService:     at.keyvaultService,
 	}
 
-	tmpl, err := template.New("containerApp.tmpl.yaml").
-		Option("missingkey=error").
-		Funcs(template.FuncMap{
-			"urlHost":   fns.UrlHost,
-			"parameter": fns.Parameter,
-			// securedParameter gets a parameter the same way as parameter, but supporting the securedParameter
-			// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
-			// stores the parameter value.
-			"securedParameter": fns.Parameter,
-			"secretOutput":     fns.kvSecret,
-			"targetPortOrDefault": func(targetPortFromManifest int) int {
-				// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
-				if portNumber == 0 {
-					return targetPortFromManifest
-				}
-				return portNumber
-			},
-		}).
-		Parse(manifest)
-	if err != nil {
-		return nil, fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err)
+	funcMap := template.FuncMap{
+		"urlHost":   fns.UrlHost,
+		"parameter": fns.Parameter,
+		// securedParameter gets a parameter the same way as parameter, but supporting the securedParameter
+		// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
+		// stores the parameter value.
+		"securedParameter": fns.Parameter,
+		"secretOutput":     fns.kvSecret,
+		"targetPortOrDefault": func(targetPortFromManifest int) int {
+			// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
+			if portNumber == 0 {
+				return targetPortFromManifest
+			}
+			return portNumber
+		},
 	}
 
 	var inputs map[string]any
@@ -240,29 +255,103 @@ func (at *dotnetContainerAppTarget) Deploy(
 		inputs = make(map[string]any)
 	}
 
-	builder := strings.Builder{}
-	err = tmpl.Execute(&builder, struct {
-		Env    map[string]string
-		Image  string
-		Inputs map[string]any
-	}{
-		Env:    at.env.Dotenv(),
-		Image:  remoteImageName,
-		Inputs: inputs,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed executing template file: %w", err)
-	}
+	if bicepTemplate != nil {
+		var parsed *azure.ArmTemplate
+		if err := json.Unmarshal(*bicepTemplate, &parsed); err != nil {
+			return nil, fmt.Errorf("parsing arm template: %w", err)
+		}
 
-	err = at.containerAppService.DeployYaml(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		serviceConfig.Name,
-		[]byte(builder.String()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("updating container app service: %w", err)
+		// Build the parameters by just evaluating the default value expressions we have and assume that will be good
+		// enough.  Perhaps longer term we'll want to support something like the `.params.json` or `.bicepparam` files
+		// to allow the user to also assign/override values.
+		params := azure.ArmParameters{}
+		for name, v := range parsed.Parameters {
+			if m, has := v.AzdMetadata(); has && m.DefaultValueExpr != nil {
+				tmpl, err := template.New("containerApp.bicep").
+					Option("missingkey=error").
+					Funcs(funcMap).
+					Parse(*m.DefaultValueExpr)
+				if err != nil {
+					return nil, fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err)
+				}
+
+				builder := strings.Builder{}
+				err = tmpl.Execute(&builder, struct {
+					Env    map[string]string
+					Image  string
+					Inputs map[string]any
+				}{
+					Env:    at.env.Dotenv(),
+					Image:  remoteImageName,
+					Inputs: inputs,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("failed executing template file: %w", err)
+				}
+
+				// TODO(ellismg): Need to support the other types here - there some logic in bicep_provider.go that we
+				// can factor out and share.
+				if strings.EqualFold("Int", v.Type) {
+					v, err := strconv.Atoi(builder.String())
+					if err != nil {
+						return nil, fmt.Errorf("converting value to int: %w", err)
+					}
+
+					params[name] = azure.ArmParameterValue{
+						Value: v,
+					}
+				} else {
+					params[name] = azure.ArmParameterValue{
+						Value: builder.String(),
+					}
+				}
+			}
+		}
+
+		_, err := at.deploymentService.DeployToResourceGroup(
+			ctx,
+			at.env.GetSubscriptionId(),
+			targetResource.ResourceGroupName(),
+			at.deploymentService.GenerateDeploymentName(serviceConfig.Name),
+			*bicepTemplate,
+			params,
+			nil)
+		if err != nil {
+			return nil, fmt.Errorf("deploying bicep template: %w", err)
+		}
+	} else {
+		tmpl, err := template.New("containerApp.tmpl.yaml").
+			Option("missingkey=error").
+			Funcs(funcMap).
+			Parse(manifest)
+		if err != nil {
+			return nil, fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err)
+		}
+
+		builder := strings.Builder{}
+		err = tmpl.Execute(&builder, struct {
+			Env    map[string]string
+			Image  string
+			Inputs map[string]any
+		}{
+			Env:    at.env.Dotenv(),
+			Image:  remoteImageName,
+			Inputs: inputs,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed executing template file: %w", err)
+		}
+
+		err = at.containerAppService.DeployYaml(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			serviceConfig.Name,
+			[]byte(builder.String()),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("updating container app service: %w", err)
+		}
 	}
 
 	progress.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))

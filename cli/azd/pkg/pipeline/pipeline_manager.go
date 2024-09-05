@@ -375,7 +375,7 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		gitRepoInfo,
 		infra.Options,
 		servicePrincipal,
-		PipelineAuthType(pm.args.PipelineAuthTypeName),
+		credentialOptions,
 		credentials,
 	)
 

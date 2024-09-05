@@ -2,7 +2,9 @@
 
 ### Bugs Fixed
 
-- [[4299]](https://github.com/Azure/azure-dev/pull/4299) Fixes issue in vs-server for Aspire projects
+- [[4299]](https://github.com/Azure/azure-dev/pull/4299) Fixes issue in vs-server for Aspire projects.
+- [[4294]](https://github.com/Azure/azure-dev/pull/4294) Fixes azd pipeline config on Codespaces.
+- [[4295]](https://github.com/Azure/azure-dev/pull/4295) Fixes azd pipeline config for Terraform.
 
 ## 1.10.0 (2024-09-04)
 

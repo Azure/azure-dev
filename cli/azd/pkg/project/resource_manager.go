@@ -240,7 +240,7 @@ func (rm *resourceManager) resolveServiceResource(
 	if err != nil &&
 		errors.As(err, &resourceNotFoundError) &&
 		ServiceTargetKind(serviceConfig.Host).SupportsDelayedProvisioning() {
-		return azureResource, nil
+		return &azapi.Resource{}, nil
 	}
 
 	if err != nil {

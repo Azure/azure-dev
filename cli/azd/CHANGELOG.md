@@ -1,3 +1,5 @@
+# Release History
+
 ## 1.10.1 (2024-09-05)
 
 ### Bugs Fixed

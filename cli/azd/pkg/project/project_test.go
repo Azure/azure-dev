@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -58,7 +59,8 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, deploymentService, resourceService)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 	targetResource, err := resourceManager.GetTargetResource(
 		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
@@ -105,7 +107,8 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, deploymentService, resourceService)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 	targetResource, err := resourceManager.GetTargetResource(
 		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
@@ -162,7 +165,8 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, deploymentService, resourceService)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 
 	for _, svc := range projectConfig.Services {
 		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, env.GetSubscriptionId(), svc)
@@ -223,7 +227,8 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, deploymentService, resourceService)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 	targetResource, err := resourceManager.GetTargetResource(
 		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)

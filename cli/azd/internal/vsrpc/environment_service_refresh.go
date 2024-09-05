@@ -12,7 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	infraP "github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -49,15 +49,15 @@ func (s *environmentService) refreshEnvironmentAsync(
 	}
 
 	var c struct {
-		projectManager       project.ProjectManager      `container:"type"`
-		projectConfig        *project.ProjectConfig      `container:"type"`
-		importManager        *project.ImportManager      `container:"type"`
-		bicep                provisioning.Provider       `container:"name"`
-		azureResourceManager *infra.AzureResourceManager `container:"type"`
-		resourceService      *azapi.ResourceService      `container:"type"`
-		resourceManager      project.ResourceManager     `container:"type"`
-		serviceManager       project.ServiceManager      `container:"type"`
-		envManager           environment.Manager         `container:"type"`
+		projectManager    project.ProjectManager     `container:"type"`
+		projectConfig     *project.ProjectConfig     `container:"type"`
+		importManager     *project.ImportManager     `container:"type"`
+		bicep             provisioning.Provider      `container:"name"`
+		deploymentService *azapi.StandardDeployments `container:"type"`
+		resourceService   *azapi.ResourceService     `container:"type"`
+		resourceManager   project.ResourceManager    `container:"type"`
+		serviceManager    project.ServiceManager     `container:"type"`
+		envManager        environment.Manager        `container:"type"`
 	}
 
 	container.MustRegisterScoped(func() internal.EnvFlag {
@@ -114,7 +114,8 @@ func (s *environmentService) refreshEnvironmentAsync(
 
 	_ = observer.OnNext(ctx, newInfoProgressMessage("Loading server resources"))
 
-	rgName, err := c.azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
+	azureResourceManager := infraP.NewAzureResourceManager(c.resourceService, c.deploymentService)
+	rgName, err := azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
 	if err == nil {
 		env.Properties["ResourceGroup"] = rgName
 

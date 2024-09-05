@@ -627,7 +627,7 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 
 				Parameters: parameters,
 			}
-		case ResourceTypeAiModel:
+		case ResourceTypeOpenAiModel:
 			props := res.Props.(AIModelProps)
 			if len(props.Model) == 0 {
 				return nil, fmt.Errorf("resources.%s.model is required", res.Name)
@@ -725,7 +725,7 @@ func infraSpec(projectConfig *ProjectConfig, env *environment.Environment) (*sca
 						svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 					case ResourceTypeDbRedis:
 						svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
-					case ResourceTypeAiModel:
+					case ResourceTypeOpenAiModel:
 						svcSpec.AIModels = append(
 							svcSpec.AIModels,
 							scaffold.AIModelReference{Name: useRes.Name})

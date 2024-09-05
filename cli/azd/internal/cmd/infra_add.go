@@ -2,19 +2,32 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -28,8 +41,14 @@ func NewInfraAddCmd() *cobra.Command {
 }
 
 type AddAction struct {
-	azdCtx  *azdcontext.AzdContext
-	console input.Console
+	azdCtx           *azdcontext.AzdContext
+	env              *environment.Environment
+	envManager       environment.Manager
+	creds            account.SubscriptionCredentialProvider
+	rm               infra.ResourceManager
+	armClientOptions *arm.ClientOptions
+	prompter         prompt.Prompter
+	console          input.Console
 }
 
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -63,7 +82,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	selectedCategory := project.ResourceCategory(displayOptions[continueOption])
+	selectedCategory := project.ResourceKind(displayOptions[continueOption])
 
 	// Get the resource types for the selected category
 	resourceTypes := resources[selectedCategory]
@@ -77,7 +96,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	resourceToAdd := &project.ResourceConfig{}
 	switch selectedCategory {
-	case project.ResourceCategoryDatabase:
+	case project.ResourceKindDatabase:
 		dbOption, err := a.console.Select(ctx, input.ConsoleOptions{
 			Message: "Which type of database?",
 			Options: resourceTypesDisplay,
@@ -87,39 +106,161 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		resourceToAdd.Type = resourceTypesDisplayMap[resourceTypesDisplay[dbOption]]
-	case project.ResourceCategoryAI:
+	case project.ResourceKindAI:
 		aiOption, err := a.console.Select(ctx, input.ConsoleOptions{
-			Message: "Which type of AI service?",
+			Message: "Which type of Azure OpenAI service?",
 			Options: []string{
-				"Chat (ChatGPT)",
+				"Chat (GPT)",
 				"Embeddings (Document search)",
-				"Image generation (DALL-E)",
-				"Speech transcription/translation",
-				"Text to speech",
 			}})
 		if err != nil {
 			return nil, err
 		}
-		resourceToAdd.Type = project.ResourceTypeAiModel
-		if aiOption == 0 {
-			// we should be able to fetch the models available.
-			// however, the catch-22 is that the models are not available until the AI resource is created.
-			resourceToAdd.Props = project.AIModelProps{
-				Model:   "gpt-4o",
-				Version: "2024-08-06",
+
+		resourceToAdd.Type = project.ResourceTypeOpenAiModel
+		var allModels []ModelList
+		for {
+			err = provisioning.EnsureSubscriptionAndLocation(ctx, a.envManager, a.env, a.prompter, nil)
+			if err != nil {
+				return nil, err
 			}
 
-			resourceToAdd.Name = "gpt-4o"
-			i := 1
-			for {
-				if _, exists := prjConfig.Resources[resourceToAdd.Name]; exists {
-					i++
-					resourceToAdd.Name = fmt.Sprintf("gpt-4o-%d", i)
-				} else {
-					break
+			cred, err := a.creds.CredentialForSubscription(ctx, a.env.GetSubscriptionId())
+			if err != nil {
+				return nil, fmt.Errorf("getting credentials: %w", err)
+			}
+
+			pipeline, err := armruntime.NewPipeline(
+				"cognitive-list", "1.0.0", cred, runtime.PipelineOptions{}, a.armClientOptions)
+			if err != nil {
+				return nil, fmt.Errorf("failed creating HTTP pipeline: %w", err)
+			}
+
+			a.console.ShowSpinner(
+				ctx,
+				fmt.Sprintf("Fetching available models in %s...", a.env.GetLocation()),
+				input.Step)
+
+			location := fmt.Sprintf(
+				//nolint:lll
+				"https://management.azure.com/subscriptions/%s/providers/Microsoft.CognitiveServices/locations/%s/models?api-version=2023-05-01",
+				a.env.GetSubscriptionId(),
+				a.env.GetLocation())
+			req, err := runtime.NewRequest(ctx, http.MethodGet, location)
+			if err != nil {
+				return nil, fmt.Errorf("creating request: %w", err)
+			}
+
+			resp, err := pipeline.Do(req)
+			if err != nil {
+				return nil, fmt.Errorf("making request: %w", err)
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				return nil, runtime.NewResponseError(resp)
+			}
+
+			body, err := runtime.Payload(resp)
+			if err != nil {
+				return nil, fmt.Errorf("reading response: %w", err)
+			}
+
+			a.console.StopSpinner(ctx, "", input.Step)
+			var response ModelResponse
+			err = json.Unmarshal(body, &response)
+			if err != nil {
+				return nil, fmt.Errorf("decoding response: %w", err)
+			}
+
+			allModels = response.Value
+			if len(allModels) > 0 {
+				break
+			}
+
+			_, err = a.rm.FindResourceGroupForEnvironment(
+				ctx, a.env.GetSubscriptionId(), a.env.Name())
+			var notFoundError *azureutil.ResourceNotFoundError
+			if errors.As(err, &notFoundError) { // not yet provisioned, we're safe here
+				a.console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: fmt.Sprintf("No models found in this %s", a.env.GetLocation()),
+				})
+				confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
+					Message: "Would you like to try a different location?",
+				})
+				if err != nil {
+					return nil, err
+				}
+				if confirm {
+					a.env.SetLocation("")
+					continue
+				}
+			} else if err != nil {
+				return nil, fmt.Errorf("finding resource group: %w", err)
+			}
+
+			return nil, fmt.Errorf("no models found in %s", a.env.GetLocation())
+		}
+
+		displayModels := make([]string, 0, len(allModels))
+		models := make([]Model, 0, len(allModels))
+		slices.SortFunc(allModels, func(a ModelList, b ModelList) int {
+			return strings.Compare(b.Model.SystemData.CreatedAt, a.Model.SystemData.CreatedAt)
+		})
+
+		for _, model := range allModels {
+			if model.Kind != "OpenAI" {
+				continue
+			}
+
+			switch aiOption {
+			case 0:
+				// this filter logic is currently in the CLI, perhaps it should be moved server-side
+				if model.Model.Name == "gpt-4o" || model.Model.Name == "gpt-4" {
+					models = append(models, model.Model)
+					displayModels = append(displayModels, fmt.Sprintf("%s\t%s", model.Model.Name, model.Model.Version))
+				}
+			case 1:
+				if strings.HasPrefix(model.Model.Name, "text-embedding") {
+					models = append(models, model.Model)
+					displayModels = append(displayModels, fmt.Sprintf("%s\t%s", model.Model.Name, model.Model.Version))
 				}
 			}
 		}
+		if a.console.IsSpinnerInteractive() {
+			displayModels, err = tabWrite(displayModels, 3)
+			if err != nil {
+				return nil, fmt.Errorf("writing models: %w", err)
+			}
+		}
+
+		sel, err := a.console.Select(ctx, input.ConsoleOptions{
+			Message: "Select the model",
+			Options: displayModels,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		resourceToAdd.Props = project.AIModelProps{
+			Model:   models[sel].Name,
+			Version: models[sel].Version,
+		}
+
+		resourceToAdd.Name = models[sel].Name
+		i := 1
+		for {
+			if _, exists := prjConfig.Resources[resourceToAdd.Name]; exists {
+				i++
+				resourceToAdd.Name = fmt.Sprintf("%s-%d", models[sel].Name, i)
+			} else {
+				break
+			}
+		}
+
+		// resourceToAdd.Props = project.AIModelProps{
+		// 	Model:   "gpt-4o",
+		// 	Version: "2024-08-06",
+		// }
 	default:
 		return nil, fmt.Errorf("not implemented")
 	}
@@ -233,10 +374,22 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func NewInfraAddAction(
 	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
+	env *environment.Environment,
+	creds account.SubscriptionCredentialProvider,
+	prompter prompt.Prompter,
+	rm infra.ResourceManager,
+	armClientOptions *arm.ClientOptions,
 	console input.Console) actions.Action {
 	return &AddAction{
-		azdCtx:  azdCtx,
-		console: console,
+		azdCtx:           azdCtx,
+		console:          console,
+		envManager:       envManager,
+		env:              env,
+		prompter:         prompter,
+		rm:               rm,
+		armClientOptions: armClientOptions,
+		creds:            creds,
 	}
 }
 
@@ -286,7 +439,7 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 		res.ConnectionEnvVars = []string{
 			"AZURE_COSMOS_MONGODB_CONNECTION_STRING",
 		}
-	case project.ResourceTypeAiModel:
+	case project.ResourceTypeOpenAiModel:
 		res.ConnectionEnvVars = []string{
 			"AZURE_OPENAI_ENDPOINT",
 			"AZURE_OPENAI_API_KEY",
@@ -404,4 +557,23 @@ func CalcIndentation(doc *yaml.Node) int {
 	}
 
 	return 2
+}
+
+type ModelResponse struct {
+	Value []ModelList `json:"value"`
+}
+
+type ModelList struct {
+	Kind  string `json:"kind"`
+	Model Model  `json:"model"`
+}
+
+type Model struct {
+	Name       string          `json:"name"`
+	Version    string          `json:"version"`
+	SystemData ModelSystemData `json:"systemData"`
+}
+
+type ModelSystemData struct {
+	CreatedAt string `json:"createdAt"`
 }

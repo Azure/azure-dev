@@ -9,13 +9,13 @@ import (
 type Resources map[string]*ResourceConfig
 
 type ResourceType string
-type ResourceCategory string
+type ResourceKind string
 
 const (
-	ResourceCategoryDatabase  ResourceCategory = "Database"
-	ResourceCategoryStorage   ResourceCategory = "Storage"
-	ResourceCategoryMessaging ResourceCategory = "Messaging"
-	ResourceCategoryAI        ResourceCategory = "AI Services"
+	ResourceKindDatabase  ResourceKind = "Database"
+	ResourceKindStorage   ResourceKind = "Storage"
+	ResourceKindMessaging ResourceKind = "Messaging"
+	ResourceKindAI        ResourceKind = "Azure OpenAI"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 	ResourceTypeDbPostgres       ResourceType = "db.postgres"
 	ResourceTypeDbMongo          ResourceType = "db.mongo"
 	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
-	ResourceTypeAiModel          ResourceType = "ai.model"
+	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
 )
 
 func (r ResourceType) String() string {
@@ -36,33 +36,23 @@ func (r ResourceType) String() string {
 		return "MongoDB"
 	case ResourceTypeHostContainerApp:
 		return "Container App"
-	case ResourceTypeAiModel:
-		return "AI Model (Pre-trained)"
+	case ResourceTypeOpenAiModel:
+		return "Open AI Model (Pre-trained)"
 	}
 
 	return ""
 }
 
-func AllCategories() map[ResourceCategory][]ResourceType {
-	return map[ResourceCategory][]ResourceType{
-		ResourceCategoryDatabase: {
+func AllCategories() map[ResourceKind][]ResourceType {
+	return map[ResourceKind][]ResourceType{
+		ResourceKindDatabase: {
 			ResourceTypeDbRedis,
 			ResourceTypeDbPostgres,
 			ResourceTypeDbMongo,
 		},
-		ResourceCategoryStorage:   {},
-		ResourceCategoryMessaging: {},
-		ResourceCategoryAI:        {ResourceTypeAiModel},
-	}
-}
-
-func AllResources() []ResourceType {
-	return []ResourceType{
-		ResourceTypeDbRedis,
-		ResourceTypeDbPostgres,
-		ResourceTypeDbMongo,
-		ResourceTypeHostContainerApp,
-		ResourceTypeAiModel,
+		ResourceKindStorage:   {},
+		ResourceKindMessaging: {},
+		ResourceKindAI:        {ResourceTypeOpenAiModel},
 	}
 }
 
@@ -101,7 +91,7 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 	}
 
 	switch raw.Type {
-	case ResourceTypeAiModel:
+	case ResourceTypeOpenAiModel:
 		err := marshalRawProps(raw.Props.(AIModelProps))
 		if err != nil {
 			return nil, err
@@ -138,7 +128,7 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 
 	// Unmarshal props based on type
 	switch raw.Type {
-	case ResourceTypeAiModel:
+	case ResourceTypeOpenAiModel:
 		amp := AIModelProps{}
 		if err := unmarshalProps(&amp); err != nil {
 			return err
@@ -170,7 +160,7 @@ func (r *ResourceConfig) DefaultModule() (bicepModule string, bicepVersion strin
 	case ResourceTypeHostContainerApp:
 		bicepModule = "avm/res/app/container-app"
 		bicepVersion = "0.8.0"
-	case ResourceTypeAiModel:
+	case ResourceTypeOpenAiModel:
 		bicepModule = "avm/res/cognitive-services/account"
 		bicepVersion = "0.7.0"
 	default:

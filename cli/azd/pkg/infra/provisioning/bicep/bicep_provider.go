@@ -764,7 +764,7 @@ func (p *BicepProvider) Destroy(
 	}
 
 	if len(groupedResources) == 0 {
-		return nil, fmt.Errorf("no resources found for deployment, '%s'", deploymentToDelete.Name())
+		return nil, fmt.Errorf("%w, '%s'", infra.ErrDeploymentResourcesNotFound, deploymentToDelete.Name())
 	}
 
 	keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)

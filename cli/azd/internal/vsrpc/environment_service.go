@@ -175,7 +175,7 @@ func (s *environmentService) DeleteEnvironmentAsync(
 		// Enable force and purge options
 		destroyOptions := provisioning.NewDestroyOptions(true, true)
 		_, err = c.provisionManager.Destroy(ctx, destroyOptions)
-		if errors.Is(err, infra.ErrDeploymentsNotFound) {
+		if errors.Is(err, infra.ErrDeploymentsNotFound) || errors.Is(err, infra.ErrDeploymentResourcesNotFound) {
 			_ = observer.OnNext(ctx, newInfoProgressMessage("No Azure resources were found"))
 		} else if err != nil {
 			return false, fmt.Errorf("deleting infrastructure: %w", err)

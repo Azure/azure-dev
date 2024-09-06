@@ -166,8 +166,8 @@ module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
         name: '{{.Name}}'
         model: {
           format: 'OpenAI'
-          name: '{{.Model}}'
-          version: '{{.Version}}'
+          name: '{{.Model.Name}}'
+          version: '{{.Model.Version}}'
         }
         sku: {
           capacity: 20

@@ -243,8 +243,10 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		resourceToAdd.Props = project.AIModelProps{
-			Model:   models[sel].Name,
-			Version: models[sel].Version,
+			Model: project.AIModelPropsModel{
+				Name:    models[sel].Name,
+				Version: models[sel].Version,
+			},
 		}
 
 		resourceToAdd.Name = models[sel].Name
@@ -257,11 +259,6 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				break
 			}
 		}
-
-		// resourceToAdd.Props = project.AIModelProps{
-		// 	Model:   "gpt-4o",
-		// 	Version: "2024-08-06",
-		// }
 	default:
 		return nil, fmt.Errorf("not implemented")
 	}

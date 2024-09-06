@@ -1161,25 +1161,35 @@
         },
         "aiModelResource": {
             "type": "object",
-            "description": "A pre-trained AI model.",
+            "description": "A deployed, ready-to-use AI model.",
             "additionalProperties": false,
             "required": [
-                "model",
-                "version"
+                "model"
             ],
             "properties": {
                 "type": true,
                 "module": true,
                 "uses": true,
                 "model": {
-                    "type": "string",
-                    "title": "The name of the AI model.",
-                    "description": "Required. The name of the AI model."
-                },
-                "version": {
-                    "type": "string",
-                    "title": "The version of the AI model.",
-                    "description": "Required. The version of the AI model."
+                    "type": "object",
+                    "description": "The underlying AI model.",
+                    "additionalProperties": false,
+                    "required": [
+                        "name",
+                        "version"
+                    ],
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "title": "The name of the AI model.",
+                            "description": "Required. The name of the AI model."
+                        },
+                        "version": {
+                            "type": "string",
+                            "title": "The version of the AI model.",
+                            "description": "Required. The version of the AI model."
+                        }
+                    }
                 }
             }
         }

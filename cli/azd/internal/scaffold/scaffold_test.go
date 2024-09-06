@@ -130,14 +130,18 @@ func TestExecInfra(t *testing.T) {
 			InfraSpec{
 				AIModels: []AIModel{
 					{
-						Name:    "pre-trained-model",
-						Model:   "base-model",
-						Version: "1.0",
+						Name: "deployed-model",
+						Model: AIModelModel{
+							Name:    "pre-trained-model",
+							Version: "1.0",
+						},
 					},
 					{
-						Name:    "pre-trained-model-2",
-						Model:   "base-model",
-						Version: "1.0",
+						Name: "deployed-model-2",
+						Model: AIModelModel{
+							Name:    "pre-trained-model",
+							Version: "1.0",
+						},
 					},
 				},
 				Services: []ServiceSpec{
@@ -146,10 +150,10 @@ func TestExecInfra(t *testing.T) {
 						Port: 3100,
 						AIModels: []AIModelReference{
 							{
-								Name: "pre-trained-model",
+								Name: "deployed-model",
 							},
 							{
-								Name: "pre-trained-model-2",
+								Name: "deployed-model-2",
 							},
 						},
 					},

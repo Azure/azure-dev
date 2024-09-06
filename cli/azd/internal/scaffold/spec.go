@@ -54,14 +54,17 @@ type DatabaseRedis struct {
 	Parameters []ParameterValue
 }
 
-// AIModel represents a pre-trained, ready to use AI model.
+// AIModel represents a deployed, ready to use AI model.
 type AIModel struct {
-	Name string
+	Name  string
+	Model AIModelModel
+}
 
+// AIModelModel represents a model that backs the AIModel.
+type AIModelModel struct {
 	// The name of the underlying model.
-	Model string
-
-	// The version of the model. Right now, this is unset and is always the latest version.
+	Name string
+	// The version of the underlying model.
 	Version string
 }
 

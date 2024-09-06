@@ -180,6 +180,10 @@ type ContainerAppProps struct {
 }
 
 type AIModelProps struct {
-	Model   string `yaml:"model,omitempty"`
+	Model AIModelPropsModel `yaml:"model,omitempty"`
+}
+
+type AIModelPropsModel struct {
+	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
 }

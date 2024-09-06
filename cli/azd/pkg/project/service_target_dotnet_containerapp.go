@@ -188,7 +188,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 	}
 
 	if useBicepForContainerApps {
-		bicepPath := filepath.Join(appHostRoot, "infra", fmt.Sprintf("%s.bicep", serviceConfig.DotNetContainerApp.ProjectName))
+		bicepPath := filepath.Join(
+			appHostRoot, "infra", fmt.Sprintf("%s.bicep", serviceConfig.DotNetContainerApp.ProjectName))
 
 		if _, err := os.Stat(bicepPath); err == nil {
 			log.Printf("using container app manifest from %s", bicepPath)

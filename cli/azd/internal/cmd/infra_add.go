@@ -269,12 +269,15 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	slices.Sort(svc)
 
-	svcOptions, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
-		Message: "Select the service(s) that uses this resource",
-		Options: svc,
-	})
-	if err != nil {
-		return nil, err
+	svcOptions := []string{}
+	if len(svc) > 0 {
+		svcOptions, err = a.console.MultiSelect(ctx, input.ConsoleOptions{
+			Message: "Select the service(s) that uses this resource",
+			Options: svc,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	configureRes, err := a.Configure(ctx, resourceToAdd)

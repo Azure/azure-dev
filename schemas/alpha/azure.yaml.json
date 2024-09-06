@@ -365,7 +365,7 @@
                             "db.postgres",
                             "db.redis",
                             "db.mongo",
-                            "ai.model",
+                            "ai.openai.model",
                             "host.containerapp"
                         ]
                     },
@@ -384,7 +384,7 @@
                 },
                 "allOf": [
                     { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
-                    { "if": { "properties": { "type": { "const": "ai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
+                    { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
                     { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} }
@@ -1108,7 +1108,7 @@
                         "db.redis",
                         "db.mongo",
                         "host.containerapp",
-                        "ai.model"
+                        "ai.openai.model"
                     ]
                 },
                 "module": {

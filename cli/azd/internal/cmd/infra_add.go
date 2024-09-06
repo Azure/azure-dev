@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -353,9 +354,22 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if len(svcOptions) > 0 {
 		followUp = "The following environment variables will be set in " +
-			strings.Join(svcOptions, ", ") + ":\n\n"
+			color.BlueString(ux.ListAsText(svcOptions)) + ":\n\n"
 		for _, envVar := range configureRes.ConnectionEnvVars {
 			followUp += "  - " + envVar + "\n"
+		}
+
+		if configureRes.LearnMoreLink != "" {
+			if configureRes.LearnMoreTopic != "" {
+				followUp += "\n" + fmt.Sprintf(
+					"Learn more about %s: %s",
+					configureRes.LearnMoreTopic,
+					output.WithHyperlink(configureRes.LearnMoreLink, configureRes.LearnMoreLink))
+			} else {
+				followUp += "\n" + fmt.Sprintf(
+					"Learn more: %s",
+					output.WithHyperlink(configureRes.LearnMoreLink, configureRes.LearnMoreLink))
+			}
 		}
 		followUp += "\n" + defaultFollowUp + "\n" + "You may also run '" +
 			color.BlueString("azd show <service> env") +
@@ -395,6 +409,8 @@ func NewInfraAddAction(
 
 type configureResult struct {
 	ConnectionEnvVars []string
+	LearnMoreTopic    string
+	LearnMoreLink     string
 }
 
 func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (configureResult, error) {
@@ -444,6 +460,8 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 			"AZURE_OPENAI_ENDPOINT",
 			"AZURE_OPENAI_API_KEY",
 		}
+		res.LearnMoreTopic = "configuring your app to use Azure OpenAI"
+		res.LearnMoreLink = "https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages"
 	}
 	return res, nil
 }

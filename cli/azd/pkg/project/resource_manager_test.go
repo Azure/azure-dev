@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -112,7 +113,8 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 
 			setupGetResourceMock(mockContext, expectedResource)
 
-			resourceManager := NewResourceManager(tt.env, deploymentService, resourceService)
+			azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+			resourceManager := NewResourceManager(tt.env, deploymentService, resourceService, azureResourceManager)
 			targetResource, err := resourceManager.GetTargetResource(
 				*mockContext.Context,
 				tt.env.GetSubscriptionId(),

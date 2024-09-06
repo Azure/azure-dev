@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,12 +76,18 @@ func TestBlobClientGetProperties(t *testing.T) {
 	}))
 
 	session := Start(t, WithHostMapping(strings.TrimPrefix(server.URL, "http://"), "127.0.0.1:80"))
-	proxyClient, err := proxyClient(session.ProxyUrl)
-	require.NoError(t, err)
+	var transport policy.Transporter
+	if session == nil {
+		transport = http.DefaultClient
+	} else {
+		proxyClient, err := proxyClient(session.ProxyUrl)
+		require.NoError(t, err)
+		transport = proxyClient
+	}
 
 	blobClient, err := blockblob.NewClientWithNoCredential(server.URL+"/test.txt", &blockblob.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
-			Transport: proxyClient,
+			Transport: transport,
 		},
 	})
 	assert.NoError(t, err)

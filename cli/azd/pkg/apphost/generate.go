@@ -426,7 +426,7 @@ func GenerateProjectArtifacts(
 	projectFileContext := genProjectFileContext{
 		Name: projectName,
 		Services: map[string]string{
-			"app": fmt.Sprintf(".%s%s", string(filepath.Separator), appHostRel),
+			"app": fmt.Sprintf("./%s", filepath.ToSlash(appHostRel)),
 		},
 	}
 

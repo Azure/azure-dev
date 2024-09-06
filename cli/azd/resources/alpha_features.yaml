@@ -1,5 +1,3 @@
-- id: resourceGroupDeployments
-  description: "Support infrastructure deployments at resource group scope."
 - id: infraSynth
   description: "Enable the `infra synth` command to write generated infrastructure to disk."
 - id: aks.helm

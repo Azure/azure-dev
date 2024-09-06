@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -30,6 +31,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
+
+var bicepForContainerAppFeature = alpha.MustFeatureKey("aspire.useBicepForContainerApps")
 
 type dotnetContainerAppTarget struct {
 	env                 *environment.Environment
@@ -174,49 +177,95 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 	progress.SetProgress(NewServiceProgress("Updating container app"))
 
+	useBicepForContainerApps := at.alphaFeatureManager.IsEnabled(bicepForContainerAppFeature)
+
 	var manifest string
-	var bicepTemplate *azure.RawArmTemplate
+	var armTemplate *azure.RawArmTemplate
 
 	appHostRoot := serviceConfig.DotNetContainerApp.AppHostPath
 	if f, err := os.Stat(appHostRoot); err == nil && !f.IsDir() {
 		appHostRoot = filepath.Dir(appHostRoot)
 	}
 
-	manifestPath := filepath.Join(
-		appHostRoot, "infra", fmt.Sprintf("%s.tmpl.yaml", serviceConfig.DotNetContainerApp.ProjectName))
+	if useBicepForContainerApps {
+		bicepPath := filepath.Join(appHostRoot, "infra", fmt.Sprintf("%s.bicep", serviceConfig.DotNetContainerApp.ProjectName))
 
-	bicepPath := filepath.Join(appHostRoot, "infra", fmt.Sprintf("%s.bicep", serviceConfig.DotNetContainerApp.ProjectName))
+		if _, err := os.Stat(bicepPath); err == nil {
+			log.Printf("using container app manifest from %s", bicepPath)
+			res, err := at.bicepCli.Build(ctx, bicepPath)
+			if err != nil {
+				return nil, fmt.Errorf("building container app bicep: %w", err)
+			}
+			armTemplate = to.Ptr(azure.RawArmTemplate(res.Compiled))
+		} else {
+			log.Printf(
+				"generating container app bicep from %s for project %s",
+				serviceConfig.DotNetContainerApp.AppHostPath,
+				serviceConfig.DotNetContainerApp.ProjectName)
 
-	if _, err := os.Stat(bicepPath); err == nil {
-		log.Printf("using container app manifest from %s", bicepPath)
-		res, err := at.bicepCli.Build(ctx, bicepPath)
-		if err != nil {
-			return nil, fmt.Errorf("building container app bicep: %w", err)
+			generatedBicep, err := apphost.BicepModuleForProject(
+				serviceConfig.DotNetContainerApp.Manifest,
+				serviceConfig.DotNetContainerApp.ProjectName,
+				apphost.AppHostOptions{},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("generating container app manifest: %w", err)
+			}
+
+			compiled, err := func() (azure.RawArmTemplate, error) {
+				f, err := os.CreateTemp(
+					"", fmt.Sprintf("azd-bicep-%s-*.bicep", serviceConfig.DotNetContainerApp.ProjectName))
+				if err != nil {
+					return azure.RawArmTemplate{}, fmt.Errorf("creating temporary file: %w", err)
+				}
+				defer func() {
+					_ = f.Close()
+					_ = os.Remove(f.Name())
+				}()
+				_, err = io.Copy(f, strings.NewReader(generatedBicep))
+				if err != nil {
+					return azure.RawArmTemplate{}, fmt.Errorf("writing bicep file: %w", err)
+				}
+
+				res, err := at.bicepCli.Build(ctx, f.Name())
+				if err != nil {
+					return azure.RawArmTemplate{}, fmt.Errorf("building container app bicep: %w", err)
+				}
+				return azure.RawArmTemplate(res.Compiled), nil
+			}()
+			if err != nil {
+				return nil, err
+			}
+			armTemplate = &compiled
 		}
-		bicepTemplate = to.Ptr(azure.RawArmTemplate(res.Compiled))
-	} else if _, err := os.Stat(manifestPath); err == nil {
-		log.Printf("using container app manifest from %s", manifestPath)
-
-		contents, err := os.ReadFile(manifestPath)
-		if err != nil {
-			return nil, fmt.Errorf("reading container app manifest: %w", err)
-		}
-		manifest = string(contents)
 	} else {
-		log.Printf(
-			"generating container app manifest from %s for project %s",
-			serviceConfig.DotNetContainerApp.AppHostPath,
-			serviceConfig.DotNetContainerApp.ProjectName)
+		manifestPath := filepath.Join(
+			appHostRoot, "infra", fmt.Sprintf("%s.tmpl.yaml", serviceConfig.DotNetContainerApp.ProjectName))
 
-		generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			serviceConfig.DotNetContainerApp.Manifest,
-			serviceConfig.DotNetContainerApp.ProjectName,
-			apphost.AppHostOptions{},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("generating container app manifest: %w", err)
+		if _, err := os.Stat(manifestPath); err == nil {
+			log.Printf("using container app manifest from %s", manifestPath)
+
+			contents, err := os.ReadFile(manifestPath)
+			if err != nil {
+				return nil, fmt.Errorf("reading container app manifest: %w", err)
+			}
+			manifest = string(contents)
+		} else {
+			log.Printf(
+				"generating container app manifest from %s for project %s",
+				serviceConfig.DotNetContainerApp.AppHostPath,
+				serviceConfig.DotNetContainerApp.ProjectName)
+
+			generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
+				serviceConfig.DotNetContainerApp.Manifest,
+				serviceConfig.DotNetContainerApp.ProjectName,
+				apphost.AppHostOptions{},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("generating container app manifest: %w", err)
+			}
+			manifest = generatedManifest
 		}
-		manifest = generatedManifest
 	}
 
 	fns := &containerAppTemplateManifestFuncs{
@@ -255,9 +304,9 @@ func (at *dotnetContainerAppTarget) Deploy(
 		inputs = make(map[string]any)
 	}
 
-	if bicepTemplate != nil {
+	if useBicepForContainerApps {
 		var parsed *azure.ArmTemplate
-		if err := json.Unmarshal(*bicepTemplate, &parsed); err != nil {
+		if err := json.Unmarshal(*armTemplate, &parsed); err != nil {
 			return nil, fmt.Errorf("parsing arm template: %w", err)
 		}
 
@@ -313,7 +362,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			at.env.GetSubscriptionId(),
 			targetResource.ResourceGroupName(),
 			at.deploymentService.GenerateDeploymentName(serviceConfig.Name),
-			*bicepTemplate,
+			*armTemplate,
 			params,
 			nil)
 		if err != nil {

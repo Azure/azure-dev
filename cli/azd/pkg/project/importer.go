@@ -20,6 +20,10 @@ type ImportManager struct {
 	dotNetImporter *DotNetImporter
 }
 
+type SynthOptions struct {
+	UseBicepForContainerApps bool
+}
+
 func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,
@@ -180,14 +184,20 @@ func pathHasModule(path, module string) (bool, error) {
 
 }
 
-func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
+func (im *ImportManager) SynthAllInfrastructure(
+	ctx context.Context, projectConfig *ProjectConfig, options *SynthOptions,
+) (fs.FS, error) {
+	if options == nil {
+		options = &SynthOptions{}
+	}
+
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if len(projectConfig.Services) != 1 {
 				return nil, errNoMultipleServicesWithAppHost
 			}
 
-			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig)
+			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig, options.UseBicepForContainerApps)
 		}
 	}
 

@@ -79,6 +79,7 @@ func newInfraSynthAction(
 }
 
 var infraSynthFeature = alpha.MustFeatureKey("infraSynth")
+var bicepForContainerAppFeature = alpha.MustFeatureKey("aspire.useBicepForContainerApps")
 
 func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !a.alphaManager.IsEnabled(infraSynthFeature) {
@@ -93,7 +94,9 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	spinnerMessage := "Synthesizing infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	synthFS, err := a.importManager.SynthAllInfrastructure(ctx, a.projectConfig)
+	synthFS, err := a.importManager.SynthAllInfrastructure(ctx, a.projectConfig, &project.SynthOptions{
+		UseBicepForContainerApps: a.alphaManager.IsEnabled(bicepForContainerAppFeature),
+	})
 	if err != nil {
 		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, err

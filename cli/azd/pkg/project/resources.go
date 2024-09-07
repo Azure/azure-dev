@@ -179,6 +179,15 @@ type ContainerAppProps struct {
 	Env  []ServiceEnvVar `yaml:"env,omitempty"`
 }
 
+type ServiceEnvVar struct {
+	Name string `yaml:"name,omitempty"`
+
+	// either Value or Secret can be set, but not both
+
+	Value  string `yaml:"value,omitempty"`
+	Secret string `yaml:"secret,omitempty"`
+}
+
 type AIModelProps struct {
 	Model AIModelPropsModel `yaml:"model,omitempty"`
 }

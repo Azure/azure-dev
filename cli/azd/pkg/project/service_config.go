@@ -47,15 +47,6 @@ type ServiceConfig struct {
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }
 
-type ServiceEnvVar struct {
-	Name string `yaml:"name,omitempty"`
-
-	// either Value or Secret can be set, but not both
-
-	Value  string `yaml:"value,omitempty"`
-	Secret string `yaml:"secret,omitempty"`
-}
-
 type DotNetContainerAppOptions struct {
 	Manifest    *apphost.Manifest
 	AppHostPath string

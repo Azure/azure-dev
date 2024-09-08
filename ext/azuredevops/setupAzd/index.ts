@@ -1,5 +1,4 @@
 import * as task from 'azure-pipelines-task-lib/task';
-import * as cp from 'child_process'
 import path from 'path';
 import * as fs from 'fs'
 import download from 'download';
@@ -77,7 +76,7 @@ Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-de
         task.prependPath(extractedTo)
         console.log(`azd installed to ${extractedTo}`)
 
-        task.exec(binPath, 'version')
+        task.execSync(binPath, 'version');
     } catch (err: any) {
         task.setResult(task.TaskResult.Failed, err.message);
     }

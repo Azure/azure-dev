@@ -14,7 +14,7 @@ describe('setup azd tests', function () {
         setTimeout(() => { }, 10000);
         let tp = path.join(__dirname, 'success.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
-        tr.run();
+        tr.runAsync();
         assert.equal(tr.succeeded, true, 'should have succeeded');
         assert.equal(tr.warningIssues.length, 0, "should have no warnings");
         assert.equal(tr.errorIssues.length, 0, "should have no errors");
@@ -27,7 +27,7 @@ describe('setup azd tests', function () {
         let tp = path.join(__dirname, 'successVersion.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
         
-        tr.run();
+        tr.runAsync();
         assert.equal(tr.succeeded, true, 'should have succeeded');
         assert.equal(tr.warningIssues.length, 0, "should have no warnings");
         assert.equal(tr.errorIssues.length, 0, "should have no errors");

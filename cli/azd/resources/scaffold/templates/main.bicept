@@ -53,4 +53,7 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAI
 output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.AZURE_KEY_VAULT_ENDPOINT
 output AZURE_KEY_VAULT_NAME string = resources.outputs.AZURE_KEY_VAULT_NAME
 {{- end}}
+{{- if .AIModels}}
+output AZURE_COGNITIVE_ACCOUNT_ID string = resources.outputs.AZURE_COGNITIVE_ACCOUNT_ID
+{{- end}}
 {{ end}}

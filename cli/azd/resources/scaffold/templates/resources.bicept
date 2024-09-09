@@ -157,12 +157,13 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.6
 {{- end}}
 
 {{- if .AIModels}}
+var accountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
 module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
   name: 'accountDeployment'
   params: {
     tags: tags
     kind: 'OpenAI'
-    name: '${abbrs.cognitiveServicesAccounts}-${resourceToken}'
+    name: accountName
     deployments: [
       {{- range .AIModels}}
       {
@@ -180,6 +181,7 @@ module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
       {{- end}}
     ]
     location: location
+    customSubDomainName: accountName
     publicNetworkAccess: 'Enabled'
   }
 }
@@ -460,5 +462,8 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
+{{- end}}
+{{- if  .AIModels}}
+output AZURE_COGNITIVE_ACCOUNT_ID string = account.outputs.resourceId
 {{- end}}
 {{ end}}

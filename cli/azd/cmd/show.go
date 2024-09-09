@@ -12,8 +12,11 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -25,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -70,6 +74,7 @@ type showAction struct {
 	flags                *showFlags
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
 	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
+	account              account.SubscriptionCredentialProvider
 	portalUrlBase        string
 	args                 []string
 }
@@ -88,6 +93,7 @@ func newShowAction(
 	args []string,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
+	account account.SubscriptionCredentialProvider,
 	cloud *cloud.Cloud,
 ) actions.Action {
 	return &showAction{
@@ -104,6 +110,7 @@ func newShowAction(
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
 		args:                 args,
+		account:              account,
 		portalUrlBase:        cloud.PortalUrlBase,
 	}
 }
@@ -132,8 +139,15 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	if len(s.args) >= 1 && showService == "" {
-		return nil, fmt.Errorf("service %s not found", s.args[0])
+	showResource := ""
+	if showService == "" && len(s.args) >= 1 {
+		if _, ok := s.projectConfig.Resources[s.args[0]]; ok {
+			showResource = s.args[0]
+		}
+	}
+
+	if len(s.args) >= 1 && showService == "" && showResource == "" {
+		return nil, fmt.Errorf("service/resource %s not found", s.args[0])
 	}
 
 	for _, svc := range stableServices {
@@ -170,7 +184,8 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	}
 	var subId, rgName string
-	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
+	env, err := s.envManager.Get(ctx, environmentName)
+	if err != nil {
 		if errors.Is(err, environment.ErrNotFound) && s.flags.EnvironmentName != "" {
 			return nil, fmt.Errorf(
 				`"environment '%s' does not exist. You can create it with "azd env new"`, environmentName,
@@ -230,15 +245,50 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	// TODO(weilim): prototype only
-	if len(s.args) == 1 {
-		service := s.args[0]
 
-		if _, ok := s.projectConfig.Services[service]; !ok {
-			return nil, fmt.Errorf("service %s not found", service)
+	if len(showResource) > 0 {
+		res := s.projectConfig.Resources[showResource]
+		switch res.Type {
+		case project.ResourceTypeOpenAiModel:
+			accountId := env.Dotenv()["AZURE_COGNITIVE_ACCOUNT_ID"]
+			cred, err := s.account.CredentialForSubscription(ctx, subId)
+			if err != nil {
+				return nil, err
+			}
+			client, err := armcognitiveservices.NewAccountsClient(subId, cred, nil)
+			if err != nil {
+				return nil, fmt.Errorf("creating accounts client: %w", err)
+			}
+
+			resId, err := arm.ParseResourceID(accountId)
+			if err != nil {
+				return nil, fmt.Errorf("parsing resource id: %w", err)
+			}
+			account, err := client.Get(ctx, rgName, resId.Name, nil)
+			if err != nil {
+				return nil, fmt.Errorf("getting account: %w", err)
+			}
+
+			if account.Properties.Endpoint != nil {
+				s.console.Message(ctx, color.HiMagentaString("%s (deployed model)", res.Name))
+				s.console.Message(ctx, "  Endpoint:")
+				s.console.Message(ctx, fmt.Sprintf("    AZURE_OPENAPI_ENDPOINT=%s", *account.Properties.Endpoint))
+				s.console.Message(ctx, "  Access:")
+				s.console.Message(ctx, "      Keyless (Microsoft Entra ID)")
+				s.console.Message(ctx, output.WithGrayFormat("        Hint: To access locally, use DefaultAzureCredential. To learn more, visit https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages"))
+
+				s.console.Message(ctx, "")
+			}
+
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("resource type %s not supported", res.Type)
 		}
+	}
 
+	if len(showService) > 0 {
 		s.console.Message(ctx, "Blueprint")
-		if res, ok := s.projectConfig.Resources[service]; ok {
+		if res, ok := s.projectConfig.Resources[showService]; ok {
 			s.console.Message(ctx, fmt.Sprintf("%s (%s)", res.Name, "Azure Container App"))
 			for _, dep := range res.Uses {
 				if r, ok := s.projectConfig.Resources[dep]; ok {
@@ -258,7 +308,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, nil
 	}
 
-	if len(s.args) > 1 && s.args[1] == "env" {
+	if len(showService) > 0 && s.args[1] == "env" {
 		s.console.Message(ctx, fmt.Sprintf("Environment variables for %s", showService))
 		environ := res.Services[showService].RemoteEnviron
 		show := []string{}

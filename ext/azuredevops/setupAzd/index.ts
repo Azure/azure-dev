@@ -69,7 +69,7 @@ Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-de
         }
         const binPath = path.join(extractedTo, binName);
 
-        fs.symlinkSync(
+        fs.copyFileSync(
             path.join(extractedTo, installArray[1]),
             binPath
         )

@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"os"
+	"path/filepath"
 )
 
 func newOrchestrateFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *orchestrateFlags {
@@ -39,8 +40,16 @@ func (action orchestrateAction) Run(ctx context.Context) (*actions.ActionResult,
 	}
 	defer azureYamlFile.Close()
 
-	if _, err := azureYamlFile.WriteString("Test Content in azure.yaml\n"); err != nil {
-		return nil, fmt.Errorf("saving azure.yaml: %w", err)
+	files, err := findPomFiles(".")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return nil, fmt.Errorf("find pom files: %w", err)
+	}
+
+	for _, file := range files {
+		if _, err := azureYamlFile.WriteString(file + "\n"); err != nil {
+			return nil, fmt.Errorf("writing azure.yaml: %w", err)
+		}
 	}
 
 	if err := azureYamlFile.Sync(); err != nil {
@@ -70,4 +79,18 @@ func getCmdOrchestrateHelpFooter(*cobra.Command) string {
 			output.WithHighLightFormat("azd orchestrate"),
 		),
 	})
+}
+
+func findPomFiles(root string) ([]string, error) {
+	var files []string
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Base(path) == "pom.xml" {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files, err
 }

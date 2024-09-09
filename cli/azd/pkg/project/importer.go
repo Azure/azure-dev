@@ -476,7 +476,8 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 		return nil, fmt.Errorf("parsing infrastructure: %w", err)
 	}
 
-	if len(infraSpec.Services) > 0 {
+	// todo(weilim): this is a hack. we may want `resources.yaml` or something.
+	if len(infraSpec.Services) > 0 || len(infraSpec.AIModels) > 0 {
 		generatedFS := memfs.New()
 		t, err := scaffold.Load()
 		if err != nil {

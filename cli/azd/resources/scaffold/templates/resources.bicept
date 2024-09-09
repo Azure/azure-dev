@@ -18,6 +18,7 @@ param principalId string
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(resourceGroup().id)
 
+{{- if .Services }}
 // Monitor application with Azure loganalytics
 module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
   name: 'loganalytics'
@@ -76,9 +77,9 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
     name: '${abbrs.appManagedEnvironments}${resourceToken}'
     location: location
     zoneRedundant: false
-    tags: tags
   }
 }
+{{- end}}
 
 {{- if .DbCosmosMongo}}
 {{- if .DbCosmosMongo.Module }}
@@ -88,6 +89,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
 {{- end }}
   name: 'cosmos'
   params: {
+    tags: tags
     locations: [
       {
         failoverPriority: 0
@@ -158,6 +160,7 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.6
 module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
   name: 'accountDeployment'
   params: {
+    tags: tags
     kind: 'OpenAI'
     name: '${abbrs.cognitiveServicesAccounts}-${resourceToken}'
     deployments: [
@@ -181,6 +184,16 @@ module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
   }
 }
 
+resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, resourceGroup().id, 'localUser', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+
+{{- if .Services}}
 module cognitiveConn './modules/set-cognitive-conn.bicep' = {
   name: 'cognitiveConn'
   params: {
@@ -189,6 +202,7 @@ module cognitiveConn './modules/set-cognitive-conn.bicep' = {
     keyVaultName: keyVault.outputs.name
   }
 }
+{{- end}}
 {{- end}}
 
 {{- range .Services}}
@@ -405,6 +419,7 @@ module redisConn './modules/set-redis-conn.bicep' = {
 }
 {{- end}}
 
+{{- if .Services}}
 // Create a keyvault to store secrets
 module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
   name: 'keyvault'
@@ -439,8 +454,11 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
     ]
   }
 }
+{{- end}}
 
+{{- if .Services}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
+{{- end}}
 {{ end}}

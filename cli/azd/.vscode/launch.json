@@ -1,6 +1,8 @@
 {
-    // You can run `git update-index --skip-worktree .vscode/launch.json to have git
-    // ignore changes to this file so you don't need to worry about commiting your edits.
+    // You can run `git update-index --skip-worktree .vscode/launch.json` to have git
+    // ignore changes to this file so you don't need to worry about commiting your edits. If you ever
+    // need to merge this file afterwards, you'll need to run `git update-index --no-skip-worktree .vscode/launch.json`
+    // to ensure git tracks changes to this file again.
     "version": "0.2.0",
     "configurations": [
         // This will launch azd (starting from main.go), under the debugger.

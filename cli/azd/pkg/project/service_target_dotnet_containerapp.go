@@ -264,12 +264,17 @@ func (at *dotnetContainerAppTarget) Deploy(
 		return nil, fmt.Errorf("failed executing template file: %w", err)
 	}
 
+	containerAppOptions := containerapps.ContainerAppOptions{
+		ApiVersion: serviceConfig.ApiVersion,
+	}
+
 	err = at.containerAppService.DeployYaml(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		serviceConfig.Name,
 		[]byte(builder.String()),
+		&containerAppOptions,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("updating container app service: %w", err)
@@ -306,11 +311,16 @@ func (at *dotnetContainerAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	containerAppOptions := containerapps.ContainerAppOptions{
+		ApiVersion: serviceConfig.ApiVersion,
+	}
+
 	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
+		&containerAppOptions,
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {

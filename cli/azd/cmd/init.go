@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -249,6 +250,30 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err != nil {
 			return nil, err
 		}
+	case initProject:
+		name, err := i.console.Prompt(ctx, input.ConsoleOptions{
+			Message:      "What is the name your project?",
+			DefaultValue: filepath.Base(azdCtx.ProjectDirectory()),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		prjConfig := project.ProjectConfig{
+			Name: name,
+		}
+		err = project.Save(ctx, &prjConfig, azdCtx.ProjectPath())
+		if err != nil {
+			return nil, fmt.Errorf("saving project config: %w", err)
+		}
+
+		_, err = i.initializeEnv(ctx, azdCtx, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		header = "Created project file azure.yaml"
+		followUp = "You can now run " + color.BlueString("azd add") + " to add new components to your project."
 	default:
 		panic("unhandled init type")
 	}
@@ -267,6 +292,7 @@ const (
 	initUnknown = iota
 	initFromApp
 	initAppTemplate
+	initProject
 	initEnvironment
 )
 
@@ -276,6 +302,7 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 		Options: []string{
 			"Use code in the current directory",
 			"Select a template",
+			"Create a minimal project",
 		},
 	})
 	if err != nil {
@@ -287,6 +314,8 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 		return initFromApp, nil
 	case 1:
 		return initAppTemplate, nil
+	case 2:
+		return initProject, nil
 	default:
 		panic("unhandled selection")
 	}

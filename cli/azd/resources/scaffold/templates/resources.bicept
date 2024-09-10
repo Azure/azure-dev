@@ -345,11 +345,11 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- end}}
           {{- if .AIModels}}
           {
-            name: 'AZURE_OPENAPI_API_KEY'
-            secretRef: 'openapi-api-key'
+            name: 'AZURE_OPENAI_API_KEY'
+            secretRef: 'openai-api-key'
           }
           {
-            name: 'AZURE_OPENAPI_ENDPOINT'
+            name: 'AZURE_OPENAI_ENDPOINT'
             value: account.outputs.endpoint
           }
           {{- end}}

@@ -8,13 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
 
 // Test_gzip2HttpRoundTripper_ContentLength validates that a response served with gzip encoding is correctly expanded
@@ -67,21 +68,26 @@ func (f funcRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 func TestBlobClientGetProperties(t *testing.T) {
 	msg := "Hello, world."
 
-	session := Start(t, WithRecordMode(recorder.ModeRecordOnly))
-	proxyClient, err := proxyClient(session.ProxyUrl)
-	require.NoError(t, err)
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(msg)))
 		w.WriteHeader(http.StatusOK)
 		_, err := w.Write([]byte(msg))
 		require.NoError(t, err)
 	}))
-	defer server.Close()
+
+	session := Start(t, WithHostMapping(strings.TrimPrefix(server.URL, "http://"), "127.0.0.1:80"))
+	var transport policy.Transporter
+	if session == nil {
+		transport = http.DefaultClient
+	} else {
+		proxyClient, err := proxyClient(session.ProxyUrl)
+		require.NoError(t, err)
+		transport = proxyClient
+	}
 
 	blobClient, err := blockblob.NewClientWithNoCredential(server.URL+"/test.txt", &blockblob.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
-			Transport: proxyClient,
+			Transport: transport,
 		},
 	})
 	assert.NoError(t, err)
@@ -90,4 +96,6 @@ func TestBlobClientGetProperties(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, props.ContentLength)
 	assert.Equal(t, int64(len(msg)), *props.ContentLength)
+
+	server.Close()
 }

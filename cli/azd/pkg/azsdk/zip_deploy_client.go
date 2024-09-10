@@ -2,6 +2,7 @@ package azsdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -239,11 +240,11 @@ func logWebAppDeploymentStatus(
 		}
 
 		logErrorFunction(properties, "runtime ")
-		return fmt.Errorf(errorString)
+		return errors.New(errorString)
 	case armappservice.DeploymentBuildStatusBuildFailed:
 		errorString += "Deployment failed because the build process failed\n"
 		logErrorFunction(properties, "build ")
-		return fmt.Errorf(errorString)
+		return errors.New(errorString)
 	// Progress Log for other states
 	default:
 		if len(status) > 0 {

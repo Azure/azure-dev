@@ -16,6 +16,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -41,9 +43,10 @@ func createServiceManager(
 	env *environment.Environment,
 	operationCache ServiceOperationCache,
 ) ServiceManager {
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	resourceManager := NewResourceManager(env, resourceService, depOpService)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 
 	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(
 		map[string]any{
@@ -240,7 +243,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		env := environment.New("test")
 		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
-		serviceConfig.Image = "nginx"
+		serviceConfig.Image = osutil.NewExpandableString("nginx")
 
 		framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)

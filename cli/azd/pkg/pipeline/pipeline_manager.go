@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,7 +33,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
-	"golang.org/x/exp/slices"
 )
 
 type PipelineAuthType string
@@ -375,7 +375,7 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		gitRepoInfo,
 		infra.Options,
 		servicePrincipal,
-		PipelineAuthType(pm.args.PipelineAuthTypeName),
+		credentialOptions,
 		credentials,
 	)
 
@@ -866,7 +866,7 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 			pipelineProviderFiles[props.CiProvider].DisplayName,
 			strings.Join(pipelineProviderFiles[props.CiProvider].PipelineDirectories, "\n"))
 		log.Println("Error:", message)
-		return fmt.Errorf(message)
+		return errors.New(message)
 	}
 
 	log.Println("Info:", message)
@@ -897,10 +897,13 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 
 	// Confirm with the user before adding the default file
 	pm.console.Message(ctx, "")
-	pm.console.Message(ctx,
+	pm.console.Message(
+		ctx,
 		fmt.Sprintf(
 			"The default %s file, which contains a basic workflow to help you get started, is missing from your project.",
-			output.WithHighLightFormat("azure-dev.yml")))
+			output.WithHighLightFormat("azure-dev.yml"),
+		),
+	)
 	pm.console.Message(ctx, "")
 
 	// Prompt the user for confirmation

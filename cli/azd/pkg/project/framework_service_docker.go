@@ -34,19 +34,19 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path        string                  `yaml:"path,omitempty"      json:"path,omitempty"`
-	Context     string                  `yaml:"context,omitempty"   json:"context,omitempty"`
-	Platform    string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
-	Target      string                  `yaml:"target,omitempty"    json:"target,omitempty"`
-	Registry    osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
-	Image       osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
-	Tag         osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
+	Path        string                  `yaml:"path,omitempty"        json:"path,omitempty"`
+	Context     string                  `yaml:"context,omitempty"     json:"context,omitempty"`
+	Platform    string                  `yaml:"platform,omitempty"    json:"platform,omitempty"`
+	Target      string                  `yaml:"target,omitempty"      json:"target,omitempty"`
+	Registry    osutil.ExpandableString `yaml:"registry,omitempty"    json:"registry,omitempty"`
+	Image       osutil.ExpandableString `yaml:"image,omitempty"       json:"image,omitempty"`
+	Tag         osutil.ExpandableString `yaml:"tag,omitempty"         json:"tag,omitempty"`
 	RemoteBuild bool                    `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
-	BuildArgs   []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	BuildArgs   []string                `yaml:"buildArgs,omitempty"   json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
 	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
-	BuildSecrets []string `yaml:"-"                   json:"-"`
-	BuildEnv     []string `yaml:"-"                   json:"-"`
+	BuildSecrets []string `yaml:"-"                     json:"-"`
+	BuildEnv     []string `yaml:"-"                     json:"-"`
 }
 
 type dockerBuildResult struct {
@@ -345,7 +345,12 @@ func (p *dockerProject) Package(
 
 	// If we don't have an image ID from a docker build then an external source image is being used
 	if imageId == "" {
-		sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
+		sourceImageValue, err := serviceConfig.Image.Envsubst(p.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("substituting environment variables in image: %w", err)
+		}
+
+		sourceImage, err := docker.ParseContainerImage(sourceImageValue)
 		if err != nil {
 			return nil, fmt.Errorf("parsing source container image: %w", err)
 		}

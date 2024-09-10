@@ -9,7 +9,6 @@ import (
 	"log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -50,15 +49,15 @@ func (s *environmentService) refreshEnvironmentAsync(
 	}
 
 	var c struct {
-		projectManager       project.ProjectManager      `container:"type"`
-		projectConfig        *project.ProjectConfig      `container:"type"`
-		importManager        *project.ImportManager      `container:"type"`
-		bicep                provisioning.Provider       `container:"name"`
-		azureResourceManager *infra.AzureResourceManager `container:"type"`
-		resourceService      *azapi.ResourceService      `container:"type"`
-		resourceManager      project.ResourceManager     `container:"type"`
-		serviceManager       project.ServiceManager      `container:"type"`
-		envManager           environment.Manager         `container:"type"`
+		projectManager       project.ProjectManager  `container:"type"`
+		projectConfig        *project.ProjectConfig  `container:"type"`
+		importManager        *project.ImportManager  `container:"type"`
+		bicep                provisioning.Provider   `container:"name"`
+		azureResourceManager infra.ResourceManager   `container:"type"`
+		resourceService      *azapi.ResourceService  `container:"type"`
+		resourceManager      project.ResourceManager `container:"type"`
+		serviceManager       project.ServiceManager  `container:"type"`
+		envManager           environment.Manager     `container:"type"`
 	}
 
 	container.MustRegisterScoped(func() internal.EnvFlag {
@@ -94,9 +93,9 @@ func (s *environmentService) refreshEnvironmentAsync(
 		log.Printf("failed to get latest deployment result: %v", err)
 	} else {
 		env.LastDeployment = &DeploymentResult{
-			DeploymentId: *deployment.ID,
-			Success:      *deployment.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded,
-			Time:         *deployment.Properties.Timestamp,
+			DeploymentId: deployment.Id,
+			Success:      deployment.ProvisioningState == azapi.DeploymentProvisioningStateSucceeded,
+			Time:         deployment.Timestamp,
 		}
 	}
 

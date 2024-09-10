@@ -85,7 +85,7 @@
                     },
                     "image": {
                         "type": "string",
-                        "title": "Optional. The source image to be used for the container image instead of building from source.",
+                        "title": "Optional. The source image to be used for the container image instead of building from source. Supports environment variable substitution.",
                         "description": "If omitted, container image will be built from source specified in the 'project' property. Setting both 'project' and 'image' is invalid."
                     },
                     "host": {
@@ -144,42 +144,42 @@
                             "predeploy": {
                                 "title": "pre deploy hook",
                                 "description": "Runs before the service is deployed to Azure",
-                                "$ref": "#/definitions/hook"
+                                "$ref": "#/definitions/hooks"
                             },
                             "postdeploy": {
                                 "title": "post deploy hook",
                                 "description": "Runs after the service is deployed to Azure",
-                                "$ref": "#/definitions/hook"
+                                "$ref": "#/definitions/hooks"
                             },
                             "prerestore": {
                                 "title": "pre restore hook",
                                 "description": "Runs before the service dependencies are restored",
-                                "$ref": "#/definitions/hook"
+                                "$ref": "#/definitions/hooks"
                             },
                             "postrestore": {
                                 "title": "post restore hook",
                                 "description": "Runs after the service dependencies are restored",
-                                "$ref": "#/definitions/hook"
+                                "$ref": "#/definitions/hooks"
                             },
                             "prebuild": {
                                 "title": "pre build hook",
                                 "description": "Runs before the service is built",
-                                "$ref": "#/definitions/hook"
+                                "$ref": "#/definitions/hooks"
                             },
                             "postbuild": {
                                 "title": "post build hook",
                                 "description": "Runs after the service is built",
-                                "$ref": "#/definitions/hook"
+                                "$ref": "#/definitions/hooks"
                             },
                             "prepackage": {
                                 "title": "pre package hook",
                                 "description": "Runs before the service is deployment package is created",
-                                "$ref": "#/definitions/hook"
+                                "$ref": "#/definitions/hooks"
                             },
                             "postpackage": {
                                 "title": "post package hook",
                                 "description": "Runs after the service is deployment package is created",
-                                "$ref": "#/definitions/hook"
+                                "$ref": "#/definitions/hooks"
                             }
                         }
                     }
@@ -352,82 +352,82 @@
                 "preprovision": {
                     "title": "pre provision hook",
                     "description": "Runs before the `provision` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "postprovision": {
                     "title": "post provision hook",
                     "description": "Runs after the `provision` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "preinfracreate": {
                     "title": "pre infra create hook",
                     "description": "Runs before the `infra create` or `provision` commands",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "postinfracreate": {
                     "title": "post infra create hook",
                     "description": "Runs after the `infra create` or `provision` commands",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "preinfradelete": {
                     "title": "pre infra delete hook",
                     "description": "Runs before the `infra delete` or `down` commands",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "postinfradelete": {
                     "title": "post infra delete hook",
                     "description": "Runs after the `infra delete` or `down` commands",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "predown": {
                     "title": "pre down hook",
                     "description": "Runs before the `infra delete` or `down` commands",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "postdown": {
                     "title": "post down hook",
                     "description": "Runs after the `infra delete` or `down` commands",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "preup": {
                     "title": "pre up hook",
                     "description": "Runs before the `up` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "postup": {
                     "title": "post up hook",
                     "description": "Runs after the `up` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "prepackage": {
                     "title": "pre package hook",
                     "description": "Runs before the `package` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "postpackage": {
                     "title": "post package hook",
                     "description": "Runs after the `package` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "predeploy": {
                     "title": "pre deploy hook",
                     "description": "Runs before the `deploy` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "postdeploy": {
                     "title": "post deploy hook",
                     "description": "Runs after the `deploy` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "prerestore": {
                     "title": "pre restore hook",
                     "description": "Runs before the `restore` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 },
                 "postrestore": {
                     "title": "post restore hook",
                     "description": "Runs after the `restore` command",
-                    "$ref": "#/definitions/hook"
+                    "$ref": "#/definitions/hooks"
                 }
             }
         },
@@ -554,6 +554,20 @@
         }
     },
     "definitions": {
+        "hooks": {
+            "anyOf": [
+                {
+                    "$ref": "#/definitions/hook"
+                },
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "$ref": "#/definitions/hook"
+                    }
+                }
+            ]
+        },
         "hook": {
             "type": "object",
             "additionalProperties": false,
@@ -982,7 +996,9 @@
         },
         "aiDeploymentConfig": {
             "allOf": [
-                { "$ref": "#/definitions/aiComponentConfig" },
+                {
+                    "$ref": "#/definitions/aiComponentConfig"
+                },
                 {
                     "type": "object",
                     "properties": {
@@ -990,7 +1006,7 @@
                             "type": "object",
                             "title": "A map of key/value pairs to set as environment variables for the deployment.",
                             "description": "Optional. Values support OS & AZD environment variable substitution.",
-                            "additionalProperties":{
+                            "additionalProperties": {
                                 "type": "string"
                             }
                         }

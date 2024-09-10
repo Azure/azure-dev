@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
-	"golang.org/x/exp/maps"
 	"gopkg.in/yaml.v3"
 )
 
@@ -172,6 +172,7 @@ func Containers(manifest *Manifest) map[string]genContainer {
 				Inputs:     comp.Inputs,
 				Volumes:    comp.Volumes,
 				BindMounts: comp.BindMounts,
+				Args:       comp.Args,
 			}
 		}
 	}
@@ -313,9 +314,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	var mapToResourceParams []genInput
 
 	// order to be deterministic when writing bicep
-	genParametersKeys := maps.Keys(generator.bicepContext.InputParameters)
-	slices.Sort(genParametersKeys)
-
+	genParametersKeys := slices.Sorted(maps.Keys(generator.bicepContext.InputParameters))
 	for _, key := range genParametersKeys {
 		parameter := generator.bicepContext.InputParameters[key]
 		parameterMetadata := ""
@@ -428,7 +427,7 @@ func GenerateProjectArtifacts(
 	projectFileContext := genProjectFileContext{
 		Name: projectName,
 		Services: map[string]string{
-			"app": fmt.Sprintf(".%s%s", string(filepath.Separator), appHostRel),
+			"app": fmt.Sprintf("./%s", filepath.ToSlash(appHostRel)),
 		},
 	}
 
@@ -592,7 +591,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "project.v0":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
 		case "container.v0":
-			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts)
+			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts, comp.Args)
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
 			if err != nil {
@@ -892,7 +891,8 @@ func (b *infraGenerator) addContainer(
 	bindings custommaps.WithOrder[Binding],
 	inputs map[string]Input,
 	volumes []*Volume,
-	bindMounts []*BindMount) {
+	bindMounts []*BindMount,
+	args []string) {
 	b.requireCluster()
 
 	if len(volumes) > 0 {
@@ -911,6 +911,7 @@ func (b *infraGenerator) addContainer(
 		Inputs:     inputs,
 		Volumes:    volumes,
 		BindMounts: bindMounts,
+		Args:       args,
 	}
 }
 
@@ -1239,6 +1240,10 @@ func (b *infraGenerator) Compile() error {
 			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
 		}
 
+		if err := b.buildArgsBlock(container.Args, &projectTemplateCtx); err != nil {
+			return err
+		}
+
 		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
 	}
 
@@ -1260,6 +1265,10 @@ func (b *infraGenerator) Compile() error {
 
 		if err := b.buildEnvBlock(bc.Env, &projectTemplateCtx); err != nil {
 			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		if err := b.buildArgsBlock(bc.Args, &projectTemplateCtx); err != nil {
+			return err
 		}
 
 		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx

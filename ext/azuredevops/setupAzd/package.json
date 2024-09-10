@@ -12,7 +12,8 @@
   "dependencies": {
     "azure-pipelines-task-lib": "^4.4.0",
     "decompress": "^4.2.1",
-    "download": "^8.0.0"
+    "download": "^8.0.0",
+    "fix": "^0.0.3"
   },
   "devDependencies": {
     "@types/decompress": "^4.2.4",

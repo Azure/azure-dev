@@ -1,5 +1,4 @@
 import * as task from 'azure-pipelines-task-lib/task';
-import * as cp from 'child_process'
 import path from 'path';
 import * as fs from 'fs'
 import download from 'download';

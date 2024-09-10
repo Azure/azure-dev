@@ -449,7 +449,7 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 
 	for !IsValidEnvironmentName(spec.Name) {
 		userInput, err := m.console.Prompt(ctx, input.ConsoleOptions{
-			Message: "Enter a new environment name:",
+			Message: "Enter a name for your Azure environment:",
 			Help: heredoc.Doc(`
 			A unique string that can be used to differentiate copies of your application in Azure.
 

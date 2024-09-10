@@ -22,7 +22,7 @@ import (
 	"github.com/otiai10/copy"
 )
 
-var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
+var LanguageMap = map[appdetect.Language]project.ServiceLanguageKind{
 	appdetect.DotNet:     project.ServiceLanguageDotNet,
 	appdetect.Java:       project.ServiceLanguageJava,
 	appdetect.JavaScript: project.ServiceLanguageJavaScript,

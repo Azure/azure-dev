@@ -30,7 +30,7 @@ func tabWrite(selections []string, padding int) ([]string, error) {
 }
 
 // Prompts the user to input a valid directory.
-func promptDir(
+func PromptDir(
 	ctx context.Context,
 	console input.Console,
 	message string) (string, error) {

@@ -132,7 +132,7 @@ func (i *Initializer) prjConfigFromDetect(
 		svcSpec.Host = project.ContainerAppTarget
 		svcSpec.RelativePath = rel
 
-		language, supported := languageMap[svc.Language]
+		language, supported := LanguageMap[svc.Language]
 		if !supported {
 			continue
 		}

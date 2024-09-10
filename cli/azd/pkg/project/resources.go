@@ -12,10 +12,9 @@ type ResourceType string
 type ResourceKind string
 
 const (
-	ResourceKindDatabase  ResourceKind = "Database"
-	ResourceKindStorage   ResourceKind = "Storage"
-	ResourceKindMessaging ResourceKind = "Messaging"
-	ResourceKindAI        ResourceKind = "Azure OpenAI"
+	ResourceKindDatabase ResourceKind = "Database"
+	ResourceKindHosts    ResourceKind = "Host service"
+	ResourceKindAI       ResourceKind = "Azure OpenAI"
 )
 
 const (
@@ -37,7 +36,7 @@ func (r ResourceType) String() string {
 	case ResourceTypeHostContainerApp:
 		return "Container App"
 	case ResourceTypeOpenAiModel:
-		return "Open AI Model (Pre-trained)"
+		return "Open AI Model"
 	}
 
 	return ""
@@ -50,9 +49,10 @@ func AllCategories() map[ResourceKind][]ResourceType {
 			ResourceTypeDbPostgres,
 			ResourceTypeDbMongo,
 		},
-		ResourceKindStorage:   {},
-		ResourceKindMessaging: {},
-		ResourceKindAI:        {ResourceTypeOpenAiModel},
+		ResourceKindHosts: {
+			ResourceTypeHostContainerApp,
+		},
+		ResourceKindAI: {ResourceTypeOpenAiModel},
 	}
 }
 

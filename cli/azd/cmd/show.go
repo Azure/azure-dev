@@ -251,6 +251,10 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		switch res.Type {
 		case project.ResourceTypeOpenAiModel:
 			accountId := env.Dotenv()["AZURE_COGNITIVE_ACCOUNT_ID"]
+			if accountId == "" {
+				return nil, fmt.Errorf("not yet provisioned")
+			}
+
 			cred, err := s.account.CredentialForSubscription(ctx, subId)
 			if err != nil {
 				return nil, err

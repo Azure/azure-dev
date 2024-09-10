@@ -284,7 +284,6 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				}
 
 			}
-			fmt.Printf("Length of all models: %d", len(allModels))
 			if len(allModels) > 0 {
 				break
 			}
@@ -294,7 +293,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			var notFoundError *azureutil.ResourceNotFoundError
 			if errors.As(err, &notFoundError) { // not yet provisioned, we're safe here
 				a.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: fmt.Sprintf("No models found in this %s", a.env.GetLocation()),
+					Description: fmt.Sprintf("No models found in %s", a.env.GetLocation()),
 				})
 				confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
 					Message: "Would you like to try a different location?",

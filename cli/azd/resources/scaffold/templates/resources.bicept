@@ -243,6 +243,15 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     {{- if ne .Port 0}}
     ingressTargetPort: {{.Port}}
     {{- end}}
+    {{- if (and .Backend .Backend.Frontends)}}
+    corsPolicy: {
+      allowedOrigins: [
+        {{- range .Backend.Frontends}}
+        'https://${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}.${containerAppsEnvironment.outputs.defaultDomain}'
+        {{- end}}
+      ]
+    }
+    {{- end}}
     scaleMinReplicas: 1
     scaleMaxReplicas: 10
     secrets: {

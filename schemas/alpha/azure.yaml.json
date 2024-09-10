@@ -1145,6 +1145,10 @@
                     "title": "Environment variables to set for the container app",
                     "items": {
                         "type": "object",
+                        "required": [
+                            "name"
+                        ],
+                        "additionalProperties": false,
                         "properties": {
                             "name": {
                                 "type": "string",
@@ -1153,6 +1157,10 @@
                             "value": {
                                 "type": "string",
                                 "title": "Value of the environment variable. Supports environment variable substitution."
+                            },
+                            "secret": {
+                                "type": "string",
+                                "title": "Secret value of the environment variable. Supports environment variable substitution."
                             }
                         }
                     }

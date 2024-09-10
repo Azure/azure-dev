@@ -63,11 +63,6 @@ type ContainerAppService interface {
 		imageName string,
 		options *ContainerAppOptions,
 	) error
-	ListSecrets(ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		appName string,
-	) ([]*armappcontainers.ContainerAppSecret, error)
 	GetEnviron(ctx context.Context,
 		subscriptionId string,
 		resourceGroup string,
@@ -112,7 +107,7 @@ func (cas *containerAppService) GetEnviron(ctx context.Context,
 	appName string,
 	showSecrets bool,
 ) (map[string]string, error) {
-	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
+	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -272,7 +272,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			if account.Properties.Endpoint != nil {
 				s.console.Message(ctx, color.HiMagentaString("%s (deployed model)", res.Name))
 				s.console.Message(ctx, "  Endpoint:")
-				s.console.Message(ctx, fmt.Sprintf("    AZURE_OPENAPI_ENDPOINT=%s", *account.Properties.Endpoint))
+				s.console.Message(ctx, fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint))
 				s.console.Message(ctx, "  Access:")
 				s.console.Message(ctx, "      Keyless (Microsoft Entra ID)")
 				s.console.Message(ctx, output.WithGrayFormat("        Hint: To access locally, use DefaultAzureCredential. To learn more, visit https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages"))

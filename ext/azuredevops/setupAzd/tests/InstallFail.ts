@@ -11,16 +11,15 @@ describe('setup azd tests - fails', function () {
         fs.rmSync('path', { recursive: true, force: true })
     });
 
-    it('should fail with invalid version', function (done: Mocha.Done) {
+    it('should fail with invalid version', async function () {
         setTimeout(() => { }, 10000);
         let tp = path.join(__dirname, 'invalidVersion.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
        
-        tr.runAsync();
+        await tr.runAsync();
         assert.equal(tr.succeeded, false, 'should have failed');
         assert.equal(tr.warningIssues.length, 0, "should have no warnings");
         assert.equal(tr.errorIssues.length, 1, "should have error");
         assert.equal(tr.stdout.indexOf('Response code 404 (Not Found)') >= 0, true, "should display error");
-        done();
     });
 });

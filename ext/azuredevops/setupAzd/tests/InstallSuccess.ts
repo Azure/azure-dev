@@ -10,28 +10,26 @@ describe('setup azd tests', function () {
         fs.rmSync('path', { recursive: true, force: true })
     });
 
-    it('should succeed with empty version', function (done: Mocha.Done) {
-        setTimeout(() => { }, 10000);
+    it('should succeed with empty version', async function () {
+        setTimeout(() => { }, 20000);
         let tp = path.join(__dirname, 'success.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
-        tr.runAsync();
+        await tr.runAsync();
         assert.equal(tr.succeeded, true, 'should have succeeded');
         assert.equal(tr.warningIssues.length, 0, "should have no warnings");
         assert.equal(tr.errorIssues.length, 0, "should have no errors");
         assert.equal(tr.stdout.indexOf('using version: latest') >= 0, true, "should display version");
-        done();
     });
 
-    it('should succeed with version', function (done: Mocha.Done) {
+    it('should succeed with version', async function () {
         setTimeout(() => { }, 10000);
         let tp = path.join(__dirname, 'successVersion.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
         
-        tr.runAsync();
+        await tr.runAsync();
         assert.equal(tr.succeeded, true, 'should have succeeded');
         assert.equal(tr.warningIssues.length, 0, "should have no warnings");
         assert.equal(tr.errorIssues.length, 0, "should have no errors");
         assert.equal(tr.stdout.indexOf('using version: 1.0.0') >= 0, true, "should display version");
-        done();
     });
 });

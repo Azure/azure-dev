@@ -153,7 +153,7 @@ func (r *ResourceConfig) DefaultModule() (bicepModule string, bicepVersion strin
 		bicepVersion = "0.4.0"
 	case ResourceTypeDbPostgres:
 		bicepModule = "avm/res/db-for-postgre-sql/flexible-server"
-		bicepVersion = "0.1.6"
+		bicepVersion = "0.1.4"
 	case ResourceTypeDbRedis:
 		bicepModule = "avm/res/cache/redis"
 		bicepVersion = "0.3.2"

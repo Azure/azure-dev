@@ -267,7 +267,24 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				return nil, fmt.Errorf("decoding response: %w", err)
 			}
 
-			allModels = response.Value
+			for _, model := range response.Value {
+				if model.Kind == "OpenAI" && slices.ContainsFunc(model.Model.Skus, func(sku ModelSku) bool {
+					return sku.Name == "Standard"
+				}) {
+					switch aiOption {
+					case 0:
+						if model.Model.Name == "gpt-4o" || model.Model.Name == "gpt-4" {
+							allModels = append(allModels, model)
+						}
+					case 1:
+						if strings.HasPrefix(model.Model.Name, "text-embedding") {
+							allModels = append(allModels, model)
+						}
+					}
+				}
+
+			}
+			fmt.Printf("Length of all models: %d", len(allModels))
 			if len(allModels) > 0 {
 				break
 			}
@@ -296,31 +313,17 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, fmt.Errorf("no models found in %s", a.env.GetLocation())
 		}
 
-		displayModels := make([]string, 0, len(allModels))
-		models := make([]Model, 0, len(allModels))
 		slices.SortFunc(allModels, func(a ModelList, b ModelList) int {
 			return strings.Compare(b.Model.SystemData.CreatedAt, a.Model.SystemData.CreatedAt)
 		})
 
+		displayModels := make([]string, 0, len(allModels))
+		models := make([]Model, 0, len(allModels))
 		for _, model := range allModels {
-			if model.Kind != "OpenAI" {
-				continue
-			}
-
-			switch aiOption {
-			case 0:
-				// this filter logic is currently in the CLI, perhaps it should be moved server-side
-				if model.Model.Name == "gpt-4o" || model.Model.Name == "gpt-4" {
-					models = append(models, model.Model)
-					displayModels = append(displayModels, fmt.Sprintf("%s\t%s", model.Model.Name, model.Model.Version))
-				}
-			case 1:
-				if strings.HasPrefix(model.Model.Name, "text-embedding") {
-					models = append(models, model.Model)
-					displayModels = append(displayModels, fmt.Sprintf("%s\t%s", model.Model.Name, model.Model.Version))
-				}
-			}
+			models = append(models, model.Model)
+			displayModels = append(displayModels, fmt.Sprintf("%s\t%s", model.Model.Name, model.Model.Version))
 		}
+
 		if a.console.IsSpinnerInteractive() {
 			displayModels, err = tabWrite(displayModels, 3)
 			if err != nil {
@@ -916,8 +919,13 @@ type ModelList struct {
 
 type Model struct {
 	Name       string          `json:"name"`
+	Skus       []ModelSku      `json:"skus"`
 	Version    string          `json:"version"`
 	SystemData ModelSystemData `json:"systemData"`
+}
+
+type ModelSku struct {
+	Name string `json:"name"`
 }
 
 type ModelSystemData struct {

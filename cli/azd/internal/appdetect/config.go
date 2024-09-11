@@ -252,3 +252,21 @@ func (o *excludeJavaScript) applyLang(c languageConfig) languageConfig {
 func WithoutJavaScript() LanguageOption {
 	return &excludeJavaScript{}
 }
+
+func WithLanguage(l Language) LanguageOption {
+	return &langOption{l: l}
+}
+
+type langOption struct {
+	l Language
+}
+
+func (o *langOption) apply(c detectConfig) detectConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, o.l)
+	return c
+}
+
+func (o *langOption) applyLang(c languageConfig) languageConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, o.l)
+	return c
+}

@@ -21,6 +21,7 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -409,7 +410,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				}
 			}
 			uses, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Select the resources that uses %s", color.BlueString(serviceToAdd.Name)),
+				Message: fmt.Sprintf("Select resources that %s uses", color.BlueString(serviceToAdd.Name)),
 				Options: labels,
 			})
 			if err != nil {
@@ -769,36 +770,47 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 
 // addLocalProject prompts the user to add a local project as a service.
 func (a *AddAction) addLocalProject(ctx context.Context) (*appdetect.Project, error) {
+	langOptions := make([]string, 0, len(repository.LanguageMap))
+	languages := make(map[string]appdetect.Language, len(repository.LanguageMap))
+	for language := range repository.LanguageMap {
+		langOptions = append(langOptions, language.Display())
+		languages[language.Display()] = language
+	}
+	slices.Sort(langOptions)
+
+	selection, err := a.console.Select(ctx, input.ConsoleOptions{
+		Message: "What language is your project?",
+		Options: langOptions,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	language := languages[langOptions[selection]]
+
 	// how does WD work here?
 	path, err := repository.PromptDir(ctx, a.console, "Where is your project located?")
 	if err != nil {
 		return nil, err
 	}
 
-	prj, err := appdetect.DetectDirectory(ctx, path)
+	prj, err := appdetect.DetectDirectory(ctx, path, appdetect.WithLanguage(language))
 	if err != nil {
 		return nil, fmt.Errorf("detecting project: %w", err)
 	}
 
 	if prj == nil {
-		return nil, errors.New("no supported project found")
-	}
+		if language == appdetect.Python {
+			_, err := os.Stat(filepath.Join(path, "requirements.txt"))
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, &internal.ErrorWithSuggestion{
+					Err:        errors.New("no requirements.txt found"),
+					Suggestion: "Run 'pip freeze > requirements.txt' or 'pip3 freeze > requirements.txt'  to create a requirements.txt file.",
+				}
+			}
+		}
 
-	_, supported := repository.LanguageMap[prj.Language]
-	if !supported {
-		return nil, errors.New("no supported project found")
-	}
-
-	confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      fmt.Sprintf("Detected %s project. Continue?", color.BlueString(prj.Language.Display())),
-		DefaultValue: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if !confirm {
-		return nil, errors.New("cancelled")
+		return nil, fmt.Errorf("no supported project found")
 	}
 
 	return prj, nil
@@ -826,7 +838,7 @@ func (a *AddAction) projectAsService(
 
 	// TODO:(weilim): allowed values for name
 	name, err := a.console.Prompt(ctx, input.ConsoleOptions{
-		Message:      "What should we call this project?",
+		Message:      "Enter a name for the service",
 		DefaultValue: name,
 	})
 	if err != nil {

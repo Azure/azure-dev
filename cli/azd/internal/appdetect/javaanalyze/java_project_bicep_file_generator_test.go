@@ -1,7 +1,6 @@
 package javaanalyze
 
 import (
-	"fmt"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -20,7 +19,6 @@ func TestGenerateBicepFilesForJavaProject(t *testing.T) {
 		ServiceBindings: []ServiceBinding{},
 	}
 	dir := t.TempDir()
-	fmt.Printf("dir:%s\n", dir)
 	err := GenerateBicepFilesForJavaProject(dir, javaProject)
 	require.NoError(t, err)
 }

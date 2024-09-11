@@ -35,30 +35,27 @@ func GenerateBicepFilesForJavaProject(outputDirectory string, project JavaProjec
 }
 
 func GenerateMainDotBicep(outputDirectory string) error {
-	log.Printf("Generating main.bicep.")
 	bicepFileName := filepath.Join(outputDirectory, "main.bicep")
 	return GenerateBicepFile(bicepFileName, "placeholder")
 }
 
 func GenerateBicepFileForResource(outputDirectory string, resource Resource) error {
-	log.Printf("Generating bicep file for resource: %s.", resource.Name)
 	bicepFileName := filepath.Join(outputDirectory, resource.Name+".bicep")
 	return GenerateBicepFile(bicepFileName, "placeholder")
 }
 
 func GenerateBicepFileForService(outputDirectory string, service ServiceConfig) error {
-	log.Printf("Generating bicep file for service config: %s.", service.Name)
 	bicepFileName := filepath.Join(outputDirectory, service.Name+".bicep")
 	return GenerateBicepFile(bicepFileName, "placeholder")
 }
 
 func GenerateBicepFileForBinding(outputDirectory string, binding ServiceBinding) error {
-	log.Printf("Generating bicep file for service binding: %s.", binding.Name)
 	bicepFileName := filepath.Join(outputDirectory, binding.Name+".bicep")
 	return GenerateBicepFile(bicepFileName, "placeholder")
 }
 
 func GenerateBicepFile(fileName string, content string) error {
+	log.Printf("Generating bicep file: %s.", fileName)
 	bicepFile, err := os.Create(fileName)
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", fileName, err)

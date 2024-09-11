@@ -302,6 +302,10 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
             value: applicationInsights.outputs.connectionString
           }
+          {
+            name: 'AZURE_CLIENT_ID'
+            value: {{bicepName .Name}}Identity.outputs.clientId
+          }
           {{- if .DbCosmosMongo}}
           {
             name: 'AZURE_COSMOS_MONGODB_CONNECTION_STRING'

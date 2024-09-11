@@ -1,25 +1,17 @@
 package javaanalyze
 
-type Rule struct {
-	Match func(MavenProject) bool
-	Apply func(*JavaProject)
+type rule interface {
+	Match(*MavenProject) bool
+	Apply(*JavaProject)
 }
 
-func matchesRule(mavenProject MavenProject, rule Rule) bool {
-	return rule.Match(mavenProject)
-}
-
-func applyOperation(javaProject *JavaProject, rule Rule) {
-	rule.Apply(javaProject)
-}
-
-func ApplyRules(mavenProject MavenProject, rules []Rule) error {
+func ApplyRules(mavenProject *MavenProject, rules []rule) (*JavaProject, error) {
 	javaProject := &JavaProject{}
 
-	for _, rule := range rules {
-		if matchesRule(mavenProject, rule) {
-			applyOperation(javaProject, rule)
+	for _, r := range rules {
+		if r.Match(mavenProject) {
+			r.Apply(javaProject)
 		}
 	}
-	return nil
+	return javaProject, nil
 }

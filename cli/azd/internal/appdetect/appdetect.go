@@ -314,7 +314,7 @@ func walkDirectories(path string, fn walkDirFunc) error {
 func analyze(projects []Project) []Project {
 	for _, project := range projects {
 		if project.Language == Java {
-			fmt.Printf("Java project [%s] found\n", project.Path)
+			fmt.Printf("Java project [%s] found", project.Path)
 			javaanalyze.Analyze(project.Path)
 			// analyze the java projects
 		}

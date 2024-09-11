@@ -11,6 +11,7 @@ import (
 type MavenProject struct {
 	XMLName              xml.Name             `xml:"project"`
 	Parent               Parent               `xml:"parent"`
+	Modules              []string             `xml:"modules>module"` // Capture the modules
 	Dependencies         []Dependency         `xml:"dependencies>dependency"`
 	DependencyManagement DependencyManagement `xml:"dependencyManagement"`
 	Build                Build                `xml:"build"`

@@ -414,6 +414,7 @@ module redis 'br/public:avm/res/cache/redis:0.3.2' = {
     name: '${abbrs.cacheRedis}${resourceToken}'
     // Non-required parameters
     location: location
+    skuName: 'Basic'
     {{- range .DbRedis.Parameters }}
     {{ .Name }}: {{.Value}}
     {{- end}}

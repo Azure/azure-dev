@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"text/tabwriter"
+	"time"
 	"unicode"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -32,6 +35,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -45,6 +49,7 @@ func NewInfraAddCmd() *cobra.Command {
 }
 
 type AddAction struct {
+	azd              workflow.AzdCommandRunner
 	azdCtx           *azdcontext.AzdContext
 	env              *environment.Environment
 	envManager       environment.Manager
@@ -165,9 +170,18 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		} else {
 			serviceOptions := make([]string, 0, len(prjConfig.Services))
 			for _, service := range prjConfig.Services {
-				serviceOptions = append(serviceOptions, service.Name)
+				if _, exists := prjConfig.Resources[service.Name]; !exists {
+					serviceOptions = append(serviceOptions, service.Name)
+				}
 			}
 			slices.Sort(serviceOptions)
+
+			if len(serviceOptions) == 0 {
+				if len(prjConfig.Services) > 0 {
+					return nil, fmt.Errorf("all services are added as resources")
+				}
+				return nil, fmt.Errorf("no services found")
+			}
 
 			serviceOption, err := a.console.Select(ctx, input.ConsoleOptions{
 				Message: "Which service would you like to host in Azure?",
@@ -412,16 +426,22 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				}
 			}
 		}
-	} else {
-		svc := make([]string, 0, len(prjConfig.Services))
-		for _, service := range prjConfig.Services {
-			svc = append(svc, service.Name)
+	} else if string(resourceToAdd.Type) != "" {
+		svc := []string{}
+		for _, res := range prjConfig.Resources {
+			if strings.HasPrefix(string(res.Type), "host.") {
+				svc = append(svc, res.Name)
+			}
 		}
 		slices.Sort(svc)
 
 		if len(svc) > 0 {
+			message := "Select the service(s) that uses this resource"
+			if strings.HasPrefix(string(resourceToAdd.Type), "host.") {
+				message = "Select the front-end service(s) that uses this back-end service"
+			}
 			resourceToAddUses, err = a.console.MultiSelect(ctx, input.ConsoleOptions{
-				Message: "Select the service(s) that uses this resource",
+				Message: message,
 				Options: svc,
 			})
 			if err != nil {
@@ -511,6 +531,117 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("closing file: %w", err)
 	}
 
+	successMessage := "azure.yaml has been updated to include the new resource."
+
+	if resourceToAdd.Type != "" {
+		a.console.MessageUxItem(ctx, &ux.ActionResult{
+			SuccessMessage: successMessage,
+		})
+		successMessage = ""
+		a.console.Message(ctx, "")
+
+		y, err := a.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Would you like to preview and provision these changes?",
+			DefaultValue: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if y {
+			a.console.ShowSpinner(ctx, "Previewing changes....", input.Step)
+			time.Sleep(2 * time.Second)
+			a.console.StopSpinner(ctx, "", input.StepDone)
+
+			a.console.Message(ctx, fmt.Sprintf("\nPreviewing changes to %s\n", color.BlueString(a.env.Name())))
+			previewWriter := previewWriter{w: a.console.GetWriter()}
+			w := tabwriter.NewWriter(&previewWriter, 0, 0, 5, ' ', 0)
+
+			switch resourceToAdd.Type {
+			case project.ResourceTypeOpenAiModel:
+				fmt.Fprintln(w, "   Azure\tLocal\tSku")
+				fmt.Fprintf(w, "+  GENERATED_ACCOUNT_NAME (Microsoft.CognitiveServices)\t-\tStandard-S0\n")
+				fmt.Fprintf(w, "+  ╰─ %s (Deployments)\t%s (%s)\tStandard (20 TPM)\n",
+					resourceToAdd.Name,
+					resourceToAdd.Name,
+					string(resourceToAdd.Type))
+				w.Flush()
+
+				a.console.Message(ctx, "")
+			case project.ResourceTypeDbPostgres,
+				project.ResourceTypeDbMongo,
+				project.ResourceTypeDbRedis:
+				serverType := "Microsoft.DBforPostgreSQL/flexibleServers"
+				skuType := "Standard_B1ms"
+				switch resourceToAdd.Type {
+				case project.ResourceTypeDbMongo:
+					serverType = "Microsoft.DocumentDB/databaseAccounts"
+					skuType = "Standard"
+				case project.ResourceTypeDbRedis:
+					serverType = "Microsoft.Cache/redis"
+					skuType = "Basic"
+				case project.ResourceTypeDbPostgres:
+					serverType = "Microsoft.DBforPostgreSQL/flexibleServers"
+					skuType = "Standard_B1ms"
+				}
+
+				a.console.Message(ctx, color.MagentaString("Resources\n"))
+				fmt.Fprintln(w, "   Azure\tLocal\tSku")
+				fmt.Fprintf(w, "+  GENERATED_SERVER_NAME (%s)\t-\t%s\n", serverType, skuType)
+				fmt.Fprintf(w, "+  ╰─ %s (Databases)\t%s (%s)\t-\n",
+					resourceToAdd.Name,
+					resourceToAdd.Name,
+					string(resourceToAdd.Type))
+				w.Flush()
+
+				a.console.Message(ctx, color.HiBlueString("\nUses\n"))
+				fmt.Fprintln(w, "  Local\tAzure")
+				for _, svc := range resourceToAddUses {
+					res := prjConfig.Resources[svc]
+					fmt.Fprintf(w, "  %s (%s)\tRESOURCE_NAME (Microsoft.App/ContainerApps)\n", res.Name, string(res.Type))
+					fmt.Fprintf(w, "  ╰─ %s (%s)\t%s (Databases)\n",
+						resourceToAdd.Name,
+						string(resourceToAdd.Type),
+						resourceToAdd.Name,
+					)
+					for _, envVar := range configureRes.ConnectionEnvVars {
+						fmt.Fprintf(w, "+      %s\t-\t-\n", envVar)
+					}
+
+					fmt.Fprintln(w, "")
+				}
+				w.Flush()
+			case project.ResourceTypeHostContainerApp:
+				a.console.Message(ctx, "Preview not available.")
+			default:
+				a.console.Message(ctx, "Preview not available.")
+			}
+
+			a.console.Message(ctx, "")
+			option, err := a.console.Select(ctx, input.ConsoleOptions{
+				Message: "Would you like to provision these changes?",
+				Options: []string{"Yes", "No"},
+			})
+			if err != nil || option == 1 {
+				return nil, err
+			}
+
+			a.azd.SetArgs([]string{"provision"})
+			err = a.azd.ExecuteContext(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			return &actions.ActionResult{
+				Message: &actions.ResultMessage{
+					FollowUp: "You can run '" +
+						color.BlueString(fmt.Sprintf("azd show %s", resourceToAdd.Name)) +
+						"' to show details about the newly provisioned resource.",
+				},
+			}, nil
+		}
+	}
+
 	var followUp string
 	defaultFollowUp := "You can run '" + color.BlueString("azd provision") + "' to provision these infrastructure changes."
 	if infraDirExists {
@@ -546,7 +677,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "azure.yaml has been updated to include the new resource.",
+			Header:   successMessage,
 			FollowUp: followUp,
 		},
 	}, err
@@ -561,6 +692,7 @@ func NewInfraAddAction(
 	rm infra.ResourceManager,
 	armClientOptions *arm.ClientOptions,
 	appInit *repository.Initializer,
+	azd workflow.AzdCommandRunner,
 	console input.Console) actions.Action {
 	return &AddAction{
 		azdCtx:           azdCtx,
@@ -572,6 +704,7 @@ func NewInfraAddAction(
 		armClientOptions: armClientOptions,
 		appInit:          appInit,
 		creds:            creds,
+		azd:              azd,
 	}
 }
 
@@ -929,4 +1062,47 @@ type ModelSku struct {
 
 type ModelSystemData struct {
 	CreatedAt string `json:"createdAt"`
+}
+
+// previewWriter is the writer for preview text.
+// It can be used as a point of indirection to modify the output before displaying to console output.
+type previewWriter struct {
+	// the underlying writer to write to
+	w io.Writer
+
+	// buffer for the current line
+	buf bytes.Buffer
+	// stores the current line start character
+	lineStartChar rune
+}
+
+// Write implements the io.Writer interface
+func (pw *previewWriter) Write(p []byte) (n int, err error) {
+	for i, b := range p {
+		if pw.buf.Len() == 0 && len(p) > 0 {
+			pw.lineStartChar = rune(p[0])
+		}
+
+		if err := pw.buf.WriteByte(b); err != nil {
+			return i, err
+		}
+
+		if b == '\n' {
+			if pw.lineStartChar == '+' {
+				green := color.GreenString(pw.buf.String())
+				_, err := pw.w.Write([]byte(green))
+				if err != nil {
+					return i, err
+				}
+			} else {
+				_, err := pw.w.Write(pw.buf.Bytes())
+				if err != nil {
+					return i, err
+				}
+			}
+			pw.buf.Reset()
+		}
+	}
+
+	return len(p), nil
 }

@@ -1,4 +1,4 @@
-package main
+package javaanalyze
 
 type Rule struct {
 	Match func(MavenProject) bool

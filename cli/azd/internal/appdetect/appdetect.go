@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect/javaanalyze"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/bmatcuk/doublestar/v4"
@@ -243,6 +244,9 @@ func detectUnder(ctx context.Context, root string, config detectConfig) ([]Proje
 		return nil, fmt.Errorf("scanning directories: %w", err)
 	}
 
+	// call the java analyzer
+	analyze(projects)
+
 	return projects, nil
 }
 
@@ -305,4 +309,16 @@ func walkDirectories(path string, fn walkDirFunc) error {
 	}
 
 	return nil
+}
+
+func analyze(projects []Project) []Project {
+	for _, project := range projects {
+		if project.Language == Java {
+			fmt.Printf("Java project [%s] found\n", project.Path)
+			javaanalyze.Analyze(project.Path)
+			// analyze the java projects
+		}
+
+	}
+	return projects
 }

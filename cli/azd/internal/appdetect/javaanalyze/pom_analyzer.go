@@ -1,4 +1,4 @@
-package main
+package javaanalyze
 
 import (
 	"encoding/xml"

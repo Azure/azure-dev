@@ -1,4 +1,4 @@
-package main
+package javaanalyze
 
 type JavaProject struct {
 	Services        []ServiceConfig  `json:"services"`

@@ -193,7 +193,8 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 
 			confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "azd will use " + color.MagentaString("Azure Container App") + " to host this project. Continue?",
+				Message:      "azd will use " + color.MagentaString("Azure Container App") + " to host this project. Continue?",
+				DefaultValue: true,
 			})
 			if err != nil || !confirm {
 				return nil, err
@@ -375,7 +376,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	resourceToAddUses := []string{}
-	if serviceToAdd != nil && string(resourceToAdd.Type) != "" {
+	if strings.HasPrefix(string(resourceToAdd.Type), "host.") {
 		type resourceDisplay struct {
 			Resource *project.ResourceConfig
 			Display  string
@@ -410,7 +411,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				}
 			}
 			uses, err := a.console.MultiSelect(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Select resources that %s uses", color.BlueString(serviceToAdd.Name)),
+				Message: fmt.Sprintf("Select the resources that %s uses", color.BlueString(resourceToAdd.Name)),
 				Options: labels,
 			})
 			if err != nil {
@@ -596,24 +597,62 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				w.Flush()
 
 				a.console.Message(ctx, color.HiBlueString("\nUses\n"))
-				fmt.Fprintln(w, "  Local\tAzure")
+				fmt.Fprintln(w, "  Azure\tLocal")
 				for _, svc := range resourceToAddUses {
 					res := prjConfig.Resources[svc]
-					fmt.Fprintf(w, "  %s (%s)\tRESOURCE_NAME (Microsoft.App/ContainerApps)\n", res.Name, string(res.Type))
-					fmt.Fprintf(w, "  ╰─ %s (%s)\t%s (Databases)\n",
+					fmt.Fprintf(w, "  RESOURCE_NAME (Microsoft.App/containerApps)\t%s (%s)\n", res.Name, string(res.Type))
+					fmt.Fprintf(w, "+  ╰─ %s (%s)\t%s (%s)\n",
+						resourceToAdd.Name,
+						"Databases",
 						resourceToAdd.Name,
 						string(resourceToAdd.Type),
-						resourceToAdd.Name,
 					)
 					for _, envVar := range configureRes.ConnectionEnvVars {
-						fmt.Fprintf(w, "+      %s\t-\t-\n", envVar)
+						fmt.Fprintf(w, "+      - %s\t-\n", envVar)
 					}
 
 					fmt.Fprintln(w, "")
 				}
 				w.Flush()
 			case project.ResourceTypeHostContainerApp:
-				a.console.Message(ctx, "Preview not available.")
+				a.console.Message(ctx, color.MagentaString("Resources\n"))
+				fmt.Fprintln(w, "   Azure\tLocal\tSku")
+				fmt.Fprintf(w, "+  %s (%s)\t%s (%s)\t%s\n",
+					resourceToAdd.Name,
+					resourceToAdd.Type.Physical(),
+					resourceToAdd.Name,
+					string(resourceToAdd.Type),
+					"Consumption")
+				w.Flush()
+
+				if len(resourceToAdd.Uses) > 0 {
+					a.console.Message(ctx, color.HiBlueString("\nUses\n"))
+					fmt.Fprintln(w, "  Azure\tLocal")
+					fmt.Fprintf(w, "  RESOURCE_NAME (%s)\t%s (%s)\n",
+						resourceToAdd.Type.Physical(),
+						resourceToAdd.Name,
+						string(resourceToAdd.Type))
+				}
+				for _, use := range resourceToAdd.Uses {
+					res := prjConfig.Resources[use]
+					fmt.Fprintf(w, "+  ╰─ %s (%s)\t%s (%s)\n",
+						res.Name,
+						res.Type.Physical(),
+						res.Name,
+						string(res.Type),
+					)
+
+					env, err := a.Configure(ctx, res)
+					if err != nil {
+						return nil, err
+					}
+					for _, envVar := range env.ConnectionEnvVars {
+						fmt.Fprintf(w, "+      - %s\t-\n", envVar)
+					}
+
+					fmt.Fprintln(w, "")
+				}
+				w.Flush()
 			default:
 				a.console.Message(ctx, "Preview not available.")
 			}
@@ -760,7 +799,7 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 	case project.ResourceTypeOpenAiModel:
 		res.ConnectionEnvVars = []string{
 			"AZURE_OPENAI_ENDPOINT",
-			"AZURE_OPENAI_API_KEY",
+			//"AZURE_OPENAI_API_KEY",
 		}
 		res.LearnMoreTopic = "configuring your app to use Azure OpenAI"
 		res.LearnMoreLink = "https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages"

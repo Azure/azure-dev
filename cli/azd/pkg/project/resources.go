@@ -25,6 +25,23 @@ const (
 	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
 )
 
+func (r ResourceType) Physical() string {
+	switch r {
+	case ResourceTypeDbRedis:
+		return "Cache/Redis"
+	case ResourceTypeDbPostgres:
+		return "DBforPostgreSQL/flexibleServers/databases"
+	case ResourceTypeDbMongo:
+		return "DocumentDB/databaseAccounts"
+	case ResourceTypeHostContainerApp:
+		return "App/containerApps"
+	case ResourceTypeOpenAiModel:
+		return "CognitiveServices/accounts/deployments"
+	}
+
+	return ""
+}
+
 func (r ResourceType) String() string {
 	switch r {
 	case ResourceTypeDbRedis:

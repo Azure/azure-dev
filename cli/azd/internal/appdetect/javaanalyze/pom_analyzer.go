@@ -15,6 +15,7 @@ type MavenProject struct {
 	Dependencies         []Dependency         `xml:"dependencies>dependency"`
 	DependencyManagement DependencyManagement `xml:"dependencyManagement"`
 	Build                Build                `xml:"build"`
+	Path                 string
 }
 
 // Parent represents the parent POM if this project is a module.
@@ -67,6 +68,8 @@ func ParsePOM(filePath string) (*MavenProject, error) {
 	if err := xml.Unmarshal(bytes, &project); err != nil {
 		return nil, fmt.Errorf("error parsing XML: %w", err)
 	}
+
+	project.Path = filePath
 
 	return &project, nil
 }

@@ -245,7 +245,7 @@ func detectUnder(ctx context.Context, root string, config detectConfig) ([]Proje
 	}
 
 	// call the java analyzer
-	analyze(projects)
+	projects = analyze(projects)
 
 	return projects, nil
 }
@@ -312,13 +312,40 @@ func walkDirectories(path string, fn walkDirFunc) error {
 }
 
 func analyze(projects []Project) []Project {
+	result := []Project{}
 	for _, project := range projects {
 		if project.Language == Java {
 			fmt.Printf("Java project [%s] found", project.Path)
-			javaanalyze.Analyze(project.Path)
-			// analyze the java projects
-		}
+			_javaProjects := javaanalyze.Analyze(project.Path)
 
+			if len(_javaProjects) == 1 {
+				enrichFromJavaProject(_javaProjects[0], &project)
+				result = append(result, project)
+			} else {
+				for _, _project := range _javaProjects {
+					copiedProject := project
+					enrichFromJavaProject(_project, &copiedProject)
+					result = append(result, copiedProject)
+				}
+			}
+		}
 	}
-	return projects
+	return result
+}
+
+func enrichFromJavaProject(javaProject javaanalyze.JavaProject, project *Project) {
+	// if there is only one project, we can safely assume that it is the main project
+	for _, resource := range javaProject.Resources {
+		if resource.Type == "Azure Storage" {
+			// project.DatabaseDeps = append(project.DatabaseDeps, Db)
+		} else if resource.Type == "MySQL" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbMySql)
+		} else if resource.Type == "PostgreSQL" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbPostgres)
+		} else if resource.Type == "SQL Server" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbSqlServer)
+		} else if resource.Type == "Redis" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbRedis)
+		}
+	}
 }

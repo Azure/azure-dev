@@ -7,7 +7,9 @@ import (
 func Analyze(path string) []JavaProject {
 	result := []JavaProject{}
 	rules := []rule{
-		&mysqlRule{},
+		&ruleService{},
+		&ruleMysql{},
+		&ruleStorage{},
 	}
 
 	entries, err := os.ReadDir(path)
@@ -26,6 +28,8 @@ func Analyze(path string) []JavaProject {
 					}
 				} else {
 					// analyze the maven project
+					javaProject, _ := ApplyRules(mavenProject, rules)
+					result = append(result, *javaProject)
 				}
 			}
 			//fmt.Printf("\tentry: %s", entry.Name())

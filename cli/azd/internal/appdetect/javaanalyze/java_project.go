@@ -1,7 +1,7 @@
 package javaanalyze
 
 type JavaProject struct {
-	Services        []ServiceConfig  `json:"services"`
+	Service         *Service         `json:"service"`
 	Resources       []Resource       `json:"resources"`
 	ServiceBindings []ServiceBinding `json:"serviceBindings"`
 }
@@ -32,11 +32,18 @@ const (
 	RESOURCE_TYPE_AZURE_STORAGE ResourceType = 1
 )
 
-// ServiceConfig represents a specific service's configuration.
-type ServiceConfig struct {
-	Name        string `json:"name"`
-	ResourceURI string `json:"resourceUri"`
-	Description string `json:"description"`
+// Service represents a specific service's configuration.
+type Service struct {
+	Name        string        `json:"name"`
+	Path        string        `json:"path"`
+	ResourceURI string        `json:"resourceUri"`
+	Description string        `json:"description"`
+	Environment []Environment `json:"environment"`
+}
+
+type Environment struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type ServiceBinding struct {

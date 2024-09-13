@@ -48,7 +48,7 @@ const (
 	defaultPath   = "infra"
 )
 
-func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
+func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options, rg osutil.ExpandableString) error {
 	// applied defaults if missing
 	if options.Module == "" {
 		options.Module = defaultModule
@@ -66,7 +66,7 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	}
 
 	m.provider = provider
-	return m.provider.Initialize(ctx, projectPath, options)
+	return m.provider.Initialize(ctx, projectPath, options, rg)
 }
 
 // Gets the latest deployment details for the specified scope

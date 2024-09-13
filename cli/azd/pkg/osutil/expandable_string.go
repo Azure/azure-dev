@@ -9,6 +9,9 @@ import (
 	"github.com/drone/envsubst"
 )
 
+// EmptyExpandableString is an expandable string that is empty.
+var EmptyExpandableString = NewExpandableString("")
+
 func NewExpandableString(template string) ExpandableString {
 	return ExpandableString{
 		template: template,

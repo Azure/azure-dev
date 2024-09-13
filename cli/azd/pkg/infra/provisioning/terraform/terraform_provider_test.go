@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	terraformTools "github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -137,7 +138,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
 	)
 
-	err := provider.Initialize(*mockContext.Context, projectDir, options)
+	err := provider.Initialize(*mockContext.Context, projectDir, options, osutil.EmptyExpandableString)
 	require.NoError(t, err)
 
 	return provider.(*TerraformProvider)

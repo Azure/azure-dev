@@ -168,7 +168,9 @@ func (s *environmentService) DeleteEnvironmentAsync(
 		}
 		defer func() { _ = projectInfra.Cleanup() }()
 
-		if err := c.provisionManager.Initialize(ctx, c.projectConfig.Path, projectInfra.Options); err != nil {
+		err = c.provisionManager.Initialize(
+			ctx, c.projectConfig.Path, projectInfra.Options, c.projectConfig.ResourceGroupName)
+		if err != nil {
 			return false, fmt.Errorf("initializing provisioning manager: %w", err)
 		}
 

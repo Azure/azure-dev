@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -74,7 +75,12 @@ func (p *ProvisionProvider) Name() string {
 }
 
 // Initialize initializes the provider
-func (p *ProvisionProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
+func (p *ProvisionProvider) Initialize(
+	ctx context.Context,
+	projectPath string,
+	options provisioning.Options,
+	_ osutil.ExpandableString,
+) error {
 	p.options = options
 
 	return p.EnsureEnv(ctx)

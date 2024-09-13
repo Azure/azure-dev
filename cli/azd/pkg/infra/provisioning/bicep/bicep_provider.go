@@ -36,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
@@ -91,7 +92,12 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
-func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
+func (p *BicepProvider) Initialize(
+	ctx context.Context,
+	projectPath string,
+	options provisioning.Options,
+	rg osutil.ExpandableString,
+) error {
 	p.projectPath = projectPath
 	p.options = options
 	if p.options.Module == "" {
@@ -108,7 +114,7 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 	p.ignoreDeploymentState = options.IgnoreDeploymentState
 
 	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
-	err := p.EnsureEnv(ctx)
+	err := p.EnsureEnv(ctx, rg)
 	p.console.StopSpinner(ctx, "", input.Step)
 	return err
 }
@@ -117,7 +123,7 @@ var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")
 
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
 // values are unset. This also requires that the Bicep module can be compiled.
-func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
+func (p *BicepProvider) EnsureEnv(ctx context.Context, rg osutil.ExpandableString) error {
 	modulePath := p.modulePath()
 
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
@@ -163,6 +169,25 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	}
 
 	if scope == azure.DeploymentScopeResourceGroup {
+		rgEval, err := rg.Envsubst(p.env.Getenv)
+		if err != nil {
+			return err
+		}
+
+		if rgEval != "" {
+			// TODO(ellismg): We set this here because the rest of the system reads from `.env` when it needs
+			// AZURE_RESOURCE_GROUP. But I'm not sure this is exactly what we want to be doing here - it feels wrong
+			// on some level that changing the value in `azure.yaml` ends up replacing what was in the `.env` file. It seems
+			// like if it is explicitly set in `azure.yaml` than we do not need to store it in the `.env` file at all.
+			//
+			// We also need to understand the policy of what happens if both are set - which one wins?  I think that perhaps
+			// it should be `AZURE_RESOURCE_GROUP` since that also allows overriding via `AZURE_RESOURCE_GROUP=foo azd up`.
+			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgEval)
+			if err := p.envManager.Save(ctx, p.env); err != nil {
+				return fmt.Errorf("saving resource group name: %w", err)
+			}
+		}
+
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
 			rgName, err := p.prompters.PromptResourceGroup(ctx)
 			if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -56,7 +57,7 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"}, osutil.NewExpandableString(""))
 	require.NoError(t, err)
 
 	require.Equal(t, "00000000-0000-0000-0000-000000000000", env.GetSubscriptionId())
@@ -83,7 +84,7 @@ func TestManagerPreview(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"}, osutil.NewExpandableString(""))
 	require.NoError(t, err)
 
 	deploymentPlan, err := mgr.Preview(*mockContext.Context)
@@ -112,7 +113,7 @@ func TestManagerGetState(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"}, osutil.NewExpandableString(""))
 	require.NoError(t, err)
 
 	getResult, err := mgr.State(*mockContext.Context, nil)
@@ -141,7 +142,7 @@ func TestManagerDeploy(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"}, osutil.NewExpandableString(""))
 	require.NoError(t, err)
 
 	deployResult, err := mgr.Deploy(*mockContext.Context)
@@ -176,7 +177,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"}, osutil.NewExpandableString(""))
 	require.NoError(t, err)
 
 	destroyOptions := provisioning.NewDestroyOptions(false, false)
@@ -212,7 +213,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		nil,
 		cloud.AzurePublic(),
 	)
-	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
+	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"}, osutil.NewExpandableString(""))
 	require.NoError(t, err)
 
 	destroyOptions := provisioning.NewDestroyOptions(false, false)

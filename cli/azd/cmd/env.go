@@ -458,7 +458,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	defer func() { _ = infra.Cleanup() }()
 
 	// env refresh supports "BYOI" infrastructure where bicep isn't available
-	err = ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, infra.Options)
+	err = ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, infra.Options, ef.projectConfig.ResourceGroupName)
 	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
 		// If bicep is not available, we continue to prompt for subscription and location unfiltered
 		err = provisioning.EnsureSubscriptionAndLocation(ctx, ef.envManager, ef.env, ef.prompters,

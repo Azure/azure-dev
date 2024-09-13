@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -36,7 +37,12 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (p *TestProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
+func (p *TestProvider) Initialize(
+	ctx context.Context,
+	projectPath string,
+	options provisioning.Options,
+	_ osutil.ExpandableString,
+) error {
 	p.projectPath = projectPath
 	p.options = options
 

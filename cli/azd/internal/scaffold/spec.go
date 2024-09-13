@@ -11,6 +11,7 @@ type InfraSpec struct {
 
 	// Databases to create
 	DbPostgres    *DatabasePostgres
+	DbMySql       *DatabaseMySql
 	DbCosmosMongo *DatabaseCosmosMongo
 }
 
@@ -22,6 +23,11 @@ type Parameter struct {
 }
 
 type DatabasePostgres struct {
+	DatabaseUser string
+	DatabaseName string
+}
+
+type DatabaseMySql struct {
 	DatabaseUser string
 	DatabaseName string
 }
@@ -42,6 +48,7 @@ type ServiceSpec struct {
 
 	// Connection to a database
 	DbPostgres    *DatabaseReference
+	DbMySql       *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
 }

@@ -18,6 +18,13 @@ param databaseName string
 @secure()
 param databasePassword string
 {{- end}}
+{{- if .DbMySql}}
+param databaseHost string
+param databaseUser string
+param databaseName string
+@secure()
+param databasePassword string
+{{- end}}
 {{- if .DbRedis}}
 param redisName string
 {{- end}}

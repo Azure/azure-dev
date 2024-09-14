@@ -207,6 +207,8 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		switch db {
 		case appdetect.DbPostgres:
 			recommendedServices = append(recommendedServices, "Azure Database for PostgreSQL flexible server")
+		case appdetect.DbMySql:
+			recommendedServices = append(recommendedServices, "Azure Database for MySQL flexible server")
 		case appdetect.DbMongo:
 			recommendedServices = append(recommendedServices, "Azure CosmosDB API for MongoDB")
 		case appdetect.DbRedis:

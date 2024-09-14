@@ -129,6 +129,13 @@ func ExecInfra(
 		}
 	}
 
+	if spec.DbMySql != nil {
+		err = Execute(t, "db-mysql.bicep", spec.DbMySql, filepath.Join(infraApp, "db-mysql.bicep"))
+		if err != nil {
+			return fmt.Errorf("scaffolding mysql: %w", err)
+		}
+	}
+
 	for _, svc := range spec.Services {
 		err = Execute(t, "host-containerapp.bicep", svc, filepath.Join(infraApp, svc.Name+".bicep"))
 		if err != nil {
@@ -150,8 +157,8 @@ func ExecInfra(
 }
 
 func preExecExpand(spec *InfraSpec) {
-	// postgres requires specific password seeding parameters
-	if spec.DbPostgres != nil {
+	// postgres and mysql requires specific password seeding parameters
+	if spec.DbPostgres != nil || spec.DbMySql != nil {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
 				Name:   "databasePassword",

@@ -91,7 +91,7 @@ module appsEnv './shared/apps-env.bicep' = {
   }
   scope: rg
 }
-{{- if (or .DbCosmosMongo .DbPostgres)}}
+{{- if (or (or .DbCosmosMongo .DbPostgres) .DbMySql)}}
 
 resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVault.outputs.name
@@ -111,8 +111,8 @@ module cosmosDb './app/db-cosmos-mongo.bicep' = {
   scope: rg
 }
 {{- end}}
-{{- if .DbPostgres}}
 
+{{- if .DbPostgres}}
 module postgresDb './app/db-postgres.bicep' = {
   name: 'postgresDb'
   params: {
@@ -126,8 +126,23 @@ module postgresDb './app/db-postgres.bicep' = {
   scope: rg
 }
 {{- end}}
-{{- range .Services}}
 
+{{- if .DbMySql}}
+module mysqlDb './app/db-mysql.bicep' = {
+  name: 'mysqlDb'
+  params: {
+    serverName: '${abbrs.dBforMySQLServers}${resourceToken}'
+    location: location
+    tags: tags
+    databasePassword: databasePassword
+    keyVaultName: keyVault.outputs.name
+    allowAllIPsFirewall: true
+  }
+  scope: rg
+}
+{{- end}}
+
+{{- range .Services}}
 module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
   name: '{{.Name}}'
   params: {
@@ -147,10 +162,16 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
     {{- end}}
     {{- if .DbPostgres}}
-    databaseName: postgresDb.outputs.databaseName
-    databaseHost: postgresDb.outputs.databaseHost
-    databaseUser: postgresDb.outputs.databaseUser
-    databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
+    postgresDatabaseName: postgresDb.outputs.databaseName
+    postgresDatabaseHost: postgresDb.outputs.databaseHost
+    postgresDatabaseUser: postgresDb.outputs.databaseUser
+    postgresDatabasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
+    {{- end}}
+    {{- if .DbMySql}}
+    mysqlDatabaseName: mysqlDb.outputs.databaseName
+    mysqlDatabaseHost: mysqlDb.outputs.databaseHost
+    mysqlDatabaseUser: mysqlDb.outputs.databaseUser
+    mysqlDatabasePassword: vault.getSecret(mysqlDb.outputs.databaseConnectionKey)
     {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [

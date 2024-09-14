@@ -21,12 +21,15 @@ To troubleshoot any issues, see [troubleshooting](#troubleshooting).
 Configure environment variables for running services by updating `settings` in [main.parameters.json](./infra/main.parameters.json).
 
 {{- range .Services}}
-{{- if or .DbPostgres .DbCosmosMongo .DbRedis }}
+{{- if or .DbPostgres .DbMysql .DbCosmosMongo .DbRedis }}
 
 #### Database connections for `{{.Name}}`
 {{ end}}
 {{- if .DbPostgres }}
 - `POSTGRES_*` environment variables are configured in [{{.Name}}.bicep](./infra/app/{{.Name}}.bicep) to connect to the Postgres database. Modify these variables to match your application's needs.
+{{- end}}
+{{- if .DbMysql }}
+- `MYSQL_*` environment variables are configured in [{{.Name}}.bicep](./infra/app/{{.Name}}.bicep) to connect to the Mysql database. Modify these variables to match your application's needs.
 {{- end}}
 {{- if .DbCosmosMongo }}
 - `AZURE_COSMOS_MONGODB_CONNECTION_STRING` environment variable is configured in [{{.Name}}.bicep](./infra/app/{{.Name}}.bicep) to connect to the MongoDB database. Modify this variable to match your application's needs.
@@ -64,6 +67,9 @@ Each bicep file declares resources to be provisioned. The resources are provisio
 {{- end}}
 {{- if .DbPostgres}}
 - [app/db-postgre.bicep](./infra/app/db-postgre.bicep) - Azure Postgres Flexible Server to host the '{{.DbPostgres.DatabaseName}}' database.
+{{- end}}
+{{- if .DbMysql}}
+- [app/db-mysql.bicep](./infra/app/db-mysql.bicep) - Azure MySQL Flexible Server to host the '{{.DbMysql.DatabaseName}}' database.
 {{- end}}
 {{- if .DbCosmosMongo}}
 - [app/db-cosmos.bicep](./infra/app/db-cosmos.bicep) - Azure Cosmos DB (MongoDB) to host the '{{.DbCosmosMongo.DatabaseName}}' database.

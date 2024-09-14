@@ -122,17 +122,17 @@ func ExecInfra(
 		}
 	}
 
-	if spec.DbMySql != nil {
-		err = Execute(t, "db-mysql.bicep", spec.DbMySql, filepath.Join(infraApp, "db-mysql.bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding mysql: %w", err)
-		}
-	}
-
 	if spec.DbPostgres != nil {
 		err = Execute(t, "db-postgres.bicep", spec.DbPostgres, filepath.Join(infraApp, "db-postgres.bicep"))
 		if err != nil {
 			return fmt.Errorf("scaffolding postgres: %w", err)
+		}
+	}
+
+	if spec.DbMySql != nil {
+		err = Execute(t, "db-mysql.bicep", spec.DbMySql, filepath.Join(infraApp, "db-mysql.bicep"))
+		if err != nil {
+			return fmt.Errorf("scaffolding mysql: %w", err)
 		}
 	}
 

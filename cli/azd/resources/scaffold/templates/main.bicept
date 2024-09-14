@@ -162,16 +162,16 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
     {{- end}}
     {{- if .DbPostgres}}
-    databaseName: postgresDb.outputs.databaseName
-    databaseHost: postgresDb.outputs.databaseHost
-    databaseUser: postgresDb.outputs.databaseUser
-    databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
+    postgresDatabaseName: postgresDb.outputs.databaseName
+    postgresDatabaseHost: postgresDb.outputs.databaseHost
+    postgresDatabaseUser: postgresDb.outputs.databaseUser
+    postgresDatabasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
     {{- end}}
     {{- if .DbMySql}}
-    databaseName: mysqlDb.outputs.databaseName
-    databaseHost: mysqlDb.outputs.databaseHost
-    databaseUser: mysqlDb.outputs.databaseUser
-    databasePassword: vault.getSecret(mysqlDb.outputs.databaseConnectionKey)
+    mysqlDatabaseName: mysqlDb.outputs.databaseName
+    mysqlDatabaseHost: mysqlDb.outputs.databaseHost
+    mysqlDatabaseUser: mysqlDb.outputs.databaseUser
+    mysqlDatabasePassword: vault.getSecret(mysqlDb.outputs.databaseConnectionKey)
     {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [

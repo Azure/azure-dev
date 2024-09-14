@@ -12,18 +12,18 @@ param applicationInsightsName string
 param cosmosDbConnectionString string
 {{- end}}
 {{- if .DbPostgres}}
-param databaseHost string
-param databaseUser string
-param databaseName string
+param postgresDatabaseHost string
+param postgresDatabaseUser string
+param postgresDatabaseName string
 @secure()
-param databasePassword string
+param postgresDatabasePassword string
 {{- end}}
 {{- if .DbMySql}}
-param databaseHost string
-param databaseUser string
-param databaseName string
+param mysqlDatabaseHost string
+param mysqlDatabaseUser string
+param mysqlDatabaseName string
 @secure()
-param databasePassword string
+param mysqlDatabasePassword string
 {{- end}}
 {{- if .DbRedis}}
 param redisName string
@@ -149,8 +149,14 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {{- end}}
         {{- if .DbPostgres}}
         {
-          name: 'db-pass'
-          value: databasePassword
+          name: 'postgres-db-pass'
+          value: postgresDatabasePassword
+        }
+        {{- end}}
+        {{- if .DbMySql}}
+        {
+          name: 'mysql-db-pass'
+          value: mysqlDatabasePassword
         }
         {{- end}}
       ],
@@ -178,23 +184,45 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
             {{- if .DbPostgres}}
             {
               name: 'POSTGRES_HOST'
-              value: databaseHost
+              value: postgresDatabaseHost
             }
             {
               name: 'POSTGRES_USERNAME'
-              value: databaseUser
+              value: postgresDatabaseUser
             }
             {
               name: 'POSTGRES_DATABASE'
-              value: databaseName
+              value: postgresDatabaseName
             }
             {
               name: 'POSTGRES_PASSWORD'
-              secretRef: 'db-pass'
+              secretRef: 'postgres-db-pass'
             }
             {
               name: 'POSTGRES_PORT'
               value: '5432'
+            }
+            {{- end}}
+            {{- if .DbMySql}}
+            {
+              name: 'MYSQL_HOST'
+              value: mysqlDatabaseHost
+            }
+            {
+              name: 'MYSQL_USERNAME'
+              value: mysqlDatabaseUser
+            }
+            {
+              name: 'MYSQL_DATABASE'
+              value: mysqlDatabaseName
+            }
+            {
+              name: 'MYSQL_PASSWORD'
+              secretRef: 'mysql-db-pass'
+            }
+            {
+              name: 'MYSQL_PORT'
+              value: '3306'
             }
             {{- end}}
             {{- if .Frontend}}

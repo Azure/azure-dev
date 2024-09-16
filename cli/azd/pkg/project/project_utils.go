@@ -14,13 +14,14 @@ import (
 	"github.com/otiai10/copy"
 )
 
-// createDeployableZip creates a zip file of a folder.
+// createDeployableZip creates a zip file of a folder, recursively.
+// Returns the path to the created zip file or an error if it fails.
 func createDeployableZip(projectName string, appName string, path string) (string, error) {
 	// Create the output zip file path
 	filePath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-azddeploy-%d.zip", projectName, appName, time.Now().Unix()))
 	zipFile, err := os.Create(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to create zip file: %w", err)
+		return "", fmt.Errorf("failed when creating zip package to deploy %s: %w", appName, err)
 	}
 
 	// Zip the directory without any exclusions (they've already been handled in buildForZip)

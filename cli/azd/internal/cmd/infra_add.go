@@ -312,7 +312,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 					Description: fmt.Sprintf("No models found in %s", a.env.GetLocation()),
 				})
 				confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
-					Message: "Would you like to try a different location?",
+					Message: "Try a different location?",
 				})
 				if err != nil {
 					return nil, err
@@ -543,7 +543,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console.Message(ctx, "")
 
 		y, err := a.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      "Would you like to preview and provision these changes?",
+			Message:      "Preview and provision these changes?",
 			DefaultValue: true,
 		})
 		if err != nil {
@@ -659,7 +659,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 			a.console.Message(ctx, "")
 			option, err := a.console.Select(ctx, input.ConsoleOptions{
-				Message: "Would you like to provision these changes?",
+				Message: "Provision these changes?",
 				Options: []string{"Yes", "No"},
 			})
 			if err != nil || option == 1 {

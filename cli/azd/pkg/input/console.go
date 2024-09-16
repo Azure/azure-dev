@@ -1056,9 +1056,9 @@ func NewConsole(
 // IsTerminal returns true if the given file descriptors are attached to a terminal,
 // taking into account of environment variables that force TTY behavior.
 func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
-	// User override to force non-TTY behavior
-	if ok, _ := strconv.ParseBool(os.Getenv("AZD_DEBUG_FORCE_NO_TTY")); ok {
-		return false
+	// User override to force TTY behavior
+	if forceTty, err := strconv.ParseBool(os.Getenv("AZD_FORCE_TTY")); err == nil {
+		return forceTty
 	}
 
 	// By default, detect if we are running on CI and force no TTY mode if we are.

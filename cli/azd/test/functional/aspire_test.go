@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/stretchr/testify/require"
@@ -235,7 +236,6 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 // Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
 func Test_CLI_Aspire_Deploy(t *testing.T) {
-
 	restoreDotnetWorkload(t)
 
 	t.Parallel()
@@ -257,7 +257,8 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 		}
 	}()
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
 	err = copySample(dir, "aspire-full")

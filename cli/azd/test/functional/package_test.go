@@ -163,6 +163,46 @@ func Test_CLI_Package(t *testing.T) {
 	require.Contains(t, packageResult.Stdout, fmt.Sprintf("Package Output: %s", os.TempDir()))
 }
 
+/*
+Test_CLI_Package_ZipIgnore
+
+This test verifies that the packaging logic correctly handles the inclusion and exclusion of files
+based on the presence or absence of `.webappignore` and `.funcignore` files. The following scenarios are covered:
+
+1. Node_App_Service_With_Webappignore
+   - Verifies that `node_modules` is included when `.webappignore` is present,
+     and that specific files like `logs/log.txt` are excluded as per the rules defined in the `.webappignore` file.
+
+2. Python_App_Service_With_Webappignore
+   - Verifies that Python-specific files like `__pycache__` and `.venv` are included when `.webappignore` is present,
+     and files like `logs/log.txt` are excluded based on the rules in the `.webappignore`.
+
+3. Python_App_Service_With_Pycache_Excluded
+   - Verifies that `__pycache__` is excluded when a `.webappignore` file explicitly contains a rule to exclude it,
+     while other directories like `.venv` are included since there is no exclusion rule for them.
+
+4. Function_App_With_Funcignore
+   - Verifies that a Function App respects the `.funcignore` file, ensuring that `logs/log.txt` is excluded
+     as per the rules defined in `.funcignore`.
+
+5. Node_App_Service_Without_Webappignore
+   - Verifies that `node_modules` is excluded when no `.webappignore` is present,
+     and that files like `logs/log.txt` are included since no exclusion rules apply without the `.webappignore`.
+
+6. Python_App_Service_Without_Webappignore
+   - Verifies that Python-specific files like `__pycache__`
+     and `.venv` are excluded by default when no `.webappignore` is present,
+     and that files like `logs/log.txt` are included.
+
+7. Function_App_Without_Funcignore
+   - Verifies that when no `.funcignore` file is present, no exclusions are applied, and files such as `logs/log.txt`
+     are included in the package.
+
+For each scenario, the test simulates the presence or absence of the relevant
+	 `.ignore` files and checks the contents of the resulting
+     zip package to ensure the correct files are included or excluded as expected.
+*/
+
 func Test_CLI_Package_ZipIgnore(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -185,8 +225,10 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 
 	// Print directory contents for debugging if printDebug is true
 	if printDebug {
-		printDirContents(t, "service1", filepath.Join(dir, "src", "service1"))
-		printDirContents(t, "service2", filepath.Join(dir, "src", "service2"))
+		printDirContents(t, "service_node", filepath.Join(dir, "src", "service_node"))
+		printDirContents(t, "service_python", filepath.Join(dir, "src", "service_python"))
+		printDirContents(t, "service_python_pycache", filepath.Join(dir, "src", "service_python_pycache"))
+		printDirContents(t, "service_function", filepath.Join(dir, "src", "service_function"))
 	}
 
 	// Run the init command to initialize the project
@@ -202,119 +244,107 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 
 	// Define the scenarios to test
 	scenarios := []struct {
-		name              string
-		description       string
-		enabled           bool
-		rootZipIgnore     string
-		service1ZipIgnore string
-		expectedFiles     map[string]map[string]bool
+		name                   string
+		description            string
+		serviceName            string // This is the actual service name used in the directory
+		expectedFiles          map[string]bool
+		shouldDeleteIgnoreFile bool // Flag to simulate the absence of .webappignore or .funcignore
 	}{
 		{
-			name: "No zipignore",
-			description: "Tests the default behavior when no .zipignore files are present. " +
-				"Verifies that common directories like __pycache__, .venv, and node_modules are excluded.",
-			enabled: true,
-			expectedFiles: map[string]map[string]bool{
-				"service1": {
-					"testfile.py":               true,
-					"__pycache__/testcache.txt": false,
-					".venv/pyvenv.cfg":          false,
-					"logs/log.txt":              true,
-				},
-				"service2": {
-					"testfile.js":                            true,
-					"node_modules/some_package/package.json": false,
-					"logs/log.txt":                           true,
-				},
+			name: "Node_App_Service_With_Webappignore",
+			description: "Verifies that node_modules are included when " +
+				".webappignore is present, and logs/log.txt is excluded.",
+			serviceName:            "service_node",
+			shouldDeleteIgnoreFile: false,
+			expectedFiles: map[string]bool{
+				"testfile.js":                        true,
+				"node_modules/some_package/index.js": true,  // Included because .webappignore is present
+				"logs/log.txt":                       false, // Excluded by .webappignore
 			},
 		},
 		{
-			name: "Root zipignore excluding pycache",
-			description: "Tests the behavior when a root .zipignore excludes __pycache__.  " +
-				"Verifies that __pycache__ is excluded in both services, but other directories are included.",
-			enabled:       true,
-			rootZipIgnore: "__pycache__\n",
-			expectedFiles: map[string]map[string]bool{
-				"service1": {
-					"testfile.py":               true,
-					"__pycache__/testcache.txt": false,
-					".venv/pyvenv.cfg":          true,
-					"logs/log.txt":              true,
-				},
-				"service2": {
-					"testfile.js":                            true,
-					"node_modules/some_package/package.json": true,
-					"logs/log.txt":                           true,
-				},
+			name: "Python_App_Service_With_Webappignore",
+			description: "Verifies that __pycache__ and .venv are included when " +
+				" .webappignore is present, and logs/log.txt is excluded.",
+			serviceName:            "service_python",
+			shouldDeleteIgnoreFile: false,
+			expectedFiles: map[string]bool{
+				"testfile.py":               true,
+				"__pycache__/testcache.txt": true,  // Included because .webappignore is present
+				".venv/pyvenv.cfg":          true,  // Included because .webappignore is present
+				"logs/log.txt":              false, // Excluded by .webappignore
 			},
 		},
 		{
-			name: "Root and Service1 zipignore",
-			description: "Tests the behavior when both the root and Service1 have .zipignore files.  " +
-				"Verifies that the root .zipignore affects both services, but Service1's .zipignore " +
-				"takes precedence for its own files.",
-			enabled:           true,
-			rootZipIgnore:     "logs/\n",
-			service1ZipIgnore: "__pycache__\n",
-			expectedFiles: map[string]map[string]bool{
-				"service1": {
-					"testfile.py":               true,
-					"__pycache__/testcache.txt": false,
-					".venv/pyvenv.cfg":          true,
-					"logs/log.txt":              false,
-				},
-				"service2": {
-					"testfile.js":                            true,
-					"node_modules/some_package/package.json": true,
-					"logs/log.txt":                           false,
-				},
+			name:                   "Python_App_Service_With_Pycache_Excluded",
+			description:            "Verifies that __pycache__ is excluded when .webappignore has a rule to exclude it.",
+			serviceName:            "service_python_pycache",
+			shouldDeleteIgnoreFile: false,
+			expectedFiles: map[string]bool{
+				"testfile.py":               true,
+				"__pycache__/testcache.txt": false, // Excluded by .webappignore rule
+				".venv/pyvenv.cfg":          true,  // Included because no exclusion rule
+				"logs/log.txt":              false, // Excluded by .webappignore
 			},
 		},
 		{
-			name: "Service1 zipignore only",
-			description: "Tests the behavior when only Service1 has a .zipignore file. " +
-				"Verifies that Service1 follows its .zipignore, while Service2 uses the default behavior.",
-			enabled:           true,
-			service1ZipIgnore: "__pycache__\n",
-			expectedFiles: map[string]map[string]bool{
-				"service1": {
-					"testfile.py":               true,
-					"__pycache__/testcache.txt": false,
-					".venv/pyvenv.cfg":          true,
-					"logs/log.txt":              true,
-				},
-				"service2": {
-					"testfile.js":                            true,
-					"node_modules/some_package/package.json": false,
-					"logs/log.txt":                           true,
-				},
+			name:                   "Function_App_With_Funcignore",
+			description:            "Verifies that logs/log.txt is excluded when .funcignore is present.",
+			serviceName:            "service_function",
+			shouldDeleteIgnoreFile: false,
+			expectedFiles: map[string]bool{
+				"testfile.py":               true,
+				"__pycache__/testcache.txt": true,
+				".venv/pyvenv.cfg":          true,
+				"logs/log.txt":              false, // Excluded by .funcignore
+			},
+		},
+		{
+			name:                   "Node_App_Service_Without_Webappignore",
+			description:            "Verifies that node_modules is excluded when .webappignore is not present.",
+			serviceName:            "service_node",
+			shouldDeleteIgnoreFile: true,
+			expectedFiles: map[string]bool{
+				"testfile.js":                        true,
+				"node_modules/some_package/index.js": false, // Excluded because no .webappignore
+				"logs/log.txt":                       true,  // Included because no .webappignore
+			},
+		},
+		{
+			name:                   "Python_App_Service_Without_Webappignore",
+			description:            "Verifies that __pycache__ and .venv are excluded when .webappignore is not present.",
+			serviceName:            "service_python",
+			shouldDeleteIgnoreFile: true,
+			expectedFiles: map[string]bool{
+				"testfile.py":               true,
+				"__pycache__/testcache.txt": false, // Excluded because no .webappignore
+				".venv/pyvenv.cfg":          false, // Excluded because no .webappignore
+				"logs/log.txt":              true,  // Included because no .webappignore
+			},
+		},
+		{
+			name:                   "Function_App_Without_Funcignore",
+			description:            "Verifies that logs/log.txt is included when .funcignore is not present.",
+			serviceName:            "service_function",
+			shouldDeleteIgnoreFile: true,
+			expectedFiles: map[string]bool{
+				"testfile.py":               true,
+				"__pycache__/testcache.txt": false,
+				".venv/pyvenv.cfg":          false,
+				"logs/log.txt":              true, // Included because no .funcignore
 			},
 		},
 	}
 
 	for _, scenario := range scenarios {
-		if !scenario.enabled {
-			continue
-		}
-
 		t.Run(scenario.name, func(t *testing.T) {
 			// Print the scenario description
 			t.Logf("Scenario: %s - %s", scenario.name, scenario.description)
 
-			// Set up .zipignore files based on the scenario
-			if scenario.rootZipIgnore != "" {
-				err := os.WriteFile(filepath.Join(dir, ".zipignore"), []byte(scenario.rootZipIgnore), 0600)
-				require.NoError(t, err)
-			}
-			if scenario.service1ZipIgnore != "" {
-				err := os.WriteFile(filepath.Join(dir, "src", "service1", ".zipignore"),
-					[]byte(scenario.service1ZipIgnore), 0600)
-				require.NoError(t, err)
-			}
-
-			// Print directory contents after writing .zipignore if printDebug is true
-			if printDebug {
-				printDirContents(t, "service1", filepath.Join(dir, "src", "service1"))
+			// If we're simulating the absence of the ignore file, delete it
+			if scenario.shouldDeleteIgnoreFile {
+				os.Remove(filepath.Join(dir, "src", scenario.serviceName, ".webappignore"))
+				os.Remove(filepath.Join(dir, "src", scenario.serviceName, ".funcignore"))
 			}
 
 			// Run the package command and specify an output path
@@ -325,26 +355,11 @@ func Test_CLI_Package_ZipIgnore(t *testing.T) {
 			_, err = cli.RunCommand(ctx, "package", "--output-path", outputDir)
 			require.NoError(t, err)
 
-			// Print directory contents of the output directory if printDebug is true
-			if printDebug {
-				printDirContents(t, scenario.name+" output", outputDir)
-			}
+			// Check contents of Service package
+			checkServicePackage(t, outputDir, scenario.serviceName, scenario.expectedFiles, printDebug)
 
-			// Verify that the package was created and the output directory exists
-			files, err := os.ReadDir(outputDir)
-			require.NoError(t, err)
-			require.Len(t, files, 2)
-
-			// Check contents of Service1 package
-			checkServicePackage(t, outputDir, "service1", scenario.expectedFiles["service1"], printDebug)
-
-			// Check contents of Service2 package
-			checkServicePackage(t, outputDir, "service2", scenario.expectedFiles["service2"], printDebug)
-
-			// Clean up .zipignore files and generated zip files
+			// Clean up generated zip files and ignore files
 			os.RemoveAll(outputDir)
-			os.Remove(filepath.Join(dir, ".zipignore"))
-			os.Remove(filepath.Join(dir, "src", "service1", ".zipignore"))
 		})
 	}
 }

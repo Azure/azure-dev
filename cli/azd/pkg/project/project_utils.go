@@ -14,38 +14,30 @@ import (
 	"github.com/otiai10/copy"
 )
 
-// CreateDeployableZip creates a zip file of a folder, recursively.
-// Returns the path to the created zip file or an error if it fails.
+// createDeployableZip creates a zip file of a folder.
 func createDeployableZip(projectName string, appName string, path string) (string, error) {
-	// TODO: should probably avoid picking up files that weren't meant to be deployed (ie, local .env files, etc..)
+	// Create the output zip file path
 	filePath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-azddeploy-%d.zip", projectName, appName, time.Now().Unix()))
 	zipFile, err := os.Create(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed when creating zip package to deploy %s: %w", appName, err)
+		return "", fmt.Errorf("failed to create zip file: %w", err)
 	}
 
-	// Read and honor the .dotignore files
-	ignoreMatchers, err := dotignore.ReadIgnoreFiles(path)
-	if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("reading .dotignore files: %w", err)
-	}
-
-	// Create the zip file, excluding files that match the .dotignore rules
-	err = rzip.CreateFromDirectoryWithIgnore(path, zipFile, ignoreMatchers)
+	// Zip the directory without any exclusions (they've already been handled in buildForZip)
+	err = rzip.CreateFromDirectory(path, zipFile)
 	if err != nil {
-		// If we fail here, just do our best to close things out and cleanup
 		zipFile.Close()
 		os.Remove(zipFile.Name())
 		return "", err
 	}
 
+	// Close the zip file and return the path
 	if err := zipFile.Close(); err != nil {
-		// May fail, but again, we'll do our best to cleanup here.
 		os.Remove(zipFile.Name())
 		return "", err
 	}
 
-	return zipFile.Name(), nil
+	return filePath, nil
 }
 
 // excludeDirEntryCondition resolves when a file or directory should be considered or not as part of build, when build is a
@@ -55,60 +47,45 @@ type excludeDirEntryCondition func(path string, file os.FileInfo) bool
 // buildForZipOptions provides a set of options for doing build for zip
 type buildForZipOptions struct {
 	excludeConditions []excludeDirEntryCondition
-	excludeCallback   func(src string) ([]excludeDirEntryCondition, error)
 }
 
-// buildForZip is used by projects whose build strategy is to only copy the source code into a folder, which is later
-// zipped for packaging. buildForZipOptions provides the specific details for each language regarding which files should
-// not be copied.
-func buildForZip(src, dst string, options buildForZipOptions) error {
-	// Add a global exclude condition for the .zipignore file
-	ignoreMatchers, err := dotignore.ReadIgnoreFiles(src, ".zipignore")
+// buildForZip is used by projects to prepare a directory for
+// zipping, excluding files based on the ignore file and other conditions.
+func buildForZip(src, dst string, options buildForZipOptions, serviceConfig *ServiceConfig) error {
+	// Lookup the appropriate ignore file name based on the service kind (Host)
+	ignoreFileName := GetIgnoreFileNameByKind(serviceConfig.Host)
+
+	// Read and honor the specified ignore file if it exists
+	ignoreMatcher, err := dotignore.ReadDotIgnoreFile(src, ignoreFileName)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reading .zipignore files: %w", err)
+		return fmt.Errorf("reading %s file: %w", ignoreFileName, err)
 	}
 
-	// Determine if the .zipignore file exists at the root of the service
-	zipIgnoreExists := len(ignoreMatchers) > 0
+	// Temporary array to build exclude conditions dynamically
+	tempExcludeConditions := []excludeDirEntryCondition{}
 
-	// Conditionally exclude virtual environments, __pycache__, and node_modules only if .zipignore doesn't exist
-	if !zipIgnoreExists {
-		if options.excludeCallback != nil {
-			callbackExcludes, err := options.excludeCallback(src)
-			if err != nil {
-				return fmt.Errorf("applying exclude callback: %w", err)
-			}
-			options.excludeConditions = append(options.excludeConditions, callbackExcludes...)
-		}
-	}
-
-	options.excludeConditions = append(options.excludeConditions, func(path string, file os.FileInfo) bool {
-		// Check if the relative path should be ignored based on .zipignore rules
-		if len(ignoreMatchers) > 0 {
+	// If there's no .ignore file, add the provided excludeConditions
+	if ignoreMatcher == nil {
+		tempExcludeConditions = append(tempExcludeConditions, options.excludeConditions...)
+	} else {
+		// If there's a .ignore file, apply ignoreMatcher only
+		tempExcludeConditions = append(tempExcludeConditions, func(path string, file os.FileInfo) bool {
 			relativePath, err := filepath.Rel(src, path)
-			if err != nil {
-				return false
-			}
-			isDir := file.IsDir()
-			if dotignore.ShouldIgnore(relativePath, isDir, ignoreMatchers) {
+			if err == nil && dotignore.ShouldIgnore(relativePath, file.IsDir(), ignoreMatcher) {
 				return true
 			}
-		}
+			return false
+		})
+	}
 
-		// Always exclude .zipignore files
-		if filepath.Base(path) == ".zipignore" {
-			return true
-		}
+	// Always append the global exclusions (e.g., .azure folder)
+	tempExcludeConditions = append(tempExcludeConditions, globalExcludeAzdFolder)
 
-		return false
-	})
-
-	// These exclude conditions apply to all projects
-	options.excludeConditions = append(options.excludeConditions, globalExcludeAzdFolder)
-
+	// Copy the source directory to the destination, applying the final exclude conditions
 	return copy.Copy(src, dst, copy.Options{
 		Skip: func(srcInfo os.FileInfo, src, dest string) (bool, error) {
-			for _, checkExclude := range options.excludeConditions {
+			// Apply exclude conditions (either the default or the ignoreMatcher)
+			for _, checkExclude := range tempExcludeConditions {
 				if checkExclude(src, srcInfo) {
 					return true, nil
 				}

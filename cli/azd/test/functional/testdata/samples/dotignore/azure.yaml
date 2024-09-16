@@ -2,11 +2,19 @@
 
 name: dotignoretest
 services:
-  service1:
-    project: src/service1
+  service_python:
+    project: src/service_python
     language: python
     host: appservice
-  service2:
-    project: src/service2
+  service_node:
+    project: src/service_node
     language: js
+    host: appservice
+  service_function:
+    project: src/service_function
+    language: python
+    host: function
+  service_python_pycache:
+    project: src/service_python_pycache
+    language: python
     host: appservice

@@ -131,10 +131,10 @@ func (pp *pythonProject) Package(
 		packageSource,
 		packageDest,
 		buildForZipOptions{
-			excludeCallback: func(src string) ([]excludeDirEntryCondition, error) {
-				return []excludeDirEntryCondition{excludeVirtualEnv, excludePyCache}, nil
-			},
-		}); err != nil {
+			excludeConditions: []excludeDirEntryCondition{excludeVirtualEnv, excludePyCache},
+		},
+		serviceConfig,
+	); err != nil {
 
 		return nil, fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err)
 	}

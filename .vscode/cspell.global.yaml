@@ -74,6 +74,7 @@ ignoreWords:
     - fdfp
     - fics
     - Frontdoor
+    - funcignore
     - gitcli
     - golobby
     - graphsdk
@@ -162,6 +163,7 @@ ignoreWords:
     - vwan
     - wafrg
     - westus
+    - webappignore
     - Wans
     - apim
     - Retryable

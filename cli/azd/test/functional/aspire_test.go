@@ -259,6 +259,7 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 
 	session := recording.Start(t)
 	envName := randomOrStoredEnvName(session)
+	_ = cfgOrStoredSubscription(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
 	err = copySample(dir, "aspire-full")

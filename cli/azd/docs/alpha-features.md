@@ -13,6 +13,10 @@ The strategy to ask `azd` to `toggle` between modes is:
 - Disable _all_ experimental features: `azd config unset alpha.all` or `azd config set alpha.all off`
 - Disable _specific_ experimental feature: `azd config unset alpha.featureName` or `azd config set alpha.featureName off`
 
+In CI, the on/off mode can be configured using environment variables with the following scheme:
+
+- `AZD_ALPHA_ENABLE_<name>`: where `<name>` is the name of the feature, with dot `.` characters replaced by underscore `_` characters.
+
 ## Alpha feature
 
 All features start as alpha features (e.g., experimental). In this phase, the goal is to receive sufficient usage to get meaningful feedback around the feature’s design, functionality and user experience.

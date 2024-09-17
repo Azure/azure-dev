@@ -64,20 +64,6 @@ func ToMap(value any) (map[string]any, error) {
 	return mapValue, nil
 }
 
-// Converts the specified map to a value
-func FromMap(value map[string]any, v any) error {
-	jsonValue, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("failed to convert value to json: %w", err)
-	}
-
-	if err := json.Unmarshal(jsonValue, &v); err != nil {
-		return fmt.Errorf("failed to convert value to map: %w", err)
-	}
-
-	return nil
-}
-
 // ToJsonArray converts the specified value (slice) to a json array
 func ToJsonArray(value any) ([]any, error) {
 	if value == nil {

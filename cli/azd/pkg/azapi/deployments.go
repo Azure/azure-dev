@@ -5,13 +5,16 @@ package azapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -66,6 +69,7 @@ type Deployments interface {
 		parameters azure.ArmParameters,
 		tags map[string]*string,
 	) (*armresources.DeploymentPropertiesExtended, error)
+	// TODO Check if what if function bug is fixed
 	ValidatePreflightToResourceGroup(
 		ctx context.Context,
 		subscriptionId,
@@ -281,6 +285,17 @@ func (ds *deployments) ValidatePreflightToSubscription(
 	return validateResult.DeploymentValidateResult.Properties, nil
 }
 
+type PreflightErrorResponse struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details []struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"details"`
+	} `json:"error"`
+}
+
 func (ds *deployments) ValidatePreflightToResourceGroup(
 	ctx context.Context,
 	subscriptionId, resourceGroup, deploymentName string,
@@ -293,7 +308,10 @@ func (ds *deployments) ValidatePreflightToResourceGroup(
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	validate, err := deploymentClient.BeginValidate(ctx, resourceGroup, deploymentName,
+	var rawResponse *http.Response
+	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
+
+	validate, err := deploymentClient.BeginValidate(ctxWithResp, resourceGroup, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
 				Template:   armTemplate,
@@ -303,7 +321,28 @@ func (ds *deployments) ValidatePreflightToResourceGroup(
 			Tags: tags,
 		}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("calling preflight validate api failing: %w", err)
+		if rawResponse.StatusCode != 400 {
+			return nil, fmt.Errorf("calling preflight validate api failing: %w", err)
+		}
+
+		defer rawResponse.Body.Close()
+		body, errOnRawResponse := io.ReadAll(rawResponse.Body)
+		if errOnRawResponse != nil {
+			return nil, fmt.Errorf("failed to read response error body from preflight api: %w", errOnRawResponse)
+		}
+
+		var errPreflight PreflightErrorResponse
+		errOnRawResponse = json.Unmarshal(body, &errPreflight)
+		if errOnRawResponse != nil {
+			return nil, fmt.Errorf("failed to unmarshal preflight error response: %v", errOnRawResponse)
+		}
+
+		if len(errPreflight.Error.Details) > 0 {
+			detailMessage := errPreflight.Error.Details[0].Message
+			return nil, fmt.Errorf("calling preflight validate api failing: %s", detailMessage)
+		} else {
+			return nil, fmt.Errorf("calling preflight validate api failing: %w", err)
+		}
 	}
 
 	validateResult, err := validate.PollUntilDone(ctx, nil)

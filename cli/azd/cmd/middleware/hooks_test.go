@@ -29,10 +29,12 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"precommand": {
-				Run:   "echo 'hello'",
-				Shell: ext.ShellTypeBash,
+				{
+					Run:   "echo 'hello'",
+					Shell: ext.ShellTypeBash,
+				},
 			},
 		},
 	}
@@ -42,7 +44,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 
 	nextFn, actionRan := createNextFn()
 	hookRan := setupHookMock(mockContext, 0)
-	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, &runOptions, nextFn)
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
@@ -61,10 +63,12 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"precommand": {
-				Run:   "echo 'hello'",
-				Shell: ext.ShellTypeBash,
+				{
+					Run:   "echo 'hello'",
+					Shell: ext.ShellTypeBash,
+				},
 			},
 		},
 	}
@@ -74,7 +78,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 
 	nextFn, actionRan := createNextFn()
 	hookRan := setupHookMock(mockContext, 0)
-	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, &runOptions, nextFn)
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
@@ -100,7 +104,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 
 	nextFn, actionRan := createNextFn()
 	hookRan := setupHookMock(mockContext, 0)
-	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, &runOptions, nextFn)
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
@@ -119,10 +123,12 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"precommand": {
-				Run:   "exit 1",
-				Shell: ext.ShellTypeBash,
+				{
+					Run:   "exit 1",
+					Shell: ext.ShellTypeBash,
+				},
 			},
 		},
 	}
@@ -133,7 +139,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 	nextFn, actionRan := createNextFn()
 	// Set a non-zero exit code to simulate failure
 	hookRan := setupHookMock(mockContext, 1)
-	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, &runOptions, nextFn)
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
 
 	require.Nil(t, result)
 	require.Error(t, err)
@@ -154,11 +160,13 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"precommand": {
-				Run:             "exit 1",
-				Shell:           ext.ShellTypeBash,
-				ContinueOnError: true,
+				{
+					Run:             "exit 1",
+					Shell:           ext.ShellTypeBash,
+					ContinueOnError: true,
+				},
 			},
 		},
 	}
@@ -169,7 +177,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 	nextFn, actionRan := createNextFn()
 	// Set a non-zero exit code to simulate failure
 	hookRan := setupHookMock(mockContext, 1)
-	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, &runOptions, nextFn)
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
@@ -190,10 +198,12 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 
 	projectConfig := project.ProjectConfig{
 		Name: envName,
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"prealias": {
-				Run:   "echo 'hello'",
-				Shell: ext.ShellTypeBash,
+				{
+					Run:   "echo 'hello'",
+					Shell: ext.ShellTypeBash,
+				},
 			},
 		},
 	}
@@ -203,7 +213,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 
 	nextFn, actionRan := createNextFn()
 	hookRan := setupHookMock(mockContext, 0)
-	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, &runOptions, nextFn)
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
@@ -230,10 +240,12 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 		Language:        "ts",
 		RelativePath:    "./src/api",
 		Host:            "appservice",
-		Hooks: map[string]*ext.HookConfig{
+		Hooks: map[string][]*ext.HookConfig{
 			"predeploy": {
-				Shell: ext.ShellTypeBash,
-				Run:   "echo 'Hello'",
+				{
+					Shell: ext.ShellTypeBash,
+					Run:   "echo 'Hello'",
+				},
 			},
 		},
 	}
@@ -265,7 +277,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 		return &actions.ActionResult{}, err
 	}
 
-	result, err := runMiddleware(mockContext, azdContext, envName, &projectConfig, &runOptions, nextFn)
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
 
 	require.NotNil(t, result)
 	require.NoError(t, err)
@@ -315,7 +327,6 @@ func setupHookMock(mockContext *mocks.MockContext, exitCode int) *bool {
 
 func runMiddleware(
 	mockContext *mocks.MockContext,
-	azdContext *azdcontext.AzdContext,
 	envName string,
 	projectConfig *project.ProjectConfig,
 	runOptions *Options,

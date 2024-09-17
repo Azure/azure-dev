@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
@@ -73,7 +75,7 @@ type sourceManager struct {
 	options        *SourceOptions
 	serviceLocator ioc.ServiceLocator
 	configManager  config.UserConfigManager
-	httpClient     httputil.HttpClient
+	transport      policy.Transporter
 }
 
 // NewSourceManager creates a new SourceManager.
@@ -81,7 +83,7 @@ func NewSourceManager(
 	options *SourceOptions,
 	serviceLocator ioc.ServiceLocator,
 	configManager config.UserConfigManager,
-	httpClient httputil.HttpClient,
+	transport policy.Transporter,
 ) SourceManager {
 	if options == nil {
 		options = NewSourceOptions()
@@ -91,7 +93,7 @@ func NewSourceManager(
 		options:        options,
 		serviceLocator: serviceLocator,
 		configManager:  configManager,
-		httpClient:     httpClient,
+		transport:      transport,
 	}
 }
 
@@ -104,7 +106,7 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 
 	allSourceConfigs := []*SourceConfig{}
 
-	if sm.options.DefaultSources != nil && len(sm.options.DefaultSources) > 0 {
+	if len(sm.options.DefaultSources) > 0 {
 		allSourceConfigs = append(allSourceConfigs, sm.options.DefaultSources...)
 	}
 
@@ -138,7 +140,7 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 	} else {
 		// In the use case where template sources have never been configured,
 		// add Awesome-Azd as the default template source.
-		if err := sm.addInternal(ctx, SourceAwesomeAzd.Key, SourceAwesomeAzd); err != nil {
+		if err := sm.addInternal(SourceAwesomeAzd); err != nil {
 			return nil, fmt.Errorf("unable to default template source '%s': %w", SourceAwesomeAzd.Key, err)
 		}
 		allSourceConfigs = append(allSourceConfigs, SourceAwesomeAzd)
@@ -178,7 +180,7 @@ func (sm *sourceManager) Add(ctx context.Context, key string, source *SourceConf
 
 	source.Key = newKey
 
-	return sm.addInternal(ctx, source.Key, source)
+	return sm.addInternal(source)
 }
 
 // Remove removes a template source by the specified key.
@@ -221,13 +223,18 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 
 	switch config.Type {
 	case SourceKindFile:
-		source, err = NewFileTemplateSource(config.Name, config.Location)
+		source, err = newFileTemplateSource(config.Name, config.Location)
 	case SourceKindUrl:
-		source, err = NewUrlTemplateSource(ctx, config.Name, config.Location, sm.httpClient)
+		source, err = newUrlTemplateSource(ctx, config.Name, config.Location, sm.transport)
 	case SourceKindAwesomeAzd:
-		source, err = NewAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.httpClient)
+		source, err = newAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.transport)
 	case SourceKindResource:
-		source, err = NewJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
+		source, err = newJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
+	case SourceKindGh:
+		err = sm.serviceLocator.Invoke(func(ghCli *github.Cli, console input.Console) error {
+			source, err = newGhTemplateSource(ctx, config.Name, config.Location, ghCli, console)
+			return err
+		})
 	default:
 		err = sm.serviceLocator.ResolveNamed(string(config.Type), &source)
 		if err != nil {
@@ -242,7 +249,7 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	return source, nil
 }
 
-func (sm *sourceManager) addInternal(ctx context.Context, key string, source *SourceConfig) error {
+func (sm *sourceManager) addInternal(source *SourceConfig) error {
 	config, err := sm.configManager.Load()
 	if err != nil {
 		return fmt.Errorf("unable to load user configuration: %w", err)

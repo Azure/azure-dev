@@ -6,16 +6,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -41,9 +43,10 @@ func createServiceManager(
 	env *environment.Environment,
 	operationCache ServiceOperationCache,
 ) ServiceManager {
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	resourceManager := NewResourceManager(env, azCli, depOpService)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 
 	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(
 		map[string]any{
@@ -98,7 +101,7 @@ func Test_ServiceManager_Restore(t *testing.T) {
 		return nil
 	})
 
-	restoreCalled := convert.RefOf(false)
+	restoreCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		return sm.Restore(ctx, serviceConfig, progess)
@@ -131,7 +134,7 @@ func Test_ServiceManager_Build(t *testing.T) {
 		return nil
 	})
 
-	buildCalled := convert.RefOf(false)
+	buildCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
 	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
@@ -165,8 +168,8 @@ func Test_ServiceManager_Package(t *testing.T) {
 		return nil
 	})
 
-	fakeFrameworkPackageCalled := convert.RefOf(false)
-	fakeServiceTargetPackageCalled := convert.RefOf(false)
+	fakeFrameworkPackageCalled := to.Ptr(false)
+	fakeServiceTargetPackageCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkPackageCalled, fakeFrameworkPackageCalled)
 	ctx = context.WithValue(ctx, serviceTargetPackageCalled, fakeServiceTargetPackageCalled)
 
@@ -204,7 +207,7 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 		return nil
 	})
 
-	deployCalled := convert.RefOf(false)
+	deployCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
 
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
@@ -240,7 +243,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		env := environment.New("test")
 		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
-		serviceConfig.Image = "nginx"
+		serviceConfig.Image = osutil.NewExpandableString("nginx")
 
 		framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
@@ -282,7 +285,7 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
-	buildCalled := convert.RefOf(false)
+	buildCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
 	buildResult1, _ := logProgress(
@@ -314,7 +317,7 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 	sm1 := createServiceManager(mockContext, env, operationCache)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
-	packageCalled := convert.RefOf(false)
+	packageCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPackageCalled, packageCalled)
 
 	packageResult1, _ := logProgress(
@@ -447,24 +450,24 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 
 	mockarmresources.AddResourceGroupListMock(mockContext.HttpClient, "SUBSCRIPTION_ID", []*armresources.ResourceGroup{
 		{
-			ID:       convert.RefOf("ID"),
-			Name:     convert.RefOf("RESOURCE_GROUP"),
-			Location: convert.RefOf("eastus2"),
-			Type:     convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
+			ID:       to.Ptr("ID"),
+			Name:     to.Ptr("RESOURCE_GROUP"),
+			Location: to.Ptr("eastus2"),
+			Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
 		},
 	})
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("RESOURCE_GROUP"),
+		to.Ptr("RESOURCE_GROUP"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("ID"),
-				Name:     convert.RefOf("WEB_APP"),
-				Location: convert.RefOf("eastus2"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				ID:       to.Ptr("ID"),
+				Name:     to.Ptr("WEB_APP"),
+				Location: to.Ptr("eastus2"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: convert.RefOf("api"),
+					azure.TagKeyAzdServiceName: to.Ptr("api"),
 				},
 			},
 		},
@@ -491,7 +494,7 @@ func (f *fakeFramework) Requirements() FrameworkRequirements {
 	}
 }
 
-func (f *fakeFramework) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (f *fakeFramework) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{&fakeTool{}}
 }
 
@@ -581,7 +584,7 @@ func (st *fakeServiceTarget) Initialize(ctx context.Context, serviceConfig *Serv
 	return nil
 }
 
-func (st *fakeServiceTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+func (st *fakeServiceTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{&fakeTool{}}
 }
 

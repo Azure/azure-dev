@@ -24,12 +24,12 @@ const (
 
 type dotnetProject struct {
 	env       *environment.Environment
-	dotnetCli dotnet.DotNetCli
+	dotnetCli *dotnet.Cli
 }
 
 // NewDotNetProject creates a new instance of a dotnet project
 func NewDotNetProject(
-	dotNetCli dotnet.DotNetCli,
+	dotNetCli *dotnet.Cli,
 	env *environment.Environment,
 ) FrameworkService {
 	return &dotnetProject{
@@ -49,7 +49,7 @@ func (dp *dotnetProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (dp *dotnetProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{dp.dotnetCli}
 }
 

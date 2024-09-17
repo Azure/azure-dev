@@ -5,17 +5,20 @@ package project
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -37,17 +40,17 @@ services:
 	mockContext := mocks.NewMockContext(context.Background())
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("deployedApiSvc"),
-				Name:     convert.RefOf("deployedApiSvc"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("deployedApiSvc"),
+				Name:     to.Ptr("deployedApiSvc"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 			},
 		})
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -56,7 +59,8 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, azCli, depOpService)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 	targetResource, err := resourceManager.GetTargetResource(
 		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
@@ -81,21 +85,21 @@ services:
 	resourceName := "app-api-abc123"
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("app-api-abc123"),
+				ID:       to.Ptr("app-api-abc123"),
 				Name:     &resourceName,
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: convert.RefOf("api"),
+					azure.TagKeyAzdServiceName: to.Ptr("api"),
 				},
 			},
 		},
 	)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -103,7 +107,8 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, azCli, depOpService)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 	targetResource, err := resourceManager.GetTargetResource(
 		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
@@ -135,23 +140,23 @@ services:
 		&resourceGroupName,
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("deployedApiSvc"),
-				Name:     convert.RefOf("deployedApiSvc"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("deployedApiSvc"),
+				Name:     to.Ptr("deployedApiSvc"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 			},
 			{
-				ID:       convert.RefOf("webResource"),
-				Name:     convert.RefOf("webResource"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("webResource"),
+				Name:     to.Ptr("webResource"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: to.Ptr("web"),
 				},
 			},
 		})
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -160,7 +165,8 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, azCli, depOpService)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 
 	for _, svc := range projectConfig.Services {
 		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, env.GetSubscriptionId(), svc)
@@ -195,23 +201,23 @@ services:
 		&expectedResourceGroupName,
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("deployedApiSvc"),
-				Name:     convert.RefOf("deployedApiSvc"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("deployedApiSvc"),
+				Name:     to.Ptr("deployedApiSvc"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 			},
 			{
-				ID:       convert.RefOf("webResource"),
-				Name:     convert.RefOf("webResource"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("webResource"),
+				Name:     to.Ptr("webResource"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
+				Location: to.Ptr("eastus2"),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: to.Ptr("web"),
 				},
 			},
 		})
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,
@@ -221,7 +227,8 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, azCli, depOpService)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 	targetResource, err := resourceManager.GetTargetResource(
 		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
@@ -310,4 +317,28 @@ func TestMinimalYaml(t *testing.T) {
 			snapshot.SnapshotT(t, string(contents))
 		})
 	}
+}
+
+// Test_WindowsStylePathsFromYaml ensures that paths using a backslash are a seperator are correctly parsed from yaml.
+// `azd` prefers forward slashes as path separators, to allow for consistent handling across platforms, but supports
+// backslashes in yaml files, and treats them as if the user had used forward slashes instead.
+func Test_WindowsStylePathsFromYaml(t *testing.T) {
+	const testProj = `
+name: test-proj
+infra:
+  path: .\iac
+services:
+  api:
+    host: containerapp
+    language: js
+    project: src\api
+    dist: bin\api
+`
+
+	projectConfig, err := Parse(context.Background(), testProj)
+	require.NoError(t, err)
+
+	assert.Equal(t, filepath.FromSlash("./iac"), projectConfig.Infra.Path)
+	assert.Equal(t, filepath.FromSlash("src/api"), projectConfig.Services["api"].RelativePath)
+	assert.Equal(t, filepath.FromSlash("bin/api"), projectConfig.Services["api"].OutputPath)
 }

@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -12,12 +13,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type LocationFilterPredicate func(loc account.Location) bool
@@ -29,26 +30,26 @@ type Prompter interface {
 }
 
 type DefaultPrompter struct {
-	console        input.Console
-	env            *environment.Environment
-	accountManager account.Manager
-	azCli          azcli.AzCli
-	portalUrlBase  string
+	console         input.Console
+	env             *environment.Environment
+	accountManager  account.Manager
+	resourceService *azapi.ResourceService
+	portalUrlBase   string
 }
 
 func NewDefaultPrompter(
 	env *environment.Environment,
 	console input.Console,
 	accountManager account.Manager,
-	azCli azcli.AzCli,
-	portalUrlBase cloud.PortalUrlBase,
+	resourceService *azapi.ResourceService,
+	cloud *cloud.Cloud,
 ) Prompter {
 	return &DefaultPrompter{
-		console:        console,
-		env:            env,
-		accountManager: accountManager,
-		azCli:          azCli,
-		portalUrlBase:  portalUrlBase,
+		console:         console,
+		env:             env,
+		accountManager:  accountManager,
+		resourceService: resourceService,
+		portalUrlBase:   cloud.PortalUrlBase,
 	}
 }
 
@@ -59,7 +60,7 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	}
 
 	if len(subscriptionOptions) == 0 {
-		return "", fmt.Errorf(heredoc.Docf(
+		return "", errors.New(heredoc.Docf(
 			`no subscriptions found.
 			Ensure you have a subscription by visiting %s and search for Subscriptions in the search bar.
 			Once you have a subscription, run 'azd auth login' again to reload subscriptions.`,
@@ -112,12 +113,12 @@ func (p *DefaultPrompter) PromptLocation(
 
 func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, error) {
 	// Get current resource groups
-	groups, err := p.azCli.ListResourceGroup(ctx, p.env.GetSubscriptionId(), nil)
+	groups, err := p.resourceService.ListResourceGroup(ctx, p.env.GetSubscriptionId(), nil)
 	if err != nil {
 		return "", fmt.Errorf("listing resource groups: %w", err)
 	}
 
-	slices.SortFunc(groups, func(a, b azcli.AzCliResource) int {
+	slices.SortFunc(groups, func(a, b *azapi.Resource) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 
@@ -147,7 +148,7 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 		return "", fmt.Errorf("prompting for resource group name: %w", err)
 	}
 
-	err = p.azCli.CreateOrUpdateResourceGroup(ctx, p.env.GetSubscriptionId(), name, p.env.GetLocation(),
+	err = p.resourceService.CreateOrUpdateResourceGroup(ctx, p.env.GetSubscriptionId(), name, p.env.GetLocation(),
 		map[string]*string{
 			azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
 		},

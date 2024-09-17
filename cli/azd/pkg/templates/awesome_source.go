@@ -11,7 +11,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 type awesomeAzdTemplate struct {
@@ -21,15 +20,15 @@ type awesomeAzdTemplate struct {
 	Tags        []string `json:"tags"`
 }
 
-// NewAwesomeAzdTemplateSource creates a new template source from the awesome-azd templates json file.
-func NewAwesomeAzdTemplateSource(
+// newAwesomeAzdTemplateSource creates a new template source from the awesome-azd templates json file.
+func newAwesomeAzdTemplateSource(
 	ctx context.Context,
 	name string,
 	url string,
-	httpClient httputil.HttpClient,
+	transport policy.Transporter,
 ) (Source, error) {
 	pipeline := runtime.NewPipeline("azd-templates", "1.0.0", runtime.PipelineOptions{}, &policy.ClientOptions{
-		Transport: httpClient,
+		Transport: transport,
 	})
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
@@ -76,5 +75,5 @@ func NewAwesomeAzdTemplateSource(
 		})
 	}
 
-	return NewTemplateSource(name, awesomeAzdTemplates)
+	return newTemplateSource(name, awesomeAzdTemplates)
 }

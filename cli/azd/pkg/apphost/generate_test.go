@@ -33,6 +33,9 @@ var aspireBicepManifest []byte
 //go:embed testdata/aspire-container.json
 var aspireContainerManifest []byte
 
+//go:embed testdata/aspire-container-args.json
+var aspireContainerArgsManifest []byte
+
 // mockPublishManifest mocks the dotnet run --publisher manifest command to return a fixed manifest.
 func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[string]string) {
 	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -74,7 +77,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	filesFromManifest["aspire.hosting.azure.bicep.appinsights.bicep"] = ignoredBicepContent
 	filesFromManifest["aspire.hosting.azure.bicep.sql.bicep"] = ignoredBicepContent
 	mockPublishManifest(mockCtx, aspireBicepManifest, filesFromManifest)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -117,7 +120,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -160,7 +163,7 @@ func TestAspireDashboardGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -195,7 +198,7 @@ func TestAspireArgsGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireArgsManifest, nil)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireArgs.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -214,7 +217,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
 	mockPublishManifest(mockCtx, aspireContainerManifest, nil)
-	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
@@ -256,6 +259,28 @@ func TestAspireContainerGeneration(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+func TestAspireContainerArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	mockPublishManifest(mockCtx, aspireContainerArgsManifest, nil)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
+	require.NoError(t, err)
+
+	for _, name := range []string{"container0", "container1"} {
+		t.Run(name, func(t *testing.T) {
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
+			require.NoError(t, err)
+			snapshot.SnapshotT(t, tmpl)
+		})
+	}
 }
 
 func TestEvaluateForOutputs(t *testing.T) {

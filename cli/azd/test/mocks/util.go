@@ -31,3 +31,15 @@ func CreateEmptyHttpResponse(request *http.Request, statusCode int) (*http.Respo
 		Body:       http.NoBody,
 	}, nil
 }
+
+// ReadHttpBody reads the body of an HTTP request or response and converts it into the specified object
+func ReadHttpBody(body io.ReadCloser, v any) error {
+	defer body.Close()
+
+	jsonBytes, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(jsonBytes, v)
+}

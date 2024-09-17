@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -18,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/spf13/cobra"
-	"golang.org/x/exp/maps"
 )
 
 var userConfigPath string
@@ -457,9 +457,7 @@ func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult,
 		return nil, err
 	}
 
-	featureKeys := maps.Keys(features)
-	slices.Sort(featureKeys)
-
+	featureKeys := slices.Sorted(maps.Keys(features))
 	var alphaOutput []string
 	for _, alphaFeatureKey := range featureKeys {
 		alphaFeature := features[alphaFeatureKey]

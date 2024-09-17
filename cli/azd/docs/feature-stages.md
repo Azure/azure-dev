@@ -31,10 +31,12 @@ As of `1.9.3`, each Azure Developer CLI feature has been evaluated and assigned 
 | CI/CD        | Azure Pipelines          | Stable    |
 | IaC          | Bicep                    | Stable    |
 | IaC          | Terraform                | Beta      |
-| IaC          | Resource Group-Scope Deployments | Alpha      |
+| IaC          | Resource Group-Scope Deployments | Beta      |
+| IaC          | Deployment Stacks        | Alpha     |
 | Host         | Azure App Service        | Stable    |
 | Host         | Azure Static Web Apps    | Stable    |
 | Host         | Azure Container Apps     | Beta      |
 | Host         | Azure Functions          | Stable    |
 | Host         | Azure Kubernetes Service | Beta      |
 | Host         | Azure Spring Apps        | Beta      |
+| Host         | Azure AI                 | Beta      |

@@ -48,7 +48,7 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 		RelativePath: "",
 	}
 
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	dp := NewDotNetProject(dotNetCli, environment.New("test")).(*dotnetProject)
 
 	err := dp.setUserSecretsFromOutputs(*mockContext.Context, serviceConfig, ServiceLifecycleEventArgs{
@@ -94,7 +94,7 @@ func Test_DotNetProject_Init(t *testing.T) {
 	})
 
 	env := environment.New("test")
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageDotNet)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
@@ -146,7 +146,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
@@ -186,7 +186,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
 	buildOutputDir := filepath.Join(serviceConfig.Path(), "bin", "Release", "net8.0")
@@ -246,7 +246,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	dotNetCli := dotnet.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api/test3.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)

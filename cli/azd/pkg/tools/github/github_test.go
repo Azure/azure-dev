@@ -100,7 +100,7 @@ func TestNewGitHubCli(t *testing.T) {
 		return strings.Contains(args.Cmd, "gh") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(
 		0,
-		fmt.Sprintf("gh version %s (abcdef0123)", GitHubCliVersion.String()),
+		fmt.Sprintf("gh version %s (abcdef0123)", Version.String()),
 		"",
 	))
 
@@ -137,9 +137,48 @@ func TestNewGitHubCli(t *testing.T) {
 
 	require.Equal(t, []byte("this is github cli"), contents)
 
-	ver, err := cli.(*ghCli).extractVersion(context.Background())
+	ver, err := cli.extractVersion(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, GitHubCliVersion.String(), ver)
+	require.Equal(t, Version.String(), ver)
+}
+
+func TestGetAuthStatus(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "gh") && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(
+		0,
+		fmt.Sprintf("gh version %s (abcdef0123)", Version.String()),
+		"",
+	))
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(1, "", notLoggedIntoAnyGitHubHostsMessageRegex.String()), fmt.Errorf("error")
+	})
+
+	mockExtract := func(src, dst string) (string, error) {
+		exp, _ := azdGithubCliPath()
+		_ = osutil.Rename(context.Background(), src, exp)
+		return src, nil
+	}
+
+	cli, err := newGitHubCliImplementation(
+		*mockContext.Context,
+		mockContext.Console,
+		mockContext.CommandRunner,
+		mockContext.HttpClient,
+		downloadGh,
+		mockExtract,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, cli)
+
+	status, err := cli.GetAuthStatus(*mockContext.Context, "test")
+	require.NoError(t, err)
+	require.Equal(t, AuthStatus{}, status)
 }
 
 func TestNewGitHubCliUpdate(t *testing.T) {

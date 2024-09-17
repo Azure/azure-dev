@@ -1,6 +1,6 @@
 # Release History
 
-## 1.10.0-beta.1 (Unreleased)
+## 1.11.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,52 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.10.1 (2024-09-05)
+
+### Bugs Fixed
+
+- [[4299]](https://github.com/Azure/azure-dev/pull/4299) Fixes issue in vs-server for Aspire projects.
+- [[4294]](https://github.com/Azure/azure-dev/pull/4294) Fixes azd pipeline config on Codespaces.
+- [[4295]](https://github.com/Azure/azure-dev/pull/4295) Fixes azd pipeline config for Terraform.
+
+## 1.10.0 (2024-09-04)
+
+### Features Added
+
+- [[4165]](https://github.com/Azure/azure-dev/pull/4165) Add support for `alpha` feature Azure Deployment stacks.
+- [[4236]](https://github.com/Azure/azure-dev/pull/4236) Support `args` on `container.{v0,v1}`.
+- [[4257]](https://github.com/Azure/azure-dev/pull/4257) Add support for multiple hooks per event.
+- [[4190]](https://github.com/Azure/azure-dev/pull/4190) Add support for `.azuredevops` folder.
+- [[4161]](https://github.com/Azure/azure-dev/pull/4161) Add remote builds support with Azure Container Registry.
+- [[4254]](https://github.com/Azure/azure-dev/pull/4254) Add support for environment variable substitution for source container image.
+- [[4203]](https://github.com/Azure/azure-dev/pull/4203) Add GitHub as template source configuration option.
+- [[4208]](https://github.com/Azure/azure-dev/pull/4208) Add support for Java Azure Functions.
+
+### Bugs Fixed
+
+- [[4237]](https://github.com/Azure/azure-dev/pull/4237) Fix pipeline config failing bug.
+- [[4263]](https://github.com/Azure/azure-dev/pull/4263) Fix `azd infra synth` ignored by `azd deploy` in azdo CI/CD pipeline bug.
+- [[4281]](https://github.com/Azure/azure-dev/pull/4281) Fix failed provision with the STG location.
+
+### Other Changes
+
+- [[4243]](https://github.com/Azure/azure-dev/pull/4243) Add AI services model deployments to provisioning display.
+
+## 1.9.6 (2024-08-13)
+
+### Features Added
+
+- [[4115]](https://github.com/Azure/azure-dev/pull/4115) Adding `alpha` feature `alpha.aca.persistIngressSessionAffinity`.
+
+### Bugs Fixed
+
+- [[4111]](https://github.com/Azure/azure-dev/pull/4111) Container Apps: Fail when explicit Dockerfile path not found.
+- [[4149]](https://github.com/Azure/azure-dev/pull/4149) Remove Admin Access as default for all .Net Aspire services.
+- [[4104]](https://github.com/Azure/azure-dev/pull/4104) Remove Azure Dev Ops git remote constraint for dev.azure.com only.
+- [[4160]](https://github.com/Azure/azure-dev/pull/4160) Fix automatic generation of CI/CD files for .Net Aspire projects.
+- [[4182]](https://github.com/Azure/azure-dev/pull/4182) Allow `.yaml` and `.yml` extension for azure-dev pipeline files.
+- [[4187]](https://github.com/Azure/azure-dev/pull/4187) Fix panic during deployment progress rendering.
 
 ## 1.9.5 (2024-07-10)
 

@@ -8,13 +8,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-// NewUrlTemplateSource creates a new template source from a URL.
-func NewUrlTemplateSource(ctx context.Context, name string, url string, httpClient httputil.HttpClient) (Source, error) {
+// newUrlTemplateSource creates a new template source from a URL.
+func newUrlTemplateSource(ctx context.Context, name string, url string, transport policy.Transporter) (Source, error) {
 	pipeline := runtime.NewPipeline("azd-templates", "1.0.0", runtime.PipelineOptions{}, &policy.ClientOptions{
-		Transport: httpClient,
+		Transport: transport,
 	})
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
@@ -36,5 +35,5 @@ func NewUrlTemplateSource(ctx context.Context, name string, url string, httpClie
 		return nil, fmt.Errorf("failed reading response body for template source '%s', %w", url, err)
 	}
 
-	return NewJsonTemplateSource(name, string(json))
+	return newJsonTemplateSource(name, string(json))
 }

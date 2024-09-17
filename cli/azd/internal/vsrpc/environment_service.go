@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -33,7 +34,7 @@ func newEnvironmentService(server *Server) *environmentService {
 func (s *environmentService) GetEnvironmentsAsync(
 	ctx context.Context, rc RequestContext, observer IObserver[ProgressMessage],
 ) ([]*EnvironmentInfo, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +73,7 @@ func (s *environmentService) GetEnvironmentsAsync(
 func (s *environmentService) SetCurrentEnvironmentAsync(
 	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return false, err
 	}
@@ -108,7 +109,7 @@ const (
 func (s *environmentService) DeleteEnvironmentAsync(
 	ctx context.Context, rc RequestContext, name string, mode int, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, rc.Session)
+	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
 		return false, err
 	}
@@ -161,20 +162,20 @@ func (s *environmentService) DeleteEnvironmentAsync(
 	if mode&DeleteModeAzureResources > 0 {
 		_ = observer.OnNext(ctx, newImportantProgressMessage("Removing Azure resources"))
 
-		infra, err := c.importManager.ProjectInfrastructure(ctx, c.projectConfig)
+		projectInfra, err := c.importManager.ProjectInfrastructure(ctx, c.projectConfig)
 		if err != nil {
 			return false, err
 		}
-		defer func() { _ = infra.Cleanup() }()
+		defer func() { _ = projectInfra.Cleanup() }()
 
-		if err := c.provisionManager.Initialize(ctx, c.projectConfig.Path, infra.Options); err != nil {
+		if err := c.provisionManager.Initialize(ctx, c.projectConfig.Path, projectInfra.Options); err != nil {
 			return false, fmt.Errorf("initializing provisioning manager: %w", err)
 		}
 
 		// Enable force and purge options
 		destroyOptions := provisioning.NewDestroyOptions(true, true)
 		_, err = c.provisionManager.Destroy(ctx, destroyOptions)
-		if errors.Is(err, provisioning.ErrDeploymentsNotFound) {
+		if errors.Is(err, infra.ErrDeploymentsNotFound) || errors.Is(err, infra.ErrDeploymentResourcesNotFound) {
 			_ = observer.OnNext(ctx, newInfoProgressMessage("No Azure resources were found"))
 		} else if err != nil {
 			return false, fmt.Errorf("deleting infrastructure: %w", err)

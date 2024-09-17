@@ -13,9 +13,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -148,8 +148,8 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 	}
 
 	requiredTools := []tools.ExternalTool{}
-	requiredTools = append(requiredTools, frameworkService.RequiredExternalTools(ctx)...)
-	requiredTools = append(requiredTools, serviceTarget.RequiredExternalTools(ctx)...)
+	requiredTools = append(requiredTools, frameworkService.RequiredExternalTools(ctx, serviceConfig)...)
+	requiredTools = append(requiredTools, serviceTarget.RequiredExternalTools(ctx, serviceConfig)...)
 
 	return tools.Unique(requiredTools), nil
 }
@@ -464,7 +464,7 @@ func (sm *serviceManager) Deploy(
 			sm.env.GetSubscriptionId(),
 			resourceGroupName,
 			containerEnvName,
-			string(infra.AzureResourceTypeContainerAppEnvironment),
+			string(azapi.AzureResourceTypeContainerAppEnvironment),
 		)
 	} else {
 		targetResource, err = sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
@@ -530,7 +530,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	var frameworkService FrameworkService
 
 	// Publishing from an existing image currently follows the same lifecycle as a docker project
-	if serviceConfig.Language == ServiceLanguageNone && serviceConfig.Image != "" {
+	if serviceConfig.Language == ServiceLanguageNone && !serviceConfig.Image.Empty() {
 		serviceConfig.Language = ServiceLanguageDocker
 	}
 

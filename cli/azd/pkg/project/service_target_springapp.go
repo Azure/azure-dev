@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -50,7 +50,7 @@ func NewSpringAppTarget(
 	}
 }
 
-func (st *springAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (st *springAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
@@ -76,7 +76,7 @@ func (st *springAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+	if err := st.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
@@ -190,8 +190,6 @@ func (st *springAppTarget) Endpoints(
 }
 
 func (st *springAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
 	if targetResource.ResourceGroupName() == "" {
@@ -199,7 +197,7 @@ func (st *springAppTarget) validateTargetResource(
 	}
 
 	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, infra.AzureResourceTypeSpringApp); err != nil {
+		if err := checkResourceType(targetResource, azapi.AzureResourceTypeSpringApp); err != nil {
 			return err
 		}
 	}

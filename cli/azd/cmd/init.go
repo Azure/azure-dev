@@ -104,7 +104,7 @@ type initAction struct {
 	lazyEnvManager  *lazy.Lazy[environment.Manager]
 	console         input.Console
 	cmdRun          exec.CommandRunner
-	gitCli          git.GitCli
+	gitCli          *git.Cli
 	flags           *initFlags
 	repoInitializer *repository.Initializer
 	templateManager *templates.TemplateManager
@@ -116,7 +116,7 @@ func newInitAction(
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	cmdRun exec.CommandRunner,
 	console input.Console,
-	gitCli git.GitCli,
+	gitCli *git.Cli,
 	flags *initFlags,
 	repoInitializer *repository.Initializer,
 	templateManager *templates.TemplateManager,
@@ -146,7 +146,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil,
 			errors.New(
-				"Using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified.")
+				"using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified")
 	}
 
 	// ensure that git is available

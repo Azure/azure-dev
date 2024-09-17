@@ -29,12 +29,23 @@ type Config interface {
 	Raw() map[string]any
 	// similar to Raw() but it will resolve any vault references
 	ResolvedRaw() map[string]any
+	// Get retrieves the value stored at the specified path
 	Get(path string) (any, bool)
+	// GetString retrieves the value stored at the specified path as a string
 	GetString(path string) (string, bool)
+	// GetSection retrieves the value stored at the specified path and unmarshals it into the provided section
 	GetSection(path string, section any) (bool, error)
+	// GetMap retrieves the map stored at the specified path
+	GetMap(path string) (map[string]any, bool)
+	// GetSlice retrieves the slice stored at the specified path
+	GetSlice(path string) ([]any, bool)
+	// Set stores the value at the specified path
 	Set(path string, value any) error
+	// SetSecret stores the secrets at the specified path within a local user vault
 	SetSecret(path string, value string) error
+	// Unset removes the value stored at the specified path
 	Unset(path string) error
+	// IsEmpty returns a value indicating whether the configuration is empty
 	IsEmpty() bool
 }
 
@@ -183,11 +194,9 @@ func (c *config) Unset(path string) error {
 			return nil
 		}
 
-		if value != nil {
-			node, ok = value.(map[string]any)
-			if !ok {
-				return fmt.Errorf("failed converting node at path '%s' to map", part)
-			}
+		node, ok = value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("failed converting node at path '%s' to map", part)
 		}
 
 		currentNode[part] = node
@@ -230,6 +239,28 @@ func (c *config) Get(path string) (any, bool) {
 	}
 
 	return nil, false
+}
+
+// GetMap retrieves the map stored at the specified path
+func (c *config) GetMap(path string) (map[string]any, bool) {
+	value, ok := c.Get(path)
+	if !ok {
+		return nil, false
+	}
+
+	node, ok := value.(map[string]any)
+	return node, ok
+}
+
+// GetSlice retrieves the slice stored at the specified path
+func (c *config) GetSlice(path string) ([]any, bool) {
+	value, ok := c.Get(path)
+	if !ok {
+		return nil, false
+	}
+
+	node, ok := value.([]any)
+	return node, ok
 }
 
 // Gets the value stored at the specified location as a string

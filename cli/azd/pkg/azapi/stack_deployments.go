@@ -450,7 +450,6 @@ func (d *StackDeployments) DeleteSubscriptionDeployment(
 		return err
 	}
 
-	// Delete all resource groups & resources within the deployment stack
 	deleteOptions := &armdeploymentstacks.ClientBeginDeleteAtSubscriptionOptions{
 		BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
 		UnmanageActionManagementGroups: (*armdeploymentstacks.UnmanageActionManagementGroupMode)(
@@ -563,7 +562,6 @@ func (d *StackDeployments) DeleteResourceGroupDeployment(
 		return err
 	}
 
-	// Delete all resource groups & resources within the deployment stack
 	deleteOptions := &armdeploymentstacks.ClientBeginDeleteAtResourceGroupOptions{
 		BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
 		UnmanageActionManagementGroups: (*armdeploymentstacks.UnmanageActionManagementGroupMode)(

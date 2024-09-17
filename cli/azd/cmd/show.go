@@ -130,24 +130,28 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	showService := ""
+	showResource := ""
+	showPropertyPath := ""
 	if len(s.args) >= 1 {
+		thing, path := parseResourcePath(s.args[0])
 		for _, ss := range stableServices {
-			if ss.Name == s.args[0] {
+			if ss.Name == thing {
 				showService = ss.Name
 				break
 			}
 		}
-	}
 
-	showResource := ""
-	if showService == "" && len(s.args) >= 1 {
-		if _, ok := s.projectConfig.Resources[s.args[0]]; ok {
-			showResource = s.args[0]
+		if showService == "" {
+			if _, ok := s.projectConfig.Resources[thing]; ok {
+				showResource = thing
+			}
 		}
-	}
 
-	if len(s.args) >= 1 && showService == "" && showResource == "" {
-		return nil, fmt.Errorf("service/resource %s not found", s.args[0])
+		showPropertyPath = path
+
+		if showService == "" && showResource == "" {
+			return nil, fmt.Errorf("service/resource %s not found", thing)
+		}
 	}
 
 	for _, svc := range stableServices {
@@ -274,7 +278,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 
 			if account.Properties.Endpoint != nil {
-				s.console.Message(ctx, color.HiMagentaString("%s (deployed model)", res.Name))
+				s.console.Message(ctx, color.HiMagentaString("%s (Azure AI Services Model Deployment)", res.Name))
 				s.console.Message(ctx, "  Endpoint:")
 				s.console.Message(ctx, fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint))
 				s.console.Message(ctx, "  Access:")
@@ -291,47 +295,47 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if len(showService) > 0 {
-		s.console.Message(ctx, "Blueprint")
-		if res, ok := s.projectConfig.Resources[showService]; ok {
-			s.console.Message(ctx, fmt.Sprintf("%s (%s)", res.Name, "Azure Container App"))
-			for _, dep := range res.Uses {
-				if r, ok := s.projectConfig.Resources[dep]; ok {
-					host := ""
-					switch r.Type {
-					case project.ResourceTypeDbRedis:
-						host = "Azure Redis for Cache"
-					case project.ResourceTypeDbMongo:
-						host = "Azure Cosmos DB for MongoDB"
-					case project.ResourceTypeDbPostgres:
-						host = "Azure Database for PostgreSQL flexible server"
+		if len(showPropertyPath) == 0 {
+			s.console.Message(ctx, "Blueprint")
+			if res, ok := s.projectConfig.Resources[showService]; ok {
+				s.console.Message(ctx, fmt.Sprintf("%s (%s)", res.Name, "Azure Container App"))
+				for _, dep := range res.Uses {
+					if r, ok := s.projectConfig.Resources[dep]; ok {
+						host := ""
+						switch r.Type {
+						case project.ResourceTypeDbRedis:
+							host = "Azure Redis for Cache"
+						case project.ResourceTypeDbMongo:
+							host = "Azure Cosmos DB for MongoDB"
+						case project.ResourceTypeDbPostgres:
+							host = "Azure Database for PostgreSQL flexible server"
+						}
+						s.console.Message(ctx, fmt.Sprintf("  ╰─ %s (%s)", r.Name, host))
 					}
-					s.console.Message(ctx, fmt.Sprintf("  ╰─ %s (%s)", r.Name, host))
 				}
 			}
-		}
-		return nil, nil
-	}
+			return nil, nil
+		} else if showPropertyPath == "env" {
+			s.console.Message(ctx, fmt.Sprintf("Environment variables for %s", showService))
+			environ := res.Services[showService].RemoteEnviron
+			show := []string{}
+			show = append(show, "Key\tValue")
+			show = append(show, "------\t-----")
 
-	if len(showService) > 0 && s.args[1] == "env" {
-		s.console.Message(ctx, fmt.Sprintf("Environment variables for %s", showService))
-		environ := res.Services[showService].RemoteEnviron
-		show := []string{}
-		show = append(show, "Key\tValue")
-		show = append(show, "------\t-----")
+			env := []string{}
+			for k, v := range environ {
+				env = append(env, fmt.Sprintf("%s\t%s", k, v))
+			}
+			slices.Sort(env)
+			show = append(show, env...)
 
-		env := []string{}
-		for k, v := range environ {
-			env = append(env, fmt.Sprintf("%s\t%s", k, v))
+			formatted, err := tabWrite(show, 10)
+			if err != nil {
+				return nil, err
+			}
+			s.console.Message(ctx, strings.Join(formatted, "\n"))
+			return nil, nil
 		}
-		slices.Sort(env)
-		show = append(show, env...)
-
-		formatted, err := tabWrite(show, 10)
-		if err != nil {
-			return nil, err
-		}
-		s.console.Message(ctx, strings.Join(formatted, "\n"))
-		return nil, nil
 	}
 
 	appEnvironments, err := s.envManager.List(ctx)
@@ -530,4 +534,9 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 	}
 
 	return svc.Path(), nil
+}
+
+func parseResourcePath(path string) (string, string) {
+	before, after, _ := strings.Cut(path, ".")
+	return before, after
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -78,7 +79,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		infraDirExists = true
 	}
 
-	const localService = "Local service"
+	const localService = "Local app code"
 	resources := project.AllCategories()
 	displayOptions := []string{localService}
 	for category := range resources {
@@ -361,16 +362,26 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			},
 		}
 
-		resourceToAdd.Name = models[sel].Name
+		defaultName := models[sel].Name
 		i := 1
 		for {
 			if _, exists := prjConfig.Resources[resourceToAdd.Name]; exists {
 				i++
-				resourceToAdd.Name = fmt.Sprintf("%s-%d", models[sel].Name, i)
+				defaultName = fmt.Sprintf("%s-%d", models[sel].Name, i)
 			} else {
 				break
 			}
 		}
+
+		modelName, err := a.console.Prompt(ctx, input.ConsoleOptions{
+			Message:      "What is the name of this model?",
+			DefaultValue: defaultName,
+		})
+		if err != nil {
+			return nil, err
+		}
+		resourceToAdd.Name = modelName
+
 	default:
 		return nil, fmt.Errorf("not implemented")
 	}
@@ -533,7 +544,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("closing file: %w", err)
 	}
 
-	successMessage := "azure.yaml has been updated to include the new resource."
+	successMessage := "azure.yaml has been updated to include this new resource."
 
 	if resourceToAdd.Type != "" {
 		a.console.MessageUxItem(ctx, &ux.ActionResult{
@@ -543,7 +554,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console.Message(ctx, "")
 
 		y, err := a.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      "Preview and provision these changes?",
+			Message:      "Preview these changes?",
 			DefaultValue: true,
 		})
 		if err != nil {
@@ -570,6 +581,27 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				w.Flush()
 
 				a.console.Message(ctx, "")
+
+				if len(resourceToAddUses) > 0 {
+					a.console.Message(ctx, color.HiBlueString("\nUses\n"))
+					fmt.Fprintln(w, "  Azure\tLocal")
+					for _, svc := range resourceToAddUses {
+						res := prjConfig.Resources[svc]
+						fmt.Fprintf(w, "  RESOURCE_NAME (Microsoft.App/containerApps)\t%s (%s)\n", res.Name, string(res.Type))
+						fmt.Fprintf(w, "+  ╰─ %s (%s)\t%s (%s)\n",
+							resourceToAdd.Name,
+							"Deployments",
+							resourceToAdd.Name,
+							string(resourceToAdd.Type),
+						)
+						for _, envVar := range configureRes.ConnectionEnvVars {
+							fmt.Fprintf(w, "+      - %s\t-\n", envVar)
+						}
+
+						fmt.Fprintln(w, "")
+					}
+					w.Flush()
+				}
 			case project.ResourceTypeDbPostgres,
 				project.ResourceTypeDbMongo,
 				project.ResourceTypeDbRedis:
@@ -687,6 +719,8 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if infraDirExists {
 		defaultFollowUp = "You can run '" + color.BlueString("azd infra synth") + "' to re-synthesize the infrastructure, "
 		defaultFollowUp += "and then '" + color.BlueString("azd provision") + "' to provision these changes."
+	} else if serviceToAdd != nil {
+		defaultFollowUp = "You can run '" + color.BlueString("azd up") + "' to provision and deploy these changes."
 	}
 
 	if len(resourceToAddUses) > 0 {
@@ -709,7 +743,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 		followUp += "\n" + defaultFollowUp + "\n" + "You may also run '" +
-			color.BlueString("azd show <service> env") +
+			color.BlueString("azd show <service>.env") +
 			"' to show environment variables of the currently provisioned instance."
 	} else {
 		followUp = defaultFollowUp
@@ -791,6 +825,7 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 			"POSTGRES_DATABASE",
 			"POSTGRES_PASSWORD",
 			"POSTGRES_PORT",
+			"POSTGRES_URL",
 		}
 	case project.ResourceTypeDbMongo:
 		res.ConnectionEnvVars = []string{
@@ -799,6 +834,7 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 	case project.ResourceTypeOpenAiModel:
 		res.ConnectionEnvVars = []string{
 			"AZURE_OPENAI_ENDPOINT",
+			"Keyless (Microsoft Entra ID)",
 			//"AZURE_OPENAI_API_KEY",
 		}
 		res.LearnMoreTopic = "configuring your app to use Azure OpenAI"
@@ -809,47 +845,85 @@ func (a *AddAction) Configure(ctx context.Context, r *project.ResourceConfig) (c
 
 // addLocalProject prompts the user to add a local project as a service.
 func (a *AddAction) addLocalProject(ctx context.Context) (*appdetect.Project, error) {
-	langOptions := make([]string, 0, len(repository.LanguageMap))
-	languages := make(map[string]appdetect.Language, len(repository.LanguageMap))
-	for language := range repository.LanguageMap {
-		langOptions = append(langOptions, language.Display())
-		languages[language.Display()] = language
-	}
-	slices.Sort(langOptions)
-
-	selection, err := a.console.Select(ctx, input.ConsoleOptions{
-		Message: "What language is your project?",
-		Options: langOptions,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	language := languages[langOptions[selection]]
-
 	// how does WD work here?
-	path, err := repository.PromptDir(ctx, a.console, "Where is your project located?")
+	path, err := repository.PromptDir(ctx, a.console, "Where is your app code project located?")
 	if err != nil {
 		return nil, err
 	}
 
-	prj, err := appdetect.DetectDirectory(ctx, path, appdetect.WithLanguage(language))
+	prj, err := appdetect.DetectDirectory(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("detecting project: %w", err)
 	}
 
 	if prj == nil {
-		if language == appdetect.Python {
+		// fallback, prompt for language
+		a.console.MessageUxItem(ctx, &ux.WarningMessage{Description: "Could not automatically detect language"})
+		languages := slices.SortedFunc(maps.Keys(repository.LanguageMap),
+			func(a, b appdetect.Language) int {
+				return strings.Compare(a.Display(), b.Display())
+			})
+
+		frameworks := slices.SortedFunc(maps.Keys(appdetect.WebUIFrameworks),
+			func(a, b appdetect.Dependency) int {
+				return strings.Compare(a.Display(), b.Display())
+			})
+
+		selections := make([]string, 0, len(languages)+len(frameworks))
+		entries := make([]any, 0, len(languages)+len(frameworks))
+
+		for _, lang := range languages {
+			selections = append(selections, fmt.Sprintf("%s\t%s", lang.Display(), "[Language]"))
+			entries = append(entries, lang)
+		}
+
+		for _, framework := range frameworks {
+			selections = append(selections, fmt.Sprintf("%s\t%s", framework.Display(), "[Framework]"))
+			entries = append(entries, framework)
+		}
+
+		// only apply tab-align if interactive
+		if a.console.IsSpinnerInteractive() {
+			formatted, err := tabWrite(selections, 3)
+			if err != nil {
+				return nil, fmt.Errorf("formatting selections: %w", err)
+			}
+
+			selections = formatted
+		}
+
+		i, err := a.console.Select(ctx, input.ConsoleOptions{
+			Message: "Enter the language or framework",
+			Options: selections,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		prj := &appdetect.Project{
+			Path:          path,
+			DetectionRule: "Manual",
+		}
+		switch entries[i].(type) {
+		case appdetect.Language:
+			prj.Language = entries[i].(appdetect.Language)
+		case appdetect.Dependency:
+			framework := entries[i].(appdetect.Dependency)
+			prj.Language = framework.Language()
+			prj.Dependencies = []appdetect.Dependency{framework}
+		}
+
+		// improve: appdetect: add troubleshooting for all kinds of languages
+		if prj.Language == appdetect.Python {
 			_, err := os.Stat(filepath.Join(path, "requirements.txt"))
 			if errors.Is(err, os.ErrNotExist) {
 				return nil, &internal.ErrorWithSuggestion{
 					Err:        errors.New("no requirements.txt found"),
-					Suggestion: "Run 'pip freeze > requirements.txt' or 'pip3 freeze > requirements.txt'  to create a requirements.txt file.",
+					Suggestion: "Run 'pip freeze > requirements.txt' or 'pip3 freeze > requirements.txt' to create a requirements.txt file for .",
 				}
 			}
 		}
-
-		return nil, fmt.Errorf("no supported project found")
+		return prj, nil
 	}
 
 	return prj, nil
@@ -877,7 +951,7 @@ func (a *AddAction) projectAsService(
 
 	// TODO:(weilim): allowed values for name
 	name, err := a.console.Prompt(ctx, input.ConsoleOptions{
-		Message:      "Enter a name for the service",
+		Message:      "Enter a name for this service",
 		DefaultValue: name,
 	})
 	if err != nil {
@@ -922,6 +996,35 @@ func (a *AddAction) projectAsService(
 
 		svcSpec.Docker = project.DockerProjectOptions{
 			Path: relDocker,
+		}
+	}
+
+	frontend := prj.HasWebUIFramework()
+	if frontend && prj.Docker == nil {
+		// By default, use 'dist'. This is common for frameworks such as:
+		// - TypeScript
+		// - Vite
+		svcSpec.OutputPath = "dist"
+
+	loop:
+		for _, dep := range prj.Dependencies {
+			switch dep {
+			case appdetect.JsNext:
+				// next.js works as SSR with default node configuration without static build output
+				svcSpec.OutputPath = ""
+				break loop
+			case appdetect.JsVite:
+				svcSpec.OutputPath = "dist"
+				break loop
+			case appdetect.JsReact:
+				// react from create-react-app uses 'build' when used, but this can be overridden
+				// by choice of build tool, such as when using Vite.
+				svcSpec.OutputPath = "build"
+			case appdetect.JsAngular:
+				// angular uses dist/<project name>
+				svcSpec.OutputPath = "dist/" + filepath.Base(rel)
+				break loop
+			}
 		}
 	}
 

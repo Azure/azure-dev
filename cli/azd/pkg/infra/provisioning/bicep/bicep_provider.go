@@ -568,7 +568,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
 	}
 
-	_, err = p.validatePreflight(
+	err = p.validatePreflight(
 		ctx,
 		bicepDeploymentData.Target,
 		bicepDeploymentData.CompiledBicep.RawArmTemplate,
@@ -1726,7 +1726,7 @@ func (p *BicepProvider) validatePreflight(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
-) (*armresources.DeploymentPropertiesExtended, error) {
+) error {
 	return target.ValidatePreflight(ctx, armTemplate, armParameters, tags)
 }
 

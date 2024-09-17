@@ -5,16 +5,11 @@ package azapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
-	"net/http"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -178,8 +173,7 @@ type DeploymentService interface {
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
-	) (*armresources.DeploymentPropertiesExtended, error)
-	// TODO Check if what if function bug is fixed
+	) error
 	ValidatePreflightToResourceGroup(
 		ctx context.Context,
 		subscriptionId,
@@ -188,7 +182,7 @@ type DeploymentService interface {
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
-	) (*armresources.DeploymentPropertiesExtended, error)
+	) error
 	WhatIfDeployToSubscription(
 		ctx context.Context,
 		subscriptionId string,

@@ -19,9 +19,10 @@ const (
 )
 
 type Options struct {
-	Provider ProviderKind `yaml:"provider,omitempty"`
-	Path     string       `yaml:"path,omitempty"`
-	Module   string       `yaml:"module,omitempty"`
+	Provider ProviderKind   `yaml:"provider,omitempty"`
+	Path     string         `yaml:"path,omitempty"`
+	Module   string         `yaml:"module,omitempty"`
+	Config   map[string]any `yaml:"config,omitempty"`
 	// Not expected to be defined at azure.yaml
 	IgnoreDeploymentState bool `yaml:"-"`
 }

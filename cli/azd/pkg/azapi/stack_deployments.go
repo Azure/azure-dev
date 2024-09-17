@@ -453,15 +453,12 @@ func (d *StackDeployments) DeleteSubscriptionDeployment(
 	// Delete all resource groups & resources within the deployment stack
 	deleteOptions := &armdeploymentstacks.ClientBeginDeleteAtSubscriptionOptions{
 		BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
-		//nolint:lll
 		UnmanageActionManagementGroups: (*armdeploymentstacks.UnmanageActionManagementGroupMode)(
 			deploymentStackOptions.ActionOnUnmanage.ManagementGroups,
 		),
-		//nolint:lll
 		UnmanageActionResourceGroups: (*armdeploymentstacks.UnmanageActionResourceGroupMode)(
 			deploymentStackOptions.ActionOnUnmanage.ResourceGroups,
 		),
-		//nolint:lll
 		UnmanageActionResources: (*armdeploymentstacks.UnmanageActionResourceMode)(
 			deploymentStackOptions.ActionOnUnmanage.Resources,
 		),
@@ -569,15 +566,12 @@ func (d *StackDeployments) DeleteResourceGroupDeployment(
 	// Delete all resource groups & resources within the deployment stack
 	deleteOptions := &armdeploymentstacks.ClientBeginDeleteAtResourceGroupOptions{
 		BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
-		//nolint:lll
 		UnmanageActionManagementGroups: (*armdeploymentstacks.UnmanageActionManagementGroupMode)(
 			deploymentStackOptions.ActionOnUnmanage.ManagementGroups,
 		),
-		//nolint:lll
 		UnmanageActionResourceGroups: (*armdeploymentstacks.UnmanageActionResourceGroupMode)(
 			deploymentStackOptions.ActionOnUnmanage.ResourceGroups,
 		),
-		//nolint:lll
 		UnmanageActionResources: (*armdeploymentstacks.UnmanageActionResourceMode)(
 			deploymentStackOptions.ActionOnUnmanage.Resources,
 		),

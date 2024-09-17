@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -526,7 +527,12 @@ func parseDeploymentStackOptions(options map[string]any) (*deploymentStackOption
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse deployment stack options: %w", err)
+		suggestion := &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("failed parsing deployment stack options: %w", err),
+			Suggestion: "Review the 'infra.config.deploymentStacks' configuration section in the 'azure.yaml' file.",
+		}
+
+		return nil, suggestion
 	}
 
 	if deploymentStackOptions.BypassStackOutOfSyncError == nil {

@@ -27,7 +27,7 @@ import (
 var FeatureDeploymentStacks = alpha.MustFeatureKey("deployment.stacks")
 
 const (
-	stacksPortalUrlFragment = "#@microsoft.onmicrosoft.com/resource"
+	stacksPortalUrlFragment = "#microsoft.onmicrosoft.com/resource"
 )
 
 type StackDeployments struct {

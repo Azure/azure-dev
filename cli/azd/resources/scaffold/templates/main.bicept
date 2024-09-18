@@ -172,6 +172,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     mysqlDatabaseHost: mysqlDb.outputs.databaseHost
     mysqlDatabaseUser: mysqlDb.outputs.databaseUser
     mysqlDatabasePassword: vault.getSecret(mysqlDb.outputs.databaseConnectionKey)
+    mysqlServerId: mysqlDb.outputs.mysqlServerId
     {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [

@@ -267,6 +267,26 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
   }
 }
 
+{{- if .DbMySql}}
+resource appLinkToMySql 'Microsoft.ServiceLinker/linkers@2022-11-01-preview' = {
+  name: 'appLinkToMySql'
+  scope: app
+  properties: {
+    authInfo: {
+      authType: 'userAssignedIdentity'
+    }
+    clientType: 'springBoot'
+    targetService: {
+      type: 'AzureResource'
+      id: mysqlServerId
+      resourceProperties: {
+        type: 'KeyVault'
+      }
+    }
+  }
+}
+{{- end}}
+
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output name string = app.name
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'

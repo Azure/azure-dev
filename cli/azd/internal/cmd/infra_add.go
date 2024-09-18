@@ -79,9 +79,10 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		infraDirExists = true
 	}
 
+	// TODO(weilim): remove local app code once we finalize this design
 	const localService = "Local app code"
 	resources := project.AllCategories()
-	displayOptions := []string{localService}
+	displayOptions := []string{}
 	for category := range resources {
 		displayOptions = append(displayOptions, string(category))
 	}
@@ -118,96 +119,23 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	switch selectedCategory {
 	case project.ResourceKindHosts:
-		if displayOptions[continueOption] == localService {
-			prj, err := a.addLocalProject(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			svcSpec, err := a.projectAsService(ctx, prj)
-			if err != nil {
-				return nil, err
-			}
-
-			serviceToAdd = svcSpec
-		} else if len(prjConfig.Services) == 0 {
-			a.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: fmt.Sprintf("No services found in %s.", output.WithHighLightFormat("azure.yaml")),
-				HidePrefix:  true,
-			})
-			confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Would you like to first add a local project as a service?",
-				DefaultValue: true,
-			})
-			if err != nil || !confirm {
-				return nil, err
-			}
-
-			prj, err := a.addLocalProject(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			svcSpec, err := a.projectAsService(ctx, prj)
-			if err != nil {
-				return nil, err
-			}
-
-			confirm, err = a.console.Confirm(ctx, input.ConsoleOptions{
-				//nolint:lll
-				Message:      "azd will use " + color.MagentaString("Azure Container App") + " to host this project. Continue?",
-				DefaultValue: true,
-			})
-			if err != nil || !confirm {
-				return nil, err
-			}
-
-			resSpec, err := addServiceAsResource(ctx, a.console, svcSpec, project.ResourceTypeHostContainerApp)
-			if err != nil {
-				return nil, err
-			}
-
-			serviceToAdd = svcSpec
-			resourceToAdd = resSpec
-		} else {
-			serviceOptions := make([]string, 0, len(prjConfig.Services))
-			for _, service := range prjConfig.Services {
-				if _, exists := prjConfig.Resources[service.Name]; !exists {
-					serviceOptions = append(serviceOptions, service.Name)
-				}
-			}
-			slices.Sort(serviceOptions)
-
-			if len(serviceOptions) == 0 {
-				if len(prjConfig.Services) > 0 {
-					return nil, fmt.Errorf("all services are added as resources")
-				}
-				return nil, fmt.Errorf("no services found")
-			}
-
-			serviceOption, err := a.console.Select(ctx, input.ConsoleOptions{
-				Message: "Which service would you like to host in Azure?",
-				Options: serviceOptions,
-			})
-			if err != nil {
-				return nil, err
-			}
-
-			confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "azd will use " + color.MagentaString("Azure Container App") + " to host this project. Continue?",
-				DefaultValue: true,
-			})
-			if err != nil || !confirm {
-				return nil, err
-			}
-
-			svc := prjConfig.Services[serviceOptions[serviceOption]]
-			resSpec, err := addServiceAsResource(ctx, a.console, svc, project.ResourceTypeHostContainerApp)
-			if err != nil {
-				return nil, err
-			}
-			resourceToAdd = resSpec
+		prj, err := a.addLocalProject(ctx)
+		if err != nil {
+			return nil, err
 		}
+
+		svcSpec, err := a.projectAsService(ctx, prj)
+		if err != nil {
+			return nil, err
+		}
+
+		resSpec, err := addServiceAsResource(ctx, a.console, svcSpec, project.ResourceTypeHostContainerApp)
+		if err != nil {
+			return nil, err
+		}
+
+		serviceToAdd = svcSpec
+		resourceToAdd = resSpec
 	case project.ResourceKindDatabase:
 		dbOption, err := a.console.Select(ctx, input.ConsoleOptions{
 			Message: "Which type of database?",
@@ -958,6 +886,15 @@ func (a *AddAction) projectAsService(
 		return nil, err
 	}
 
+	confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
+		//nolint:lll
+		Message:      "azd will use " + color.MagentaString("Azure Container App") + " to host this project. Continue?",
+		DefaultValue: true,
+	})
+	if err != nil || !confirm {
+		return nil, err
+	}
+
 	if prj.Docker == nil {
 		confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
 			Message:      "No Dockerfile found. Allow azd to automatically build a container image?",
@@ -968,12 +905,19 @@ func (a *AddAction) projectAsService(
 		}
 
 		if !confirm {
-			_, err := repository.PromptDir(ctx, a.console, "Where is your Dockerfile located?")
+			path, err := repository.PromptDir(ctx, a.console, "Where is your Dockerfile located?")
 			if err != nil {
 				return nil, err
 			}
 
-			panic("unimplemented")
+			svcRel, err := filepath.Rel(prj.Path, path)
+			if err != nil {
+				return nil, fmt.Errorf("calculating relative path: %w", err)
+			}
+
+			prj.Docker = &appdetect.Docker{
+				Path: svcRel,
+			}
 		}
 	}
 

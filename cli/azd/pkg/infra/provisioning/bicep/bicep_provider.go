@@ -599,13 +599,19 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
 	}
+
+	optionsMap, err := convert.ToMap(p.options)
+	if err != nil {
+		return nil, err
+	}
+
 	deployResult, err := p.deployModule(
 		ctx,
 		bicepDeploymentData.Target,
 		bicepDeploymentData.CompiledBicep.RawArmTemplate,
 		bicepDeploymentData.CompiledBicep.Parameters,
 		deploymentTags,
-		p.options.Config,
+		optionsMap,
 	)
 	if err != nil {
 		return nil, err
@@ -1035,7 +1041,12 @@ func (p *BicepProvider) destroyDeploymentWithConfirmation(
 			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
 		}
 	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		return deployment.Delete(ctx, p.options.Config, progress)
+		optionsMap, err := convert.ToMap(p.options)
+		if err != nil {
+			return err
+		}
+
+		return deployment.Delete(ctx, optionsMap, progress)
 	})
 
 	if err != nil {

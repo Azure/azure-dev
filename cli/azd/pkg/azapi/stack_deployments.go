@@ -29,7 +29,7 @@ import (
 var FeatureDeploymentStacks = alpha.MustFeatureKey("deployment.stacks")
 
 const (
-	deploymentStacksConfigKey = "deploymentStacks"
+	deploymentStacksConfigKey = "DeploymentStacks"
 	stacksPortalUrlFragment   = "#@microsoft.onmicrosoft.com/resource"
 )
 
@@ -40,7 +40,9 @@ var defaultDeploymentStackOptions = &deploymentStackOptions{
 		ResourceGroups:   to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),
 		Resources:        to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),
 	},
-	DenySettings: nil,
+	DenySettings: &armdeploymentstacks.DenySettings{
+		Mode: to.Ptr(armdeploymentstacks.DenySettingsModeNone),
+	},
 }
 
 type StackDeployments struct {

@@ -14,10 +14,8 @@ steps:
         ${{ parameters.SubscriptionConfiguration }}
       '@ | ConvertFrom-Json -AsHashtable;
 
-      & $azdCmd login `
-        --client-id "$($subscriptionConfiguration.TestApplicationId)" `
-        --client-secret "$($subscriptionConfiguration.TestApplicationSecret)" `
-        --tenant-id "$($subscriptionConfiguration.TenantId)"
+      # Delegate auth to az CLI which supports federated auth in AzDo
+      & $azdCmd config set auth.useAzCliAuth true
 
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -30,7 +28,6 @@ steps:
 
       # Export service principal auth information for terraform testing
       Write-Host "##vso[task.setvariable variable=arm-client-id;issecret=false]$($subscriptionConfiguration.TestApplicationId)"
-      Write-Host "##vso[task.setvariable variable=arm-client-secret;issecret=true]$($subscriptionConfiguration.TestApplicationSecret)"
       Write-Host "##vso[task.setvariable variable=arm-tenant-id;issecret=false]$($subscriptionConfiguration.TenantId)"
 
     condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

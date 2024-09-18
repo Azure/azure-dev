@@ -201,7 +201,6 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var err error
 	spinnerMessage := "Loading Bicep template"
-	// TODO: Report progress, "Loading Bicep template"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	defer func() {
 		// Make sure we stop the spinner if an error occurs with the last message.
@@ -238,7 +237,6 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 		outputs = azure.ArmTemplateOutputs{}
 	}
 
-	// TODO: Report progress, "Retrieving Azure deployment"
 	spinnerMessage = "Retrieving Azure deployment"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
@@ -350,7 +348,6 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 
 	modulePath := p.modulePath()
-	// TODO: Report progress, "Compiling Bicep template"
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
@@ -730,7 +727,8 @@ func (p *BicepProvider) Destroy(
 	options provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
 	modulePath := p.modulePath()
-	// TODO: Report progress, "Compiling Bicep template"
+	p.console.ShowSpinner(ctx, "Discovering resources to delete...", input.Step)
+	defer p.console.StopSpinner(ctx, "", input.StepDone)
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
@@ -792,6 +790,7 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
 	}
 
+	p.console.StopSpinner(ctx, "", input.StepDone)
 	if err := p.destroyDeploymentWithConfirmation(
 		ctx,
 		options,

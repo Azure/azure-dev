@@ -515,7 +515,9 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 					fmt.Fprintln(w, "  Azure\tLocal")
 					for _, svc := range resourceToAddUses {
 						res := prjConfig.Resources[svc]
-						fmt.Fprintf(w, "  RESOURCE_NAME (Microsoft.App/containerApps)\t%s (%s)\n", res.Name, string(res.Type))
+						fmt.Fprintf(w,
+							"  %s (Microsoft.App/containerApps)\t%s (%s)\n",
+							resourceToAdd.Name, res.Name, string(res.Type))
 						fmt.Fprintf(w, "+  ╰─ %s (%s)\t%s (%s)\n",
 							resourceToAdd.Name,
 							"Deployments",

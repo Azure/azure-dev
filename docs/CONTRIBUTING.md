@@ -7,7 +7,7 @@ In general, to make contributions a smooth and easy experience, we encourage the
 - Check existing issues for [bugs][bug issues] or [enhancements][enhancement issues].
 - Open an issue if things aren't working as expected, or if an enhancement is being proposed.
 - Start a conversation on the issue if you are thinking of submitting a pull request.
-- Submit a pull request. The `azd` team will work with you to review the changes and provide feedback. Once the pull request is accepted, a member will merge the changes. Thank you for making a contribution!
+- Submit a pull request. The `azd` team will work with you to review the changes and provide feedback. Once the pull request is accepted, a member will merge the changes. Thank you for taking time out of your day to help improve our community!
 
 ## Building `azd`
 

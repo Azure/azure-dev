@@ -769,7 +769,6 @@ func validatePreflightError(
 	} else {
 		return fmt.Errorf("calling preflight validate api failing to %s: %w", typeMessage, err)
 	}
-	return nil
 }
 
 func (ds *StandardDeployments) ValidatePreflightToResourceGroup(

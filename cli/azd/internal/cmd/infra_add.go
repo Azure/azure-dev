@@ -620,18 +620,32 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 
 			a.console.Message(ctx, "")
-			option, err := a.console.Select(ctx, input.ConsoleOptions{
-				Message: "Provision these changes?",
-				Options: []string{"Yes", "No"},
-			})
-			if err != nil || option == 1 {
-				return nil, err
-			}
-
-			a.azd.SetArgs([]string{"provision"})
-			err = a.azd.ExecuteContext(ctx)
-			if err != nil {
-				return nil, err
+			if serviceToAdd != nil {
+				option, err := a.console.Select(ctx, input.ConsoleOptions{
+					Message: "Provision and deploy these changes?",
+					Options: []string{"Yes", "No"},
+				})
+				if err != nil || option == 1 {
+					return nil, err
+				}
+				a.azd.SetArgs([]string{"up"})
+				err = a.azd.ExecuteContext(ctx)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				option, err := a.console.Select(ctx, input.ConsoleOptions{
+					Message: "Provision these changes?",
+					Options: []string{"Yes", "No"},
+				})
+				if err != nil || option == 1 {
+					return nil, err
+				}
+				a.azd.SetArgs([]string{"provision"})
+				err = a.azd.ExecuteContext(ctx)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			return &actions.ActionResult{
@@ -893,8 +907,10 @@ func (a *AddAction) projectAsService(
 		Message:      "azd will use " + color.MagentaString("Azure Container App") + " to host this project. Continue?",
 		DefaultValue: true,
 	})
-	if err != nil || !confirm {
+	if err != nil {
 		return nil, err
+	} else if !confirm {
+		return nil, fmt.Errorf("cancelled")
 	}
 
 	if prj.Docker == nil {

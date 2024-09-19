@@ -1,6 +1,6 @@
 # Contributing to `azd`
 
-Hi there! Thank you for showing interest in contributing to `azd`.
+Hi there 👋! Thank you for showing interest in contributing to `azd`.
 
 In general, to make contributions a smooth and easy experience, we encourage the following:
 

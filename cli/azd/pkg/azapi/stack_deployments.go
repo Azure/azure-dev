@@ -524,17 +524,17 @@ func parseDeploymentStackOptions(options map[string]any) (*deploymentStackOption
 
 	var deploymentStackOptions *deploymentStackOptions
 	has, err := optionsConfig.GetSection(deploymentStacksConfigKey, &deploymentStackOptions)
-	if !has {
-		return defaultDeploymentStackOptions, nil
-	}
-
 	if err != nil {
 		suggestion := &internal.ErrorWithSuggestion{
 			Err:        fmt.Errorf("failed parsing deployment stack options: %w", err),
-			Suggestion: "Review the 'infra.config.deploymentStacks' configuration section in the 'azure.yaml' file.",
+			Suggestion: "Review the 'infra.deploymentStacks' configuration section in the 'azure.yaml' file.",
 		}
 
 		return nil, suggestion
+	}
+
+	if !has || deploymentStackOptions == nil {
+		return defaultDeploymentStackOptions, nil
 	}
 
 	if deploymentStackOptions.BypassStackOutOfSyncError == nil {

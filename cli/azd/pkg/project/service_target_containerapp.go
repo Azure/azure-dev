@@ -6,7 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -171,15 +171,31 @@ func (at *containerAppTarget) addPreProvisionChecks(_ context.Context, serviceCo
 	// This allows the resource deployment to detect whether or not to pull existing container image during
 	// provision operation to avoid resetting the container app back to a default image
 	return serviceConfig.Project.AddHandler("preprovision", func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-		exists := false
-
-		// Check if the target resource already exists
-		targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
-		if targetResource != nil && err == nil {
-			exists = true
+		// If we already have a container image name set in the environment then use it.
+		imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
+		if imageName != "" {
+			return nil
 		}
 
-		at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
+		targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
+		if err != nil || targetResource == nil {
+			log.Printf("Did not find target resource for container app with service name: '%s'", serviceConfig.Name)
+			return nil
+		}
+
+		imageName, err = at.containerAppService.GetActiveContainerImage(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+			nil,
+		)
+		if err != nil {
+			log.Printf("Did not find target resource for container app with service name: '%s'", serviceConfig.Name)
+			return nil
+		}
+
+		at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", imageName)
 		return at.envManager.Save(ctx, at.env)
 	})
 }

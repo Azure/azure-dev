@@ -19,11 +19,7 @@ param postgresDatabaseName string
 param postgresDatabasePassword string
 {{- end}}
 {{- if .DbMySql}}
-param mysqlDatabaseHost string
-param mysqlDatabaseUser string
-param mysqlDatabaseName string
-@secure()
-param mysqlDatabasePassword string
+param mysqlDatabaseId string
 {{- end}}
 {{- if .DbRedis}}
 param redisName string
@@ -153,12 +149,6 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
           value: postgresDatabasePassword
         }
         {{- end}}
-        {{- if .DbMySql}}
-        {
-          name: 'mysql-db-pass'
-          value: mysqlDatabasePassword
-        }
-        {{- end}}
       ],
       map(secrets, secret => {
         name: secret.secretRef
@@ -203,28 +193,6 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
               value: '5432'
             }
             {{- end}}
-            {{- if .DbMySql}}
-            {
-              name: 'MYSQL_HOST'
-              value: mysqlDatabaseHost
-            }
-            {
-              name: 'MYSQL_USERNAME'
-              value: mysqlDatabaseUser
-            }
-            {
-              name: 'MYSQL_DATABASE'
-              value: mysqlDatabaseName
-            }
-            {
-              name: 'MYSQL_PASSWORD'
-              secretRef: 'mysql-db-pass'
-            }
-            {
-              name: 'MYSQL_PORT'
-              value: '3306'
-            }
-            {{- end}}
             {{- if .Frontend}}
             {{- range $i, $e := .Frontend.Backends}}
             {
@@ -266,22 +234,22 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
     }
   }
 }
-
 {{- if .DbMySql}}
+
 resource appLinkToMySql 'Microsoft.ServiceLinker/linkers@2022-11-01-preview' = {
   name: 'appLinkToMySql'
   scope: app
   properties: {
+    scope: 'main'
     authInfo: {
       authType: 'userAssignedIdentity'
+      subscriptionId: subscription().subscriptionId
+      clientId: identity.properties.clientId
     }
     clientType: 'springBoot'
     targetService: {
       type: 'AzureResource'
-      id: mysqlServerId
-      resourceProperties: {
-        type: 'KeyVault'
-      }
+      id: mysqlDatabaseId
     }
   }
 }

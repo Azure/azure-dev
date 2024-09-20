@@ -67,9 +67,5 @@ resource dbPasswordKey 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
   }
 }
 
-output databaseHost string = mysqlServer.properties.fullyQualifiedDomainName
-output databaseName string = databaseName
-output databaseUser string = databaseUser
-output databaseConnectionKey string = 'databasePassword'
-output mysqlServerId string = mysqlServer.id
+output databaseId string = database.id
 {{ end}}

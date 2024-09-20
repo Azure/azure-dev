@@ -760,7 +760,7 @@ func validatePreflightError(
 	var errPreflight PreflightErrorResponse
 	errOnRawResponse = json.Unmarshal(body, &errPreflight)
 	if errOnRawResponse != nil {
-		return fmt.Errorf("failed to unmarshal preflight error response to %s: %v", typeMessage, errOnRawResponse)
+		return fmt.Errorf("failed to unmarshal preflight error response to %s: %w", typeMessage, errOnRawResponse)
 	}
 
 	if len(errPreflight.Error.Details) > 0 {

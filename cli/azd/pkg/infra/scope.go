@@ -257,7 +257,8 @@ func (s *SubscriptionDeployment) DeploymentUrl(ctx context.Context) (string, err
 func (s *SubscriptionDeployment) ValidatePreflight(
 	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) error {
-	return s.deploymentService.ValidatePreflightToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters, tags)
+	return s.deploymentService.ValidatePreflightToSubscription(ctx, s.subscriptionId, s.location, 
+		s.name, template, parameters, tags)
 }
 
 // Deploy a given template with a set of parameters.

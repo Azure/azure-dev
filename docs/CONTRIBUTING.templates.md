@@ -1,4 +1,23 @@
-# Developing Templates
+# Contributing to templates stored in `azd`
+
+## Pre-requisites
+
+Language tooling:
+
+- [NodeJS](https://nodejs.org/en/download/)
+- [Python](https://www.python.org/downloads)
+- [DotNet CLI](https://get.dot.net)
+
+Infrastructure-as-code providers:
+
+- [Bicep CLI](https://aka.ms/bicep-install)
+- [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli) (if working on Terraform templates)
+
+Docker:
+
+- [Docker](https://docs.docker.com/desktop/#download-and-install)
+
+## Build templates
 
 Unlike fully released [azd templates](https://github.com/topics/azd-templates), the template definition contained in this repository under the `templates` folder is disassembled into multiple directories. This allows re-use of specific assets such as Bicep files, resource assets, tests across templates. To reassemble the assets, a `repoman` file (`repo.yml`) is defined for each template that defines stitching and path rewriting via the `repoman generate` command. To learn more about the `repoman` tooling, see it's source under [generators/repo](../generators/repo).
 

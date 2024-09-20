@@ -42,7 +42,7 @@ go test ./...
 Run cspell (install [cspell](https://cspell.org/)):
 
 ```bash
-`cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
+cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml
 ```
 
 Run linter (install [golangci-lint](https://golangci-lint.run/welcome/install/#local-installation)):

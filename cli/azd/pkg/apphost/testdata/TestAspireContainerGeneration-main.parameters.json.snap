@@ -23,6 +23,9 @@
       "noVolume_password": {
         "value": "${AZURE_NO_VOLUME_PASSWORD}"
       },
+      "param_with_value": {
+        "value": "${AZURE_PARAM_WITH_VALUE}"
+      },
       "environmentName": {
         "value": "${AZURE_ENV_NAME}"
       },

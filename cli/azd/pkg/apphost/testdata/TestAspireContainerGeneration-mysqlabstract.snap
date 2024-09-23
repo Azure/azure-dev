@@ -39,6 +39,8 @@ properties:
         env:
           - name: AZURE_CLIENT_ID
             value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
+          - name: WITH_VALUE
+            value: '{{ parameter "param_with_value" }}'
           - name: MYSQL_ROOT_PASSWORD
             secretRef: mysql-root-password
           - name: SpecialChar

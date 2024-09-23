@@ -90,6 +90,12 @@ func init() {
 					return strings.ReplaceAll(src, ".", "")
 				},
 				"envFormat": scaffold.EnvFormat,
+				"bicepParameterValue": func(value *string) string {
+					if value == nil {
+						return ""
+					}
+					return fmt.Sprintf(" = '%s'", *value)
+				},
 			},
 		).
 		ParseFS(resources.AppHostTemplates, "apphost/templates/*")
@@ -255,6 +261,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		Name   string
 		Secret bool
 		Type   string
+		Value  *string
 	}
 	type autoGenInput struct {
 		genInput
@@ -274,14 +281,22 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	for _, key := range genParametersKeys {
 		parameter := generator.bicepContext.InputParameters[key]
 		parameterMetadata := ""
-		if parameter.Default != nil && parameter.Default.Generate != nil {
-			pMetadata, err := inputMetadata(*parameter.Default.Generate)
-			if err != nil {
-				return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
+		var parameterDefaultValue *string
+		if parameter.Default != nil {
+			// main.bicep template handles *string for default.Value. If the value is nil, it will be ignored.
+			// if not nil, like empty string or any other string, it is used as `= '<value>'`
+			parameterDefaultValue = parameter.Default.Value
+			if parameter.Default.Generate != nil {
+				pMetadata, err := inputMetadata(*parameter.Default.Generate)
+				if err != nil {
+					return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
+				}
+				parameterMetadata = pMetadata
 			}
-			parameterMetadata = pMetadata
+			// Note: azd is not checking or validating that Default.Generate and Default.Value are not both set.
+			// The AppHost prevents this from happening by not allowing both to be set at the same time.
 		}
-		input := genInput{Name: key, Secret: parameter.Secret, Type: parameter.Type}
+		input := genInput{Name: key, Secret: parameter.Secret, Type: parameter.Type, Value: parameterDefaultValue}
 		parameters = append(parameters, autoGenInput{
 			genInput:       input,
 			MetadataConfig: parameterMetadata,

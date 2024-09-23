@@ -16,6 +16,19 @@
         }
       }
     },
+    "param-with-value": {
+      "type": "parameter.v0",
+      "value": "{param-with-value.inputs.value}",
+      "inputs": {
+        "value": {
+          "type": "string",
+          "secret": false,
+          "default":{
+            "value": "default value for param"
+          }
+        }
+      }
+    },
     "mysqlabstract-pas-sw-ord": {
       "type": "parameter.v0",
       "value": "{mysqlabstract-pas-sw-ord.inputs.value}",
@@ -38,7 +51,8 @@
       "image": "mysql:latest",
       "env": {
         "MYSQL_ROOT_PASSWORD": "{mysqlabstract-password.value}",
-        "SpecialChar": "{mysqlabstract-pas-sw-ord.value}"
+        "SpecialChar": "{mysqlabstract-pas-sw-ord.value}",
+        "WITH_VALUE": "{param-with-value.value}"
       },
       "volumes": [
         {

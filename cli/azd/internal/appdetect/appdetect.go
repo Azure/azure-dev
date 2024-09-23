@@ -132,6 +132,24 @@ func (db DatabaseDep) Display() string {
 	return ""
 }
 
+type AzureDep string
+
+const (
+	AzureStorage    AzureDep = "storage"
+	AzureServiceBus AzureDep = "servicebus"
+)
+
+func (azureDep AzureDep) Display() string {
+	switch azureDep {
+	case AzureStorage:
+		return "Azure Storage"
+	case AzureServiceBus:
+		return "Azure Service Bus"
+	}
+
+	return ""
+}
+
 type Project struct {
 	// The language associated with the project.
 	Language Language
@@ -141,6 +159,9 @@ type Project struct {
 
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
+
+	// Experimental: Azure dependencies inferred through heuristics while scanning dependencies in the project.
+	AzureDeps []AzureDep
 
 	// The path to the project directory.
 	Path string
@@ -346,6 +367,10 @@ func enrichFromJavaProject(javaProject javaanalyze.JavaProject, project *Project
 			project.DatabaseDeps = append(project.DatabaseDeps, DbSqlServer)
 		} else if resource.Type == "Redis" {
 			project.DatabaseDeps = append(project.DatabaseDeps, DbRedis)
+		} else if resource.Type == "Azure Service Bus" {
+			project.AzureDeps = append(project.AzureDeps, AzureServiceBus)
+		} else if resource.Type == "Azure Storage" {
+			project.AzureDeps = append(project.AzureDeps, AzureStorage)
 		}
 	}
 }

@@ -47,6 +47,7 @@ type detectConfirm struct {
 	// detected services and databases
 	Services  []appdetect.Project
 	Databases map[appdetect.DatabaseDep]EntryKind
+	AzureDeps map[appdetect.AzureDep]EntryKind
 
 	// the root directory of the project
 	root string
@@ -59,6 +60,7 @@ type detectConfirm struct {
 // Init initializes state from initial detection output
 func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 	d.Databases = make(map[appdetect.DatabaseDep]EntryKind)
+	d.AzureDeps = make(map[appdetect.AzureDep]EntryKind)
 	d.Services = make([]appdetect.Project, 0, len(projects))
 	d.modified = false
 	d.root = root
@@ -73,16 +75,24 @@ func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 				d.Databases[dbType] = EntryKindDetected
 			}
 		}
+
+		for _, azureDep := range project.AzureDeps {
+			if _, supported := azureDepMap[azureDep]; supported {
+				d.AzureDeps[azureDep] = EntryKindDetected
+			}
+		}
 	}
 
 	d.captureUsage(
 		fields.AppInitDetectedDatabase,
-		fields.AppInitDetectedServices)
+		fields.AppInitDetectedServices,
+		fields.AppInitDetectedAzureDeps)
 }
 
 func (d *detectConfirm) captureUsage(
 	databases attribute.Key,
-	services attribute.Key) {
+	services attribute.Key,
+	azureDeps attribute.Key) {
 	names := make([]string, 0, len(d.Services))
 	for _, svc := range d.Services {
 		names = append(names, string(svc.Language))
@@ -93,9 +103,15 @@ func (d *detectConfirm) captureUsage(
 		dbNames = append(dbNames, string(db))
 	}
 
+	azureDepNames := make([]string, 0, len(d.AzureDeps))
+	for azureDep := range d.AzureDeps {
+		azureDepNames = append(azureDepNames, string(azureDep))
+	}
+
 	tracing.SetUsageAttributes(
 		databases.StringSlice(dbNames),
 		services.StringSlice(names),
+		azureDeps.StringSlice(azureDepNames),
 	)
 }
 
@@ -146,7 +162,8 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 		case 0:
 			d.captureUsage(
 				fields.AppInitConfirmedDatabases,
-				fields.AppInitConfirmedServices)
+				fields.AppInitConfirmedServices,
+				fields.AppInitDetectedAzureDeps)
 			return nil
 		case 1:
 			if err := d.remove(ctx); err != nil {
@@ -203,6 +220,9 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		}
 	}
 
+	if len(d.Databases) > 0 {
+		d.console.Message(ctx, "\n"+output.WithBold("Detected databases:")+"\n")
+	}
 	for db, entry := range d.Databases {
 		switch db {
 		case appdetect.DbPostgres:
@@ -223,6 +243,28 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		}
 
 		d.console.Message(ctx, "  "+color.BlueString(db.Display())+status)
+		d.console.Message(ctx, "")
+	}
+
+	if len(d.AzureDeps) > 0 {
+		d.console.Message(ctx, "\n"+output.WithBold("Detected Azure dependencies:")+"\n")
+	}
+	for azureDep, entry := range d.AzureDeps {
+		switch azureDep {
+		case appdetect.AzureStorage:
+			recommendedServices = append(recommendedServices, "Azure Storage")
+		case appdetect.AzureServiceBus:
+			recommendedServices = append(recommendedServices, "Azure Service Bus")
+		}
+
+		status := ""
+		if entry == EntryKindModified {
+			status = " " + output.WithSuccessFormat("[Updated]")
+		} else if entry == EntryKindManual {
+			status = " " + output.WithSuccessFormat("[Added]")
+		}
+
+		d.console.Message(ctx, "  "+color.BlueString(azureDep.Display())+status)
 		d.console.Message(ctx, "")
 	}
 

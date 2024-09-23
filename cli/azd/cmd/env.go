@@ -45,6 +45,15 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newEnvSetAction,
 	})
 
+	group.Add("set-secret", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "set-secret <secret name>",
+			Short: "Set a Key Vault secret in the environment.",
+		},
+		FlagsResolver:  newEnvSetSecretFlags,
+		ActionResolver: newEnvSetSecretAction,
+	})
+
 	group.Add("select", &actions.ActionDescriptorOptions{
 		Command:        newEnvSelectCmd(),
 		ActionResolver: newEnvSelectAction,
@@ -148,6 +157,56 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	return nil, nil
+}
+
+func newEnvSetSecretFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetSecretFlags {
+	flags := &envSetSecretFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+type envSetSecretFlags struct {
+	internal.EnvFlag
+	global *internal.GlobalCommandOptions
+}
+
+func (f *envSetSecretFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	f.EnvFlag.Bind(local, global)
+	f.global = global
+}
+
+type envSetSecretAction struct {
+	console    input.Console
+	azdCtx     *azdcontext.AzdContext
+	env        *environment.Environment
+	envManager environment.Manager
+	flags      *envSetFlags
+	args       []string
+}
+
+func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+
+	e.console.Message(ctx, "Not implemented yet")
+	return nil, nil
+}
+
+func newEnvSetSecretAction(
+	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
+	envManager environment.Manager,
+	console input.Console,
+	flags *envSetFlags,
+	args []string,
+) actions.Action {
+	return &envSetSecretAction{
+		console:    console,
+		azdCtx:     azdCtx,
+		env:        env,
+		envManager: envManager,
+		flags:      flags,
+		args:       args,
+	}
 }
 
 func newEnvSelectCmd() *cobra.Command {

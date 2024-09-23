@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
@@ -126,7 +127,10 @@ services:
 
 	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
 	require.Equal(t, "../", service.Docker.Context)
-	require.Equal(t, []string{"foo", "bar"}, service.Docker.BuildArgs)
+	require.Equal(t, []osutil.ExpandableString{
+		osutil.NewExpandableString("foo"),
+		osutil.NewExpandableString("bar"),
+	}, service.Docker.BuildArgs)
 }
 
 func TestProjectConfigAddHandler(t *testing.T) {

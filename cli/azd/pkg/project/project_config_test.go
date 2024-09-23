@@ -133,6 +133,34 @@ services:
 	}, service.Docker.BuildArgs)
 }
 
+func TestProjectWithExpandableDockerArgs(t *testing.T) {
+	env := environment.NewWithValues("test", map[string]string{
+		"REGISTRY": "myregistry",
+		"IMAGE":    "myimage",
+		"TAG":      "mytag",
+		"KEY1":     "val1",
+		"KEY2":     "val2",
+	})
+
+	serviceConfig := &ServiceConfig{
+		Docker: DockerProjectOptions{
+			Registry: osutil.NewExpandableString("${REGISTRY}"),
+			Image:    osutil.NewExpandableString("${IMAGE}"),
+			Tag:      osutil.NewExpandableString("${TAG}"),
+			BuildArgs: []osutil.ExpandableString{
+				osutil.NewExpandableString("key1=${KEY1}"),
+				osutil.NewExpandableString("key2=${KEY2}"),
+			},
+		},
+	}
+
+	require.Equal(t, env.Getenv("REGISTRY"), serviceConfig.Docker.Registry.MustEnvsubst(env.Getenv))
+	require.Equal(t, env.Getenv("IMAGE"), serviceConfig.Docker.Image.MustEnvsubst(env.Getenv))
+	require.Equal(t, env.Getenv("TAG"), serviceConfig.Docker.Tag.MustEnvsubst(env.Getenv))
+	require.Equal(t, fmt.Sprintf("key1=%s", env.Getenv("KEY1")), serviceConfig.Docker.BuildArgs[0].MustEnvsubst(env.Getenv))
+	require.Equal(t, fmt.Sprintf("key2=%s", env.Getenv("KEY2")), serviceConfig.Docker.BuildArgs[1].MustEnvsubst(env.Getenv))
+}
+
 func TestProjectConfigAddHandler(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()

@@ -10,6 +10,7 @@ func Analyze(path string) []JavaProject {
 		&ruleService{},
 		&ruleMysql{},
 		&ruleStorage{},
+		&ruleServiceBus{},
 	}
 
 	entries, err := os.ReadDir(path)

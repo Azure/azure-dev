@@ -21,3 +21,5 @@
 
 # Exclude @jongio from version bump PRs opened by dependabot
 /templates/**/package-lock.json     @wbreza
+
+/.config/1espt/ @benbp @weshaggard

@@ -30,7 +30,6 @@ import (
 )
 
 type DeployFlags struct {
-	serviceName string
 	All         bool
 	fromPackage string
 	global      *internal.GlobalCommandOptions
@@ -45,15 +44,6 @@ func (d *DeployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 func (d *DeployFlags) BindNonCommon(
 	local *pflag.FlagSet,
 	global *internal.GlobalCommandOptions) {
-	local.StringVar(
-		&d.serviceName,
-		"service",
-		"",
-		//nolint:lll
-		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
-	)
-	//deprecate:flag hide --service
-	_ = local.MarkHidden("service")
 	d.global = global
 }
 
@@ -169,12 +159,10 @@ type DeploymentResult struct {
 }
 
 func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	targetServiceName := da.flags.serviceName
+	var targetServiceName string
 	if len(da.args) == 1 {
 		targetServiceName = da.args[0]
 	}
-
-	serviceNameWarningCheck(da.console, da.flags.serviceName, "deploy")
 
 	if da.env.GetSubscriptionId() == "" {
 		return nil, errors.New(

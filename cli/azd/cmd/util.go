@@ -37,18 +37,6 @@ func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) st
 		resourceGroupName))
 }
 
-func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {
-	if serviceNameFlag == "" {
-		return
-	}
-
-	fmt.Fprintln(
-		console.Handles().Stderr,
-		output.WithWarningFormat("WARNING: The `--service` flag is deprecated and will be removed in a future release."),
-	)
-	fmt.Fprintf(console.Handles().Stderr, "Next time use `azd %s <service>`.\n\n", commandName)
-}
-
 func getTargetServiceName(
 	ctx context.Context,
 	projectManager project.ProjectManager,

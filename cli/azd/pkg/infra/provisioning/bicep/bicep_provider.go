@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -49,6 +50,13 @@ import (
 const (
 	defaultModule = "main"
 	defaultPath   = "infra"
+
+	// List of error strings to check against when a bicep deployment error occurs.
+	aINotValid                  = "is not valid according to the validation procedure"
+	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' " +
+		"from kind 'OpenAI'"
+	responsibleAITerms              = "until you agree to Responsible AI terms for this resource"
+	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
 )
 
 type deploymentDetails struct {
@@ -614,7 +622,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		optionsMap,
 	)
 	if err != nil {
-		return nil, err
+		return nil, p.suggestErrorAction(err)
 	}
 
 	deployment.Outputs = p.createOutputParameters(
@@ -625,6 +633,44 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	return &provisioning.DeployResult{
 		Deployment: deployment,
 	}, nil
+}
+
+func (p *BicepProvider) suggestErrorAction(err error) error {
+	//if user don't have access to openai
+	errorMsg := err.Error()
+	if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
+		requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
+		return &internal.ErrorWithSuggestion{
+			Err: err,
+			Suggestion: "\nSuggested Action: The selected subscription does not have access to" +
+				" Azure OpenAI Services. Please visit " + output.WithLinkFormat("%s", requestAccessLink) +
+				" to request access.",
+		}
+	}
+
+	if strings.Contains(errorMsg, aINotValid) &&
+		strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
+		return &internal.ErrorWithSuggestion{
+			Suggestion: "\nSuggested Action: The selected " +
+				"subscription has not been enabled for use of Azure AI service and does not have quota for " +
+				"any pricing tiers. Please visit " + output.WithLinkFormat("%s", p.portalUrlBase) +
+				" and select 'Create' on specific services to request access.",
+			Err: err,
+		}
+	}
+
+	//if user haven't agree to Responsible AI terms
+	if strings.Contains(errorMsg, responsibleAITerms) {
+		return &internal.ErrorWithSuggestion{
+			Suggestion: "\nSuggested Action: Please visit azure portal in " +
+				output.WithLinkFormat("%s", p.portalUrlBase) + ". Create the resource in azure portal " +
+				"to go through Responsible AI terms, and then delete it. " +
+				"After that, run 'azd provision' again",
+			Err: err,
+		}
+	}
+
+	return fmt.Errorf("deployment failed: %w", err)
 }
 
 // Preview runs deploy using the what-if argument

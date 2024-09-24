@@ -7,9 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -63,26 +61,13 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 			return err
 		}
 
-		deploymentLink := fmt.Sprintf(output.WithLinkFormat("%s\n"), deploymentUrl)
-
+		deploymentLink := output.WithHyperlink(deploymentUrl, "Azure Portal")
 		display.console.EnsureBlankLine(ctx)
-
-		lines := []string{
-			"You can view detailed progress in the Azure Portal:",
-			deploymentLink,
-		}
-
-		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
-			lines = []string{
-				"You can view detailed progress in the Azure Portal.",
-				"\n",
-			}
-		}
 
 		display.console.MessageUxItem(
 			ctx,
 			&ux.MultilineMessage{
-				Lines: lines,
+				Lines: []string{fmt.Sprintf("You can view detailed progress in the %s.\n", deploymentLink)},
 			},
 		)
 	}

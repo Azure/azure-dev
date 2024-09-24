@@ -19,17 +19,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/golobby/container/v3"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type ProvisionFlags struct {
-	serviceName           string
+	all                   bool
+	platform              bool
 	noProgress            bool
 	preview               bool
 	ignoreDeploymentState bool
@@ -37,27 +36,12 @@ type ProvisionFlags struct {
 	*internal.EnvFlag
 }
 
-const (
-	AINotValid                  = "is not valid according to the validation procedure"
-	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' " +
-		"from kind 'OpenAI'"
-	responsibleAITerms              = "until you agree to Responsible AI terms for this resource"
-	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
-)
-
 func (i *ProvisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.BindNonCommon(local, global)
 	i.bindCommon(local, global)
 }
 
 func (i *ProvisionFlags) BindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVar(
-		&i.serviceName,
-		"service",
-		"",
-		//nolint:lll
-		"Provisions infrastructure for a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
-	)
 	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
 	//deprecate:Flag hide --no-progress
 	_ = local.MarkHidden("no-progress")
@@ -71,6 +55,18 @@ func (i *ProvisionFlags) bindCommon(local *pflag.FlagSet, global *internal.Globa
 		"no-state",
 		false,
 		"Do not use latest Deployment State (bicep only).")
+	local.BoolVar(
+		&i.all,
+		"all",
+		false,
+		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
+	local.BoolVar(
+		&i.platform,
+		"platform",
+		false,
+		"Deploys the root platform infrastructure",
+	)
 
 	i.EnvFlag = &internal.EnvFlag{}
 	i.EnvFlag.Bind(local, global)
@@ -107,7 +103,7 @@ func NewProvisionCmd() *cobra.Command {
 type ProvisionAction struct {
 	args                []string
 	flags               *ProvisionFlags
-	serviceLocator      ioc.ServiceLocator
+	provisionManager    *provisioning.Manager
 	projectManager      project.ProjectManager
 	resourceManager     project.ResourceManager
 	env                 *environment.Environment
@@ -125,7 +121,7 @@ type ProvisionAction struct {
 func NewProvisionAction(
 	args []string,
 	flags *ProvisionFlags,
-	serviceLocator ioc.ServiceLocator,
+	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
 	importManager *project.ImportManager,
 	resourceManager project.ResourceManager,
@@ -142,7 +138,7 @@ func NewProvisionAction(
 	return &ProvisionAction{
 		args:                args,
 		flags:               flags,
-		serviceLocator:      serviceLocator,
+		provisionManager:    provisionManager,
 		projectManager:      projectManager,
 		resourceManager:     resourceManager,
 		env:                 env,
@@ -167,183 +163,28 @@ func (p *ProvisionAction) SetFlags(flags *ProvisionFlags) {
 	p.flags = flags
 }
 
-func (p *ProvisionAction) provisionPlatform(ctx context.Context, preview bool) (*provisioning.DeployResult, *provisioning.DeployPreviewResult, error) {
-	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer func() { _ = infra.Cleanup() }()
-
-	var deployResult *provisioning.DeployResult
-	var deployPreviewResult *provisioning.DeployPreviewResult
-
-	err = p.serviceLocator.Invoke(func(provisionManager *provisioning.Manager) error {
-		infraOptions := infra.Options
-		infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
-
-		if err := provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
-			return fmt.Errorf("initializing provisioning manager: %w", err)
-		}
-
-		// Get Subscription to Display in Command Title Note
-		// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
-		// is not displayed.
-		// This needs to happen after the provisionManager initializes to make sure the env is ready for the provisioning
-		// provider
-		subscription, subErr := p.subManager.GetSubscription(ctx, p.env.GetSubscriptionId())
-		if subErr == nil {
-			location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
-			var locationDisplay string
-			if err != nil {
-				log.Printf("failed getting location: %v", err)
-			} else {
-				locationDisplay = location.DisplayName
-			}
-
-			var subscriptionDisplay string
-			if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
-				subscriptionDisplay = subscription.Name
-			} else {
-				subscriptionDisplay = fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id)
-			}
-
-			p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
-				Subscription: subscriptionDisplay,
-				Location:     locationDisplay,
-			})
-
-		} else {
-			log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
-		}
-
-		projectEventArgs := project.ProjectLifecycleEventArgs{
-			Project: p.projectConfig,
-			Args: map[string]any{
-				"preview": preview,
-			},
-		}
-
-		if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
-			p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
-		}
-
-		return p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
-			var err error
-			if preview {
-				deployPreviewResult, err = provisionManager.Preview(ctx)
-			} else {
-				deployResult, err = provisionManager.Deploy(ctx)
-			}
-			return err
-		})
-	})
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return deployResult, deployPreviewResult, nil
-}
-
-func (p *ProvisionAction) provisionServices(ctx context.Context, targetServiceName string, preview bool) (map[string]*provisioning.DeployResult, map[string]*provisioning.DeployPreviewResult, error) {
-	stableServices, err := p.importManager.ServiceStable(ctx, p.projectConfig)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	targetServiceName, err = getTargetServiceName(
-		ctx,
-		p.projectManager,
-		p.importManager,
-		p.projectConfig,
-		string(project.ServiceEventDeploy),
-		targetServiceName,
-		targetServiceName == "",
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	deployResults := map[string]*provisioning.DeployResult{}
-	previewResults := map[string]*provisioning.DeployPreviewResult{}
-
-	for _, svc := range stableServices {
-		stepMessage := fmt.Sprintf("Provisioning service %s", svc.Name)
-		p.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-		// Skip this service if both cases are true:
-		// 1. The user specified a service name
-		// 2. This service is not the one the user specified
-		if targetServiceName != "" && targetServiceName != svc.Name {
-			p.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-			continue
-		}
-
-		err := container.Call(func(provisionManager *provisioning.Manager) error {
-			if err := provisionManager.Initialize(ctx, svc.Path(), svc.Infra); err != nil {
-				return err
-			}
-
-			serviceEventArgs := project.ServiceLifecycleEventArgs{
-				Project: p.projectConfig,
-				Service: svc,
-				Args: map[string]any{
-					"preview": preview,
-				},
-			}
-
-			return svc.Invoke(ctx, project.ServiceEventProvision, serviceEventArgs, func() error {
-				if preview {
-					previewResult, err := provisionManager.Preview(ctx)
-					if err != nil {
-						return err
-					}
-
-					previewResults[svc.Name] = previewResult
-				} else {
-					deployResult, err := provisionManager.Deploy(ctx)
-					if err != nil {
-						return err
-					}
-
-					deployResults[svc.Name] = deployResult
-				}
-
-				return nil
-			})
-		})
-
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	return deployResults, previewResults, nil
-}
-
 func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	targetServiceName := p.flags.serviceName
+	var targetServiceName string
 	if len(p.args) == 1 {
 		targetServiceName = p.args[0]
 	}
 
-	serviceNameWarningCheck(p.console, p.flags.serviceName, "provision")
-
-	if p.flags.noProgress {
-		fmt.Fprintln(
-			p.console.Handles().Stderr,
-			//nolint:Lll
-			output.WithWarningFormat(
-				"WARNING: The '--no-progress' flag is deprecated and will be removed in a future release.",
-			),
-		)
+	if targetServiceName != "" && p.flags.all {
+		return nil, fmt.Errorf("cannot specify both --all and <service>")
 	}
-	previewMode := p.flags.preview
+
+	if targetServiceName == "" && p.flags.platform {
+		return nil, fmt.Errorf("cannot specify both --platform and <service>")
+	}
+
+	if p.flags.platform && p.flags.all {
+		return nil, fmt.Errorf("cannot specify both --platform and --all")
+	}
 
 	// Command title
 	defaultTitle := "Provisioning Azure resources (azd provision)"
 	defaultTitleNote := "Provisioning Azure resources can take some time"
-	if previewMode {
+	if p.flags.preview {
 		defaultTitle = "Previewing Azure resource changes (azd provision --preview)"
 		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
 	}
@@ -353,18 +194,55 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		TitleNote: defaultTitleNote},
 	)
 
+	if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
+		p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
+	}
+
 	startTime := time.Now()
 
 	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
 		return nil, err
 	}
 
-	_, _, err := p.provisionPlatform(ctx, previewMode)
+	// Get Subscription to Display in Command Title Note
+	// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
+	// is not displayed.
+	// This needs to happen after the provisionManager initializes to make sure the env is ready for the provisioning
+	// provider
+	subscription, subErr := p.subManager.GetSubscription(ctx, p.env.GetSubscriptionId())
+	if subErr == nil {
+		location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
+		var locationDisplay string
+		if err != nil {
+			log.Printf("failed getting location: %v", err)
+		} else {
+			locationDisplay = location.DisplayName
+		}
+
+		var subscriptionDisplay string
+		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+			subscriptionDisplay = subscription.Name
+		} else {
+			subscriptionDisplay = fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id)
+		}
+
+		p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
+			Subscription: subscriptionDisplay,
+			Location:     locationDisplay,
+		})
+
+	} else {
+		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
+	}
+
+	// Provision root platform infrastructure
+	_, _, err := p.provisionPlatform(ctx, targetServiceName)
 	if err != nil {
 		return nil, err
 	}
 
-	_, _, err = p.provisionServices(ctx, targetServiceName, previewMode)
+	// Provision services infrastructure
+	_, _, err = p.provisionServices(ctx, targetServiceName)
 	if err != nil {
 		return nil, err
 	}
@@ -387,43 +265,6 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// 			)
 	// 		}
 	// 	}
-
-	// 	//if user don't have access to openai
-	// 	errorMsg := err.Error()
-	// 	if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
-	// 		requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
-	// 		return nil, &internal.ErrorWithSuggestion{
-	// 			Err: err,
-	// 			Suggestion: "\nSuggested Action: The selected subscription does not have access to" +
-	// 				" Azure OpenAI Services. Please visit " + output.WithLinkFormat("%s", requestAccessLink) +
-	// 				" to request access.",
-	// 		}
-	// 	}
-
-	// 	if strings.Contains(errorMsg, AINotValid) &&
-	// 		strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
-	// 		return nil, &internal.ErrorWithSuggestion{
-	// 			Suggestion: "\nSuggested Action: The selected " +
-	// 				"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-	// 				"any pricing tiers. Please visit " + output.WithLinkFormat("%s", p.portalUrlBase) +
-	// 				" and select 'Create' on specific services to request access.",
-	// 			Err: err,
-	// 		}
-	// 	}
-
-	// 	//if user haven't agree to Responsible AI terms
-	// 	if strings.Contains(errorMsg, responsibleAITerms) {
-	// 		return nil, &internal.ErrorWithSuggestion{
-	// 			Suggestion: "\nSuggested Action: Please visit azure portal in " +
-	// 				output.WithLinkFormat("%s", p.portalUrlBase) + ". Create the resource in azure portal " +
-	// 				"to go through Responsible AI terms, and then delete it. " +
-	// 				"After that, run 'azd provision' again",
-	// 			Err: err,
-	// 		}
-	// 	}
-
-	// 	return nil, fmt.Errorf("deployment failed: %w", err)
-	// }
 
 	// if previewMode {
 	// 	p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
@@ -490,6 +331,24 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// 	}
 	// }
 
+	if p.flags.preview {
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: fmt.Sprintf(
+					"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
+				FollowUp: getResourceGroupFollowUp(
+					ctx,
+					p.formatter,
+					p.portalUrlBase,
+					p.projectConfig,
+					p.resourceManager,
+					p.env,
+					true,
+				),
+			},
+		}, nil
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
@@ -505,6 +364,155 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			),
 		},
 	}, nil
+}
+
+func (p *ProvisionAction) provisionPlatform(
+	ctx context.Context,
+	targetServiceName string,
+) (*provisioning.DeployResult, *provisioning.DeployPreviewResult, error) {
+	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = infra.Cleanup() }()
+
+	stepMessage := fmt.Sprintf(output.WithBold("Provisioning platform infrastructure"))
+	p.console.Message(ctx, stepMessage)
+
+	if targetServiceName != "" {
+		p.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+		return nil, nil, nil
+	}
+
+	infraOptions := infra.Options
+	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+
+	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
+		p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+		return nil, nil, fmt.Errorf("initializing provisioning manager: %w", err)
+	}
+
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: p.projectConfig,
+		Args: map[string]any{
+			"preview": p.flags.preview,
+		},
+	}
+
+	var deployResult *provisioning.DeployResult
+	var previewResult *provisioning.DeployPreviewResult
+
+	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+		if p.flags.preview {
+			previewResult, err = p.provisionManager.Preview(ctx)
+			if err == nil {
+				p.console.MessageUxItem(ctx, deployResultToUx(previewResult))
+			}
+		} else {
+			deployResult, err = p.provisionManager.Deploy(ctx)
+		}
+		return err
+	})
+
+	if err != nil {
+		p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+		return nil, nil, err
+	}
+
+	p.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
+	return deployResult, previewResult, nil
+}
+
+func (p *ProvisionAction) provisionServices(
+	ctx context.Context,
+	targetServiceName string,
+) (map[string]*provisioning.DeployResult, map[string]*provisioning.DeployPreviewResult, error) {
+	stableServices, err := p.importManager.ServiceStable(ctx, p.projectConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	targetServiceName, err = getTargetServiceName(
+		ctx,
+		p.projectManager,
+		p.importManager,
+		p.projectConfig,
+		string(project.ServiceEventDeploy),
+		targetServiceName,
+		p.flags.all,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	deployResults := map[string]*provisioning.DeployResult{}
+	previewResults := map[string]*provisioning.DeployPreviewResult{}
+
+	for _, svc := range stableServices {
+		stepMessage := fmt.Sprintf(output.WithBold("\nProvisioning service %s", svc.Name))
+		p.console.Message(ctx, stepMessage)
+
+		if p.flags.platform {
+			p.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			return nil, nil, nil
+		}
+
+		// Skip this service if both cases are true:
+		// 1. The user specified a service name
+		// 2. This service is not the one the user specified
+		if targetServiceName != "" && targetServiceName != svc.Name {
+			p.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			continue
+		}
+
+		infraOptions := svc.Infra
+		infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+
+		if err := p.provisionManager.Initialize(ctx, svc.Path(), infraOptions); err != nil {
+			p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, nil, err
+		}
+
+		serviceEventArgs := project.ServiceLifecycleEventArgs{
+			Project: p.projectConfig,
+			Service: svc,
+			Args: map[string]any{
+				"preview": p.flags.preview,
+			},
+		}
+
+		err = svc.Invoke(ctx, project.ServiceEventProvision, serviceEventArgs, func() error {
+			if p.flags.preview {
+				previewResult, err := p.provisionManager.Preview(ctx)
+				if err != nil {
+					return err
+				}
+
+				p.console.MessageUxItem(ctx, deployResultToUx(previewResult))
+
+				previewResults[svc.Name] = previewResult
+			} else {
+				deployResult, err := p.provisionManager.Deploy(ctx)
+				if err != nil {
+					return err
+				}
+
+				deployResults[svc.Name] = deployResult
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, nil, err
+		}
+
+		p.console.StopSpinner(ctx, stepMessage, input.StepDone)
+	}
+
+	return deployResults, previewResults, nil
 }
 
 // deployResultToUx creates the ux element to display from a provision preview

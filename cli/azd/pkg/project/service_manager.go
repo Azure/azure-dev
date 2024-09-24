@@ -26,6 +26,7 @@ const (
 	ServiceEventEnvUpdated ext.Event = "environment updated"
 	ServiceEventRestore    ext.Event = "restore"
 	ServiceEventBuild      ext.Event = "build"
+	ServiceEventProvision  ext.Event = "package"
 	ServiceEventPackage    ext.Event = "package"
 	ServiceEventDeploy     ext.Event = "deploy"
 )

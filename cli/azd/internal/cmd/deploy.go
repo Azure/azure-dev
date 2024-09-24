@@ -97,8 +97,8 @@ func NewDeployCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy <service>",
 		Short: "Deploy the application's code to Azure.",
+		Args:  cobra.MaximumNArgs(1),
 	}
-	cmd.Args = cobra.MaximumNArgs(1)
 
 	return cmd
 }

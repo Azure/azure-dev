@@ -181,7 +181,7 @@ func mapToStringSlice(m map[string]string, separator string) []string {
 // Each key-value pair in the map is converted to a string in the format "key:value",
 // where the separator is specified by the `separator` parameter.
 // If the value is an empty string, only the key is included in the resulting slice.
-// The resulting slice is returned without any string interpolation performed.
+// The resulting slice is returned without any string interpolation performed. 
 func mapToExpandableStringSlice(m map[string]string, separator string) []osutil.ExpandableString {
 	var result []osutil.ExpandableString
 	for key, value := range m {

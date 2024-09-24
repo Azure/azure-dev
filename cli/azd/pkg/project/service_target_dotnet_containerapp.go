@@ -13,6 +13,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -212,8 +213,9 @@ func (at *dotnetContainerAppTarget) Deploy(
 	tmpl, err := template.New("containerApp.tmpl.yaml").
 		Option("missingkey=error").
 		Funcs(template.FuncMap{
-			"urlHost":   fns.UrlHost,
-			"parameter": fns.Parameter,
+			"urlHost":              fns.UrlHost,
+			"parameter":            fns.Parameter,
+			"parameterWithDefault": fns.ParameterWithDefault,
 			// securedParameter gets a parameter the same way as parameter, but supporting the securedParameter
 			// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
 			// stores the parameter value.
@@ -364,7 +366,16 @@ func (_ *containerAppTemplateManifestFuncs) UrlHost(s string) (string, error) {
 
 const infraParametersKey = "infra.parameters."
 
+// Parameter resolves the name of a parameter defined in the ACA yaml definition. The parameter can be mapped to a system
+// environment variable or persisted in the azd environment configuration.
 func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, error) {
+	envVarMapping := scaffold.EnvFormat(name)
+	// map only to system environment variables. Not adding support for mapping to azd environment by design (b/c
+	// parameters could be secured)
+	if val, found := os.LookupEnv(envVarMapping); found {
+		return val, nil
+	}
+
 	key := infraParametersKey + name
 	val, found := fns.env.Config.Get(key)
 	if !found {
@@ -375,6 +386,18 @@ func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, er
 		return "", fmt.Errorf("parameter %s is not a string", name)
 	}
 	return valString, nil
+}
+
+// ParameterWithDefault resolves the name of a parameter defined in the ACA yaml definition.
+// The parameter can be mapped to a system environment variable or be default to a value directly.
+func (fns *containerAppTemplateManifestFuncs) ParameterWithDefault(name string, defaultValue string) (string, error) {
+	envVarMapping := scaffold.EnvFormat(name)
+	// map only to system environment variables. Not adding support for mapping to azd environment by design (b/c
+	// parameters could be secured)
+	if val, found := os.LookupEnv(envVarMapping); found {
+		return val, nil
+	}
+	return defaultValue, nil
 }
 
 // kvSecret gets the value of the secret with the given name from the KeyVault with the given host name. If the secret is

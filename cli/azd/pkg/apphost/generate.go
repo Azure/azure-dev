@@ -1533,6 +1533,15 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		case inputEmitTypeBicep:
 			return fmt.Sprintf("{{%s}}", replaceDash), nil
 		case inputEmitTypeYaml:
+			if param.Default != nil && param.Default.Value != nil {
+				if param.Secret {
+					return "", fmt.Errorf("default value for secured parameter %s is not supported", resource)
+				}
+				inputType = "parameterWithDefault"
+				// parameter with default value will either use the default value or the value passed in the environment
+				return fmt.Sprintf(`{{ %s "%s" "%s"}}`, inputType, replaceDash, *param.Default.Value), nil
+			}
+			// parameter without default value
 			return fmt.Sprintf(`{{ %s "%s" }}`, inputType, replaceDash), nil
 		default:
 			panic(fmt.Sprintf("unexpected parameter %s", string(emitType)))

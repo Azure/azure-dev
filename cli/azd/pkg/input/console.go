@@ -141,8 +141,15 @@ type AskerConsole struct {
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
-	writer     io.Writer
-	formatter  output.Formatter
+	writer    io.Writer
+	formatter output.Formatter
+
+	// isTerminal controls whether terminal-style input/output will be used.
+	//
+	// When isTerminal is false, the following notable behaviors apply:
+	//   - Spinner progress will be written as standard newline messages.
+	//   - Prompting assumes a non-terminal environment, where output written and input received are machine-friendly text,
+	//     stripped of formatting characters.
 	isTerminal bool
 	noPrompt   bool
 	// when non nil, use this client instead of prompting ourselves on the console.
@@ -1062,18 +1069,9 @@ func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
 	}
 
 	// By default, detect if we are running on CI and force no TTY mode if we are.
-	// Allow for an override if this is not desired.
-	shouldDetectCI := true
-	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
-		skip, err := strconv.ParseBool(strVal)
-		if err != nil {
-			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
-		} else if skip {
-			shouldDetectCI = false
-		}
-	}
-
-	if shouldDetectCI && resource.IsRunningOnCI() {
+	// If this is affecting you locally while debugging on a CI machine,
+	// use the override AZD_FORCE_TTY=true.
+	if resource.IsRunningOnCI() {
 		return false
 	}
 

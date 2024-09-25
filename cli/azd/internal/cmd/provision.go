@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -166,14 +167,14 @@ func (p *ProvisionAction) SetFlags(flags *ProvisionFlags) {
 func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var targetServiceName string
 	if len(p.args) == 1 {
-		targetServiceName = p.args[0]
+		targetServiceName = strings.TrimSpace(p.args[0])
 	}
 
 	if targetServiceName != "" && p.flags.all {
 		return nil, fmt.Errorf("cannot specify both --all and <service>")
 	}
 
-	if targetServiceName == "" && p.flags.platform {
+	if targetServiceName != "" && p.flags.platform {
 		return nil, fmt.Errorf("cannot specify both --platform and <service>")
 	}
 

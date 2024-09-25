@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -34,19 +32,22 @@ func getResourceGroupFollowUp(
 		projectConfig.ResourceGroupName,
 	)
 	if err == nil {
-		suffix := ":\n" + azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName)
-
-		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
-			suffix = "."
-		}
+		resourceGroupLink := azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName)
+		azurePortalHyperlink := output.WithHyperlink(resourceGroupLink, "Azure Portal")
 
 		defaultFollowUpText := fmt.Sprintf(
-			"You can view the resources created under the resource group %s in Azure Portal", resourceGroupName)
+			"You can view the resources created under the resource group %s in the %s",
+			output.WithHighLightFormat(resourceGroupName),
+			azurePortalHyperlink,
+		)
 		if whatIf {
 			defaultFollowUpText = fmt.Sprintf(
-				"You can view the current resources under the resource group %s in Azure Portal", resourceGroupName)
+				"You can view the current resources under the resource group %s in the %s",
+				output.WithHighLightFormat(resourceGroupName),
+				azurePortalHyperlink,
+			)
 		}
-		followUp = defaultFollowUpText + suffix
+		followUp = defaultFollowUpText
 	}
 
 	return followUp
@@ -56,11 +57,11 @@ func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) st
 	if subscriptionId == "" || resourceGroupName == "" {
 		return ""
 	}
-	return output.WithLinkFormat(fmt.Sprintf(
+	return fmt.Sprintf(
 		"%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
 		portalUrlBase,
 		subscriptionId,
-		resourceGroupName))
+		resourceGroupName)
 }
 
 func getTargetServiceName(

@@ -186,10 +186,6 @@ func pathHasModule(path, module string) (bool, error) {
 func (im *ImportManager) SynthAllInfrastructure(
 	ctx context.Context, projectConfig *ProjectConfig, options *SynthOptions,
 ) (fs.FS, error) {
-	if options == nil {
-		options = &SynthOptions{}
-	}
-
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if len(projectConfig.Services) != 1 {

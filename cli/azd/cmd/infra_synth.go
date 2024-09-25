@@ -79,7 +79,6 @@ func newInfraSynthAction(
 }
 
 var infraSynthFeature = alpha.MustFeatureKey("infraSynth")
-var bicepForContainerAppFeature = alpha.MustFeatureKey("aspire.useBicepForContainerApps")
 
 func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !a.alphaManager.IsEnabled(infraSynthFeature) {

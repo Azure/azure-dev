@@ -49,15 +49,21 @@ func TestEvaluateArgsWithConfig(t *testing.T) {
 	manifest := apphost.Manifest{
 		Resources: map[string]*apphost.Resource{
 			"param1": {
-				Type:  "parameter.v0",
+				BaseResource: apphost.BaseResource{
+					Type: "parameter.v0",
+				},
 				Value: "value1",
 			},
 			"param2": {
-				Type:  "parameter.v0",
+				BaseResource: apphost.BaseResource{
+					Type: "parameter.v0",
+				},
 				Value: "value2",
 			},
 			"param3": {
-				Type:  "parameter.v0",
+				BaseResource: apphost.BaseResource{
+					Type: "parameter.v0",
+				},
 				Value: "{param3.inputs.iParam}",
 				Inputs: map[string]apphost.Input{
 					"iParam": {
@@ -66,7 +72,9 @@ func TestEvaluateArgsWithConfig(t *testing.T) {
 				},
 			},
 			envParamName: {
-				Type:  "parameter.v0",
+				BaseResource: apphost.BaseResource{
+					Type: "parameter.v0",
+				},
 				Value: fmt.Sprintf("{%s.inputs.foo}", envParamName),
 				Inputs: map[string]apphost.Input{
 					"foo": {
@@ -106,11 +114,15 @@ func TestBuildArgsArrayAndEnv(t *testing.T) {
 	manifest := apphost.Manifest{
 		Resources: map[string]*apphost.Resource{
 			"param1": {
-				Type:  "parameter.v0",
+				BaseResource: apphost.BaseResource{
+					Type: "parameter.v0",
+				},
 				Value: "value1",
 			},
 			"param2": {
-				Type:  "parameter.v0",
+				BaseResource: apphost.BaseResource{
+					Type: "parameter.v0",
+				},
 				Value: "value2",
 			},
 		},

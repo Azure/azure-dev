@@ -295,6 +295,15 @@ func (p *dockerProject) Build(
 		return res, nil
 	}
 
+	// Include full environment variables for the docker build including:
+	// 1. Environment variables from the host
+	// 2. Environment variables from the service configuration
+	// 3. Environment variables from the docker configuration
+	dockerEnv := []string{}
+	dockerEnv = append(dockerEnv, os.Environ()...)
+	dockerEnv = append(dockerEnv, p.env.Environ()...)
+	dockerEnv = append(dockerEnv, dockerOptions.BuildEnv...)
+
 	// Build the container
 	progress.SetProgress(NewServiceProgress("Building Docker image"))
 	previewerWriter := p.console.ShowPreviewer(ctx,
@@ -313,7 +322,7 @@ func (p *dockerProject) Build(
 		imageName,
 		resolvedBuildArgs,
 		dockerOptions.BuildSecrets,
-		dockerOptions.BuildEnv,
+		dockerEnv,
 		previewerWriter,
 	)
 	p.console.StopPreviewer(ctx, false)

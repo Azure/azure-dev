@@ -19,6 +19,7 @@ const (
 )
 
 type Options struct {
+	Name             string         `yaml:"-"`
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
 	Path             string         `yaml:"path,omitempty"`
 	Module           string         `yaml:"module,omitempty"`

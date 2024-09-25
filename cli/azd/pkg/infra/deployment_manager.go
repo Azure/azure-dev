@@ -76,7 +76,7 @@ func (dm *DeploymentManager) ResourceGroupDeployment(
 func (dm *DeploymentManager) CompletedDeployments(
 	ctx context.Context,
 	scope Scope,
-	envName string,
+	deploymentName string,
 	hint string,
 ) ([]*azapi.ResourceDeployment, error) {
 	deployments, err := scope.ListDeployments(ctx)
@@ -90,7 +90,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 
 	// If hint is not provided, use the environment name as the hint
 	if hint == "" {
-		hint = envName
+		hint = deploymentName
 	}
 
 	// Environment matching strategy
@@ -107,7 +107,8 @@ func (dm *DeploymentManager) CompletedDeployments(
 		}
 
 		// Match on current azd strategy (tags) or old azd strategy (deployment name)
-		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName || deployment.Name == envName {
+		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == deploymentName ||
+			deployment.Name == deploymentName {
 			return []*azapi.ResourceDeployment{deployment}, nil
 		}
 
@@ -118,7 +119,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 	}
 
 	if len(matchingDeployments) == 0 {
-		return nil, fmt.Errorf("'%s': %w", envName, ErrDeploymentsNotFound)
+		return nil, fmt.Errorf("'%s': %w", deploymentName, ErrDeploymentsNotFound)
 	}
 
 	return matchingDeployments, nil

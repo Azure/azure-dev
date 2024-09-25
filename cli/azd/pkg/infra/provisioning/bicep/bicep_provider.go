@@ -126,6 +126,12 @@ var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	modulePath := p.modulePath()
 
+	// Verify that the module path exists
+	_, err := os.Stat(modulePath)
+	if err != nil {
+		return fmt.Errorf("checking module path: %w", err)
+	}
+
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
 	if isBicepParamFile(modulePath) {
@@ -248,7 +254,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var deployment *azapi.ResourceDeployment
 
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), options.Hint())
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.options.Name, options.Hint())
 	p.console.StopSpinner(ctx, "", input.StepDone)
 
 	if err != nil {
@@ -385,7 +391,7 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 }
 
 func (p *BicepProvider) deploymentFromScopeType(deploymentScopeType azure.DeploymentScope) (infra.Deployment, error) {
-	deploymentName := p.deploymentManager.GenerateDeploymentName(p.env.Name())
+	deploymentName := p.deploymentManager.GenerateDeploymentName(p.options.Name)
 
 	if deploymentScopeType == azure.DeploymentScopeSubscription {
 		scope := p.deploymentManager.SubscriptionScope(p.env.GetSubscriptionId(), p.env.GetLocation())
@@ -445,7 +451,7 @@ func (p *BicepProvider) latestDeploymentResult(
 	ctx context.Context,
 	scope infra.Scope,
 ) (*azapi.ResourceDeployment, error) {
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.options.Name, "")
 	// findCompletedDeployments returns error if no deployments are found
 	// No need to check for empty list
 	if err != nil {
@@ -790,13 +796,13 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
 
-	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
+	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.options.Name, "")
 	if err != nil {
 		return nil, fmt.Errorf("finding completed deployments: %w", err)
 	}
 
 	if len(completedDeployments) == 0 {
-		return nil, fmt.Errorf("no deployments found for environment, '%s'", p.env.Name())
+		return nil, fmt.Errorf("no deployments found for environment, '%s'", p.options.Name)
 	}
 
 	mostRecentDeployment := completedDeployments[0]

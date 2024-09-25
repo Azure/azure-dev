@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -377,20 +378,31 @@ func (p *ProvisionAction) provisionPlatform(
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	stepMessage := fmt.Sprintf(output.WithBold("Provisioning platform infrastructure"))
-	p.console.Message(ctx, stepMessage)
+	stepMessage := "Initializing"
+	p.console.Message(ctx, output.WithBold("Provisioning platform infrastructure"))
+	p.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 	if targetServiceName != "" {
-		p.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+		p.console.StopSpinner(ctx, "Platform not selected", input.StepSkipped)
 		return nil, nil, nil
 	}
 
 	infraOptions := infra.Options
 	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+	if infraOptions.Name == "" {
+		infraOptions.Name = p.env.Name()
+	}
 
 	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
-		p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-		return nil, nil, fmt.Errorf("initializing provisioning manager: %w", err)
+		p.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		if errors.Is(err, os.ErrNotExist) {
+			p.console.StopSpinner(ctx, "No infrastructure found", input.StepSkipped)
+			return nil, nil, nil
+		} else {
+			p.console.StopSpinner(ctx, "Provisioning Infrastructure", input.StepFailed)
+			return nil, nil, fmt.Errorf("initializing provisioning manager: %w", err)
+		}
 	}
 
 	projectEventArgs := project.ProjectLifecycleEventArgs{
@@ -451,8 +463,10 @@ func (p *ProvisionAction) provisionServices(
 	previewResults := map[string]*provisioning.DeployPreviewResult{}
 
 	for _, svc := range stableServices {
-		stepMessage := fmt.Sprintf(output.WithBold("\nProvisioning service %s", svc.Name))
-		p.console.Message(ctx, stepMessage)
+		p.console.Message(ctx, output.WithBold("\nProvisioning service %s", svc.Name))
+
+		stepMessage := "Initializing"
+		p.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		if p.flags.platform {
 			p.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
@@ -463,16 +477,26 @@ func (p *ProvisionAction) provisionServices(
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
-			p.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			p.console.StopSpinner(ctx, "Service not selected", input.StepSkipped)
 			continue
 		}
 
 		infraOptions := svc.Infra
 		infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+		if infraOptions.Name == "" {
+			infraOptions.Name = fmt.Sprintf("%s-%s", p.env.Name(), svc.Name)
+		}
 
 		if err := p.provisionManager.Initialize(ctx, svc.Path(), infraOptions); err != nil {
-			p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, nil, err
+			p.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+			if errors.Is(err, os.ErrNotExist) {
+				p.console.StopSpinner(ctx, "No infrastructure found", input.StepSkipped)
+				continue
+			} else {
+				p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, nil, err
+			}
 		}
 
 		serviceEventArgs := project.ServiceLifecycleEventArgs{

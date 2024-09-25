@@ -583,8 +583,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Tools
 	container.MustRegisterSingleton(azcli.NewAzCli)
-	container.MustRegisterSingleton(azapi.NewDeployments)
-	container.MustRegisterSingleton(azapi.NewDeploymentOperations)
+
+	// Tools
 	container.MustRegisterSingleton(azapi.NewResourceService)
 	container.MustRegisterSingleton(docker.NewCli)
 	container.MustRegisterSingleton(dotnet.NewCli)
@@ -603,6 +603,43 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(project.NewAiHelper)
 
 	// Provisioning
+	container.MustRegisterSingleton(func(
+		serviceLocator ioc.ServiceLocator,
+		featureManager *alpha.FeatureManager,
+	) (azapi.DeploymentService, error) {
+		deploymentsType := azapi.DeploymentTypeStandard
+
+		if featureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
+			deploymentsType = azapi.DeploymentTypeStacks
+		}
+
+		var deployments azapi.DeploymentService
+		if err := serviceLocator.ResolveNamed(string(deploymentsType), &deployments); err != nil {
+			return nil, err
+		}
+
+		return deployments, nil
+	})
+
+	container.MustRegisterSingleton(azapi.NewResourceService)
+
+	// Register Deployment Services
+	deploymentServiceTypes := map[azapi.DeploymentType]any{
+		azapi.DeploymentTypeStandard: func(deploymentService *azapi.StandardDeployments) azapi.DeploymentService {
+			return deploymentService
+		},
+		azapi.DeploymentTypeStacks: func(deploymentService *azapi.StackDeployments) azapi.DeploymentService {
+			return deploymentService
+		},
+	}
+
+	for deploymentType, constructor := range deploymentServiceTypes {
+		container.MustRegisterNamedSingleton(string(deploymentType), constructor)
+	}
+
+	container.MustRegisterSingleton(azapi.NewStandardDeployments)
+	container.MustRegisterSingleton(azapi.NewStackDeployments)
+	container.MustRegisterScoped(infra.NewDeploymentManager)
 	container.MustRegisterSingleton(infra.NewAzureResourceManager)
 	container.MustRegisterScoped(provisioning.NewManager)
 	container.MustRegisterScoped(provisioning.NewPrincipalIdProvider)

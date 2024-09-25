@@ -1,0 +1,15 @@
+name: test-proj
+services:
+    api:
+        project: src/api
+        host: containerapp
+        language: ts
+        hooks:
+            postprovision:
+                shell: sh
+                run: scripts/postprovision.sh
+hooks:
+    postprovision:
+        shell: sh
+        run: scripts/postprovision.sh
+

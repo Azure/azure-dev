@@ -41,6 +41,36 @@ func MockContainerAppGet(
 	return mockRequest
 }
 
+func MockContainerAppCreateOrUpdate(
+	mockContext *mocks.MockContext,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	containerApp *armappcontainers.ContainerApp,
+) *http.Request {
+	mockRequest := &http.Request{}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut && strings.Contains(
+			request.URL.Path,
+			fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
+				subscriptionId,
+				resourceGroup,
+				appName,
+			),
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*mockRequest = *request
+
+		response := armappcontainers.ContainerAppsClientCreateOrUpdateResponse{}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusCreated, response)
+	})
+
+	return mockRequest
+}
+
 func MockContainerAppUpdate(
 	mockContext *mocks.MockContext,
 	subscriptionId string,

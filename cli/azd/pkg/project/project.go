@@ -82,6 +82,12 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		projectConfig.Infra.Path = "infra"
 	}
 
+	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {
+		projectConfig.Infra.Path = strings.ReplaceAll(projectConfig.Infra.Path, "\\", "/")
+	}
+
+	projectConfig.Infra.Path = filepath.FromSlash(projectConfig.Infra.Path)
+
 	for key, svc := range projectConfig.Services {
 		svc.Name = key
 		svc.Project = &projectConfig
@@ -103,12 +109,30 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
+		if strings.Contains(svc.Infra.Path, "\\") && !strings.Contains(svc.Infra.Path, "/") {
+			svc.Infra.Path = strings.ReplaceAll(svc.Infra.Path, "\\", "/")
+		}
+
+		svc.Infra.Path = filepath.FromSlash(svc.Infra.Path)
+
 		// TODO: Move parsing/validation requirements for service targets into their respective components.
 		// When working within container based applications users may be using external/pre-built images instead of source
 		// In this case it is valid to have not specified a language but would be required to specify a source image
 		if svc.Host == ContainerAppTarget && svc.Language == ServiceLanguageNone && svc.Image.Empty() {
 			return nil, fmt.Errorf("parsing service %s: must specify language or image", svc.Name)
 		}
+
+		if strings.ContainsRune(svc.RelativePath, '\\') && !strings.ContainsRune(svc.RelativePath, '/') {
+			svc.RelativePath = strings.ReplaceAll(svc.RelativePath, "\\", "/")
+		}
+
+		svc.RelativePath = filepath.FromSlash(svc.RelativePath)
+
+		if strings.ContainsRune(svc.OutputPath, '\\') && !strings.ContainsRune(svc.OutputPath, '/') {
+			svc.OutputPath = strings.ReplaceAll(svc.OutputPath, "\\", "/")
+		}
+
+		svc.OutputPath = filepath.FromSlash(svc.OutputPath)
 	}
 
 	return &projectConfig, nil
@@ -205,7 +229,25 @@ func SaveConfig(ctx context.Context, config config.Config, projectFilePath strin
 
 // Saves the current instance back to the azure.yaml file
 func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath string) error {
-	projectBytes, err := yaml.Marshal(projectConfig)
+	// We store paths at runtime with os native separators, but want to normalize paths to use forward slashes
+	// before saving so `azure.yaml` is consistent across platforms. To avoid mutating the original projectConfig,
+	// we make a copy.
+	copy := *projectConfig
+
+	copy.Infra.Path = filepath.ToSlash(copy.Infra.Path)
+	copy.Services = make(map[string]*ServiceConfig, len(projectConfig.Services))
+
+	for name, svc := range projectConfig.Services {
+		svcCopy := *svc
+		svcCopy.Project = &copy
+		svcCopy.Infra.Path = filepath.ToSlash(svc.Infra.Path)
+		svcCopy.RelativePath = filepath.ToSlash(svc.RelativePath)
+		svcCopy.OutputPath = filepath.ToSlash(svc.OutputPath)
+
+		copy.Services[name] = &svcCopy
+	}
+
+	projectBytes, err := yaml.Marshal(copy)
 	if err != nil {
 		return fmt.Errorf("marshalling project yaml: %w", err)
 	}

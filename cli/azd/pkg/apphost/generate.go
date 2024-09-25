@@ -111,7 +111,7 @@ func ProjectPaths(manifest *Manifest) map[string]string {
 
 	for name, comp := range manifest.Resources {
 		switch comp.Type {
-		case "project.v0":
+		case "project.v0", "project.v1":
 			res[name] = *comp.Path
 		}
 	}
@@ -586,7 +586,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		}
 
 		switch comp.Type {
-		case "project.v0":
+		case "project.v0", "project.v1":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts, comp.Args)
@@ -1422,7 +1422,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	}
 
 	switch {
-	case targetType == "project.v0" || targetType == "container.v0" || targetType == "dockerfile.v0":
+	case targetType == "project.v0" ||
+		targetType == "container.v0" ||
+		targetType == "container.v1" ||
+		targetType == "dockerfile.v0" ||
+		targetType == "project.v1":
 		if !strings.HasPrefix(prop, "bindings.") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
@@ -1439,11 +1443,14 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		bindingName := parts[0]
 		bindingProperty := parts[1]
 
-		if targetType == "project.v0" {
+		if targetType == "project.v0" || targetType == "project.v1" {
 			bindings := b.projects[resource].Bindings
 			binding, has = bindings.Get(bindingName)
 		} else if targetType == "container.v0" {
 			bindings := b.containers[resource].Bindings
+			binding, has = bindings.Get(bindingName)
+		} else if targetType == "container.v1" {
+			bindings := b.buildContainers[resource].Bindings
 			binding, has = bindings.Get(bindingName)
 		} else if targetType == "dockerfile.v0" {
 			bindings := b.dockerfiles[resource].Bindings

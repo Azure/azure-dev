@@ -442,8 +442,7 @@ func evaluateSingleExpressionMatch(
 	return fmt.Sprintf("{%s%s}", infraParametersKey, resourceName), nil
 }
 
-func (ai *DotNetImporter) SynthAllInfrastructure(
-	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig, useBicepForContainerApps bool,
+func (ai *DotNetImporter) SynthAllInfrastructure(ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
 	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
@@ -510,7 +509,13 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
+	// NOTE: If the resource contains `deployment` config, this becomes a no-op b/c the AppHost will generate bicep files.
 	writeManifestForResource := func(name string) error {
+		resource := manifest.Resources[name]
+		if resource.Deployment != nil {
+			return nil
+		}
+
 		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
 		if err != nil {
 			return err
@@ -521,39 +526,21 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
-		if useBicepForContainerApps {
-			bicepManifest, err := apphost.BicepModuleForProject(manifest, name, apphost.AppHostOptions{})
-			if err != nil {
-				return fmt.Errorf("generating bicep module for resource %s: %w", name, err)
-			}
+		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
+			manifest, name, apphost.AppHostOptions{})
+		if err != nil {
+			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
+		}
 
-			bicepPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.bicep", name))
+		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.tmpl.yaml", name))
 
-			if err := generatedFS.MkdirAll(filepath.Dir(bicepPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
-				return err
-			}
+		if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
+			return err
+		}
 
-			err = generatedFS.WriteFile(bicepPath, []byte(bicepManifest), osutil.PermissionFileOwnerOnly)
-			if err != nil {
-				return err
-			}
-		} else {
-			containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
-				manifest, name, apphost.AppHostOptions{})
-			if err != nil {
-				return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
-			}
-
-			manifestPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.tmpl.yaml", name))
-
-			if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
-				return err
-			}
-
-			err = generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
-			if err != nil {
-				return err
-			}
+		err = generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		if err != nil {
+			return err
 		}
 
 		return nil

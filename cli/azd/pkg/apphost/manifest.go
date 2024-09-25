@@ -21,7 +21,7 @@ type Manifest struct {
 	BicepFiles *memfs.FS `json:"-"`
 }
 
-type Resource struct {
+type BaseResource struct {
 	// Type is present on all resource types
 	Type string `json:"type"`
 
@@ -29,6 +29,13 @@ type Resource struct {
 	// resource and is the path to the Dockerfile (including the "Dockerfile" filename).
 	// For a bicep.v0 resource, it is the path to the bicep file.
 	Path *string `json:"path,omitempty"`
+
+	// For a bicep.v0 resource, defines the input parameters for the bicep file.
+	Params map[string]any `json:"params,omitempty"`
+}
+
+type Resource struct {
+	BaseResource
 
 	// Context is present on a dockerfile.v0 resource and is the path to the context directory.
 	Context *string `json:"context,omitempty"`
@@ -77,9 +84,6 @@ type Resource struct {
 	// a password for a database).
 	Inputs map[string]Input `json:"inputs,omitempty"`
 
-	// For a bicep.v0 resource, defines the input parameters for the bicep file.
-	Params map[string]any `json:"params,omitempty"`
-
 	// parameter.v0 uses value field to define the value of the parameter.
 	Value string
 
@@ -94,6 +98,9 @@ type Resource struct {
 
 	// container.v0 uses bind mounts field to define the volumes with initial data of the container.
 	BindMounts []*BindMount `json:"bindMounts,omitempty"`
+
+	// project.v1 and container.v1 uses deployment when the AppHost owns the ACA bicep definitions.
+	Deployment *BaseResource `json:"deployment,omitempty"`
 }
 
 type ContainerV1Build struct {
@@ -249,6 +256,27 @@ func ManifestFromAppHost(
 
 			if !filepath.IsAbs(*res.Path) {
 				*res.Path = filepath.Join(manifestDir, *res.Path)
+			}
+		}
+
+		if res.Deployment != nil {
+			if res.Deployment.Type != "azure.bicep.v0" {
+				return nil, fmt.Errorf(
+					"unexpected deployment type %q. Supported types: [azure.bicep.v0]", res.Deployment.Type)
+			}
+			// use a folder with the name of the resource
+			e := manifest.BicepFiles.MkdirAll(resourceName, osutil.PermissionDirectory)
+			if e != nil {
+				return nil, e
+			}
+			content, e := os.ReadFile(filepath.Join(manifestDir, *res.Deployment.Path))
+			if e != nil {
+				return nil, fmt.Errorf("reading bicep file from deployment property: %w", e)
+			}
+			*res.Deployment.Path = filepath.Join(resourceName, filepath.Base(*res.Deployment.Path))
+			e = manifest.BicepFiles.WriteFile(*res.Deployment.Path, content, osutil.PermissionFile)
+			if e != nil {
+				return nil, e
 			}
 		}
 

@@ -21,7 +21,6 @@ type ImportManager struct {
 }
 
 type SynthOptions struct {
-	UseBicepForContainerApps bool
 }
 
 func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
@@ -197,7 +196,7 @@ func (im *ImportManager) SynthAllInfrastructure(
 				return nil, errNoMultipleServicesWithAppHost
 			}
 
-			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig, options.UseBicepForContainerApps)
+			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig)
 		}
 	}
 

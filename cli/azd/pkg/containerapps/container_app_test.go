@@ -43,7 +43,7 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
 	)
-	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, subscriptionId, resourceGroup, appName)
+	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, subscriptionId, resourceGroup, appName, nil)
 	require.NoError(t, err)
 	require.NotNil(t, ingressConfig)
 
@@ -138,7 +138,7 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
 	)
-	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName)
+	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName, nil)
 	require.NoError(t, err)
 
 	// Verify lastest revision is read
@@ -159,4 +159,93 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, updatedImageName, *updatedContainerApp.Properties.Template.Containers[0].Image)
 	require.Equal(t, "azd-0", *updatedContainerApp.Properties.Template.RevisionSuffix)
+}
+
+func Test_ContainerApp_DeployYaml(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	subscriptionId := "SUBSCRIPTION_ID"
+	location := "eastus2"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "APP_NAME"
+
+	containerAppYaml := `
+location: eastus2
+name: APP_NAME
+properties:
+  latestRevisionName: LATEST_REVISION_NAME
+  configuration:
+    activeRevisionsMode: Single
+  template:
+    containers:
+      - image: IMAGE_NAME
+`
+
+	expected := &armappcontainers.ContainerApp{
+		Location: to.Ptr(location),
+		Name:     to.Ptr(appName),
+		Properties: &armappcontainers.ContainerAppProperties{
+			LatestRevisionName: to.Ptr("LATEST_REVISION_NAME"),
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+				Ingress: &armappcontainers.Ingress{
+					CustomDomains: []*armappcontainers.CustomDomain{
+						{
+							Name: to.Ptr("DOMAIN_NAME"),
+						},
+					},
+					StickySessions: &armappcontainers.IngressStickySessions{
+						Affinity: to.Ptr(armappcontainers.AffinitySticky),
+					},
+				},
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: to.Ptr("IMAGE_NAME"),
+					},
+				},
+			},
+		},
+	}
+
+	containerAppGetRequest := mockazsdk.MockContainerAppGet(
+		mockContext,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		expected,
+	)
+	require.NotNil(t, containerAppGetRequest)
+
+	containerAppUpdateRequest := mockazsdk.MockContainerAppCreateOrUpdate(
+		mockContext,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		expected,
+	)
+	require.NotNil(t, containerAppUpdateRequest)
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+
+	err := mockContext.Config.Set("alpha.aca.persistDomains", "on")
+	require.NoError(t, err)
+	err = mockContext.Config.Set("alpha.aca.persistIngressSessionAffinity", "on")
+	require.NoError(t, err)
+
+	err = cas.DeployYaml(*mockContext.Context, subscriptionId, resourceGroup, appName, []byte(containerAppYaml), nil)
+	require.NoError(t, err)
+
+	var actual *armappcontainers.ContainerApp
+	err = mocks.ReadHttpBody(containerAppUpdateRequest.Body, &actual)
+	require.NoError(t, err)
+
+	require.Equal(t, expected.Properties.Configuration, actual.Properties.Configuration)
+	require.Equal(t, expected.Properties.Template, actual.Properties.Template)
 }

@@ -132,7 +132,7 @@ func (p *GitHubScmProvider) configureGitRemote(
 }
 
 // defines the structure of an ssl git remote
-var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:(.*?)(?:\.git)?$`)
+var gitHubRemoteGitUrlRegex = regexp.MustCompile(`^git@[a-zA-Z0-9.-_]+:(.*?)(?:\.git)?$`)
 
 // defines the structure of an HTTPS git remote
 var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/(.*?)(?:\.git)?$`)
@@ -459,16 +459,11 @@ func (p *GitHubCiProvider) configureConnection(
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	servicePrincipal *graphsdk.ServicePrincipal,
-	authType PipelineAuthType,
+	credentialOptions *CredentialOptions,
 	credentials *entraid.AzureCredentials,
 ) error {
-	// Default auth type to client-credentials for terraform
-	if infraOptions.Provider == provisioning.Terraform && authType == "" {
-		authType = AuthTypeClientCredentials
-	}
-
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-	if authType == AuthTypeClientCredentials {
+	if credentialOptions.EnableClientCredentials {
 		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, credentials)
 		if err != nil {
 			return fmt.Errorf("configuring client credentials auth: %w", err)

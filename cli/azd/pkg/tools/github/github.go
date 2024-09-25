@@ -438,7 +438,7 @@ var isGhCliNotLoggedInMessageRegex = regexp.MustCompile(
 var repositoryNameInUseRegex = regexp.MustCompile(`GraphQL: Name already exists on this account \(createRepository\)`)
 
 var notLoggedIntoAnyGitHubHostsMessageRegex = regexp.MustCompile(
-	"You are not logged into any GitHub hosts. Run gh auth login to authenticate.",
+	"You are not logged into any GitHub hosts.",
 )
 
 var isUserNotAuthorizedMessageRegex = regexp.MustCompile(

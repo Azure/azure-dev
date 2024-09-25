@@ -118,7 +118,7 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 		return "", fmt.Errorf("listing resource groups: %w", err)
 	}
 
-	slices.SortFunc(groups, func(a, b azapi.Resource) int {
+	slices.SortFunc(groups, func(a, b *azapi.Resource) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 

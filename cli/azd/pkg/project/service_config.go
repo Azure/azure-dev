@@ -18,6 +18,8 @@ type ServiceConfig struct {
 	ResourceGroupName osutil.ExpandableString `yaml:"resourceGroup,omitempty"`
 	// The name used to override the default azure resource name
 	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
+	// The ARM api version to use for the service. If not specified, the latest version is used.
+	ApiVersion string `yaml:"apiVersion,omitempty"`
 	// The relative path to the project folder from the project root
 	RelativePath string `yaml:"project"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
@@ -37,7 +39,7 @@ type ServiceConfig struct {
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra,omitempty"`
 	// Hook configuration for service
-	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+	Hooks HooksConfig `yaml:"hooks,omitempty"`
 	// Options specific to the DotNetContainerApp target. These are set by the importer and
 	// can not be controlled via the project file today.
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`

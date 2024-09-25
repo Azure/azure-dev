@@ -13,7 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -35,9 +35,9 @@ type TerraformProvider struct {
 	prompters    prompt.Prompter
 	console      input.Console
 	cli          *terraform.Cli
-	curPrincipal CurrentPrincipalIdProvider
+	curPrincipal provisioning.CurrentPrincipalIdProvider
 	projectPath  string
-	options      Options
+	options      provisioning.Options
 }
 
 type terraformDeploymentDetails struct {
@@ -61,9 +61,9 @@ func NewTerraformProvider(
 	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
-	curPrincipal CurrentPrincipalIdProvider,
+	curPrincipal provisioning.CurrentPrincipalIdProvider,
 	prompters prompt.Prompter,
-) Provider {
+) provisioning.Provider {
 	provider := &TerraformProvider{
 		envManager:   envManager,
 		env:          env,
@@ -76,7 +76,7 @@ func NewTerraformProvider(
 	return provider
 }
 
-func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
+func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
 	t.projectPath = projectPath
 	t.options = options
 	if t.options.Module == "" {
@@ -122,7 +122,7 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(
+	return provisioning.EnsureSubscriptionAndLocation(
 		ctx,
 		t.envManager,
 		t.env,
@@ -132,7 +132,7 @@ func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
 }
 
 // Previews the infrastructure through terraform plan
-func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDeploymentDetails, error) {
+func (t *TerraformProvider) plan(ctx context.Context) (*provisioning.Deployment, *terraformDeploymentDetails, error) {
 	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading backend config: %w", err)
@@ -179,7 +179,7 @@ func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDe
 }
 
 // Deploy the infrastructure within the specified template through terraform apply
-func (t *TerraformProvider) Deploy(ctx context.Context) (*DeployResult, error) {
+func (t *TerraformProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
 	t.console.Message(ctx, "Locating plan file...")
 
 	modulePath := t.modulePath()
@@ -210,12 +210,12 @@ func (t *TerraformProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 	}
 
 	deployment.Outputs = outputs
-	return &DeployResult{
+	return &provisioning.DeployResult{
 		Deployment: deployment,
 	}, nil
 }
 
-func (t *TerraformProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+func (t *TerraformProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
 	// terraform uses plan() to display the what-if output
 	// no changes are added to the properties
 	_, _, err := t.plan(ctx)
@@ -223,16 +223,19 @@ func (t *TerraformProvider) Preview(ctx context.Context) (*DeployPreviewResult, 
 		return nil, err
 	}
 
-	return &DeployPreviewResult{
-		Preview: &DeploymentPreview{
+	return &provisioning.DeployPreviewResult{
+		Preview: &provisioning.DeploymentPreview{
 			Status:     "done",
-			Properties: &DeploymentPreviewProperties{},
+			Properties: &provisioning.DeploymentPreviewProperties{},
 		},
 	}, nil
 }
 
 // Destroys the specified deployment through terraform destroy
-func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
+func (t *TerraformProvider) Destroy(
+	ctx context.Context,
+	options provisioning.DestroyOptions,
+) (*provisioning.DestroyResult, error) {
 	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 	if err != nil {
 		return nil, fmt.Errorf("reading backend config: %w", err)
@@ -262,12 +265,15 @@ func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions)
 		return nil, fmt.Errorf("template Deploy failed: %s, err: %w", runResult, err)
 	}
 
-	return &DestroyResult{
+	return &provisioning.DestroyResult{
 		InvalidatedEnvKeys: slices.Collect(maps.Keys(outputs)),
 	}, nil
 }
 
-func (t *TerraformProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
+func (t *TerraformProvider) State(
+	ctx context.Context,
+	options *provisioning.StateOptions,
+) (*provisioning.StateResult, error) {
 	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 	if err != nil {
 		return nil, fmt.Errorf("reading backend config: %w", err)
@@ -281,12 +287,12 @@ func (t *TerraformProvider) State(ctx context.Context, options *StateOptions) (*
 		return nil, fmt.Errorf("fetching terraform state failed: %w", err)
 	}
 
-	state := State{}
+	state := provisioning.State{}
 
 	state.Outputs = t.convertOutputs(terraformState.Values.Outputs)
 	state.Resources = t.collectAzureResources(terraformState.Values.RootModule)
 
-	return &StateResult{
+	return &provisioning.StateResult{
 		State: &state,
 	}, nil
 }
@@ -378,7 +384,7 @@ func (t *TerraformProvider) createOutputParameters(
 	ctx context.Context,
 	modulePath string,
 	isRemoteBackend bool,
-) (map[string]OutputParameter, error) {
+) (map[string]provisioning.OutputParameter, error) {
 	cmd := []string{}
 
 	if !isRemoteBackend {
@@ -398,18 +404,18 @@ func (t *TerraformProvider) createOutputParameters(
 	return t.convertOutputs(outputMap), nil
 }
 
-func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) ParameterType {
+func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) provisioning.ParameterType {
 	// in the JSON output, the type property maps to either a string (for a primitive type) or an
 	// array of things which describe a complex type.
 	switch v := typ.(type) {
 	case string:
 		switch v {
 		case "string":
-			return ParameterTypeString
+			return provisioning.ParameterTypeString
 		case "bool":
-			return ParameterTypeBoolean
+			return provisioning.ParameterTypeBoolean
 		case "number":
-			return ParameterTypeNumber
+			return provisioning.ParameterTypeNumber
 		default:
 			panic(fmt.Sprintf("unknown primitive type: %s", v))
 		}
@@ -418,27 +424,27 @@ func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) ParameterTy
 		// first part and map to either and object or array.
 		switch v[0].(string) {
 		case "list", "tuple", "set":
-			return ParameterTypeArray
+			return provisioning.ParameterTypeArray
 		case "object", "map":
-			return ParameterTypeObject
+			return provisioning.ParameterTypeObject
 		default:
 			panic(fmt.Sprintf("unknown complex type tag: %s (full type: %+v)", v, typ))
 		}
 	}
 
-	return ParameterTypeString
+	return provisioning.ParameterTypeString
 }
 
 // convertOutputs converts a terraform output map to the canonical format shared by all provider implementations.
-func (t *TerraformProvider) convertOutputs(outputMap map[string]terraformOutput) map[string]OutputParameter {
-	outputParameters := make(map[string]OutputParameter)
+func (t *TerraformProvider) convertOutputs(outputMap map[string]terraformOutput) map[string]provisioning.OutputParameter {
+	outputParameters := make(map[string]provisioning.OutputParameter)
 	for k, v := range outputMap {
 		if val, ok := v.Value.(string); ok && val == "null" {
 			// omit null
 			continue
 		}
 
-		outputParameters[k] = OutputParameter{
+		outputParameters[k] = provisioning.OutputParameter{
 			Type:  t.mapTerraformTypeToInterfaceType(v.Type),
 			Value: v.Value,
 		}
@@ -471,8 +477,8 @@ func (t *TerraformProvider) showCurrentState(
 }
 
 // Creates the deployment object from the specified module path
-func (t *TerraformProvider) createDeployment(ctx context.Context) (*Deployment, error) {
-	templateParameters := make(map[string]InputParameter)
+func (t *TerraformProvider) createDeployment(ctx context.Context) (*provisioning.Deployment, error) {
+	templateParameters := make(map[string]provisioning.InputParameter)
 
 	//build the template parameters.
 	parameters := make(map[string]any)
@@ -494,13 +500,13 @@ func (t *TerraformProvider) createDeployment(ctx context.Context) (*Deployment, 
 	}
 
 	for key, param := range parameters {
-		templateParameters[key] = InputParameter{
+		templateParameters[key] = provisioning.InputParameter{
 			Type:  key,
 			Value: param,
 		}
 	}
 
-	template := Deployment{
+	template := provisioning.Deployment{
 		Parameters: templateParameters,
 	}
 
@@ -511,7 +517,7 @@ func (t *TerraformProvider) createDeployment(ctx context.Context) (*Deployment, 
 // resources from all child modules. Only resources managed by azure providers are considered (today, that's
 // just resources from the `registry.terraform.io/hashicorp/azurerm` provider). Only "managed" resources are
 // considered.
-func (t *TerraformProvider) collectAzureResources(rootModule terraformRootModule) []Resource {
+func (t *TerraformProvider) collectAzureResources(rootModule terraformRootModule) []provisioning.Resource {
 	// the set of resources we've seen (keyed by their id)
 	azureResources := make(map[string]struct{})
 
@@ -547,9 +553,9 @@ func (t *TerraformProvider) collectAzureResources(rootModule terraformRootModule
 	}
 
 	// At this point, allResources contains the ids of all the resources we discovered.
-	resources := make([]Resource, 0, len(azureResources))
+	resources := make([]provisioning.Resource, 0, len(azureResources))
 	for id := range azureResources {
-		resources = append(resources, Resource{
+		resources = append(resources, provisioning.Resource{
 			Id: id,
 		})
 	}

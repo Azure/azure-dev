@@ -3,9 +3,9 @@ package javaanalyze
 type ruleStorage struct {
 }
 
-func (mr *ruleStorage) Match(mavenProject *MavenProject) bool {
-	if mavenProject.Dependencies != nil {
-		for _, dep := range mavenProject.Dependencies {
+func (r *ruleStorage) match(javaProject *javaProject) bool {
+	if javaProject.mavenProject.Dependencies != nil {
+		for _, dep := range javaProject.mavenProject.Dependencies {
 			if dep.GroupId == "com.azure" && dep.ArtifactId == "" {
 				return true
 			}
@@ -26,13 +26,13 @@ func (mr *ruleStorage) Match(mavenProject *MavenProject) bool {
 	return false
 }
 
-func (mr *ruleStorage) Apply(javaProject *JavaProject) {
-	javaProject.Resources = append(javaProject.Resources, Resource{
+func (r *ruleStorage) apply(azureYaml *AzureYaml) {
+	azureYaml.Resources = append(azureYaml.Resources, &Resource{
 		Name: "Azure Storage",
 		Type: "Azure Storage",
 	})
 
-	javaProject.ServiceBindings = append(javaProject.ServiceBindings, ServiceBinding{
+	azureYaml.ServiceBindings = append(azureYaml.ServiceBindings, ServiceBinding{
 		Name:     "Azure Storage",
 		AuthType: AuthType_SYSTEM_MANAGED_IDENTITY,
 	})

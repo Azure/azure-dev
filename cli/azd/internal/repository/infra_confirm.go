@@ -103,6 +103,13 @@ func (i *Initializer) infraSpecFromDetect(
 		}
 	}
 
+	for azureDep := range detect.AzureDeps {
+		infraSpec, err := i.promptForAzureResource(ctx, azureDep, spec)
+		if err != nil {
+			return infraSpec, err
+		}
+	}
+
 	for _, svc := range detect.Services {
 		name := filepath.Base(svc.Path)
 		serviceSpec := scaffold.ServiceSpec{
@@ -206,5 +213,68 @@ func (i *Initializer) infraSpecFromDetect(
 		}
 	}
 
+	return spec, nil
+}
+
+func (i *Initializer) promptForAzureResource(
+	ctx context.Context,
+	azureDep appdetect.AzureDep,
+	spec scaffold.InfraSpec) (scaffold.InfraSpec, error) {
+azureDepPrompt:
+	for {
+		azureDepName, err := i.console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the name of the Azure dependency (%s)", azureDep.Display()),
+			Help: "Hint: Azure dependency name\n\n" +
+				"Name of the Azure dependency that the app connects to. " +
+				"This dependency will be created after running azd provision or azd up." +
+				"\nYou may be able to skip this step by hitting enter, in which case the dependency will not be created.",
+		})
+		if err != nil {
+			return scaffold.InfraSpec{}, err
+		}
+
+		if strings.ContainsAny(azureDepName, " ") {
+			i.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: "Dependency name contains whitespace. This might not be allowed by the Azure service.",
+			})
+			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Continue with name '%s'?", azureDepName),
+			})
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+
+			if !confirm {
+				continue azureDepPrompt
+			}
+		} else if !wellFormedDbNameRegex.MatchString(azureDepName) {
+			i.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: "Dependency name contains special characters. " +
+					"This might not be allowed by the Azure service.",
+			})
+			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Continue with name '%s'?", azureDepName),
+			})
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+
+			if !confirm {
+				continue azureDepPrompt
+			}
+		}
+
+		switch azureDep {
+		case appdetect.AzureServiceBus:
+
+			spec.AzureServiceBus = &scaffold.AzureDepServiceBus{
+				Name: azureDepName,
+			}
+			break azureDepPrompt
+		case appdetect.AzureStorage:
+			break azureDepPrompt
+		}
+		break azureDepPrompt
+	}
 	return spec, nil
 }

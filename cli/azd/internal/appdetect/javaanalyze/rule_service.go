@@ -1,17 +1,17 @@
 package javaanalyze
 
 type ruleService struct {
-	MavenProject *MavenProject
+	javaProject *javaProject
 }
 
-func (mr *ruleService) Match(mavenProject *MavenProject) bool {
-	mr.MavenProject = mavenProject
+func (r *ruleService) match(javaProject *javaProject) bool {
+	r.javaProject = javaProject
 	return true
 }
 
-func (mr *ruleService) Apply(javaProject *JavaProject) {
-	if javaProject.Service == nil {
-		javaProject.Service = &Service{}
+func (r *ruleService) apply(azureYaml *AzureYaml) {
+	if azureYaml.Service == nil {
+		azureYaml.Service = &Service{}
 	}
-	javaProject.Service.Path = mr.MavenProject.Path
+	azureYaml.Service.Path = r.javaProject.mavenProject.path
 }

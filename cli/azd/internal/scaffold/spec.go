@@ -13,6 +13,9 @@ type InfraSpec struct {
 	DbPostgres    *DatabasePostgres
 	DbMySql       *DatabaseMySql
 	DbCosmosMongo *DatabaseCosmosMongo
+
+	// Azure Service Bus
+	AzureServiceBus *AzureDepServiceBus
 }
 
 type Parameter struct {
@@ -36,6 +39,12 @@ type DatabaseCosmosMongo struct {
 	DatabaseName string
 }
 
+type AzureDepServiceBus struct {
+	Name                   string
+	Queues                 []string
+	TopicsAndSubscriptions map[string][]string
+}
+
 type ServiceSpec struct {
 	Name string
 	Port int
@@ -51,6 +60,9 @@ type ServiceSpec struct {
 	DbMySql       *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
+
+	// Azure Service Bus
+	AzureServiceBus *AzureDepServiceBus
 }
 
 type Frontend struct {

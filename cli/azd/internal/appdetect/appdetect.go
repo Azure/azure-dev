@@ -354,22 +354,22 @@ func analyze(projects []Project) []Project {
 	return result
 }
 
-func enrichFromJavaProject(javaProject javaanalyze.JavaProject, project *Project) {
+func enrichFromJavaProject(azureYaml javaanalyze.AzureYaml, project *Project) {
 	// if there is only one project, we can safely assume that it is the main project
-	for _, resource := range javaProject.Resources {
-		if resource.Type == "Azure Storage" {
+	for _, resource := range azureYaml.Resources {
+		if resource.GetType() == "Azure Storage" {
 			// project.DatabaseDeps = append(project.DatabaseDeps, Db)
-		} else if resource.Type == "MySQL" {
+		} else if resource.GetType() == "MySQL" {
 			project.DatabaseDeps = append(project.DatabaseDeps, DbMySql)
-		} else if resource.Type == "PostgreSQL" {
+		} else if resource.GetType() == "PostgreSQL" {
 			project.DatabaseDeps = append(project.DatabaseDeps, DbPostgres)
-		} else if resource.Type == "SQL Server" {
+		} else if resource.GetType() == "SQL Server" {
 			project.DatabaseDeps = append(project.DatabaseDeps, DbSqlServer)
-		} else if resource.Type == "Redis" {
+		} else if resource.GetType() == "Redis" {
 			project.DatabaseDeps = append(project.DatabaseDeps, DbRedis)
-		} else if resource.Type == "Azure Service Bus" {
+		} else if resource.GetType() == "Azure Service Bus" {
 			project.AzureDeps = append(project.AzureDeps, AzureServiceBus)
-		} else if resource.Type == "Azure Storage" {
+		} else if resource.GetType() == "Azure Storage" {
 			project.AzureDeps = append(project.AzureDeps, AzureStorage)
 		}
 	}

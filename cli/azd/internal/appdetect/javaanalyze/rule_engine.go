@@ -1,17 +1,17 @@
 package javaanalyze
 
 type rule interface {
-	Match(*MavenProject) bool
-	Apply(*JavaProject)
+	match(project *javaProject) bool
+	apply(azureYaml *AzureYaml)
 }
 
-func ApplyRules(mavenProject *MavenProject, rules []rule) (*JavaProject, error) {
-	javaProject := &JavaProject{}
+func applyRules(javaProject *javaProject, rules []rule) (*AzureYaml, error) {
+	azureYaml := &AzureYaml{}
 
 	for _, r := range rules {
-		if r.Match(mavenProject) {
-			r.Apply(javaProject)
+		if r.match(javaProject) {
+			r.apply(azureYaml)
 		}
 	}
-	return javaProject, nil
+	return azureYaml, nil
 }

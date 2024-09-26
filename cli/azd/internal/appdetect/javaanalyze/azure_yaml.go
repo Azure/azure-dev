@@ -1,9 +1,16 @@
 package javaanalyze
 
-type JavaProject struct {
+type AzureYaml struct {
 	Service         *Service         `json:"service"`
-	Resources       []Resource       `json:"resources"`
+	Resources       []IResource      `json:"resources"`
 	ServiceBindings []ServiceBinding `json:"serviceBindings"`
+}
+
+type IResource interface {
+	GetName() string
+	GetType() string
+	GetBicepParameters() []BicepParameter
+	GetBicepProperties() []BicepProperty
 }
 
 type Resource struct {
@@ -11,6 +18,28 @@ type Resource struct {
 	Type            string           `json:"type"`
 	BicepParameters []BicepParameter `json:"bicepParameters"`
 	BicepProperties []BicepProperty  `json:"bicepProperties"`
+}
+
+func (r *Resource) GetName() string {
+	return r.Name
+}
+
+func (r *Resource) GetType() string {
+	return r.Type
+}
+
+func (r *Resource) GetBicepParameters() []BicepParameter {
+	return r.BicepParameters
+}
+
+func (r *Resource) GetBicepProperties() []BicepProperty {
+	return r.BicepProperties
+}
+
+type ServiceBusResource struct {
+	Resource
+	Queues                []string `json:"queues"`
+	TopicAndSubscriptions []string `json:"topicAndSubscriptions"`
 }
 
 type BicepParameter struct {

@@ -70,6 +70,7 @@ type genBuildContainer struct {
 	Build            *genBuildContainerDetails
 	DeploymentParams map[string]any
 	DeploymentSource string
+	BindMounts       []*BindMount
 }
 
 type genBuildContainerDetails struct {

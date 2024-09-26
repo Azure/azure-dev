@@ -226,6 +226,13 @@ func ContainerAppManifestTemplateForProject(
 		}
 	}
 
+	// replace the containerPort with the targetPort expression
+	for p, v := range tmplCtx.DeployParams {
+		if v == "'{{ containerPort }}'" {
+			tmplCtx.DeployParams[p] = fmt.Sprintf("'%s'", tmplCtx.TargetPortExpression)
+		}
+	}
+
 	var manifestType ContainerAppManifestType
 	if len(tCtx.DeployParams) == 0 {
 		manifestType = ContainerAppManifestTypeYAML
@@ -923,6 +930,11 @@ func (b *infraGenerator) addBuildContainer(
 		b.requireStorageVolume()
 	}
 
+	if len(r.BindMounts) > 0 {
+		b.requireStorageVolume()
+		b.hasBindMounts()
+	}
+
 	bc, err := buildContainerFromResource(r)
 	if err != nil {
 		return fmt.Errorf("container resource '%s': %w", name, err)
@@ -950,6 +962,7 @@ func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
 		Volumes:          r.Volumes,
 		DeploymentParams: deploymentParams,
 		DeploymentSource: deploymentSource,
+		BindMounts:       r.BindMounts,
 	}
 
 	// container.v0 and container.v1+pre-build image
@@ -1224,8 +1237,26 @@ func (b *infraGenerator) Compile() error {
 	}
 
 	for resourceName, bc := range b.buildContainers {
+		var bMounts []*BindMount
+		if len(bc.BindMounts) > 0 {
+			// must grant write role to the Storage File Share to upload data
+			b.bicepContext.RequiresPrincipalId = true
+		}
+		for count, bm := range bc.BindMounts {
+			bMounts = append(bMounts, &BindMount{
+				// adding a name using the index. This name is used for naming the resource in bicep.
+				Name: fmt.Sprintf("bm%d", count),
+				// mount bind is not supported across devices, as it depends on a local path which might be missing in
+				// another device.
+				Source:   bm.Source,
+				Target:   bm.Target,
+				ReadOnly: bm.ReadOnly,
+			})
+		}
+
 		cs := genContainerApp{
-			Volumes: bc.Volumes,
+			Volumes:    bc.Volumes,
+			BindMounts: bMounts,
 		}
 
 		b.bicepContext.ContainerApps[resourceName] = cs
@@ -1403,7 +1434,12 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	resource, prop := parts[0], parts[1]
 
 	if resource == "" {
-		return `{{ tbd }}`, nil
+		// empty resource name means is used for global properties like outputs (currently only outputs is supported)
+		if !strings.HasPrefix(prop, "outputs.") {
+			return "", fmt.Errorf("unsupported global property referenced in binding expression: %s", prop)
+		}
+		output := prop[len("outputs."):]
+		return fmt.Sprintf(`{{ .Env.%s }}`, output), nil
 	}
 
 	targetType, ok := b.resourceTypes[resource]
@@ -1458,10 +1494,10 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		targetType == "dockerfile.v0" ||
 		targetType == "project.v1":
 		if strings.HasPrefix(prop, "containerImage") {
-			return fmt.Sprintf(`{{ %s.%s }}`, resource, prop), nil
+			return `{{ .Image }}`, nil
 		}
 		if strings.HasPrefix(prop, "containerPort") {
-			return fmt.Sprintf(`{{ %s.%s }}`, resource, prop), nil
+			return `{{ containerPort }}`, nil
 		}
 		if strings.HasPrefix(prop, "bindMounts.") {
 			parts := strings.Split(prop[len("bindMounts."):], ".")
@@ -1470,7 +1506,14 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 					"bindMounts.<index>.<property> but was: %s", v)
 			}
 			index, property := parts[0], parts[1]
-			return fmt.Sprintf(`{{ TBD - %s.%s.%s }}`, resource, index, property), nil
+			if property == "storage" {
+				return fmt.Sprintf(
+						`{{ .Env.SERVICE_%s_FILE_SHARE_%s_NAME }}`,
+						scaffold.AlphaSnakeUpper(resource),
+						fmt.Sprintf("BM%s", index)),
+					nil
+			}
+			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
 		if !strings.HasPrefix(prop, "bindings.") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)

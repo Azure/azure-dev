@@ -105,8 +105,9 @@ func TestAspireBicepGeneration(t *testing.T) {
 
 	for _, name := range []string{"frontend"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
+			tmpl, mType, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
 			require.NoError(t, err)
+			require.Equal(t, ContainerAppManifestTypeYAML, mType)
 			snapshot.SnapshotT(t, tmpl)
 		})
 	}
@@ -127,8 +128,9 @@ func TestAspireDockerGeneration(t *testing.T) {
 
 	for _, name := range []string{"nodeapp", "api"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
+			tmpl, mType, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
 			require.NoError(t, err)
+			require.Equal(t, ContainerAppManifestTypeYAML, mType)
 			snapshot.SnapshotT(t, tmpl)
 		})
 	}
@@ -203,7 +205,8 @@ func TestAspireArgsGeneration(t *testing.T) {
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireArgs.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
-	manifest, err := ContainerAppManifestTemplateForProject(m, "apiservice", AppHostOptions{})
+	manifest, mType, err := ContainerAppManifestTemplateForProject(m, "apiservice", AppHostOptions{})
+	require.Equal(t, ContainerAppManifestTypeYAML, mType)
 	require.NoError(t, err)
 
 	snapshot.SnapshotT(t, manifest)
@@ -224,7 +227,8 @@ func TestAspireContainerGeneration(t *testing.T) {
 
 	for _, name := range []string{"mysqlabstract", "my-sql-abstract", "noVolume", "kafka"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
+			tmpl, mType, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
+			require.Equal(t, ContainerAppManifestTypeYAML, mType)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})
@@ -276,7 +280,8 @@ func TestAspireContainerArgs(t *testing.T) {
 
 	for _, name := range []string{"container0", "container1"} {
 		t.Run(name, func(t *testing.T) {
-			tmpl, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
+			tmpl, mType, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
+			require.Equal(t, ContainerAppManifestTypeYAML, mType)
 			require.NoError(t, err)
 			snapshot.SnapshotT(t, tmpl)
 		})

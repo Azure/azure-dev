@@ -12,11 +12,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"text/template"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -175,67 +173,40 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 	progress.SetProgress(NewServiceProgress("Updating container app"))
 
-	var manifest string
+	var manifestTemplate string
 	var armTemplate *azure.RawArmTemplate
+	var armParams azure.ArmParameters
 
 	appHostRoot := serviceConfig.DotNetContainerApp.AppHostPath
 	if f, err := os.Stat(appHostRoot); err == nil && !f.IsDir() {
 		appHostRoot = filepath.Dir(appHostRoot)
 	}
 
-	useBicepForContainerApps := serviceConfig.DotNetContainerApp.Manifest.Resources[serviceConfig.Name].Deployment != nil
+	deploymentConfig := serviceConfig.DotNetContainerApp.Manifest.Resources[serviceConfig.Name].Deployment
+	useBicepForContainerApps := deploymentConfig != nil
 	projectName := serviceConfig.DotNetContainerApp.ProjectName
+
 	if useBicepForContainerApps {
 		bicepParamPath := filepath.Join(
 			appHostRoot, "infra", projectName, fmt.Sprintf("%s.tmpl.bicepparam", projectName))
-
 		if _, err := os.Stat(bicepParamPath); err == nil {
-			log.Printf("using container app manifest from %s", bicepParamPath)
-			res, err := at.bicepCli.BuildBicepParam(ctx, bicepParamPath, at.env.Environ())
+			// read the file into manifestContents
+			contents, err := os.ReadFile(bicepParamPath)
 			if err != nil {
-				return nil, fmt.Errorf("building container app bicep: %w", err)
+				return nil, fmt.Errorf("reading container app manifest: %w", err)
 			}
-			armTemplate = to.Ptr(azure.RawArmTemplate(res.Compiled))
+			manifestTemplate = string(contents)
 		} else {
-			log.Printf(
-				"generating container app bicepparam from %s for project %s",
-				serviceConfig.DotNetContainerApp.AppHostPath,
-				projectName)
-
-			compiled, err := func() (azure.RawArmTemplate, error) {
-				f, err := os.CreateTemp("", fmt.Sprintf("azd-bicep-%s-*.bicepparam", projectName))
-				if err != nil {
-					return azure.RawArmTemplate{}, fmt.Errorf("creating temporary file: %w", err)
-				}
-				defer func() {
-					_ = f.Close()
-					_ = os.Remove(f.Name())
-				}()
-				generatedManifest, _, err := apphost.ContainerAppManifestTemplateForProject(
-					serviceConfig.DotNetContainerApp.Manifest,
-					projectName,
-					apphost.AppHostOptions{},
-				)
-				if err != nil {
-					return nil, fmt.Errorf("generating container app manifest: %w", err)
-				}
-				_, err = io.Copy(f, strings.NewReader(generatedManifest))
-				if err != nil {
-					return azure.RawArmTemplate{}, fmt.Errorf("writing bicepparam file: %w", err)
-				}
-
-				//
-
-				res, err := at.bicepCli.BuildBicepParam(ctx, f.Name(), at.env.Environ())
-				if err != nil {
-					return azure.RawArmTemplate{}, fmt.Errorf("building container app bicep: %w", err)
-				}
-				return azure.RawArmTemplate(res.Compiled), nil
-			}()
+			// missing bicepparam template file, generate it
+			contents, _, err := apphost.ContainerAppManifestTemplateForProject(
+				serviceConfig.DotNetContainerApp.Manifest,
+				projectName,
+				apphost.AppHostOptions{},
+			)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("generating container app manifest: %w", err)
 			}
-			armTemplate = &compiled
+			manifestTemplate = contents
 		}
 	} else {
 		manifestPath := filepath.Join(
@@ -248,7 +219,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			if err != nil {
 				return nil, fmt.Errorf("reading container app manifest: %w", err)
 			}
-			manifest = string(contents)
+			manifestTemplate = string(contents)
 		} else {
 			log.Printf(
 				"generating container app manifest from %s for project %s",
@@ -263,9 +234,11 @@ func (at *dotnetContainerAppTarget) Deploy(
 			if err != nil {
 				return nil, fmt.Errorf("generating container app manifest: %w", err)
 			}
-			manifest = generatedManifest
+			manifestTemplate = generatedManifest
 		}
 	}
+
+	log.Printf("Resolve the manifest template for project %s", projectName)
 
 	fns := &containerAppTemplateManifestFuncs{
 		ctx:                 ctx,
@@ -303,93 +276,104 @@ func (at *dotnetContainerAppTarget) Deploy(
 		inputs = make(map[string]any)
 	}
 
+	tmpl, err := template.New("manifest template").
+		Option("missingkey=error").
+		Funcs(funcMap).
+		Parse(manifestTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failing parsing manifest template: %w", err)
+	}
+
+	builder := strings.Builder{}
+	err = tmpl.Execute(&builder, struct {
+		Env    map[string]string
+		Image  string
+		Inputs map[string]any
+	}{
+		Env:    at.env.Dotenv(),
+		Image:  remoteImageName,
+		Inputs: inputs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed executing template file: %w", err)
+	}
+
 	if useBicepForContainerApps {
-		var parsed *azure.ArmTemplate
-		if err := json.Unmarshal(*armTemplate, &parsed); err != nil {
-			return nil, fmt.Errorf("parsing arm template: %w", err)
-		}
-
-		// Build the parameters by just evaluating the default value expressions we have and assume that will be good
-		// enough.  Perhaps longer term we'll want to support something like the `.params.json` or `.bicepparam` files
-		// to allow the user to also assign/override values.
-		params := azure.ArmParameters{}
-		for name, v := range parsed.Parameters {
-			if m, has := v.AzdMetadata(); has && m.DefaultValueExpr != nil {
-				tmpl, err := template.New("containerApp.bicep").
-					Option("missingkey=error").
-					Funcs(funcMap).
-					Parse(*m.DefaultValueExpr)
-				if err != nil {
-					return nil, fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err)
-				}
-
-				builder := strings.Builder{}
-				err = tmpl.Execute(&builder, struct {
-					Env    map[string]string
-					Image  string
-					Inputs map[string]any
-				}{
-					Env:    at.env.Dotenv(),
-					Image:  remoteImageName,
-					Inputs: inputs,
-				})
-				if err != nil {
-					return nil, fmt.Errorf("failed executing template file: %w", err)
-				}
-
-				// TODO(ellismg): Need to support the other types here - there some logic in bicep_provider.go that we
-				// can factor out and share.
-				if strings.EqualFold("Int", v.Type) {
-					v, err := strconv.Atoi(builder.String())
-					if err != nil {
-						return nil, fmt.Errorf("converting value to int: %w", err)
-					}
-
-					params[name] = azure.ArmParameterValue{
-						Value: v,
-					}
-				} else {
-					params[name] = azure.ArmParameterValue{
-						Value: builder.String(),
-					}
-				}
+		// Compile the bicep template
+		compiled, params, err := func() (azure.RawArmTemplate, azure.ArmParameters, error) {
+			tempFolder, err := os.MkdirTemp("", fmt.Sprintf("%s-build*", projectName))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating temporary build folder: %w", err)
 			}
-		}
+			defer func() {
+				_ = os.RemoveAll(tempFolder)
+			}()
+			// write bicepparam content to a new file in the temp folder
+			f, err := os.Create(filepath.Join(tempFolder, "main.bicepparam"))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating bicepparam file: %w", err)
+			}
+			_, err = io.Copy(f, strings.NewReader(builder.String()))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicepparam file: %w", err)
+			}
+			// copy module to same path as bicepparam so it can be compiled from the temp folder
+			bicepSourceFileName := filepath.Base(*deploymentConfig.Path)
+			bicepContent, err := os.ReadFile(filepath.Join(appHostRoot, "infra", projectName, bicepSourceFileName))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("reading bicep file: %w", err)
+			}
+			sourceFile, err := os.Create(filepath.Join(tempFolder, bicepSourceFileName))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating bicep file: %w", err)
+			}
+			_, err = io.Copy(sourceFile, strings.NewReader(string(bicepContent)))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicep file: %w", err)
+			}
 
-		_, err := at.deploymentService.DeployToResourceGroup(
+			res, err := at.bicepCli.BuildBicepParam(ctx, f.Name(), at.env.Environ())
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("building container app bicep: %w", err)
+			}
+			type compiledBicepParamResult struct {
+				TemplateJson   string `json:"templateJson"`
+				ParametersJson string `json:"parametersJson"`
+			}
+			var bicepParamOutput compiledBicepParamResult
+			if err := json.Unmarshal([]byte(res.Compiled), &bicepParamOutput); err != nil {
+				log.Printf(
+					"failed unmarshalling compiled bicepparam (err: %v), template contents:\n%s", err, res.Compiled)
+				return nil, nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
+			}
+			var params azure.ArmParameterFile
+			if err := json.Unmarshal([]byte(bicepParamOutput.ParametersJson), &params); err != nil {
+				log.Printf(
+					"failed unmarshalling compiled bicepparam parameters(err: %v), template contents:\n%s",
+					err,
+					res.Compiled)
+				return nil, nil, fmt.Errorf("failed unmarshalling arm parameters template from json: %w", err)
+			}
+			return azure.RawArmTemplate(bicepParamOutput.TemplateJson), params.Parameters, nil
+		}()
+		if err != nil {
+			return nil, err
+		}
+		armTemplate = &compiled
+		armParams = params
+
+		_, err = at.deploymentService.DeployToResourceGroup(
 			ctx,
 			at.env.GetSubscriptionId(),
 			targetResource.ResourceGroupName(),
 			at.deploymentService.GenerateDeploymentName(serviceConfig.Name),
 			*armTemplate,
-			params,
+			armParams,
 			nil)
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
 		}
 	} else {
-		tmpl, err := template.New("containerApp.tmpl.yaml").
-			Option("missingkey=error").
-			Funcs(funcMap).
-			Parse(manifest)
-		if err != nil {
-			return nil, fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err)
-		}
-
-		builder := strings.Builder{}
-		err = tmpl.Execute(&builder, struct {
-			Env    map[string]string
-			Image  string
-			Inputs map[string]any
-		}{
-			Env:    at.env.Dotenv(),
-			Image:  remoteImageName,
-			Inputs: inputs,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed executing template file: %w", err)
-		}
-
 		containerAppOptions := containerapps.ContainerAppOptions{
 			ApiVersion: serviceConfig.ApiVersion,
 		}

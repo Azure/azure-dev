@@ -480,4 +480,10 @@ output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 {{- if  .AIModels}}
 output AZURE_COGNITIVE_ACCOUNT_ID string = account.outputs.resourceId
 {{- end}}
+{{- if .DbRedis}}
+output AZURE_CACHE_REDIS_ID string = redis.outputs.resourceId
+{{- end}}
+{{- if .DbPostgres}}
+output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = postgreServer.outputs.resourceId
+{{- end}}
 {{ end}}

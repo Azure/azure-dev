@@ -14,6 +14,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	armpostgresqlflexibleservers "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/postgresql/armpostgresqlflexibleservers/v4"
+	armredis "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -277,7 +279,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				return nil, fmt.Errorf("getting account: %w", err)
 			}
 
-			if account.Properties.Endpoint != nil {
+			if account.Properties != nil && account.Properties.Endpoint != nil {
 				s.console.Message(ctx, color.HiMagentaString("%s (Azure AI Services Model Deployment)", res.Name))
 				s.console.Message(ctx, "  Endpoint:")
 				s.console.Message(ctx, fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint))
@@ -288,6 +290,95 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				s.console.Message(ctx, "")
 			}
 
+			return nil, nil
+		case project.ResourceTypeDbPostgres:
+			resourceId := env.Dotenv()["AZURE_POSTGRES_FLEXIBLE_SERVER_ID"]
+			if resourceId == "" {
+				return nil, fmt.Errorf("not yet provisioned")
+			}
+
+			cred, err := s.account.CredentialForSubscription(ctx, subId)
+			if err != nil {
+				return nil, err
+			}
+
+			// Create a client
+			client, err := armpostgresqlflexibleservers.NewServersClient(subId, cred, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create client: %w", err)
+			}
+
+			resId, err := arm.ParseResourceID(resourceId)
+			if err != nil {
+				return nil, fmt.Errorf("parsing resource id: %w", err)
+			}
+			server, err := client.Get(ctx, resId.ResourceGroupName, resId.Name, nil)
+			if err != nil {
+				return nil, fmt.Errorf("getting server: %w", err)
+			}
+
+			s.console.Message(ctx, color.HiMagentaString("%s (Azure Database for PostgreSQL flexible server)", res.Name))
+
+			if server.Properties != nil && server.Properties.FullyQualifiedDomainName != nil {
+				s.console.Message(ctx, "  Endpoint:")
+				// TODO(weilim): centralize all this logic
+				s.console.Message(ctx, fmt.Sprintf("    POSTGRES_HOST=%s", *server.Properties.FullyQualifiedDomainName))
+				s.console.Message(ctx, fmt.Sprintf("    POSTGRES_USERNAME=%s", *server.Properties.AdministratorLogin))
+				s.console.Message(ctx, fmt.Sprintf("    POSTGRES_DATABASE=%s", res.Name))
+				// TODO(weilim): the default API doesn't return this value
+				s.console.Message(ctx, fmt.Sprintf("    POSTGRES_PASSWORD=%s", "*****"))
+				s.console.Message(ctx, fmt.Sprintf("    POSTGRES_PORT=%d", 5432))
+				//nolint:lll
+				s.console.Message(ctx, fmt.Sprintf("    POSTGRES_URL=postgresql://%s:%s@%s:%d/%s",
+					*server.Properties.AdministratorLogin,
+					"*****",
+					*server.Properties.FullyQualifiedDomainName,
+					5432,
+					res.Name))
+
+				s.console.Message(ctx, "")
+			}
+			return nil, nil
+		case project.ResourceTypeDbRedis:
+			resourceId := env.Dotenv()["AZURE_CACHE_REDIS_ID"]
+			if resourceId == "" {
+				return nil, fmt.Errorf("not yet provisioned")
+			}
+
+			cred, err := s.account.CredentialForSubscription(ctx, subId)
+			if err != nil {
+				return nil, err
+			}
+
+			resId, err := arm.ParseResourceID(resourceId)
+			if err != nil {
+				return nil, fmt.Errorf("parsing resource id: %w", err)
+			}
+
+			// Create a client
+			client, err := armredis.NewClient(subId, cred, nil)
+			if err != nil {
+				log.Fatalf("Failed to create client: %v", err)
+			}
+
+			// Get Redis Cache
+			redis, err := client.Get(ctx, resId.ResourceGroupName, resId.Name, nil)
+			if err != nil {
+				log.Fatalf("Failed to get Redis cache: %v", err)
+			}
+
+			s.console.Message(ctx, color.HiMagentaString("%s (Azure Redis for Cache)", res.Name))
+
+			if redis.Properties != nil && redis.Properties.HostName != nil {
+				s.console.Message(ctx, "  Endpoint:")
+				s.console.Message(ctx, fmt.Sprintf("    REDIS_HOST=%s", *redis.Properties.HostName))
+				s.console.Message(ctx, fmt.Sprintf("    REDIS_PORT=%d", *redis.Properties.SSLPort))
+				// TODO(weilim): the default API doesn't return this value
+				s.console.Message(ctx, fmt.Sprintf("    REDIS_PASSWORD=%s", "*****"))
+				s.console.Message(ctx, fmt.Sprintf("    REDIS_ENDPOINT=%s:%d",
+					*redis.Properties.HostName, *redis.Properties.SSLPort))
+				s.console.Message(ctx, "")
+			}
 			return nil, nil
 		default:
 			return nil, fmt.Errorf("resource type %s not supported", res.Type)

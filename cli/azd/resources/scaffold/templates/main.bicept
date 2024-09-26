@@ -56,4 +56,10 @@ output AZURE_KEY_VAULT_NAME string = resources.outputs.AZURE_KEY_VAULT_NAME
 {{- if .AIModels}}
 output AZURE_COGNITIVE_ACCOUNT_ID string = resources.outputs.AZURE_COGNITIVE_ACCOUNT_ID
 {{- end}}
+{{- if .DbRedis}}
+output AZURE_CACHE_REDIS_ID string = resources.outputs.AZURE_CACHE_REDIS_ID
+{{- end}}
+{{- if .DbPostgres}}
+output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = resources.outputs.AZURE_POSTGRES_FLEXIBLE_SERVER_ID
+{{- end}}
 {{ end}}

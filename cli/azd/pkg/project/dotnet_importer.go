@@ -506,16 +506,11 @@ func (ai *DotNetImporter) SynthAllInfrastructure(ctx context.Context, p *Project
 		return nil, err
 	}
 
-	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
-	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
+	// writeManifestForResource writes the containerApp.tmpl.yaml or containerApp.bicepparam for the given resource to the
+	// generated filesystem. The manifest is written to a file name "containerApp.tmpl.yaml" or
+	// "containerApp.tmpl.bicepparam" in the same directory as the project that produces the
 	// container we will deploy.
-	// NOTE: If the resource contains `deployment` config, this becomes a no-op b/c the AppHost will generate bicep files.
 	writeManifestForResource := func(name string) error {
-		resource := manifest.Resources[name]
-		if resource.Deployment != nil {
-			return nil
-		}
-
 		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
 		if err != nil {
 			return err
@@ -526,13 +521,17 @@ func (ai *DotNetImporter) SynthAllInfrastructure(ctx context.Context, p *Project
 			return err
 		}
 
-		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
+		containerAppManifest, manifestType, err := apphost.ContainerAppManifestTemplateForProject(
 			manifest, name, apphost.AppHostOptions{})
 		if err != nil {
-			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
+			return fmt.Errorf("generating containerApp deployment manifest for resource %s: %w", name, err)
 		}
 
 		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.tmpl.yaml", name))
+		if manifestType == apphost.ContainerAppManifestTypeBicep {
+			manifestPath = filepath.Join(
+				filepath.Dir(projectRelPath), "infra", name, fmt.Sprintf("%s.tmpl.bicepparam", name))
+		}
 
 		if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
 			return err

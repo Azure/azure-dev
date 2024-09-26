@@ -184,18 +184,26 @@ type AppHostOptions struct {
 	AzdOperations bool
 }
 
+type ContainerAppManifestType string
+
+const (
+	ContainerAppManifestTypeYAML  ContainerAppManifestType = "yaml"
+	ContainerAppManifestTypeBicep ContainerAppManifestType = "bicep"
+)
+
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
+// When the projectName contains `Deployment` it will generate a bicepparam template instead of the yaml template.
 func ContainerAppManifestTemplateForProject(
-	manifest *Manifest, projectName string, options AppHostOptions) (string, error) {
+	manifest *Manifest, projectName string, options AppHostOptions) (string, ContainerAppManifestType, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	if err := generator.Compile(); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	var buf bytes.Buffer
@@ -218,55 +226,22 @@ func ContainerAppManifestTemplateForProject(
 		}
 	}
 
-	err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
-	if err != nil {
-		return "", fmt.Errorf("executing template: %w", err)
-	}
-
-	return buf.String(), nil
-}
-
-// BicepModuleForProject returns the bicep module for the container app manifest for a given project.
-// It can be used (after evaluation) to deploy the service to a container app environment.
-func BicepModuleForProject(
-	manifest *Manifest, projectName string, options AppHostOptions) (string, error) {
-	generator := newInfraGenerator()
-	generator.skipAsYamlString = true
-
-	if err := generator.LoadManifest(manifest); err != nil {
-		return "", err
-	}
-
-	if err := generator.Compile(); err != nil {
-		return "", err
-	}
-
-	var buf bytes.Buffer
-
-	type yamlTemplateCtx struct {
-		genContainerAppManifestTemplateContext
-		TargetPortExpression string
-	}
-	tCtx := generator.containerAppTemplateContexts[projectName]
-	tmplCtx := yamlTemplateCtx{
-		genContainerAppManifestTemplateContext: tCtx,
-	}
-
-	if tCtx.Ingress != nil {
-		if tCtx.Ingress.TargetPort != 0 && !tCtx.Ingress.UsingDefaultPort {
-			// not using default port makes this to be a non-changing value
-			tmplCtx.TargetPortExpression = fmt.Sprintf("%d", tCtx.Ingress.TargetPort)
-		} else {
-			tmplCtx.TargetPortExpression = fmt.Sprintf("{{ targetPortOrDefault %d }}", tCtx.Ingress.TargetPort)
+	var manifestType ContainerAppManifestType
+	if len(tCtx.DeployParams) == 0 {
+		manifestType = ContainerAppManifestTypeYAML
+		err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.yaml", tmplCtx)
+		if err != nil {
+			return "", "", fmt.Errorf("executing template: %w", err)
+		}
+	} else {
+		manifestType = ContainerAppManifestTypeBicep
+		err := genTemplates.ExecuteTemplate(&buf, "containerApp.tmpl.bicepparam", tmplCtx)
+		if err != nil {
+			return "", "", fmt.Errorf("executing bicepparam template: %w", err)
 		}
 	}
 
-	err := genTemplates.ExecuteTemplate(&buf, "containerApp.bicep", tmplCtx)
-	if err != nil {
-		return "", fmt.Errorf("executing template: %w", err)
-	}
-
-	return buf.String(), nil
+	return buf.String(), manifestType, nil
 }
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
@@ -473,8 +448,6 @@ func GenerateProjectArtifacts(
 }
 
 type infraGenerator struct {
-	skipAsYamlString bool
-
 	containers        map[string]genContainer
 	dapr              map[string]genDapr
 	dockerfiles       map[string]genDockerfile
@@ -585,11 +558,19 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.connectionStrings[name] = *comp.ConnectionString
 		}
 
+		var deploymentParams map[string]any
+		var deploymentSource string
+		if comp.Deployment != nil {
+			deploymentParams = comp.Deployment.Params
+			deploymentSource = filepath.Base(*comp.Deployment.Path)
+		}
 		switch comp.Type {
 		case "project.v0", "project.v1":
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args)
+			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, deploymentParams, deploymentSource)
 		case "container.v0":
-			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts, comp.Args)
+			b.addContainer(
+				name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts,
+				comp.Args, deploymentParams, deploymentSource)
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
 			if err != nil {
@@ -606,7 +587,9 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return err
 			}
 		case "dockerfile.v0":
-			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs, comp.Args)
+			b.addDockerfile(
+				name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs,
+				comp.Args, deploymentParams, deploymentSource)
 		case "parameter.v0":
 			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
@@ -847,16 +830,24 @@ func uniqueFnvNumber(val string) string {
 }
 
 func (b *infraGenerator) addProject(
-	name string, path string, env map[string]string, bindings custommaps.WithOrder[Binding], args []string,
+	name string,
+	path string,
+	env map[string]string,
+	bindings custommaps.WithOrder[Binding],
+	args []string,
+	deploymentParams map[string]any,
+	deploymentSource string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
 
 	b.projects[name] = genProject{
-		Path:     path,
-		Env:      env,
-		Bindings: bindings,
-		Args:     args,
+		Path:             path,
+		Env:              env,
+		Bindings:         bindings,
+		Args:             args,
+		DeploymentParams: deploymentParams,
+		DeploymentSource: deploymentSource,
 	}
 }
 
@@ -883,7 +874,10 @@ func (b *infraGenerator) addContainer(
 	inputs map[string]Input,
 	volumes []*Volume,
 	bindMounts []*BindMount,
-	args []string) {
+	args []string,
+	deploymentParams map[string]any,
+	deploymentSource string,
+) {
 	b.requireCluster()
 
 	if len(volumes) > 0 {
@@ -896,13 +890,15 @@ func (b *infraGenerator) addContainer(
 	}
 
 	b.containers[name] = genContainer{
-		Image:      image,
-		Env:        env,
-		Bindings:   bindings,
-		Inputs:     inputs,
-		Volumes:    volumes,
-		BindMounts: bindMounts,
-		Args:       args,
+		Image:            image,
+		Env:              env,
+		Bindings:         bindings,
+		Inputs:           inputs,
+		Volumes:          volumes,
+		BindMounts:       bindMounts,
+		Args:             args,
+		DeploymentParams: deploymentParams,
+		DeploymentSource: deploymentSource,
 	}
 }
 
@@ -940,12 +936,20 @@ func (b *infraGenerator) addBuildContainer(
 
 func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
 	// common fields for all build containers
+	var deploymentParams map[string]any
+	var deploymentSource string
+	if r.Deployment != nil {
+		deploymentParams = r.Deployment.Params
+		deploymentSource = filepath.Base(*r.Deployment.Path)
+	}
 	bc := &genBuildContainer{
-		Entrypoint: r.Entrypoint,
-		Args:       r.Args,
-		Env:        r.Env,
-		Bindings:   r.Bindings,
-		Volumes:    r.Volumes,
+		Entrypoint:       r.Entrypoint,
+		Args:             r.Args,
+		Env:              r.Env,
+		Bindings:         r.Bindings,
+		Volumes:          r.Volumes,
+		DeploymentParams: deploymentParams,
+		DeploymentSource: deploymentSource,
 	}
 
 	// container.v0 and container.v1+pre-build image
@@ -1083,18 +1087,20 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 func (b *infraGenerator) addDockerfile(
 	name string, path string, context string, env map[string]string,
 	bindings custommaps.WithOrder[Binding], buildArgs map[string]string,
-	args []string,
+	args []string, deploymentParams map[string]any, deploymentSource string,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
 
 	b.dockerfiles[name] = genDockerfile{
-		Path:      path,
-		Context:   context,
-		Env:       env,
-		Bindings:  bindings,
-		BuildArgs: buildArgs,
-		Args:      args,
+		Path:             path,
+		Context:          context,
+		Env:              env,
+		Bindings:         bindings,
+		BuildArgs:        buildArgs,
+		Args:             args,
+		DeploymentParams: deploymentParams,
+		DeploymentSource: deploymentSource,
 	}
 }
 
@@ -1192,14 +1198,15 @@ func (b *infraGenerator) Compile() error {
 		b.bicepContext.ContainerApps[resourceName] = cs
 
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:               resourceName,
-			Env:                make(map[string]string),
-			Secrets:            make(map[string]string),
-			KeyVaultSecrets:    make(map[string]string),
-			BindingExpressions: make(map[string]string),
-			Ingress:            b.allServicesIngress[resourceName].ingress,
-			Volumes:            container.Volumes,
-			BindMounts:         bMounts,
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			DeployParams:    make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Volumes:         container.Volumes,
+			BindMounts:      bMounts,
+			DeploySource:    container.DeploymentSource,
 		}
 
 		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
@@ -1207,6 +1214,9 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		if err := b.buildArgsBlock(container.Args, &projectTemplateCtx); err != nil {
+			return err
+		}
+		if err := b.buildDeployBlock(container.DeploymentParams, &projectTemplateCtx); err != nil {
 			return err
 		}
 
@@ -1221,13 +1231,14 @@ func (b *infraGenerator) Compile() error {
 		b.bicepContext.ContainerApps[resourceName] = cs
 
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:               resourceName,
-			Env:                make(map[string]string),
-			Secrets:            make(map[string]string),
-			KeyVaultSecrets:    make(map[string]string),
-			BindingExpressions: make(map[string]string),
-			Ingress:            b.allServicesIngress[resourceName].ingress,
-			Volumes:            bc.Volumes,
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			DeployParams:    make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			Volumes:         bc.Volumes,
+			DeploySource:    bc.DeploymentSource,
 		}
 
 		if err := b.buildEnvBlock(bc.Env, &projectTemplateCtx); err != nil {
@@ -1238,17 +1249,22 @@ func (b *infraGenerator) Compile() error {
 			return err
 		}
 
+		if err := b.buildDeployBlock(bc.DeploymentParams, &projectTemplateCtx); err != nil {
+			return err
+		}
+
 		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
 	}
 
 	for resourceName, docker := range b.dockerfiles {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:               resourceName,
-			Env:                make(map[string]string),
-			Secrets:            make(map[string]string),
-			KeyVaultSecrets:    make(map[string]string),
-			BindingExpressions: make(map[string]string),
-			Ingress:            b.allServicesIngress[resourceName].ingress,
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			DeployParams:    make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			DeploySource:    docker.DeploymentSource,
 		}
 
 		if err := b.buildEnvBlock(docker.Env, &projectTemplateCtx); err != nil {
@@ -1259,17 +1275,22 @@ func (b *infraGenerator) Compile() error {
 			return err
 		}
 
+		if err := b.buildDeployBlock(docker.DeploymentParams, &projectTemplateCtx); err != nil {
+			return err
+		}
+
 		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
 	}
 
 	for resourceName, project := range b.projects {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:               resourceName,
-			Env:                make(map[string]string),
-			Secrets:            make(map[string]string),
-			KeyVaultSecrets:    make(map[string]string),
-			BindingExpressions: make(map[string]string),
-			Ingress:            b.allServicesIngress[resourceName].ingress,
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
+			DeployParams:    make(map[string]string),
+			Ingress:         b.allServicesIngress[resourceName].ingress,
+			DeploySource:    project.DeploymentSource,
 		}
 
 		for _, dapr := range b.dapr {
@@ -1299,6 +1320,10 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		if err := b.buildArgsBlock(project.Args, &projectTemplateCtx); err != nil {
+			return err
+		}
+
+		if err := b.buildDeployBlock(project.DeploymentParams, &projectTemplateCtx); err != nil {
 			return err
 		}
 
@@ -1376,6 +1401,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	}
 
 	resource, prop := parts[0], parts[1]
+
+	if resource == "" {
+		return `{{ tbd }}`, nil
+	}
+
 	targetType, ok := b.resourceTypes[resource]
 	if !ok {
 		return "", fmt.Errorf("unknown resource referenced in binding expression: %s", resource)
@@ -1427,6 +1457,21 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		targetType == "container.v1" ||
 		targetType == "dockerfile.v0" ||
 		targetType == "project.v1":
+		if strings.HasPrefix(prop, "containerImage") {
+			return fmt.Sprintf(`{{ %s.%s }}`, resource, prop), nil
+		}
+		if strings.HasPrefix(prop, "containerPort") {
+			return fmt.Sprintf(`{{ %s.%s }}`, resource, prop), nil
+		}
+		if strings.HasPrefix(prop, "bindMounts.") {
+			parts := strings.Split(prop[len("bindMounts."):], ".")
+			if len(parts) != 2 {
+				return "", fmt.Errorf("malformed binding expression, expected "+
+					"bindMounts.<index>.<property> but was: %s", v)
+			}
+			index, property := parts[0], parts[1]
+			return fmt.Sprintf(`{{ TBD - %s.%s.%s }}`, resource, index, property), nil
+		}
 		if !strings.HasPrefix(prop, "bindings.") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
@@ -1650,11 +1695,7 @@ func urlPortFromTargetPort(binding *Binding, bindingMappedToMainIngress bool) (s
 }
 
 // asYamlString converts a string to the YAML representation of the string, ensuring that it is quoted and escaped as needed.
-func (b *infraGenerator) asYamlString(s string) (string, error) {
-	if b.skipAsYamlString {
-		return s, nil
-	}
-
+func asYamlString(s string) (string, error) {
 	// We want to ensure that we render these values in the YAML as strings.  If `res` was the string "true"
 	// (without the quotes), we would naturally create a value directive in yaml that looks like this:
 	//
@@ -1680,31 +1721,6 @@ func (b *infraGenerator) asYamlString(s string) (string, error) {
 }
 
 func (b *infraGenerator) buildArgsBlock(args []string, manifestCtx *genContainerAppManifestTemplateContext) error {
-	// TODO(ellismg): This needs to consider secrets and stuff like the regular version does.
-	if b.skipAsYamlString {
-		for argN, arg := range args {
-			res, err := EvalString(arg, func(s string) (string, error) {
-				resolved, err := b.evalBindingRef(s, inputEmitTypeYaml)
-				if err != nil {
-					return "", err
-				}
-
-				bindingName := strings.Replace(s, ".", "_", -1)
-
-				manifestCtx.BindingExpressions[bindingName] = resolved
-				return fmt.Sprintf("${%s}", bindingName), nil
-
-			})
-			if err != nil {
-				return fmt.Errorf("evaluating value for argument %d: %w", argN, err)
-			}
-
-			manifestCtx.Args = append(manifestCtx.Args, res)
-		}
-
-		return nil
-	}
-
 	for argN, arg := range args {
 		resolvedArg, err := EvalString(arg, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
 		if err != nil {
@@ -1725,7 +1741,7 @@ func (b *infraGenerator) buildArgsBlock(args []string, manifestCtx *genContainer
 				"environment variables instead", argN)
 		}
 
-		yamlString, err := b.asYamlString(resolvedArg)
+		yamlString, err := asYamlString(resolvedArg)
 		if err != nil {
 			return fmt.Errorf("marshalling arg value: %w", err)
 		}
@@ -1739,37 +1755,13 @@ func (b *infraGenerator) buildArgsBlock(args []string, manifestCtx *genContainer
 // evaluating any binding expressions that are present. It writes the result of the evaluation after calling json.Marshal
 // so the values may be emitted into YAML as is without worrying about escaping.
 func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genContainerAppManifestTemplateContext) error {
-	// TODO(ellismg): This needs to consider secrets and stuff like the regular version does.
-	if b.skipAsYamlString {
-		for k, value := range env {
-			res, err := EvalString(value, func(s string) (string, error) {
-				resolved, err := b.evalBindingRef(s, inputEmitTypeYaml)
-				if err != nil {
-					return "", err
-				}
-
-				bindingName := strings.Replace(s, ".", "_", -1)
-
-				manifestCtx.BindingExpressions[bindingName] = resolved
-				return fmt.Sprintf("${%s}", bindingName), nil
-			})
-			if err != nil {
-				return fmt.Errorf("evaluating value for %s: %w", k, err)
-			}
-
-			manifestCtx.Env[k] = res
-		}
-
-		return nil
-	}
-
 	for k, value := range env {
 		res, err := EvalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
 		if err != nil {
 			return fmt.Errorf("evaluating value for %s: %w", k, err)
 		}
 
-		resolvedValue, err := b.asYamlString(res)
+		resolvedValue, err := asYamlString(res)
 		if err != nil {
 			return fmt.Errorf("marshalling env value: %w", err)
 		}
@@ -1809,6 +1801,32 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		}
 
 		manifestCtx.Env[k] = resolvedValue
+	}
+
+	return nil
+}
+
+// buildDeployBlock is like buildEnvBlock but supports additional conventions for referencing secrets
+// It could be merged with buildEnvBlock, but it's kept separate for clarity until we have a better understanding of
+// what the final implementation will look like.
+func (b *infraGenerator) buildDeployBlock(
+	deployParams map[string]any, manifestCtx *genContainerAppManifestTemplateContext) error {
+	for k, valueAny := range deployParams {
+		value, ok := valueAny.(string)
+		if !ok {
+			return fmt.Errorf("expected string value for %s, got %T", k, valueAny)
+		}
+		res, err := EvalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
+		if err != nil {
+			return fmt.Errorf("evaluating value for %s: %w", k, err)
+		}
+
+		resolvedValue, err := asYamlString(res)
+		if err != nil {
+			return fmt.Errorf("marshalling env value: %w", err)
+		}
+
+		manifestCtx.DeployParams[k] = resolvedValue
 	}
 
 	return nil

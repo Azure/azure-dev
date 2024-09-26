@@ -1508,9 +1508,39 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			index, property := parts[0], parts[1]
 			if property == "storage" {
 				return fmt.Sprintf(
-						`{{ .Env.SERVICE_%s_FILE_SHARE_%s_NAME }}`,
+						`{{ .Env.SERVICE_%s_VOLUME_%s_NAME }}`,
 						scaffold.AlphaSnakeUpper(resource),
 						fmt.Sprintf("BM%s", index)),
+					nil
+			}
+			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
+		}
+		if strings.HasPrefix(prop, "volumes.") {
+			parts := strings.Split(prop[len("volumes."):], ".")
+			if len(parts) != 2 {
+				return "", fmt.Errorf("malformed binding expression, expected "+
+					"volumes.<index>.<property> but was: %s", v)
+			}
+			index, property := parts[0], parts[1]
+			if property == "storage" {
+				// find the name of the volume
+				// convert index string to integer
+				indexInt, err := strconv.Atoi(index)
+				if err != nil {
+					return "", fmt.Errorf("malformed binding expression, expected "+
+						"volumes.<index>.<property> but was: %s", v)
+				}
+				var volName string
+				if targetType == "container.v0" {
+					volName = b.containers[resource].Volumes[indexInt].Name
+				} else if targetType == "container.v1" {
+					volName = b.buildContainers[resource].Volumes[indexInt].Name
+				}
+
+				return fmt.Sprintf(
+						`{{ .Env.SERVICE_%s_VOLUME_%s_NAME }}`,
+						scaffold.AlphaSnakeUpper(resource),
+						scaffold.AlphaSnakeUpper(strings.ReplaceAll(volName, ".", ""))),
 					nil
 			}
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)

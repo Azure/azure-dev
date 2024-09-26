@@ -87,7 +87,7 @@ func init() {
 					return strings.ReplaceAll(src, "-", "_")
 				},
 				"removeDot": func(src string) string {
-					return strings.ReplaceAll(src, ".", "")
+					return strings.ReplaceAll(strings.ReplaceAll(src, ".", ""), "-", "")
 				},
 				"envFormat": scaffold.EnvFormat,
 			},

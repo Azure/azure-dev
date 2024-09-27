@@ -86,9 +86,7 @@ func init() {
 				"bicepParameterName": func(src string) string {
 					return strings.ReplaceAll(src, "-", "_")
 				},
-				"removeDot": func(src string) string {
-					return strings.ReplaceAll(strings.ReplaceAll(src, ".", ""), "-", "")
-				},
+				"removeDot": scaffold.RemoveDotAndDash,
 				"envFormat": scaffold.EnvFormat,
 			},
 		).
@@ -1529,7 +1527,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			if property == "storage" {
 				return fmt.Sprintf(
 						`{{ .Env.SERVICE_%s_VOLUME_%s_NAME }}`,
-						scaffold.AlphaSnakeUpper(resource),
+						scaffold.AlphaSnakeUpper(scaffold.RemoveDotAndDash(resource)),
 						fmt.Sprintf("BM%s", index)),
 					nil
 			}
@@ -1560,7 +1558,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				return fmt.Sprintf(
 						`{{ .Env.SERVICE_%s_VOLUME_%s_NAME }}`,
 						scaffold.AlphaSnakeUpper(resource),
-						scaffold.AlphaSnakeUpper(strings.ReplaceAll(volName, ".", ""))),
+						scaffold.AlphaSnakeUpper(scaffold.RemoveDotAndDash(volName))),
 					nil
 			}
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)

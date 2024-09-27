@@ -1898,6 +1898,27 @@ func (b *infraGenerator) buildDeployBlock(
 		if err != nil {
 			return fmt.Errorf("marshalling env value: %w", err)
 		}
+		if strings.Contains(k, "ConnectionStrings__") || // a)
+			strings.Contains(value, ".connectionString}") || // b)
+			strings.Contains(resolvedValue, "{{ securedParameter ") || // c)
+			strings.Contains(resolvedValue, "{{ secretOutput ") { // d)
+
+			// handle secret-outputs:
+			// secretOutputs can be either complex expressions or direct references to key vault secrets.
+			// A complex expression is like `key:{{ secretOutput kv secret }};foo;bar`.
+			// For non complex expressions, like `{{ secretOutput kv secret }}`, the resolved value is set without the
+			// secretOutput function. The caller can use the value as a reference to a key vault secret.
+			// For complex expressions, the value includes the `secretOutput` function to pull the value during deployment.
+			if strings.Contains(resolvedValue, "{{ secretOutput ") {
+				if isComplexExp, _ := isComplexExpression(resolvedValue); !isComplexExp {
+					removeBrackets := strings.ReplaceAll(
+						strings.ReplaceAll(resolvedValue, " }}'", "'"), "{{ secretOutput ", "")
+					resolvedValue = removeBrackets
+				} else {
+					resolvedValue = secretOutputForDeployTemplate(resolvedValue)
+				}
+			}
+		}
 
 		manifestCtx.DeployParams[k] = resolvedValue
 	}

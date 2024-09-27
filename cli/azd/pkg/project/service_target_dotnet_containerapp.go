@@ -317,11 +317,25 @@ func (at *dotnetContainerAppTarget) Deploy(
 			if err != nil {
 				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicepparam file: %w", err)
 			}
+			err = f.Close()
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("closing bicepparam file: %w", err)
+			}
+
 			// copy module to same path as bicepparam so it can be compiled from the temp folder
 			bicepSourceFileName := filepath.Base(*deploymentConfig.Path)
 			bicepContent, err := os.ReadFile(filepath.Join(appHostRoot, "infra", projectName, bicepSourceFileName))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("reading bicep file: %w", err)
+				// when source bicep is not found, we generate it from the manifest
+				generatedBicep, err := apphost.ContainerSourceBicepContent(
+					serviceConfig.DotNetContainerApp.Manifest,
+					projectName,
+					apphost.AppHostOptions{},
+				)
+				if err != nil {
+					return azure.RawArmTemplate{}, nil, fmt.Errorf("generating bicep file: %w", err)
+				}
+				bicepContent = []byte(generatedBicep)
 			}
 			sourceFile, err := os.Create(filepath.Join(tempFolder, bicepSourceFileName))
 			if err != nil {
@@ -330,6 +344,10 @@ func (at *dotnetContainerAppTarget) Deploy(
 			_, err = io.Copy(sourceFile, strings.NewReader(string(bicepContent)))
 			if err != nil {
 				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicep file: %w", err)
+			}
+			err = sourceFile.Close()
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("closing bicep file: %w", err)
 			}
 
 			res, err := at.bicepCli.BuildBicepParam(ctx, f.Name(), at.env.Environ())

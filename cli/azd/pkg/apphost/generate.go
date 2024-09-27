@@ -191,6 +191,26 @@ const (
 	ContainerAppManifestTypeBicep ContainerAppManifestType = "bicep"
 )
 
+func ContainerSourceBicepContent(
+	manifest *Manifest, projectName string, options AppHostOptions) (string, error) {
+	templateFs, err := BicepTemplate(projectName, manifest, options)
+	if err != nil {
+		return "", err
+	}
+	sourceName := filepath.Base(*manifest.Resources[projectName].Deployment.Path)
+	file, err := templateFs.Open(filepath.Join(projectName, sourceName))
+	if err != nil {
+		return "", fmt.Errorf("opening bicep source file: %w", err)
+	}
+	defer file.Close()
+	// read the file content into a string
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(file); err != nil {
+		return "", fmt.Errorf("reading bicep source file: %w", err)
+	}
+	return buf.String(), nil
+}
+
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
 // When the projectName contains `Deployment` it will generate a bicepparam template instead of the yaml template.

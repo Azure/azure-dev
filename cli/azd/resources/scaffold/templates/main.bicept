@@ -134,6 +134,7 @@ module mysqlDb './app/db-mysql.bicep' = {
     serverName: '${abbrs.dBforMySQLServers}${resourceToken}'
     location: location
     tags: tags
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}mysql-${resourceToken}'
     databasePassword: databasePassword
     keyVaultName: keyVault.outputs.name
     allowAllIPsFirewall: true
@@ -170,6 +171,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     {{- end}}
     {{- if .DbMySql}}
     mysqlDatabaseId: mysqlDb.outputs.databaseId
+    mysqlIdentityName: mysqlDb.outputs.identityName
     {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [

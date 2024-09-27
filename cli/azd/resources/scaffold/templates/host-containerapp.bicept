@@ -20,6 +20,7 @@ param postgresDatabasePassword string
 {{- end}}
 {{- if .DbMySql}}
 param mysqlDatabaseId string
+param mysqlIdentityName string
 {{- end}}
 {{- if .DbRedis}}
 param redisName string
@@ -236,21 +237,39 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
 }
 {{- if .DbMySql}}
 
-resource appLinkToMySql 'Microsoft.ServiceLinker/linkers@2022-11-01-preview' = {
-  name: 'appLinkToMySql'
-  scope: app
+resource linkerCreatorIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'linkerCreatorIdentity'
+  location: location
+}
+
+resource linkerCreatorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: resourceGroup()
+  name: guid(subscription().id, resourceGroup().id, linkerCreatorIdentity.id, 'linkerCreatorRole')
   properties: {
-    scope: 'main'
-    authInfo: {
-      authType: 'userAssignedIdentity'
-      subscriptionId: subscription().subscriptionId
-      clientId: identity.properties.clientId
+    roleDefinitionId:  subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalType: 'ServicePrincipal'
+    principalId: linkerCreatorIdentity.properties.principalId
+  }
+}
+
+resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  dependsOn: [ linkerCreatorRole ]
+  name: 'appLinkToMySql'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${linkerCreatorIdentity.id}': {}
     }
-    clientType: 'springBoot'
-    targetService: {
-      type: 'AzureResource'
-      id: mysqlDatabaseId
-    }
+  }
+  properties: {
+    azCliVersion: '2.63.0'
+    timeout: 'PT10M'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection \'appLinkToMySql\' --source-id ${app.id} --target-id ${mysqlDatabaseId} --client-type \'springBoot\' --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} mysql-identity-id=${mysqlIdentityName} -c main --yes 1>&2'
+    cleanupPreference: 'OnSuccess'
+    retentionInterval: 'P1D'
   }
 }
 {{- end}}

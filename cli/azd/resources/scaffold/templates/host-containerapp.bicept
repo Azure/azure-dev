@@ -267,7 +267,7 @@ resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   properties: {
     azCliVersion: '2.63.0'
     timeout: 'PT10M'
-    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection \'appLinkToMySql\' --source-id ${app.id} --target-id ${mysqlDatabaseId} --client-type \'springBoot\' --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} mysql-identity-id=${mysqlIdentityName} -c main --yes 1>&2'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection appLinkToMySql --source-id ${app.id} --target-id ${mysqlDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} mysql-identity-id=${mysqlIdentityName} -c main --yes; az tag create --resource-id ${app.id} --tags azd-service-name={{.Name}} '
     cleanupPreference: 'OnSuccess'
     retentionInterval: 'P1D'
   }

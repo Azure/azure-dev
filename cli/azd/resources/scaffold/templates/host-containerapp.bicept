@@ -238,7 +238,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
 {{- if .DbMySql}}
 
 resource linkerCreatorIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'linkerCreatorIdentity'
+  name: '${name}-linker-creator-identity'
   location: location
 }
 
@@ -255,7 +255,7 @@ resource linkerCreatorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 
 resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   dependsOn: [ linkerCreatorRole ]
-  name: 'appLinkToMySql'
+  name: '${name}-deployment-script'
   location: location
   kind: 'AzureCLI'
   identity: {

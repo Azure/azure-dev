@@ -111,8 +111,8 @@ module cosmosDb './app/db-cosmos-mongo.bicep' = {
   scope: rg
 }
 {{- end}}
-
 {{- if .DbPostgres}}
+
 module postgresDb './app/db-postgres.bicep' = {
   name: 'postgresDb'
   params: {
@@ -126,20 +126,22 @@ module postgresDb './app/db-postgres.bicep' = {
   scope: rg
 }
 {{- end}}
-
 {{- if .DbMySql}}
+
 module mysqlDb './app/db-mysql.bicep' = {
   name: 'mysqlDb'
   params: {
     serverName: '${abbrs.dBforMySQLServers}${resourceToken}'
     location: location
     tags: tags
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}mysql-${resourceToken}'
     databasePassword: databasePassword
     keyVaultName: keyVault.outputs.name
     allowAllIPsFirewall: true
   }
   scope: rg
 }
+
 {{- end}}
 
 {{- range .Services}}
@@ -168,10 +170,8 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     postgresDatabasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
     {{- end}}
     {{- if .DbMySql}}
-    mysqlDatabaseName: mysqlDb.outputs.databaseName
-    mysqlDatabaseHost: mysqlDb.outputs.databaseHost
-    mysqlDatabaseUser: mysqlDb.outputs.databaseUser
-    mysqlDatabasePassword: vault.getSecret(mysqlDb.outputs.databaseConnectionKey)
+    mysqlDatabaseId: mysqlDb.outputs.databaseId
+    mysqlIdentityName: mysqlDb.outputs.identityName
     {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [

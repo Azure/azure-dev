@@ -4,6 +4,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param keyVaultName string
+param identityName string
 
 param databaseUser string = 'mysqladmin'
 param databaseName string = '{{.DatabaseName}}'
@@ -12,13 +13,24 @@ param databasePassword string
 
 param allowAllIPsFirewall bool = false
 
-resource mysqlServer'Microsoft.DBforMySQL/flexibleServers@2023-06-30' = {
+resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: identityName
+  location: location
+}
+
+resource mysqlServer 'Microsoft.DBforMySQL/flexibleServers@2023-06-30' = {
   location: location
   tags: tags
   name: serverName
   sku: {
     name: 'Standard_B1ms'
     tier: 'Burstable'
+  }
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentity.id}': {}
+    }
   }
   properties: {
     version: '8.0.21'
@@ -67,8 +79,6 @@ resource dbPasswordKey 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
   }
 }
 
-output databaseHost string = mysqlServer.properties.fullyQualifiedDomainName
-output databaseName string = databaseName
-output databaseUser string = databaseUser
-output databaseConnectionKey string = 'databasePassword'
+output databaseId string = database.id
+output identityName string = userAssignedIdentity.name
 {{ end}}

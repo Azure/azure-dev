@@ -19,11 +19,8 @@ param postgresDatabaseName string
 param postgresDatabasePassword string
 {{- end}}
 {{- if .DbMySql}}
-param mysqlDatabaseHost string
-param mysqlDatabaseUser string
-param mysqlDatabaseName string
-@secure()
-param mysqlDatabasePassword string
+param mysqlDatabaseId string
+param mysqlIdentityName string
 {{- end}}
 {{- if .DbRedis}}
 param redisName string
@@ -153,12 +150,6 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
           value: postgresDatabasePassword
         }
         {{- end}}
-        {{- if .DbMySql}}
-        {
-          name: 'mysql-db-pass'
-          value: mysqlDatabasePassword
-        }
-        {{- end}}
       ],
       map(secrets, secret => {
         name: secret.secretRef
@@ -203,28 +194,6 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
               value: '5432'
             }
             {{- end}}
-            {{- if .DbMySql}}
-            {
-              name: 'MYSQL_HOST'
-              value: mysqlDatabaseHost
-            }
-            {
-              name: 'MYSQL_USERNAME'
-              value: mysqlDatabaseUser
-            }
-            {
-              name: 'MYSQL_DATABASE'
-              value: mysqlDatabaseName
-            }
-            {
-              name: 'MYSQL_PASSWORD'
-              secretRef: 'mysql-db-pass'
-            }
-            {
-              name: 'MYSQL_PORT'
-              value: '3306'
-            }
-            {{- end}}
             {{- if .Frontend}}
             {{- range $i, $e := .Frontend.Backends}}
             {
@@ -266,6 +235,44 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
     }
   }
 }
+{{- if .DbMySql}}
+
+resource linkerCreatorIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'linkerCreatorIdentity'
+  location: location
+}
+
+resource linkerCreatorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: resourceGroup()
+  name: guid(subscription().id, resourceGroup().id, linkerCreatorIdentity.id, 'linkerCreatorRole')
+  properties: {
+    roleDefinitionId:  subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalType: 'ServicePrincipal'
+    principalId: linkerCreatorIdentity.properties.principalId
+  }
+}
+
+resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  dependsOn: [ linkerCreatorRole ]
+  name: 'appLinkToMySql'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${linkerCreatorIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.63.0'
+    timeout: 'PT10M'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection appLinkToMySql --source-id ${app.id} --target-id ${mysqlDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} mysql-identity-id=${mysqlIdentityName} -c main --yes; az tag create --resource-id ${app.id} --tags azd-service-name={{.Name}} '
+    cleanupPreference: 'OnSuccess'
+    retentionInterval: 'P1D'
+  }
+}
+{{- end}}
 
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output name string = app.name

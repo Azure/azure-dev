@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -165,9 +166,10 @@ func createContainerAppServiceTarget(
 		mockContext.Console,
 		cloud.AzurePublic(),
 	)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	resourceManager := NewResourceManager(env, resourceService, depOpService)
+	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(credentialProvider, mockContext.ArmClientOptions)
+	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)
 
 	return NewContainerAppTarget(
 		env,

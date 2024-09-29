@@ -28,14 +28,14 @@ type ResourceManager interface {
 		subscriptionId string,
 		resourceGroupName string,
 		serviceConfig *ServiceConfig,
-	) ([]azapi.Resource, error)
+	) ([]*azapi.Resource, error)
 	GetServiceResource(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		serviceConfig *ServiceConfig,
 		rerunCommand string,
-	) (azapi.Resource, error)
+	) (*azapi.Resource, error)
 	GetTargetResource(
 		ctx context.Context,
 		subscriptionId string,
@@ -45,19 +45,23 @@ type ResourceManager interface {
 
 type resourceManager struct {
 	env                  *environment.Environment
+	deploymentService    *azapi.StandardDeployments
 	resourceService      *azapi.ResourceService
-	deploymentOperations azapi.DeploymentOperations
+	azureResourceManager infra.ResourceManager
 }
 
 // NewResourceManager creates a new instance of the project resource manager
 func NewResourceManager(
 	env *environment.Environment,
+	deploymentService *azapi.StandardDeployments,
 	resourceService *azapi.ResourceService,
-	deploymentOperations azapi.DeploymentOperations) ResourceManager {
+	azureResourceManager infra.ResourceManager,
+) ResourceManager {
 	return &resourceManager{
 		env:                  env,
+		deploymentService:    deploymentService,
 		resourceService:      resourceService,
-		deploymentOperations: deploymentOperations,
+		azureResourceManager: azureResourceManager,
 	}
 }
 
@@ -89,8 +93,7 @@ func (rm *resourceManager) GetResourceGroupName(
 		return envResourceGroupName, nil
 	}
 
-	resourceManager := infra.NewAzureResourceManager(rm.resourceService, rm.deploymentOperations)
-	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subscriptionId, rm.env.Name())
+	resourceGroupName, err := rm.azureResourceManager.FindResourceGroupForEnvironment(ctx, subscriptionId, rm.env.Name())
 	if err != nil {
 		return "", err
 	}
@@ -107,7 +110,7 @@ func (rm *resourceManager) GetServiceResources(
 	subscriptionId string,
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
-) ([]azapi.Resource, error) {
+) ([]*azapi.Resource, error) {
 	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", azure.TagKeyAzdServiceName, serviceConfig.Name)
 
 	subst, err := serviceConfig.ResourceName.Envsubst(rm.env.Getenv)
@@ -139,15 +142,15 @@ func (rm *resourceManager) GetServiceResource(
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 	rerunCommand string,
-) (azapi.Resource, error) {
+) (*azapi.Resource, error) {
 	expandedResourceName, err := serviceConfig.ResourceName.Envsubst(rm.env.Getenv)
 	if err != nil {
-		return azapi.Resource{}, fmt.Errorf("expanding name: %w", err)
+		return nil, fmt.Errorf("expanding name: %w", err)
 	}
 
 	resources, err := rm.GetServiceResources(ctx, subscriptionId, resourceGroupName, serviceConfig)
 	if err != nil {
-		return azapi.Resource{}, fmt.Errorf("getting service resource: %w", err)
+		return nil, fmt.Errorf("getting service resource: %w", err)
 	}
 
 	if expandedResourceName == "" { // A tag search was performed
@@ -159,11 +162,11 @@ func (rm *resourceManager) GetServiceResource(
 				serviceConfig.Name,
 				rerunCommand,
 			)
-			return azapi.Resource{}, azureutil.ResourceNotFound(err)
+			return nil, azureutil.ResourceNotFound(err)
 		}
 
 		if len(resources) != 1 {
-			return azapi.Resource{}, fmt.Errorf(
+			return nil, fmt.Errorf(
 				//nolint:lll
 				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your infrastructure configuration, and rerun %s",
 				azure.TagKeyAzdServiceName,
@@ -178,12 +181,12 @@ func (rm *resourceManager) GetServiceResource(
 				"unable to find a resource with name '%s'. Ensure that resourceName in azure.yaml is valid, and rerun %s",
 				expandedResourceName,
 				rerunCommand)
-			return azapi.Resource{}, azureutil.ResourceNotFound(err)
+			return nil, azureutil.ResourceNotFound(err)
 		}
 
 		// This can happen if multiple resources with different resource types are given the same name.
 		if len(resources) != 1 {
-			return azapi.Resource{},
+			return nil,
 				fmt.Errorf(
 					//nolint:lll
 					"expecting only '1' resource named '%s', but found '%d'. Use a unique name for the service resource in the resource group '%s'",
@@ -231,7 +234,7 @@ func (rm *resourceManager) resolveServiceResource(
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 	rerunCommand string,
-) (azapi.Resource, error) {
+) (*azapi.Resource, error) {
 	azureResource, err := rm.GetServiceResource(ctx, subscriptionId, resourceGroupName, serviceConfig, rerunCommand)
 
 	// If the service target supports delayed provisioning, the resource isn't expected to be found yet.
@@ -240,11 +243,11 @@ func (rm *resourceManager) resolveServiceResource(
 	if err != nil &&
 		errors.As(err, &resourceNotFoundError) &&
 		ServiceTargetKind(serviceConfig.Host).SupportsDelayedProvisioning() {
-		return azureResource, nil
+		return &azapi.Resource{}, nil
 	}
 
 	if err != nil {
-		return azapi.Resource{}, err
+		return nil, err
 	}
 
 	return azureResource, nil

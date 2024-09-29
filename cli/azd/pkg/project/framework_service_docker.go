@@ -34,19 +34,19 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path        string                  `yaml:"path,omitempty"      json:"path,omitempty"`
-	Context     string                  `yaml:"context,omitempty"   json:"context,omitempty"`
-	Platform    string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
-	Target      string                  `yaml:"target,omitempty"    json:"target,omitempty"`
-	Registry    osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
-	Image       osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
-	Tag         osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
-	RemoteBuild bool                    `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
-	BuildArgs   []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	Path        string                    `yaml:"path,omitempty"        json:"path,omitempty"`
+	Context     string                    `yaml:"context,omitempty"     json:"context,omitempty"`
+	Platform    string                    `yaml:"platform,omitempty"    json:"platform,omitempty"`
+	Target      string                    `yaml:"target,omitempty"      json:"target,omitempty"`
+	Registry    osutil.ExpandableString   `yaml:"registry,omitempty"    json:"registry,omitempty"`
+	Image       osutil.ExpandableString   `yaml:"image,omitempty"       json:"image,omitempty"`
+	Tag         osutil.ExpandableString   `yaml:"tag,omitempty"         json:"tag,omitempty"`
+	RemoteBuild bool                      `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
+	BuildArgs   []osutil.ExpandableString `yaml:"buildArgs,omitempty"   json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
 	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
-	BuildSecrets []string `yaml:"-"                   json:"-"`
-	BuildEnv     []string `yaml:"-"                   json:"-"`
+	BuildSecrets []string `yaml:"-"                     json:"-"`
+	BuildEnv     []string `yaml:"-"                     json:"-"`
 }
 
 type dockerBuildResult struct {
@@ -223,13 +223,22 @@ func (p *dockerProject) Build(
 		}
 		return result, nil
 	}
+
+	dockerBuildArgs := []string{}
+	for _, arg := range dockerOptions.BuildArgs {
+		buildArgValue, err := arg.Envsubst(p.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("substituting environment variables in build args: %w", err)
+		}
+
+		dockerBuildArgs = append(dockerBuildArgs, buildArgValue)
+	}
+
 	// resolve parameters for build args and secrets
-	resolvedBuildArgs, err := resolveParameters(dockerOptions.BuildArgs)
+	resolvedBuildArgs, err := resolveParameters(dockerBuildArgs)
 	if err != nil {
 		return nil, err
 	}
-
-	dockerOptions.BuildArgs = resolvedBuildArgs
 
 	resolvedBuildEnv, err := resolveParameters(dockerOptions.BuildEnv)
 	if err != nil {
@@ -247,7 +256,7 @@ func (p *dockerProject) Build(
 	}
 
 	buildArgs := []string{}
-	for _, arg := range dockerOptions.BuildArgs {
+	for _, arg := range resolvedBuildArgs {
 		buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
 	}
 
@@ -286,6 +295,15 @@ func (p *dockerProject) Build(
 		return res, nil
 	}
 
+	// Include full environment variables for the docker build including:
+	// 1. Environment variables from the host
+	// 2. Environment variables from the service configuration
+	// 3. Environment variables from the docker configuration
+	dockerEnv := []string{}
+	dockerEnv = append(dockerEnv, os.Environ()...)
+	dockerEnv = append(dockerEnv, p.env.Environ()...)
+	dockerEnv = append(dockerEnv, dockerOptions.BuildEnv...)
+
 	// Build the container
 	progress.SetProgress(NewServiceProgress("Building Docker image"))
 	previewerWriter := p.console.ShowPreviewer(ctx,
@@ -302,9 +320,9 @@ func (p *dockerProject) Build(
 		dockerOptions.Target,
 		dockerOptions.Context,
 		imageName,
-		dockerOptions.BuildArgs,
+		resolvedBuildArgs,
 		dockerOptions.BuildSecrets,
-		dockerOptions.BuildEnv,
+		dockerEnv,
 		previewerWriter,
 	)
 	p.console.StopPreviewer(ctx, false)
@@ -345,7 +363,12 @@ func (p *dockerProject) Package(
 
 	// If we don't have an image ID from a docker build then an external source image is being used
 	if imageId == "" {
-		sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
+		sourceImageValue, err := serviceConfig.Image.Envsubst(p.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("substituting environment variables in image: %w", err)
+		}
+
+		sourceImage, err := docker.ParseContainerImage(sourceImageValue)
 		if err != nil {
 			return nil, fmt.Errorf("parsing source container image: %w", err)
 		}

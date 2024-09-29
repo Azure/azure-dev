@@ -30,6 +30,10 @@ func RedactSensitiveArgs(args []string, sensitiveDataMatch []string) []string {
 
 func RedactSensitiveData(msg string) string {
 	var regexpRedactRules = map[string]redactData{
+		"token": {
+			regexp.MustCompile("\"token\": \".*\""),
+			"\"token\": \"" + redactedReplacement + "\"",
+		},
 		"access token": {
 			regexp.MustCompile("\"accessToken\": \".*\""),
 			"\"accessToken\": \"" + redactedReplacement + "\"",

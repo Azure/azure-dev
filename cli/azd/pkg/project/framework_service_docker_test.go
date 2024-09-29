@@ -233,7 +233,12 @@ services:
 
 func Test_DockerProject_Build(t *testing.T) {
 	tests := []struct {
+		// Optional - use for custom initialization
+		init func(t *testing.T) error
+		// Optional - use for custom validation
+		validate                func(t *testing.T, result *ServiceBuildResult, dockerBuildArgs *exec.RunArgs) error
 		name                    string
+		env                     *environment.Environment
 		project                 string
 		language                ServiceLanguageKind
 		dockerOptions           DockerProjectOptions
@@ -342,6 +347,47 @@ func Test_DockerProject_Build(t *testing.T) {
 			},
 			expectedDockerBuildArgs: nil,
 		},
+		{
+			name:          "With custom environment variables",
+			project:       "./src/api",
+			language:      ServiceLanguageJavaScript,
+			hasDockerFile: true,
+			init: func(t *testing.T) error {
+				os.Setenv("AZD_CUSTOM_OS_VAR", "os-value")
+				return nil
+			},
+			env: environment.NewWithValues("test", map[string]string{
+				"AZD_CUSTOM_ENV_VAR": "env-value",
+			}),
+			dockerOptions: DockerProjectOptions{
+				BuildEnv: []string{
+					"AZD_CUSTOM_BUILD_VAR=build-value",
+				},
+				BuildArgs: []osutil.ExpandableString{
+					osutil.NewExpandableString("AZD_CUSTOM_OS_VAR"),
+					osutil.NewExpandableString("AZD_CUSTOM_ENV_VAR"),
+					osutil.NewExpandableString("AZD_CUSTOM_BUILD_VAR"),
+					osutil.NewExpandableString("AZD_CUSTOM_EXPANDED_VAR=${AZD_CUSTOM_ENV_VAR}"),
+				},
+			},
+			validate: func(t *testing.T, result *ServiceBuildResult, dockerBuildArgs *exec.RunArgs) error {
+				require.NotNil(t, result)
+				require.NotNil(t, dockerBuildArgs)
+
+				// Contains OS, azd env & docker env vars
+				require.Contains(t, dockerBuildArgs.Env, "AZD_CUSTOM_OS_VAR=os-value")
+				require.Contains(t, dockerBuildArgs.Env, "AZD_CUSTOM_ENV_VAR=env-value")
+				require.Contains(t, dockerBuildArgs.Env, "AZD_CUSTOM_BUILD_VAR=build-value")
+
+				// Contains docker build args
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_OS_VAR")
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_ENV_VAR")
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_BUILD_VAR")
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_EXPANDED_VAR=env-value")
+
+				return nil
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -385,14 +431,23 @@ func Test_DockerProject_Build(t *testing.T) {
 				return exec.NewRunResult(0, "3.0.0", ""), nil
 			})
 
+			if tt.init != nil {
+				err := tt.init(t)
+				require.NoError(t, err)
+			}
+
 			temp := t.TempDir()
 
-			env := environment.New("test")
+			env := tt.env
+			if env == nil {
+				env = environment.New("test")
+			}
+
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, tt.language)
 			serviceConfig.Project.Path = temp
 			serviceConfig.Docker = tt.dockerOptions
-			serviceConfig.Image = tt.image
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 
 			if tt.hasDockerFile {
 				err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
@@ -427,10 +482,15 @@ func Test_DockerProject_Build(t *testing.T) {
 				},
 			)
 
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			require.Equal(t, tt.expectedBuildResult, result)
-			require.Equal(t, tt.expectedDockerBuildArgs, dockerBuildArgs.Args)
+			if tt.validate != nil {
+				err := tt.validate(t, result, &dockerBuildArgs)
+				require.NoError(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				require.Equal(t, tt.expectedBuildResult, result)
+				require.Equal(t, tt.expectedDockerBuildArgs, dockerBuildArgs.Args)
+			}
 		})
 	}
 }
@@ -536,7 +596,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			// Set the custom test options
 			serviceConfig.Docker = tt.docker
 			serviceConfig.RelativePath = tt.project
-			serviceConfig.Image = tt.image
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 
 			if serviceConfig.RelativePath != "" {
 				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env)
@@ -544,7 +604,10 @@ func Test_DockerProject_Package(t *testing.T) {
 			}
 
 			buildOutputPath := ""
-			if serviceConfig.Image == "" && serviceConfig.RelativePath != "" {
+			sourceImage, err := serviceConfig.Image.Envsubst(env.Getenv)
+			require.NoError(t, err)
+
+			if sourceImage == "" && serviceConfig.RelativePath != "" {
 				buildOutputPath = "IMAGE_ID"
 			}
 

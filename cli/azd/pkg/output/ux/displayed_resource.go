@@ -6,6 +6,7 @@ package ux
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
@@ -18,9 +19,10 @@ const (
 type DisplayedResourceState string
 
 type DisplayedResource struct {
-	Type  string
-	Name  string
-	State DisplayedResourceState
+	Type     string
+	Name     string
+	State    DisplayedResourceState
+	Duration time.Duration
 }
 
 func (cr *DisplayedResource) ToString(currentIndentation string) string {
@@ -35,7 +37,12 @@ func (cr *DisplayedResource) ToString(currentIndentation string) string {
 		prefix = donePrefix
 	}
 
-	return fmt.Sprintf("%s%s %s: %s", currentIndentation, prefix, cr.Type, cr.Name)
+	result := fmt.Sprintf("%s%s %s: %s", currentIndentation, prefix, cr.Type, cr.Name)
+	if cr.Duration > 0 {
+		result += output.WithGrayFormat(" (%s)", cr.Duration.String())
+	}
+
+	return result
 }
 
 func (cr *DisplayedResource) MarshalJSON() ([]byte, error) {

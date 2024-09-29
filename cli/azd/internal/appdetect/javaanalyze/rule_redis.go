@@ -3,13 +3,12 @@ package javaanalyze
 type ruleRedis struct {
 }
 
-func (mr *ruleRedis) Match(mavenProject *MavenProject) bool {
-
+func (r *ruleRedis) match(javaProject *javaProject) bool {
 	return false
 }
 
-func (mr *ruleRedis) Apply(javaProject *JavaProject) {
-	javaProject.Resources = append(javaProject.Resources, Resource{
+func (r *ruleRedis) apply(azureYaml *AzureYaml) {
+	azureYaml.Resources = append(azureYaml.Resources, &Resource{
 		Name: "Redis",
 		Type: "Redis",
 	})

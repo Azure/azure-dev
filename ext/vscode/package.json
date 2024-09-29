@@ -185,11 +185,16 @@
             "explorer/context": [
                 {
                     "submenu": "azure-dev.explorer.submenu",
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /(azure.yaml|pom.xml)/i",
                     "group": "azure-dev"
                 }
             ],
             "azure-dev.explorer.submenu": [
+                {
+                    "when": "resourceFilename =~ /pom.xml/i",
+                    "command": "azure-dev.commands.cli.init",
+                    "group": "10provision@10"
+                },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.provision",

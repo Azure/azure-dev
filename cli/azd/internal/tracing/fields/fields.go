@@ -240,8 +240,9 @@ const (
 const (
 	InitMethod = attribute.Key("init.method")
 
-	AppInitDetectedDatabase = attribute.Key("appinit.detected.databases")
-	AppInitDetectedServices = attribute.Key("appinit.detected.services")
+	AppInitDetectedDatabase  = attribute.Key("appinit.detected.databases")
+	AppInitDetectedServices  = attribute.Key("appinit.detected.services")
+	AppInitDetectedAzureDeps = attribute.Key("appinit.detected.azuredeps")
 
 	AppInitConfirmedDatabases = attribute.Key("appinit.confirmed.databases")
 	AppInitConfirmedServices  = attribute.Key("appinit.confirmed.services")

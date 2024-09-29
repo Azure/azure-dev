@@ -5,28 +5,30 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 )
 
-// MavenProject represents the top-level structure of a Maven POM file.
-type MavenProject struct {
-	XMLName              xml.Name             `xml:"project"`
-	Parent               Parent               `xml:"parent"`
+// mavenProject represents the top-level structure of a Maven POM file.
+type mavenProject struct {
+	XmlName              xml.Name             `xml:"project"`
+	Parent               parent               `xml:"parent"`
 	Modules              []string             `xml:"modules>module"` // Capture the modules
-	Dependencies         []Dependency         `xml:"dependencies>dependency"`
-	DependencyManagement DependencyManagement `xml:"dependencyManagement"`
-	Build                Build                `xml:"build"`
-	Path                 string
+	Dependencies         []dependency         `xml:"dependencies>dependency"`
+	DependencyManagement dependencyManagement `xml:"dependencyManagement"`
+	Build                build                `xml:"build"`
+	path                 string
+	spring               springProject
 }
 
 // Parent represents the parent POM if this project is a module.
-type Parent struct {
+type parent struct {
 	GroupId    string `xml:"groupId"`
 	ArtifactId string `xml:"artifactId"`
 	Version    string `xml:"version"`
 }
 
 // Dependency represents a single Maven dependency.
-type Dependency struct {
+type dependency struct {
 	GroupId    string `xml:"groupId"`
 	ArtifactId string `xml:"artifactId"`
 	Version    string `xml:"version"`
@@ -34,25 +36,40 @@ type Dependency struct {
 }
 
 // DependencyManagement includes a list of dependencies that are managed.
-type DependencyManagement struct {
-	Dependencies []Dependency `xml:"dependencies>dependency"`
+type dependencyManagement struct {
+	Dependencies []dependency `xml:"dependencies>dependency"`
 }
 
 // Build represents the build configuration which can contain plugins.
-type Build struct {
-	Plugins []Plugin `xml:"plugins>plugin"`
+type build struct {
+	Plugins []plugin `xml:"plugins>plugin"`
 }
 
 // Plugin represents a build plugin.
-type Plugin struct {
+type plugin struct {
 	GroupId    string `xml:"groupId"`
 	ArtifactId string `xml:"artifactId"`
 	Version    string `xml:"version"`
 	//Configuration xml.Node `xml:"configuration"`
 }
 
-// ParsePOM Parse the POM file.
-func ParsePOM(filePath string) (*MavenProject, error) {
+func analyzeMavenProject(projectPath string) ([]mavenProject, error) {
+	rootProject, _ := analyze(projectPath + "/pom.xml")
+	var result []mavenProject
+
+	// if it has submodules
+	if len(rootProject.Modules) > 0 {
+		for _, m := range rootProject.Modules {
+			subModule, _ := analyze(projectPath + "/" + m + "/pom.xml")
+			result = append(result, *subModule)
+		}
+	} else {
+		result = append(result, *rootProject)
+	}
+	return result, nil
+}
+
+func analyze(filePath string) (*mavenProject, error) {
 	xmlFile, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
@@ -64,12 +81,12 @@ func ParsePOM(filePath string) (*MavenProject, error) {
 		return nil, fmt.Errorf("error reading file: %w", err)
 	}
 
-	var project MavenProject
+	var project mavenProject
 	if err := xml.Unmarshal(bytes, &project); err != nil {
 		return nil, fmt.Errorf("error parsing XML: %w", err)
 	}
 
-	project.Path = filePath
+	project.path = filepath.Dir(filePath)
 
 	return &project, nil
 }

@@ -18,13 +18,11 @@ param applicationInsightsDashboardName string = ''
 param applicationInsightsName string = ''
 param appServicePlanName string = ''
 param cosmosAccountName string = ''
-param cosmosDatabaseName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webServiceName string = ''
 param apimServiceName string = ''
-param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 param apimApiName string = 'todo-api'
 param apimLoggerName string = 'app-insights-logger'
 
@@ -40,7 +38,6 @@ param principalId string = ''
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : 'Todo'
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -79,8 +76,8 @@ module api '../../../../../common/infra/bicep/app/api-appservice-avm.bicep' = {
     }
     appSettings: {
       AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
-      AZURE_COSMOS_CONNECTION_STRING_KEY: connectionStringKey
-      AZURE_COSMOS_DATABASE_NAME: actualDatabaseName
+      AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
+      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
       AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
       API_ALLOW_ORIGINS: web.outputs.SERVICE_WEB_URI
       SCM_DO_BUILD_DURING_DEPLOYMENT: false
@@ -119,46 +116,15 @@ module accessKeyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
 }
 
 // The application database
-module cosmos 'br/public:avm/res/document-db/database-account:0.6.0' = {
+module cosmos '../../../../../common/infra/bicep/app/cosmos-sql-db-avm.bicep' = {
   name: 'cosmos'
   scope: rg
   params: {
-    name: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
     location: location
-    locations: [
-      {
-        failoverPriority: 0
-        locationName: location
-        isZoneRedundant: false
-      }
-    ]
-    secretsExportConfiguration:{
-      keyVaultResourceId: keyVault.outputs.resourceId
-      primaryWriteConnectionStringSecretName: connectionStringKey
-    }
-    capabilitiesToAdd: [ 'EnableServerless' ] 
-    automaticFailover: false
-    sqlDatabases: [
-      {
-        name: actualDatabaseName
-        containers: [
-          {
-            name: 'TodoList'
-            paths: [ 'id' ]
-          }
-          {
-            name: 'TodoItem'
-            paths: [ 'id' ]
-          }
-        ]
-      }
-    ] 
-    sqlRoleAssignmentsPrincipalIds: [ principalId ]
-    sqlRoleDefinitions: [
-      {
-        name: 'writer'
-      }
-    ]
+    tags: tags
+    keyVaultResourceId: keyVault.outputs.resourceId
+    principalId: principalId
   }
 }
 
@@ -167,7 +133,7 @@ module apiCosmosSqlRoleAssign 'br/public:avm/res/document-db/database-account:0.
   name: 'api-cosmos-access'
   scope: rg
   params: {
-    name: cosmos.outputs.name
+    name: cosmos.outputs.accountName
     location: location
     sqlRoleAssignmentsPrincipalIds: [ api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID ]
     sqlRoleDefinitions: [
@@ -292,8 +258,8 @@ module apimApi 'br/public:avm/ptn/azd/apim-api:0.1.0' = {
 
 // Data outputs
 output AZURE_COSMOS_ENDPOINT string = cosmos.outputs.endpoint
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = actualDatabaseName
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
+output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString

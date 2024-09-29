@@ -76,6 +76,11 @@ repo:
         patterns:
           - "**/main.bicep"
 
+      - from: /sqlserver-avm.bicep
+        to: /db-avm.bicep
+        patterns:
+          - "**/main.bicep"
+
       - from: ../../../../api/common/openapi.yaml
         to: ../../src/api/wwwroot/openapi.yaml
         patterns:
@@ -109,8 +114,8 @@ repo:
     - from: ../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep
       to: ./infra/app/applicationinsights-dashboard.bicep
 
-    - from: ../../../../common/infra/bicep/app/sql-deployment-script.bicep
-      to: ./infra/app/sql-deployment-script.bicep
+    - from: ../../../../common/infra/bicep/app/sqlserver-avm.bicep
+      to: ./infra/app/db-avm.bicep
 
     - from: ../../../../common/infra/bicep/app/web-appservice-avm.bicep
       to: ./infra/app/web-appservice-avm.bicep

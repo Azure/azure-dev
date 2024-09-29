@@ -19,7 +19,6 @@ param applicationInsightsName string = ''
 param containerAppsEnvironmentName string = ''
 param containerRegistryName string = ''
 param cosmosAccountName string = ''
-param cosmosDatabaseName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
@@ -28,40 +27,6 @@ param apimServiceName string = ''
 param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 param apimApiName string = 'todo-api'
 param apimLoggerName string = 'app-insights-logger'
-param collections array = [
-  {
-    name: 'TodoList'
-    id: 'TodoList'
-    shardKey: {keys: [
-      'Hash'
-    ]}
-    indexes: [
-      {
-        key: {
-          keys: [
-            '_id'
-          ]
-        }
-      }
-    ]
-  }
-  {
-    name: 'TodoItem'
-    id: 'TodoItem'
-    shardKey: {keys: [
-      'Hash'
-    ]}
-    indexes: [
-      {
-        key: {
-          keys: [
-            '_id'
-          ]
-        }
-      }
-    ]
-  }
-]
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
@@ -78,8 +43,6 @@ param principalId string = ''
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var defaultDatabaseName = 'Todo'
-var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : defaultDatabaseName
 var apiContainerAppNameOrDefault = '${abbrs.appContainerApps}web-${resourceToken}'
 var corsAcaUrl = 'https://${apiContainerAppNameOrDefault}.${containerAppsEnvironment.outputs.defaultDomain}'
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
@@ -241,30 +204,14 @@ module api 'br/public:avm/res/app/container-app:0.2.0' = {
 }
 
 // The application database
-module cosmos 'br/public:avm/res/document-db/database-account:0.6.0' = {
+module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db-avm.bicep' = {
   name: 'cosmos'
   scope: rg
   params: {
-    locations: [
-      {
-        failoverPriority: 0
-        isZoneRedundant: false
-        locationName: location
-      }
-    ]
-    name: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
     location: location
-    mongodbDatabases: [
-      {
-        name: actualDatabaseName
-        tags: tags
-        collections: collections
-      }
-    ]
-    secretsExportConfiguration: {
-      keyVaultResourceId: keyVault.outputs.resourceId
-      primaryWriteConnectionStringSecretName: connectionStringKey
-    }
+    tags: tags
+    keyVaultResourceId: keyVault.outputs.resourceId
   }
 }
 
@@ -378,7 +325,7 @@ module apimApi 'br/public:avm/ptn/azd/apim-api:0.1.0' = {
 
 // Data outputs
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = actualDatabaseName
+output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
 output API_CORS_ACA_URL string = corsAcaUrl

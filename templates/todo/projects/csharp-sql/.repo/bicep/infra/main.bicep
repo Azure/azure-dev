@@ -45,12 +45,9 @@ param sqlAdminPassword string
 @description('Application user password')
 param appUserPassword string
 param appUser string = 'appUser'
-param sqlAdmin string = 'sqlAdmin'
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var defaultDatabaseName = 'Todo'
-var actualDatabaseName = !empty(sqlDatabaseName) ? sqlDatabaseName : defaultDatabaseName
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -134,7 +131,7 @@ module accessKeyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
         }
         {
           name: connectionStringKey
-          value: 'Server=${sqlService.outputs.name}${environment().suffixes.sqlServerHostname}; Database=${actualDatabaseName}; User=${appUser}; Password=${appUserPassword}'
+          value: 'Server=${sqlService.outputs.sqlServerName}${environment().suffixes.sqlServerHostname}; Database=${sqlService.outputs.databaseName}; User=${appUser}; Password=${appUserPassword}'
         }
       ]
     }
@@ -142,41 +139,15 @@ module accessKeyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
 }
 
 // The application database
-module sqlService 'br/public:avm/res/sql/server:0.2.0' = {
-  name: 'sqlservice'
-  scope: rg
-  params: {
-    name: !empty(sqlServerName) ? sqlServerName : '${abbrs.sqlServers}${resourceToken}'
-    administratorLogin: sqlAdmin
-    administratorLoginPassword: sqlAdminPassword
-    location: location
-    tags: tags
-    publicNetworkAccess: 'Enabled'
-    databases: [
-      {
-        name: actualDatabaseName
-      }
-    ]
-    firewallRules: [
-      {
-        name: 'Azure Services'
-        startIpAddress: '0.0.0.1'
-        endIpAddress: '255.255.255.254'
-      }
-    ]
-  }
-}
-
-//Add appuser to database owner
-module sqlDeploymentScript '../../../../../common/infra/bicep/app/sql-deployment-script.bicep' = {
+module sqlService '../../../../../common/infra/bicep/app/sqlserver-avm.bicep' = {
   name: 'sqldeploymentscript'
   scope: rg
   params: {
     location: location
     appUserPassword: appUserPassword
     sqlAdminPassword: sqlAdminPassword
-    sqlDatabaseName: actualDatabaseName
-    sqlServiceName: sqlService.outputs.name
+    sqlServiceName: !empty(sqlServerName) ? sqlServerName : '${abbrs.sqlServers}${resourceToken}'
+    appUser: appUser
   }
 }
 

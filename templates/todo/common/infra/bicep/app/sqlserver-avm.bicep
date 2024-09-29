@@ -1,13 +1,13 @@
 param location string = resourceGroup().location
 
 @description('Application user name')
-param appUser string = 'appUser'
+param appUser string 
 
 @description('SQL Server administrator name')
 param sqlAdmin string = 'sqlAdmin'
 
 @description('The name for sql database ')
-param sqlDatabaseName string
+param sqlDatabaseName string = ''
 
 @description('Resource name for sql service')
 param sqlServiceName string
@@ -19,6 +19,35 @@ param sqlAdminPassword string
 @secure()
 @description('Application user password')
 param appUserPassword string
+
+param tags object = {}
+
+var defaultDatabaseName = 'Todo'
+var actualDatabaseName = !empty(sqlDatabaseName) ? sqlDatabaseName : defaultDatabaseName
+
+module sqlServer 'br/public:avm/res/sql/server:0.2.0' = {
+  name: 'sqlservice'
+  params: {
+    name: sqlServiceName
+    administratorLogin: sqlAdmin
+    administratorLoginPassword: sqlAdminPassword
+    location: location
+    tags: tags
+    publicNetworkAccess: 'Enabled'
+    databases: [
+      {
+        name: actualDatabaseName
+      }
+    ]
+    firewallRules: [
+      {
+        name: 'Azure Services'
+        startIpAddress: '0.0.0.1'
+        endIpAddress: '255.255.255.254'
+      }
+    ]
+  }
+}
 
 module deploymentScript 'br/public:avm/res/resources/deployment-script:0.1.3' = {
   name: 'deployment-script'
@@ -42,11 +71,11 @@ module deploymentScript 'br/public:avm/res/resources/deployment-script:0.1.3' = 
         }
         {
           name: 'DBNAME'
-          value: !empty(sqlDatabaseName) ? sqlDatabaseName : 'Todo'
+          value: actualDatabaseName
         }
         {
           name: 'DBSERVER'
-          value: '${sqlServiceName}${environment().suffixes.sqlServerHostname}'
+          value: '${sqlServer.outputs.name}${environment().suffixes.sqlServerHostname}'
         }
         {
           name: 'SQLCMDPASSWORD'
@@ -75,3 +104,6 @@ SCRIPT_END
     '''
   }
 }
+
+output databaseName string = actualDatabaseName
+output sqlServerName string = sqlServer.outputs.name

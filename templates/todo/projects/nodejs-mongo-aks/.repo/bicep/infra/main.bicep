@@ -22,45 +22,10 @@ param containerRegistryName string = ''
 param applicationInsightsDashboardName string = ''
 param applicationInsightsName string = ''
 param cosmosAccountName string = ''
-param cosmosDatabaseName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
-param collections array = [
-  {
-    name: 'TodoList'
-    id: 'TodoList'
-    shardKey: {keys: [
-      'Hash'
-    ]}
-    indexes: [
-      {
-        key: {
-          keys: [
-            '_id'
-          ]
-        }
-      }
-    ]
-  }
-  {
-    name: 'TodoItem'
-    id: 'TodoItem'
-    shardKey: {keys: [
-      'Hash'
-    ]}
-    indexes: [
-      {
-        key: {
-          keys: [
-            '_id'
-          ]
-        }
-      }
-    ]
-  }
-]
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -77,8 +42,6 @@ param systemPoolType string = 'CostOptimised'
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var defaultDatabaseName = 'Todo'
-var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : defaultDatabaseName
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var aksClusterAdminRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b')
 var systemPoolSpec = nodePoolPresets[systemPoolType]
@@ -246,30 +209,14 @@ module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' =
 }
 
 // The application database
-module cosmos 'br/public:avm/res/document-db/database-account:0.6.0' = {
+module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db-avm.bicep' = {
   name: 'cosmos'
   scope: rg
   params: {
-    locations: [
-      {
-        failoverPriority: 0
-        isZoneRedundant: false
-        locationName: location
-      }
-    ]
-    name: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
     location: location
-    mongodbDatabases: [
-      {
-        name: actualDatabaseName
-        tags: tags
-        collections: collections
-      }
-    ]
-    secretsExportConfiguration:{
-      keyVaultResourceId: keyVault.outputs.resourceId
-      primaryWriteConnectionStringSecretName: connectionStringKey
-    }
+    tags: tags
+    keyVaultResourceId: keyVault.outputs.resourceId
   }
 }
 
@@ -338,7 +285,7 @@ module applicationInsightsDashboard '../../../../../common/infra/bicep/app/appli
 
 // Data outputs
 output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
-output AZURE_COSMOS_DATABASE_NAME string = actualDatabaseName
+output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString

@@ -80,8 +80,6 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 var tags = { 'azd-env-name': environmentName }
 var defaultDatabaseName = 'Todo'
 var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : defaultDatabaseName
-var apimApiUri = 'https://${apim.outputs.name}.azure-api.net/todo'
-var apimServiceId = useAPIM ? apim.outputs.resourceId : ''
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -91,7 +89,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 }
 
 // The application frontend
-module web '../../../../../common/infra/bicep/app/web-avm.bicep' = {
+module web '../../../../../common/infra/bicep/app/web-appservice-avm.bicep' = {
   name: 'web'
   scope: rg
   params: {
@@ -105,7 +103,7 @@ module web '../../../../../common/infra/bicep/app/web-avm.bicep' = {
 }
 
 // The application backend
-module api '../../../../../common/infra/bicep/app/api-avm.bicep' = {
+module api '../../../../../common/infra/bicep/app/api-appservice-avm.bicep' = {
   name: 'api'
   scope: rg
   params: {
@@ -266,44 +264,8 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
     tags: tags
     sku: apimSku
     skuCount: 0
-    customProperties: {}
     zones: []
-    apiDiagnostics: [
-      {
-        apiName: apimApiName
-        alwaysLog: 'allErrors'
-        backend: {
-          request: {
-            body: {
-              bytes: 1024
-            }
-          }
-          response: {
-            body: {
-              bytes: 1024
-            }
-          }
-        }
-        frontend: {
-          request: {
-            body: {
-              bytes: 1024
-            }
-          }
-          response: {
-            body: {
-              bytes: 1024
-            }
-          }
-        }
-        httpCorrelationProtocol: 'W3C'
-        logClientIp: true
-        loggerName: apimLoggerName
-        metrics: true
-        verbosity: 'verbose'
-        name: 'applicationinsights'
-      }
-    ]
+    customProperties: {}
     loggers: [
       {
         name: apimLoggerName
@@ -316,43 +278,23 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
         targetResourceId: applicationInsights.outputs.resourceId
       }
     ]
-    apis: [
-      {
-        name: apimApiName
-        path: 'todo'
-        displayName: 'Simple Todo API'
-        apiDescription: 'This is a simple Todo API'
-        serviceUrl: api.outputs.SERVICE_API_URI
-        subscriptionRequired: false
-        protocols: [ 'https' ]
-        type: 'http'
-        value: loadTextContent('../../../../../api/common/openapi.yaml')
-        policies: [
-          {
-            value: replace(loadTextContent('../../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml'), '{origin}', web.outputs.SERVICE_WEB_URI)
-            format: 'rawxml'
-          }
-        ]
-      }
-    ]
   }
 }
 
 //Configures the API settings for an api app within the Azure API Management (APIM) service.
-module apiConfig 'br/public:avm/res/web/site:0.3.9' = if (useAPIM) {
-  name: 'apiconfig'
+module apimApi 'br/public:avm/ptn/azd/apim-api:0.1.0' = {
+  name: 'apim-api-deployment'
   scope: rg
   params: {
-    kind: 'app'
-    name: api.outputs.SERVICE_API_NAME
-    tags: union(tags, { 'azd-service-name': 'api' })
-    serverFarmResourceId: appServicePlan.outputs.resourceId
+    apiBackendUrl: api.outputs.SERVICE_API_URI
+    apiDescription: 'This is a simple Todo API'
+    apiDisplayName: 'Simple Todo API'
+    apiName: apimApiName
+    apiPath: 'todo'
+    name: apim.outputs.name
+    webFrontendUrl: web.outputs.SERVICE_WEB_URI
     location: location
-    apiManagementConfiguration: {
-      apiManagementConfig: {
-        id: '${apimServiceId}/apis/${apimApiName}'
-      }
-    }
+    apiAppName: api.outputs.SERVICE_API_NAME
   }
 }
 
@@ -366,7 +308,7 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output API_BASE_URL string = useAPIM ? apimApiUri : api.outputs.SERVICE_API_URI
+output API_BASE_URL string = useAPIM ? apimApi.outputs.serviceApiUri : api.outputs.SERVICE_API_URI
 output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
 output USE_APIM bool = useAPIM
-output SERVICE_API_ENDPOINTS array = useAPIM ? [apimApiUri, api.outputs.SERVICE_API_URI] : []
+output SERVICE_API_ENDPOINTS array = useAPIM ? [apimApi.outputs.serviceApiUri, api.outputs.SERVICE_API_URI] : []

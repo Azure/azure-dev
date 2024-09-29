@@ -85,7 +85,6 @@ var corsAcaUrl = 'https://${apiContainerAppNameOrDefault}.${containerAppsEnviron
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
 var webUri = 'https://${web.outputs.fqdn}'
 var apiUri = 'https://${api.outputs.fqdn}'
-var apimApiUri = 'https://${apim.outputs.name}.azure-api.net/todo'
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -344,44 +343,8 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
     tags: tags
     sku: apimSku
     skuCount: 0
-    customProperties: {}
     zones: []
-    apiDiagnostics: [
-      {
-        apiName: apimApiName
-        alwaysLog: 'allErrors'
-        backend: {
-          request: {
-            body: {
-              bytes: 1024
-            }
-          }
-          response: {
-            body: {
-              bytes: 1024
-            }
-          }
-        }
-        frontend: {
-          request: {
-            body: {
-              bytes: 1024
-            }
-          }
-          response: {
-            body: {
-              bytes: 1024
-            }
-          }
-        }
-        httpCorrelationProtocol: 'W3C'
-        logClientIp: true
-        loggerName: apimLoggerName
-        metrics: true
-        verbosity: 'verbose'
-        name: 'applicationinsights'
-      }
-    ]
+    customProperties: {}
     loggers: [
       {
         name: apimLoggerName
@@ -394,25 +357,22 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
         targetResourceId: applicationInsights.outputs.resourceId
       }
     ]
-    apis: [
-      {
-        name: apimApiName
-        path: 'todo'
-        displayName: 'Simple Todo API'
-        apiDescription: 'This is a simple Todo API'
-        serviceUrl: apiUri
-        subscriptionRequired: false
-        protocols: [ 'https' ]
-        type: 'http'
-        value: loadTextContent('../../../../../api/common/openapi.yaml')
-        policies: [
-          {
-            value: replace(loadTextContent('../../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml'), '{origin}', webUri)
-            format: 'rawxml'
-          }
-        ]
-      }
-    ]
+  }
+}
+
+//Configures the API settings for an api app within the Azure API Management (APIM) service.
+module apimApi 'br/public:avm/ptn/azd/apim-api:0.1.0' = {
+  name: 'apim-api-deployment'
+  scope: rg
+  params: {
+    apiBackendUrl: apiUri
+    apiDescription: 'This is a simple Todo API'
+    apiDisplayName: 'Simple Todo API'
+    apiName: apimApiName
+    apiPath: 'todo'
+    name: apim.outputs.name
+    webFrontendUrl: webUri
+    location: location
   }
 }
 
@@ -431,9 +391,9 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output API_BASE_URL string = useAPIM ? apimApiUri : apiUri
+output API_BASE_URL string = useAPIM ? apimApi.outputs.serviceApiUri : apiUri
 output REACT_APP_WEB_BASE_URL string = webUri
 output SERVICE_API_NAME string = api.outputs.name
 output SERVICE_WEB_NAME string = web.outputs.name
 output USE_APIM bool = useAPIM
-output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApiUri, apiUri ] : []
+output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.serviceApiUri, apiUri ] : []

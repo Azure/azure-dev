@@ -1671,13 +1671,20 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
 	case targetType == "azure.bicep.v0":
-		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs.") {
+		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
 		replaceDash := strings.ReplaceAll(resource, "-", "_")
 		outputParts := strings.SplitN(prop, ".", 2)
-		outputType := outputParts[0]
-		outputName := outputParts[1]
+		var outputType string
+		var outputName string
+		noOutputName := len(outputParts) == 1
+		if noOutputName {
+			outputType = outputParts[0]
+		} else {
+			outputType = outputParts[0]
+			outputName = outputParts[1]
+		}
 		if outputType == "outputs" {
 			if emitType == inputEmitTypeYaml {
 				return fmt.Sprintf("{{ .Env.%s_%s }}", strings.ToUpper(replaceDash), strings.ToUpper(outputName)), nil
@@ -1689,6 +1696,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			return "", fmt.Errorf("unexpected output type %s", string(emitType))
 		} else {
 			if emitType == inputEmitTypeYaml {
+				if noOutputName {
+					return fmt.Sprintf(
+						"{{ .Env.SERVICE_BINDING_%s_NAME }}",
+						strings.ToUpper("kv"+uniqueFnvNumber(resource))), nil
+				}
 				return fmt.Sprintf(
 					"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
 					strings.ToUpper("kv"+uniqueFnvNumber(resource)),

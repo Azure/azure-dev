@@ -42,7 +42,7 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a new application.",
+		Short: "Initializes an existing template or creates a new template based on app code in the current directory. The initialization workflow retrieves or generates the template, prompts you for essential environment settings, and creates a `.azure` folder to store those settings.",
 	}
 }
 
@@ -64,7 +64,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"t",
 		"",
 		//nolint:lll
-		"Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
+		"Initializes an existing template. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
 	)
 	local.StringVarP(
 		&i.templateBranch,
@@ -91,7 +91,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"from-code",
 		"",
 		false,
-		"Initializes a new application from your existing code.",
+		"Initializes a new template from your existing code.",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 	i.EnvFlag.Bind(local, global)

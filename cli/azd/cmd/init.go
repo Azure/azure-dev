@@ -39,10 +39,11 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 	return flags
 }
 
+//nolint:lll
 func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "Initializes an existing template or creates a new template based on app code in the current directory.",
+		Short: "Initializes an existing template or creates a new template based on app code in the current directory. The initialization workflow retrieves or generates the template, prompts you for essential environment settings, and creates a `.azure` folder to store those settings.",
 	}
 }
 

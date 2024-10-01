@@ -177,6 +177,23 @@ func mapToStringSlice(m map[string]string, separator string) []string {
 	return result
 }
 
+// mapToExpandableStringSlice converts a map of strings to a slice of expandable strings.
+// Each key-value pair in the map is converted to a string in the format "key:value",
+// where the separator is specified by the `separator` parameter.
+// If the value is an empty string, only the key is included in the resulting slice.
+// The resulting slice is returned without any string interpolation performed.
+func mapToExpandableStringSlice(m map[string]string, separator string) []osutil.ExpandableString {
+	var result []osutil.ExpandableString
+	for key, value := range m {
+		if value == "" {
+			result = append(result, osutil.NewExpandableString(key))
+		} else {
+			result = append(result, osutil.NewExpandableString(key+separator+value))
+		}
+	}
+	return result
+}
+
 func (ai *DotNetImporter) Services(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (map[string]*ServiceConfig, error) {
@@ -234,7 +251,7 @@ func (ai *DotNetImporter) Services(
 			Docker: DockerProjectOptions{
 				Path:      dockerfile.Path,
 				Context:   dockerfile.Context,
-				BuildArgs: mapToStringSlice(dockerfile.BuildArgs, "="),
+				BuildArgs: mapToExpandableStringSlice(dockerfile.BuildArgs, "="),
 			},
 		}
 
@@ -314,7 +331,7 @@ func (ai *DotNetImporter) Services(
 			dOptions = DockerProjectOptions{
 				Path:         bContainer.Build.Dockerfile,
 				Context:      bContainer.Build.Context,
-				BuildArgs:    mapToStringSlice(bArgs, "="),
+				BuildArgs:    mapToExpandableStringSlice(bArgs, "="),
 				BuildSecrets: bArgsArray,
 				BuildEnv:     reqEnv,
 			}

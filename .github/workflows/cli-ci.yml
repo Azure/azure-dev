@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "cli/**"
+      - '!cli/docs/**'
       - ".github/workflows/cli-ci.yml"
       - "go.mod"
     branches: [main]

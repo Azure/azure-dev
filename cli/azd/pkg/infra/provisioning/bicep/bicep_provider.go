@@ -74,10 +74,8 @@ type BicepProvider struct {
 	ignoreDeploymentState bool
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
-	// prevent resolving parameters multiple times in the same azd run.
-	ensureParamsInMemoryCache azure.ArmParameters
-	keyvaultService           keyvault.KeyVaultService
-	portalUrlBase             string
+	keyvaultService         keyvault.KeyVaultService
+	portalUrlBase           string
 }
 
 // Name gets the name of the infra provider
@@ -201,7 +199,6 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var err error
 	spinnerMessage := "Loading Bicep template"
-	// TODO: Report progress, "Loading Bicep template"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	defer func() {
 		// Make sure we stop the spinner if an error occurs with the last message.
@@ -238,7 +235,6 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 		outputs = azure.ArmTemplateOutputs{}
 	}
 
-	// TODO: Report progress, "Retrieving Azure deployment"
 	spinnerMessage = "Retrieving Azure deployment"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
@@ -350,7 +346,6 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 
 	modulePath := p.modulePath()
-	// TODO: Report progress, "Compiling Bicep template"
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
@@ -730,7 +725,8 @@ func (p *BicepProvider) Destroy(
 	options provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
 	modulePath := p.modulePath()
-	// TODO: Report progress, "Compiling Bicep template"
+	p.console.ShowSpinner(ctx, "Discovering resources to delete...", input.Step)
+	defer p.console.StopSpinner(ctx, "", input.StepDone)
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
@@ -792,6 +788,7 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
 	}
 
+	p.console.StopSpinner(ctx, "", input.StepDone)
 	if err := p.destroyDeploymentWithConfirmation(
 		ctx,
 		options,
@@ -1794,10 +1791,6 @@ func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
-	if p.ensureParamsInMemoryCache != nil {
-		return maps.Clone(p.ensureParamsInMemoryCache), nil
-	}
-
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
@@ -1923,19 +1916,15 @@ func (p *BicepProvider) ensureParameters(
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: value,
 				}
-				configuredParameters[prompt.key] = azure.ArmParameterValue{
-					Value: value,
-				}
 			}
 		}
 	}
 
 	if configModified {
 		if err := p.envManager.Save(ctx, p.env); err != nil {
-			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
+			return nil, fmt.Errorf("saving prompt values: %w", err)
 		}
 	}
-	p.ensureParamsInMemoryCache = maps.Clone(configuredParameters)
 	return configuredParameters, nil
 }
 

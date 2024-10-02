@@ -4,7 +4,7 @@
 
 Environment variables that can be used to configure `azd` behavior, usually set within a shell or terminal. For environment variables that accept a boolean, the values `1, t, T, TRUE, true, True` are accepted as "true"; the values: `0, f, F, FALSE, false, False` are all accepted as "false".
 
-- `AZD_ALPHA_ENABLE_<name>`: Enables or disables an alpha feature. `<name>` is the name of the feature, with dot `.` characters replaced by underscore `_` characters.
+- `AZD_ALPHA_ENABLE_<name>`: Enables or disables an alpha feature. `<name>` is the upper-cased name of the feature, with dot `.` characters replaced by underscore `_` characters.
 - `AZD_AUTH_ENDPOINT`: The [External Authentication](./external-authentication.md) endpoint.
 - `AZD_AUTH_KEY`: The [External Authentication](./external-authentication.md) shared key.
 - `AZD_BUILDER_IMAGE`: The builder docker image used to perform docker-less builds.

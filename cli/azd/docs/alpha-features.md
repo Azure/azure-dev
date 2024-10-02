@@ -15,7 +15,7 @@ The strategy to ask `azd` to `toggle` between modes is:
 
 In CI, the on/off mode can be configured using environment variables with the following scheme:
 
-- `AZD_ALPHA_ENABLE_<name>`: where `<name>` is the name of the feature, with dot `.` characters replaced by underscore `_` characters.
+- `AZD_ALPHA_ENABLE_<name>`: where `<name>` is the upper-cased name of the feature, with dot `.` characters replaced by underscore `_` characters.
 
 ## Alpha feature
 

@@ -7,7 +7,7 @@ Environment variables that can be used to configure `azd` behavior, usually set 
 - `AZD_ALPHA_ENABLE_<name>`: Enables or disables an alpha feature. `<name>` is the upper-cased name of the feature, with dot `.` characters replaced by underscore `_` characters.
 - `AZD_AUTH_ENDPOINT`: The [External Authentication](./external-authentication.md) endpoint.
 - `AZD_AUTH_KEY`: The [External Authentication](./external-authentication.md) shared key.
-- `AZD_BUILDER_IMAGE`: The builder docker image used to perform docker-less builds.
+- `AZD_BUILDER_IMAGE`: The builder docker image used to perform Dockerfile-less builds.
 - `AZD_CONFIG_DIR`: The file path of the user-level configuration directory.
 - `AZD_DEMO_MODE`: If true, enables demo mode. This hides personal output, such as subscription IDs, from being displayed in output.
 - `AZD_FORCE_TTY`: If true, forces `azd` to write terminal-style output.

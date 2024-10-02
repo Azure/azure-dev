@@ -30,7 +30,7 @@ func Test_Templates_NewTemplateManager(t *testing.T) {
 			NewSourceOptions(),
 			mockContext.Container,
 			config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
-			mockContext.HttpClient,
+			mockContext.CoreClientOptions,
 		),
 		mockContext.Console,
 	)
@@ -47,7 +47,7 @@ func Test_Templates_ListTemplates(t *testing.T) {
 	addGhMocks(mockContext)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.CoreClientOptions),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func Test_Templates_ListTemplates_WithTagFilter(t *testing.T) {
 	addGhMocks(mockContext)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.CoreClientOptions),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func Test_Templates_ListTemplates_SourceError(t *testing.T) {
 	addGhMocks(mockContext)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.CoreClientOptions),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -140,7 +140,7 @@ func Test_Templates_GetTemplate_WithValidPath(t *testing.T) {
 	addGhMocks(mockContext)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.CoreClientOptions),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func Test_Templates_GetTemplate_WithInvalidPath(t *testing.T) {
 	addGhMocks(mockContext)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.CoreClientOptions),
 		mockContext.Console,
 	)
 	require.NoError(t, err)
@@ -182,7 +182,7 @@ func Test_Templates_GetTemplate_WithNotFoundPath(t *testing.T) {
 	addGhMocks(mockContext)
 
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.CoreClientOptions),
 		mockContext.Console,
 	)
 	require.NoError(t, err)

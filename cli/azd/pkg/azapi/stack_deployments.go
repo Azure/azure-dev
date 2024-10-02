@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"net/url"
+	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -29,8 +32,9 @@ import (
 var FeatureDeploymentStacks = alpha.MustFeatureKey("deployment.stacks")
 
 const (
-	deploymentStacksConfigKey = "DeploymentStacks"
-	stacksPortalUrlFragment   = "#@microsoft.onmicrosoft.com/resource"
+	deploymentStacksConfigKey      = "DeploymentStacks"
+	stacksPortalUrlFragment        = "#@microsoft.onmicrosoft.com/resource"
+	bypassOutOfSyncErrorEnvVarName = "DEPLOYMENT_STACKS_BYPASS_STACK_OUT_OF_SYNC_ERROR"
 )
 
 var defaultDeploymentStackOptions = &deploymentStackOptions{
@@ -516,14 +520,16 @@ func (d *StackDeployments) DeleteSubscriptionDeployment(
 // - ActionOnUnmanage: Delete for all
 // - DenySettings: nil
 func parseDeploymentStackOptions(options map[string]any) (*deploymentStackOptions, error) {
-	if options == nil {
+	bypassStackOutOfSyncErrorVal, hasBypassStackOutOfSyncError := os.LookupEnv(bypassOutOfSyncErrorEnvVarName)
+
+	if options == nil && !hasBypassStackOutOfSyncError {
 		return defaultDeploymentStackOptions, nil
 	}
 
 	optionsConfig := config.NewConfig(options)
 
 	var deploymentStackOptions *deploymentStackOptions
-	has, err := optionsConfig.GetSection(deploymentStacksConfigKey, &deploymentStackOptions)
+	hasDeploymentStacksConfig, err := optionsConfig.GetSection(deploymentStacksConfigKey, &deploymentStackOptions)
 	if err != nil {
 		suggestion := &internal.ErrorWithSuggestion{
 			Err:        fmt.Errorf("failed parsing deployment stack options: %w", err),
@@ -533,8 +539,29 @@ func parseDeploymentStackOptions(options map[string]any) (*deploymentStackOption
 		return nil, suggestion
 	}
 
-	if !has || deploymentStackOptions == nil {
+	if !hasBypassStackOutOfSyncError && (!hasDeploymentStacksConfig || deploymentStackOptions == nil) {
 		return defaultDeploymentStackOptions, nil
+	}
+
+	if deploymentStackOptions == nil {
+		deploymentStackOptions = defaultDeploymentStackOptions
+	}
+
+	// The BypassStackOutOfSyncError will NOT be exposed in the `azure.yaml` for configuration
+	// since this option will typically only be used on a per call basis.
+	// The value will be read from the environment variable `DEPLOYMENT_STACKS_BYPASS_STACK_OUT_OF_SYNC_ERROR`
+	// If the value is a truthy value, the value will be set to true, otherwise it will be set to false (default)
+	if hasBypassStackOutOfSyncError {
+		byPassOutOfSyncError, err := strconv.ParseBool(bypassStackOutOfSyncErrorVal)
+		if err != nil {
+			log.Printf(
+				"Failed to parse environment variable '%s' value '%s' as a boolean. Defaulting to false.",
+				bypassOutOfSyncErrorEnvVarName,
+				bypassStackOutOfSyncErrorVal,
+			)
+		} else {
+			deploymentStackOptions.BypassStackOutOfSyncError = &byPassOutOfSyncError
+		}
 	}
 
 	if deploymentStackOptions.BypassStackOutOfSyncError == nil {

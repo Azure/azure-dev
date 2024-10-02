@@ -1,6 +1,7 @@
 package azapi
 
 import (
+	"os"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -116,5 +117,30 @@ func Test_ParseDeploymentStackOptions(t *testing.T) {
 		require.Equal(t, customOptions.BypassStackOutOfSyncError, actual.BypassStackOutOfSyncError)
 		require.Equal(t, customOptions.ActionOnUnmanage, actual.ActionOnUnmanage)
 		require.Equal(t, customOptions.DenySettings, actual.DenySettings)
+	})
+
+	t.Run("override bypass stack out of sync error from OS env var", func(t *testing.T) {
+		t.Run("valid", func(t *testing.T) {
+			err := os.Setenv(bypassOutOfSyncErrorEnvVarName, "true")
+			require.NoError(t, err)
+
+			config := config.NewConfig(nil)
+			actual, err := parseDeploymentStackOptions(config.Raw())
+			require.NoError(t, err)
+			require.True(t, *actual.BypassStackOutOfSyncError)
+			require.Equal(t, defaultDeploymentStackOptions.ActionOnUnmanage, actual.ActionOnUnmanage)
+			require.Equal(t, defaultDeploymentStackOptions.DenySettings, actual.DenySettings)
+		})
+		t.Run("invalid", func(t *testing.T) {
+			err := os.Setenv(bypassOutOfSyncErrorEnvVarName, "invalid")
+			require.NoError(t, err)
+
+			config := config.NewConfig(nil)
+			actual, err := parseDeploymentStackOptions(config.Raw())
+			require.NoError(t, err)
+			require.Equal(t, defaultDeploymentStackOptions.BypassStackOutOfSyncError, actual.BypassStackOutOfSyncError)
+			require.Equal(t, defaultDeploymentStackOptions.ActionOnUnmanage, actual.ActionOnUnmanage)
+			require.Equal(t, defaultDeploymentStackOptions.DenySettings, actual.DenySettings)
+		})
 	})
 }

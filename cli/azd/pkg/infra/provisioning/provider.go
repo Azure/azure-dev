@@ -5,6 +5,8 @@ package provisioning
 
 import (
 	"context"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type ProviderKind string
@@ -52,10 +54,9 @@ type StateResult struct {
 
 type Provider interface {
 	Name() string
-	Initialize(ctx context.Context, projectPath string, options Options) error
+	Initialize(ctx context.Context, projectPath string, options Options, rg osutil.ExpandableString) error
 	State(ctx context.Context, options *StateOptions) (*StateResult, error)
 	Deploy(ctx context.Context) (*DeployResult, error)
 	Preview(ctx context.Context) (*DeployPreviewResult, error)
 	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
-	EnsureEnv(ctx context.Context) error
 }

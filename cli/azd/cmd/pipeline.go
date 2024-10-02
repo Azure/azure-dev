@@ -165,7 +165,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	err = p.provisioningManager.Initialize(ctx, p.projectConfig.Path, infra.Options)
+	err = p.provisioningManager.Initialize(ctx, p.projectConfig.Path, infra.Options, p.projectConfig.ResourceGroupName)
 	if err != nil {
 		return nil, err
 	}

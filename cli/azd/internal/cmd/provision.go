@@ -193,7 +193,8 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	infraOptions := infra.Options
 	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
-	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
+	err = p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions, p.projectConfig.ResourceGroupName)
+	if err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 

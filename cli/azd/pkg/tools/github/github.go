@@ -49,7 +49,7 @@ func newGitHubCliImplementation(
 	acquireGitHubCliImpl getGitHubCliImplementation,
 	extractImplementation extractGitHubCliFromFileImplementation,
 ) (*Cli, error) {
-	if override := os.Getenv("AZD_GH_CLI_TOOL_PATH"); override != "" {
+	if override := os.Getenv("AZD_GH_TOOL_PATH"); override != "" {
 		log.Printf("using external github cli tool: %s", override)
 		cli := &Cli{
 			path:          override,

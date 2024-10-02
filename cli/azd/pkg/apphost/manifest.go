@@ -21,7 +21,7 @@ type Manifest struct {
 	BicepFiles *memfs.FS `json:"-"`
 }
 
-type BaseResource struct {
+type Resource struct {
 	// Type is present on all resource types
 	Type string `json:"type"`
 
@@ -29,13 +29,6 @@ type BaseResource struct {
 	// resource and is the path to the Dockerfile (including the "Dockerfile" filename).
 	// For a bicep.v0 resource, it is the path to the bicep file.
 	Path *string `json:"path,omitempty"`
-
-	// For a bicep.v0 resource, defines the input parameters for the bicep file.
-	Params map[string]any `json:"params,omitempty"`
-}
-
-type Resource struct {
-	BaseResource
 
 	// Context is present on a dockerfile.v0 resource and is the path to the context directory.
 	Context *string `json:"context,omitempty"`
@@ -84,6 +77,9 @@ type Resource struct {
 	// a password for a database).
 	Inputs map[string]Input `json:"inputs,omitempty"`
 
+	// For a bicep.v0 resource, defines the input parameters for the bicep file.
+	Params map[string]any `json:"params,omitempty"`
+
 	// parameter.v0 uses value field to define the value of the parameter.
 	Value string
 
@@ -100,7 +96,18 @@ type Resource struct {
 	BindMounts []*BindMount `json:"bindMounts,omitempty"`
 
 	// project.v1 and container.v1 uses deployment when the AppHost owns the ACA bicep definitions.
-	Deployment *BaseResource `json:"deployment,omitempty"`
+	Deployment *DeploymentMetadata `json:"deployment,omitempty"`
+}
+
+type DeploymentMetadata struct {
+	// Type is the type of deployment. For now, only bicep.v0 is supported.
+	Type string `json:"type"`
+
+	// Path is present for a bicep.v0 deployment type, and the path to the bicep file.
+	Path *string `json:"path,omitempty"`
+
+	// For a bicep.v0 deployment type, defines the input parameters for the bicep file.
+	Params map[string]any `json:"params,omitempty"`
 }
 
 type ContainerV1Build struct {

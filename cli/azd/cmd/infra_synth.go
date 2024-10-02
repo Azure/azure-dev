@@ -93,7 +93,7 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	spinnerMessage := "Synthesizing infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	synthFS, err := a.importManager.SynthAllInfrastructure(ctx, a.projectConfig, &project.SynthOptions{})
+	synthFS, err := a.importManager.SynthAllInfrastructure(ctx, a.projectConfig)
 	if err != nil {
 		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, err

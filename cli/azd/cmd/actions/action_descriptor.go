@@ -130,16 +130,17 @@ type ActionHelpOptions struct {
 type RootLevelHelpOption string
 
 const (
-	CmdGroupNone    RootLevelHelpOption = ""
-	CmdGroupConfig  RootLevelHelpOption = "Configure and develop your app"
-	CmdGroupManage  RootLevelHelpOption = "Manage Azure resources and app deployments"
-	CmdGroupMonitor RootLevelHelpOption = "Monitor, test and release your app"
-	CmdGroupAbout   RootLevelHelpOption = "About, help and upgrade"
+	CmdGroupNone       RootLevelHelpOption = ""
+	CmdGroupConfig     RootLevelHelpOption = "Configure and develop your app"
+	CmdGroupManage     RootLevelHelpOption = "Manage Azure resources and app deployments"
+	CmdGroupMonitor    RootLevelHelpOption = "Monitor, test and release your app"
+	CmdGroupAbout      RootLevelHelpOption = "About, help and upgrade"
+	CmdGroupExtensions RootLevelHelpOption = "Extensions"
 )
 
 func GetGroupAnnotations() []RootLevelHelpOption {
 	return []RootLevelHelpOption{
-		CmdGroupConfig, CmdGroupManage, CmdGroupMonitor, CmdGroupAbout,
+		CmdGroupConfig, CmdGroupManage, CmdGroupMonitor, CmdGroupExtensions, CmdGroupAbout,
 	}
 }
 

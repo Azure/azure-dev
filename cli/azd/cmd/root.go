@@ -16,6 +16,7 @@ import (
 	// Importing for infrastructure provider plugin registrations
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
@@ -354,6 +355,15 @@ func NewRootCmd(
 	// Invalid configurations will fall back to default platform
 	if _, err := platform.Initialize(rootContainer, azd.PlatformKindDefault); err != nil {
 		panic(err)
+	}
+
+	installedExtensions, err := extensions.Initialize(rootContainer)
+	if err != nil {
+		log.Printf("Failed to initialize extensions: %v", err)
+	}
+
+	if err := bindExtensions(rootContainer, root, installedExtensions); err != nil {
+		log.Printf("Failed to bind extensions: %v", err)
 	}
 
 	// Compose the hierarchy of action descriptions into cobra commands

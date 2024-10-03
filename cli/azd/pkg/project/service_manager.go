@@ -26,17 +26,20 @@ const (
 	ServiceEventEnvUpdated ext.Event = "environment updated"
 	ServiceEventRestore    ext.Event = "restore"
 	ServiceEventBuild      ext.Event = "build"
-	ServiceEventProvision  ext.Event = "package"
+	ServiceEventProvision  ext.Event = "provision"
 	ServiceEventPackage    ext.Event = "package"
 	ServiceEventDeploy     ext.Event = "deploy"
+	ServiceEventDown       ext.Event = "down"
 )
 
 var (
 	ServiceEvents []ext.Event = []ext.Event{
 		ServiceEventEnvUpdated,
 		ServiceEventRestore,
+		ServiceEventProvision,
 		ServiceEventPackage,
 		ServiceEventDeploy,
+		ServiceEventDown,
 	}
 )
 

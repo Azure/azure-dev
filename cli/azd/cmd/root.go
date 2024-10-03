@@ -227,7 +227,7 @@ func NewRootCmd(
 			DefaultFormat:  output.NoneFormat,
 			HelpOptions: actions.ActionHelpOptions{
 				Description: cmd.GetCmdProvisionHelpDescription,
-				Footer:      getCmdHelpDefaultFooter,
+				Footer:      cmd.GetCmdProvisionHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupManage,

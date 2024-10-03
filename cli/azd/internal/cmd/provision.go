@@ -96,7 +96,7 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 
 func NewProvisionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "provision <service>",
+		Use:   "provision [<service>]",
 		Short: "Provision the Azure resources for an application.",
 		Args:  cobra.MaximumNArgs(1),
 	}
@@ -389,9 +389,6 @@ func (p *ProvisionAction) provisionPlatform(
 
 	infraOptions := infra.Options
 	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
-	if infraOptions.Name == "" {
-		infraOptions.Name = p.env.Name()
-	}
 
 	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
 		p.console.ShowSpinner(ctx, stepMessage, input.Step)
@@ -451,7 +448,7 @@ func (p *ProvisionAction) provisionServices(
 		p.projectManager,
 		p.importManager,
 		p.projectConfig,
-		string(project.ServiceEventDeploy),
+		string(project.ServiceEventProvision),
 		targetServiceName,
 		p.flags.all,
 	)
@@ -463,7 +460,14 @@ func (p *ProvisionAction) provisionServices(
 	previewResults := map[string]*provisioning.DeployPreviewResult{}
 
 	for _, svc := range stableServices {
-		p.console.Message(ctx, output.WithBold("\nProvisioning service %s", svc.Name))
+		p.console.Message(
+			ctx,
+			fmt.Sprintf("%s %s %s",
+				output.WithBold("Provisioning infrastructure for"),
+				output.WithHighLightFormat(svc.Name),
+				output.WithBold("service"),
+			),
+		)
 
 		stepMessage := "Initializing"
 		p.console.ShowSpinner(ctx, stepMessage, input.Step)
@@ -564,5 +568,15 @@ func GetCmdProvisionHelpDescription(c *cobra.Command) string {
 		output.WithHighLightFormat(c.CommandPath())), []string{
 		formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
 		formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
+	})
+}
+
+func GetCmdProvisionHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Provision all resources for an application.": output.WithHighLightFormat("azd provision"),
+		//nolint:lll
+		"Provision all resources for a specific service within the application. ": output.WithHighLightFormat("azd provision <service>"),
+		//nolint:lll
+		"Provision the root platform infrastructure for the application. ": output.WithHighLightFormat("azd provision --platform"),
 	})
 }

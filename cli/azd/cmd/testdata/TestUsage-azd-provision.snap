@@ -7,7 +7,7 @@ This command prompts you to input the following:
   • Azure subscription: The Azure subscription where your resources will be deployed.
 
 Usage
-  azd provision <service> [flags]
+  azd provision [<service>] [flags]
 
 Flags
         --all                	: Deploys all services that are listed in azure.yaml
@@ -23,6 +23,14 @@ Global Flags
         --debug      	: Enables debugging and diagnostics logging.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
-Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+Examples
+  Provision all resources for a specific service within the application. 
+    azd provision <service>
+
+  Provision all resources for an application.
+    azd provision
+
+  Provision the root platform infrastructure for the application. 
+    azd provision --platform
 
 

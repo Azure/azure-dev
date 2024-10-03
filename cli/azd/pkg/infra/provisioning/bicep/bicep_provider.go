@@ -254,7 +254,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var deployment *azapi.ResourceDeployment
 
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.options.Name, options.Hint())
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.deploymentName(), options.Hint())
 	p.console.StopSpinner(ctx, "", input.StepDone)
 
 	if err != nil {
@@ -391,7 +391,7 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 }
 
 func (p *BicepProvider) deploymentFromScopeType(deploymentScopeType azure.DeploymentScope) (infra.Deployment, error) {
-	deploymentName := p.deploymentManager.GenerateDeploymentName(p.options.Name)
+	deploymentName := p.deploymentManager.GenerateDeploymentName(p.deploymentName())
 
 	if deploymentScopeType == azure.DeploymentScopeSubscription {
 		scope := p.deploymentManager.SubscriptionScope(p.env.GetSubscriptionId(), p.env.GetLocation())
@@ -451,7 +451,7 @@ func (p *BicepProvider) latestDeploymentResult(
 	ctx context.Context,
 	scope infra.Scope,
 ) (*azapi.ResourceDeployment, error) {
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.options.Name, "")
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.deploymentName(), "")
 	// findCompletedDeployments returns error if no deployments are found
 	// No need to check for empty list
 	if err != nil {
@@ -796,13 +796,13 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
 
-	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.options.Name, "")
+	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.deploymentName(), "")
 	if err != nil {
 		return nil, fmt.Errorf("finding completed deployments: %w", err)
 	}
 
 	if len(completedDeployments) == 0 {
-		return nil, fmt.Errorf("no deployments found for environment, '%s'", p.options.Name)
+		return nil, fmt.Errorf("no deployments found for environment, '%s'", p.deploymentName())
 	}
 
 	mostRecentDeployment := completedDeployments[0]
@@ -928,6 +928,17 @@ func (p *BicepProvider) Destroy(
 	}
 
 	return destroyResult, nil
+}
+
+// deploymentName returns the name of the deployment to use for the current operation.
+// If the user has specified a name, that will be used. Otherwise, the name of the environment will be used.
+func (p *BicepProvider) deploymentName() string {
+	deploymentName := p.options.Name
+	if deploymentName == "" {
+		deploymentName = p.env.Name()
+	}
+
+	return deploymentName
 }
 
 // A local type for adding the resource group to a cognitive account as it is required for purging

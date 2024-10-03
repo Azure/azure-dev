@@ -473,7 +473,6 @@ func GenerateProjectArtifacts(
 }
 
 type infraGenerator struct {
-	containers        map[string]genContainer
 	dapr              map[string]genDapr
 	dockerfiles       map[string]genDockerfile
 	projects          map[string]genProject
@@ -500,7 +499,6 @@ func newInfraGenerator() *infraGenerator {
 			OutputParameters:                make(map[string]genOutputParameter),
 			OutputSecretParameters:          make(map[string]genOutputParameter),
 		},
-		containers:                   make(map[string]genContainer),
 		dapr:                         make(map[string]genDapr),
 		dockerfiles:                  make(map[string]genDockerfile),
 		projects:                     make(map[string]genProject),
@@ -593,9 +591,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "project.v0", "project.v1":
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, deploymentParams, deploymentSource)
 		case "container.v0":
-			b.addContainer(
-				name, *comp.Image, comp.Env, comp.Bindings, comp.Inputs, comp.Volumes, comp.BindMounts,
-				comp.Args, deploymentParams, deploymentSource)
+			err := b.addBuildContainer(name, comp)
+			if err != nil {
+				return err
+			}
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
 			if err != nil {
@@ -891,42 +890,6 @@ func (b *infraGenerator) addKeyVault(name string, noTags, readAccessPrincipalId 
 	}
 }
 
-func (b *infraGenerator) addContainer(
-	name string,
-	image string,
-	env map[string]string,
-	bindings custommaps.WithOrder[Binding],
-	inputs map[string]Input,
-	volumes []*Volume,
-	bindMounts []*BindMount,
-	args []string,
-	deploymentParams map[string]any,
-	deploymentSource string,
-) {
-	b.requireCluster()
-
-	if len(volumes) > 0 {
-		b.requireStorageVolume()
-	}
-
-	if len(bindMounts) > 0 {
-		b.requireStorageVolume()
-		b.hasBindMounts()
-	}
-
-	b.containers[name] = genContainer{
-		Image:            image,
-		Env:              env,
-		Bindings:         bindings,
-		Inputs:           inputs,
-		Volumes:          volumes,
-		BindMounts:       bindMounts,
-		Args:             args,
-		DeploymentParams: deploymentParams,
-		DeploymentSource: deploymentSource,
-	}
-}
-
 // buildContainer represents a container defined with a pre-build image or a build context.
 // container.v0 resources are used to define containers with pre-built images.
 //   - uses image field
@@ -968,19 +931,25 @@ func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
 	// common fields for all build containers
 	var deploymentParams map[string]any
 	var deploymentSource string
+	defaultTargetPort := 80
+	// container.v1 uses default target port 8080
+	if r.Type == "container.v1" {
+		defaultTargetPort = 8080
+	}
 	if r.Deployment != nil {
 		deploymentParams = r.Deployment.Params
 		deploymentSource = filepath.Base(*r.Deployment.Path)
 	}
 	bc := &genBuildContainer{
-		Entrypoint:       r.Entrypoint,
-		Args:             r.Args,
-		Env:              r.Env,
-		Bindings:         r.Bindings,
-		Volumes:          r.Volumes,
-		DeploymentParams: deploymentParams,
-		DeploymentSource: deploymentSource,
-		BindMounts:       r.BindMounts,
+		Entrypoint:        r.Entrypoint,
+		Args:              r.Args,
+		Env:               r.Env,
+		Bindings:          r.Bindings,
+		Volumes:           r.Volumes,
+		DeploymentParams:  deploymentParams,
+		DeploymentSource:  deploymentSource,
+		BindMounts:        r.BindMounts,
+		DefaultTargetPort: defaultTargetPort,
 	}
 
 	// container.v0 and container.v1+pre-build image
@@ -1149,16 +1118,6 @@ type ingressDetails struct {
 
 func (b *infraGenerator) compileIngress() error {
 	result := make(map[string]ingressDetails)
-	for name, container := range b.containers {
-		ingress, bindingsFromIngress, err := buildAcaIngress(container.Bindings, 80)
-		if err != nil {
-			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
-		}
-		result[name] = ingressDetails{
-			ingress:         ingress,
-			ingressBindings: bindingsFromIngress,
-		}
-	}
 	for name, docker := range b.dockerfiles {
 		ingress, bindingsFromIngress, err := buildAcaIngress(docker.Bindings, 80)
 		if err != nil {
@@ -1180,7 +1139,7 @@ func (b *infraGenerator) compileIngress() error {
 		}
 	}
 	for name, bc := range b.buildContainers {
-		ingress, bindingsFromIngress, err := buildAcaIngress(bc.Bindings, 8080)
+		ingress, bindingsFromIngress, err := buildAcaIngress(bc.Bindings, bc.DefaultTargetPort)
 		if err != nil {
 			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
 		}
@@ -1201,57 +1160,6 @@ func (b *infraGenerator) Compile() error {
 	// All services's ingress must be compiled before resolving the environment variables below.
 	if err := b.compileIngress(); err != nil {
 		return err
-	}
-
-	for resourceName, container := range b.containers {
-		var bMounts []*BindMount
-		if len(container.BindMounts) > 0 {
-			// must grant write role to the Storage File Share to upload data
-			b.bicepContext.RequiresPrincipalId = true
-		}
-		for count, bm := range container.BindMounts {
-			bMounts = append(bMounts, &BindMount{
-				// adding a name using the index. This name is used for naming the resource in bicep.
-				Name: fmt.Sprintf("bm%d", count),
-				// mount bind is not supported across devices, as it depends on a local path which might be missing in
-				// another device.
-				Source:   bm.Source,
-				Target:   bm.Target,
-				ReadOnly: bm.ReadOnly,
-			})
-		}
-
-		cs := genContainerApp{
-			Volumes:    container.Volumes,
-			BindMounts: bMounts,
-		}
-
-		b.bicepContext.ContainerApps[resourceName] = cs
-
-		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:            resourceName,
-			Env:             make(map[string]string),
-			Secrets:         make(map[string]string),
-			KeyVaultSecrets: make(map[string]string),
-			DeployParams:    make(map[string]string),
-			Ingress:         b.allServicesIngress[resourceName].ingress,
-			Volumes:         container.Volumes,
-			BindMounts:      bMounts,
-			DeploySource:    container.DeploymentSource,
-		}
-
-		if err := b.buildEnvBlock(container.Env, &projectTemplateCtx); err != nil {
-			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
-		}
-
-		if err := b.buildArgsBlock(container.Args, &projectTemplateCtx); err != nil {
-			return err
-		}
-		if err := b.buildDeployBlock(container.DeploymentParams, &projectTemplateCtx); err != nil {
-			return err
-		}
-
-		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
 	}
 
 	for resourceName, bc := range b.buildContainers {
@@ -1288,6 +1196,7 @@ func (b *infraGenerator) Compile() error {
 			Ingress:         b.allServicesIngress[resourceName].ingress,
 			Volumes:         bc.Volumes,
 			DeploySource:    bc.DeploymentSource,
+			BindMounts:      bMounts,
 		}
 
 		if err := b.buildEnvBlock(bc.Env, &projectTemplateCtx); err != nil {
@@ -1548,13 +1457,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 					return "", fmt.Errorf("malformed binding expression, expected "+
 						"volumes.<index>.<property> but was: %s", v)
 				}
-				var volName string
-				if targetType == "container.v0" {
-					volName = b.containers[resource].Volumes[indexInt].Name
-				} else if targetType == "container.v1" {
-					volName = b.buildContainers[resource].Volumes[indexInt].Name
-				}
-
+				volName := b.buildContainers[resource].Volumes[indexInt].Name
 				return fmt.Sprintf(
 						`{{ .Env.SERVICE_%s_VOLUME_%s_NAME }}`,
 						scaffold.AlphaSnakeUpper(resource),
@@ -1582,10 +1485,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		if targetType == "project.v0" || targetType == "project.v1" {
 			bindings := b.projects[resource].Bindings
 			binding, has = bindings.Get(bindingName)
-		} else if targetType == "container.v0" {
-			bindings := b.containers[resource].Bindings
-			binding, has = bindings.Get(bindingName)
-		} else if targetType == "container.v1" {
+		} else if targetType == "container.v0" || targetType == "container.v1" {
 			bindings := b.buildContainers[resource].Bindings
 			binding, has = bindings.Get(bindingName)
 		} else if targetType == "dockerfile.v0" {

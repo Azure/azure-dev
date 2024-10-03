@@ -61,16 +61,17 @@ type genDockerfile struct {
 }
 
 type genBuildContainer struct {
-	Image            string
-	Entrypoint       string
-	Args             []string
-	Env              map[string]string
-	Bindings         custommaps.WithOrder[Binding]
-	Volumes          []*Volume
-	Build            *genBuildContainerDetails
-	DeploymentParams map[string]any
-	DeploymentSource string
-	BindMounts       []*BindMount
+	Image             string
+	Entrypoint        string
+	Args              []string
+	Env               map[string]string
+	Bindings          custommaps.WithOrder[Binding]
+	Volumes           []*Volume
+	Build             *genBuildContainerDetails
+	DeploymentParams  map[string]any
+	DeploymentSource  string
+	BindMounts        []*BindMount
+	DefaultTargetPort int
 }
 
 type genBuildContainerDetails struct {

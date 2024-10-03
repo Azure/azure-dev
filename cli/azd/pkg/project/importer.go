@@ -20,9 +20,6 @@ type ImportManager struct {
 	dotNetImporter *DotNetImporter
 }
 
-type SynthOptions struct {
-}
-
 func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,
@@ -183,9 +180,7 @@ func pathHasModule(path, module string) (bool, error) {
 
 }
 
-func (im *ImportManager) SynthAllInfrastructure(
-	ctx context.Context, projectConfig *ProjectConfig, options *SynthOptions,
-) (fs.FS, error) {
+func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if len(projectConfig.Services) != 1 {

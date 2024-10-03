@@ -313,7 +313,11 @@ func Start(t *testing.T, opts ...Options) *Session {
 		Log: log,
 		HttpHandler: &recorderProxy{
 			Log: log,
-			Panic: func(msg string) {
+			Panic: func(req *http.Request, msg string) {
+				if strings.Contains(req.URL.Host, "applicationinsights.azure.com") {
+					return
+				}
+
 				t.Fatal("recorderProxy: " + msg)
 			},
 			Recorder: vcr,

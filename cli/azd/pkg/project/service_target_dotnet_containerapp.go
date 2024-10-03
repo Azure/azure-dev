@@ -387,7 +387,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			at.deploymentService.GenerateDeploymentName(serviceConfig.Name),
 			*armTemplate,
 			armParams,
-			nil)
+			nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
 		}

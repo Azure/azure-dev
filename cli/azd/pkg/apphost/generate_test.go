@@ -36,6 +36,9 @@ var aspireContainerManifest []byte
 //go:embed testdata/aspire-container-args.json
 var aspireContainerArgsManifest []byte
 
+//go:embed testdata/aspire-projectv1.json
+var aspireProjectV1Manifet []byte
+
 // mockPublishManifest mocks the dotnet run --publisher manifest command to return a fixed manifest.
 func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[string]string) {
 	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -484,4 +487,56 @@ func TestHasInputs(t *testing.T) {
 			assert.Equal(t, tt.result, hasInputs(tt.value))
 		})
 	}
+}
+
+func TestAspireProjectV1Generation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	filesFromManifest := make(map[string]string)
+	ignoredBicepContent := "bicep file contents"
+	filesFromManifest["test.bicep"] = ignoredBicepContent
+	filesFromManifest["storage.module.bicep"] = ignoredBicepContent
+	filesFromManifest["cache.module.bicep"] = ignoredBicepContent
+	filesFromManifest["api.module.bicep"] = ignoredBicepContent
+	filesFromManifest["account.module.bicep"] = ignoredBicepContent
+	mockPublishManifest(mockCtx, aspireProjectV1Manifet, filesFromManifest)
+	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
+	require.NoError(t, err)
+
+	for _, name := range []string{"api", "cache"} {
+		t.Run(name, func(t *testing.T) {
+			tmpl, mType, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
+			require.Equal(t, ContainerAppManifestTypeBicep, mType)
+			require.NoError(t, err)
+			snapshot.SnapshotT(t, tmpl)
+		})
+	}
+
+	files, err := BicepTemplate("main", m, AppHostOptions{})
+	require.NoError(t, err)
+
+	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		contents, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+		t.Run(path, func(t *testing.T) {
+			snapshot.SnapshotT(t, string(contents))
+		})
+		return nil
+	})
+	require.NoError(t, err)
+
 }

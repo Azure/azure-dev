@@ -474,7 +474,6 @@ func GenerateProjectArtifacts(
 
 type infraGenerator struct {
 	dapr              map[string]genDapr
-	dockerfiles       map[string]genDockerfile
 	projects          map[string]genProject
 	connectionStrings map[string]string
 	// keeps the value from value.v0 resources if provided.
@@ -484,7 +483,8 @@ type infraGenerator struct {
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
 	allServicesIngress           map[string]ingressDetails
-	buildContainers              map[string]genBuildContainer
+	// works for container.v0, container.v1 and dockerfile.v0
+	buildContainers map[string]genBuildContainer
 }
 
 func newInfraGenerator() *infraGenerator {
@@ -500,7 +500,6 @@ func newInfraGenerator() *infraGenerator {
 			OutputSecretParameters:          make(map[string]genOutputParameter),
 		},
 		dapr:                         make(map[string]genDapr),
-		dockerfiles:                  make(map[string]genDockerfile),
 		projects:                     make(map[string]genProject),
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
@@ -581,14 +580,16 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.connectionStrings[name] = *comp.ConnectionString
 		}
 
-		var deploymentParams map[string]any
-		var deploymentSource string
-		if comp.Deployment != nil {
-			deploymentParams = comp.Deployment.Params
-			deploymentSource = filepath.Base(*comp.Deployment.Path)
-		}
 		switch comp.Type {
-		case "project.v0", "project.v1":
+		case "project.v0":
+			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, nil, "")
+		case "project.v1":
+			var deploymentParams map[string]any
+			var deploymentSource string
+			if comp.Deployment != nil {
+				deploymentParams = comp.Deployment.Params
+				deploymentSource = filepath.Base(*comp.Deployment.Path)
+			}
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, deploymentParams, deploymentSource)
 		case "container.v0":
 			err := b.addBuildContainer(name, comp)
@@ -611,9 +612,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return err
 			}
 		case "dockerfile.v0":
-			b.addDockerfile(
-				name, *comp.Path, *comp.Context, comp.Env, comp.Bindings, comp.BuildArgs,
-				comp.Args, deploymentParams, deploymentSource)
+			err := b.addBuildContainer(name, comp)
+			if err != nil {
+				return err
+			}
 		case "parameter.v0":
 			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
@@ -1084,26 +1086,6 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 	b.addDaprRedisComponent(name, DaprStateStoreComponentType)
 }
 
-func (b *infraGenerator) addDockerfile(
-	name string, path string, context string, env map[string]string,
-	bindings custommaps.WithOrder[Binding], buildArgs map[string]string,
-	args []string, deploymentParams map[string]any, deploymentSource string,
-) {
-	b.requireCluster()
-	b.requireContainerRegistry()
-
-	b.dockerfiles[name] = genDockerfile{
-		Path:             path,
-		Context:          context,
-		Env:              env,
-		Bindings:         bindings,
-		BuildArgs:        buildArgs,
-		Args:             args,
-		DeploymentParams: deploymentParams,
-		DeploymentSource: deploymentSource,
-	}
-}
-
 // singleQuotedStringRegex is a regular expression pattern used to match single-quoted strings.
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
@@ -1118,16 +1100,6 @@ type ingressDetails struct {
 
 func (b *infraGenerator) compileIngress() error {
 	result := make(map[string]ingressDetails)
-	for name, docker := range b.dockerfiles {
-		ingress, bindingsFromIngress, err := buildAcaIngress(docker.Bindings, 80)
-		if err != nil {
-			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
-		}
-		result[name] = ingressDetails{
-			ingress:         ingress,
-			ingressBindings: bindingsFromIngress,
-		}
-	}
 	for name, project := range b.projects {
 		ingress, bindingsFromIngress, err := buildAcaIngress(project.Bindings, 8080)
 		if err != nil {
@@ -1208,32 +1180,6 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		if err := b.buildDeployBlock(bc.DeploymentParams, &projectTemplateCtx); err != nil {
-			return err
-		}
-
-		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
-	}
-
-	for resourceName, docker := range b.dockerfiles {
-		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:            resourceName,
-			Env:             make(map[string]string),
-			Secrets:         make(map[string]string),
-			KeyVaultSecrets: make(map[string]string),
-			DeployParams:    make(map[string]string),
-			Ingress:         b.allServicesIngress[resourceName].ingress,
-			DeploySource:    docker.DeploymentSource,
-		}
-
-		if err := b.buildEnvBlock(docker.Env, &projectTemplateCtx); err != nil {
-			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
-		}
-
-		if err := b.buildArgsBlock(docker.Args, &projectTemplateCtx); err != nil {
-			return err
-		}
-
-		if err := b.buildDeployBlock(docker.DeploymentParams, &projectTemplateCtx); err != nil {
 			return err
 		}
 
@@ -1485,11 +1431,8 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		if targetType == "project.v0" || targetType == "project.v1" {
 			bindings := b.projects[resource].Bindings
 			binding, has = bindings.Get(bindingName)
-		} else if targetType == "container.v0" || targetType == "container.v1" {
+		} else if targetType == "container.v0" || targetType == "container.v1" || targetType == "dockerfile.v0" {
 			bindings := b.buildContainers[resource].Bindings
-			binding, has = bindings.Get(bindingName)
-		} else if targetType == "dockerfile.v0" {
-			bindings := b.dockerfiles[resource].Bindings
 			binding, has = bindings.Get(bindingName)
 		}
 

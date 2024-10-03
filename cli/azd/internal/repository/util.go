@@ -49,10 +49,6 @@ func isAsciiAlphaNumeric(r rune) bool {
 	return ('0' <= r && r <= '9') || ('A' <= r && r <= 'Z') || ('a' <= r && r <= 'z')
 }
 
-func isUpperAlphaNumeric(r rune) bool {
-	return ('0' <= r && r <= '9') || ('A' <= r && r <= 'Z')
-}
-
 func isSeparator(r rune) bool {
 	return r == '-' || r == '_' || r == '.'
 }

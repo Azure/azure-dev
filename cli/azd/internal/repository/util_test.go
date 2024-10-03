@@ -49,7 +49,9 @@ func TestLabelNameEdgeCases(t *testing.T) {
 		{"SingleCharacter", "A", "a"},
 		{"TwoCharacters", "Ab", "ab"},
 		{"StartEndHyphens", "-abc-", "abc"},
-		{"LongString", "ThisIsOneVeryLongStringThatExceedsTheSixtyThreeCharacterLimitForRFC1123LabelNames", "this-is-one-very-long-string-that-exceeds-the-sixty-three-character-limit-for-rfc1123-label-names"},
+		{"LongString",
+			"ThisIsOneVeryLongStringThatExceedsTheSixtyThreeCharacterLimitForRFC1123LabelNames",
+			"this-is-one-very-long-string-that-exceeds-the-sixty-three-character-limit-for-rfc1123-label-names"},
 	}
 
 	for _, tt := range tests {

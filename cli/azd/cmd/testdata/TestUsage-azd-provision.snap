@@ -7,13 +7,15 @@ This command prompts you to input the following:
   • Azure subscription: The Azure subscription where your resources will be deployed.
 
 Usage
-  azd provision [flags]
+  azd provision <service> [flags]
 
 Flags
+        --all                	: Deploys all services that are listed in azure.yaml
         --docs               	: Opens the documentation for azd provision in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for provision.
         --no-state           	: Do not use latest Deployment State (bicep only).
+        --platform           	: Deploys the root platform infrastructure
         --preview            	: Preview changes to Azure resources.
 
 Global Flags

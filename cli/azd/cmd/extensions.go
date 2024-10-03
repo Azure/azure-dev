@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// bindExtensions binds the extensions to the root command
 func bindExtensions(
 	serviceLocator ioc.ServiceLocator,
 	root *actions.ActionDescriptor,
@@ -34,6 +35,7 @@ func bindExtensions(
 	return nil
 }
 
+// bindExtension binds the extension to the root command
 func bindExtension(
 	serviceLocator ioc.ServiceLocator,
 	root *actions.ActionDescriptor,
@@ -61,6 +63,7 @@ func bindExtension(
 	return nil
 }
 
+// invokeExtensionHelp invokes the help for the extension
 func invokeExtensionHelp(console input.Console, commandRunner exec.CommandRunner, extensionManager *extensions.Manager) {
 	extensionName := os.Args[1]
 	extension, err := extensionManager.Get(extensionName)

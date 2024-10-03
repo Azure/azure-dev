@@ -135,7 +135,7 @@ const (
 	CmdGroupManage     RootLevelHelpOption = "Manage Azure resources and app deployments"
 	CmdGroupMonitor    RootLevelHelpOption = "Monitor, test and release your app"
 	CmdGroupAbout      RootLevelHelpOption = "About, help and upgrade"
-	CmdGroupExtensions RootLevelHelpOption = "Extensions"
+	CmdGroupExtensions RootLevelHelpOption = "Installed Extensions"
 )
 
 func GetGroupAnnotations() []RootLevelHelpOption {

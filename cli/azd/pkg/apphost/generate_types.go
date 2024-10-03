@@ -73,6 +73,12 @@ type genBuildContainerDetails struct {
 	Secrets    map[string]ContainerV1BuildSecrets
 }
 
+type genFunction struct {
+	Path     string
+	Env      map[string]string
+	Bindings custommaps.WithOrder[Binding]
+}
+
 type genProject struct {
 	Path     string
 	Env      map[string]string
@@ -122,9 +128,11 @@ type genBicepTemplateContext struct {
 	HasContainerEnvironment         bool
 	HasDaprStore                    bool
 	HasLogAnalyticsWorkspace        bool
+	HasAppInsights                  bool
 	RequiresPrincipalId             bool
 	RequiresStorageVolume           bool
 	HasBindMounts                   bool
+	Functions                       []string
 	KeyVaults                       map[string]genKeyVault
 	ContainerAppEnvironmentServices map[string]genContainerAppEnvironmentServices
 	ContainerApps                   map[string]genContainerApp

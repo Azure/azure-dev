@@ -147,7 +147,6 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
-	platform := DefaultPlatform
 	imageName := "IMAGE_NAME"
 	buildArgs := []string{"foo=bar"}
 
@@ -167,7 +166,6 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 		require.Equal(t, []string{
 			"build",
 			"-f", dockerFile,
-			"--platform", platform,
 			"-t", imageName,
 			"--build-arg", buildArgs[0],
 			dockerContext,
@@ -197,7 +195,6 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
-	platform := DefaultPlatform
 	imageName := "IMAGE_NAME"
 	buildArgs := []string{}
 
@@ -217,7 +214,6 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 		require.Equal(t, []string{
 			"build",
 			"-f", dockerFile,
-			"--platform", platform,
 			"-t", imageName,
 			dockerContext,
 		}, argsNoFile)
@@ -246,7 +242,6 @@ func Test_DockerBuildArgsMultiple(t *testing.T) {
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
-	platform := DefaultPlatform
 	imageName := "IMAGE_NAME"
 	buildArgs := []string{"foo=bar", "bar=baz"}
 
@@ -266,7 +261,6 @@ func Test_DockerBuildArgsMultiple(t *testing.T) {
 		require.Equal(t, []string{
 			"build",
 			"-f", dockerFile,
-			"--platform", platform,
 			"-t", imageName,
 			"--build-arg", buildArgs[0],
 			"--build-arg", buildArgs[1],

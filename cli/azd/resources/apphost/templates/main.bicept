@@ -67,6 +67,9 @@ output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 {{if .HasLogAnalyticsWorkspace -}}
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
 {{end -}}
+{{if .HasAppInsights -}}
+output AZURE_APP_INSIGHTS_CONNECTION_STRING string = resources.outputs.AZURE_APP_INSIGHTS_CONNECTION_STRING
+{{end -}}
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
@@ -75,6 +78,9 @@ output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.A
 output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+{{end -}}
+{{range $name := .Functions -}}
+output SERVICE_{{alphaSnakeUpper $name}}_WEBJOBS_STORAGE_NAME string = resources.outputs.SERVICE_{{alphaSnakeUpper $name}}_WEBJOBS_STORAGE_NAME
 {{end -}}
 {{range $name, $value := .ContainerApps -}}
 {{range $volume := $value.Volumes -}}

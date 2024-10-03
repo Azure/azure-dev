@@ -571,10 +571,6 @@ func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOpt
 		options.Path = "./Dockerfile"
 	}
 
-	if options.Platform == "" {
-		options.Platform = docker.DefaultPlatform
-	}
-
 	if options.Context == "" {
 		options.Context = "."
 	}

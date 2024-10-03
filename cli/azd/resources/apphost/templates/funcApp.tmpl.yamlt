@@ -1,0 +1,39 @@
+{{define "funcApp.tmpl.yaml" -}}
+api-version: "2023-12-01"
+location: {{ "{{ .Env.AZURE_LOCATION }}" }}
+kind: functionapp,linux,container,azurecontainerapps
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    ? {{ `"{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}"` }}
+    : {}
+properties:
+  workloadProfileName: Consumption
+  managedEnvironmentId: {{ "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}" }}
+  siteConfig:
+    linuxFxVersion: {{ "DOCKER|{{ .Image }}" }}
+    acrUseManagedIdentityCreds: true
+    acrUserManagedIdentityID: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
+    appSettings:
+      - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+        value: {{ "{{ .Env.AZURE_APP_INSIGHTS_CONNECTION_STRING }}" }}
+      - name: AZURE_CLIENT_ID
+        value: {{ "{{ .Env.MANAGED_IDENTITY_CLIENT_ID }}" }}    
+      - name: DOCKER_REGISTRY_SERVER_URL
+        value: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
+      - name: AzureWebJobsStorage__credential
+        value: managedidentity
+      - name: AzureWebJobsStorage__clientId
+        value: {{ "{{ .Env.MANAGED_IDENTITY_CLIENT_ID }}" }}
+      - name: AzureWebJobsStorage__accountName
+        value: {{ "{{ .Env.SERVICE_" }}{{ alphaSnakeUpper $.Name}}_WEBJOBS_STORAGE{{ "_NAME }} "}}
+      - name: FUNCTIONS_EXTENSION_VERSION
+        value: "~4"
+{{- range $name, $value := .Env}}
+      - name: {{$name}}
+        value: {{$value}}
+{{- end}}        
+tags:
+  azd-service-name: {{ .Name }}
+  aspire-resource-name: {{ .Name }}
+{{ end}}

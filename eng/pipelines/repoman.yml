@@ -96,19 +96,19 @@ extends:
                   Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
                 displayName: Set Repoman Content
 
-              - task: PowerShell@2
-                displayName: Post PR comment
-                inputs:
-                  pwsh: true
-                  targetType: filePath
-                  filePath: ./eng/scripts/Update-PRComment.ps1
-                  arguments: >-
-                    -Repo 'azure/azure-dev'
-                    -PRNumber '$(PRNumber)'
-                    -BodyFile '$(CommentBodyFile)'
-                    -Tag '<!-- #comment-repoman-generate -->'
-                env:
-                  GH_TOKEN: $(azuresdk-github-pat)
+              # - task: PowerShell@2
+              #   displayName: Post PR comment
+              #   inputs:
+              #     pwsh: true
+              #     targetType: filePath
+              #     filePath: ./eng/scripts/Update-PRComment.ps1
+              #     arguments: >-
+              #       -Repo 'azure/azure-dev'
+              #       -PRNumber '$(PRNumber)'
+              #       -BodyFile '$(CommentBodyFile)'
+              #       -Tag '<!-- #comment-repoman-generate -->'
+              #   env:
+              #     GH_TOKEN: $(azuresdk-github-pat)
 
           - template: /eng/pipelines/templates/jobs/run-template-tests.yml
             parameters:

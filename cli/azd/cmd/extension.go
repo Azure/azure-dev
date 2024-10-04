@@ -2,14 +2,12 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -21,8 +19,9 @@ import (
 func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("extension", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "extension",
-			Short: "Manage azd extensions.",
+			Use:     "extension",
+			Aliases: []string{"ext"},
+			Short:   "Manage azd extensions.",
 		},
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupConfig,
@@ -57,8 +56,7 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	group.Add("install", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "install <extension-name>",
-			Short: "Install an extension.",
-			Args:  cobra.ExactArgs(1),
+			Short: "Installs specified extensions.",
 		},
 		ActionResolver: newExtensionInstallAction,
 		FlagsResolver:  newExtensionInstallFlags,
@@ -68,18 +66,17 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	group.Add("uninstall", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "uninstall <extension-name>",
-			Short: "Uninstall an extension.",
-			Args:  cobra.ExactArgs(1),
+			Short: "Uninstall specified extensions.",
 		},
 		ActionResolver: newExtensionUninstallAction,
+		FlagsResolver:  newExtensionUninstallFlags,
 	})
 
 	// azd extension upgrade <extension-name>
 	group.Add("upgrade", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "upgrade <extension-name>",
-			Short: "Upgrade an installed extension.",
-			Args:  cobra.MaximumNArgs(1),
+			Short: "Upgrade specified extensions.",
 		},
 		ActionResolver: newExtensionUpgradeAction,
 		FlagsResolver:  newExtensionUpgradeFlags,
@@ -330,92 +327,143 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		TitleNote: "Installs the specified extension onto the local machine",
 	})
 
-	extensionName := a.args[0]
+	extensionNames := a.args
+	if len(extensionNames) == 0 {
+		return nil, fmt.Errorf("must specify an extension name")
+	}
 
-	stepMessage := fmt.Sprintf("Installing extension %s", extensionName)
-	a.console.ShowSpinner(ctx, stepMessage, input.Step)
+	if len(extensionNames) > 1 && a.flags.version != "" {
+		return nil, fmt.Errorf("cannot specify --version flag when using multiple extensions")
+	}
 
-	extensionVersion, err := a.extensionManager.Install(ctx, extensionName, a.flags.version)
-	if err != nil {
-		a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-
-		if errors.Is(err, extensions.ErrExtensionInstalled) {
-			return nil, &internal.ErrorWithSuggestion{
-				Err:        err,
-				Suggestion: fmt.Sprint("Run 'azd extension upgrade ", extensionName, "' to upgrade the extension."),
-			}
+	for index, extensionName := range extensionNames {
+		if index > 0 {
+			a.console.Message(ctx, "")
 		}
 
-		return nil, fmt.Errorf("failed to install extension: %w", err)
+		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionName))
+		a.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		installed, err := a.extensionManager.GetInstalled(extensionName)
+		if err == nil {
+			stepMessage += output.WithGrayFormat(" (version %s already installed)", installed.Version)
+			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			continue
+		}
+
+		extensionVersion, err := a.extensionManager.Install(ctx, extensionName, a.flags.version)
+		if err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, fmt.Errorf("failed to install extension: %w", err)
+		}
+
+		stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
+		a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
+		a.console.Message(ctx, fmt.Sprintf("      %s %s", output.WithBold("Usage: "), extensionVersion.Usage))
+		a.console.Message(ctx, output.WithBold("      Examples:"))
+
+		for _, example := range extensionVersion.Examples {
+			a.console.Message(ctx, "        "+output.WithHighLightFormat(example))
+		}
 	}
-
-	stepMessage += fmt.Sprintf(" (%s)", extensionVersion.Version)
-	a.console.StopSpinner(ctx, stepMessage, input.StepDone)
-
-	lines := []string{
-		fmt.Sprintf("Usage: %s", extensionVersion.Usage),
-		"\nExamples:",
-	}
-
-	lines = append(lines, extensionVersion.Examples...)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "Extension installed successfully",
-			FollowUp: strings.Join(lines, "\n"),
+			Header: "Extension(s) installed successfully",
 		},
 	}, nil
 }
 
 // azd extension uninstall
+type extensionUninstallFlags struct {
+	all bool
+}
+
+func newExtensionUninstallFlags(cmd *cobra.Command) *extensionUninstallFlags {
+	flags := &extensionUninstallFlags{}
+	cmd.Flags().BoolVar(&flags.all, "all", false, "Uninstall all installed extensions")
+
+	return flags
+}
+
 type extensionUninstallAction struct {
 	args             []string
+	flags            *extensionUninstallFlags
 	console          input.Console
 	extensionManager *extensions.Manager
 }
 
 func newExtensionUninstallAction(
 	args []string,
+	flags *extensionUninstallFlags,
 	console input.Console,
 	extensionManager *extensions.Manager,
 ) actions.Action {
 	return &extensionUninstallAction{
 		args:             args,
+		flags:            flags,
 		console:          console,
 		extensionManager: extensionManager,
 	}
 }
 
 func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(a.args) > 0 && a.flags.all {
+		return nil, fmt.Errorf("cannot specify both an extension name and --all flag")
+	}
+
+	if len(a.args) == 0 && !a.flags.all {
+		return nil, fmt.Errorf("must specify an extension name or use --all flag")
+	}
+
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Uninstall an azd extension (azd extension uninstall)",
 		TitleNote: "Uninstalls the specified extension from the local machine",
 	})
 
-	extensionName := a.args[0]
-	stepMessage := fmt.Sprintf("Uninstalling extension %s", extensionName)
+	extensionNames := a.args
+	if a.flags.all {
+		installed, err := a.extensionManager.ListInstalled()
+		if err != nil {
+			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
+		}
 
-	installed, err := a.extensionManager.GetInstalled(extensionName)
-	if err != nil {
+		extensionNames = make([]string, 0, len(installed))
+		for name := range installed {
+			extensionNames = append(extensionNames, name)
+		}
+	}
+
+	if len(extensionNames) == 0 {
+		return nil, fmt.Errorf("no extensions to uninstall")
+	}
+
+	for _, extensionName := range extensionNames {
+		stepMessage := fmt.Sprintf("Uninstalling %s extension", output.WithHighLightFormat(extensionName))
+
+		installed, err := a.extensionManager.GetInstalled(extensionName)
+		if err != nil {
+			a.console.ShowSpinner(ctx, stepMessage, input.Step)
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+
+			return nil, fmt.Errorf("failed to get installed extension: %w", err)
+		}
+
+		stepMessage += fmt.Sprintf(" (%s)", installed.Version)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
-		a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 
-		return nil, fmt.Errorf("failed to get installed extension: %w", err)
+		if err := a.extensionManager.Uninstall(extensionName); err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, fmt.Errorf("failed to uninstall extension: %w", err)
+		}
+
+		a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 	}
-
-	stepMessage += fmt.Sprintf(" (%s)", installed.Version)
-	a.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-	if err := a.extensionManager.Uninstall(extensionName); err != nil {
-		a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-		return nil, fmt.Errorf("failed to uninstall extension: %w", err)
-	}
-
-	a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Extension uninstalled successfully",
+			Header: "Extension(s) uninstalled successfully",
 		},
 	}, nil
 }
@@ -456,13 +504,16 @@ func newExtensionUpgradeAction(
 }
 
 func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	extensionName := ""
-	if len(a.args) > 0 {
-		extensionName = a.args[0]
+	if len(a.args) > 0 && a.flags.all {
+		return nil, fmt.Errorf("cannot specify both an extension name and --all flag")
 	}
 
-	if extensionName != "" && a.flags.all {
-		return nil, fmt.Errorf("cannot specify both an extension name and --all flag")
+	if len(a.args) > 1 && a.flags.version != "" {
+		return nil, fmt.Errorf("cannot specify --version flag when using multiple extensions")
+	}
+
+	if len(a.args) == 0 && !a.flags.all {
+		return nil, fmt.Errorf("must specify an extension name or use --all flag")
 	}
 
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
@@ -470,57 +521,68 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		TitleNote: "Upgrades the specified extensions on the local machine",
 	})
 
-	if extensionName != "" {
-		stepMessage := fmt.Sprintf("Upgrading extension %s", extensionName)
-		a.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-		extensionVersion, err := a.extensionManager.Upgrade(ctx, extensionName, a.flags.version)
-		if err != nil {
-			return nil, fmt.Errorf("failed to upgrade extension: %w", err)
-		}
-
-		stepMessage += fmt.Sprintf(" (%s)", extensionVersion.Version)
-		a.console.StopSpinner(ctx, stepMessage, input.StepDone)
-
-		lines := []string{
-			fmt.Sprintf("%s %s", output.WithBold("Usage: "), extensionVersion.Usage),
-			output.WithBold("\nExamples:"),
-		}
-
-		for _, example := range extensionVersion.Examples {
-			lines = append(lines, "  "+output.WithHighLightFormat(example))
-		}
-
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				Header:   "Extension upgraded successfully",
-				FollowUp: strings.Join(lines, "\n"),
-			},
-		}, nil
-	} else {
+	extensionNames := a.args
+	if a.flags.all {
 		installed, err := a.extensionManager.ListInstalled()
 		if err != nil {
 			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
 		}
 
+		extensionNames = make([]string, 0, len(installed))
 		for name := range installed {
-			stepMessage := fmt.Sprintf("Upgrading extension %s", name)
-			a.console.ShowSpinner(ctx, stepMessage, input.Step)
+			extensionNames = append(extensionNames, name)
+		}
+	}
 
-			extensionVersion, err := a.extensionManager.Upgrade(ctx, name, "")
-			if err != nil {
-				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, fmt.Errorf("failed to upgrade extension %s: %w", name, err)
-			}
+	if len(extensionNames) == 0 {
+		return nil, fmt.Errorf("no extensions to upgrade")
+	}
 
-			stepMessage += fmt.Sprintf(" (%s)", extensionVersion.Version)
-			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+	for index, extensionName := range extensionNames {
+		if index > 0 {
+			a.console.Message(ctx, "")
 		}
 
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				Header: "All extensions upgraded successfully",
-			},
-		}, nil
+		stepMessage := fmt.Sprintf("Upgrading %s extension", output.WithHighLightFormat(extensionName))
+		a.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		installed, err := a.extensionManager.GetInstalled(extensionName)
+		if err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, fmt.Errorf("failed to get installed extension: %w", err)
+		}
+
+		extension, err := a.extensionManager.GetFromRegistry(ctx, extensionName)
+		if err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, fmt.Errorf("failed to get extension %s: %w", extensionName, err)
+		}
+
+		latestVersion := extension.Versions[len(extension.Versions)-1]
+		if latestVersion.Version == installed.Version {
+			stepMessage += output.WithGrayFormat(" (No upgrade available)")
+			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+		} else {
+			extensionVersion, err := a.extensionManager.Upgrade(ctx, extensionName, a.flags.version)
+			if err != nil {
+				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
+			}
+
+			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
+			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
+			a.console.Message(ctx, fmt.Sprintf("      %s %s", output.WithBold("Usage: "), extensionVersion.Usage))
+			a.console.Message(ctx, output.WithBold("      Examples:"))
+
+			for _, example := range extensionVersion.Examples {
+				a.console.Message(ctx, "        "+output.WithHighLightFormat(example))
+			}
+		}
 	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Extensions upgraded successfully",
+		},
+	}, nil
 }

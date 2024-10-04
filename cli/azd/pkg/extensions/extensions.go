@@ -10,7 +10,12 @@ func Initialize(serviceLocator *ioc.NestedContainer) (map[string]*Extension, err
 		return nil, err
 	}
 
-	extensions, err := manager.Initialize()
+	err := manager.Initialize()
+	if err != nil {
+		return nil, err
+	}
+
+	extensions, err := manager.ListInstalled()
 	if err != nil {
 		return nil, err
 	}

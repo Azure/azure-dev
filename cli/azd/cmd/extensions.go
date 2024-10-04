@@ -49,7 +49,7 @@ func bindExtension(
 	}
 
 	cmd.SetHelpFunc(func(c *cobra.Command, s []string) {
-		serviceLocator.Invoke(invokeExtensionHelp)
+		_ = serviceLocator.Invoke(invokeExtensionHelp)
 	})
 
 	root.Add(extension.Name, &actions.ActionDescriptorOptions{
@@ -66,7 +66,7 @@ func bindExtension(
 // invokeExtensionHelp invokes the help for the extension
 func invokeExtensionHelp(console input.Console, commandRunner exec.CommandRunner, extensionManager *extensions.Manager) {
 	extensionName := os.Args[1]
-	extension, err := extensionManager.Get(extensionName)
+	extension, err := extensionManager.GetInstalled(extensionName)
 	if err != nil {
 		fmt.Println("Failed running help")
 	}
@@ -114,7 +114,7 @@ func newExtensionAction(
 func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	extensionName := os.Args[1]
 
-	extension, err := a.extensionManager.Get(extensionName)
+	extension, err := a.extensionManager.GetInstalled(extensionName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension %s: %w", extensionName, err)
 	}

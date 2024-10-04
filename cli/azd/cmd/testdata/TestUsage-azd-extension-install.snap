@@ -1,0 +1,19 @@
+
+Installs specified extensions.
+
+Usage
+  azd extension install <extension-name> [flags]
+
+Flags
+        --docs           	: Opens the documentation for azd extension install in your web browser.
+    -h, --help           	: Gets help for install.
+    -v, --version string 	: The version of the extension to install
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
+

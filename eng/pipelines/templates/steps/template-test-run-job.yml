@@ -74,7 +74,7 @@ steps:
               ARM_CLIENT_ID=$(arm-client-id-test-tenant)
               ARM_CLIENT_SECRET=$(arm-client-secret-test-tenant)
               ARM_TENANT_ID=$(arm-tenant-id-test-tenant)
-              SUBSCRIPTION_ID=$(SubscriptionId)
+              SUBSCRIPTION_ID=$(SubscriptionId-test-tenant)
 
               # Pass in TemplateRunEnvironmentVariables
               $(VARIABLE_LIST)
@@ -86,7 +86,7 @@ steps:
               VALIDATE=$(TemplateName)
               PLAYWRIGHT_REPORTER='list'
               LOCATION=$(AzureLocation)
-              SUBSCRIPTION=$(SubscriptionId)
+              SUBSCRIPTION=$(SubscriptionId-test-tenant)
               ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
               CLEANUP=$(SynchronousCleanup)
 
@@ -126,7 +126,7 @@ steps:
                 --tenant "$(arm-tenant-id-test-tenant)"
 
               # set default sub for az to be the same used by azd
-              az account set --subscription "$(SubscriptionId)"
+              az account set --subscription "$(SubscriptionId-test-tenant)"
 
               # enable alpha features
               azd config set alpha.all on
@@ -143,7 +143,7 @@ steps:
                 -e '$(EnvPrefixName)' \
                 -t '$(TemplateName)' \
                 -b '$(TemplateBranchName)' \
-                -s '$(SubscriptionId)' \
+                -s '$(SubscriptionId-test-tenant)' \
                 -u '$(Build.BuildId)-$(System.JobAttempt)' \
                 -l '$(AzureLocation)' \
                 -p 'list' \

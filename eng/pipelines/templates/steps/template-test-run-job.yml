@@ -122,7 +122,7 @@ steps:
               az login \
                 --service-principal \
                 -u "$(arm-client-id-test-tenant)" \
-                -p "$(arm-client-secret-test-tenant)" \
+                -p="$(arm-client-secret-test-tenant)" \
                 --tenant "$(arm-tenant-id-test-tenant)"
 
               # set default sub for az to be the same used by azd

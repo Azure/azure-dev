@@ -45,6 +45,10 @@ func BicepName(name string) string {
 	return sb.String()
 }
 
+func RemoveDotAndDash(name string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(name, ".", ""), "-", "")
+}
+
 // UpperSnakeAlpha returns a name in upper-snake case alphanumeric name separated only by underscores.
 //
 // Non-alphanumeric characters are discarded, while consecutive separators ('-', '_', and '.') are treated

@@ -1,0 +1,27 @@
+
+Manage azd extensions.
+
+Usage
+  azd extension [command]
+
+Available Commands
+  install  	: Installs specified extensions.
+  list     	: List available extensions.
+  show     	: Show details for a specific extension.
+  uninstall	: Uninstall specified extensions.
+  upgrade  	: Upgrade specified extensions.
+
+Flags
+        --docs 	: Opens the documentation for azd extension in your web browser.
+    -h, --help 	: Gets help for extension.
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Use azd extension [command] --help to view examples and more information about a specific command.
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
+

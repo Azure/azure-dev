@@ -8,6 +8,7 @@ Commands
   Configure and develop your app
     auth     	: Authenticate with Azure.
     config   	: Manage azd configurations (ex: default Azure subscription, location).
+    extension	: Manage azd extensions.
     hooks    	: Develop, test and run hooks for an application. (Beta)
     init     	: Initialize a new application.
     restore  	: Restores the application's dependencies. (Beta)
@@ -25,6 +26,9 @@ Commands
     monitor  	: Monitor a deployed application. (Beta)
     pipeline 	: Manage and configure your deployment pipelines. (Beta)
     show     	: Display information about your app and its resources.
+
+  Installed Extensions
+    
 
   About, help and upgrade
     version  	: Print the version number of Azure Developer CLI.

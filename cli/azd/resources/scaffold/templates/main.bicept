@@ -141,10 +141,9 @@ module mysqlDb './app/db-mysql.bicep' = {
   }
   scope: rg
 }
-
 {{- end}}
-
 {{- range .Services}}
+
 module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
   name: '{{.Name}}'
   params: {
@@ -167,6 +166,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     postgresDatabaseName: postgresDb.outputs.databaseName
     postgresDatabaseHost: postgresDb.outputs.databaseHost
     postgresDatabaseUser: postgresDb.outputs.databaseUser
+    postgresDatabaseId: postgresDb.outputs.databaseId
     postgresDatabasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
     {{- end}}
     {{- if .DbMySql}}
@@ -195,4 +195,8 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
+{{- range .Services}}
+output {{.Name}}_uri string = {{.Name}}.outputs.uri
+{{- end}}
 {{ end}}

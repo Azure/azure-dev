@@ -349,6 +349,8 @@ func analyze(projects []Project) []Project {
 					result = append(result, copiedProject)
 				}
 			}
+		} else {
+			result = append(result, project)
 		}
 	}
 	return result

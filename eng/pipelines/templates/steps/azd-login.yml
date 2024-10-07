@@ -4,6 +4,13 @@ parameters:
   ServiceConnectionId: "3d79cc98-46f2-428c-bdd5-861414f85602"
 
 steps:
+  - bash: |
+      curl --verbose \
+        --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+        --header "Content-Type: application/json" \
+        "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}${SYSTEM_TEAMPROJECT}/_apis/serviceendpoint/endpoints?api-version=7.1"
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
   - pwsh: |
       Get-ChildItem Env: | Sort-Object Name | Format-List
 

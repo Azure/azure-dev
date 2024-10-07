@@ -22,7 +22,7 @@ import (
 
 const (
 	registryCacheFilePath = "registry.cache"
-	extensionRegistryUrl  = "https://raw.githubusercontent.com/wbreza/azd-extensions/refs/heads/main/registry.json"
+	extensionRegistryUrl  = "https://raw.githubusercontent.com/wbreza/azd-extensions/refs/heads/main/registry/registry.json"
 )
 
 var (

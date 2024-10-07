@@ -74,10 +74,8 @@ type BicepProvider struct {
 	ignoreDeploymentState bool
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
-	// prevent resolving parameters multiple times in the same azd run.
-	ensureParamsInMemoryCache azure.ArmParameters
-	keyvaultService           keyvault.KeyVaultService
-	portalUrlBase             string
+	keyvaultService         keyvault.KeyVaultService
+	portalUrlBase           string
 }
 
 // Name gets the name of the infra provider
@@ -601,12 +599,19 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
 	}
+
+	optionsMap, err := convert.ToMap(p.options)
+	if err != nil {
+		return nil, err
+	}
+
 	deployResult, err := p.deployModule(
 		ctx,
 		bicepDeploymentData.Target,
 		bicepDeploymentData.CompiledBicep.RawArmTemplate,
 		bicepDeploymentData.CompiledBicep.Parameters,
 		deploymentTags,
+		optionsMap,
 	)
 	if err != nil {
 		return nil, err
@@ -1036,7 +1041,12 @@ func (p *BicepProvider) destroyDeploymentWithConfirmation(
 			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
 		}
 	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		return deployment.Delete(ctx, progress)
+		optionsMap, err := convert.ToMap(p.options)
+		if err != nil {
+			return err
+		}
+
+		return deployment.Delete(ctx, optionsMap, progress)
 	})
 
 	if err != nil {
@@ -1715,8 +1725,9 @@ func (p *BicepProvider) deployModule(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*azapi.ResourceDeployment, error) {
-	return target.Deploy(ctx, armTemplate, armParameters, tags)
+	return target.Deploy(ctx, armTemplate, armParameters, tags, options)
 }
 
 // Returns either the bicep or bicepparam module file located in the infrastructure root.
@@ -1793,10 +1804,6 @@ func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
-	if p.ensureParamsInMemoryCache != nil {
-		return maps.Clone(p.ensureParamsInMemoryCache), nil
-	}
-
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
@@ -1922,19 +1929,15 @@ func (p *BicepProvider) ensureParameters(
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: value,
 				}
-				configuredParameters[prompt.key] = azure.ArmParameterValue{
-					Value: value,
-				}
 			}
 		}
 	}
 
 	if configModified {
 		if err := p.envManager.Save(ctx, p.env); err != nil {
-			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
+			return nil, fmt.Errorf("saving prompt values: %w", err)
 		}
 	}
-	p.ensureParamsInMemoryCache = maps.Clone(configuredParameters)
 	return configuredParameters, nil
 }
 

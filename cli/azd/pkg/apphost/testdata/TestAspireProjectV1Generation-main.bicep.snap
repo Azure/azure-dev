@@ -12,6 +12,8 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
+@secure()
+param secretparam string
 
 var tags = {
   'azd-env-name': environmentName
@@ -33,11 +35,11 @@ module resources 'resources.bicep' = {
   }
 }
 
-module cosmos 'cosmos/cosmos.module.bicep' = {
-  name: 'cosmos'
+module account 'account/account.module.bicep' = {
+  name: 'account'
   scope: rg
   params: {
-    keyVaultName: resources.outputs.SERVICE_BINDING_KVF2EDECB5_NAME
+    keyVaultName: resources.outputs.SERVICE_BINDING_KV294FC75C_NAME
     location: location
   }
 }
@@ -58,9 +60,9 @@ output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.A
 output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
-output SERVICE_BINDING_KVF2EDECB5_ENDPOINT string = resources.outputs.SERVICE_BINDING_KVF2EDECB5_ENDPOINT
-output SERVICE_BINDING_KVF2EDECB5_NAME string = resources.outputs.SERVICE_BINDING_KVF2EDECB5_NAME
+output SERVICE_CACHE_VOLUME_AZURECONTAINERAPPSAPPHOST8F235654EDCACHEDATA_NAME string = resources.outputs.SERVICE_CACHE_VOLUME_AZURECONTAINERAPPSAPPHOST8F235654EDCACHEDATA_NAME
+output SERVICE_BINDING_KV294FC75C_ENDPOINT string = resources.outputs.SERVICE_BINDING_KV294FC75C_ENDPOINT
+output SERVICE_BINDING_KV294FC75C_NAME string = resources.outputs.SERVICE_BINDING_KV294FC75C_NAME
 output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
-output STORAGE_QUEUEENDPOINT string = storage.outputs.queueEndpoint
-output STORAGE_TABLEENDPOINT string = storage.outputs.tableEndpoint
+output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
 

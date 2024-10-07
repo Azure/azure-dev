@@ -106,6 +106,7 @@ const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
 type AzdMetadata struct {
 	Type               *AzdMetadataType `json:"type,omitempty"`
 	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
+	DefaultValueExpr   *string          `json:"defaultValueExpr,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

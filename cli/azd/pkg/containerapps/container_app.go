@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -63,6 +64,12 @@ type ContainerAppService interface {
 		imageName string,
 		options *ContainerAppOptions,
 	) error
+	GetActiveContainerImage(ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		appName string,
+		options *ContainerAppOptions,
+	) (string, error)
 }
 
 // NewContainerAppService creates a new ContainerAppService
@@ -260,6 +267,36 @@ func (cas *containerAppService) DeployYaml(
 	}
 
 	return nil
+}
+
+// GetActiveContainerImage returns the image name of the active container in the specified container app
+func (cas *containerAppService) GetActiveContainerImage(ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+	options *ContainerAppOptions,
+) (string, error) {
+	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
+	if err != nil {
+		return "", fmt.Errorf("getting container app: %w", err)
+	}
+
+	var containers []map[string]any
+	has, err := containerApp.GetSection(pathTemplateContainers, &containers)
+	if err != nil {
+		return "", fmt.Errorf("getting app containers: %w", err)
+	}
+
+	if !has || len(containers) == 0 {
+		return "", errors.New("no containers found in container app")
+	}
+
+	imageName, ok := containers[0]["image"].(string)
+	if !ok {
+		return "", errors.New("no image found in container app")
+	}
+
+	return imageName, nil
 }
 
 // Adds and activates a new revision to the specified container app

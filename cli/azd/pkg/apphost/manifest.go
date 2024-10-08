@@ -195,6 +195,7 @@ type InputDefaultGenerate struct {
 
 type InputDefault struct {
 	Generate *InputDefaultGenerate `json:"generate,omitempty"`
+	Value    *string               `json:"value,omitempty"`
 }
 
 // ManifestFromAppHost returns the Manifest from the given app host.

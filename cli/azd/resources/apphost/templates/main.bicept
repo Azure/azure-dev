@@ -24,7 +24,7 @@ param principalId string = ''
 {{- if $parameter.Secret }}
 @secure()
 {{- end}}
-param {{bicepParameterName $parameter.Name}} {{$parameter.Type}}
+param {{bicepParameterName $parameter.Name}} {{$parameter.Type}}{{bicepParameterValue $parameter.Value}}
 {{- end}}
 
 var tags = {

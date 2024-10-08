@@ -54,6 +54,8 @@ param noVolume_pas_sw_ord string
 })
 @secure()
 param noVolume_password string
+param param_with_empty_value string = ''
+param param_with_value string = 'default value for param'
 
 var tags = {
   'azd-env-name': environmentName

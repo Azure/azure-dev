@@ -34,6 +34,7 @@ const (
 	pathConfigurationIngressFqdn           = "properties.configuration.ingress.fqdn"
 	pathConfigurationIngressCustomDomains  = "properties.configuration.ingress.customDomains"
 	pathConfigurationIngressStickySessions = "properties.configuration.ingress.stickySessions"
+	pathConfigurationCors                  = "properties.configuration.ingress.corsPolicy"
 )
 
 // ContainerAppService exposes operations for managing Azure Container Apps
@@ -127,6 +128,7 @@ const apiVersionKey = "api-version"
 
 var persistCustomDomainsFeature = alpha.MustFeatureKey("aca.persistDomains")
 var persistIngressSessionAffinity = alpha.MustFeatureKey("aca.persistIngressSessionAffinity")
+var persistCors = alpha.MustFeatureKey("aca.persistCors")
 
 func (cas *containerAppService) persistSettings(
 	ctx context.Context,
@@ -138,8 +140,9 @@ func (cas *containerAppService) persistSettings(
 ) (map[string]any, error) {
 	shouldPersistDomains := cas.alphaFeatureManager.IsEnabled(persistCustomDomainsFeature)
 	shouldPersistIngressSessionAffinity := cas.alphaFeatureManager.IsEnabled(persistIngressSessionAffinity)
+	shouldPersistCors := cas.alphaFeatureManager.IsEnabled(persistCors)
 
-	if !shouldPersistDomains && !shouldPersistIngressSessionAffinity {
+	if !shouldPersistDomains && !shouldPersistIngressSessionAffinity && !shouldPersistCors {
 		return obj, nil
 	}
 
@@ -164,6 +167,15 @@ func (cas *containerAppService) persistSettings(
 		if has {
 			if err := objConfig.Set(pathConfigurationIngressStickySessions, stickySessions); err != nil {
 				return nil, fmt.Errorf("setting sticky sessions: %w", err)
+			}
+		}
+	}
+
+	if shouldPersistCors {
+		cors, has := aca.GetMap(pathConfigurationCors)
+		if has {
+			if err := objConfig.Set(pathConfigurationCors, cors); err != nil {
+				return nil, fmt.Errorf("setting cors: %w", err)
 			}
 		}
 	}

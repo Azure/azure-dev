@@ -136,6 +136,13 @@ func ExecInfra(
 		}
 	}
 
+	if spec.AzureServiceBus != nil {
+		err = Execute(t, "azure-service-bus.bicep", spec.AzureServiceBus, filepath.Join(infraApp, "azure-service-bus.bicep"))
+		if err != nil {
+			return fmt.Errorf("scaffolding service bus: %w", err)
+		}
+	}
+
 	for _, svc := range spec.Services {
 		err = Execute(t, "host-containerapp.bicep", svc, filepath.Join(infraApp, svc.Name+".bicep"))
 		if err != nil {

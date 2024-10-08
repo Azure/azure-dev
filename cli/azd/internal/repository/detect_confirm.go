@@ -42,12 +42,17 @@ const (
 	EntryKindModified EntryKind = "modified"
 )
 
+type Pair struct {
+	first  appdetect.AzureDep
+	second EntryKind
+}
+
 // detectConfirm handles prompting for confirming the detected services and databases
 type detectConfirm struct {
 	// detected services and databases
 	Services  []appdetect.Project
 	Databases map[appdetect.DatabaseDep]EntryKind
-	AzureDeps map[appdetect.AzureDep]EntryKind
+	AzureDeps map[string]Pair
 
 	// the root directory of the project
 	root string
@@ -60,7 +65,7 @@ type detectConfirm struct {
 // Init initializes state from initial detection output
 func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 	d.Databases = make(map[appdetect.DatabaseDep]EntryKind)
-	d.AzureDeps = make(map[appdetect.AzureDep]EntryKind)
+	d.AzureDeps = make(map[string]Pair)
 	d.Services = make([]appdetect.Project, 0, len(projects))
 	d.modified = false
 	d.root = root
@@ -77,8 +82,8 @@ func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 		}
 
 		for _, azureDep := range project.AzureDeps {
-			if _, supported := azureDepMap[azureDep]; supported {
-				d.AzureDeps[azureDep] = EntryKindDetected
+			if _, supported := azureDepMap[azureDep.ResourceDisplay()]; supported {
+				d.AzureDeps[azureDep.ResourceDisplay()] = Pair{azureDep, EntryKindDetected}
 			}
 		}
 	}
@@ -104,8 +109,9 @@ func (d *detectConfirm) captureUsage(
 	}
 
 	azureDepNames := make([]string, 0, len(d.AzureDeps))
-	for azureDep := range d.AzureDeps {
-		azureDepNames = append(azureDepNames, string(azureDep))
+
+	for _, pair := range d.AzureDeps {
+		azureDepNames = append(azureDepNames, pair.first.ResourceDisplay())
 	}
 
 	tracing.SetUsageAttributes(
@@ -250,21 +256,16 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		d.console.Message(ctx, "\n"+output.WithBold("Detected Azure dependencies:")+"\n")
 	}
 	for azureDep, entry := range d.AzureDeps {
-		switch azureDep {
-		case appdetect.AzureStorage:
-			recommendedServices = append(recommendedServices, "Azure Storage")
-		case appdetect.AzureServiceBus:
-			recommendedServices = append(recommendedServices, "Azure Service Bus")
-		}
+		recommendedServices = append(recommendedServices, azureDep)
 
 		status := ""
-		if entry == EntryKindModified {
+		if entry.second == EntryKindModified {
 			status = " " + output.WithSuccessFormat("[Updated]")
-		} else if entry == EntryKindManual {
+		} else if entry.second == EntryKindManual {
 			status = " " + output.WithSuccessFormat("[Added]")
 		}
 
-		d.console.Message(ctx, "  "+color.BlueString(azureDep.Display())+status)
+		d.console.Message(ctx, "  "+color.BlueString(azureDep)+status)
 		d.console.Message(ctx, "")
 	}
 

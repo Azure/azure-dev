@@ -103,10 +103,10 @@ func (i *Initializer) infraSpecFromDetect(
 		}
 	}
 
-	for azureDep := range detect.AzureDeps {
-		infraSpec, err := i.promptForAzureResource(ctx, azureDep, spec)
+	for _, azureDep := range detect.AzureDeps {
+		err := i.promptForAzureResource(ctx, azureDep.first, &spec)
 		if err != nil {
-			return infraSpec, err
+			return scaffold.InfraSpec{}, err
 		}
 	}
 
@@ -155,6 +155,13 @@ func (i *Initializer) infraSpecFromDetect(
 				serviceSpec.DbRedis = &scaffold.DatabaseReference{
 					DatabaseName: "redis",
 				}
+			}
+		}
+
+		for _, azureDep := range svc.AzureDeps {
+			switch azureDep.(type) {
+			case appdetect.AzureDepServiceBus:
+				serviceSpec.AzureServiceBus = spec.AzureServiceBus
 			}
 		}
 		spec.Services = append(spec.Services, serviceSpec)
@@ -219,18 +226,18 @@ func (i *Initializer) infraSpecFromDetect(
 func (i *Initializer) promptForAzureResource(
 	ctx context.Context,
 	azureDep appdetect.AzureDep,
-	spec scaffold.InfraSpec) (scaffold.InfraSpec, error) {
+	spec *scaffold.InfraSpec) error {
 azureDepPrompt:
 	for {
 		azureDepName, err := i.console.Prompt(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Input the name of the Azure dependency (%s)", azureDep.Display()),
+			Message: fmt.Sprintf("Input the name of the Azure dependency (%s)", azureDep.ResourceDisplay()),
 			Help: "Hint: Azure dependency name\n\n" +
 				"Name of the Azure dependency that the app connects to. " +
 				"This dependency will be created after running azd provision or azd up." +
 				"\nYou may be able to skip this step by hitting enter, in which case the dependency will not be created.",
 		})
 		if err != nil {
-			return scaffold.InfraSpec{}, err
+			return err
 		}
 
 		if strings.ContainsAny(azureDepName, " ") {
@@ -241,7 +248,7 @@ azureDepPrompt:
 				Message: fmt.Sprintf("Continue with name '%s'?", azureDepName),
 			})
 			if err != nil {
-				return scaffold.InfraSpec{}, err
+				return err
 			}
 
 			if !confirm {
@@ -256,7 +263,7 @@ azureDepPrompt:
 				Message: fmt.Sprintf("Continue with name '%s'?", azureDepName),
 			})
 			if err != nil {
-				return scaffold.InfraSpec{}, err
+				return err
 			}
 
 			if !confirm {
@@ -264,17 +271,15 @@ azureDepPrompt:
 			}
 		}
 
-		switch azureDep {
-		case appdetect.AzureServiceBus:
-
+		switch azureDep.(type) {
+		case appdetect.AzureDepServiceBus:
 			spec.AzureServiceBus = &scaffold.AzureDepServiceBus{
-				Name: azureDepName,
+				Name:   azureDepName,
+				Queues: azureDep.(appdetect.AzureDepServiceBus).Queues,
 			}
-			break azureDepPrompt
-		case appdetect.AzureStorage:
 			break azureDepPrompt
 		}
 		break azureDepPrompt
 	}
-	return spec, nil
+	return nil
 }

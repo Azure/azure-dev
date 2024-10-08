@@ -38,9 +38,8 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 	appdetect.DbRedis:    {},
 }
 
-var azureDepMap = map[appdetect.AzureDep]struct{}{
-	appdetect.AzureServiceBus: {},
-	appdetect.AzureStorage:    {},
+var azureDepMap = map[string]struct{}{
+	appdetect.AzureDepServiceBus{}.ResourceDisplay(): {},
 }
 
 // InitFromApp initializes the infra directory and project file from the current existing app.

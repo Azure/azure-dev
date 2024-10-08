@@ -132,22 +132,18 @@ func (db DatabaseDep) Display() string {
 	return ""
 }
 
-type AzureDep string
+//type AzureDep string
 
-const (
-	AzureStorage    AzureDep = "storage"
-	AzureServiceBus AzureDep = "servicebus"
-)
+type AzureDep interface {
+	ResourceDisplay() string
+}
 
-func (azureDep AzureDep) Display() string {
-	switch azureDep {
-	case AzureStorage:
-		return "Azure Storage"
-	case AzureServiceBus:
-		return "Azure Service Bus"
-	}
+type AzureDepServiceBus struct {
+	Queues []string
+}
 
-	return ""
+func (a AzureDepServiceBus) ResourceDisplay() string {
+	return "Azure Service Bus"
 }
 
 type Project struct {
@@ -370,9 +366,9 @@ func enrichFromJavaProject(azureYaml javaanalyze.AzureYaml, project *Project) {
 		} else if resource.GetType() == "Redis" {
 			project.DatabaseDeps = append(project.DatabaseDeps, DbRedis)
 		} else if resource.GetType() == "Azure Service Bus" {
-			project.AzureDeps = append(project.AzureDeps, AzureServiceBus)
-		} else if resource.GetType() == "Azure Storage" {
-			project.AzureDeps = append(project.AzureDeps, AzureStorage)
+			project.AzureDeps = append(project.AzureDeps, AzureDepServiceBus{
+				Queues: resource.(*javaanalyze.ServiceBusResource).Queues,
+			})
 		}
 	}
 }

@@ -59,6 +59,7 @@ blockblob
 BOOLSLICE
 BUILDID
 BUILDNUMBER
+buildargs
 buildpacks
 byoi
 cflags

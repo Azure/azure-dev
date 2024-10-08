@@ -21,7 +21,8 @@ func findSpringApplicationProperties(projectPath string) map[string]interface{} 
 	yamlFilePath := projectPath + "/src/main/resources/application.yml"
 	data, err := ioutil.ReadFile(yamlFilePath)
 	if err != nil {
-		log.Fatalf("error reading YAML file: %v", err)
+		log.Printf("failed to read spring application properties: %s", yamlFilePath)
+		return nil
 	}
 
 	// Parse the YAML into a yaml.Node

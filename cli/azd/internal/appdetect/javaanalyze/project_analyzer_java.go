@@ -12,6 +12,7 @@ func Analyze(path string) []AzureYaml {
 	rules := []rule{
 		&ruleService{},
 		&ruleMysql{},
+		&rulePostgresql{},
 		&ruleStorage{},
 		&ruleServiceBusScsb{},
 	}

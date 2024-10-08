@@ -73,6 +73,7 @@ resource dbPasswordKey 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
   }
 }
 
+output databaseId string = database.id
 output databaseHost string = postgreServer.properties.fullyQualifiedDomainName
 output databaseName string = databaseName
 output databaseUser string = databaseUser

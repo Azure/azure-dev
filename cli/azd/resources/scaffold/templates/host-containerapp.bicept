@@ -15,6 +15,7 @@ param cosmosDbConnectionString string
 param postgresDatabaseHost string
 param postgresDatabaseUser string
 param postgresDatabaseName string
+param postgresDatabaseId string
 @secure()
 param postgresDatabasePassword string
 {{- end}}
@@ -127,6 +128,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
           allowedOrigins: union(allowedOrigins, [
             // define additional allowed origins here
           ])
+          allowedMethods: ['GET', 'PUT', 'POST', 'DELETE']
         }
         {{- end}}
       }
@@ -235,10 +237,10 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
     }
   }
 }
-{{- if .DbMySql}}
+{{- if (or .DbMySql .DbPostgres)}}
 
 resource linkerCreatorIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'linkerCreatorIdentity'
+  name: '${name}-linker-creator-identity'
   location: location
 }
 
@@ -252,10 +254,12 @@ resource linkerCreatorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' 
     principalId: linkerCreatorIdentity.properties.principalId
   }
 }
+{{- end}}
+{{- if .DbMySql}}
 
 resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   dependsOn: [ linkerCreatorRole ]
-  name: 'appLinkToMySql'
+  name: '${name}-link-to-mysql'
   location: location
   kind: 'AzureCLI'
   identity: {
@@ -268,6 +272,28 @@ resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
     azCliVersion: '2.63.0'
     timeout: 'PT10M'
     scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection appLinkToMySql --source-id ${app.id} --target-id ${mysqlDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} mysql-identity-id=${mysqlIdentityName} -c main --yes; az tag create --resource-id ${app.id} --tags azd-service-name={{.Name}} '
+    cleanupPreference: 'OnSuccess'
+    retentionInterval: 'P1D'
+  }
+}
+{{- end}}
+{{- if .DbPostgres}}
+
+resource appLinkToPostgres 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  dependsOn: [ linkerCreatorRole ]
+  name: '${name}-link-to-postgres'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${linkerCreatorIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.63.0'
+    timeout: 'PT10M'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create postgres-flexible --connection appLinkToPostgres --source-id ${app.id} --target-id ${postgresDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} -c main --yes; az tag create --resource-id ${app.id} --tags azd-service-name={{.Name}} '
     cleanupPreference: 'OnSuccess'
     retentionInterval: 'P1D'
   }

@@ -150,6 +150,7 @@ module serviceBus './app/azure-service-bus.bicep' = {
     serviceBusNamespaceName: '${abbrs.serviceBusNamespaces}${resourceToken}'
     location: location
     tags: tags
+    keyVaultName: keyVault.outputs.name
   }
   scope: rg
 }
@@ -187,7 +188,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     mysqlIdentityName: mysqlDb.outputs.identityName
     {{- end}}
     {{- if .AzureServiceBus }}
-    azureServiceBusConnectionString: vault.getSecret(serviceBus.outputs.serviceBusConnectionString)
+    azureServiceBusConnectionString: vault.getSecret(serviceBus.outputs.serviceBusConnectionStringKey)
     {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [
@@ -213,6 +214,6 @@ output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
 {{- range .Services}}
-output {{.Name}}_uri string = {{.Name}}.outputs.uri
+output {{bicepName .Name}}_uri string = {{bicepName .Name}}.outputs.uri
 {{- end}}
 {{ end}}

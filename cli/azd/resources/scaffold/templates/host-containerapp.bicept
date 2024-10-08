@@ -158,7 +158,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {{- end}}
         {{- if .AzureServiceBus}}
         {
-          name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTION_STRING'
+          name: 'spring-cloud-azure-servicebus-connection-string'
           value: azureServiceBusConnectionString
         }
         {{- end}}
@@ -204,6 +204,12 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
             {
               name: 'POSTGRES_PORT'
               value: '5432'
+            }
+            {{- end}}
+            {{- if .AzureServiceBus}}
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTION_STRING'
+              secretRef: 'spring-cloud-azure-servicebus-connection-string'
             }
             {{- end}}
             {{- if .Frontend}}

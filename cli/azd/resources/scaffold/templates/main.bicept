@@ -91,7 +91,7 @@ module appsEnv './shared/apps-env.bicep' = {
   }
   scope: rg
 }
-{{- if (or (or .DbCosmosMongo .DbPostgres) .DbMySql)}}
+{{- if (or (or (or .DbCosmosMongo .DbPostgres) .DbMySql) .AzureServiceBus)}}
 
 resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVault.outputs.name
@@ -142,6 +142,20 @@ module mysqlDb './app/db-mysql.bicep' = {
   scope: rg
 }
 {{- end}}
+
+{{- if .AzureServiceBus }}
+module serviceBus './app/azure-service-bus.bicep' = {
+  name: 'serviceBus'
+  params: {
+    serviceBusNamespaceName: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    location: location
+    tags: tags
+    keyVaultName: keyVault.outputs.name
+  }
+  scope: rg
+}
+{{- end}}
+
 {{- range .Services}}
 
 module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
@@ -173,6 +187,9 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     mysqlDatabaseId: mysqlDb.outputs.databaseId
     mysqlIdentityName: mysqlDb.outputs.identityName
     {{- end}}
+    {{- if .AzureServiceBus }}
+    azureServiceBusConnectionString: vault.getSecret(serviceBus.outputs.serviceBusConnectionStringKey)
+    {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [
       {{- range .Frontend.Backends}}
@@ -197,6 +214,6 @@ output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
 {{- range .Services}}
-output {{.Name}}_uri string = {{.Name}}.outputs.uri
+output {{bicepName .Name}}_uri string = {{bicepName .Name}}.outputs.uri
 {{- end}}
 {{ end}}

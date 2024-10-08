@@ -18,7 +18,7 @@ type serviceBusPrompt struct {
 }
 
 func (s *serviceBusPrompt) Type() string {
-	return appdetect.AzureServiceBus.Display()
+	return appdetect.AzureDepServiceBus{}.ResourceDisplay()
 }
 
 func (s *serviceBusPrompt) Properties() map[string]string {

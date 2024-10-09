@@ -23,8 +23,7 @@ param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webServiceName string = ''
 param apimServiceName string = ''
-param apimApiName string = 'todo-api'
-param apimLoggerName string = 'app-insights-logger'
+
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
@@ -125,6 +124,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-sql-db-avm.bicep' = 
     tags: tags
     keyVaultResourceId: keyVault.outputs.resourceId
     principalId: principalId
+    backupPolicyType: 'Periodic'
   }
 }
 
@@ -226,7 +226,7 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
     customProperties: {}
     loggers: [
       {
-        name: apimLoggerName
+        name: 'app-insights-logger'
         credentials: {
           instrumentationKey: applicationInsights.outputs.instrumentationKey
         }
@@ -240,16 +240,16 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
 }
 
 //Configures the API settings for an api app within the Azure API Management (APIM) service.
-module apimApi 'br/public:avm/ptn/azd/apim-api:0.1.0' = {
+module apimApi 'br/public:avm/ptn/azd/apim-api:0.1.0' = if (useAPIM) {
   name: 'apim-api-deployment'
   scope: rg
   params: {
     apiBackendUrl: api.outputs.SERVICE_API_URI
     apiDescription: 'This is a simple Todo API'
     apiDisplayName: 'Simple Todo API'
-    apiName: apimApiName
+    apiName: 'todo-api'
     apiPath: 'todo'
-    name: apim.outputs.name
+    name: useAPIM ? useAPIM ? apim.outputs.name : '' : ''
     webFrontendUrl: web.outputs.SERVICE_WEB_URI
     location: location
     apiAppName: api.outputs.SERVICE_API_NAME

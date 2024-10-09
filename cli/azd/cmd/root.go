@@ -440,6 +440,11 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 
 	var paragraph []string
 	for _, title := range groups {
+		groupCommands := commandGroups[string(title)]
+		if len(groupCommands) == 0 {
+			continue
+		}
+
 		paragraph = append(paragraph, fmt.Sprintf("  %s\n    %s\n",
 			output.WithBold("%s", string(title)),
 			strings.Join(commandGroups[string(title)], "\n    ")))

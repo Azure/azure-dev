@@ -14,7 +14,7 @@
         },
         "ghcr.io/devcontainers/features/azure-cli:1": {},
         "ghcr.io/devcontainers/features/dotnet:2": {},
-        "ghcr.io/devcontainers/features/java:1": {},
+        "ghcr.io/devcontainers/features/java:1.6.0": {},
         "ghcr.io/devcontainers/features/node:1": {},
         "ghcr.io/devcontainers/features/python:1": {},
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {},

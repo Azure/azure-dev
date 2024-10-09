@@ -17,7 +17,7 @@ import (
 func ListAsText(items []string) string {
 	count := len(items)
 	if count < 1 {
-		log.Panic("calling itemsCountAsText() with empty list.")
+		log.Panic("calling ListAsText() with empty list.")
 	}
 
 	if count == 1 {
@@ -25,6 +25,7 @@ func ListAsText(items []string) string {
 	}
 
 	if count == 2 {
+		//nolint:gosec // G602: slice index out of range - false positive, we know the slice has at least 2 elements
 		return fmt.Sprintf("%s and %s", items[0], items[1])
 	}
 

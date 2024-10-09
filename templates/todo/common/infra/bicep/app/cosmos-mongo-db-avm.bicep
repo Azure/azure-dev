@@ -47,7 +47,7 @@ var defaultDatabaseName = 'Todo'
 var actualDatabaseName = !empty(cosmosDatabaseName) ? cosmosDatabaseName : defaultDatabaseName
 
 module cosmos 'br/public:avm/res/document-db/database-account:0.6.0' = {
-  name: 'cosmos'
+  name: 'cosmos-mongo'
   params: {
     locations: [
       {

@@ -197,7 +197,7 @@ func (p *DefaultPrompter) PromptResource(ctx context.Context, options PromptReso
 	choices[0] = fmt.Sprintf("Create a new %s", resourceTypeDisplayName)
 
 	for idx, resource := range resources {
-		parsedResource, err := arm.ParseResourceID(*&resource.Id)
+		parsedResource, err := arm.ParseResourceID(resource.Id)
 		if err != nil {
 			return nil, fmt.Errorf("parsing resource id: %w", err)
 		}

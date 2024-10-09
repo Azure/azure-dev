@@ -11,7 +11,7 @@
 ### Bugs Fixed
 
 - [[4375]](https://github.com/Azure/azure-dev/pull/4375) Enables remote build support for AKS.
-- [[4363]](https://github.com/Azure/azure-dev/pull/4363) Removes `main.parameters.json` caching.
+- [[4363]](https://github.com/Azure/azure-dev/pull/4363) Fix environment variables to be evaluated too early for `main.parameters.json`.
 
 ### Other Changes
 

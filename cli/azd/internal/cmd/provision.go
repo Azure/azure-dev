@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -24,24 +26,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"go.uber.org/multierr"
 )
 
 type ProvisionFlags struct {
+	all                   bool
+	platform              bool
 	noProgress            bool
 	preview               bool
 	ignoreDeploymentState bool
 	global                *internal.GlobalCommandOptions
 	*internal.EnvFlag
 }
-
-const (
-	AINotValid                  = "is not valid according to the validation procedure"
-	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' " +
-		"from kind 'OpenAI'"
-	responsibleAITerms              = "until you agree to Responsible AI terms for this resource"
-	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
-)
 
 func (i *ProvisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.BindNonCommon(local, global)
@@ -62,6 +57,18 @@ func (i *ProvisionFlags) bindCommon(local *pflag.FlagSet, global *internal.Globa
 		"no-state",
 		false,
 		"Do not use latest Deployment State (bicep only).")
+	local.BoolVar(
+		&i.all,
+		"all",
+		false,
+		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
+	local.BoolVar(
+		&i.platform,
+		"platform",
+		false,
+		"Deploys the root platform infrastructure",
+	)
 
 	i.EnvFlag = &internal.EnvFlag{}
 	i.EnvFlag.Bind(local, global)
@@ -89,12 +96,14 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 
 func NewProvisionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "provision",
+		Use:   "provision [<service>]",
 		Short: "Provision the Azure resources for an application.",
+		Args:  cobra.MaximumNArgs(1),
 	}
 }
 
 type ProvisionAction struct {
+	args                []string
 	flags               *ProvisionFlags
 	provisionManager    *provisioning.Manager
 	projectManager      project.ProjectManager
@@ -112,6 +121,7 @@ type ProvisionAction struct {
 }
 
 func NewProvisionAction(
+	args []string,
 	flags *ProvisionFlags,
 	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
@@ -128,6 +138,7 @@ func NewProvisionAction(
 	cloud *cloud.Cloud,
 ) actions.Action {
 	return &ProvisionAction{
+		args:                args,
 		flags:               flags,
 		provisionManager:    provisionManager,
 		projectManager:      projectManager,
@@ -155,21 +166,27 @@ func (p *ProvisionAction) SetFlags(flags *ProvisionFlags) {
 }
 
 func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if p.flags.noProgress {
-		fmt.Fprintln(
-			p.console.Handles().Stderr,
-			//nolint:Lll
-			output.WithWarningFormat(
-				"WARNING: The '--no-progress' flag is deprecated and will be removed in a future release.",
-			),
-		)
+	var targetServiceName string
+	if len(p.args) == 1 {
+		targetServiceName = strings.TrimSpace(p.args[0])
 	}
-	previewMode := p.flags.preview
+
+	if targetServiceName != "" && p.flags.all {
+		return nil, fmt.Errorf("cannot specify both --all and <service>")
+	}
+
+	if targetServiceName != "" && p.flags.platform {
+		return nil, fmt.Errorf("cannot specify both --platform and <service>")
+	}
+
+	if p.flags.platform && p.flags.all {
+		return nil, fmt.Errorf("cannot specify both --platform and --all")
+	}
 
 	// Command title
 	defaultTitle := "Provisioning Azure resources (azd provision)"
 	defaultTitleNote := "Provisioning Azure resources can take some time"
-	if previewMode {
+	if p.flags.preview {
 		defaultTitle = "Previewing Azure resource changes (azd provision --preview)"
 		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
 	}
@@ -179,22 +196,14 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		TitleNote: defaultTitleNote},
 	)
 
+	if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
+		p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
+	}
+
 	startTime := time.Now()
 
 	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
 		return nil, err
-	}
-
-	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = infra.Cleanup() }()
-
-	infraOptions := infra.Options
-	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
-	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
-		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
 	// Get Subscription to Display in Command Title Note
@@ -228,89 +237,103 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
 	}
 
-	var deployResult *provisioning.DeployResult
-	var deployPreviewResult *provisioning.DeployPreviewResult
-
-	projectEventArgs := project.ProjectLifecycleEventArgs{
-		Project: p.projectConfig,
-		Args: map[string]any{
-			"preview": previewMode,
-		},
-	}
-
-	if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
-		p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
-	}
-
-	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
-		var err error
-		if previewMode {
-			deployPreviewResult, err = p.provisionManager.Preview(ctx)
-		} else {
-			deployResult, err = p.provisionManager.Deploy(ctx)
-		}
-		return err
-	})
-
+	// Provision root platform infrastructure
+	_, _, err := p.provisionPlatform(ctx, targetServiceName)
 	if err != nil {
-		if p.formatter.Kind() == output.JsonFormat {
-			stateResult, err := p.provisionManager.State(ctx, nil)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"deployment failed and the deployment result is unavailable: %w",
-					multierr.Combine(err, err),
-				)
-			}
-
-			if err := p.formatter.Format(
-				provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
-				return nil, fmt.Errorf(
-					"deployment failed and the deployment result could not be displayed: %w",
-					multierr.Combine(err, err),
-				)
-			}
-		}
-
-		//if user don't have access to openai
-		errorMsg := err.Error()
-		if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
-			requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
-			return nil, &internal.ErrorWithSuggestion{
-				Err: err,
-				Suggestion: "\nSuggested Action: The selected subscription does not have access to" +
-					" Azure OpenAI Services. Please visit " + output.WithLinkFormat("%s", requestAccessLink) +
-					" to request access.",
-			}
-		}
-
-		if strings.Contains(errorMsg, AINotValid) &&
-			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
-			return nil, &internal.ErrorWithSuggestion{
-				Suggestion: "\nSuggested Action: The selected " +
-					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-					"any pricing tiers. Please visit " + output.WithLinkFormat("%s", p.portalUrlBase) +
-					" and select 'Create' on specific services to request access.",
-				Err: err,
-			}
-		}
-
-		//if user haven't agree to Responsible AI terms
-		if strings.Contains(errorMsg, responsibleAITerms) {
-			return nil, &internal.ErrorWithSuggestion{
-				Suggestion: "\nSuggested Action: Please visit azure portal in " +
-					output.WithLinkFormat("%s", p.portalUrlBase) + ". Create the resource in azure portal " +
-					"to go through Responsible AI terms, and then delete it. " +
-					"After that, run 'azd provision' again",
-				Err: err,
-			}
-		}
-
-		return nil, fmt.Errorf("deployment failed: %w", err)
+		return nil, err
 	}
 
-	if previewMode {
-		p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
+	// Provision services infrastructure
+	_, _, err = p.provisionServices(ctx, targetServiceName)
+	if err != nil {
+		return nil, err
+	}
 
+	// if err != nil {
+	// 	if p.formatter.Kind() == output.JsonFormat {
+	// 		stateResult, err := p.provisionManager.State(ctx, nil)
+	// 		if err != nil {
+	// 			return nil, fmt.Errorf(
+	// 				"deployment failed and the deployment result is unavailable: %w",
+	// 				multierr.Combine(err, err),
+	// 			)
+	// 		}
+
+	// 		if err := p.formatter.Format(
+	// 			provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
+	// 			return nil, fmt.Errorf(
+	// 				"deployment failed and the deployment result could not be displayed: %w",
+	// 				multierr.Combine(err, err),
+	// 			)
+	// 		}
+	// 	}
+
+	// if previewMode {
+	// 	p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
+
+	// 	return &actions.ActionResult{
+	// 		Message: &actions.ResultMessage{
+	// 			Header: fmt.Sprintf(
+	// 				"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
+	// 			FollowUp: getResourceGroupFollowUp(
+	// 				ctx,
+	// 				p.formatter,
+	// 				p.portalUrlBase,
+	// 				p.projectConfig,
+	// 				p.resourceManager,
+	// 				p.env,
+	// 				true,
+	// 			),
+	// 		},
+	// 	}, nil
+	// }
+
+	// if deployResult.SkippedReason == provisioning.DeploymentStateSkipped {
+	// 	return &actions.ActionResult{
+	// 		Message: &actions.ResultMessage{
+	// 			Header: "There are no changes to provision for your application.",
+	// 		},
+	// 	}, nil
+	// }
+
+	// servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// for _, svc := range servicesStable {
+	// 	eventArgs := project.ServiceLifecycleEventArgs{
+	// 		Project: p.projectConfig,
+	// 		Service: svc,
+	// 		Args: map[string]any{
+	// 			"bicepOutput": deployResult.Deployment.Outputs,
+	// 		},
+	// 	}
+
+	// 	if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
+
+	// if p.formatter.Kind() == output.JsonFormat {
+	// 	stateResult, err := p.provisionManager.State(ctx, nil)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf(
+	// 			"deployment succeeded but the deployment result is unavailable: %w",
+	// 			multierr.Combine(err, err),
+	// 		)
+	// 	}
+
+	// 	if err := p.formatter.Format(
+	// 		provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
+	// 		return nil, fmt.Errorf(
+	// 			"deployment succeeded but the deployment result could not be displayed: %w",
+	// 			multierr.Combine(err, err),
+	// 		)
+	// 	}
+	// }
+
+	if p.flags.preview {
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
 				Header: fmt.Sprintf(
@@ -328,51 +351,6 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
-	if deployResult.SkippedReason == provisioning.DeploymentStateSkipped {
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				Header: "There are no changes to provision for your application.",
-			},
-		}, nil
-	}
-
-	servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, svc := range servicesStable {
-		eventArgs := project.ServiceLifecycleEventArgs{
-			Project: p.projectConfig,
-			Service: svc,
-			Args: map[string]any{
-				"bicepOutput": deployResult.Deployment.Outputs,
-			},
-		}
-
-		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
-			return nil, err
-		}
-	}
-
-	if p.formatter.Kind() == output.JsonFormat {
-		stateResult, err := p.provisionManager.State(ctx, nil)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"deployment succeeded but the deployment result is unavailable: %w",
-				multierr.Combine(err, err),
-			)
-		}
-
-		if err := p.formatter.Format(
-			provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
-			return nil, fmt.Errorf(
-				"deployment succeeded but the deployment result could not be displayed: %w",
-				multierr.Combine(err, err),
-			)
-		}
-	}
-
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
@@ -388,6 +366,182 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			),
 		},
 	}, nil
+}
+
+func (p *ProvisionAction) provisionPlatform(
+	ctx context.Context,
+	targetServiceName string,
+) (*provisioning.DeployResult, *provisioning.DeployPreviewResult, error) {
+	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = infra.Cleanup() }()
+
+	stepMessage := "Initializing"
+	p.console.Message(ctx, output.WithBold("Provisioning platform infrastructure"))
+	p.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+	if targetServiceName != "" {
+		p.console.StopSpinner(ctx, "Platform not selected", input.StepSkipped)
+		return nil, nil, nil
+	}
+
+	infraOptions := infra.Options
+	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+
+	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
+		p.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		if errors.Is(err, os.ErrNotExist) {
+			p.console.StopSpinner(ctx, "No infrastructure found", input.StepSkipped)
+			return nil, nil, nil
+		} else {
+			p.console.StopSpinner(ctx, "Provisioning Infrastructure", input.StepFailed)
+			return nil, nil, fmt.Errorf("initializing provisioning manager: %w", err)
+		}
+	}
+
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: p.projectConfig,
+		Args: map[string]any{
+			"preview": p.flags.preview,
+		},
+	}
+
+	var deployResult *provisioning.DeployResult
+	var previewResult *provisioning.DeployPreviewResult
+
+	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+		if p.flags.preview {
+			previewResult, err = p.provisionManager.Preview(ctx)
+			if err == nil {
+				p.console.MessageUxItem(ctx, deployResultToUx(previewResult))
+			}
+		} else {
+			deployResult, err = p.provisionManager.Deploy(ctx)
+		}
+		return err
+	})
+
+	if err != nil {
+		p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+		return nil, nil, err
+	}
+
+	p.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
+	return deployResult, previewResult, nil
+}
+
+func (p *ProvisionAction) provisionServices(
+	ctx context.Context,
+	targetServiceName string,
+) (map[string]*provisioning.DeployResult, map[string]*provisioning.DeployPreviewResult, error) {
+	stableServices, err := p.importManager.ServiceStable(ctx, p.projectConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	targetServiceName, err = getTargetServiceName(
+		ctx,
+		p.projectManager,
+		p.importManager,
+		p.projectConfig,
+		string(project.ServiceEventProvision),
+		targetServiceName,
+		p.flags.all,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	deployResults := map[string]*provisioning.DeployResult{}
+	previewResults := map[string]*provisioning.DeployPreviewResult{}
+
+	for _, svc := range stableServices {
+		p.console.Message(
+			ctx,
+			fmt.Sprintf("%s %s %s",
+				output.WithBold("Provisioning infrastructure for"),
+				output.WithHighLightFormat(svc.Name),
+				output.WithBold("service"),
+			),
+		)
+
+		stepMessage := "Initializing"
+		p.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		if p.flags.platform {
+			p.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			return nil, nil, nil
+		}
+
+		// Skip this service if both cases are true:
+		// 1. The user specified a service name
+		// 2. This service is not the one the user specified
+		if targetServiceName != "" && targetServiceName != svc.Name {
+			p.console.StopSpinner(ctx, "Service not selected", input.StepSkipped)
+			continue
+		}
+
+		infraOptions := svc.Infra
+		infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+		if infraOptions.Name == "" {
+			infraOptions.Name = fmt.Sprintf("%s-%s", p.env.Name(), svc.Name)
+		}
+
+		if err := p.provisionManager.Initialize(ctx, svc.Path(), infraOptions); err != nil {
+			p.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+			if errors.Is(err, os.ErrNotExist) {
+				p.console.StopSpinner(ctx, "No infrastructure found", input.StepSkipped)
+				continue
+			} else {
+				p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, nil, err
+			}
+		}
+
+		serviceEventArgs := project.ServiceLifecycleEventArgs{
+			Project: p.projectConfig,
+			Service: svc,
+			Args: map[string]any{
+				"preview": p.flags.preview,
+			},
+		}
+
+		err = svc.Invoke(ctx, project.ServiceEventProvision, serviceEventArgs, func() error {
+			if p.flags.preview {
+				previewResult, err := p.provisionManager.Preview(ctx)
+				if err != nil {
+					return err
+				}
+
+				p.console.MessageUxItem(ctx, deployResultToUx(previewResult))
+
+				previewResults[svc.Name] = previewResult
+			} else {
+				deployResult, err := p.provisionManager.Deploy(ctx)
+				if err != nil {
+					return err
+				}
+
+				deployResults[svc.Name] = deployResult
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			p.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, nil, err
+		}
+
+		p.console.StopSpinner(ctx, stepMessage, input.StepDone)
+	}
+
+	return deployResults, previewResults, nil
 }
 
 // deployResultToUx creates the ux element to display from a provision preview
@@ -414,5 +568,15 @@ func GetCmdProvisionHelpDescription(c *cobra.Command) string {
 		output.WithHighLightFormat(c.CommandPath())), []string{
 		formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
 		formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
+	})
+}
+
+func GetCmdProvisionHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Provision all resources for an application.": output.WithHighLightFormat("azd provision"),
+		//nolint:lll
+		"Provision all resources for a specific service within the application. ": output.WithHighLightFormat("azd provision <service>"),
+		//nolint:lll
+		"Provision the root platform infrastructure for the application. ": output.WithHighLightFormat("azd provision --platform"),
 	})
 }

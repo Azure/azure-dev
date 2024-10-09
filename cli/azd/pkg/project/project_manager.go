@@ -19,6 +19,7 @@ import (
 const (
 	ProjectEventDeploy    ext.Event = "deploy"
 	ProjectEventProvision ext.Event = "provision"
+	ProjectEventDown      ext.Event = "down"
 )
 
 var (

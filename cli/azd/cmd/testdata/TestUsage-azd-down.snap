@@ -2,13 +2,15 @@
 Delete Azure resources for an application. Running azd down will not delete application files on your local machine.
 
 Usage
-  azd down [flags]
+  azd down [<service>] [flags]
 
 Flags
+        --all                	: Deploys all services that are listed in azure.yaml
         --docs               	: Opens the documentation for azd down in your web browser.
     -e, --environment string 	: The name of the environment to use.
         --force              	: Does not require confirmation before it deletes resources.
     -h, --help               	: Gets help for down.
+        --platform           	: Deploys the root platform infrastructure
         --purge              	: Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).
 
 Global Flags
@@ -17,8 +19,14 @@ Global Flags
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
+  Delete all resources for a specific service within the application. 
+    azd down <service>
+
   Delete all resources for an application. You will be prompted to confirm your decision.
     azd down
+
+  Delete the root platform infrastructure for the application. 
+    azd down --platform
 
   Forcibly delete all applications resources without confirmation.
     azd down --force

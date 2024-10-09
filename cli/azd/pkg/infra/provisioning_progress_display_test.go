@@ -145,7 +145,8 @@ func TestReportProgress(t *testing.T) {
 
 	outputLength++
 	assert.Len(t, mockContext.Console.Output(), outputLength)
-	assert.Contains(t, mockContext.Console.Output()[0], "You can view detailed progress in the Azure Portal:")
+	assert.Contains(t, mockContext.Console.Output()[0], "You can view detailed progress in the")
+	assert.Contains(t, mockContext.Console.Output()[0], "Azure Portal")
 
 	mockResourceManager.AddInProgressOperation()
 	err = progressDisplay.ReportProgress(*mockContext.Context, &startTime)

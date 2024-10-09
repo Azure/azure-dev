@@ -27,9 +27,6 @@ Commands
     pipeline 	: Manage and configure your deployment pipelines. (Beta)
     show     	: Display information about your app and its resources.
 
-  Installed Extensions
-    
-
   About, help and upgrade
     version  	: Print the version number of Azure Developer CLI.
 

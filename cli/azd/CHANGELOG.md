@@ -18,7 +18,7 @@
 - [[4336]](https://github.com/Azure/azure-dev/pull/4336) Adds spinner to `azd down`.
 - [[4357]](https://github.com/Azure/azure-dev/pull/4357) Updates `azure.yaml.json` for `remoteBuild`.
 - [[4369]](https://github.com/Azure/azure-dev/pull/4369) Updates docker `buildargs` to expandable strings.
-- [[4331]](https://github.com/Azure/azure-dev/pull/4331) Exposes configurable settings for `actionOnUnmanage` and `denySettings` for `Deployment Stacks`
+- [[4331]](https://github.com/Azure/azure-dev/pull/4331) Exposes configurable settings for `actionOnUnmanage` and `denySettings` for Azure Deployment Stacks (alpha).
 
 ## 1.10.1 (2024-09-05)
 

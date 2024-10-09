@@ -5,7 +5,7 @@
 ### Features Added
 
 - [[4272]](https://github.com/Azure/azure-dev/pull/4272) Supports configurable `api-version` for container app deployments.
-- [[4286]](https://github.com/Azure/azure-dev/pull/4286) Adds`alpha` feature `alpha.aspire.useBicepForContainerApps` to use bicep for container app deployment.
+- [[4286]](https://github.com/Azure/azure-dev/pull/4286) Adds `alpha` feature `alpha.aspire.useBicepForContainerApps` to use bicep for container app deployment.
 - [[4371]](https://github.com/Azure/azure-dev/pull/4371) Adds support for `default.value` for `parameter.v0`.
 
 ### Bugs Fixed

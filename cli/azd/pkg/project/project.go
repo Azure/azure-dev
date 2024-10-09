@@ -154,6 +154,24 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project file: %w", err)
 	}
 
+	projectConfig.Path = filepath.Dir(projectFilePath)
+
+	// complement the project config with azd.hooks files if they exist
+	hooksDefinedAtInfraPath, err := hooksFromFolderPath(filepath.Join(projectConfig.Path, projectConfig.Infra.Path))
+	if err != nil {
+		return nil, fmt.Errorf("failed getting hooks from infra path, %w", err)
+	}
+	if len(hooksDefinedAtInfraPath) > 0 && len(projectConfig.Hooks) > 0 {
+		return nil, fmt.Errorf(
+			"project hooks defined in both %s and azure.yaml configuration,"+
+				" please remove one of them",
+			filepath.Join(projectConfig.Infra.Path, "azd.hooks.yaml"),
+		)
+	}
+	if projectConfig.Hooks == nil {
+		projectConfig.Hooks = hooksDefinedAtInfraPath
+	}
+
 	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {
 		template := strings.Split(projectConfig.Metadata.Template, "@")
 		if len(template) == 1 { // no version specifier, just the template ID
@@ -177,6 +195,20 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		for _, svcConfig := range projectConfig.Services {
 			hosts[i] = string(svcConfig.Host)
 			languages[i] = string(svcConfig.Language)
+
+			// complement service level hooks
+			hooksDefinedAtServicePath, err := hooksFromFolderPath(svcConfig.RelativePath)
+			if err != nil {
+				return nil, err
+			}
+			if svcConfig.Hooks != nil && hooksDefinedAtServicePath != nil {
+				return nil, fmt.Errorf("service %s has hooks defined in both azd.hooks.yaml and azure.yaml, "+
+					"please remove one of them.", svcConfig.Name)
+			}
+			if svcConfig.Hooks == nil {
+				svcConfig.Hooks = hooksDefinedAtServicePath
+			}
+
 			i++
 		}
 
@@ -187,7 +219,6 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		tracing.SetUsageAttributes(fields.ProjectServiceHostsKey.StringSlice(hosts))
 	}
 
-	projectConfig.Path = filepath.Dir(projectFilePath)
 	return projectConfig, nil
 }
 
@@ -263,7 +294,40 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("saving project file: %w", err)
 	}
 
-	projectConfig.Path = projectFilePath
+	projectConfig.Path = filepath.Dir(projectFilePath)
 
 	return nil
+}
+
+// hooksFromFolderPath check if there is file named azd.hooks.yaml in the service path
+// and return the hooks configuration.
+func hooksFromFolderPath(servicePath string) (HooksConfig, error) {
+	hooksPath := filepath.Join(servicePath, "azd.hooks.yaml")
+
+	// due to projects depending on a ProjectImporter like Aspire, we need to ignore all type of errors related to
+	// the path is either not found, not accessible or any other error that might occur.
+	// In case of Aspire, the servicePath points out to the C# project, and not to the directory.
+	// We could handle Aspire Project here but that's not the purpose of this function.
+	// The right thing might be to use the ProjectImporter and get the list of services from Aspire and check for hooks at
+	// each path, but hooks for Aspire services are not even supported on azure.yaml.
+	if _, err := os.Stat(hooksPath); err != nil {
+		hooksPath = filepath.Join(servicePath, "azd.hooks.yml")
+		if _, err := os.Stat(hooksPath); err != nil {
+			log.Println("error trying to read hooks file for service in path: ", servicePath, ". Error:", err)
+			return nil, nil
+		}
+	}
+
+	hooksFile, err := os.ReadFile(hooksPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading hooks from '%s', %w", hooksPath, err)
+	}
+
+	// open hooksPath into a byte array and unmarshal it into a map[string]*ext.HookConfig
+	hooks := make(HooksConfig)
+	if err := yaml.Unmarshal(hooksFile, &hooks); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling hooks from '%s', %w", hooksPath, err)
+	}
+
+	return hooks, nil
 }

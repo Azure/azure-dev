@@ -556,6 +556,24 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		logDS("%s", err.Error())
 	}
 
+	deploymentTags := map[string]*string{
+		azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
+	}
+	if parametersHashErr == nil {
+		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
+	}
+
+	err = p.validatePreflight(
+		ctx,
+		bicepDeploymentData.Target,
+		bicepDeploymentData.CompiledBicep.RawArmTemplate,
+		bicepDeploymentData.CompiledBicep.Parameters,
+		deploymentTags,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	cancelProgress := make(chan bool)
 	defer func() { cancelProgress <- true }()
 	go func() {
@@ -592,13 +610,6 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
-
-	deploymentTags := map[string]*string{
-		azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
-	}
-	if parametersHashErr == nil {
-		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
-	}
 
 	optionsMap, err := convert.ToMap(p.options)
 	if err != nil {
@@ -1716,6 +1727,16 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*p
 	template.Outputs = outputs
 
 	return &template, nil
+}
+
+func (p *BicepProvider) validatePreflight(
+	ctx context.Context,
+	target infra.Deployment,
+	armTemplate azure.RawArmTemplate,
+	armParameters azure.ArmParameters,
+	tags map[string]*string,
+) error {
+	return target.ValidatePreflight(ctx, armTemplate, armParameters, tags)
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)

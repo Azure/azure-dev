@@ -23,9 +23,13 @@ param postgresDatabasePassword string
 param mysqlDatabaseId string
 param mysqlIdentityName string
 {{- end}}
-{{- if .AzureServiceBus}}
+{{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
 @secure()
 param azureServiceBusConnectionString string
+{{- end}}
+{{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
+@secure()
+param azureServiceBusNamespace string
 {{- end}}
 {{- if .DbRedis}}
 param redisName string
@@ -156,7 +160,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
           value: postgresDatabasePassword
         }
         {{- end}}
-        {{- if .AzureServiceBus}}
+        {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
         {
           name: 'spring-cloud-azure-servicebus-connection-string'
           value: azureServiceBusConnectionString
@@ -206,10 +210,28 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
               value: '5432'
             }
             {{- end}}
-            {{- if .AzureServiceBus}}
+            {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
             {
               name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTION_STRING'
               secretRef: 'spring-cloud-azure-servicebus-connection-string'
+            }
+            {{- end}}
+            {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTION_STRING'
+              value: ''
+            }
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE'
+              value: azureServiceBusNamespace
+            }
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+              value: 'true'
+            }
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_CLIENTID'
+              value: identity.properties.clientId
             }
             {{- end}}
             {{- if .Frontend}}
@@ -315,6 +337,33 @@ resource appLinkToPostgres 'Microsoft.Resources/deploymentScripts@2023-08-01' = 
   }
 }
 {{- end}}
+
+{{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity) }}
+resource servicebus 'Microsoft.ServiceBus/namespaces@2022-01-01-preview' existing = {
+  name: azureServiceBusNamespace
+}
+
+resource serviceBusReceiverRoleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(servicebus.id, '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0', identity.name)
+  scope: servicebus
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0') // Azure Service Bus Data Receiver
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource serviceBusSenderRoleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(servicebus.id, '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39', identity.name)
+  scope: servicebus
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39') // Azure Service Bus Data Sender
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+{{end}}
 
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output name string = app.name

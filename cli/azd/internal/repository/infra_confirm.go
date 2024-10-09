@@ -231,7 +231,7 @@ azureDepPrompt:
 	for {
 		azureDepName, err := i.console.Prompt(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf("Input the name of the Azure dependency (%s)", azureDep.ResourceDisplay()),
-			Help: "Hint: Azure dependency name\n\n" +
+			Help: "Azure dependency name\n\n" +
 				"Name of the Azure dependency that the app connects to. " +
 				"This dependency will be created after running azd provision or azd up." +
 				"\nYou may be able to skip this step by hitting enter, in which case the dependency will not be created.",
@@ -271,11 +271,37 @@ azureDepPrompt:
 			}
 		}
 
+		authType := scaffold.AuthType(0)
+		switch azureDep.(type) {
+		case appdetect.AzureDepServiceBus:
+			_authType, err := i.console.Prompt(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Input the authentication type you want for (%s), 1 for connection string, 2 for managed identity", azureDep.ResourceDisplay()),
+				Help: "Authentication type:\n\n" +
+					"Enter 1 if you want to use connection string to connect to the Service Bus.\n" +
+					"Enter 2 if you want to use user assigned managed identity to connect to the Service Bus.",
+			})
+			if err != nil {
+				return err
+			}
+
+			if _authType != "1" && _authType != "2" {
+				i.console.Message(ctx, "Invalid authentication type. Please enter 0 or 1.")
+				continue azureDepPrompt
+			}
+			if _authType == "1" {
+				authType = scaffold.AuthType_PASSWORD
+			} else {
+				authType = scaffold.AuthType_TOKEN_CREDENTIAL
+			}
+		}
+
 		switch azureDep.(type) {
 		case appdetect.AzureDepServiceBus:
 			spec.AzureServiceBus = &scaffold.AzureDepServiceBus{
-				Name:   azureDepName,
-				Queues: azureDep.(appdetect.AzureDepServiceBus).Queues,
+				Name:                      azureDepName,
+				Queues:                    azureDep.(appdetect.AzureDepServiceBus).Queues,
+				AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
+				AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
 			}
 			break azureDepPrompt
 		}

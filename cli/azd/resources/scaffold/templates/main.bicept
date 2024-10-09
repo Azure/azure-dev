@@ -91,13 +91,14 @@ module appsEnv './shared/apps-env.bicep' = {
   }
   scope: rg
 }
-{{- if (or (or (or .DbCosmosMongo .DbPostgres) .DbMySql) .AzureServiceBus)}}
+{{- if (or (or (or .DbCosmosMongo .DbPostgres) .DbMySql) (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString))}})))}}
 
 resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVault.outputs.name
   scope: rg
 }
 {{- end}}
+
 {{- if .DbCosmosMongo}}
 
 module cosmosDb './app/db-cosmos-mongo.bicep' = {
@@ -150,7 +151,9 @@ module serviceBus './app/azure-service-bus.bicep' = {
     serviceBusNamespaceName: '${abbrs.serviceBusNamespaces}${resourceToken}'
     location: location
     tags: tags
+    {{- if .AzureServiceBus.AuthUsingConnectionString}}
     keyVaultName: keyVault.outputs.name
+    {{end}}
   }
   scope: rg
 }
@@ -187,8 +190,13 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     mysqlDatabaseId: mysqlDb.outputs.databaseId
     mysqlIdentityName: mysqlDb.outputs.identityName
     {{- end}}
-    {{- if .AzureServiceBus }}
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
     azureServiceBusConnectionString: vault.getSecret(serviceBus.outputs.serviceBusConnectionStringKey)
+    {{- end}}
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
+    azureServiceBusNamespace: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    {{- end}}
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
     {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [

@@ -1,6 +1,8 @@
 {{define "azure-service-bus.bicep" -}}
 param serviceBusNamespaceName string
+{{- if .AuthUsingConnectionString }}
 param keyVaultName string
+{{end}}
 param location string
 param tags object = {}
 
@@ -35,6 +37,8 @@ resource serviceBusQueue_{{ $index }} 'Microsoft.ServiceBus/namespaces/queues@20
 }
 {{end}}
 
+{{- if .AuthUsingConnectionString }}
+
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVaultName
 }
@@ -46,8 +50,11 @@ resource serviceBusConnectionString 'Microsoft.KeyVault/vaults/secrets@2022-07-0
     value: listKeys('${serviceBusNamespace.id}/AuthorizationRules/RootManageSharedAccessKey', serviceBusNamespace.apiVersion).primaryConnectionString
   }
 }
+{{end}}
 
 output serviceBusNamespaceId string = serviceBusNamespace.id
 output serviceBusNamespaceApiVersion string = serviceBusNamespace.apiVersion
+{{- if .AuthUsingConnectionString }}
 output serviceBusConnectionStringKey string = 'serviceBusConnectionString'
+{{end}}
 {{ end}}

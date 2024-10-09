@@ -16,6 +16,7 @@ import (
 	// Importing for infrastructure provider plugin registrations
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
@@ -125,6 +126,7 @@ func NewRootCmd(
 	templatesActions(root)
 	authActions(root)
 	hooksActions(root)
+	extensionActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -350,6 +352,15 @@ func NewRootCmd(
 		panic(err)
 	}
 
+	installedExtensions, err := extensions.Initialize(rootContainer)
+	if err != nil {
+		log.Printf("Failed to initialize extensions: %v", err)
+	}
+
+	if err := bindExtensions(rootContainer, root, installedExtensions); err != nil {
+		log.Printf("Failed to bind extensions: %v", err)
+	}
+
 	// Compose the hierarchy of action descriptions into cobra commands
 	var cobraBuilder *CobraBuilder
 	if err := rootContainer.Resolve(&cobraBuilder); err != nil {
@@ -423,6 +434,11 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 
 	var paragraph []string
 	for _, title := range groups {
+		groupCommands := commandGroups[string(title)]
+		if len(groupCommands) == 0 {
+			continue
+		}
+
 		paragraph = append(paragraph, fmt.Sprintf("  %s\n    %s\n",
 			output.WithBold("%s", string(title)),
 			strings.Join(commandGroups[string(title)], "\n    ")))

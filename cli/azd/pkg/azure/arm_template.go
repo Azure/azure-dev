@@ -97,16 +97,35 @@ type AutoGenInput struct {
 	MinSpecial *uint `json:"minSpecial,omitempty"`
 }
 
+// ResourceInputMetadata is set on ARM/Bicep parameter properties
+// This metadata is used to generate a resource picker in the CLI
+type ResourceInputMetadata struct {
+	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+}
+
+// OptionalResource is used to represent a resource that may or may not exist in the Azure subscription.
+// This value is used as an input value to the ARM/Bicep parameter for parameters with azd type resource metadata.
+type OptionalResource struct {
+	Name           string `json:"name"`
+	SubscriptionId string `json:"subscriptionId"`
+	ResourceGroup  string `json:"resourceGroup"`
+	Exists         bool   `json:"exists"`
+}
+
 type AzdMetadataType string
 
 const AzdMetadataTypeLocation AzdMetadataType = "location"
 const AzdMetadataTypeGenerate AzdMetadataType = "generate"
 const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
+const AzdMetadataTypeResource AzdMetadataType = "resource"
 
 type AzdMetadata struct {
-	Type               *AzdMetadataType `json:"type,omitempty"`
-	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
-	DefaultValueExpr   *string          `json:"defaultValueExpr,omitempty"`
+	Type               *AzdMetadataType       `json:"type,omitempty"`
+	AutoGenerateConfig *AutoGenInput          `json:"config,omitempty"`
+	DefaultValueExpr   *string                `json:"defaultValueExpr,omitempty"`
+	Resource           *ResourceInputMetadata `json:"resource,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

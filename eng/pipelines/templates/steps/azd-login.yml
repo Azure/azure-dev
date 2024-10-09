@@ -1,9 +1,19 @@
 parameters:
   SubscriptionConfiguration: $(sub-config-azure-cloud-test-resources)
   AzdDirectory: ""
+  ServiceConnectionId: "3d79cc98-46f2-428c-bdd5-861414f85602"
 
 steps:
+  - bash: |
+      curl --verbose \
+        --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+        --header "Content-Type: application/json" \
+        "${SYSTEM_TEAMFOUNDATIONCOLLECTIONURI}${SYSTEM_TEAMPROJECT}/_apis/serviceendpoint/endpoints?api-version=7.1"
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
   - pwsh: |
+      Get-ChildItem Env: | Sort-Object Name | Format-List
+
       $azdCmd = "azd"
 
       if ("${{ parameters.AzdDirectory }}" -ne "") {
@@ -14,8 +24,10 @@ steps:
         ${{ parameters.SubscriptionConfiguration }}
       '@ | ConvertFrom-Json -AsHashtable;
 
-      # Delegate auth to az CLI which supports federated auth in AzDo
-      & $azdCmd config set auth.useAzCliAuth true
+      & $azdCmd login `
+        --client-id "$($subscriptionConfiguration.TestApplicationId)" `
+        --tenant-id "$($subscriptionConfiguration.TenantId)" `
+        --service-connection-id "${{ parameters.ServiceConnectionId }}"
 
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -27,8 +39,11 @@ steps:
       Write-Host "##vso[task.setvariable variable=SubscriptionId]$($subscriptionConfiguration.SubscriptionId)"
 
       # Export service principal auth information for terraform testing
+      Write-Host "##vso[task.setvariable variable=arm-oidc-request-url;issecret=false]$($env:SYSTEM_OIDCREQUESTURI)?api-version=7.1&serviceConnectionId=${{ parameters.ServiceConnectionId }}"
       Write-Host "##vso[task.setvariable variable=arm-client-id;issecret=false]$($subscriptionConfiguration.TestApplicationId)"
       Write-Host "##vso[task.setvariable variable=arm-tenant-id;issecret=false]$($subscriptionConfiguration.TenantId)"
 
     condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
     displayName: Azure Dev Login
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)

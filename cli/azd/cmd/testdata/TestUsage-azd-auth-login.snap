@@ -5,17 +5,19 @@ Usage
   azd auth login [flags]
 
 Flags
-        --check-status                         	: Checks the log-in status instead of logging in.
-        --client-certificate string            	: The path to the client certificate for the service principal to authenticate with.
-        --client-id string                     	: The client id for the service principal to authenticate with.
-        --client-secret string                 	: The client secret for the service principal to authenticate with. Set to the empty string to read the value from the console.
-        --docs                                 	: Opens the documentation for azd auth login in your web browser.
-        --federated-credential-provider string 	: The provider to use to acquire a federated token to authenticate with.
-    -h, --help                                 	: Gets help for login.
-        --managed-identity                     	: Use a managed identity to authenticate.
-        --redirect-port int                    	: Choose the port to be used as part of the redirect URI during interactive login.
-        --tenant-id string                     	: The tenant id or domain name to authenticate with.
-        --use-device-code                      	: When true, log in by using a device code instead of a browser.
+        --check-status                                         	: Checks the log-in status instead of logging in.
+        --client-certificate string                            	: The path to the client certificate for the service principal to authenticate with.
+        --client-id string                                     	: The client id for the service principal to authenticate with.
+        --client-secret string                                 	: The client secret for the service principal to authenticate with. Set to the empty string to read the value from the console.
+        --docs                                                 	: Opens the documentation for azd auth login in your web browser.
+        --federated-credential-provider string                 	: The provider to use to acquire a federated token to authenticate with.
+    -h, --help                                                 	: Gets help for login.
+        --managed-identity                                     	: Use a managed identity to authenticate.
+        --redirect-port int                                    	: Choose the port to be used as part of the redirect URI during interactive login.
+        --service-connection-id string                         	: The service connection id to authenticate with.
+        --system-access-token-environment-variable-name string 	: The name of the environment variable that contains the system access token to authenticate with.
+        --tenant-id string                                     	: The tenant id or domain name to authenticate with.
+        --use-device-code                                      	: When true, log in by using a device code instead of a browser.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

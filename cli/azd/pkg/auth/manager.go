@@ -312,11 +312,6 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 		return m.newCredentialFromManagedIdentity(clientID)
 	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
-		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
-		if err != nil {
-			return nil, fmt.Errorf("loading secret: %w: %w", err, ErrNoCurrentUser)
-		}
-
 		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
 		// `azd auth login`), but we allow an override using the options bag, when
 		// TenantID is non-empty and PreferFallbackTenant is not true.
@@ -324,6 +319,16 @@ func (m *Manager) CredentialForCurrentUser(
 
 		if options.TenantID != "" {
 			tenantID = options.TenantID
+		}
+
+		if currentUser.ServiceConnectionID != nil && currentUser.SystemAccessTokenName != nil {
+			return m.newCredentialFromServiceConnection(
+				tenantID, *currentUser.ClientID, *currentUser.ServiceConnectionID, *currentUser.SystemAccessTokenName)
+		}
+
+		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
+		if err != nil {
+			return nil, fmt.Errorf("loading secret: %w: %w", err, ErrNoCurrentUser)
 		}
 
 		if ps.ClientSecret != nil {
@@ -474,6 +479,36 @@ func (m *Manager) newCredentialFromClientSecret(
 		},
 	}
 	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
+	}
+
+	return cred, nil
+}
+
+func (m *Manager) newCredentialFromServiceConnection(
+	tenantID string,
+	clientID string,
+	serviceConnectionID string,
+	systemAccessTokenEnvVar string,
+) (azcore.TokenCredential, error) {
+	options := &azidentity.AzurePipelinesCredentialOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: m.httpClient,
+			// TODO: Inject client options instead? this can be done if we're OK
+			// using the default user agent string.
+			Cloud: m.cloud.Configuration,
+		},
+	}
+
+	systemAccessToken := os.Getenv(systemAccessTokenEnvVar)
+	if systemAccessToken == "" {
+		// nolint:lll
+		return nil, fmt.Errorf("system access token not found, ensure the System.AccessToken value is mapped to an environment variable named %s", systemAccessTokenEnvVar)
+	}
+
+	cred, err := azidentity.NewAzurePipelinesCredential(
+		tenantID, clientID, serviceConnectionID, systemAccessToken, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
 	}
@@ -688,6 +723,37 @@ func (m *Manager) LoginWithDeviceCode(
 
 }
 
+func (m *Manager) LoginWithServiceConnection(
+	ctx context.Context, tenantID string, clientID string, serviceConnectionID string, systemAccessTokenEnvVar string,
+) (azcore.TokenCredential, error) {
+	systemAccessToken := os.Getenv(systemAccessTokenEnvVar)
+
+	if systemAccessToken == "" {
+		// nolint:lll
+		return nil, fmt.Errorf("system access token not found, ensure the System.AccessToken value is mapped to an environment variable named %s", systemAccessTokenEnvVar)
+	}
+
+	options := &azidentity.AzurePipelinesCredentialOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: m.httpClient,
+			// TODO: Inject client options instead? this can be done if we're OK
+			// using the default user agent string.
+			Cloud: m.cloud.Configuration,
+		},
+	}
+
+	cred, err := azidentity.NewAzurePipelinesCredential(tenantID, clientID, serviceConnectionID, systemAccessToken, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %w", err)
+	}
+
+	if err := m.saveLoginForServiceConnection(tenantID, clientID, serviceConnectionID, systemAccessTokenEnvVar); err != nil {
+		return nil, err
+	}
+
+	return cred, nil
+}
+
 func (m *Manager) LoginWithManagedIdentity(ctx context.Context, clientID string) (azcore.TokenCredential, error) {
 	options := &azidentity.ManagedIdentityCredentialOptions{}
 	if clientID != "" {
@@ -840,6 +906,22 @@ func (m *Manager) saveLoginForManagedIdentity(clientID string) error {
 	props := &userProperties{ManagedIdentity: true}
 	if clientID != "" {
 		props.ClientID = &clientID
+	}
+	if err := m.saveUserProperties(props); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *Manager) saveLoginForServiceConnection(
+	tenantID, clientID, serviceConnectionID, systemAccessTokenEnvVar string,
+) error {
+	props := &userProperties{
+		ClientID:              &clientID,
+		TenantID:              &tenantID,
+		ServiceConnectionID:   &serviceConnectionID,
+		SystemAccessTokenName: &systemAccessTokenEnvVar,
 	}
 	if err := m.saveUserProperties(props); err != nil {
 		return err
@@ -1033,11 +1115,13 @@ type federatedAuth struct {
 // either an home account id (when logging in using a public client) or a client and tenant id (when using a confidential
 // client).
 type userProperties struct {
-	ManagedIdentity bool    `json:"managedIdentity,omitempty"`
-	HomeAccountID   *string `json:"homeAccountId,omitempty"`
-	FromOneAuth     bool    `json:"fromOneAuth,omitempty"`
-	ClientID        *string `json:"clientId,omitempty"`
-	TenantID        *string `json:"tenantId,omitempty"`
+	ManagedIdentity       bool    `json:"managedIdentity,omitempty"`
+	HomeAccountID         *string `json:"homeAccountId,omitempty"`
+	FromOneAuth           bool    `json:"fromOneAuth,omitempty"`
+	ClientID              *string `json:"clientId,omitempty"`
+	TenantID              *string `json:"tenantId,omitempty"`
+	ServiceConnectionID   *string `json:"serviceConnectionId,omitempty"`
+	SystemAccessTokenName *string `json:"systemAccessTokenName,omitempty"`
 }
 
 func readUserProperties(cfg config.Config) (*userProperties, error) {

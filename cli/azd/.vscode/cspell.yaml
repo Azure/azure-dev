@@ -26,6 +26,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: cmd/auth_login.go
+    words:
+      - ACCESSTOKEN
   - filename: internal/tracing/fields/domains.go
     words:
       - azmk
@@ -110,6 +113,9 @@ overrides:
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
+  - filename: test/recording/recording.go
+    words:
+      - oidctoken
   - filename: internal/vsrpc/handler.go
     words:
       - arity

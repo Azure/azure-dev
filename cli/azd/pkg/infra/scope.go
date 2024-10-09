@@ -43,8 +43,12 @@ type Deployment interface {
 		template azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
+		options map[string]any,
 	) (*azapi.ResourceDeployment, error)
-	Delete(ctx context.Context, progress *async.Progress[azapi.DeleteDeploymentProgress]) error
+	Delete(ctx context.Context,
+		options map[string]any,
+		progress *async.Progress[azapi.DeleteDeploymentProgress],
+	) error
 	// Deploy a given template with a set of parameters.
 	DeployPreview(
 		ctx context.Context,
@@ -76,17 +80,29 @@ func (s *ResourceGroupDeployment) ValidatePreflight(
 }
 
 func (s *ResourceGroupDeployment) Deploy(
-	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
 ) (*azapi.ResourceDeployment, error) {
 	return s.deploymentService.DeployToResourceGroup(
-		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags)
+		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags, options)
 }
 
 func (s *ResourceGroupDeployment) Delete(
 	ctx context.Context,
+	options map[string]any,
 	progress *async.Progress[azapi.DeleteDeploymentProgress],
 ) error {
-	return s.deploymentService.DeleteResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroupName, s.name, progress)
+	return s.deploymentService.DeleteResourceGroupDeployment(
+		ctx,
+		s.subscriptionId,
+		s.resourceGroupName,
+		s.name,
+		options,
+		progress,
+	)
 }
 
 func (s *ResourceGroupDeployment) DeployPreview(
@@ -267,15 +283,26 @@ func (s *SubscriptionDeployment) Deploy(
 	template azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*azapi.ResourceDeployment, error) {
-	return s.deploymentService.DeployToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters, tags)
+	return s.deploymentService.DeployToSubscription(
+		ctx,
+		s.subscriptionId,
+		s.location,
+		s.name,
+		template,
+		parameters,
+		tags,
+		options,
+	)
 }
 
 func (s *SubscriptionDeployment) Delete(
 	ctx context.Context,
+	options map[string]any,
 	progress *async.Progress[azapi.DeleteDeploymentProgress],
 ) error {
-	return s.deploymentService.DeleteSubscriptionDeployment(ctx, s.subscriptionId, s.name, progress)
+	return s.deploymentService.DeleteSubscriptionDeployment(ctx, s.subscriptionId, s.name, options, progress)
 }
 
 // Deploy a given template with a set of parameters.

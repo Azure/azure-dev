@@ -207,6 +207,7 @@ func (ds *StandardDeployments) DeployToSubscription(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*ResourceDeployment, error) {
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -247,6 +248,7 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*ResourceDeployment, error) {
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -420,6 +422,7 @@ func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
+	options map[string]any,
 	progress *async.Progress[DeleteDeploymentProgress],
 ) error {
 	resources, err := ds.ListSubscriptionDeploymentResources(ctx, subscriptionId, deploymentName)
@@ -485,6 +488,7 @@ func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 			emptyTemplate,
 			azure.ArmParameters{},
 			tags,
+			options,
 		)
 
 		if err != nil {
@@ -500,6 +504,7 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 	subscriptionId,
 	resourceGroupName string,
 	deploymentName string,
+	options map[string]any,
 	progress *async.Progress[DeleteDeploymentProgress],
 ) error {
 	progress.SetProgress(DeleteDeploymentProgress{

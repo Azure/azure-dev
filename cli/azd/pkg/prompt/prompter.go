@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -27,6 +30,7 @@ type Prompter interface {
 	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
 	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
 	PromptResourceGroup(ctx context.Context) (string, error)
+	PromptResource(ctx context.Context, options PromptResourceOptions) (*azapi.Resource, error)
 }
 
 type DefaultPrompter struct {
@@ -158,6 +162,72 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 	}
 
 	return name, nil
+}
+
+type PromptResourceOptions struct {
+	ResourceType string
+	DisplayName  string
+	Description  string
+}
+
+// PromptResource prompts the user to select a resource with the specified resource type.
+// If the user selects to create a new resource, the user will be prompted to enter a name for the new resource.
+// This new resource is intended to be created in the Bicep deployment
+func (p *DefaultPrompter) PromptResource(ctx context.Context, options PromptResourceOptions) (*azapi.Resource, error) {
+	resourceListOptions := armresources.ClientListOptions{
+		Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", options.ResourceType)),
+	}
+
+	if options.DisplayName == "" {
+		options.DisplayName = filepath.Base(options.ResourceType)
+	}
+
+	resourceTypeDisplayName := strings.ToLower(options.DisplayName)
+
+	resources, err := p.resourceService.ListSubscriptionResources(ctx, p.env.GetSubscriptionId(), &resourceListOptions)
+	if err != nil {
+		return nil, fmt.Errorf("listing subscription resources: %w", err)
+	}
+
+	slices.SortFunc(resources, func(a, b *azapi.Resource) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	choices := make([]string, len(resources)+1)
+	choices[0] = fmt.Sprintf("Create a new %s", resourceTypeDisplayName)
+
+	for idx, resource := range resources {
+		parsedResource, err := arm.ParseResourceID(*&resource.Id)
+		if err != nil {
+			return nil, fmt.Errorf("parsing resource id: %w", err)
+		}
+
+		choices[idx+1] = fmt.Sprintf("%d. %s (Resource Group: %s)", idx+1, resource.Name, parsedResource.ResourceGroupName)
+	}
+
+	selectedIndex, err := p.console.Select(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf("Select a %s to use:", resourceTypeDisplayName),
+		Options: choices,
+		Help:    options.Description,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("selecting %s: %w", resourceTypeDisplayName, err)
+	}
+
+	if selectedIndex > 0 {
+		return resources[selectedIndex-1], nil
+	}
+
+	name, err := p.console.Prompt(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf("Enter a name for the new %s:", resourceTypeDisplayName),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for %s name: %w", resourceTypeDisplayName, err)
+	}
+
+	return &azapi.Resource{
+		Name: name,
+	}, nil
 }
 
 func (p *DefaultPrompter) getSubscriptionOptions(ctx context.Context) ([]string, []string, any, error) {

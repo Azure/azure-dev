@@ -1880,6 +1880,52 @@ func (p *BicepProvider) ensureParameters(
 			continue
 		}
 
+		// Prompt user to specify an existing resource to link to the template
+		if hasMetadata &&
+			azdMetadata.Type != nil && *azdMetadata.Type == azure.AzdMetadataTypeResource &&
+			azdMetadata.Resource != nil {
+
+			// Prompt user to select an existing resource to link to the template
+			selectedResource, err := p.prompters.PromptResource(ctx, prompt.PromptResourceOptions{
+				ResourceType: azdMetadata.Resource.Type,
+				DisplayName:  azdMetadata.Resource.DisplayName,
+				Description:  azdMetadata.Resource.Description,
+			})
+
+			if err != nil {
+				return nil, fmt.Errorf("prompting for resource: %w", err)
+			}
+
+			armResourceValue := azure.OptionalResource{}
+
+			// User opted to create a new resource
+			if selectedResource.Id == "" {
+				armResourceValue.Exists = false
+				armResourceValue.Name = selectedResource.Name
+				armResourceValue.SubscriptionId = p.env.GetSubscriptionId()
+				armResourceValue.ResourceGroup = p.env.Getenv(environment.ResourceGroupEnvVarName)
+			} else {
+				// User selected an existing resource
+				parsedResource, err := arm.ParseResourceID(selectedResource.Id)
+				if err != nil {
+					return nil, fmt.Errorf("parsing resource id: %w", err)
+				}
+
+				armResourceValue.Exists = true
+				armResourceValue.Name = parsedResource.Name
+				armResourceValue.SubscriptionId = parsedResource.SubscriptionID
+				armResourceValue.ResourceGroup = parsedResource.ResourceGroupName
+			}
+
+			configuredParameters[key] = azure.ArmParameterValue{
+				Value: armResourceValue,
+			}
+
+			mustSetParamAsConfig(key, armResourceValue, p.env.Config, false)
+			configModified = true
+			continue
+		}
+
 		// No saved value for this required parameter, we'll need to prompt for it.
 		parameterPrompts = append(parameterPrompts, struct {
 			key   string

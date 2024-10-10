@@ -12,11 +12,24 @@ param applicationInsightsName string
 param cosmosDbConnectionString string
 {{- end}}
 {{- if .DbPostgres}}
-param databaseHost string
-param databaseUser string
-param databaseName string
+param postgresDatabaseHost string
+param postgresDatabaseUser string
+param postgresDatabaseName string
+param postgresDatabaseId string
 @secure()
-param databasePassword string
+param postgresDatabasePassword string
+{{- end}}
+{{- if .DbMySql}}
+param mysqlDatabaseId string
+param mysqlIdentityName string
+{{- end}}
+{{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
+@secure()
+param azureServiceBusConnectionString string
+{{- end}}
+{{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
+@secure()
+param azureServiceBusNamespace string
 {{- end}}
 {{- if .DbRedis}}
 param redisName string
@@ -123,6 +136,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
           allowedOrigins: union(allowedOrigins, [
             // define additional allowed origins here
           ])
+          allowedMethods: ['GET', 'PUT', 'POST', 'DELETE']
         }
         {{- end}}
       }
@@ -142,8 +156,14 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
         {{- end}}
         {{- if .DbPostgres}}
         {
-          name: 'db-pass'
-          value: databasePassword
+          name: 'postgres-db-pass'
+          value: postgresDatabasePassword
+        }
+        {{- end}}
+        {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
+        {
+          name: 'spring-cloud-azure-servicebus-connection-string'
+          value: azureServiceBusConnectionString
         }
         {{- end}}
       ],
@@ -171,23 +191,47 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
             {{- if .DbPostgres}}
             {
               name: 'POSTGRES_HOST'
-              value: databaseHost
+              value: postgresDatabaseHost
             }
             {
               name: 'POSTGRES_USERNAME'
-              value: databaseUser
+              value: postgresDatabaseUser
             }
             {
               name: 'POSTGRES_DATABASE'
-              value: databaseName
+              value: postgresDatabaseName
             }
             {
               name: 'POSTGRES_PASSWORD'
-              secretRef: 'db-pass'
+              secretRef: 'postgres-db-pass'
             }
             {
               name: 'POSTGRES_PORT'
               value: '5432'
+            }
+            {{- end}}
+            {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTION_STRING'
+              secretRef: 'spring-cloud-azure-servicebus-connection-string'
+            }
+            {{- end}}
+            {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTION_STRING'
+              value: ''
+            }
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE'
+              value: azureServiceBusNamespace
+            }
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+              value: 'true'
+            }
+            {
+              name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_CLIENTID'
+              value: identity.properties.clientId
             }
             {{- end}}
             {{- if .Frontend}}
@@ -231,6 +275,95 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
     }
   }
 }
+{{- if (or .DbMySql .DbPostgres)}}
+
+resource linkerCreatorIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${name}-linker-creator-identity'
+  location: location
+}
+
+resource linkerCreatorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: resourceGroup()
+  name: guid(subscription().id, resourceGroup().id, linkerCreatorIdentity.id, 'linkerCreatorRole')
+  properties: {
+    roleDefinitionId:  subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalType: 'ServicePrincipal'
+    principalId: linkerCreatorIdentity.properties.principalId
+  }
+}
+{{- end}}
+{{- if .DbMySql}}
+
+resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  dependsOn: [ linkerCreatorRole ]
+  name: '${name}-link-to-mysql'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${linkerCreatorIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.63.0'
+    timeout: 'PT10M'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection appLinkToMySql --source-id ${app.id} --target-id ${mysqlDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} mysql-identity-id=${mysqlIdentityName} -c main --yes;'
+    cleanupPreference: 'OnSuccess'
+    retentionInterval: 'P1D'
+  }
+}
+{{- end}}
+{{- if .DbPostgres}}
+
+resource appLinkToPostgres 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  dependsOn: [ linkerCreatorRole ]
+  name: '${name}-link-to-postgres'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${linkerCreatorIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.63.0'
+    timeout: 'PT10M'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create postgres-flexible --connection appLinkToPostgres --source-id ${app.id} --target-id ${postgresDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} -c main --yes; az tag create --resource-id ${app.id} --tags azd-service-name={{.Name}} '
+    cleanupPreference: 'OnSuccess'
+    retentionInterval: 'P1D'
+  }
+}
+{{- end}}
+
+{{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity) }}
+resource servicebus 'Microsoft.ServiceBus/namespaces@2022-01-01-preview' existing = {
+  name: azureServiceBusNamespace
+}
+
+resource serviceBusReceiverRoleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(servicebus.id, '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0', identity.name)
+  scope: servicebus
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0') // Azure Service Bus Data Receiver
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource serviceBusSenderRoleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(servicebus.id, '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39', identity.name)
+  scope: servicebus
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39') // Azure Service Bus Data Sender
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+{{end}}
 
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output name string = app.name

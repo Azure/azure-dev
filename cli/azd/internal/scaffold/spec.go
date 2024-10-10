@@ -11,7 +11,11 @@ type InfraSpec struct {
 
 	// Databases to create
 	DbPostgres    *DatabasePostgres
+	DbMySql       *DatabaseMySql
 	DbCosmosMongo *DatabaseCosmosMongo
+
+	// Azure Service Bus
+	AzureServiceBus *AzureDepServiceBus
 }
 
 type Parameter struct {
@@ -26,9 +30,33 @@ type DatabasePostgres struct {
 	DatabaseName string
 }
 
+type DatabaseMySql struct {
+	DatabaseUser string
+	DatabaseName string
+}
+
 type DatabaseCosmosMongo struct {
 	DatabaseName string
 }
+
+type AzureDepServiceBus struct {
+	Name                      string
+	Queues                    []string
+	TopicsAndSubscriptions    map[string][]string
+	AuthUsingConnectionString bool
+	AuthUsingManagedIdentity  bool
+}
+
+// AuthType defines different authentication types.
+type AuthType int32
+
+const (
+	AUTH_TYPE_UNSPECIFIED AuthType = 0
+	// Username and password, or key based authentication, or connection string
+	AuthType_PASSWORD AuthType = 1
+	// Microsoft EntraID token credential
+	AuthType_TOKEN_CREDENTIAL AuthType = 2
+)
 
 type ServiceSpec struct {
 	Name string
@@ -42,8 +70,12 @@ type ServiceSpec struct {
 
 	// Connection to a database
 	DbPostgres    *DatabaseReference
+	DbMySql       *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
+
+	// Azure Service Bus
+	AzureServiceBus *AzureDepServiceBus
 }
 
 type Frontend struct {

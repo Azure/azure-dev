@@ -91,13 +91,14 @@ module appsEnv './shared/apps-env.bicep' = {
   }
   scope: rg
 }
-{{- if (or .DbCosmosMongo .DbPostgres)}}
+{{- if (or (or (or .DbCosmosMongo .DbPostgres) .DbMySql) (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString))}})))}}
 
 resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVault.outputs.name
   scope: rg
 }
 {{- end}}
+
 {{- if .DbCosmosMongo}}
 
 module cosmosDb './app/db-cosmos-mongo.bicep' = {
@@ -126,6 +127,38 @@ module postgresDb './app/db-postgres.bicep' = {
   scope: rg
 }
 {{- end}}
+{{- if .DbMySql}}
+
+module mysqlDb './app/db-mysql.bicep' = {
+  name: 'mysqlDb'
+  params: {
+    serverName: '${abbrs.dBforMySQLServers}${resourceToken}'
+    location: location
+    tags: tags
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}mysql-${resourceToken}'
+    databasePassword: databasePassword
+    keyVaultName: keyVault.outputs.name
+    allowAllIPsFirewall: true
+  }
+  scope: rg
+}
+{{- end}}
+
+{{- if .AzureServiceBus }}
+module serviceBus './app/azure-service-bus.bicep' = {
+  name: 'serviceBus'
+  params: {
+    serviceBusNamespaceName: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    location: location
+    tags: tags
+    {{- if .AzureServiceBus.AuthUsingConnectionString}}
+    keyVaultName: keyVault.outputs.name
+    {{end}}
+  }
+  scope: rg
+}
+{{- end}}
+
 {{- range .Services}}
 
 module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
@@ -147,10 +180,23 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
     {{- end}}
     {{- if .DbPostgres}}
-    databaseName: postgresDb.outputs.databaseName
-    databaseHost: postgresDb.outputs.databaseHost
-    databaseUser: postgresDb.outputs.databaseUser
-    databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
+    postgresDatabaseName: postgresDb.outputs.databaseName
+    postgresDatabaseHost: postgresDb.outputs.databaseHost
+    postgresDatabaseUser: postgresDb.outputs.databaseUser
+    postgresDatabaseId: postgresDb.outputs.databaseId
+    postgresDatabasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
+    {{- end}}
+    {{- if .DbMySql}}
+    mysqlDatabaseId: mysqlDb.outputs.databaseId
+    mysqlIdentityName: mysqlDb.outputs.identityName
+    {{- end}}
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
+    azureServiceBusConnectionString: vault.getSecret(serviceBus.outputs.serviceBusConnectionStringKey)
+    {{- end}}
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
+    azureServiceBusNamespace: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    {{- end}}
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
     {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [
@@ -174,4 +220,8 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
+{{- range .Services}}
+output {{bicepName .Name}}_uri string = {{bicepName .Name}}.outputs.uri
+{{- end}}
 {{ end}}

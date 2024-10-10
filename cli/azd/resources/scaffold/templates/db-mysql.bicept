@@ -1,18 +1,24 @@
-{{define "db-postgres.bicep" -}}
+{{define "db-mysql.bicep" -}}
 param serverName string
 param location string = resourceGroup().location
 param tags object = {}
 
 param keyVaultName string
+param identityName string
 
-param databaseUser string = 'psqladmin'
+param databaseUser string = 'mysqladmin'
 param databaseName string = '{{.DatabaseName}}'
 @secure()
 param databasePassword string
 
 param allowAllIPsFirewall bool = false
 
-resource postgreServer'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-preview' = {
+resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: identityName
+  location: location
+}
+
+resource mysqlServer 'Microsoft.DBforMySQL/flexibleServers@2023-06-30' = {
   location: location
   tags: tags
   name: serverName
@@ -20,8 +26,14 @@ resource postgreServer'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-prev
     name: 'Standard_B1ms'
     tier: 'Burstable'
   }
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentity.id}': {}
+    }
+  }
   properties: {
-    version: '13'
+    version: '8.0.21'
     administratorLogin: databaseUser
     administratorLoginPassword: databasePassword
     storage: {
@@ -34,12 +46,6 @@ resource postgreServer'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-prev
     highAvailability: {
       mode: 'Disabled'
     }
-    maintenanceWindow: {
-      customWindow: 'Disabled'
-      dayOfWeek: 0
-      startHour: 0
-      startMinute: 0
-    }
   }
 
   resource firewall_all 'firewallRules' = if (allowAllIPsFirewall) {
@@ -51,8 +57,8 @@ resource postgreServer'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-prev
   }
 }
 
-resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-01-20-preview' = {
-  parent: postgreServer
+resource database 'Microsoft.DBforMySQL/flexibleServers/databases@2023-06-30' = {
+  parent: mysqlServer
   name: databaseName
   properties: {
     // Azure defaults to UTF-8 encoding, override if required.
@@ -74,8 +80,5 @@ resource dbPasswordKey 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
 }
 
 output databaseId string = database.id
-output databaseHost string = postgreServer.properties.fullyQualifiedDomainName
-output databaseName string = databaseName
-output databaseUser string = databaseUser
-output databaseConnectionKey string = 'databasePassword'
+output identityName string = userAssignedIdentity.name
 {{ end}}

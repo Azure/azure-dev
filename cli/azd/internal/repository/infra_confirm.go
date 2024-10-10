@@ -88,8 +88,25 @@ func (i *Initializer) infraSpecFromDetect(
 				spec.DbPostgres = &scaffold.DatabasePostgres{
 					DatabaseName: dbName,
 				}
+				break dbPrompt
+			case appdetect.DbMySql:
+				if dbName == "" {
+					i.console.Message(ctx, "Database name is required.")
+					continue
+				}
+				spec.DbMySql = &scaffold.DatabaseMySql{
+					DatabaseName: dbName,
+				}
+				break dbPrompt
 			}
 			break dbPrompt
+		}
+	}
+
+	for _, azureDep := range detect.AzureDeps {
+		err := i.promptForAzureResource(ctx, azureDep.first, &spec)
+		if err != nil {
+			return scaffold.InfraSpec{}, err
 		}
 	}
 
@@ -130,10 +147,21 @@ func (i *Initializer) infraSpecFromDetect(
 				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
 					DatabaseName: spec.DbPostgres.DatabaseName,
 				}
+			case appdetect.DbMySql:
+				serviceSpec.DbMySql = &scaffold.DatabaseReference{
+					DatabaseName: spec.DbMySql.DatabaseName,
+				}
 			case appdetect.DbRedis:
 				serviceSpec.DbRedis = &scaffold.DatabaseReference{
 					DatabaseName: "redis",
 				}
+			}
+		}
+
+		for _, azureDep := range svc.AzureDeps {
+			switch azureDep.(type) {
+			case appdetect.AzureDepServiceBus:
+				serviceSpec.AzureServiceBus = spec.AzureServiceBus
 			}
 		}
 		spec.Services = append(spec.Services, serviceSpec)
@@ -193,4 +221,91 @@ func (i *Initializer) infraSpecFromDetect(
 	}
 
 	return spec, nil
+}
+
+func (i *Initializer) promptForAzureResource(
+	ctx context.Context,
+	azureDep appdetect.AzureDep,
+	spec *scaffold.InfraSpec) error {
+azureDepPrompt:
+	for {
+		azureDepName, err := i.console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the name of the Azure dependency (%s)", azureDep.ResourceDisplay()),
+			Help: "Azure dependency name\n\n" +
+				"Name of the Azure dependency that the app connects to. " +
+				"This dependency will be created after running azd provision or azd up." +
+				"\nYou may be able to skip this step by hitting enter, in which case the dependency will not be created.",
+		})
+		if err != nil {
+			return err
+		}
+
+		if strings.ContainsAny(azureDepName, " ") {
+			i.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: "Dependency name contains whitespace. This might not be allowed by the Azure service.",
+			})
+			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Continue with name '%s'?", azureDepName),
+			})
+			if err != nil {
+				return err
+			}
+
+			if !confirm {
+				continue azureDepPrompt
+			}
+		} else if !wellFormedDbNameRegex.MatchString(azureDepName) {
+			i.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: "Dependency name contains special characters. " +
+					"This might not be allowed by the Azure service.",
+			})
+			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Continue with name '%s'?", azureDepName),
+			})
+			if err != nil {
+				return err
+			}
+
+			if !confirm {
+				continue azureDepPrompt
+			}
+		}
+
+		authType := scaffold.AuthType(0)
+		switch azureDep.(type) {
+		case appdetect.AzureDepServiceBus:
+			_authType, err := i.console.Prompt(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Input the authentication type you want for (%s), 1 for connection string, 2 for managed identity", azureDep.ResourceDisplay()),
+				Help: "Authentication type:\n\n" +
+					"Enter 1 if you want to use connection string to connect to the Service Bus.\n" +
+					"Enter 2 if you want to use user assigned managed identity to connect to the Service Bus.",
+			})
+			if err != nil {
+				return err
+			}
+
+			if _authType != "1" && _authType != "2" {
+				i.console.Message(ctx, "Invalid authentication type. Please enter 0 or 1.")
+				continue azureDepPrompt
+			}
+			if _authType == "1" {
+				authType = scaffold.AuthType_PASSWORD
+			} else {
+				authType = scaffold.AuthType_TOKEN_CREDENTIAL
+			}
+		}
+
+		switch azureDep.(type) {
+		case appdetect.AzureDepServiceBus:
+			spec.AzureServiceBus = &scaffold.AzureDepServiceBus{
+				Name:                      azureDepName,
+				Queues:                    azureDep.(appdetect.AzureDepServiceBus).Queues,
+				AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
+				AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
+			}
+			break azureDepPrompt
+		}
+		break azureDepPrompt
+	}
+	return nil
 }

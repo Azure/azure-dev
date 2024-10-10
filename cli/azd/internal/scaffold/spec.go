@@ -26,13 +26,17 @@ type Parameter struct {
 }
 
 type DatabasePostgres struct {
-	DatabaseUser string
-	DatabaseName string
+	DatabaseUser              string
+	DatabaseName              string
+	AuthUsingManagedIdentity  bool
+	AuthUsingUsernamePassword bool
 }
 
 type DatabaseMySql struct {
-	DatabaseUser string
-	DatabaseName string
+	DatabaseUser              string
+	DatabaseName              string
+	AuthUsingManagedIdentity  bool
+	AuthUsingUsernamePassword bool
 }
 
 type DatabaseCosmosMongo struct {
@@ -91,7 +95,9 @@ type ServiceReference struct {
 }
 
 type DatabaseReference struct {
-	DatabaseName string
+	DatabaseName              string
+	AuthUsingManagedIdentity  bool
+	AuthUsingUsernamePassword bool
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

@@ -11,11 +11,13 @@ param applicationInsightsName string
 @secure()
 param cosmosDbConnectionString string
 {{- end}}
-{{- if .DbPostgres}}
-param postgresDatabaseHost string
-param postgresDatabaseUser string
-param postgresDatabaseName string
+{{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity)}}
 param postgresDatabaseId string
+{{- end}}
+{{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword)}}
+param postgresDatabaseHost string
+param postgresDatabaseName string
+param postgresDatabaseUser string
 @secure()
 param postgresDatabasePassword string
 {{- end}}
@@ -154,7 +156,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
           value: cosmosDbConnectionString
         }
         {{- end}}
-        {{- if .DbPostgres}}
+        {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword)}}
         {
           name: 'postgres-db-pass'
           value: postgresDatabasePassword
@@ -188,26 +190,26 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
               secretRef: 'azure-cosmos-connection-string'
             }
             {{- end}}
-            {{- if .DbPostgres}}
+            {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword)}}
             {
               name: 'POSTGRES_HOST'
               value: postgresDatabaseHost
             }
             {
-              name: 'POSTGRES_USERNAME'
-              value: postgresDatabaseUser
+              name: 'POSTGRES_PORT'
+              value: '5432'
             }
             {
               name: 'POSTGRES_DATABASE'
               value: postgresDatabaseName
             }
             {
-              name: 'POSTGRES_PASSWORD'
-              secretRef: 'postgres-db-pass'
+              name: 'POSTGRES_USERNAME'
+              value: postgresDatabaseUser
             }
             {
-              name: 'POSTGRES_PORT'
-              value: '5432'
+              name: 'POSTGRES_PASSWORD'
+              secretRef: 'postgres-db-pass'
             }
             {{- end}}
             {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
@@ -275,7 +277,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
     }
   }
 }
-{{- if (or .DbMySql .DbPostgres)}}
+{{- if (or .DbMySql (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity))}}
 
 resource linkerCreatorIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${name}-linker-creator-identity'
@@ -315,7 +317,7 @@ resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   }
 }
 {{- end}}
-{{- if .DbPostgres}}
+{{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity)}}
 
 resource appLinkToPostgres 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   dependsOn: [ linkerCreatorRole ]

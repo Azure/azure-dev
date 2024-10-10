@@ -285,7 +285,11 @@ func (d *StackDeployments) DeployToSubscription(
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, err
+		deploymentError := createDeploymentError(err)
+		return nil, fmt.Errorf(
+			"deploying to subscription:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
 	}
 
 	return d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)

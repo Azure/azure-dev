@@ -66,14 +66,28 @@ steps:
           TargetFolder: "$(Build.SourcesDirectory)/temp"
       displayName: Copy test-templates.sh
 
+    - task: AzureCLI@2
+      displayName: Azure CLI Login
+      inputs:
+        azureSubscription: azure-sdk-apiscan
+        scriptType: pscore
+        scriptLocation: inlineScript
+        addSpnToEnvironment: true
+        inlineScript: |
+          az --version
+          az account show -o json
+          Write-Host "##vso[task.setvariable variable=ARM_CLIENT_ID;issecret=true]$($env:servicePrincipalId)"
+          Write-Host "##vso[task.setvariable variable=ARM_TENANT_ID;issecret=true]$($env:tenantId)"
+          Write-Host "##vso[task.setvariable variable=ARM_OIDC_TOKEN;issecret=true]$($env:idToken)"
+
     - task: DevcontainersCI@0
       inputs:
           env: |
               # Required secrets for Terraform service principal authentication
               # $(arm-*) secrets are set by azd-login.yml
-              ARM_CLIENT_ID=$(arm-client-id-test-tenant)
-              ARM_CLIENT_SECRET=$(arm-client-secret-test-tenant)
-              ARM_TENANT_ID=$(arm-tenant-id-test-tenant)
+              ARM_CLIENT_ID=$(ARM_CLIENT_ID)
+              ARM_TENANT_ID=$(ARM_TENANT_ID)
+              ARM_OIDC_TOKEN=$(ARM_OIDC_TOKEN)
               SUBSCRIPTION_ID=$(SubscriptionId-test-tenant)
 
               # Pass in TemplateRunEnvironmentVariables
@@ -113,10 +127,13 @@ steps:
               azd version
 
               # Login azd
-              azd auth login \
-                --client-id "$(arm-client-id-test-tenant)" \
-                --client-secret "$(arm-client-secret-test-tenant)" \
-                --tenant-id "$(arm-tenant-id-test-tenant)"
+              az login \
+                --federated-token "$(ARM_OIDC_TOKEN)" \
+                --service-principal \
+                -u "$(ARM_CLIENT_ID)" \
+                -t "$(ARM_TENANT_ID)"
+
+              azd config set auth.useAzCliAuth true
 
               # Login az CLI (required for scenarios where az is invoked)
               az login \

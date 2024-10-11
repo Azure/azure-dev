@@ -110,6 +110,7 @@ steps:
           runCmd: |
               # Uninstall azd version
               curl -fsSL https://aka.ms/uninstall-azd.sh | sudo bash
+              az --version
 
               # Install azd build
               if [[ $(AzdVersion) == pr/* ]];
@@ -137,13 +138,6 @@ steps:
                 -t "$(ARM_TENANT_ID)"
 
               azd config set auth.useAzCliAuth true
-
-              # Login az CLI (required for scenarios where az is invoked)
-              az login \
-                --service-principal \
-                -u "$(arm-client-id-test-tenant)" \
-                -p="$(arm-client-secret-test-tenant)" \
-                --tenant "$(arm-tenant-id-test-tenant)"
 
               # set default sub for az to be the same used by azd
               az account set --subscription "$(SubscriptionId-test-tenant)"

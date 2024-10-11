@@ -21,9 +21,16 @@ param postgresDatabaseUser string
 @secure()
 param postgresDatabasePassword string
 {{- end}}
-{{- if .DbMySql}}
+{{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity)}}
 param mysqlDatabaseId string
 param mysqlIdentityName string
+{{- end}}
+{{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword)}}
+param mysqlDatabaseHost string
+param mysqlDatabaseName string
+param mysqlDatabaseUser string
+@secure()
+param mysqlDatabasePassword string
 {{- end}}
 {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
 @secure()
@@ -162,6 +169,12 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
           value: postgresDatabasePassword
         }
         {{- end}}
+        {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword)}}
+        {
+          name: 'mysql-db-pass'
+          value: mysqlDatabasePassword
+        }
+        {{- end}}
         {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
         {
           name: 'spring-cloud-azure-servicebus-connection-string'
@@ -210,6 +223,28 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
             {
               name: 'POSTGRES_PASSWORD'
               secretRef: 'postgres-db-pass'
+            }
+            {{- end}}
+            {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword)}}
+            {
+              name: 'MYSQL_HOST'
+              value: mysqlDatabaseHost
+            }
+            {
+              name: 'MYSQL_PORT'
+              value: '3306'
+            }
+            {
+              name: 'MYSQL_DATABASE'
+              value: mysqlDatabaseName
+            }
+            {
+              name: 'MYSQL_USERNAME'
+              value: mysqlDatabaseUser
+            }
+            {
+              name: 'MYSQL_PASSWORD'
+              secretRef: 'mysql-db-pass'
             }
             {{- end}}
             {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
@@ -277,7 +312,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
     }
   }
 }
-{{- if (or .DbMySql (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity))}}
+{{- if (or (and .DbMySql .DbMySql.AuthUsingManagedIdentity) (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity))}}
 
 resource linkerCreatorIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${name}-linker-creator-identity'
@@ -292,28 +327,6 @@ resource linkerCreatorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' 
       'Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
     principalType: 'ServicePrincipal'
     principalId: linkerCreatorIdentity.properties.principalId
-  }
-}
-{{- end}}
-{{- if .DbMySql}}
-
-resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  dependsOn: [ linkerCreatorRole ]
-  name: '${name}-link-to-mysql'
-  location: location
-  kind: 'AzureCLI'
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${linkerCreatorIdentity.id}': {}
-    }
-  }
-  properties: {
-    azCliVersion: '2.63.0'
-    timeout: 'PT10M'
-    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection appLinkToMySql --source-id ${app.id} --target-id ${mysqlDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} mysql-identity-id=${mysqlIdentityName} -c main --yes;'
-    cleanupPreference: 'OnSuccess'
-    retentionInterval: 'P1D'
   }
 }
 {{- end}}
@@ -339,8 +352,30 @@ resource appLinkToPostgres 'Microsoft.Resources/deploymentScripts@2023-08-01' = 
   }
 }
 {{- end}}
+{{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity)}}
 
+resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  dependsOn: [ linkerCreatorRole ]
+  name: '${name}-link-to-mysql'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${linkerCreatorIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.63.0'
+    timeout: 'PT10M'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection appLinkToMySql --source-id ${app.id} --target-id ${mysqlDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} mysql-identity-id=${mysqlIdentityName} -c main --yes;'
+    cleanupPreference: 'OnSuccess'
+    retentionInterval: 'P1D'
+  }
+}
+{{- end}}
 {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity) }}
+
 resource servicebus 'Microsoft.ServiceBus/namespaces@2022-01-01-preview' existing = {
   name: azureServiceBusNamespace
 }
@@ -364,7 +399,6 @@ resource serviceBusSenderRoleAssignment 'Microsoft.Authorization/roleAssignments
     principalType: 'ServicePrincipal'
   }
 }
-
 {{end}}
 
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain

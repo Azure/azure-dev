@@ -188,9 +188,15 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     postgresDatabaseUser: postgresDb.outputs.databaseUser
     postgresDatabasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
     {{- end}}
-    {{- if .DbMySql}}
+    {{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity)}}
     mysqlDatabaseId: mysqlDb.outputs.databaseId
     mysqlIdentityName: mysqlDb.outputs.identityName
+    {{- end}}
+    {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword)}}
+    mysqlDatabaseHost: mysqlDb.outputs.databaseHost
+    mysqlDatabaseName: mysqlDb.outputs.databaseName
+    mysqlDatabaseUser: mysqlDb.outputs.databaseUser
+    mysqlDatabasePassword: vault.getSecret(mysqlDb.outputs.databaseConnectionKey)
     {{- end}}
     {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
     azureServiceBusConnectionString: vault.getSecret(serviceBus.outputs.serviceBusConnectionStringKey)

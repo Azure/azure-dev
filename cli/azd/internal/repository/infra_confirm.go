@@ -174,8 +174,8 @@ func (i *Initializer) infraSpecFromDetect(
 			case appdetect.DbMySql:
 				serviceSpec.DbMySql = &scaffold.DatabaseReference{
 					DatabaseName:              spec.DbMySql.DatabaseName,
-					AuthUsingManagedIdentity:  spec.DbPostgres.AuthUsingManagedIdentity,
-					AuthUsingUsernamePassword: spec.DbPostgres.AuthUsingUsernamePassword,
+					AuthUsingManagedIdentity:  spec.DbMySql.AuthUsingManagedIdentity,
+					AuthUsingUsernamePassword: spec.DbMySql.AuthUsingUsernamePassword,
 				}
 			case appdetect.DbRedis:
 				serviceSpec.DbRedis = &scaffold.DatabaseReference{

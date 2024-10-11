@@ -126,7 +126,10 @@ steps:
 
               azd version
 
-              # Login azd
+              # Install az CLI
+              curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+              # Login az (azd will use legacy az auth because it supports federated token)
               az login \
                 --federated-token "$(ARM_OIDC_TOKEN)" \
                 --service-principal \

@@ -52,6 +52,7 @@ param allowedOrigins array
 param exists bool
 @secure()
 param appDefinition object
+param currentTime string = utcNow()
 
 var appSettingsArray = filter(array(appDefinition.settings), i => i.name != '')
 var secrets = map(filter(appSettingsArray, i => i.?secret != null), i => {
@@ -346,6 +347,7 @@ resource appLinkToPostgres 'Microsoft.Resources/deploymentScripts@2023-08-01' = 
   properties: {
     azCliVersion: '2.63.0'
     timeout: 'PT10M'
+    forceUpdateTag: currentTime
     scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create postgres-flexible --connection appLinkToPostgres --source-id ${app.id} --target-id ${postgresDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} -c main --yes;'
     cleanupPreference: 'OnSuccess'
     retentionInterval: 'P1D'
@@ -368,6 +370,7 @@ resource appLinkToMySql 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   properties: {
     azCliVersion: '2.63.0'
     timeout: 'PT10M'
+    forceUpdateTag: currentTime
     scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection appLinkToMySql --source-id ${app.id} --target-id ${mysqlDatabaseId} --client-type springBoot --user-identity client-id=${identity.properties.clientId} subs-id=${subscription().subscriptionId} user-object-id=${linkerCreatorIdentity.properties.principalId} mysql-identity-id=${mysqlIdentityName} -c main --yes;'
     cleanupPreference: 'OnSuccess'
     retentionInterval: 'P1D'

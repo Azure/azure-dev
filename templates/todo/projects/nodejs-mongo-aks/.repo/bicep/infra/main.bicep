@@ -25,7 +25,6 @@ param cosmosAccountName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
-param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -284,7 +283,7 @@ module applicationInsightsDashboard '../../../../../common/infra/bicep/app/appli
 }
 
 // Data outputs
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs

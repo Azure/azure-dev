@@ -25,7 +25,6 @@ param webServiceName string = ''
 param apimServiceName string = ''
 param connectionStringKey string = 'AZURE-SQL-CONNECTION-STRING'
 
-
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 

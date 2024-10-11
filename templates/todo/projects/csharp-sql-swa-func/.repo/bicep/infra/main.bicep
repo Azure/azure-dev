@@ -21,13 +21,11 @@ param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param storageAccountName string = ''
-param sqlDatabaseName string = ''
 param sqlServerName string = ''
 param webServiceName string = ''
 param apimServiceName string = ''
 param appUser string = 'appUser'
 param connectionStringKey string = 'AZURE-SQL-CONNECTION-STRING'
-
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false

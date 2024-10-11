@@ -24,7 +24,6 @@ param resourceGroupName string = ''
 param webServiceName string = ''
 param apimServiceName string = ''
 
-
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 

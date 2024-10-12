@@ -72,21 +72,41 @@ func (i *Initializer) infraSpecFromDetect(
 				}
 			}
 
+			authType := scaffold.AuthType(0)
+			selection, err := i.console.Select(ctx, input.ConsoleOptions{
+				Message: "Input the authentication type you want for database:",
+				Options: []string{
+					"Use user assigned managed identity",
+					"Use username and password",
+				},
+			})
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			switch selection {
+			case 0:
+				authType = scaffold.AuthType_TOKEN_CREDENTIAL
+			case 1:
+				authType = scaffold.AuthType_PASSWORD
+			default:
+				panic("unhandled selection")
+			}
+
 			switch database {
 			case appdetect.DbMongo:
 				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
 					DatabaseName: dbName,
 				}
-
 				break dbPrompt
 			case appdetect.DbPostgres:
 				if dbName == "" {
 					i.console.Message(ctx, "Database name is required.")
 					continue
 				}
-
 				spec.DbPostgres = &scaffold.DatabasePostgres{
-					DatabaseName: dbName,
+					DatabaseName:              dbName,
+					AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
+					AuthUsingUsernamePassword: authType == scaffold.AuthType_PASSWORD,
 				}
 				break dbPrompt
 			case appdetect.DbMySql:
@@ -95,7 +115,9 @@ func (i *Initializer) infraSpecFromDetect(
 					continue
 				}
 				spec.DbMySql = &scaffold.DatabaseMySql{
-					DatabaseName: dbName,
+					DatabaseName:              dbName,
+					AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
+					AuthUsingUsernamePassword: authType == scaffold.AuthType_PASSWORD,
 				}
 				break dbPrompt
 			}
@@ -145,11 +167,15 @@ func (i *Initializer) infraSpecFromDetect(
 				}
 			case appdetect.DbPostgres:
 				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
+					DatabaseName:              spec.DbPostgres.DatabaseName,
+					AuthUsingManagedIdentity:  spec.DbPostgres.AuthUsingManagedIdentity,
+					AuthUsingUsernamePassword: spec.DbPostgres.AuthUsingUsernamePassword,
 				}
 			case appdetect.DbMySql:
 				serviceSpec.DbMySql = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbMySql.DatabaseName,
+					DatabaseName:              spec.DbMySql.DatabaseName,
+					AuthUsingManagedIdentity:  spec.DbMySql.AuthUsingManagedIdentity,
+					AuthUsingUsernamePassword: spec.DbMySql.AuthUsingUsernamePassword,
 				}
 			case appdetect.DbRedis:
 				serviceSpec.DbRedis = &scaffold.DatabaseReference{

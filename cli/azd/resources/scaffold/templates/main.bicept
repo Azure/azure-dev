@@ -91,7 +91,7 @@ module appsEnv './shared/apps-env.bicep' = {
   }
   scope: rg
 }
-{{- if (or (or (or .DbCosmosMongo .DbPostgres) .DbMySql) (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString))}})))}}
+{{- if (or (or (or .DbCosmosMongo .DbPostgres) .DbMySql) (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString))}}
 
 resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVault.outputs.name
@@ -179,16 +179,24 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     {{- if .DbCosmosMongo}}
     cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
     {{- end}}
-    {{- if .DbPostgres}}
-    postgresDatabaseName: postgresDb.outputs.databaseName
-    postgresDatabaseHost: postgresDb.outputs.databaseHost
-    postgresDatabaseUser: postgresDb.outputs.databaseUser
+    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity)}}
     postgresDatabaseId: postgresDb.outputs.databaseId
+    {{- end}}
+    {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword)}}
+    postgresDatabaseHost: postgresDb.outputs.databaseHost
+    postgresDatabaseName: postgresDb.outputs.databaseName
+    postgresDatabaseUser: postgresDb.outputs.databaseUser
     postgresDatabasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
     {{- end}}
-    {{- if .DbMySql}}
+    {{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity)}}
     mysqlDatabaseId: mysqlDb.outputs.databaseId
     mysqlIdentityName: mysqlDb.outputs.identityName
+    {{- end}}
+    {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword)}}
+    mysqlDatabaseHost: mysqlDb.outputs.databaseHost
+    mysqlDatabaseName: mysqlDb.outputs.databaseName
+    mysqlDatabaseUser: mysqlDb.outputs.databaseUser
+    mysqlDatabasePassword: vault.getSecret(mysqlDb.outputs.databaseConnectionKey)
     {{- end}}
     {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
     azureServiceBusConnectionString: vault.getSecret(serviceBus.outputs.serviceBusConnectionStringKey)

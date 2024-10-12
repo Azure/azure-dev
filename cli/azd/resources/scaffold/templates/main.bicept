@@ -228,8 +228,4 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
-{{- range .Services}}
-output {{bicepName .Name}}_uri string = {{bicepName .Name}}.outputs.uri
-{{- end}}
 {{ end}}

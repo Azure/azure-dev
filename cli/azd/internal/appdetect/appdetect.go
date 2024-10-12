@@ -361,6 +361,8 @@ func enrichFromJavaProject(azureYaml javaanalyze.AzureYaml, project *Project) {
 			project.DatabaseDeps = append(project.DatabaseDeps, DbMySql)
 		} else if resource.GetType() == "PostgreSQL" {
 			project.DatabaseDeps = append(project.DatabaseDeps, DbPostgres)
+		} else if resource.GetType() == "MongoDB" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbMongo)
 		} else if resource.GetType() == "SQL Server" {
 			project.DatabaseDeps = append(project.DatabaseDeps, DbSqlServer)
 		} else if resource.GetType() == "Redis" {

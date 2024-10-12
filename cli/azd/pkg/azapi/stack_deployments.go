@@ -347,7 +347,11 @@ func (d *StackDeployments) DeployToResourceGroup(
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, err
+		deploymentError := createDeploymentError(err)
+		return nil, fmt.Errorf(
+			"deploying to resource group:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
 	}
 
 	return d.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroup, deploymentName)

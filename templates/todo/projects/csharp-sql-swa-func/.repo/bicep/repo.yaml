@@ -113,9 +113,6 @@ repo:
     - from: ../../../../common/infra/bicep/app/sqlserver-avm.bicep
       to: ./infra/app/db-avm.bicep
 
-    - from: ../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep
-      to: ./infra/app/applicationinsights-dashboard.bicep
-
     - from: ../../../../common/infra/bicep/app/sql-deployment-script.bicep
       to: ./infra/app/sql-deployment-script.bicep
 

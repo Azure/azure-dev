@@ -121,10 +121,10 @@ module managedCluster 'br/public:avm/res/container-service/managed-cluster:0.1.7
         roleDefinitionIdOrName: aksClusterAdminRole
       }
     ]
-    monitoringWorkspaceId: logAnalytics.outputs.resourceId
+    monitoringWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceResourceId
     diagnosticSettings: [
       {
-        workspaceResourceId: logAnalytics.outputs.resourceId
+        workspaceResourceId: monitoring.outputs.logAnalyticsWorkspaceResourceId
         logCategoriesAndGroups: [
           {
             category: 'cluster-autoscaler'
@@ -178,7 +178,7 @@ module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' =
     location: location
     diagnosticSettings: [
       {
-        workspaceResourceId: logAnalytics.outputs.resourceId
+        workspaceResourceId: monitoring.outputs.logAnalyticsWorkspaceResourceId
         logCategoriesAndGroups: [
           {
             category: 'ContainerRegistryRepositoryEvents'
@@ -249,36 +249,16 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.3.5' = {
   }
 }
 
-// Monitor application with Azure loganalytics
-module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
-  name: 'loganalytics'
+// Monitor application with Azure Monitor
+module monitoring 'br/public:avm/ptn/azd/monitoring:0.1.0' = {
+  name: 'monitoringDeployment'
   scope: rg
   params: {
-    name: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
+    logAnalyticsName: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
     location: location
-  }
-}
-
-// Monitor application with Azure applicationInsights
-module applicationInsights 'br/public:avm/res/insights/component:0.3.1' = {
-  name: 'applicationinsights'
-  scope: rg
-  params: {
-    name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    workspaceResourceId: logAnalytics.outputs.resourceId
-    location: location
-  }
-}
-
-// Monitor application with Azure applicationInsightsDashboard
-module applicationInsightsDashboard '../../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep' = {
-  name: 'application-insights-dashboard'
-  scope: rg
-  params: {
-    name: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
-    location: location
-    applicationInsightsName: applicationInsights.outputs.name
-    applicationInsightsId: applicationInsights.outputs.resourceId
+    tags: tags
   }
 }
 
@@ -287,7 +267,7 @@ output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStri
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location

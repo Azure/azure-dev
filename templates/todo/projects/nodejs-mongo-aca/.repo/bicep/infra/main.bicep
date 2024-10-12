@@ -24,7 +24,6 @@ param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webContainerAppName string = ''
 param apimServiceName string = ''
-param connectionStringKey string = 'AZURE-COSMOS-CONNECTION-STRING'
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
@@ -84,7 +83,7 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
   name: 'container-apps-environment'
   scope: rg
   params: {
-    logAnalyticsWorkspaceResourceId: logAnalytics.outputs.resourceId
+    logAnalyticsWorkspaceResourceId: monitoring.outputs.logAnalyticsWorkspaceResourceId
     name: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
     location: location
     zoneRedundant: false
@@ -175,7 +174,7 @@ module api 'br/public:avm/res/app/container-app:0.2.0' = {
           }
           {
             name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-            value: applicationInsights.outputs.connectionString
+            value: monitoring.outputs.applicationInsightsConnectionString
           }
           {
             name: 'API_ALLOW_ORIGINS'
@@ -243,36 +242,16 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   }
 }
 
-// Monitor application with Azure loganalytics
-module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
-  name: 'loganalytics'
+// Monitor application with Azure Monitor
+module monitoring 'br/public:avm/ptn/azd/monitoring:0.1.0' = {
+  name: 'monitoringDeployment'
   scope: rg
   params: {
-    name: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
+    logAnalyticsName: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
     location: location
-  }
-}
-
-// Monitor application with Azure applicationInsights
-module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
-  name: 'applicationinsights'
-  scope: rg
-  params: {
-    name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    workspaceResourceId: logAnalytics.outputs.resourceId
-    location: location
-  }
-}
-
-//Monitor application with Azure applicationInsightsDashboard
-module applicationInsightsDashboard '../../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep' = {
-  name: 'application-insights-dashboard'
-  scope: rg
-  params: {
-    name: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
-    location: location
-    applicationInsightsName: applicationInsights.outputs.name
-    applicationInsightsId: applicationInsights.outputs.resourceId
+    tags: tags
   }
 }
 
@@ -294,12 +273,12 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
       {
         name: 'app-insights-logger'
         credentials: {
-          instrumentationKey: applicationInsights.outputs.instrumentationKey
+          instrumentationKey: monitoring.outputs.applicationInsightsInstrumentationKey
         }
         loggerDescription: 'Logger to Azure Application Insights'
         isBuffered: false
         loggerType: 'applicationInsights'
-        targetResourceId: applicationInsights.outputs.resourceId
+        targetResourceId: monitoring.outputs.applicationInsightsResourceId
       }
     ]
   }
@@ -322,13 +301,13 @@ module apimApi 'br/public:avm/ptn/azd/apim-api:0.1.0' = if (useAPIM) {
 }
 
 // Data outputs
-output AZURE_COSMOS_CONNECTION_STRING_KEY string = connectionStringKey
+output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStringKey
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
 output API_CORS_ACA_URL string = corsAcaUrl
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
-output APPLICATIONINSIGHTS_NAME string = applicationInsights.outputs.name
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
+output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.applicationInsightsName
 output AZURE_CONTAINER_ENVIRONMENT_NAME string = containerAppsEnvironment.outputs.name
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name

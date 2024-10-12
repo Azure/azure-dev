@@ -110,9 +110,6 @@ repo:
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db-avm.bicep
       to: ./infra/app/db-avm.bicep
 
-    - from: ../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep
-      to: ./infra/app/applicationinsights-dashboard.bicep
-
     - from: ../../../../common/infra/bicep/app/web-appservice-avm.bicep
       to: ./infra/app/web-appservice-avm.bicep
       

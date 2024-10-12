@@ -53,7 +53,7 @@ module web '../../../../../common/infra/bicep/app/web-appservice-avm.bicep' = {
     location: location
     tags: tags
     appServicePlanId: appServicePlan.outputs.resourceId
-    appInsightResourceId: applicationInsights.outputs.resourceId
+    appInsightResourceId: monitoring.outputs.applicationInsightsResourceId
     linuxFxVersion: 'node|20-lts'
   }
 }
@@ -80,7 +80,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-avm.bicep' = {
       API_ALLOW_ORIGINS: web.outputs.SERVICE_WEB_URI
       SCM_DO_BUILD_DURING_DEPLOYMENT: false
     }
-    appInsightResourceId: applicationInsights.outputs.resourceId
+    appInsightResourceId: monitoring.outputs.applicationInsightsResourceId
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
   }
 }
@@ -176,36 +176,16 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
   }
 }
 
-// Monitor application with Azure loganalytics
-module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
-  name: 'loganalytics'
+// Monitor application with Azure Monitor
+module monitoring 'br/public:avm/ptn/azd/monitoring:0.1.0' = {
+  name: 'monitoringDeployment'
   scope: rg
   params: {
-    name: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
+    logAnalyticsName: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
     location: location
-  }
-}
-
-// Monitor application with Azure applicationInsights
-module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
-  name: 'applicationinsights'
-  scope: rg
-  params: {
-    name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    workspaceResourceId: logAnalytics.outputs.resourceId
-    location: location
-  }
-}
-
-// Monitor application with Azure applicationInsightsDashboard
-module applicationInsightsDashboard '../../../../../common/infra/bicep/app/applicationinsights-dashboard.bicep' = {
-  name: 'application-insights-dashboard'
-  scope: rg
-  params: {
-    name: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
-    location: location
-    applicationInsightsName: applicationInsights.outputs.name
-    applicationInsightsId: applicationInsights.outputs.resourceId
+    tags: tags
   }
 }
 
@@ -227,12 +207,12 @@ module apim 'br/public:avm/res/api-management/service:0.2.0' = if (useAPIM) {
       {
         name: 'app-insights-logger'
         credentials: {
-          instrumentationKey: applicationInsights.outputs.instrumentationKey
+          instrumentationKey: monitoring.outputs.applicationInsightsInstrumentationKey
         }
         loggerDescription: 'Logger to Azure Application Insights'
         isBuffered: false
         loggerType: 'applicationInsights'
-        targetResourceId: applicationInsights.outputs.resourceId
+        targetResourceId: monitoring.outputs.applicationInsightsResourceId
       }
     ]
   }
@@ -261,7 +241,7 @@ output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStri
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location

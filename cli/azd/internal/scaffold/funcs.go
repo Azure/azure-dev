@@ -14,6 +14,9 @@ import (
 func BicepName(name string) string {
 	sb := strings.Builder{}
 	separatorStart := -1
+
+	allUpper := isAllUpperCase(name)
+
 	for i := range name {
 		switch name[i] {
 		case '-', '_':
@@ -24,18 +27,17 @@ func BicepName(name string) string {
 			if !isAsciiAlphaNumeric(name[i]) {
 				continue
 			}
-			char := name[i]
-			if separatorStart != -1 {
-				if separatorStart == 0 { // first character should be lowerCase
-					char = lowerCase(name[i])
-				} else {
-					char = upperCase(name[i])
-				}
-				separatorStart = -1
-			}
-
-			if i == 0 {
+			var char byte
+			if separatorStart == 0 || i == 0 { // we are at the start
 				char = lowerCase(name[i])
+				separatorStart = -1
+			} else if separatorStart > 0 { // end of separator, and it's not the first one
+				char = upperCase(name[i])
+				separatorStart = -1
+			} else if allUpper { // when the input is all uppercase, convert to lowercase
+				char = lowerCase(name[i])
+			} else {
+				char = name[i]
 			}
 
 			sb.WriteByte(char)
@@ -79,6 +81,16 @@ func AlphaSnakeUpper(name string) string {
 	}
 
 	return sb.String()
+}
+
+func isAllUpperCase(c string) bool {
+	for i := range c {
+		if 'a' <= c[i] && c[i] <= 'z' {
+			return false
+		}
+	}
+
+	return true
 }
 
 func isAsciiAlphaNumeric(c byte) bool {

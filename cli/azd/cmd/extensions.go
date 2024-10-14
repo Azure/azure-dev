@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -121,6 +122,11 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	allEnv := []string{}
 	allEnv = append(allEnv, os.Environ()...)
+
+	forceColor := !color.NoColor
+	if forceColor {
+		allEnv = append(allEnv, "FORCE_COLOR=1")
+	}
 
 	env, err := a.lazyEnv.GetValue()
 	if err == nil && env != nil {

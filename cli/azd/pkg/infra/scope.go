@@ -276,9 +276,9 @@ func (s *SubscriptionDeployment) DeploymentUrl(ctx context.Context) (string, err
 }
 
 func (s *SubscriptionDeployment) ValidatePreflight(
-	ctx context.Context, 
-	template azure.RawArmTemplate, 
-	parameters azure.ArmParameters, 
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
 ) error {

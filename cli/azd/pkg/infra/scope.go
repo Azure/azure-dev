@@ -36,6 +36,7 @@ type Deployment interface {
 		template azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
+		options map[string]any,
 	) error
 	// Deploy a given template with a set of parameters.
 	Deploy(
@@ -73,10 +74,14 @@ func (s *ResourceGroupDeployment) Name() string {
 }
 
 func (s *ResourceGroupDeployment) ValidatePreflight(
-	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
 ) error {
 	return s.deploymentService.ValidatePreflightToResourceGroup(
-		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags)
+		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags, options)
 }
 
 func (s *ResourceGroupDeployment) Deploy(
@@ -271,10 +276,14 @@ func (s *SubscriptionDeployment) DeploymentUrl(ctx context.Context) (string, err
 }
 
 func (s *SubscriptionDeployment) ValidatePreflight(
-	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
+	ctx context.Context, 
+	template azure.RawArmTemplate, 
+	parameters azure.ArmParameters, 
+	tags map[string]*string,
+	options map[string]any,
 ) error {
-	return s.deploymentService.ValidatePreflightToSubscription(ctx, s.subscriptionId, s.location, 
-		s.name, template, parameters, tags)
+	return s.deploymentService.ValidatePreflightToSubscription(ctx, s.subscriptionId, s.location,
+		s.name, template, parameters, tags, options)
 }
 
 // Deploy a given template with a set of parameters.

@@ -752,6 +752,7 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) error {
 	client, err := d.createClient(ctx, subscriptionId)
 	if err != nil {
@@ -773,22 +774,19 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 		}
 	}
 
-	deleteBehavior := armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete
+	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	if err != nil {
+		return err
+	}
 
 	stack := armdeploymentstacks.DeploymentStack{
 		Tags: clonedTags,
 		Properties: &armdeploymentstacks.DeploymentStackProperties{
-			BypassStackOutOfSyncError: to.Ptr(false),
-			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
-				Resources:        &deleteBehavior,
-				ManagementGroups: &deleteBehavior,
-				ResourceGroups:   &deleteBehavior,
-			},
-			DenySettings: &armdeploymentstacks.DenySettings{
-				Mode: to.Ptr(armdeploymentstacks.DenySettingsModeNone),
-			},
-			Parameters: stackParams,
-			Template:   armTemplate,
+			BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
+			ActionOnUnmanage:          deploymentStackOptions.ActionOnUnmanage,
+			DenySettings:              deploymentStackOptions.DenySettings,
+			Parameters:                stackParams,
+			Template:                  armTemplate,
 		},
 	}
 	poller, err := client.BeginValidateStackAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
@@ -812,6 +810,7 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) error {
 	client, err := d.createClient(ctx, subscriptionId)
 	if err != nil {
@@ -833,23 +832,20 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 		}
 	}
 
-	deleteBehavior := armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete
+	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	if err != nil {
+		return err
+	}
 
 	stack := armdeploymentstacks.DeploymentStack{
 		Location: &location,
 		Tags:     clonedTags,
 		Properties: &armdeploymentstacks.DeploymentStackProperties{
-			BypassStackOutOfSyncError: to.Ptr(false),
-			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
-				Resources:        &deleteBehavior,
-				ManagementGroups: &deleteBehavior,
-				ResourceGroups:   &deleteBehavior,
-			},
-			DenySettings: &armdeploymentstacks.DenySettings{
-				Mode: to.Ptr(armdeploymentstacks.DenySettingsModeNone),
-			},
-			Parameters: stackParams,
-			Template:   armTemplate,
+			BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
+			ActionOnUnmanage:          deploymentStackOptions.ActionOnUnmanage,
+			DenySettings:              deploymentStackOptions.DenySettings,
+			Parameters:                stackParams,
+			Template:                  armTemplate,
 		},
 	}
 	poller, err := client.BeginValidateStackAtSubscription(ctx, deploymentName, stack, nil)

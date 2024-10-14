@@ -700,6 +700,7 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) error {
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -782,6 +783,7 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) error {
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {

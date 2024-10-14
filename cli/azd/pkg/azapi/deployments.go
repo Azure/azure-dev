@@ -175,6 +175,7 @@ type DeploymentService interface {
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
+		options map[string]any,
 	) error
 	ValidatePreflightToResourceGroup(
 		ctx context.Context,
@@ -184,6 +185,7 @@ type DeploymentService interface {
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
+		options map[string]any,
 	) error
 	WhatIfDeployToSubscription(
 		ctx context.Context,

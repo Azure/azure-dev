@@ -563,12 +563,18 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
 	}
 
+	optionsMap, err := convert.ToMap(p.options)
+	if err != nil {
+		return nil, err
+	}
+
 	err = p.validatePreflight(
 		ctx,
 		bicepDeploymentData.Target,
 		bicepDeploymentData.CompiledBicep.RawArmTemplate,
 		bicepDeploymentData.CompiledBicep.Parameters,
 		deploymentTags,
+		optionsMap,
 	)
 	if err != nil {
 		return nil, err
@@ -610,11 +616,6 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
-
-	optionsMap, err := convert.ToMap(p.options)
-	if err != nil {
-		return nil, err
-	}
 
 	deployResult, err := p.deployModule(
 		ctx,
@@ -1735,8 +1736,9 @@ func (p *BicepProvider) validatePreflight(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) error {
-	return target.ValidatePreflight(ctx, armTemplate, armParameters, tags)
+	return target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)

@@ -16,6 +16,32 @@
         }
       }
     },
+    "param-with-value": {
+      "type": "parameter.v0",
+      "value": "{param-with-value.inputs.value}",
+      "inputs": {
+        "value": {
+          "type": "string",
+          "secret": false,
+          "default":{
+            "value": "default value for param"
+          }
+        }
+      }
+    },
+    "param-with-empty-value": {
+      "type": "parameter.v0",
+      "value": "{param-with-empty-value.inputs.value}",
+      "inputs": {
+        "value": {
+          "type": "string",
+          "secret": false,
+          "default":{
+            "value": ""
+          }
+        }
+      }
+    },
     "mysqlabstract-pas-sw-ord": {
       "type": "parameter.v0",
       "value": "{mysqlabstract-pas-sw-ord.inputs.value}",
@@ -38,7 +64,9 @@
       "image": "mysql:latest",
       "env": {
         "MYSQL_ROOT_PASSWORD": "{mysqlabstract-password.value}",
-        "SpecialChar": "{mysqlabstract-pas-sw-ord.value}"
+        "SpecialChar": "{mysqlabstract-pas-sw-ord.value}",
+        "WITH_VALUE": "{param-with-value.value}",
+        "EMPTY_VALUE": "{param-with-empty-value.value}"
       },
       "volumes": [
         {
@@ -158,6 +186,18 @@
         "MYSQL_ROOT_PASSWORD": "{noVolume-password.value}",
         "SpecialChar": "{noVolume-pas-sw-ord.value}"
       },
+      "bindMounts": [
+        {
+          "source": "../MySql.ApiService/data",
+          "target": "/docker-entrypoint-initdb.d",
+          "readOnly": false
+        },
+        {
+          "source": "../MySql.ApiService/data2",
+          "target": "/docker-entrypoint-initdb.d/two",
+          "readOnly": true
+        }
+      ],
       "bindings": {
         "tcp": {
           "scheme": "tcp",

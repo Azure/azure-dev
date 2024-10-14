@@ -14,8 +14,12 @@ type Template struct {
 	// Name is the friendly short name of the template.
 	Name string `json:"name"`
 
+	Title string `json:"title,omitempty"`
+
 	// The source of the template
-	Source string `json:"source,omitempty"`
+	Source string `json:"-"`
+
+	RepoSource string `json:"source,omitempty"`
 
 	// Description is a long description of the template.
 	Description string `json:"description,omitempty"`

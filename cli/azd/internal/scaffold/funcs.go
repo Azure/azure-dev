@@ -45,6 +45,10 @@ func BicepName(name string) string {
 	return sb.String()
 }
 
+func RemoveDotAndDash(name string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(name, ".", ""), "-", "")
+}
+
 // UpperSnakeAlpha returns a name in upper-snake case alphanumeric name separated only by underscores.
 //
 // Non-alphanumeric characters are discarded, while consecutive separators ('-', '_', and '.') are treated
@@ -95,16 +99,9 @@ func lowerCase(r byte) byte {
 	return r
 }
 
-// Provide a reasonable limit for the container app infix to avoid name length issues
-// This is calculated as follows:
-//  1. Start with max initial length of 32 characters from the Container App name
-//     https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
-//  2. Prefix abbreviation of 'ca-' from abbreviations.json (4 characters)
-//  3. Bicep resource token (13 characters) + separator '-' (1 character) -- total of 14 characters
+// 32 characters are allowed for the Container App name. See
+// https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
 //
-// Which leaves us with: 32 - 4 - 14 = 14 characters.
-const containerAppNameInfixMaxLen = 12
-
 // We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.
 const containerAppNameMaxLen = 30
 
@@ -167,14 +164,6 @@ var camelCaseRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 func EnvFormat(src string) string {
 	snake := strings.ReplaceAll(strings.ToUpper(camelCaseRegex.ReplaceAllString(src, "${1}_${2}")), "-", "_")
 	return fmt.Sprintf("${AZURE_%s}", snake)
-}
-
-// ContainerAppInfix returns a suitable infix for a container app resource.
-//
-// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
-// as the first or last character.
-func ContainerAppInfix(name string) string {
-	return containerAppName(name, containerAppNameInfixMaxLen)
 }
 
 // Formats a parameter value for use in a bicep file.

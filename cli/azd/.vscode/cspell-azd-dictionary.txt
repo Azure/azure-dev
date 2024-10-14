@@ -21,6 +21,7 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 armcosmos
+armdeploymentstacks
 armmachinelearning
 armresourcegraph
 armsql
@@ -29,6 +30,7 @@ aspnetcore
 asyncmy
 asyncpg
 azapi
+azblob
 AZCLI
 azcorelog
 azdcli
@@ -53,9 +55,11 @@ azureutil
 azureyaml
 Backticks
 bicepparam
+blockblob
 BOOLSLICE
 BUILDID
 BUILDNUMBER
+buildargs
 buildpacks
 byoi
 cflags
@@ -74,9 +78,11 @@ csharpapptest
 cupaloy
 custommaps
 deletedservices
+deviceid
 devcenter
 devcenters
 devcentersdk
+devdeviceid
 devel
 discarder
 docf
@@ -86,12 +92,14 @@ doublestar
 dskip
 eastus
 endregion
+entraid
 envlist
 envname
 errcheck
 errorinfo
 errorlint
 executil
+flexconsumption
 Frontends
 funcapp
 functestapp
@@ -103,9 +111,13 @@ godotenv
 golangci
 gosec
 goterm
+gotest
+gotestsum
 hotspot
+ignorefile
 iidfile
 ineffassign
+jaegertracing
 javac
 jmes
 jquery
@@ -121,6 +133,7 @@ mgmt
 mgutz
 microsoftonline
 missingkey
+moby
 mockarmresources
 mockazcli
 mongojs
@@ -134,6 +147,7 @@ notrail
 omitempty
 oneauth
 oneline
+onmicrosoft
 opentelemetry
 ostest
 osutil
@@ -145,6 +159,7 @@ otlptrace
 otlptracehttp
 overriden
 paketobuildpacks
+patternmatcher
 pflag
 posix
 preinit
@@ -182,6 +197,7 @@ stdbool
 stdlib
 stdouttrace
 STRINGSLICE
+struct
 structs
 substr
 swacli
@@ -196,6 +212,7 @@ trafficmanager
 Truef
 typeflag
 unhide
+unmanage
 unmarshaled
 unmarshalled
 unmarshalling
@@ -210,4 +227,5 @@ webfrontend
 westus2
 wireinject
 yacspin
+ymlt
 zerr

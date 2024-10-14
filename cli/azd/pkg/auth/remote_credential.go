@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // RemoteCredential implements azcore.TokenCredential by using the remote credential protocol.
@@ -21,17 +21,21 @@ type RemoteCredential struct {
 	key string
 	// Tenant ID to use to authenticate, instead of the default. Optional.
 	tenantID string
-	// The HTTP client to use to make requests.
-	httpClient httputil.HttpClient
+	// The transport to use to make requests.
+	transporter policy.Transporter
 }
 
-func newRemoteCredential(endpoint, key, tenantID string, httpClient httputil.HttpClient) *RemoteCredential {
+func newRemoteCredential(endpoint, key, tenantID string, transporter policy.Transporter) *RemoteCredential {
 	return &RemoteCredential{
-		endpoint:   endpoint,
-		key:        key,
-		tenantID:   tenantID,
-		httpClient: httpClient,
+		endpoint:    endpoint,
+		key:         key,
+		tenantID:    tenantID,
+		transporter: transporter,
 	}
+}
+
+func remoteCredentialError(err string, w error) error {
+	return fmt.Errorf("RemoteCredential: %w", fmt.Errorf("%s: %w", err, w))
 }
 
 // GetToken implements azcore.TokenCredential.
@@ -55,19 +59,19 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 		fmt.Sprintf("%s/token?api-version=2023-07-12-preview", rc.endpoint),
 		bytes.NewReader(body))
 	if err != nil {
-		return azcore.AccessToken{}, fmt.Errorf("building request: %w", err)
+		return azcore.AccessToken{}, remoteCredentialError("building request", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", rc.key))
 
-	res, err := rc.httpClient.Do(req)
+	res, err := rc.transporter.Do(req)
 	if err != nil {
-		return azcore.AccessToken{}, fmt.Errorf("making request: %w", err)
+		return azcore.AccessToken{}, remoteCredentialError("making request", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return azcore.AccessToken{}, fmt.Errorf("unexpected status code: %d", res.StatusCode)
+		return azcore.AccessToken{}, remoteCredentialError("unexpected status code", fmt.Errorf("%d", res.StatusCode))
 	}
 
 	var tokenResp struct {
@@ -83,7 +87,7 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 	}
 
 	if err := json.NewDecoder(res.Body).Decode(&tokenResp); err != nil {
-		return azcore.AccessToken{}, fmt.Errorf("unmarshalling response: %w", err)
+		return azcore.AccessToken{}, remoteCredentialError("decoding token response", err)
 	}
 
 	switch tokenResp.Status {
@@ -93,11 +97,11 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 			ExpiresOn: *tokenResp.ExpiresOn,
 		}, nil
 	case "error":
-		return azcore.AccessToken{}, fmt.Errorf("RemoteCredential: failed to acquire token: code: %s message: %s",
+		return azcore.AccessToken{}, remoteCredentialError("failed to acquire token", fmt.Errorf("code: %s message: %s",
 			*tokenResp.Code,
-			*tokenResp.Message)
+			*tokenResp.Message))
 	default:
-		return azcore.AccessToken{}, fmt.Errorf("RemoteCredential: unexpected status: %s", tokenResp.Status)
+		return azcore.AccessToken{}, remoteCredentialError("unexpected status", errors.New(tokenResp.Status))
 	}
 }
 

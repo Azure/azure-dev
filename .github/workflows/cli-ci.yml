@@ -21,12 +21,12 @@ jobs:
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: "^1.21.0"
+          go-version: "^1.23.0"
       - uses: actions/checkout@v4
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.54.1
+          version: v1.60.1
           args: -v --timeout 10m0s
           working-directory: cli/azd
 
@@ -37,9 +37,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npm install -g cspell
-      - name: Spell check for CLI source code
-        run: cspell lint '**/*.go' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
+      - run: npm install -g cspell@8.13.1
+      - name: Spell check for go and docs
+        run: cspell lint '**/*.{go,md}' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
 
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml

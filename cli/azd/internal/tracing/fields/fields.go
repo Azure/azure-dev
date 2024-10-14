@@ -41,6 +41,9 @@ const (
 	// guarantees.
 	MachineIdKey = attribute.Key("machine.id")
 
+	// The unique DevDeviceId associated with the device.
+	DevDeviceIdKey = attribute.Key("machine.devdeviceid")
+
 	// An enumeration of possible environments that the application is running on.
 	//
 	// Example: Desktop, Azure Pipelines, Visual Studio.
@@ -94,6 +97,12 @@ const (
 // Platform related attributes for integrations like devcenter / ADE
 const (
 	PlatformTypeKey = attribute.Key("platform.type")
+)
+
+// Machine-level configuration related attribute.
+const (
+	// Tracks what alpha features are enabled on each command
+	AlphaFeaturesKey = attribute.Key("config.features")
 )
 
 // Environment related attributes
@@ -165,14 +174,6 @@ const (
 
 // The value used for ServiceNameKey
 const ServiceNameAzd = "azd"
-
-// Additional fields of events.AccountSubscriptionsListEvent
-const (
-	// Number of tenants found
-	AccountSubscriptionsListTenantsFound = attribute.Key("tenants.found")
-	// Number of tenants where listing of subscriptions failed
-	AccountSubscriptionsListTenantsFailed = attribute.Key("tenants.failed")
-)
 
 // Error related fields
 const (
@@ -250,6 +251,11 @@ const (
 
 	// The last step recorded during the app init process.
 	AppInitLastStep = attribute.Key("appinit.lastStep")
+)
+
+// Remote docker build related fields
+const (
+	RemoteBuildCount = attribute.Key("container.remoteBuild.count")
 )
 
 // JSON-RPC related fields

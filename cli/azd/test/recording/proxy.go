@@ -5,6 +5,7 @@ package recording
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"crypto/tls"
 	"errors"
@@ -64,10 +65,26 @@ func (u *gzip2HttpRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 
 	if resp.Header.Get("Content-Encoding") == "gzip" {
 		resp.Header.Del("Content-Encoding")
-		resp.Header.Del("Content-Length")
-		resp.ContentLength = -1
-		resp.Body = &http2gzipReader{body: resp.Body}
-		resp.Uncompressed = true
+
+		if resp.Header.Get("Content-Length") != "" {
+			defer resp.Body.Close()
+			reader, err := gzip.NewReader(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			body, err := io.ReadAll(reader)
+			if err != nil {
+				return nil, fmt.Errorf("reading gzip body: %w", err)
+			}
+			resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
+			resp.ContentLength = int64(len(body))
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+			resp.Uncompressed = false
+		} else {
+			resp.ContentLength = -1
+			resp.Uncompressed = true
+			resp.Body = &http2gzipReader{body: resp.Body}
+		}
 	}
 
 	return resp, nil
@@ -78,9 +95,9 @@ func (u *gzip2HttpRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 type recorderProxy struct {
 	Log *slog.Logger
 
-	// Panic specifies the function to call when the server panics.
+	// Panic specifies the function to call when the server panics while round-tripping a http request.
 	// If nil, `panic` is used.
-	Panic func(msg string)
+	Panic func(req *http.Request, msg string)
 
 	// The recorder that will be used to record or replay interactions.
 	Recorder *recorder.Recorder
@@ -91,7 +108,7 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 
 	resp, err := p.Recorder.RoundTrip(req)
 	if err != nil {
-		p.panic(fmt.Sprintf("%s %s: %s", req.Method, req.URL.String(), err.Error()))
+		p.panic(req, fmt.Sprintf("%s %s: %s", req.Method, req.URL.String(), err.Error()))
 	}
 
 	if err != nil {
@@ -102,20 +119,27 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 		resp.Body = io.NopCloser(strings.NewReader(fmt.Sprintf(`{"error":{"code":"%s"}}`, err.Error())))
 	}
 
-	// Always use chunked encoding for transferring the response back, which handles large response bodies.
-	resp.TransferEncoding = []string{"chunked"}
+	// Always use chunked encoding for transferring the response back, which handles large response bodies, except in the
+	// case of HEAD requests. The response for a HEAD request does not have a body and writing a chunked response would
+	// cause the Content-Length header to be dropped, which would break things like the blob storage sdk which uses a HEAD
+	// request during GetProperties. There, the lack of a Content-Length header in the response means the `ContentLength`
+	// property of the properties in nil, making it impossible to determine the size of the blob without reading it.
+	if req.Method != http.MethodHead {
+		resp.TransferEncoding = []string{"chunked"}
+	}
+
 	err = resp.Write(conn)
 	if err != nil {
-		p.panic(err.Error())
+		p.panic(req, err.Error())
 	}
 }
 
 // panic calls the user-defined Panic function if set, otherwise the default panic function.
-func (p *recorderProxy) panic(msg string, args ...interface{}) {
+func (p *recorderProxy) panic(req *http.Request, msg string) {
 	if p.Panic != nil {
-		p.Panic(fmt.Sprintf(msg, args...))
+		p.Panic(req, msg)
 	} else {
-		panic(fmt.Sprintf(msg, args...))
+		panic(msg)
 	}
 }
 

@@ -1,6 +1,6 @@
 # Release History
 
-## 1.10.0-beta.1 (Unreleased)
+## 1.11.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,110 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.10.2 (2024-10-08)
+
+### Features Added
+
+- [[4272]](https://github.com/Azure/azure-dev/pull/4272) Supports configurable `api-version` for container app deployments.
+- [[4286]](https://github.com/Azure/azure-dev/pull/4286) Adds `alpha` feature `alpha.aspire.useBicepForContainerApps` to use bicep for container app deployment.
+- [[4371]](https://github.com/Azure/azure-dev/pull/4371) Adds support for `default.value` for `parameter.v0`.
+
+### Bugs Fixed
+
+- [[4375]](https://github.com/Azure/azure-dev/pull/4375) Enables remote build support for AKS.
+- [[4363]](https://github.com/Azure/azure-dev/pull/4363) Fix environment variables to be evaluated too early for `main.parameters.json`.
+
+### Other Changes
+
+- [[4336]](https://github.com/Azure/azure-dev/pull/4336) Adds spinner to `azd down`.
+- [[4357]](https://github.com/Azure/azure-dev/pull/4357) Updates `azure.yaml.json` for `remoteBuild`.
+- [[4369]](https://github.com/Azure/azure-dev/pull/4369) Updates docker `buildargs` to expandable strings.
+- [[4331]](https://github.com/Azure/azure-dev/pull/4331) Exposes configurable settings for `actionOnUnmanage` and `denySettings` for Azure Deployment Stacks (alpha).
+
+## 1.10.1 (2024-09-05)
+
+### Bugs Fixed
+
+- [[4299]](https://github.com/Azure/azure-dev/pull/4299) Fixes issue in vs-server for Aspire projects.
+- [[4294]](https://github.com/Azure/azure-dev/pull/4294) Fixes azd pipeline config on Codespaces.
+- [[4295]](https://github.com/Azure/azure-dev/pull/4295) Fixes azd pipeline config for Terraform.
+
+## 1.10.0 (2024-09-04)
+
+### Features Added
+
+- [[4165]](https://github.com/Azure/azure-dev/pull/4165) Add support for `alpha` feature Azure Deployment stacks.
+- [[4236]](https://github.com/Azure/azure-dev/pull/4236) Support `args` on `container.{v0,v1}`.
+- [[4257]](https://github.com/Azure/azure-dev/pull/4257) Add support for multiple hooks per event.
+- [[4190]](https://github.com/Azure/azure-dev/pull/4190) Add support for `.azuredevops` folder.
+- [[4161]](https://github.com/Azure/azure-dev/pull/4161) Add remote builds support with Azure Container Registry.
+- [[4254]](https://github.com/Azure/azure-dev/pull/4254) Add support for environment variable substitution for source container image.
+- [[4203]](https://github.com/Azure/azure-dev/pull/4203) Add GitHub as template source configuration option.
+- [[4208]](https://github.com/Azure/azure-dev/pull/4208) Add support for Java Azure Functions.
+
+### Bugs Fixed
+
+- [[4237]](https://github.com/Azure/azure-dev/pull/4237) Fix pipeline config failing bug.
+- [[4263]](https://github.com/Azure/azure-dev/pull/4263) Fix `azd infra synth` ignored by `azd deploy` in azdo CI/CD pipeline bug.
+- [[4281]](https://github.com/Azure/azure-dev/pull/4281) Fix failed provision with the STG location.
+
+### Other Changes
+
+- [[4243]](https://github.com/Azure/azure-dev/pull/4243) Add AI services model deployments to provisioning display.
+
+## 1.9.6 (2024-08-13)
+
+### Features Added
+
+- [[4115]](https://github.com/Azure/azure-dev/pull/4115) Adding `alpha` feature `alpha.aca.persistIngressSessionAffinity`.
+
+### Bugs Fixed
+
+- [[4111]](https://github.com/Azure/azure-dev/pull/4111) Container Apps: Fail when explicit Dockerfile path not found.
+- [[4149]](https://github.com/Azure/azure-dev/pull/4149) Remove Admin Access as default for all .Net Aspire services.
+- [[4104]](https://github.com/Azure/azure-dev/pull/4104) Remove Azure Dev Ops git remote constraint for dev.azure.com only.
+- [[4160]](https://github.com/Azure/azure-dev/pull/4160) Fix automatic generation of CI/CD files for .Net Aspire projects.
+- [[4182]](https://github.com/Azure/azure-dev/pull/4182) Allow `.yaml` and `.yml` extension for azure-dev pipeline files.
+- [[4187]](https://github.com/Azure/azure-dev/pull/4187) Fix panic during deployment progress rendering.
+
+## 1.9.5 (2024-07-10)
+
+### Features Added
+
+- [[4080]](https://github.com/Azure/azure-dev/pull/4080) Add `azd env get-value`.
+
+### Bugs Fixed
+
+- [[4065]](https://github.com/Azure/azure-dev/pull/4065) Fix panic when a project has no endpoints.
+- [[4074]](https://github.com/Azure/azure-dev/pull/4074) Fix error in retrieving cross-rg service plan.
+- [[4073]](https://github.com/Azure/azure-dev/pull/4073) Fix bug where windows logic app passed isLinuxWebApp.
+
+## 1.9.4 (2024-07-02)
+
+### Features Added
+
+- [[3924]](https://github.com/Azure/azure-dev/pull/3924) Updating azd pipeline config to support Federated Credential for Azure DevOps.
+- [[3553]](https://github.com/Azure/azure-dev/pull/3553) Support swa-cli.config.json for Azure Static Web Apps.
+- [[3955]](https://github.com/Azure/azure-dev/pull/3955) Adding `alpha` feature `alpha.aca.persistDomains`.
+- [[3723]](https://github.com/Azure/azure-dev/pull/3723) Add --managed-identity to azd auth login.
+- [[3965]](https://github.com/Azure/azure-dev/pull/3965) Add deployment status tracking for linux web apps.
+- [[4003]](https://github.com/Azure/azure-dev/pull/4003) Add support for deploying flex-consumption function apps.
+- [[4008]](https://github.com/Azure/azure-dev/pull/4008) Add support for container.v1 [Aspire].
+- [[4030]](https://github.com/Azure/azure-dev/pull/4030) Prompt to add pipeline definition file during azd pipeline config.
+- [[3790]](https://github.com/Azure/azure-dev/pull/3790) Adding `alpha` feature `azd.operations` to support .Net Aspire bind mounts.
+- [[4049]](https://github.com/Azure/azure-dev/pull/4049) Adding pipeline config `--applicationServiceManagementReference`.
+
+### Bugs Fixed
+
+- [[3941]](https://github.com/Azure/azure-dev/pull/3941) Fix exposed ports for Aspire projects.
+- [[3948]](https://github.com/Azure/azure-dev/pull/3948) Adds missing namespace property to Helm configuration schema.
+- [[3942]](https://github.com/Azure/azure-dev/pull/3942) Fixes issue selected environment with different environment type.
+- [[3985]](https://github.com/Azure/azure-dev/pull/3985) Reset the read cursor in zip deployments to fix bugs in retry.
+
+### Other Changes
+
+- [[4043]](https://github.com/Azure/azure-dev/pull/4043) wait for Ai-studio deployments before polling.
 
 ## 1.9.3 (2024-05-20)
 
@@ -454,7 +558,7 @@
 
 #### Static Web App Dynamic Configuration
 
-This change affects `staticwebapp` services that are currently relying on azd provided `.env` file variables during `azd deploy`. If you have an application initialized from an older `azd` provided Static Web App template (before April 10, 2023), we recommend uptaking the latest changes if you're relying on `.env` variables being present. A way to check whether this affects you is by looking at contents in `azure.yaml`:
+This change affects `staticwebapp` services that are currently relying on azd provided `.env` file variables during `azd deploy`. If you have an application initialized from an older `azd` provided Static Web App template (before April 10, 2023), we recommend adopting the latest changes if you're relying on `.env` variables being present. A way to check whether this affects you is by looking at contents in `azure.yaml`:
 
 Old, uptake needed:
 
@@ -525,7 +629,7 @@ From the example above, dynamic configuration can still be generated from azd `.
 - [[#1963]](https://github.com/Azure/azure-dev/pull/1963) Update GitHub federated auth token provider to allow for fetching of tokens when tokens expire.
 - [[#1967]](https://github.com/Azure/azure-dev/pull/1967) Display provisioning resources in `Failed` state.
 - [[#1940]](https://github.com/Azure/azure-dev/pull/1940) Detect and update environment changes before and after hook executions.
-- [[#1970]](https://github.com/Azure/azure-dev/pull/1970) Fix `pipeline config` issues on Codespaces for `ghcli` and `gitcli` auth.
+- [[#1970]](https://github.com/Azure/azure-dev/pull/1970) Fix `pipeline config` issues on Codespaces for `GitHub cli` and `git cli` auth.
 - [[#1982]](https://github.com/Azure/azure-dev/pull/1982) Ensure directory has user "execute" permissions.
 
 ## 0.8.0-beta.1 (2023-04-10)

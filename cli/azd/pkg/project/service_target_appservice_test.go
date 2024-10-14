@@ -4,13 +4,11 @@
 package project
 
 import (
-	"context"
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +22,7 @@ func TestNewAppServiceTargetTypeValidation(t *testing.T) {
 
 	tests := map[string]*serviceTargetValidationTest{
 		"ValidateTypeSuccess": {
-			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", string(infra.AzureResourceTypeWebSite)),
+			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", string(azapi.AzureResourceTypeWebSite)),
 			expectError:    false,
 		},
 		"ValidateTypeLowerCaseSuccess": {
@@ -32,7 +30,7 @@ func TestNewAppServiceTargetTypeValidation(t *testing.T) {
 				"SUB_ID",
 				"RG_ID",
 				"res",
-				strings.ToLower(string(infra.AzureResourceTypeWebSite)),
+				strings.ToLower(string(azapi.AzureResourceTypeWebSite)),
 			),
 			expectError: false,
 		},
@@ -44,11 +42,9 @@ func TestNewAppServiceTargetTypeValidation(t *testing.T) {
 
 	for test, data := range tests {
 		t.Run(test, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
 			serviceTarget := &appServiceTarget{}
-			serviceConfig := &ServiceConfig{}
 
-			err := serviceTarget.validateTargetResource(*mockContext.Context, serviceConfig, data.targetResource)
+			err := serviceTarget.validateTargetResource(data.targetResource)
 			if data.expectError {
 				require.Error(t, err)
 			} else {

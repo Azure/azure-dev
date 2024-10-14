@@ -31,9 +31,6 @@ type ArmTemplate struct {
 	Definitions    ArmTemplateParameterDefinitions `json:"definitions"`
 }
 
-var cResourceDeploymentTemplateSchemaLower = strings.ToLower("deploymentTemplate.json")
-var cSubscriptionDeploymentTemplateSchemaLower = strings.ToLower("subscriptionDeploymentTemplate.json")
-
 // TargetScope uses the $schema property of the template to determine what scope this template should be deployed
 // at or an error if the scope could not be determined.
 func (t ArmTemplate) TargetScope() (DeploymentScope, error) {
@@ -46,10 +43,10 @@ func (t ArmTemplate) TargetScope() (DeploymentScope, error) {
 		return DeploymentScope(""), fmt.Errorf("error parsing schema: %w", err)
 	}
 
-	switch strings.ToLower(path.Base(u.Path)) {
-	case cSubscriptionDeploymentTemplateSchemaLower:
+	switch {
+	case strings.EqualFold(path.Base(u.Path), "subscriptionDeploymentTemplate.json"):
 		return DeploymentScopeSubscription, nil
-	case cResourceDeploymentTemplateSchemaLower:
+	case strings.EqualFold(path.Base(u.Path), "deploymentTemplate.json"):
 		return DeploymentScopeResourceGroup, nil
 	default:
 		return DeploymentScope(""), fmt.Errorf("unknown schema: %s", t.Schema)
@@ -109,6 +106,7 @@ const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
 type AzdMetadata struct {
 	Type               *AzdMetadataType `json:"type,omitempty"`
 	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
+	DefaultValueExpr   *string          `json:"defaultValueExpr,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

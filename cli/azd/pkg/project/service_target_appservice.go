@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -27,7 +27,6 @@ func NewAppServiceTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
 ) ServiceTarget {
-
 	return &appServiceTarget{
 		env: env,
 		cli: azCli,
@@ -35,7 +34,7 @@ func NewAppServiceTarget(
 }
 
 // Gets the required external tools
-func (st *appServiceTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (st *appServiceTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
@@ -49,26 +48,22 @@ func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
-			zipFilePath, err := createDeployableZip(
-				serviceConfig.Project.Name,
-				serviceConfig.Name,
-				packageOutput.PackagePath,
-			)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetResult(&ServicePackageResult{
-				Build:       packageOutput.Build,
-				PackagePath: zipFilePath,
-			})
-		},
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
+	zipFilePath, err := createDeployableZip(
+		serviceConfig.Project.Name,
+		serviceConfig.Name,
+		packageOutput.PackagePath,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ServicePackageResult{
+		Build:       packageOutput.Build,
+		PackagePath: zipFilePath,
+	}, nil
 }
 
 // Deploys the prepared zip archive using Zip deploy to the Azure App Service resource
@@ -77,58 +72,52 @@ func (st *appServiceTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
-			}
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	if err := st.validateTargetResource(targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
 
-			zipFile, err := os.Open(packageOutput.PackagePath)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed reading deployment zip file: %w", err))
-				return
-			}
+	zipFile, err := os.Open(packageOutput.PackagePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
+	}
 
-			defer os.Remove(packageOutput.PackagePath)
-			defer zipFile.Close()
+	defer os.Remove(packageOutput.PackagePath)
+	defer zipFile.Close()
 
-			task.SetProgress(NewServiceProgress("Uploading deployment package"))
-			res, err := st.cli.DeployAppServiceZip(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				zipFile,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Fetching endpoints for app service"))
-			endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			sdr := NewServiceDeployResult(
-				azure.WebsiteRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				AppServiceTarget,
-				*res,
-				endpoints,
-			)
-			sdr.Package = packageOutput
-
-			task.SetResult(sdr)
-		},
+	progress.SetProgress(NewServiceProgress("Uploading deployment package"))
+	res, err := st.cli.DeployAppServiceZip(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		zipFile,
+		func(logProgress string) { progress.SetProgress(NewServiceProgress(logProgress)) },
 	)
+	if err != nil {
+		return nil, fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err)
+	}
+
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for app service"))
+	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	sdr := NewServiceDeployResult(
+		azure.WebsiteRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		AppServiceTarget,
+		*res,
+		endpoints,
+	)
+	sdr.Package = packageOutput
+
+	return sdr, nil
 }
 
 // Gets the exposed endpoints for the App Service
@@ -156,15 +145,13 @@ func (st *appServiceTarget) Endpoints(
 }
 
 func (st *appServiceTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
-	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
+	if !strings.EqualFold(targetResource.ResourceType(), string(azapi.AzureResourceTypeWebSite)) {
 		return resourceTypeMismatchError(
 			targetResource.ResourceName(),
 			targetResource.ResourceType(),
-			infra.AzureResourceTypeWebSite,
+			azapi.AzureResourceTypeWebSite,
 		)
 	}
 

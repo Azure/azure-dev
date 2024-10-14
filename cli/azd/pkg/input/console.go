@@ -23,11 +23,11 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	tm "github.com/buger/goterm"
@@ -141,8 +141,15 @@ type AskerConsole struct {
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
-	writer     io.Writer
-	formatter  output.Formatter
+	writer    io.Writer
+	formatter output.Formatter
+
+	// isTerminal controls whether terminal-style input/output will be used.
+	//
+	// When isTerminal is false, the following notable behaviors apply:
+	//   - Spinner progress will be written as standard newline messages.
+	//   - Prompting assumes a non-terminal environment, where output written and input received are machine-friendly text,
+	//     stripped of formatting characters.
 	isTerminal bool
 	noPrompt   bool
 	// when non nil, use this client instead of prompting ourselves on the console.
@@ -238,7 +245,7 @@ func (c *AskerConsole) updateLastBytes(msg string) {
 }
 
 func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) {
-	if shouldWarn(key) {
+	if shouldWarn() {
 		c.MessageUxItem(ctx, &ux.MultilineMessage{
 			Lines: []string{
 				"",
@@ -252,7 +259,7 @@ func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) 
 }
 
 // shouldWarn returns true if a warning should be emitted when using a given alpha feature.
-func shouldWarn(key alpha.FeatureId) bool {
+func shouldWarn() bool {
 	noAlphaWarnings, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_NO_ALPHA_WARNINGS"))
 
 	return err != nil || !noAlphaWarnings
@@ -318,7 +325,8 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
 	_ = c.spinner.Unpause()
 }
 
-const cPostfix = "..."
+// truncationDots is the text we use to indicate that text has been truncated.
+const truncationDots = "..."
 
 // The line of text for the spinner, displayed in the format of: <prefix><spinner> <message>
 type spinnerLine struct {
@@ -349,7 +357,7 @@ func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
 		return spinnerLine{
 			CharSet: spinnerShortCharSet[:width],
 		}
-	case width <= spinnerLen+len(cPostfix): // show number of dots
+	case width <= spinnerLen+len(truncationDots): // show number of dots
 		return spinnerLine{
 			CharSet: spinnerShortCharSet,
 		}
@@ -357,7 +365,7 @@ func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
 		return spinnerLine{
 			Prefix:  indent,
 			CharSet: spinnerCharSet,
-			Message: title[:width-spinnerLen-len(cPostfix)] + cPostfix,
+			Message: title[:width-spinnerLen-len(truncationDots)] + truncationDots,
 		}
 	default:
 		return spinnerLine{
@@ -386,7 +394,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	c.spinnerLineMu.Lock()
 	c.spinnerCurrentTitle = title
 
-	indentPrefix := c.getIndent(format)
+	indentPrefix := c.getIndent()
 	line := c.spinnerLine(title, indentPrefix)
 
 	_ = c.spinner.Pause()
@@ -435,7 +443,7 @@ func setIndentation(spaces int) string {
 	return string(bytes)
 }
 
-func (c *AskerConsole) getIndent(format SpinnerUxType) string {
+func (c *AskerConsole) getIndent() string {
 	requiredSize := 2
 	if requiredSize != len(c.currentIndent.Load()) {
 		c.currentIndent.Store(setIndentation(requiredSize))
@@ -492,7 +500,7 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 	case StepSkipped:
 		stopChar = output.WithGrayFormat("(-) Skipped:")
 	}
-	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
+	return fmt.Sprintf("%s%s", c.getIndent(), stopChar)
 }
 
 func promptFromOptions(options ConsoleOptions) survey.Prompt {
@@ -520,10 +528,10 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 	}
 }
 
-// cAfterIO is a sentinel used after Input/Output operations as the state for the last 2-bytes written.
+// afterIoSentinel is a sentinel value used after Input/Output operations as the state for the last 2-bytes written.
 // For example, after running Prompt or Confirm, the last characters on the terminal should be any char (represented by the
 // 0 in the sentinel), followed by a new line.
-const cAfterIO = "0\n"
+const afterIoSentinel = "0\n"
 
 func (c *AskerConsole) SupportsPromptDialog() bool {
 	return c.promptClient != nil
@@ -586,7 +594,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 		}
 
 		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -609,7 +617,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	if err != nil {
 		return response, err
 	}
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -627,7 +635,7 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 		}
 
 		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -656,7 +664,7 @@ func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (s
 	if err != nil {
 		return response, err
 	}
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -683,12 +691,12 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Choices: convert.RefOf(choicesFromOptions(options)),
+				Choices: to.Ptr(choicesFromOptions(options)),
 			},
 		}
 
 		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -750,7 +758,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		return -1, err
 	}
 
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -763,12 +771,12 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Choices: convert.RefOf(choicesFromOptions(options)),
+				Choices: to.Ptr(choicesFromOptions(options)),
 			},
 		}
 
 		if value, ok := options.DefaultValue.([]string); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -835,7 +843,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		}
 
 		if value, ok := options.DefaultValue.(bool); ok {
-			opts.Options.DefaultValue = convert.RefOf[any](value)
+			opts.Options.DefaultValue = to.Ptr[any](value)
 		}
 
 		result, err := c.promptClient.Prompt(ctx, opts)
@@ -882,7 +890,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		return false, err
 	}
 
-	c.updateLastBytes(cAfterIO)
+	c.updateLastBytes(afterIoSentinel)
 	return response, nil
 }
 
@@ -924,13 +932,22 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 }
 
 // consoleWidth the number of columns in the active console window
-func consoleWidth() int {
-	width, _ := consolesize.GetConsoleSize()
-	return width
+func consoleWidth() int32 {
+	widthInt, _ := consolesize.GetConsoleSize()
+
+	// Suppress G115: integer overflow conversion int -> int32 below.
+	// Explanation:
+	// consolesize.GetConsoleSize() returns an int, but the underlying implementation actually is a uint16 on both
+	// Windows and unix systems.
+	//
+	// In practice, console width is the number of columns (text) in the active console window.
+	// We don't ever expect this to be larger than math.MaxInt32, so we can safely cast to int32.
+	// nolint:gosec // G115
+	return int32(widthInt)
 }
 
-func (c *AskerConsole) handleResize(width int) {
-	c.consoleWidth.Store(int32(width))
+func (c *AskerConsole) handleResize(width int32) {
+	c.consoleWidth.Store(width)
 
 	c.spinnerLineMu.Lock()
 	if c.spinner.Status() == yacspin.SpinnerRunning {
@@ -993,9 +1010,9 @@ type Writers struct {
 
 // ExternalPromptConfiguration allows configuring the console to delegate prompts to an external service.
 type ExternalPromptConfiguration struct {
-	Endpoint string
-	Key      string
-	Client   httputil.HttpClient
+	Endpoint    string
+	Key         string
+	Transporter policy.Transporter
 }
 
 // Creates a new console with the specified writers, handles and formatter. When externalPromptCfg is non nil, it is used
@@ -1025,7 +1042,8 @@ func NewConsole(
 	}
 
 	if externalPromptCfg != nil {
-		c.promptClient = newExternalPromptClient(externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Client)
+		c.promptClient = newExternalPromptClient(
+			externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Transporter)
 	}
 
 	spinnerConfig := yacspin.Config{
@@ -1043,7 +1061,7 @@ func NewConsole(
 	c.spinner, _ = yacspin.New(spinnerConfig)
 	c.spinnerTerminalMode = spinnerConfig.TerminalMode
 	if isTerminal {
-		c.consoleWidth = atomic.NewInt32(int32(consoleWidth()))
+		c.consoleWidth = atomic.NewInt32(consoleWidth())
 		watchTerminalResize(c)
 		watchTerminalInterrupt(c)
 	}
@@ -1054,24 +1072,15 @@ func NewConsole(
 // IsTerminal returns true if the given file descriptors are attached to a terminal,
 // taking into account of environment variables that force TTY behavior.
 func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
-	// User override to force non-TTY behavior
-	if ok, _ := strconv.ParseBool(os.Getenv("AZD_DEBUG_FORCE_NO_TTY")); ok {
-		return false
+	// User override to force TTY behavior
+	if forceTty, err := strconv.ParseBool(os.Getenv("AZD_FORCE_TTY")); err == nil {
+		return forceTty
 	}
 
 	// By default, detect if we are running on CI and force no TTY mode if we are.
-	// Allow for an override if this is not desired.
-	shouldDetectCI := true
-	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
-		skip, err := strconv.ParseBool(strVal)
-		if err != nil {
-			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
-		} else if skip {
-			shouldDetectCI = false
-		}
-	}
-
-	if shouldDetectCI && resource.IsRunningOnCI() {
+	// If this is affecting you locally while debugging on a CI machine,
+	// use the override AZD_FORCE_TTY=true.
+	if resource.IsRunningOnCI() {
 		return false
 	}
 

@@ -3,16 +3,18 @@
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
     "features": {
         "ghcr.io/devcontainers/features/go:1": {
-            "version": "1.21"
+            "version": "1.23"
         },
-        "ghcr.io/guiyomh/features/golangci-lint:0":{},
-        "ghcr.io/devcontainers/features/docker-in-docker:1": {
+        "ghcr.io/guiyomh/features/golangci-lint:0":{
+            "version": "1.60.1"
+        },
+        "ghcr.io/devcontainers/features/docker-in-docker:2.11.0": {
             "version": "latest",
             "moby": true
         },
         "ghcr.io/devcontainers/features/azure-cli:1": {},
         "ghcr.io/devcontainers/features/dotnet:2": {},
-        "ghcr.io/devcontainers/features/java:1": {},
+        "ghcr.io/devcontainers/features/java:1.6.0": {},
         "ghcr.io/devcontainers/features/node:1": {},
         "ghcr.io/devcontainers/features/python:1": {},
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {},
@@ -33,5 +35,6 @@
                 "jinliming2.vscode-go-template"
             ]
         }
-    }
+    },
+    "postCreateCommand": "go install gotest.tools/gotestsum@latest"
 }

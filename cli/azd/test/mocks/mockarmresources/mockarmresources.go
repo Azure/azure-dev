@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 )
@@ -88,7 +88,7 @@ func applyFilter(filter string, result []*armresources.GenericResourceExpanded) 
 			tagVal := resource.Tags[tagNameFilter]
 			if tagVal == nil {
 				// treat nil as empty string
-				tagVal = convert.RefOf("")
+				tagVal = to.Ptr("")
 			}
 
 			if tagValueFilter != *tagVal {
@@ -100,7 +100,7 @@ func applyFilter(filter string, result []*armresources.GenericResourceExpanded) 
 			name := resource.Name
 			if name == nil {
 				// treat nil as empty string
-				name = convert.RefOf("")
+				name = to.Ptr("")
 			}
 
 			if *name != nameFilter {

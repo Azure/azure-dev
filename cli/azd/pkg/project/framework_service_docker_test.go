@@ -10,12 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
@@ -50,13 +51,13 @@ services:
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("app-api-abc123"),
-				Name:     convert.RefOf("test-containerapp-web"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("app-api-abc123"),
+				Name:     to.Ptr("test-containerapp-web"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeContainerApp)),
+				Location: to.Ptr("eastus2"),
 			},
 		})
 
@@ -97,10 +98,8 @@ services:
 	err = os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
-	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner)
-
-	done := make(chan bool)
+	npmCli := npm.NewCli(mockContext.CommandRunner)
+	docker := docker.NewCli(mockContext.CommandRunner)
 
 	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
@@ -108,22 +107,20 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker, cloud.AzurePublic()),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
-	go func() {
-		for value := range buildTask.Progress() {
+	buildResult, err := async.RunWithProgress(
+		func(value ServiceProgress) {
 			progressMessages = append(progressMessages, value.Message)
-		}
-		done <- true
-	}()
-
-	buildResult, err := buildTask.Await()
-	<-done
+		},
+		func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+			return framework.Build(*mockContext.Context, service, nil, progress)
+		},
+	)
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
@@ -156,13 +153,13 @@ services:
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
+		to.Ptr("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       convert.RefOf("app-api-abc123"),
-				Name:     convert.RefOf("test-containerapp-web"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeContainerApp)),
-				Location: convert.RefOf("eastus2"),
+				ID:       to.Ptr("app-api-abc123"),
+				Name:     to.Ptr("test-containerapp-web"),
+				Type:     to.Ptr(string(azapi.AzureResourceTypeContainerApp)),
+				Location: to.Ptr("eastus2"),
 			},
 		})
 
@@ -195,8 +192,8 @@ services:
 		}, nil
 	})
 
-	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner)
+	npmCli := npm.NewCli(mockContext.CommandRunner)
+	docker := docker.NewCli(mockContext.CommandRunner)
 
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
@@ -208,30 +205,25 @@ services:
 	err = os.WriteFile(filepath.Join(temp, "Dockerfile.dev"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env)
 	status := ""
 
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker, cloud.AzurePublic()),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
-	go func() {
-		for value := range buildTask.Progress() {
+	buildResult, err := async.RunWithProgress(
+		func(value ServiceProgress) {
 			status = value.Message
-		}
-		done <- true
-	}()
-
-	buildResult, err := buildTask.Await()
-	<-done
+		}, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+			return framework.Build(*mockContext.Context, service, nil, progress)
+		},
+	)
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
@@ -241,7 +233,12 @@ services:
 
 func Test_DockerProject_Build(t *testing.T) {
 	tests := []struct {
+		// Optional - use for custom initialization
+		init func(t *testing.T) error
+		// Optional - use for custom validation
+		validate                func(t *testing.T, result *ServiceBuildResult, dockerBuildArgs *exec.RunArgs) error
 		name                    string
+		env                     *environment.Environment
 		project                 string
 		language                ServiceLanguageKind
 		dockerOptions           DockerProjectOptions
@@ -350,6 +347,47 @@ func Test_DockerProject_Build(t *testing.T) {
 			},
 			expectedDockerBuildArgs: nil,
 		},
+		{
+			name:          "With custom environment variables",
+			project:       "./src/api",
+			language:      ServiceLanguageJavaScript,
+			hasDockerFile: true,
+			init: func(t *testing.T) error {
+				os.Setenv("AZD_CUSTOM_OS_VAR", "os-value")
+				return nil
+			},
+			env: environment.NewWithValues("test", map[string]string{
+				"AZD_CUSTOM_ENV_VAR": "env-value",
+			}),
+			dockerOptions: DockerProjectOptions{
+				BuildEnv: []string{
+					"AZD_CUSTOM_BUILD_VAR=build-value",
+				},
+				BuildArgs: []osutil.ExpandableString{
+					osutil.NewExpandableString("AZD_CUSTOM_OS_VAR"),
+					osutil.NewExpandableString("AZD_CUSTOM_ENV_VAR"),
+					osutil.NewExpandableString("AZD_CUSTOM_BUILD_VAR"),
+					osutil.NewExpandableString("AZD_CUSTOM_EXPANDED_VAR=${AZD_CUSTOM_ENV_VAR}"),
+				},
+			},
+			validate: func(t *testing.T, result *ServiceBuildResult, dockerBuildArgs *exec.RunArgs) error {
+				require.NotNil(t, result)
+				require.NotNil(t, dockerBuildArgs)
+
+				// Contains OS, azd env & docker env vars
+				require.Contains(t, dockerBuildArgs.Env, "AZD_CUSTOM_OS_VAR=os-value")
+				require.Contains(t, dockerBuildArgs.Env, "AZD_CUSTOM_ENV_VAR=env-value")
+				require.Contains(t, dockerBuildArgs.Env, "AZD_CUSTOM_BUILD_VAR=build-value")
+
+				// Contains docker build args
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_OS_VAR")
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_ENV_VAR")
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_BUILD_VAR")
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_EXPANDED_VAR=env-value")
+
+				return nil
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -393,14 +431,23 @@ func Test_DockerProject_Build(t *testing.T) {
 				return exec.NewRunResult(0, "3.0.0", ""), nil
 			})
 
+			if tt.init != nil {
+				err := tt.init(t)
+				require.NoError(t, err)
+			}
+
 			temp := t.TempDir()
 
-			env := environment.New("test")
-			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			env := tt.env
+			if env == nil {
+				env = environment.New("test")
+			}
+
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, tt.language)
 			serviceConfig.Project.Path = temp
 			serviceConfig.Docker = tt.dockerOptions
-			serviceConfig.Image = tt.image
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 
 			if tt.hasDockerFile {
 				err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
@@ -418,24 +465,32 @@ func Test_DockerProject_Build(t *testing.T) {
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
 
 			if tt.language == ServiceLanguageTypeScript || tt.language == ServiceLanguageJavaScript {
-				npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
+				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env)
 				dockerProject.SetSource(npmProject)
 			}
 
-			buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
-			logProgress(buildTask)
-			result, err := buildTask.Await()
+			result, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
+					return dockerProject.Build(*mockContext.Context, serviceConfig, nil, progress)
+				},
+			)
 
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			require.Equal(t, tt.expectedBuildResult, result)
-			require.Equal(t, tt.expectedDockerBuildArgs, dockerBuildArgs.Args)
+			if tt.validate != nil {
+				err := tt.validate(t, result, &dockerBuildArgs)
+				require.NoError(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				require.Equal(t, tt.expectedBuildResult, result)
+				require.Equal(t, tt.expectedDockerBuildArgs, dockerBuildArgs.Args)
+			}
 		})
 	}
 }
@@ -526,13 +581,14 @@ func Test_DockerProject_Package(t *testing.T) {
 			envManager := &mockenv.MockEnvManager{}
 
 			env := environment.NewWithValues("test", map[string]string{})
-			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
-				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli, cloud.AzurePublic()),
+				NewContainerHelper(
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
@@ -540,28 +596,34 @@ func Test_DockerProject_Package(t *testing.T) {
 			// Set the custom test options
 			serviceConfig.Docker = tt.docker
 			serviceConfig.RelativePath = tt.project
-			serviceConfig.Image = tt.image
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 
 			if serviceConfig.RelativePath != "" {
-				npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
+				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env)
 				dockerProject.SetSource(npmProject)
 			}
 
 			buildOutputPath := ""
-			if serviceConfig.Image == "" && serviceConfig.RelativePath != "" {
+			sourceImage, err := serviceConfig.Image.Envsubst(env.Getenv)
+			require.NoError(t, err)
+
+			if sourceImage == "" && serviceConfig.RelativePath != "" {
 				buildOutputPath = "IMAGE_ID"
 			}
 
-			packageTask := dockerProject.Package(
-				*mockContext.Context,
-				serviceConfig,
-				&ServiceBuildResult{
-					BuildOutputPath: buildOutputPath,
+			result, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+					return dockerProject.Package(
+						*mockContext.Context,
+						serviceConfig,
+						&ServiceBuildResult{
+							BuildOutputPath: buildOutputPath,
+						},
+						progress,
+					)
 				},
 			)
-			logProgress(packageTask)
 
-			result, err := packageTask.Await()
 			require.NoError(t, err)
 			dockerDetails, ok := result.Details.(*dockerPackageResult)
 			require.True(t, ok)

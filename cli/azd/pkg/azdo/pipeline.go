@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/taskagent"
@@ -62,7 +62,7 @@ func getPipelineDefinition(
 
 	// GetDefinitions return just the first page (it could be more)
 	// using pager to iterate pages
-	definitionsPager := getDefinitionsPager(ctx, client, projectId, pipelineName)
+	definitionsPager := getDefinitionsPager(client, projectId, pipelineName)
 
 	for definitionsPager.More() {
 		page, err := definitionsPager.NextPage(ctx)
@@ -89,7 +89,7 @@ func CreatePipeline(
 	name string,
 	repoName string,
 	connection *azuredevops.Connection,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 	env *environment.Environment,
 	console input.Console,
 	provisioningProvider provisioning.Options,
@@ -134,7 +134,7 @@ func CreatePipeline(
 	}
 
 	createDefinitionArgs, err := createAzureDevPipelineArgs(
-		ctx, projectId, name, repoName, credentials, env, queue,
+		projectId, name, repoName, credentials, env, queue,
 		provisioningProvider, additionalSecrets, additionalVariables)
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func CreatePipeline(
 
 func getDefinitionVariables(
 	env *environment.Environment,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 	provisioningProvider provisioning.Options,
 	additionalSecrets map[string]string,
 	additionalVariables map[string]string) (*map[string]build.BuildDefinitionVariable, error) {
@@ -177,9 +177,9 @@ func getDefinitionVariables(
 		for _, key := range remoteStateKeys {
 			value, ok := env.LookupEnv(key)
 			if !ok || strings.TrimSpace(value) == "" {
-				return nil, fmt.Errorf(fmt.Sprintf(`terraform remote state is not correctly configured,
+				return nil, fmt.Errorf(`terraform remote state is not correctly configured,
 Visit %s for more information on configuring Terraform remote state`,
-					output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
+					output.WithLinkFormat("https://aka.ms/azure-dev/terraform"))
 			}
 			variables[key] = createBuildDefinitionVariable(value, false, true)
 		}
@@ -198,11 +198,10 @@ Visit %s for more information on configuring Terraform remote state`,
 
 // create Azure Deploy Pipeline parameters
 func createAzureDevPipelineArgs(
-	ctx context.Context,
 	projectId string,
 	name string,
 	repoName string,
-	credentials *azcli.AzureCredentials,
+	credentials *entraid.AzureCredentials,
 	env *environment.Environment,
 	queue *taskagent.TaskAgentQueue,
 	provisioningProvider provisioning.Options,

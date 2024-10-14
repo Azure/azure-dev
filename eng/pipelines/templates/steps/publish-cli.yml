@@ -5,11 +5,8 @@ parameters:
   UploadMsi: false
   PublishShield: false
   PublishUpdatedDocs: false
-  StorageAccountName: $(azdev-storage-account-name)
-  StorageAccountKey: $(azdev-storage-account-key)
   StorageContainerName: azd
   PublishBrewFormula: false
-  PublishArm64Binaries: false
   AllowPrerelease: false
   CliVersion: $(CLI_VERSION)
 
@@ -78,25 +75,27 @@ steps:
       # the same place in the directory structure
       Copy-Item NOTICE.txt ./release-staging/
       tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
+
+      # ARM64 releases
+      Rename-Item signed/win/azd-windows-arm64.exe azd-windows-arm64-alpha.exe
+      zip release/azd-windows-arm64-alpha.zip -j signed/win/azd-windows-arm64-alpha.exe NOTICE.txt
+
+      Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64
+      Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
+
+      New-Item -ItemType Directory -Path release -Force
+      zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
+
+      # Must place NOTICE.txt in file tree for tar to pick it up and place it in
+      # the same place in the directory structure
+      Copy-Item NOTICE.txt ./release-staging/
+      tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
     displayName: Compress standalone binary for release
 
-  - ${{ if eq('true', parameters.PublishArm64Binaries) }}: 
-    - pwsh: |
-        Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64 
-        Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
-
-        New-Item -ItemType Directory -Path release -Force
-        zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
-
-        # Must place NOTICE.txt in file tree for tar to pick it up and place it in
-        # the same place in the directory structure
-        Copy-Item NOTICE.txt ./release-staging/
-        tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
-      displayName: Compress standalone binary for release (ARM64)
-
-
   - ${{ if eq('true', parameters.UploadMsi) }}: 
-    - pwsh: Copy-Item signed/win/azd-windows-amd64.msi release/
+    - pwsh: |
+        Copy-Item signed/win/azd-windows-amd64.msi release/
+        # TODO: Copy signed MSI to release
       displayName: Copy MSI to release
 
   - pwsh: |
@@ -136,26 +135,27 @@ steps:
       env:
         GH_TOKEN: $(azuresdk-github-pat)
 
-  - pwsh: |
-      $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
-
-      Get-ChildItem release/
-
-      foreach ($folder in $uploadLocations) {
-          Write-Host "Upload to ${{ parameters.StorageContainerName }}/standalone/$folder"
-          az storage blob upload-batch `
-            --account-name '${{ parameters.StorageAccountName }}' `
-            --account-key '${{ parameters.StorageAccountKey }}' `
-            --auth-mode key `
-            -s release/ `
-            -d "${{ parameters.StorageContainerName }}/standalone/$folder" `
-            --overwrite
-          if ($LASTEXITCODE) {
-            Write-Error "Upload failed"
-            exit 1
-          }
-      }
+  - task: AzurePowerShell@5
     displayName: Upload release to storage account
+    inputs:
+      azureSubscription: 'Azure SDK Artifacts'
+      azurePowerShellVersion: LatestVersion
+      pwsh: true
+      ScriptType: InlineScript
+      Inline: |
+        $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
+
+        Get-ChildItem release/
+        foreach ($folder in $uploadLocations) {
+            Write-Host "Upload to ${{ parameters.StorageContainerName }}/standalone/$folder"
+            azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/standalone/$folder" --overwrite=true
+            if ($LASTEXITCODE) {
+              Write-Error "Upload failed"
+              exit 1
+            }
+        }
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - task: 1ES.PublishPipelineArtifact@1
     inputs: 
@@ -168,8 +168,6 @@ steps:
         ArtifactName: shield-standalone
         ArtifactDownloadPath: shields/standalone
         ArtifactFilename: standalone.json
-        StorageAccountName: ${{ parameters.StorageAccountName }}
-        StorageAccountKey: ${{ parameters.StorageAccountKey }}
         StorageContainerName: ${{ parameters.StorageContainerName }}
         PublishDestination: standalone/latest
 

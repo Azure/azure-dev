@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
@@ -26,14 +26,14 @@ const DefaultStaticWebAppEnvironmentName = "default"
 type staticWebAppTarget struct {
 	env *environment.Environment
 	cli azcli.AzCli
-	swa swa.SwaCli
+	swa *swa.Cli
 }
 
 // NewStaticWebAppTarget creates a new instance of the Static Web App target
 func NewStaticWebAppTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
-	swaCli swa.SwaCli,
+	swaCli *swa.Cli,
 ) ServiceTarget {
 	return &staticWebAppTarget{
 		env: env,
@@ -43,7 +43,7 @@ func NewStaticWebAppTarget(
 }
 
 // Gets the required external tools for the Static Web App target
-func (at *staticWebAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+func (at *staticWebAppTarget) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{at.swa}
 }
 
@@ -57,34 +57,30 @@ func (at *staticWebAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			if usingSwaConfig(packageOutput) {
-				// The swa framework service does not set a packageOutput.PackagePath during package b/c the output
-				// is governed by the swa-cli.config.json file.
-				task.SetResult(packageOutput)
-				return
-			}
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	if usingSwaConfig(packageOutput) {
+		// The swa framework service does not set a packageOutput.PackagePath during package b/c the output
+		// is governed by the swa-cli.config.json file.
+		return packageOutput, nil
+	}
 
-			// packageOutput.PackagePath != "" -> This means swa framework service is not used to build/deploy and there
-			// is no a swa-cli.config.json file to govern the output.
-			// In this case, the serviceConfig.OutputPath (azure.yaml -> service -> dist) defines where is the output from
-			// the language framework service.
-			// If serviceConfig.OutputPath is not defined, azd should use the package path defined by the language framework
-			// service.
+	// packageOutput.PackagePath != "" -> This means swa framework service is not used to build/deploy and there
+	// is no a swa-cli.config.json file to govern the output.
+	// In this case, the serviceConfig.OutputPath (azure.yaml -> service -> dist) defines where is the output from
+	// the language framework service.
+	// If serviceConfig.OutputPath is not defined, azd should use the package path defined by the language framework
+	// service.
 
-			packagePath := serviceConfig.OutputPath
-			if strings.TrimSpace(packagePath) == "" {
-				packagePath = packageOutput.PackagePath
-			}
+	packagePath := serviceConfig.OutputPath
+	if strings.TrimSpace(packagePath) == "" {
+		packagePath = packageOutput.PackagePath
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       packageOutput.Build,
-				PackagePath: packagePath,
-			})
-		},
-	)
+	return &ServicePackageResult{
+		Build:       packageOutput.Build,
+		PackagePath: packagePath,
+	}, nil
 }
 
 func usingSwaConfig(packageResult *ServicePackageResult) bool {
@@ -99,81 +95,73 @@ func (at *staticWebAppTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
-			}
+	progress *async.Progress[ServiceProgress],
+) (*ServiceDeployResult, error) {
+	if err := at.validateTargetResource(targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
 
-			// Get the static webapp deployment token
-			task.SetProgress(NewServiceProgress("Retrieving deployment token"))
-			deploymentToken, err := at.cli.GetStaticWebAppApiKey(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed retrieving static web app deployment token: %w", err))
-				return
-			}
-
-			// SWA performs a zip & deploy of the specified output folder and deploys it to the configured environment
-			task.SetProgress(NewServiceProgress("swa cli deploy"))
-			dOptions := swa.DeployOptions{}
-			cwd := serviceConfig.Path()
-			if !usingSwaConfig(packageOutput) {
-				dOptions.AppFolderPath = serviceConfig.RelativePath
-				dOptions.OutputRelativeFolderPath = packageOutput.PackagePath
-				cwd = serviceConfig.Project.Path
-			}
-			res, err := at.swa.Deploy(ctx,
-				cwd,
-				at.env.GetTenantId(),
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				DefaultStaticWebAppEnvironmentName,
-				*deploymentToken,
-				dOptions)
-
-			log.Println(res)
-
-			if err != nil {
-				task.SetError(fmt.Errorf("failed deploying static web app: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Verifying deployment"))
-			if err := at.verifyDeployment(ctx, targetResource); err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Fetching endpoints for static web app"))
-			endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			sdr := NewServiceDeployResult(
-				azure.StaticWebAppRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				StaticWebAppTarget,
-				res,
-				endpoints,
-			)
-			sdr.Package = packageOutput
-
-			task.SetResult(sdr)
-		},
+	// Get the static webapp deployment token
+	progress.SetProgress(NewServiceProgress("Retrieving deployment token"))
+	deploymentToken, err := at.cli.GetStaticWebAppApiKey(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving static web app deployment token: %w", err)
+	}
+
+	// SWA performs a zip & deploy of the specified output folder and deploys it to the configured environment
+	progress.SetProgress(NewServiceProgress("swa cli deploy"))
+	dOptions := swa.DeployOptions{}
+	cwd := serviceConfig.Path()
+	if !usingSwaConfig(packageOutput) {
+		dOptions.AppFolderPath = serviceConfig.RelativePath
+		dOptions.OutputRelativeFolderPath = packageOutput.PackagePath
+		cwd = serviceConfig.Project.Path
+	}
+	res, err := at.swa.Deploy(ctx,
+		cwd,
+		at.env.GetTenantId(),
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		DefaultStaticWebAppEnvironmentName,
+		*deploymentToken,
+		dOptions)
+
+	log.Println(res)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed deploying static web app: %w", err)
+	}
+
+	progress.SetProgress(NewServiceProgress("Verifying deployment"))
+	if err := at.verifyDeployment(ctx, targetResource); err != nil {
+		return nil, err
+	}
+
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for static web app"))
+	endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	sdr := NewServiceDeployResult(
+		azure.StaticWebAppRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		StaticWebAppTarget,
+		res,
+		endpoints,
+	)
+	sdr.Package = packageOutput
+
+	return sdr, nil
 }
 
 // Gets the endpoints for the static web app
@@ -198,15 +186,13 @@ func (at *staticWebAppTarget) Endpoints(
 }
 
 func (at *staticWebAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) error {
-	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeStaticWebSite)) {
+	if !strings.EqualFold(targetResource.ResourceType(), string(azapi.AzureResourceTypeStaticWebSite)) {
 		return resourceTypeMismatchError(
 			targetResource.ResourceName(),
 			targetResource.ResourceType(),
-			infra.AzureResourceTypeStaticWebSite,
+			azapi.AzureResourceTypeStaticWebSite,
 		)
 	}
 

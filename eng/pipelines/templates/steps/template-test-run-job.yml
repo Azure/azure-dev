@@ -75,7 +75,13 @@ steps:
         addSpnToEnvironment: true
         inlineScript: |
           az --version
-          az account show -o json
+          $azAccountJson = az account show -o json
+
+          # A service connection should be associated with only one subscription
+          $subscriptionId = ($azAccountJson | ConvertFrom-Json -AsHashTable)['id']
+
+          Write-Host $azAccountJson
+          Write-Host "##vso[task.setvariable variable=SUBSCRIPTION_ID;issecret=true]$subscriptionId"
           Write-Host "##vso[task.setvariable variable=ARM_CLIENT_ID;issecret=true]$($env:servicePrincipalId)"
           Write-Host "##vso[task.setvariable variable=ARM_TENANT_ID;issecret=true]$($env:tenantId)"
           Write-Host "##vso[task.setvariable variable=ARM_OIDC_TOKEN;issecret=true]$($env:idToken)"
@@ -88,7 +94,7 @@ steps:
               ARM_CLIENT_ID=$(ARM_CLIENT_ID)
               ARM_TENANT_ID=$(ARM_TENANT_ID)
               ARM_OIDC_TOKEN=$(ARM_OIDC_TOKEN)
-              SUBSCRIPTION_ID=$(SubscriptionId-test-tenant)
+              SUBSCRIPTION_ID=$(SUBSCRIPTION_ID)
 
               # Pass in TemplateRunEnvironmentVariables
               $(VARIABLE_LIST)
@@ -100,7 +106,7 @@ steps:
               VALIDATE=$(TemplateName)
               PLAYWRIGHT_REPORTER='list'
               LOCATION=$(AzureLocation)
-              SUBSCRIPTION=$(SubscriptionId-test-tenant)
+              SUBSCRIPTION=$(SUBSCRIPTION_ID)
               ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
               CLEANUP=$(SynchronousCleanup)
 
@@ -140,7 +146,7 @@ steps:
               azd config set auth.useAzCliAuth true
 
               # set default sub for az to be the same used by azd
-              az account set --subscription "$(SubscriptionId-test-tenant)"
+              az account set --subscription "$(SUBSCRIPTION_ID)"
 
               # enable alpha features
               azd config set alpha.all on
@@ -157,7 +163,7 @@ steps:
                 -e '$(EnvPrefixName)' \
                 -t '$(TemplateName)' \
                 -b '$(TemplateBranchName)' \
-                -s '$(SubscriptionId-test-tenant)' \
+                -s '$(SUBSCRIPTION_ID)' \
                 -u '$(Build.BuildId)-$(System.JobAttempt)' \
                 -l '$(AzureLocation)' \
                 -p 'list' \

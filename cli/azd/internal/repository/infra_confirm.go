@@ -72,26 +72,6 @@ func (i *Initializer) infraSpecFromDetect(
 				}
 			}
 
-			authType := scaffold.AuthType(0)
-			selection, err := i.console.Select(ctx, input.ConsoleOptions{
-				Message: "Input the authentication type you want for database:",
-				Options: []string{
-					"Use user assigned managed identity",
-					"Use username and password",
-				},
-			})
-			if err != nil {
-				return scaffold.InfraSpec{}, err
-			}
-			switch selection {
-			case 0:
-				authType = scaffold.AuthType_TOKEN_CREDENTIAL
-			case 1:
-				authType = scaffold.AuthType_PASSWORD
-			default:
-				panic("unhandled selection")
-			}
-
 			switch database {
 			case appdetect.DbMongo:
 				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
@@ -103,6 +83,10 @@ func (i *Initializer) infraSpecFromDetect(
 					i.console.Message(ctx, "Database name is required.")
 					continue
 				}
+				authType, err := i.getAuthType(ctx)
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
 				spec.DbPostgres = &scaffold.DatabasePostgres{
 					DatabaseName:              dbName,
 					AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
@@ -113,6 +97,10 @@ func (i *Initializer) infraSpecFromDetect(
 				if dbName == "" {
 					i.console.Message(ctx, "Database name is required.")
 					continue
+				}
+				authType, err := i.getAuthType(ctx)
+				if err != nil {
+					return scaffold.InfraSpec{}, err
 				}
 				spec.DbMySql = &scaffold.DatabaseMySql{
 					DatabaseName:              dbName,
@@ -247,6 +235,29 @@ func (i *Initializer) infraSpecFromDetect(
 	}
 
 	return spec, nil
+}
+
+func (i *Initializer) getAuthType(ctx context.Context) (scaffold.AuthType, error) {
+	authType := scaffold.AuthType(0)
+	selection, err := i.console.Select(ctx, input.ConsoleOptions{
+		Message: "Input the authentication type you want:",
+		Options: []string{
+			"Use user assigned managed identity",
+			"Use username and password",
+		},
+	})
+	if err != nil {
+		return authType, err
+	}
+	switch selection {
+	case 0:
+		authType = scaffold.AuthType_TOKEN_CREDENTIAL
+	case 1:
+		authType = scaffold.AuthType_PASSWORD
+	default:
+		panic("unhandled selection")
+	}
+	return authType, nil
 }
 
 func (i *Initializer) promptForAzureResource(

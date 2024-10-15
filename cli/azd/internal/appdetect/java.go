@@ -55,7 +55,7 @@ func analyzeJavaProject(projectPath string) (*Project, error) {
 		result = append(result, *project)
 	}
 
-	// todo (xiada) we should support multiple modules
+	// TODO we should support multiple modules
 	return &result[0], nil
 }
 
@@ -103,7 +103,10 @@ type plugin struct {
 }
 
 func analyzeMavenProject(projectPath string) ([]mavenProject, error) {
-	rootProject, _ := readMavenProject(filepath.Join(projectPath, "pom.xml"))
+	rootProject, err := readMavenProject(filepath.Join(projectPath, "pom.xml"))
+	if err != nil {
+		return nil, fmt.Errorf("error reading root project: %w", err)
+	}
 	var result []mavenProject
 
 	// if it has submodules

@@ -285,6 +285,10 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
               name: 'PORT'
               value: '{{ .Port }}'
             }
+            {
+              name: 'SERVER_PORT'
+              value: '{{ .Port }}'
+            }
             {{- end}}
           ],
           env,

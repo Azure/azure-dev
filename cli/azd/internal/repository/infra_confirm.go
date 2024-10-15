@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -130,10 +132,11 @@ func (i *Initializer) infraSpecFromDetect(
 		if svc.Docker == nil || svc.Docker.Path == "" {
 			// default builder always specifies port 80
 			serviceSpec.Port = 80
-
 			if svc.Language == appdetect.Java {
 				serviceSpec.Port = 8080
 			}
+		} else {
+			serviceSpec.Port = i.detectPortInDockerfile(svc.Docker.Path)
 		}
 
 		for _, framework := range svc.Dependencies {
@@ -258,6 +261,28 @@ func (i *Initializer) getAuthType(ctx context.Context) (scaffold.AuthType, error
 		panic("unhandled selection")
 	}
 	return authType, nil
+}
+
+func (i *Initializer) detectPortInDockerfile(
+	filePath string) int {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return -1
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "EXPOSE") {
+			var port int
+			_, err := fmt.Sscanf(line, "EXPOSE %d", &port)
+			if err == nil {
+				return port
+			}
+		}
+	}
+	return -1
 }
 
 func (i *Initializer) promptForAzureResource(

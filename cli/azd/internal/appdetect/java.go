@@ -43,7 +43,7 @@ func analyzeJavaProject(projectPath string) (*Project, error) {
 	}
 
 	for _, mavenProject := range mavenProjects {
-		// todo (xiada) we need to add spring related analysis here
+		// todo we need to add spring related analysis here
 		project, err := detectDependencies(&mavenProject, &Project{
 			Language:      Java,
 			Path:          projectPath,

@@ -51,14 +51,20 @@ func TestJavaDetector_DetectProject_WithoutPomXml(t *testing.T) {
 func TestAnalyzeMavenProject_WithSubmodules(t *testing.T) {
 	// Setup a temporary directory with a root pom.xml and submodule poms
 	tempDir := t.TempDir()
-	os.WriteFile(filepath.Join(tempDir, "pom.xml"), []byte(`
+	err := os.WriteFile(filepath.Join(tempDir, "pom.xml"), []byte(`
 		<project>
 			<modules>
 				<module>submodule</module>
 			</modules>
 		</project>`), 0644)
-	os.Mkdir(filepath.Join(tempDir, "submodule"), 0755)
-	os.WriteFile(filepath.Join(tempDir, "submodule", "pom.xml"), []byte(`
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err = os.Mkdir(filepath.Join(tempDir, "submodule"), 0755)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(tempDir, "submodule", "pom.xml"), []byte(`
 		<project>
 			<dependencies>
 				<dependency>
@@ -67,7 +73,9 @@ func TestAnalyzeMavenProject_WithSubmodules(t *testing.T) {
 				</dependency>
 			</dependencies>
 		</project>`), 0644)
-
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	projects, err := analyzeMavenProject(tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -80,7 +88,7 @@ func TestAnalyzeMavenProject_WithSubmodules(t *testing.T) {
 func TestAnalyzeMavenProject_WithoutSubmodules(t *testing.T) {
 	// Setup a temporary directory with a root pom.xml
 	tempDir := t.TempDir()
-	os.WriteFile(filepath.Join(tempDir, "pom.xml"), []byte(`
+	err := os.WriteFile(filepath.Join(tempDir, "pom.xml"), []byte(`
 		<project>
 			<dependencies>
 				<dependency>
@@ -89,7 +97,9 @@ func TestAnalyzeMavenProject_WithoutSubmodules(t *testing.T) {
 				</dependency>
 			</dependencies>
 		</project>`), 0644)
-
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	projects, err := analyzeMavenProject(tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -19,30 +19,14 @@ var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
 {{- if .Services }}
-// Monitor application with Azure loganalytics
-module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
-  name: 'loganalytics'
-  params: {
-    name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
-    location: location
-  }
-}
 
-// Monitor application with Azure applicationInsights
-module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
-  name: 'applicationinsights'
+// Monitor application with Azure Monitor
+module monitoring 'br/public:avm/ptn/azd/monitoring:0.1.0' = {
+  name: 'monitoring'
   params: {
-    name: '${abbrs.insightsComponents}${resourceToken}'
-    workspaceResourceId: logAnalytics.outputs.resourceId
-    location: location
-  }
-}
-
-module dashboard './modules/dashboard-web.bicep' = {
-  name: 'dashboard'
-  params: {
-    name: '${abbrs.portalDashboards}${resourceToken}'
-    applicationInsightsName: applicationInsights.outputs.name
+    logAnalyticsName: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    applicationInsightsName: '${abbrs.insightsComponents}${resourceToken}'
+    applicationInsightsDashboardName: '${abbrs.portalDashboards}${resourceToken}'
     location: location
     tags: tags
   }
@@ -73,7 +57,7 @@ module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' =
 module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5' = {
   name: 'container-apps-environment'
   params: {
-    logAnalyticsWorkspaceResourceId: logAnalytics.outputs.resourceId
+    logAnalyticsWorkspaceResourceId: monitoring.outputs.logAnalyticsWorkspaceResourceId
     name: '${abbrs.appManagedEnvironments}${resourceToken}'
     location: location
     zoneRedundant: false
@@ -233,7 +217,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         env: union([
           {
             name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-            value: applicationInsights.outputs.connectionString
+            value: monitoring.outputs.applicationInsightsConnectionString
           }
           {
             name: 'AZURE_CLIENT_ID'

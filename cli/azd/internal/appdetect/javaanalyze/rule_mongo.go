@@ -9,6 +9,9 @@ func (mr *ruleMongo) match(javaProject *javaProject) bool {
 			if dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb" {
 				return true
 			}
+			if dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb-reactive" {
+				return true
+			}
 		}
 	}
 	return false

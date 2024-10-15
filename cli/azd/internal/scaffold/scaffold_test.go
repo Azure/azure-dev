@@ -114,6 +114,7 @@ func TestExecInfra(t *testing.T) {
 		{
 			"API with Redis",
 			InfraSpec{
+				DbRedis: &DatabaseRedis{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",

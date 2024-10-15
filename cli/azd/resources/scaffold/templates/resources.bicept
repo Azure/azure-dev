@@ -1,0 +1,401 @@
+{{define "resources.bicep" -}}
+@description('The location used for all deployed resources')
+param location string = resourceGroup().location
+
+@description('Tags that will be applied to all resources')
+param tags object = {}
+
+{{range .Parameters}}
+{{- if .Secret}}
+@secure()
+{{- end}}
+param {{.Name}} {{.Type}}
+{{- end}}
+
+@description('Id of the user or app to assign application roles')
+param principalId string
+
+var abbrs = loadJsonContent('./abbreviations.json')
+var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
+
+{{- if .Services }}
+// Monitor application with Azure loganalytics
+module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.3.4' = {
+  name: 'loganalytics'
+  params: {
+    name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    location: location
+  }
+}
+
+// Monitor application with Azure applicationInsights
+module applicationInsights 'br/public:avm/res/insights/component:0.3.0' = {
+  name: 'applicationinsights'
+  params: {
+    name: '${abbrs.insightsComponents}${resourceToken}'
+    workspaceResourceId: logAnalytics.outputs.resourceId
+    location: location
+  }
+}
+
+module dashboard './modules/dashboard-web.bicep' = {
+  name: 'dashboard'
+  params: {
+    name: '${abbrs.portalDashboards}${resourceToken}'
+    applicationInsightsName: applicationInsights.outputs.name
+    location: location
+    tags: tags
+  }
+}
+
+// Container registry
+module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' = {
+  name: 'registry'
+  params: {
+    name: '${abbrs.containerRegistryRegistries}${resourceToken}'
+    location: location
+    acrAdminUserEnabled: true
+    tags: tags
+    publicNetworkAccess: 'Enabled'
+    roleAssignments:[
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+      }
+      {{- end}}
+    ]
+  }
+}
+
+// Container apps environment
+module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5' = {
+  name: 'container-apps-environment'
+  params: {
+    logAnalyticsWorkspaceResourceId: logAnalytics.outputs.resourceId
+    name: '${abbrs.appManagedEnvironments}${resourceToken}'
+    location: location
+    zoneRedundant: false
+  }
+}
+{{- end}}
+
+{{- if .DbCosmosMongo}}
+module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
+  name: 'cosmos'
+  params: {
+    tags: tags
+    locations: [
+      {
+        failoverPriority: 0
+        isZoneRedundant: false
+        locationName: location
+      }
+    ]
+    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    location: location
+    {{- if .DbCosmosMongo.DatabaseName}}
+    mongodbDatabases: [
+      {
+        name: '{{ .DbCosmosMongo.DatabaseName }}'
+      }
+    ]
+    {{- end}}
+    secretsKeyVault: {
+      keyVaultName: keyVault.outputs.name
+      primaryWriteConnectionStringSecretName: 'AZURE-COSMOS-CONNECTION-STRING'
+    }
+    capabilitiesToAdd: [ 'EnableServerless' ]
+  }
+}
+{{- end}}
+
+{{- if .DbPostgres}}
+var databaseName = '{{ .DbPostgres.DatabaseName }}'
+var databaseUser = 'psqladmin'
+module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
+  name: 'postgreServer'
+  params: {
+    // Required parameters
+    name: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
+    skuName: 'Standard_B1ms'
+    tier: 'Burstable'
+    // Non-required parameters
+    administratorLogin: databaseUser
+    administratorLoginPassword: databasePassword
+    geoRedundantBackup: 'Disabled'
+    passwordAuth:'Enabled'
+    firewallRules: [
+      {
+        name: 'AllowAllIps'
+        startIpAddress: '0.0.0.0'
+        endIpAddress: '255.255.255.255'
+      }
+    ]
+    databases: [
+      {
+        name: databaseName
+      }
+    ]
+    location: location
+  }
+}
+{{- end}}
+
+{{- range .Services}}
+
+module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
+  name: '{{bicepName .Name}}identity'
+  params: {
+    name: '${abbrs.managedIdentityUserAssignedIdentities}{{bicepName .Name}}-${resourceToken}'
+    location: location
+  }
+}
+
+module {{bicepName .Name}}FetchLatestImage './modules/fetch-container-image.bicep' = {
+  name: '{{bicepName .Name}}-fetch-image'
+  params: {
+    exists: {{bicepName .Name}}Exists
+    name: '{{.Name}}'
+  }
+}
+
+var {{bicepName .Name}}AppSettingsArray = filter(array({{bicepName .Name}}Definition.settings), i => i.name != '')
+var {{bicepName .Name}}Secrets = map(filter({{bicepName .Name}}AppSettingsArray, i => i.?secret != null), i => {
+  name: i.name
+  value: i.value
+  secretRef: i.?secretRef ?? take(replace(replace(toLower(i.name), '_', '-'), '.', '-'), 32)
+})
+var {{bicepName .Name}}Env = map(filter({{bicepName .Name}}AppSettingsArray, i => i.?secret == null), i => {
+  name: i.name
+  value: i.value
+})
+
+module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
+  name: '{{bicepName .Name}}'
+  params: {
+    name: '{{.Name}}'
+    {{- if ne .Port 0}}
+    ingressTargetPort: {{.Port}}
+    {{- end}}
+    {{- if (and .Backend .Backend.Frontends)}}
+    corsPolicy: {
+      allowedOrigins: [
+        {{- range .Backend.Frontends}}
+        'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
+        {{- end}}
+      ]
+    }
+    {{- end}}
+    scaleMinReplicas: 1
+    scaleMaxReplicas: 10
+    secrets: {
+      secureList:  union([
+        {{- if .DbCosmosMongo}}
+        {
+          name: 'azure-cosmos-connection-string'
+          identity:{{bicepName .Name}}Identity.outputs.resourceId
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/AZURE-COSMOS-CONNECTION-STRING'
+        }
+        {{- end}}
+        {{- if .DbPostgres}}
+        {
+          name: 'db-pass'
+          value: databasePassword
+        }
+        {
+          name: 'db-url'
+          value: 'postgresql://${databaseUser}:${databasePassword}@${postgreServer.outputs.fqdn}:5432/${databaseName}'
+        }
+        {{- end}}
+        {{- if .DbRedis}}
+        {
+          name: 'redis-pass'
+          identity:{{bicepName .Name}}Identity.outputs.resourceId
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
+        }
+        {{- end}}
+      ],
+      map({{bicepName .Name}}Secrets, secret => {
+        name: secret.secretRef
+        value: secret.value
+      }))
+    }
+    containers: [
+      {
+        image: {{bicepName .Name}}FetchLatestImage.outputs.?containers[?0].?image ?? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+        name: 'main'
+        resources: {
+          cpu: json('0.5')
+          memory: '1.0Gi'
+        }
+        env: union([
+          {
+            name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+            value: applicationInsights.outputs.connectionString
+          }
+          {
+            name: 'AZURE_CLIENT_ID'
+            value: {{bicepName .Name}}Identity.outputs.clientId
+          }
+          {{- if .DbCosmosMongo}}
+          {
+            name: 'AZURE_COSMOS_MONGODB_CONNECTION_STRING'
+            secretRef: 'azure-cosmos-connection-string'
+          }
+          {{- end}}
+          {{- if .DbPostgres}}
+          {
+            name: 'POSTGRES_HOST'
+            value: postgreServer.outputs.fqdn
+          }
+          {
+            name: 'POSTGRES_USERNAME'
+            value: databaseUser
+          }
+          {
+            name: 'POSTGRES_DATABASE'
+            value: databaseName
+          }
+          {
+            name: 'POSTGRES_PASSWORD'
+            secretRef: 'db-pass'
+          }
+          {
+            name: 'POSTGRES_URL'
+            secretRef: 'db-url'
+          }
+          {
+            name: 'POSTGRES_PORT'
+            value: '5432'
+          }
+          {{- end}}
+          {{- if .DbRedis}}
+          {
+            name: 'REDIS_HOST'
+            value: redis.outputs.hostName
+          }
+          {
+            name: 'REDIS_PORT'
+            value: string(redis.outputs.sslPort)
+          }
+          {
+            name: 'REDIS_ENDPOINT'
+            value: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
+          }
+          {
+            name: 'REDIS_PASSWORD'
+            secretRef: 'redis-pass'
+          }
+          {{- end}}
+          {{- if .Frontend}}
+          {{- range $i, $e := .Frontend.Backends}}
+          {
+            name: '{{upper .Name}}_BASE_URL'
+            value: 'https://{{.Name}}.internal.${containerAppsEnvironment.outputs.defaultDomain}'
+          }
+          {{- end}}
+          {{- end}}
+          {{- if ne .Port 0}}
+          {
+            name: 'PORT'
+            value: '{{ .Port }}'
+          }
+          {{- end}}
+        ],
+        {{bicepName .Name}}Env,
+        map({{bicepName .Name}}Secrets, secret => {
+            name: secret.name
+            secretRef: secret.secretRef
+        }))
+      }
+    ]
+    managedIdentities:{
+      systemAssigned: false
+      userAssignedResourceIds: [{{bicepName .Name}}Identity.outputs.resourceId]
+    }
+    registries:[
+      {
+        server: containerRegistry.outputs.loginServer
+        identity: {{bicepName .Name}}Identity.outputs.resourceId
+      }
+    ]
+    environmentResourceId: containerAppsEnvironment.outputs.resourceId
+    location: location
+    tags: union(tags, { 'azd-service-name': '{{.Name}}' })
+  }
+}
+{{- end}}
+
+{{- if .DbRedis}}
+module redis 'br/public:avm/res/cache/redis:0.3.2' = {
+  name: 'redisDeployment'
+  params: {
+    // Required parameters
+    name: '${abbrs.cacheRedis}${resourceToken}'
+    // Non-required parameters
+    location: location
+    skuName: 'Basic'
+  }
+}
+
+module redisConn './modules/set-redis-conn.bicep' = {
+  name: 'redisConn'
+  params: {
+    name: redis.outputs.name
+    secretName: 'REDIS-PASSWORD'
+    keyVaultName: keyVault.outputs.name
+  }
+}
+{{- end}}
+
+{{- if .Services}}
+// Create a keyvault to store secrets
+module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
+  name: 'keyvault'
+  params: {
+    name: '${abbrs.keyVaultVaults}${resourceToken}'
+    location: location
+    tags: tags
+    enableRbacAuthorization: false
+    accessPolicies: [
+      {
+        objectId: principalId
+        permissions: {
+          secrets: [ 'get', 'list' ]
+        }
+      }
+      {{- range .Services}}
+      {
+        objectId: {{bicepName .Name}}Identity.outputs.principalId
+        permissions: {
+          secrets: [ 'get', 'list' ]
+        }
+      }
+      {{- end}}
+    ]
+    secrets: [
+      {{- if .DbPostgres}}
+      {
+        name: 'db-pass'
+        value: databasePassword
+      }
+      {{- end}}
+    ]
+  }
+}
+{{- end}}
+
+{{- if .Services}}
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
+output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
+{{- end}}
+{{- if .DbRedis}}
+output AZURE_CACHE_REDIS_ID string = redis.outputs.resourceId
+{{- end}}
+{{- if .DbPostgres}}
+output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = postgreServer.outputs.resourceId
+{{- end}}
+{{ end}}

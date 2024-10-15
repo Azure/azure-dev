@@ -33,44 +33,26 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 	return nil, nil
 }
 
-type javaProject struct {
-	mavenProject mavenProject
-}
-
 // readMavenProject the java project
-func analyzeJavaProject(path string) (*Project, error) {
+func analyzeJavaProject(projectPath string) (*Project, error) {
 	var result []Project
 
-	entries, err := os.ReadDir(path)
-
+	mavenProjects, err := analyzeMavenProject(projectPath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading directory: %w", err)
+		return nil, fmt.Errorf("error analyzing maven project: %w", err)
 	}
 
-	for _, entry := range entries {
-		if "pom.xml" == entry.Name() {
-			mavenProjects, err := analyzeMavenProject(path)
-			if err != nil {
-				return nil, fmt.Errorf("error analyzing maven project: %w", err)
-			}
-
-			for _, mavenProject := range mavenProjects {
-				javaProject := &javaProject{
-					mavenProject: mavenProject,
-					// todo (xiada) we need to add spring related analysis here
-				}
-				project, err := detectDependencies(javaProject, &Project{
-					Language:      Java,
-					Path:          path,
-					DetectionRule: "Inferred by presence of: " + entry.Name(),
-				})
-				if err != nil {
-					return nil, fmt.Errorf("error applying rules: %w", err)
-				}
-				result = append(result, *project)
-
-			}
+	for _, mavenProject := range mavenProjects {
+		// todo (xiada) we need to add spring related analysis here
+		project, err := detectDependencies(&mavenProject, &Project{
+			Language:      Java,
+			Path:          projectPath,
+			DetectionRule: "Inferred by presence of: pom.xml",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error applying rules: %w", err)
 		}
+		result = append(result, *project)
 	}
 
 	// todo (xiada) we should support multiple modules
@@ -127,7 +109,10 @@ func analyzeMavenProject(projectPath string) ([]mavenProject, error) {
 	// if it has submodules
 	if len(rootProject.Modules) > 0 {
 		for _, m := range rootProject.Modules {
-			subModule, _ := readMavenProject(filepath.Join(projectPath, m, "pom.xml"))
+			subModule, err := readMavenProject(filepath.Join(projectPath, m, "pom.xml"))
+			if err != nil {
+				return nil, fmt.Errorf("error reading sub module: %w", err)
+			}
 			result = append(result, *subModule)
 		}
 	} else {
@@ -152,18 +137,15 @@ func readMavenProject(filePath string) (*mavenProject, error) {
 	return &project, nil
 }
 
-func detectDependencies(javaProject *javaProject, project *Project) (*Project, error) {
+func detectDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
 	databaseDepMap := map[DatabaseDep]struct{}{}
-	if javaProject.mavenProject.Dependencies != nil {
-		for _, dep := range javaProject.mavenProject.Dependencies {
-			if dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j" {
-				databaseDepMap[DbMySql] = struct{}{}
-			}
+	for _, dep := range mavenProject.Dependencies {
+		if dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j" {
+			databaseDepMap[DbMySql] = struct{}{}
+		}
 
-			if dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql" {
-				databaseDepMap[DbPostgres] = struct{}{}
-			}
-
+		if dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql" {
+			databaseDepMap[DbPostgres] = struct{}{}
 		}
 	}
 

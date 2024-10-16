@@ -146,6 +146,7 @@ func (cas *containerAppService) persistSettings(
 	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
 	if err != nil {
 		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
+		return obj, nil
 	}
 
 	objConfig := config.NewConfig(obj)

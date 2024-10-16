@@ -22,7 +22,7 @@ func (r *ruleServiceBusScsb) match(javaProject *javaProject) bool {
 }
 
 // Function to find all properties that match the pattern `spring.cloud.stream.bindings.<binding-name>.destination`
-func findBindingDestinations(properties map[string]interface{}) map[string]string {
+func findBindingDestinations(properties map[string]string) map[string]string {
 	result := make(map[string]string)
 
 	// Iterate through the properties map and look for matching keys

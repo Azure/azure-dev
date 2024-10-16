@@ -1,28 +1,44 @@
 package javaanalyze
 
 import (
+	"bufio"
 	"fmt"
 	"gopkg.in/yaml.v3"
-	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 type springProject struct {
-	applicationProperties map[string]interface{}
+	applicationProperties map[string]string
 }
 
 func analyzeSpringProject(projectPath string) springProject {
 	return springProject{
-		applicationProperties: findSpringApplicationProperties(projectPath),
+		applicationProperties: getProperties(projectPath),
 	}
 }
 
-func findSpringApplicationProperties(projectPath string) map[string]interface{} {
-	yamlFilePath := projectPath + "/src/main/resources/application.yml"
-	data, err := ioutil.ReadFile(yamlFilePath)
+func getProperties(projectPath string) map[string]string {
+	result := make(map[string]string)
+	getPropertiesInPropertiesFile(filepath.Join(projectPath, "/src/main/resources/application.properties"), result)
+	getPropertiesInYamlFile(filepath.Join(projectPath, "/src/main/resources/application.yml"), result)
+	getPropertiesInYamlFile(filepath.Join(projectPath, "/src/main/resources/application.yaml"), result)
+	profile, profileSet := result["spring.profiles.active"]
+	if profileSet {
+		getPropertiesInPropertiesFile(filepath.Join(projectPath, "/src/main/resources/application-"+profile+".properties"), result)
+		getPropertiesInYamlFile(filepath.Join(projectPath, "/src/main/resources/application-"+profile+".yml"), result)
+		getPropertiesInYamlFile(filepath.Join(projectPath, "/src/main/resources/application-"+profile+".yaml"), result)
+	}
+	return result
+}
+
+func getPropertiesInYamlFile(yamlFilePath string, result map[string]string) {
+	data, err := os.ReadFile(yamlFilePath)
 	if err != nil {
-		log.Printf("failed to read spring application properties: %s", yamlFilePath)
-		return nil
+		// Ignore the error if file not exist.
+		return
 	}
 
 	// Parse the YAML into a yaml.Node
@@ -32,14 +48,11 @@ func findSpringApplicationProperties(projectPath string) map[string]interface{} 
 		log.Fatalf("error unmarshalling YAML: %v", err)
 	}
 
-	result := make(map[string]interface{})
 	parseYAML("", &root, result)
-
-	return result
 }
 
 // Recursively parse the YAML and build dot-separated keys into a map
-func parseYAML(prefix string, node *yaml.Node, result map[string]interface{}) {
+func parseYAML(prefix string, node *yaml.Node, result map[string]string) {
 	switch node.Kind {
 	case yaml.DocumentNode:
 		// Process each document's content
@@ -75,5 +88,28 @@ func parseYAML(prefix string, node *yaml.Node, result map[string]interface{}) {
 		result[prefix] = node.Value
 	default:
 		// Handle other node types if necessary
+	}
+}
+
+func getPropertiesInPropertiesFile(propertiesFilePath string, result map[string]string) {
+	file, err := os.Open(propertiesFilePath)
+	if err != nil {
+		// Ignore the error if file not exist.
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			result[key] = value
+		}
 	}
 }

@@ -27,6 +27,32 @@ func CreateFromDirectory(source string, buf *os.File) error {
 			return err
 		}
 
+		// Skip symbolic links
+		if fileInfo.Mode()&os.ModeSymlink != 0 {
+			target, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return err
+			}
+
+			targetInfo, err := os.Stat(target)
+			if err != nil {
+				return err
+			}
+
+			if targetInfo.IsDir() {
+				// we need to copy the directory structure here
+				// for each file in the directory, the path should be:
+				// original_path/<path relative to the target>
+
+				// target is both:
+				// - If path is relative the result will be relative to the current directory
+				// - Unless one of the components is an absolute symbolic link.
+
+				// root on the name of the target
+				// expand
+			}
+		}
+
 		header := &zip.FileHeader{
 			Name: strings.Replace(
 				strings.TrimPrefix(
@@ -48,6 +74,7 @@ func CreateFromDirectory(source string, buf *os.File) error {
 		if err != nil {
 			return err
 		}
+
 		return nil
 	})
 	if err != nil {

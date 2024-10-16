@@ -13,6 +13,10 @@ import (
 )
 
 func TestCreateFromDirectory(t *testing.T) {
+	dest, err := os.Readlink("/Users/weilim/ziptest/symsymdir")
+	require.NoError(t, err)
+	require.Empty(t, dest)
+
 	require := require.New(t)
 	assert := assert.New(t)
 	tempDir := t.TempDir()

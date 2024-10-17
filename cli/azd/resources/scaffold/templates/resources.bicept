@@ -88,7 +88,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
     {{- end}}
     secretsKeyVault: {
       keyVaultName: keyVault.outputs.name
-      primaryWriteConnectionStringSecretName: 'AZURE-COSMOS-CONNECTION-STRING'
+      primaryWriteConnectionStringSecretName: 'MONGODB-URL'
     }
     capabilitiesToAdd: [ 'EnableServerless' ]
   }
@@ -178,9 +178,9 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
       secureList:  union([
         {{- if .DbCosmosMongo}}
         {
-          name: 'azure-cosmos-connection-string'
+          name: 'mongodb-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/AZURE-COSMOS-CONNECTION-STRING'
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/MONGODB-URL'
         }
         {{- end}}
         {{- if .DbPostgres}}
@@ -198,6 +198,11 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           name: 'redis-pass'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
           keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
+        }
+        {
+          name: 'redis-url'
+          identity:{{bicepName .Name}}Identity.outputs.resourceId
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
         }
         {{- end}}
       ],
@@ -225,8 +230,8 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           }
           {{- if .DbCosmosMongo}}
           {
-            name: 'AZURE_COSMOS_MONGODB_CONNECTION_STRING'
-            secretRef: 'azure-cosmos-connection-string'
+            name: 'MONGODB_URL'
+            secretRef: 'mongodb-url'
           }
           {{- end}}
           {{- if .DbPostgres}}
@@ -263,6 +268,10 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'REDIS_PORT'
             value: string(redis.outputs.sslPort)
+          }
+          {
+            name: 'REDIS_URL'
+            secretRef: 'redis-url'
           }
           {
             name: 'REDIS_ENDPOINT'
@@ -328,7 +337,8 @@ module redisConn './modules/set-redis-conn.bicep' = {
   name: 'redisConn'
   params: {
     name: redis.outputs.name
-    secretName: 'REDIS-PASSWORD'
+    passwordSecretName: 'REDIS-PASSWORD'
+    urlSecretName: 'REDIS-URL'
     keyVaultName: keyVault.outputs.name
   }
 }

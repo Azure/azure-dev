@@ -62,6 +62,20 @@ func Test_GetAllHookConfigs(t *testing.T) {
 		require.Nil(t, validHooks)
 		require.Error(t, err)
 	})
+
+	t.Run("With Missing Configuration", func(t *testing.T) {
+		// All hooksMap are invalid because they are missing a script type
+		hooksMap := map[string][]*HookConfig{
+			"preprovision": nil,
+		}
+
+		hooksManager := NewHooksManager(tempDir)
+		validHooks, err := hooksManager.GetAll(hooksMap)
+
+		require.NoError(t, err)
+		require.NotNil(t, validHooks)
+		require.Len(t, validHooks, 0)
+	})
 }
 
 func Test_GetByParams(t *testing.T) {

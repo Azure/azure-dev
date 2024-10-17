@@ -91,13 +91,14 @@ module appsEnv './shared/apps-env.bicep' = {
   }
   scope: rg
 }
-{{- if (or .DbCosmosMongo .DbPostgres)}}
+{{- if (or (or (or .DbCosmosMongo .DbPostgres) .DbMySql) (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString))}}
 
 resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVault.outputs.name
   scope: rg
 }
 {{- end}}
+
 {{- if .DbCosmosMongo}}
 
 module cosmosDb './app/db-cosmos-mongo.bicep' = {
@@ -126,6 +127,38 @@ module postgresDb './app/db-postgres.bicep' = {
   scope: rg
 }
 {{- end}}
+{{- if .DbMySql}}
+
+module mysqlDb './app/db-mysql.bicep' = {
+  name: 'mysqlDb'
+  params: {
+    serverName: '${abbrs.dBforMySQLServers}${resourceToken}'
+    location: location
+    tags: tags
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}mysql-${resourceToken}'
+    databasePassword: databasePassword
+    keyVaultName: keyVault.outputs.name
+    allowAllIPsFirewall: true
+  }
+  scope: rg
+}
+{{- end}}
+
+{{- if .AzureServiceBus }}
+module serviceBus './app/azure-service-bus.bicep' = {
+  name: 'serviceBus'
+  params: {
+    serviceBusNamespaceName: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    location: location
+    tags: tags
+    {{- if .AzureServiceBus.AuthUsingConnectionString}}
+    keyVaultName: keyVault.outputs.name
+    {{end}}
+  }
+  scope: rg
+}
+{{- end}}
+
 {{- range .Services}}
 
 module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
@@ -146,11 +179,32 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     {{- if .DbCosmosMongo}}
     cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
     {{- end}}
-    {{- if .DbPostgres}}
-    databaseName: postgresDb.outputs.databaseName
-    databaseHost: postgresDb.outputs.databaseHost
-    databaseUser: postgresDb.outputs.databaseUser
-    databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
+    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity)}}
+    postgresDatabaseId: postgresDb.outputs.databaseId
+    {{- end}}
+    {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword)}}
+    postgresDatabaseHost: postgresDb.outputs.databaseHost
+    postgresDatabaseName: postgresDb.outputs.databaseName
+    postgresDatabaseUser: postgresDb.outputs.databaseUser
+    postgresDatabasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
+    {{- end}}
+    {{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity)}}
+    mysqlDatabaseId: mysqlDb.outputs.databaseId
+    mysqlIdentityName: mysqlDb.outputs.identityName
+    {{- end}}
+    {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword)}}
+    mysqlDatabaseHost: mysqlDb.outputs.databaseHost
+    mysqlDatabaseName: mysqlDb.outputs.databaseName
+    mysqlDatabaseUser: mysqlDb.outputs.databaseUser
+    mysqlDatabasePassword: vault.getSecret(mysqlDb.outputs.databaseConnectionKey)
+    {{- end}}
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString)}}
+    azureServiceBusConnectionString: vault.getSecret(serviceBus.outputs.serviceBusConnectionStringKey)
+    {{- end}}
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
+    azureServiceBusNamespace: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    {{- end}}
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity)}}
     {{- end}}
     {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [

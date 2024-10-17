@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect/javaanalyze"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/bmatcuk/doublestar/v4"
@@ -131,6 +132,20 @@ func (db DatabaseDep) Display() string {
 	return ""
 }
 
+//type AzureDep string
+
+type AzureDep interface {
+	ResourceDisplay() string
+}
+
+type AzureDepServiceBus struct {
+	Queues []string
+}
+
+func (a AzureDepServiceBus) ResourceDisplay() string {
+	return "Azure Service Bus"
+}
+
 type Project struct {
 	// The language associated with the project.
 	Language Language
@@ -140,6 +155,9 @@ type Project struct {
 
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
+
+	// Experimental: Azure dependencies inferred through heuristics while scanning dependencies in the project.
+	AzureDeps []AzureDep
 
 	// The path to the project directory.
 	Path string
@@ -243,6 +261,9 @@ func detectUnder(ctx context.Context, root string, config detectConfig) ([]Proje
 		return nil, fmt.Errorf("scanning directories: %w", err)
 	}
 
+	// call the java analyzer
+	projects = analyze(projects)
+
 	return projects, nil
 }
 
@@ -305,4 +326,51 @@ func walkDirectories(path string, fn walkDirFunc) error {
 	}
 
 	return nil
+}
+
+func analyze(projects []Project) []Project {
+	result := []Project{}
+	for _, project := range projects {
+		if project.Language == Java {
+			fmt.Printf("Java project [%s] found", project.Path)
+			_javaProjects := javaanalyze.Analyze(project.Path)
+
+			if len(_javaProjects) == 1 {
+				enrichFromJavaProject(_javaProjects[0], &project)
+				result = append(result, project)
+			} else {
+				for _, _project := range _javaProjects {
+					copiedProject := project
+					enrichFromJavaProject(_project, &copiedProject)
+					result = append(result, copiedProject)
+				}
+			}
+		} else {
+			result = append(result, project)
+		}
+	}
+	return result
+}
+
+func enrichFromJavaProject(azureYaml javaanalyze.AzureYaml, project *Project) {
+	// if there is only one project, we can safely assume that it is the main project
+	for _, resource := range azureYaml.Resources {
+		if resource.GetType() == "Azure Storage" {
+			// project.DatabaseDeps = append(project.DatabaseDeps, Db)
+		} else if resource.GetType() == "MySQL" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbMySql)
+		} else if resource.GetType() == "PostgreSQL" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbPostgres)
+		} else if resource.GetType() == "MongoDB" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbMongo)
+		} else if resource.GetType() == "SQL Server" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbSqlServer)
+		} else if resource.GetType() == "Redis" {
+			project.DatabaseDeps = append(project.DatabaseDeps, DbRedis)
+		} else if resource.GetType() == "Azure Service Bus" {
+			project.AzureDeps = append(project.AzureDeps, AzureDepServiceBus{
+				Queues: resource.(*javaanalyze.ServiceBusResource).Queues,
+			})
+		}
+	}
 }

@@ -124,8 +124,6 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	startTime := time.Now()
 
-	serviceNameWarningCheck(ra.console, ra.flags.serviceName, "restore")
-
 	targetServiceName := ra.flags.serviceName
 	if len(ra.args) == 1 {
 		targetServiceName = ra.args[0]

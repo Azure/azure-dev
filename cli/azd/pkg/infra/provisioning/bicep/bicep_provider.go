@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -49,6 +50,13 @@ import (
 const (
 	defaultModule = "main"
 	defaultPath   = "infra"
+
+	// List of error strings to check against when a bicep deployment error occurs.
+	aINotValid                  = "is not valid according to the validation procedure"
+	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' " +
+		"from kind 'OpenAI'"
+	responsibleAITerms              = "until you agree to Responsible AI terms for this resource"
+	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
 )
 
 type deploymentDetails struct {
@@ -117,6 +125,12 @@ var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")
 // values are unset. This also requires that the Bicep module can be compiled.
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	modulePath := p.modulePath()
+
+	// Verify that the module path exists
+	_, err := os.Stat(modulePath)
+	if err != nil {
+		return fmt.Errorf("checking module path: %w", err)
+	}
 
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
@@ -240,7 +254,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var deployment *azapi.ResourceDeployment
 
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), options.Hint())
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.deploymentName(), options.Hint())
 	p.console.StopSpinner(ctx, "", input.StepDone)
 
 	if err != nil {
@@ -377,7 +391,7 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 }
 
 func (p *BicepProvider) deploymentFromScopeType(deploymentScopeType azure.DeploymentScope) (infra.Deployment, error) {
-	deploymentName := p.deploymentManager.GenerateDeploymentName(p.env.Name())
+	deploymentName := p.deploymentManager.GenerateDeploymentName(p.deploymentName())
 
 	if deploymentScopeType == azure.DeploymentScopeSubscription {
 		scope := p.deploymentManager.SubscriptionScope(p.env.GetSubscriptionId(), p.env.GetLocation())
@@ -437,7 +451,7 @@ func (p *BicepProvider) latestDeploymentResult(
 	ctx context.Context,
 	scope infra.Scope,
 ) (*azapi.ResourceDeployment, error) {
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.deploymentName(), "")
 	// findCompletedDeployments returns error if no deployments are found
 	// No need to check for empty list
 	if err != nil {
@@ -614,7 +628,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		optionsMap,
 	)
 	if err != nil {
-		return nil, err
+		return nil, p.suggestErrorAction(err)
 	}
 
 	deployment.Outputs = p.createOutputParameters(
@@ -625,6 +639,44 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	return &provisioning.DeployResult{
 		Deployment: deployment,
 	}, nil
+}
+
+func (p *BicepProvider) suggestErrorAction(err error) error {
+	//if user don't have access to openai
+	errorMsg := err.Error()
+	if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
+		requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
+		return &internal.ErrorWithSuggestion{
+			Err: err,
+			Suggestion: "\nSuggested Action: The selected subscription does not have access to" +
+				" Azure OpenAI Services. Please visit " + output.WithLinkFormat("%s", requestAccessLink) +
+				" to request access.",
+		}
+	}
+
+	if strings.Contains(errorMsg, aINotValid) &&
+		strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
+		return &internal.ErrorWithSuggestion{
+			Suggestion: "\nSuggested Action: The selected " +
+				"subscription has not been enabled for use of Azure AI service and does not have quota for " +
+				"any pricing tiers. Please visit " + output.WithLinkFormat("%s", p.portalUrlBase) +
+				" and select 'Create' on specific services to request access.",
+			Err: err,
+		}
+	}
+
+	//if user haven't agree to Responsible AI terms
+	if strings.Contains(errorMsg, responsibleAITerms) {
+		return &internal.ErrorWithSuggestion{
+			Suggestion: "\nSuggested Action: Please visit azure portal in " +
+				output.WithLinkFormat("%s", p.portalUrlBase) + ". Create the resource in azure portal " +
+				"to go through Responsible AI terms, and then delete it. " +
+				"After that, run 'azd provision' again",
+			Err: err,
+		}
+	}
+
+	return fmt.Errorf("deployment failed: %w", err)
 }
 
 // Preview runs deploy using the what-if argument
@@ -744,13 +796,13 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
 
-	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
+	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.deploymentName(), "")
 	if err != nil {
 		return nil, fmt.Errorf("finding completed deployments: %w", err)
 	}
 
 	if len(completedDeployments) == 0 {
-		return nil, fmt.Errorf("no deployments found for environment, '%s'", p.env.Name())
+		return nil, fmt.Errorf("no deployments found for environment, '%s'", p.deploymentName())
 	}
 
 	mostRecentDeployment := completedDeployments[0]
@@ -876,6 +928,17 @@ func (p *BicepProvider) Destroy(
 	}
 
 	return destroyResult, nil
+}
+
+// deploymentName returns the name of the deployment to use for the current operation.
+// If the user has specified a name, that will be used. Otherwise, the name of the environment will be used.
+func (p *BicepProvider) deploymentName() string {
+	deploymentName := p.options.Name
+	if deploymentName == "" {
+		deploymentName = p.env.Name()
+	}
+
+	return deploymentName
 }
 
 // A local type for adding the resource group to a cognitive account as it is required for purging

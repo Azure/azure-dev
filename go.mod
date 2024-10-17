@@ -35,6 +35,7 @@ require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/bmatcuk/doublestar/v4 v4.6.0
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
+	github.com/braydonk/yaml v0.7.0
 	github.com/buger/goterm v1.0.4
 	github.com/cli/browser v1.1.0
 	github.com/drone/envsubst v1.0.3
@@ -69,7 +70,6 @@ require (
 	go.uber.org/multierr v1.8.0
 	golang.org/x/sys v0.21.0
 	gopkg.in/dnaeon/go-vcr.v3 v3.1.2
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -106,4 +106,5 @@ require (
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 	google.golang.org/grpc v1.56.3 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

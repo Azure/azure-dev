@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/resources"
-	"gopkg.in/yaml.v3"
+	"github.com/braydonk/yaml"
 )
 
 // Feature defines the structure for a feature in alpha mode.

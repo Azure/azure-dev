@@ -18,9 +18,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 // Specifying resource name in the project file should override the default

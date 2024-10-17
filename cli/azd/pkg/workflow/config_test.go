@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 var testWorkflow = &Workflow{

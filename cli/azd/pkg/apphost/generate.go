@@ -28,8 +28,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/braydonk/yaml"
 	"github.com/psanford/memfs"
-	"gopkg.in/yaml.v3"
 )
 
 const RedisContainerAppService = "redis"

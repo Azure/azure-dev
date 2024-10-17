@@ -13,6 +13,7 @@ import (
 )
 
 type javaDetector struct {
+	rootProjects []mavenProject
 }
 
 func (jd *javaDetector) Language() Language {
@@ -22,41 +23,39 @@ func (jd *javaDetector) Language() Language {
 func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "pom.xml" {
-			project, err := analyzeJavaProject(path)
+			pomFile := filepath.Join(path, entry.Name())
+			project, err := readMavenProject(pomFile)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("error reading pom.xml: %w", err)
 			}
-			return project, nil
+
+			if len(project.Modules) > 0 {
+				// This is a multi-module project, we will capture the analysis, but return nil
+				// to continue recursing
+				jd.rootProjects = append(jd.rootProjects, *project)
+				return nil, nil
+			}
+
+			var currentRoot *mavenProject
+			for _, rootProject := range jd.rootProjects {
+				// we can say that the project is in the root project if the path is under the project
+				if inRoot := strings.HasPrefix(pomFile, rootProject.path); inRoot {
+					currentRoot = &rootProject
+				}
+			}
+
+			_ = currentRoot // use currentRoot here in the analysis
+			result, err := detectDependencies(project, &Project{
+				Language:      Java,
+				Path:          path,
+				DetectionRule: "Inferred by presence of: pom.xml",
+			})
+
+			return result, nil
 		}
 	}
 
 	return nil, nil
-}
-
-// readMavenProject the java project
-func analyzeJavaProject(projectPath string) (*Project, error) {
-	var result []Project
-
-	mavenProjects, err := analyzeMavenProject(projectPath)
-	if err != nil {
-		return nil, fmt.Errorf("error analyzing maven project: %w", err)
-	}
-
-	for _, mavenProject := range mavenProjects {
-		// todo we need to add spring related analysis here
-		project, err := detectDependencies(&mavenProject, &Project{
-			Language:      Java,
-			Path:          projectPath,
-			DetectionRule: "Inferred by presence of: pom.xml",
-		})
-		if err != nil {
-			return nil, fmt.Errorf("error applying rules: %w", err)
-		}
-		result = append(result, *project)
-	}
-
-	// TODO we should support multiple modules
-	return &result[0], nil
 }
 
 // mavenProject represents the top-level structure of a Maven POM file.
@@ -100,28 +99,6 @@ type plugin struct {
 	GroupId    string `xml:"groupId"`
 	ArtifactId string `xml:"artifactId"`
 	Version    string `xml:"version"`
-}
-
-func analyzeMavenProject(projectPath string) ([]mavenProject, error) {
-	rootProject, err := readMavenProject(filepath.Join(projectPath, "pom.xml"))
-	if err != nil {
-		return nil, fmt.Errorf("error reading root project: %w", err)
-	}
-	var result []mavenProject
-
-	// if it has submodules
-	if len(rootProject.Modules) > 0 {
-		for _, m := range rootProject.Modules {
-			subModule, err := readMavenProject(filepath.Join(projectPath, m, "pom.xml"))
-			if err != nil {
-				return nil, fmt.Errorf("error reading sub module: %w", err)
-			}
-			result = append(result, *subModule)
-		}
-	} else {
-		result = append(result, *rootProject)
-	}
-	return result, nil
 }
 
 func readMavenProject(filePath string) (*mavenProject, error) {

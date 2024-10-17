@@ -48,7 +48,7 @@ func TestJavaDetector_DetectProject_WithoutPomXml(t *testing.T) {
 	}
 }
 
-func TestAnalyzeMavenProject_WithSubmodules(t *testing.T) {
+func TestJavaDetector_DetectProject_WithSubmodules(t *testing.T) {
 	// Setup a temporary directory with a root pom.xml and submodule poms
 	tempDir := t.TempDir()
 	err := os.WriteFile(filepath.Join(tempDir, "pom.xml"), []byte(`
@@ -76,36 +76,34 @@ func TestAnalyzeMavenProject_WithSubmodules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	projects, err := analyzeMavenProject(tempDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(projects) != 1 {
-		t.Fatalf("expected 1 projects, got %d", len(projects))
-	}
-}
 
-func TestAnalyzeMavenProject_WithoutSubmodules(t *testing.T) {
-	// Setup a temporary directory with a root pom.xml
-	tempDir := t.TempDir()
-	err := os.WriteFile(filepath.Join(tempDir, "pom.xml"), []byte(`
-		<project>
-			<dependencies>
-				<dependency>
-					<groupId>org.postgresql</groupId>
-					<artifactId>postgresql</artifactId>
-				</dependency>
-			</dependencies>
-		</project>`), 0644)
+	jd := &javaDetector{}
+	entries, err := os.ReadDir(tempDir)
+	if err != nil {
+		t.Fatalf("reading directory: %v", err)
+	}
+
+	project, err := jd.DetectProject(context.Background(), tempDir, entries)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	projects, err := analyzeMavenProject(tempDir)
+	if project != nil {
+		t.Fatalf("expected no project to be detected, got %v", project)
+	}
+	if len(jd.rootProjects) != 1 {
+		t.Fatalf("expected 1 root project, got %d", len(jd.rootProjects))
+	}
+
+	entries, err = os.ReadDir(filepath.Join(tempDir, "submodule"))
+	if err != nil {
+		t.Fatalf("reading directory: %v", err)
+	}
+	project, err = jd.DetectProject(context.Background(), filepath.Join(tempDir, "submodule"), entries)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(projects) != 1 {
-		t.Fatalf("expected 1 project, got %d", len(projects))
+	if project == nil {
+		t.Fatalf("expected project to be detected, got nil")
 	}
 }
 

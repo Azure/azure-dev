@@ -54,11 +54,11 @@ func copyFS(embedFs fs.FS, root string, target string) error {
 // To execute a named template, call Execute with the defined name.
 func Load() (*template.Template, error) {
 	funcMap := template.FuncMap{
-		"bicepName":         BicepName,
-		"containerAppInfix": ContainerAppInfix,
-		"upper":             strings.ToUpper,
-		"lower":             strings.ToLower,
-		"formatParam":       FormatParameter,
+		"bicepName":        BicepName,
+		"containerAppName": ContainerAppName,
+		"upper":            strings.ToUpper,
+		"lower":            strings.ToLower,
+		"formatParam":      FormatParameter,
 	}
 
 	t, err := template.New("templates").

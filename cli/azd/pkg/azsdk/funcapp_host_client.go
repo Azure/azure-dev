@@ -117,8 +117,11 @@ func (c *FuncAppHostClient) Publish(
 
 func (c *FuncAppHostClient) waitForDeployment(ctx context.Context, location string) (PublishResponse, error) {
 	// This frequency is recommended by the service team.
-	polLDelay := 1 * time.Second
+	pollDelay := 1 * time.Second
 	var lastResponse *PublishResponse
+
+	// mitigation for deployments that take awhile to "come alive"
+	deploymentNotFoundAttempts := 0
 
 	for {
 		req, err := runtime.NewRequest(ctx, http.MethodGet, location)
@@ -129,6 +132,12 @@ func (c *FuncAppHostClient) waitForDeployment(ctx context.Context, location stri
 		response, err := c.pipeline.Do(req)
 		if err != nil {
 			return PublishResponse{}, err
+		}
+
+		if deploymentNotFoundAttempts <= 3 && response.StatusCode == http.StatusNotFound {
+			deploymentNotFoundAttempts++
+			time.Sleep(pollDelay)
+			continue
 		}
 
 		// It's possible to observe a 404 response after the deployment is complete.
@@ -167,9 +176,9 @@ func (c *FuncAppHostClient) waitForDeployment(ctx context.Context, location stri
 		// Record the latest response
 		lastResponse = &resp
 
-		delay := polLDelay
+		delay := pollDelay
 		if retryAfter := httputil.RetryAfter(response); retryAfter > 0 {
-			delay = polLDelay
+			delay = pollDelay
 		}
 
 		select {

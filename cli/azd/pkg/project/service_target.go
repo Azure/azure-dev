@@ -94,6 +94,19 @@ type ServiceTarget interface {
 	) ([]string, error)
 }
 
+// GetIgnoreFileNameByKind returns the appropriate ignore file name (e.g., .funcignore, .webappignore)
+// based on the service target kind.
+func GetIgnoreFileNameByKind(kind ServiceTargetKind) string {
+	switch kind {
+	case AzureFunctionTarget:
+		return ".funcignore"
+	case AppServiceTarget:
+		return ".webappignore"
+	default:
+		return ""
+	}
+}
+
 // NewServiceDeployResult is a helper function to create a new ServiceDeployResult
 func NewServiceDeployResult(
 	relatedResourceId string,

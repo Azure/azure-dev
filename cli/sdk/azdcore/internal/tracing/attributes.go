@@ -1,0 +1,193 @@
+package tracing
+
+import (
+	"context"
+	"slices"
+	"sync"
+
+	"github.com/azure/azure-dev/cli/sdk/azdcore/internal/tracing/baggage"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/atomic"
+)
+
+// SetBaggageInContext sets the given attributes as baggage.
+// Baggage attributes are set for the current running span, and for any child spans created.
+func SetBaggageInContext(ctx context.Context, attributes ...attribute.KeyValue) context.Context {
+	SetAttributesInContext(ctx, attributes...)
+	return baggage.ContextWithAttributes(ctx, attributes)
+}
+
+// SetAttributesInContext sets the given attributes for the current running span.
+func SetAttributesInContext(ctx context.Context, attributes ...attribute.KeyValue) {
+	runningSpan := trace.SpanFromContext(ctx)
+	runningSpan.SetAttributes(attributes...)
+}
+
+// Attributes that are global and set on all events
+var globalVal = valSynced{}
+
+// Attributes that are only set on command-level usage events
+var usageVal = valSynced{}
+
+// Atomic value with mutex for multiple writers
+type valSynced struct {
+	val atomic.Value
+	mu  sync.Mutex
+}
+
+func init() {
+	globalVal.val.Store(baggage.NewBaggage())
+	usageVal.val.Store(baggage.NewBaggage())
+}
+
+func set(v *valSynced, attributes []attribute.KeyValue) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	baggage := v.val.Load().(baggage.Baggage)
+	newBaggage := baggage.Set(attributes...)
+
+	v.val.Store(newBaggage)
+}
+
+func get(v *valSynced) []attribute.KeyValue {
+	baggage := v.val.Load().(baggage.Baggage)
+	return baggage.Attributes()
+}
+
+func appendTo(v *valSynced, attr attribute.KeyValue) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	baggage := v.val.Load().(baggage.Baggage)
+	val, ok := baggage.Lookup(attr.Key)
+	if ok && val.Type() == attr.Value.Type() {
+		switch attr.Value.Type() {
+		case attribute.BOOLSLICE:
+			attr = attr.Key.BoolSlice(append(val.AsBoolSlice(), attr.Value.AsBoolSlice()...))
+		case attribute.INT64SLICE:
+			attr = attr.Key.Int64Slice(append(val.AsInt64Slice(), attr.Value.AsInt64Slice()...))
+		case attribute.FLOAT64SLICE:
+			attr = attr.Key.Float64Slice(append(val.AsFloat64Slice(), attr.Value.AsFloat64Slice()...))
+		case attribute.STRINGSLICE:
+			attr = attr.Key.StringSlice(append(val.AsStringSlice(), attr.Value.AsStringSlice()...))
+		}
+	}
+
+	newBaggage := baggage.Set(attr)
+	v.val.Store(newBaggage)
+}
+
+func appendToUnique(v *valSynced, attr attribute.KeyValue) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	baggage := v.val.Load().(baggage.Baggage)
+	val, ok := baggage.Lookup(attr.Key)
+	if ok && val.Type() == attribute.STRINGSLICE {
+		switch attr.Value.Type() {
+		case attribute.STRING:
+			attrValue := attr.Value.AsString()
+			for _, v := range val.AsStringSlice() {
+				if v == attrValue { // already exists
+					return
+				}
+			}
+
+			attr = attr.Key.StringSlice(append(val.AsStringSlice(), attrValue))
+		case attribute.STRINGSLICE:
+			attrValues := attr.Value.AsStringSlice()
+			adds := make([]string, 0, len(attrValues))
+
+			for _, a := range attrValues {
+				if !slices.Contains(val.AsStringSlice(), a) {
+					adds = append(adds, a)
+				}
+			}
+
+			if len(adds) == 0 {
+				return
+			}
+
+			attr = attr.Key.StringSlice(append(val.AsStringSlice(), adds...))
+		}
+	} else if attr.Value.Type() == attribute.STRING {
+		attr = attr.Key.StringSlice([]string{attr.Value.AsString()})
+	}
+
+	newBaggage := baggage.Set(attr)
+	v.val.Store(newBaggage)
+}
+
+func increment(v *valSynced, attr attribute.KeyValue) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	baggage := v.val.Load().(baggage.Baggage)
+	val, ok := baggage.Lookup(attr.Key)
+	if ok && val.Type() == attr.Value.Type() {
+		switch attr.Value.Type() {
+		case attribute.INT64:
+			attr = attr.Key.Int64(val.AsInt64() + attr.Value.AsInt64())
+		case attribute.FLOAT64:
+			attr = attr.Key.Float64(val.AsFloat64() + attr.Value.AsFloat64())
+		case attribute.STRING:
+			attr = attr.Key.String(val.AsString() + attr.Value.AsString())
+		}
+	}
+
+	newBaggage := baggage.Set(attr)
+	v.val.Store(newBaggage)
+}
+
+// Sets global attributes that are included with all telemetry events emitted.
+// If the attribute already exists, the value is replaced.
+func SetGlobalAttributes(attributes ...attribute.KeyValue) {
+	set(&globalVal, attributes)
+}
+
+// Returns all global attributes set.
+func GetGlobalAttributes() []attribute.KeyValue {
+	return get(&globalVal)
+}
+
+// Sets usage attributes that are included with usage events emitted.
+// If the attribute already exists, the value is replaced.
+func SetUsageAttributes(attributes ...attribute.KeyValue) {
+	set(&usageVal, attributes)
+}
+
+// Returns all usage attributes set.
+func GetUsageAttributes() []attribute.KeyValue {
+	return get(&usageVal)
+}
+
+// Sets or appends a value to a slice-type usage attribute that possibly exists.
+// The attribute is expected to be a slice-type value, and matches the existing type.
+// Otherwise, a strict replacement is performed.
+func AppendUsageAttribute(attr attribute.KeyValue) {
+	appendTo(&usageVal, attr)
+}
+
+// Sets or appends a value to a string slice-type usage attribute that possibly exists,
+// merging on unique elements.
+//
+// The attribute is expected to be a slice-type value, and matches the existing type.
+// For convenience, a string-type value is also treated as a string-slice with a single element.
+//
+// If the types do not match, a strict replacement is performed.
+func AppendUsageAttributeUnique(attr attribute.KeyValue) {
+	appendToUnique(&usageVal, attr)
+}
+
+// Sets or increments a possibly stored usage attribute.
+// The attribute is expected to be a numeric-type or string-type value, and matches the existing type
+// of a previously stored usage attribute.
+// Otherwise, a strict replacement is performed.
+func IncrementUsageAttribute(attr attribute.KeyValue) {
+	increment(&usageVal, attr)
+}
+
+// InteractTimeMs is the time spent waiting on user interaction in milliseconds.
+var InteractTimeMs = atomic.NewInt64(0)

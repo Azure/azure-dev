@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -163,7 +164,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	_, err = a.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return nil, err
+		log.Printf("Failed to run extension %s: %v\n", extensionName, err)
 	}
 
 	return nil, nil

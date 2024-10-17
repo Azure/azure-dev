@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -77,7 +79,6 @@ func (i *Initializer) infraSpecFromDetect(
 				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
 					DatabaseName: dbName,
 				}
-
 				break dbPrompt
 			case appdetect.DbPostgres:
 				if dbName == "" {
@@ -106,6 +107,11 @@ func (i *Initializer) infraSpecFromDetect(
 
 			if svc.Language == appdetect.Java {
 				serviceSpec.Port = 8080
+			}
+		} else {
+			ports := i.detectPortInDockerfile(svc.Docker.Path)
+			if len(ports) == 1 {
+				serviceSpec.Port = ports[0]
 			}
 		}
 
@@ -193,4 +199,27 @@ func (i *Initializer) infraSpecFromDetect(
 	}
 
 	return spec, nil
+}
+
+func (i *Initializer) detectPortInDockerfile(
+	filePath string) []int {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return []int{}
+	}
+	defer file.Close()
+
+	var result []int
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "EXPOSE") {
+			var port int
+			_, err := fmt.Sscanf(line, "EXPOSE %d", &port)
+			if err == nil {
+				result = append(result, port)
+			}
+		}
+	}
+	return result
 }

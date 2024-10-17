@@ -205,7 +205,7 @@ func Test_CLI_Init_From_App(t *testing.T) {
 	require.NoError(t, err)
 
 	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
+	require.FileExists(t, filepath.Join(dir, "infra", "resources.bicep"))
 	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
-	require.FileExists(t, filepath.Join(dir, "infra", "app", "app.bicep"))
-	require.FileExists(t, filepath.Join(dir, "infra", "app", "db-postgres.bicep"))
 }

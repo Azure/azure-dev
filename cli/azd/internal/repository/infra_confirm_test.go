@@ -241,11 +241,17 @@ func TestDetectPortInDockerfile(t *testing.T) {
 			nil,
 			nil),
 	}
-	var port int
-	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "Dockerfile1"))
-	require.Equal(t, 80, port)
-	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "Dockerfile2"))
-	require.Equal(t, 3100, port)
-	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "Dockerfile3"))
-	require.Equal(t, -1, port)
+	var port []int
+	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "DockerfilePort80"))
+	require.Equal(t, 1, len(port))
+	require.Equal(t, 80, port[0])
+	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "DockerfilePort3100"))
+	require.Equal(t, 1, len(port))
+	require.Equal(t, 3100, port[0])
+	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "DockerfilePort3100And80"))
+	require.Equal(t, 2, len(port))
+	require.Equal(t, 3100, port[0])
+	require.Equal(t, 80, port[1])
+	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "DockerfileNoPort"))
+	require.Equal(t, 0, len(port))
 }

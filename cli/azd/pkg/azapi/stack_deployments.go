@@ -743,3 +743,120 @@ func convertFromStacksProvisioningState(
 
 	return DeploymentProvisioningState("")
 }
+
+func (d *StackDeployments) ValidatePreflightToResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	client, err := d.createClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to calculate template hash: %w", err)
+	}
+
+	clonedTags := maps.Clone(tags)
+	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
+
+	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
+	for k, v := range parameters {
+		stackParams[k] = &armdeploymentstacks.DeploymentParameter{
+			Value: v.Value,
+		}
+	}
+
+	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	if err != nil {
+		return err
+	}
+
+	stack := armdeploymentstacks.DeploymentStack{
+		Tags: clonedTags,
+		Properties: &armdeploymentstacks.DeploymentStackProperties{
+			BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
+			ActionOnUnmanage:          deploymentStackOptions.ActionOnUnmanage,
+			DenySettings:              deploymentStackOptions.DenySettings,
+			Parameters:                stackParams,
+			Template:                  armTemplate,
+		},
+	}
+	poller, err := client.BeginValidateStackAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
+	if err != nil {
+		return err
+	}
+
+	_, err = poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d *StackDeployments) ValidatePreflightToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	client, err := d.createClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to calculate template hash: %w", err)
+	}
+
+	clonedTags := maps.Clone(tags)
+	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
+
+	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
+	for k, v := range parameters {
+		stackParams[k] = &armdeploymentstacks.DeploymentParameter{
+			Value: v.Value,
+		}
+	}
+
+	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	if err != nil {
+		return err
+	}
+
+	stack := armdeploymentstacks.DeploymentStack{
+		Location: &location,
+		Tags:     clonedTags,
+		Properties: &armdeploymentstacks.DeploymentStackProperties{
+			BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
+			ActionOnUnmanage:          deploymentStackOptions.ActionOnUnmanage,
+			DenySettings:              deploymentStackOptions.DenySettings,
+			Parameters:                stackParams,
+			Template:                  armTemplate,
+		},
+	}
+	poller, err := client.BeginValidateStackAtSubscription(ctx, deploymentName, stack, nil)
+	if err != nil {
+		return err
+	}
+
+	_, err = poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

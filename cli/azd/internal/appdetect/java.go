@@ -50,6 +50,9 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				Path:          path,
 				DetectionRule: "Inferred by presence of: pom.xml",
 			})
+			if err != nil {
+				return nil, fmt.Errorf("detecting dependencies: %w", err)
+			}
 
 			return result, nil
 		}

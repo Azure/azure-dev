@@ -21,10 +21,13 @@ func TestJavaDetector_DetectProject_WithPomXml(t *testing.T) {
 		mockDirEntry{name: "pom.xml"},
 	}
 	tempDir := t.TempDir()
-	os.WriteFile(filepath.Join(tempDir, "pom.xml"), []byte(`
+	err := os.WriteFile(filepath.Join(tempDir, "pom.xml"), []byte(`
 		<project>
 			
-		</project>`), 0644)
+		</project>`), 0600)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	project, err := jd.DetectProject(context.Background(), tempDir, entries)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -49,14 +52,14 @@ func TestJavaDetector_DetectProject_WithoutPomXml(t *testing.T) {
 }
 
 func TestJavaDetector_DetectProject_WithSubmodules(t *testing.T) {
-	// Setup a temporary directory with a root pom.xml and submodule poms
+	// Set up a temporary directory with a root pom.xml and submodule poms
 	tempDir := t.TempDir()
 	err := os.WriteFile(filepath.Join(tempDir, "pom.xml"), []byte(`
 		<project>
 			<modules>
 				<module>submodule</module>
 			</modules>
-		</project>`), 0644)
+		</project>`), 0600)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -72,7 +75,7 @@ func TestJavaDetector_DetectProject_WithSubmodules(t *testing.T) {
 					<artifactId>mysql-connector-j</artifactId>
 				</dependency>
 			</dependencies>
-		</project>`), 0644)
+		</project>`), 0600)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

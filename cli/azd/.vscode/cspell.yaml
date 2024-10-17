@@ -110,6 +110,9 @@ overrides:
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
+  - filename: test/recording/recording.go
+    words:
+      - oidctoken
   - filename: internal/vsrpc/handler.go
     words:
       - arity

@@ -7,3 +7,5 @@ resource.syso
 versioninfo.json
 azd.sln
 
+**/target
+

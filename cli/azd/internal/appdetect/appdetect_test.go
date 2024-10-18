@@ -42,6 +42,20 @@ func TestDetect(t *testing.T) {
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
+					Language:      Java,
+					Path:          "java-multimodules/application",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/library",
+					DetectionRule: "Inferred by presence of: pom.xml",
+				},
+				{
 					Language:      JavaScript,
 					Path:          "javascript",
 					DetectionRule: "Inferred by presence of: package.json",
@@ -111,6 +125,20 @@ func TestDetect(t *testing.T) {
 					Path:          "java",
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/application",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/library",
+					DetectionRule: "Inferred by presence of: pom.xml",
+				},
 			},
 		},
 		{
@@ -128,6 +156,20 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java",
+					DetectionRule: "Inferred by presence of: pom.xml",
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/application",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 			},
@@ -150,6 +192,20 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java",
+					DetectionRule: "Inferred by presence of: pom.xml",
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/application",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{

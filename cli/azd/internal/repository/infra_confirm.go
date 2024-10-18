@@ -77,7 +77,6 @@ func (i *Initializer) infraSpecFromDetect(
 				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
 					DatabaseName: dbName,
 				}
-
 				break dbPrompt
 			case appdetect.DbPostgres:
 				if dbName == "" {
@@ -103,9 +102,15 @@ func (i *Initializer) infraSpecFromDetect(
 		if svc.Docker == nil || svc.Docker.Path == "" {
 			// default builder always specifies port 80
 			serviceSpec.Port = 80
-
 			if svc.Language == appdetect.Java {
 				serviceSpec.Port = 8080
+			}
+		} else {
+			ports := svc.Docker.ExposedPorts
+			if len(ports) == 1 {
+				for key := range ports {
+					serviceSpec.Port = key
+				}
 			}
 		}
 

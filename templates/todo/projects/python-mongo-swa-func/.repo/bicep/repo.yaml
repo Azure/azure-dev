@@ -74,6 +74,11 @@ repo:
         to: db.bicep
         patterns:
           - "**/main.bicep"
+
+      - from: cosmos-mongo-db-avm.bicep
+        to: db-avm.bicep
+        patterns:
+          - "**/main.bicep"
       
       - from: ../../../../api/common/openapi.yaml
         to: ../../src/api/openapi.yaml
@@ -104,6 +109,12 @@ repo:
       
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
+
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db-avm.bicep
+      to: ./infra/app/db-avm.bicep
+
+    - from: ../../../../common/infra/bicep/app/api-appservice-avm.bicep
+      to: ./infra/app/api-appservice-avm.bicep
 
     - from: ./../../
       to: ./

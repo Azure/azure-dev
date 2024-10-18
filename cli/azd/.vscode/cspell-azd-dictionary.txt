@@ -228,5 +228,6 @@ webfrontend
 westus2
 wireinject
 yacspin
+yamlnode
 ymlt
 zerr

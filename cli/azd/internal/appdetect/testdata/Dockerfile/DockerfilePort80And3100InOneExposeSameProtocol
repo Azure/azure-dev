@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/openjdk/jdk:17-mariner AS build
 
 WORKDIR /workspace/app
-EXPOSE 3100
+EXPOSE 80 3100
 
 COPY mvnw .
 COPY .mvn .mvn
@@ -13,7 +13,6 @@ RUN ./mvnw package -DskipTests
 RUN mkdir -p target/dependency && (cd target/dependency; jar -xf ../*.jar)
 
 FROM mcr.microsoft.com/openjdk/jdk:17-mariner
-EXPOSE 80
 
 ARG DEPENDENCY=/workspace/app/target/dependency
 COPY --from=build ${DEPENDENCY}/BOOT-INF/lib /app/lib

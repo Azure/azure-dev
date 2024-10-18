@@ -3,24 +3,52 @@ package appdetect
 import (
 	"github.com/stretchr/testify/require"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
 func TestDetectPortInDockerfile(t *testing.T) {
-	var port []int
-	port = detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "DockerfilePort80"))
-	require.Equal(t, 1, len(port))
-	require.Equal(t, 80, port[0])
 
-	port = detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "DockerfilePort3100"))
-	require.Equal(t, 1, len(port))
-	require.Equal(t, 3100, port[0])
+	ports, err := getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfileNoPort"))
+	require.Equal(t, nil, err)
+	require.Equal(t, 0, len(ports))
 
-	port = detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "DockerfilePort3100And80"))
-	require.Equal(t, 2, len(port))
-	require.Equal(t, 3100, port[0])
-	require.Equal(t, 80, port[1])
+	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfilePort80"))
+	expectedPorts := map[int]string{
+		80: "tcp",
+	}
+	require.Equal(t, nil, err)
+	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
 
-	port = detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "DockerfileNoPort"))
-	require.Equal(t, 0, len(port))
+	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfilePort80And3100InOneExposeSameProtocol"))
+	expectedPorts = map[int]string{
+		80:   "tcp",
+		3100: "tcp",
+	}
+	require.Equal(t, nil, err)
+	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
+
+	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfilePort80And3100InOneExposeDifferentProtocol"))
+	expectedPorts = map[int]string{
+		80:   "tcp",
+		3100: "udp",
+	}
+	require.Equal(t, nil, err)
+	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
+
+	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfilePort80And3100InMultiExposeSameProtocol"))
+	expectedPorts = map[int]string{
+		80:   "tcp",
+		3100: "tcp",
+	}
+	require.Equal(t, nil, err)
+	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
+
+	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfilePort80And3100InMultiExposeDifferentProtocol"))
+	expectedPorts = map[int]string{
+		80:   "tcp",
+		3100: "udp",
+	}
+	require.Equal(t, nil, err)
+	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
 }

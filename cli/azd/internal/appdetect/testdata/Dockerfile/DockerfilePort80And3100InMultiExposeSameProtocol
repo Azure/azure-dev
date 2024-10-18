@@ -1,6 +1,7 @@
 FROM mcr.microsoft.com/openjdk/jdk:17-mariner AS build
 
 WORKDIR /workspace/app
+EXPOSE 80
 EXPOSE 3100
 
 COPY mvnw .

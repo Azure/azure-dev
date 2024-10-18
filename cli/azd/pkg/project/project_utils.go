@@ -9,34 +9,36 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/dotignore"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/otiai10/copy"
 )
 
-// CreateDeployableZip creates a zip file of a folder, recursively.
+// createDeployableZip creates a zip file of a folder, recursively.
 // Returns the path to the created zip file or an error if it fails.
 func createDeployableZip(projectName string, appName string, path string) (string, error) {
-	// TODO: should probably avoid picking up files that weren't meant to be deployed (ie, local .env files, etc..)
+	// Create the output zip file path
 	filePath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-azddeploy-%d.zip", projectName, appName, time.Now().Unix()))
 	zipFile, err := os.Create(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed when creating zip package to deploy %s: %w", appName, err)
 	}
 
-	if err := rzip.CreateFromDirectory(path, zipFile); err != nil {
-		// if we fail here just do our best to close things out and cleanup
+	// Zip the directory without any exclusions (they've already been handled in buildForZip)
+	err = rzip.CreateFromDirectory(path, zipFile)
+	if err != nil {
 		zipFile.Close()
 		os.Remove(zipFile.Name())
 		return "", err
 	}
 
+	// Close the zip file and return the path
 	if err := zipFile.Close(); err != nil {
-		// may fail but, again, we'll do our best to cleanup here.
 		os.Remove(zipFile.Name())
 		return "", err
 	}
 
-	return zipFile.Name(), nil
+	return filePath, nil
 }
 
 // excludeDirEntryCondition resolves when a file or directory should be considered or not as part of build, when build is a
@@ -48,17 +50,43 @@ type buildForZipOptions struct {
 	excludeConditions []excludeDirEntryCondition
 }
 
-// buildForZip is use by projects which build strategy is to only copy the source code into a folder which is later
-// zipped for packaging. For example Python and Node framework languages. buildForZipOptions provides the specific
-// details for each language which should not be ever copied.
-func buildForZip(src, dst string, options buildForZipOptions) error {
+// buildForZip is used by projects to prepare a directory for
+// zipping, excluding files based on the ignore file and other conditions.
+func buildForZip(src, dst string, options buildForZipOptions, serviceConfig *ServiceConfig) error {
+	// Lookup the appropriate ignore file name based on the service kind (Host)
+	ignoreFileName := GetIgnoreFileNameByKind(serviceConfig.Host)
 
-	// these exclude conditions applies to all projects
-	options.excludeConditions = append(options.excludeConditions, globalExcludeAzdFolder)
+	// Read and honor the specified ignore file if it exists
+	ignoreMatcher, err := dotignore.ReadDotIgnoreFile(src, ignoreFileName)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading %s file: %w", ignoreFileName, err)
+	}
 
+	// Temporary array to build exclude conditions dynamically
+	tempExcludeConditions := []excludeDirEntryCondition{}
+
+	// If there's no .ignore file, add the provided excludeConditions
+	if ignoreMatcher == nil {
+		tempExcludeConditions = append(tempExcludeConditions, options.excludeConditions...)
+	} else {
+		// If there's a .ignore file, apply ignoreMatcher only
+		tempExcludeConditions = append(tempExcludeConditions, func(path string, file os.FileInfo) bool {
+			relativePath, err := filepath.Rel(src, path)
+			if err == nil && dotignore.ShouldIgnore(relativePath, file.IsDir(), ignoreMatcher) {
+				return true
+			}
+			return false
+		})
+	}
+
+	// Always append the global exclusions (e.g., .azure folder)
+	tempExcludeConditions = append(tempExcludeConditions, globalExcludeAzdFolder)
+
+	// Copy the source directory to the destination, applying the final exclude conditions
 	return copy.Copy(src, dst, copy.Options{
 		Skip: func(srcInfo os.FileInfo, src, dest string) (bool, error) {
-			for _, checkExclude := range options.excludeConditions {
+			// Apply exclude conditions (either the default or the ignoreMatcher)
+			for _, checkExclude := range tempExcludeConditions {
 				if checkExclude(src, srcInfo) {
 					return true, nil
 				}

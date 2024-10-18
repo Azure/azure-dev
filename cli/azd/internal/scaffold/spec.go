@@ -12,6 +12,7 @@ type InfraSpec struct {
 	// Databases to create
 	DbPostgres    *DatabasePostgres
 	DbCosmosMongo *DatabaseCosmosMongo
+	DbRedis       *DatabaseRedis
 }
 
 type Parameter struct {
@@ -28,6 +29,9 @@ type DatabasePostgres struct {
 
 type DatabaseCosmosMongo struct {
 	DatabaseName string
+}
+
+type DatabaseRedis struct {
 }
 
 type ServiceSpec struct {

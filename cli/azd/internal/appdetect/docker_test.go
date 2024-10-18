@@ -20,7 +20,8 @@ func TestDetectPortInDockerfile(t *testing.T) {
 	require.Equal(t, nil, err)
 	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
 
-	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfilePort80And3100InOneExposeSameProtocol"))
+	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile",
+		"DockerfilePort80And3100InOneExposeSameProtocol"))
 	expectedPorts = map[int]string{
 		80:   "tcp",
 		3100: "tcp",
@@ -28,7 +29,8 @@ func TestDetectPortInDockerfile(t *testing.T) {
 	require.Equal(t, nil, err)
 	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
 
-	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfilePort80And3100InOneExposeDifferentProtocol"))
+	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile",
+		"DockerfilePort80And3100InOneExposeDifferentProtocol"))
 	expectedPorts = map[int]string{
 		80:   "tcp",
 		3100: "udp",
@@ -36,7 +38,8 @@ func TestDetectPortInDockerfile(t *testing.T) {
 	require.Equal(t, nil, err)
 	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
 
-	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfilePort80And3100InMultiExposeSameProtocol"))
+	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile",
+		"DockerfilePort80And3100InMultiExposeSameProtocol"))
 	expectedPorts = map[int]string{
 		80:   "tcp",
 		3100: "tcp",
@@ -44,7 +47,8 @@ func TestDetectPortInDockerfile(t *testing.T) {
 	require.Equal(t, nil, err)
 	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
 
-	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile", "DockerfilePort80And3100InMultiExposeDifferentProtocol"))
+	ports, err = getExposedPorts(filepath.Join("testdata", "Dockerfile",
+		"DockerfilePort80And3100InMultiExposeDifferentProtocol"))
 	expectedPorts = map[int]string{
 		80:   "tcp",
 		3100: "udp",

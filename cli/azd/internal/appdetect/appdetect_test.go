@@ -45,6 +45,10 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
 				},
 				{
 					Language:      Java,
@@ -125,6 +129,10 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
 				},
 				{
 					Language:      Java,
@@ -154,6 +162,10 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
 				},
 				{
 					Language:      Java,
@@ -186,6 +198,10 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
 				},
 				{
 					Language:      Java,

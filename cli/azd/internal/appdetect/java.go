@@ -107,12 +107,12 @@ type plugin struct {
 func readMavenProject(filePath string) (*mavenProject, error) {
 	bytes, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading file: %w", err)
+		return nil, err
 	}
 
 	var project mavenProject
 	if err := xml.Unmarshal(bytes, &project); err != nil {
-		return nil, fmt.Errorf("error parsing XML: %w", err)
+		return nil, fmt.Errorf("parsing xml: %w", err)
 	}
 
 	project.path = filepath.Dir(filePath)

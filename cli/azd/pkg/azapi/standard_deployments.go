@@ -753,7 +753,7 @@ func validatePreflightError(
 	err error,
 	typeMessage string,
 ) error {
-	if rawResponse == nil || rawResponse.StatusCode == nil || rawResponse.StatusCode != 400 {
+	if rawResponse == nil || rawResponse.StatusCode != 400 {
 		return fmt.Errorf("calling preflight validate api failing to %s: %w", typeMessage, err)
 	}
 

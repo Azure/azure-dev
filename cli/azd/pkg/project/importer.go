@@ -162,6 +162,10 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
+	if len(projectConfig.Resources) > 0 {
+		return tempInfra(ctx, im.dotNetImporter.alphaFeatureManager, projectConfig)
+	}
+
 	return &Infra{}, nil
 }
 

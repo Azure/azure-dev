@@ -34,6 +34,8 @@ type ServiceSpec struct {
 	Name string
 	Port int
 
+	Env map[string]string
+
 	// Front-end properties.
 	Frontend *Frontend
 

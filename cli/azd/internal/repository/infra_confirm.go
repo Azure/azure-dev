@@ -106,9 +106,9 @@ func (i *Initializer) infraSpecFromDetect(
 				serviceSpec.Port = 8080
 			}
 		} else {
-			ports := svc.Docker.ExposedPorts
+			ports := svc.Docker.Ports
 			if len(ports) == 1 {
-				serviceSpec.Port = ports[0]
+				serviceSpec.Port = ports[0].Number
 			}
 		}
 

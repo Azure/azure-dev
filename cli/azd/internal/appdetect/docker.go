@@ -20,18 +20,18 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 			defer file.Close()
 			scanner := bufio.NewScanner(file)
 
-			var exposedPorts []int
+			var ports []Port
 			for scanner.Scan() {
 				line := scanner.Text()
 				if strings.HasPrefix(line, "EXPOSE") {
 					parsedPorts, _ := parsePorts(line[len("EXPOSE"):])
-					exposedPorts = append(exposedPorts, parsedPorts...)
+					ports = append(ports, parsedPorts...)
 				}
 			}
 
 			return &Docker{
-				Path:         dockerFilePath,
-				ExposedPorts: exposedPorts,
+				Path:  dockerFilePath,
+				Ports: ports,
 			}, nil
 		}
 	}
@@ -39,22 +39,26 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 	return nil, nil
 }
 
-func parsePorts(s string) ([]int, error) {
+func parsePorts(s string) ([]Port, error) {
 	s = strings.TrimSpace(s)
-	var ports []int
+	var ports []Port
 	portSpecs := strings.Split(s, " ")
 	for _, portSpec := range portSpecs {
-		var numberString string
 		if strings.Contains(portSpec, "/") {
-			numberString = strings.Split(portSpec, "/")[0]
+			parts := strings.Split(portSpec, "/")
+			portNumber, err := strconv.Atoi(parts[0])
+			if err != nil {
+				return nil, err
+			}
+			protocol := parts[1]
+			ports = append(ports, Port{portNumber, protocol})
 		} else {
-			numberString = portSpec
+			portNumber, err := strconv.Atoi(portSpec)
+			if err != nil {
+				return nil, err
+			}
+			ports = append(ports, Port{portNumber, "tcp"})
 		}
-		port, err := strconv.Atoi(numberString)
-		if err != nil {
-			return nil, err
-		}
-		ports = append(ports, port)
 	}
 	return ports, nil
 }

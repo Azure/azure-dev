@@ -14,6 +14,9 @@ import (
 func BicepName(name string) string {
 	sb := strings.Builder{}
 	separatorStart := -1
+
+	allUpper := isAllUpperCase(name)
+
 	for i := range name {
 		switch name[i] {
 		case '-', '_':
@@ -24,18 +27,17 @@ func BicepName(name string) string {
 			if !isAsciiAlphaNumeric(name[i]) {
 				continue
 			}
-			char := name[i]
-			if separatorStart != -1 {
-				if separatorStart == 0 { // first character should be lowerCase
-					char = lowerCase(name[i])
-				} else {
-					char = upperCase(name[i])
-				}
-				separatorStart = -1
-			}
-
-			if i == 0 {
+			var char byte
+			if separatorStart == 0 || i == 0 { // we are at the start
 				char = lowerCase(name[i])
+				separatorStart = -1
+			} else if separatorStart > 0 { // end of separator, and it's not the first one
+				char = upperCase(name[i])
+				separatorStart = -1
+			} else if allUpper { // when the input is all uppercase, convert to lowercase
+				char = lowerCase(name[i])
+			} else {
+				char = name[i]
 			}
 
 			sb.WriteByte(char)
@@ -81,6 +83,16 @@ func AlphaSnakeUpper(name string) string {
 	return sb.String()
 }
 
+func isAllUpperCase(c string) bool {
+	for i := range c {
+		if 'a' <= c[i] && c[i] <= 'z' {
+			return false
+		}
+	}
+
+	return true
+}
+
 func isAsciiAlphaNumeric(c byte) bool {
 	return ('0' <= c && c <= '9') || ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
 }
@@ -99,16 +111,9 @@ func lowerCase(r byte) byte {
 	return r
 }
 
-// Provide a reasonable limit for the container app infix to avoid name length issues
-// This is calculated as follows:
-//  1. Start with max initial length of 32 characters from the Container App name
-//     https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
-//  2. Prefix abbreviation of 'ca-' from abbreviations.json (4 characters)
-//  3. Bicep resource token (13 characters) + separator '-' (1 character) -- total of 14 characters
+// 32 characters are allowed for the Container App name. See
+// https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
 //
-// Which leaves us with: 32 - 4 - 14 = 14 characters.
-const containerAppNameInfixMaxLen = 12
-
 // We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.
 const containerAppNameMaxLen = 30
 
@@ -171,14 +176,6 @@ var camelCaseRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 func EnvFormat(src string) string {
 	snake := strings.ReplaceAll(strings.ToUpper(camelCaseRegex.ReplaceAllString(src, "${1}_${2}")), "-", "_")
 	return fmt.Sprintf("${AZURE_%s}", snake)
-}
-
-// ContainerAppInfix returns a suitable infix for a container app resource.
-//
-// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
-// as the first or last character.
-func ContainerAppInfix(name string) string {
-	return containerAppName(name, containerAppNameInfixMaxLen)
 }
 
 // Formats a parameter value for use in a bicep file.

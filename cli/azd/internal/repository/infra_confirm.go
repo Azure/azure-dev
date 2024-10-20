@@ -109,6 +109,37 @@ func (i *Initializer) infraSpecFromDetect(
 			ports := svc.Docker.Ports
 			if len(ports) == 1 {
 				serviceSpec.Port = ports[0].Number
+			} else if len(ports) > 1 {
+				var portOptions []string
+				for _, port := range ports {
+					portOptions = append(portOptions, strconv.Itoa(port.Number))
+				}
+				inputAnotherPortOption := "Input another port"
+				portOptions = append(portOptions, inputAnotherPortOption)
+				selection, err := i.console.Select(ctx, input.ConsoleOptions{
+					Message: "Detected multiple ports exposed in Dockerfile. " +
+						"Please select a port to expose, or input another port: ",
+					Options: portOptions,
+				})
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				if selection < len(ports) {
+					serviceSpec.Port = ports[selection].Number
+				} else {
+					inputPortString, err := i.console.Prompt(ctx, input.ConsoleOptions{
+						Message: "Input the port to expose:",
+						Help:    "Hint: Input the port to be exposed in docker container.",
+					})
+					if err != nil {
+						return scaffold.InfraSpec{}, err
+					}
+					inputPortNumber, err := strconv.Atoi(inputPortString)
+					if err != nil {
+						return scaffold.InfraSpec{}, err
+					}
+					serviceSpec.Port = inputPortNumber
+				}
 			}
 		}
 

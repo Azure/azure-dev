@@ -62,8 +62,3 @@ func getExposedPorts(dockerfilePath string) (map[int]string, error) {
 
 	return ports, nil
 }
-
-type Docker struct {
-	Path         string
-	ExposedPorts map[int]string
-}

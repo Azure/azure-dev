@@ -161,6 +161,11 @@ func (p *Project) HasWebUIFramework() bool {
 	return false
 }
 
+type Docker struct {
+	Path         string
+	ExposedPorts map[int]string
+}
+
 type projectDetector interface {
 	Language() Language
 	DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error)

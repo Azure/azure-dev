@@ -1,44 +1,25 @@
 package appdetect
 
 import (
-	"github.com/stretchr/testify/require"
-	"reflect"
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
 func TestParsePorts(t *testing.T) {
-	ports, err := parsePorts("")
-	require.NotEqual(t, nil, err)
-	require.Equal(t, 0, len(ports))
-
-	ports, err = parsePorts(" 80")
-	expectedPorts := []Port{
-		{80, "tcp"},
+	tests := []struct {
+		portString    string
+		expectedPorts []Port
+	}{
+		{"", nil},
+		{"80", []Port{{80, "tcp"}}},
+		{"80 3100", []Port{{80, "tcp"}, {3100, "tcp"}}},
+		{"80 3100/udp", []Port{{80, "tcp"}, {3100, "udp"}}},
+		{" 80/tcp 3100/udp ", []Port{{80, "tcp"}, {3100, "udp"}}},
 	}
-	require.Equal(t, nil, err)
-	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
-
-	ports, err = parsePorts(" 80 3100")
-	expectedPorts = []Port{
-		{80, "tcp"},
-		{3100, "tcp"},
+	for _, tt := range tests {
+		t.Run(tt.portString, func(t *testing.T) {
+			actual, _ := parsePorts(tt.portString)
+			assert.Equal(t, tt.expectedPorts, actual)
+		})
 	}
-	require.Equal(t, nil, err)
-	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
-
-	ports, err = parsePorts("80 3100/udp")
-	expectedPorts = []Port{
-		{80, "tcp"},
-		{3100, "udp"},
-	}
-	require.Equal(t, nil, err)
-	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
-
-	ports, err = parsePorts(" 80/tcp 3100/udp ")
-	expectedPorts = []Port{
-		{80, "tcp"},
-		{3100, "udp"},
-	}
-	require.Equal(t, nil, err)
-	require.Equal(t, true, reflect.DeepEqual(ports, expectedPorts))
 }

@@ -163,7 +163,7 @@ func (p *Project) HasWebUIFramework() bool {
 
 type Docker struct {
 	Path         string
-	ExposedPorts map[int]string
+	ExposedPorts []int
 }
 
 type projectDetector interface {

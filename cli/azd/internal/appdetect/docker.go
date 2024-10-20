@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -14,7 +13,22 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "dockerfile" {
 			dockerFilePath := filepath.Join(path, entry.Name())
-			exposedPorts, _ := getExposedPorts(dockerFilePath)
+			file, err := os.Open(dockerFilePath)
+			if err != nil {
+				return nil, err
+			}
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+
+			var exposedPorts []int
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.HasPrefix(line, "EXPOSE") {
+					parsedPorts, _ := parsePorts(line[len("EXPOSE"):])
+					exposedPorts = append(exposedPorts, parsedPorts...)
+				}
+			}
+
 			return &Docker{
 				Path:         dockerFilePath,
 				ExposedPorts: exposedPorts,
@@ -25,40 +39,22 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 	return nil, nil
 }
 
-func getExposedPorts(dockerfilePath string) (map[int]string, error) {
-	file, err := os.Open(dockerfilePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	ports := make(map[int]string)
-	scanner := bufio.NewScanner(file)
-	exposeRegex := regexp.MustCompile(`^EXPOSE\s+(.+)$`)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		matches := exposeRegex.FindStringSubmatch(line)
-		if len(matches) == 2 {
-			portSpecs := strings.Fields(matches[1])
-			for _, portSpec := range portSpecs {
-				parts := strings.Split(portSpec, "/")
-				port, err := strconv.Atoi(parts[0])
-				if err != nil {
-					return nil, err
-				}
-				protocol := "tcp"
-				if len(parts) > 1 {
-					protocol = parts[1]
-				}
-				ports[port] = protocol
-			}
+func parsePorts(s string) ([]int, error) {
+	s = strings.TrimSpace(s)
+	var ports []int
+	portSpecs := strings.Split(s, " ")
+	for _, portSpec := range portSpecs {
+		var numberString string
+		if strings.Contains(portSpec, "/") {
+			numberString = strings.Split(portSpec, "/")[0]
+		} else {
+			numberString = portSpec
 		}
+		port, err := strconv.Atoi(numberString)
+		if err != nil {
+			return nil, err
+		}
+		ports = append(ports, port)
 	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
 	return ports, nil
 }

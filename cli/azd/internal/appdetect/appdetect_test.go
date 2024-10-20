@@ -194,7 +194,7 @@ func TestDetectDocker(t *testing.T) {
 		DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 		Docker: &Docker{
 			Path:         filepath.Join(dir, "dotnet", "Dockerfile"),
-			ExposedPorts: map[int]string{},
+			ExposedPorts: []int{},
 		},
 	})
 }

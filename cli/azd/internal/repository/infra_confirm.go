@@ -108,9 +108,7 @@ func (i *Initializer) infraSpecFromDetect(
 		} else {
 			ports := svc.Docker.ExposedPorts
 			if len(ports) == 1 {
-				for key := range ports {
-					serviceSpec.Port = key
-				}
+				serviceSpec.Port = ports[0]
 			}
 		}
 

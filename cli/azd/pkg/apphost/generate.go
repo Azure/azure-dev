@@ -18,6 +18,7 @@ import (
 	"text/template"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/azure/azure-dev/cli/azd/internal/label"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -439,7 +440,7 @@ func GenerateProjectArtifacts(
 	generatedFS := memfs.New()
 
 	projectFileContext := genProjectFileContext{
-		Name: projectName,
+		Name: label.LabelName(projectName),
 		Services: map[string]string{
 			"app": fmt.Sprintf("./%s", filepath.ToSlash(appHostRel)),
 		},

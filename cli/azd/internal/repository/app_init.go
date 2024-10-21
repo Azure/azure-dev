@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/label"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -345,7 +346,7 @@ func prjConfigFromDetect(
 	root string,
 	detect detectConfirm) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
-		Name: LabelName(filepath.Base(root)),
+		Name: label.LabelName(filepath.Base(root)),
 		Metadata: &project.ProjectMetadata{
 			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
 		},
@@ -410,7 +411,7 @@ func prjConfigFromDetect(
 		if name == "." {
 			name = config.Name
 		}
-		name = LabelName(name)
+		name = label.LabelName(name)
 		config.Services[name] = &svc
 	}
 

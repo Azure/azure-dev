@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -384,7 +385,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		cloud.AzurePublic(),
 	)
 
-	err = provider.Initialize(*mockContext.Context, projectDir, options)
+	err = provider.Initialize(*mockContext.Context, projectDir, options, osutil.EmptyExpandableString)
 	require.NoError(t, err)
 
 	return provider.(*BicepProvider)

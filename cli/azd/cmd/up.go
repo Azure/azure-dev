@@ -110,7 +110,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// TODO(weilim): remove this once we have decided if it's okay to not set AZURE_SUBSCRIPTION_ID and AZURE_LOCATION
 	// early in the up workflow in #3745
-	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
+	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options, u.projectConfig.ResourceGroupName)
 	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
 		// If bicep is not available, we continue to prompt for subscription and location unfiltered
 		err = provisioning.EnsureSubscriptionAndLocation(ctx, u.envManager, u.env, u.prompters, nil)

@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockdevcentersdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -40,7 +41,7 @@ func Test_ProvisionProvider_Initialize(t *testing.T) {
 		_ = env.Config.Set("platform.config", configMap)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)
-		err = provider.Initialize(*mockContext.Context, "project/path", provisioning.Options{})
+		err = provider.Initialize(*mockContext.Context, "project/path", provisioning.Options{}, osutil.EmptyExpandableString)
 		require.NoError(t, err)
 	})
 
@@ -68,7 +69,7 @@ func Test_ProvisionProvider_Initialize(t *testing.T) {
 		}).Respond(selectedEnvironmentTypeIndex)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)
-		err = provider.Initialize(*mockContext.Context, "project/path", provisioning.Options{})
+		err = provider.Initialize(*mockContext.Context, "project/path", provisioning.Options{}, osutil.EmptyExpandableString)
 		require.NoError(t, err)
 
 		actualEnvironmentType, ok := env.Config.Get(DevCenterEnvTypePath)
@@ -199,7 +200,7 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, manager)
 
-		err := provider.Initialize(*mockContext.Context, "project/path", provisioning.Options{})
+		err := provider.Initialize(*mockContext.Context, "project/path", provisioning.Options{}, osutil.EmptyExpandableString)
 		require.NoError(t, err)
 
 		result, err := provider.Deploy(*mockContext.Context)

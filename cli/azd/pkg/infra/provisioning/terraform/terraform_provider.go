@@ -76,7 +76,12 @@ func NewTerraformProvider(
 	return provider
 }
 
-func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
+func (t *TerraformProvider) Initialize(
+	ctx context.Context,
+	projectPath string,
+	options provisioning.Options,
+	_ osutil.ExpandableString,
+) error {
 	t.projectPath = projectPath
 	t.options = options
 	if t.options.Module == "" {

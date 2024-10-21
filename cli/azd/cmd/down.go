@@ -98,7 +98,8 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, infra.Options); err != nil {
+	err = a.provisionManager.Initialize(ctx, a.projectConfig.Path, infra.Options, a.projectConfig.ResourceGroupName)
+	if err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 

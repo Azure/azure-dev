@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
@@ -82,7 +83,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	if err := bicepProvider.Initialize(ctx, c.projectConfig.Path, infra.Options); err != nil {
+	if err := bicepProvider.Initialize(ctx, c.projectConfig.Path, infra.Options, osutil.EmptyExpandableString); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 

@@ -206,7 +206,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	actionName := createActionName(cmd)
 
 	// Automatically adds a consistent help flag
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	cmd.PersistentFlags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 	// docs flags for all commands
 	docsFlag := &docsFlag{
 		command: cmd,
@@ -218,7 +218,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 			return console
 		},
 	}
-	flag := cmd.Flags().VarPF(
+	flag := cmd.PersistentFlags().VarPF(
 		docsFlag, "docs", "", fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
 	flag.NoOptDefVal = "true"
 

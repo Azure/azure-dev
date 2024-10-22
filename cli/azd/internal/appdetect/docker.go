@@ -15,25 +15,10 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "dockerfile" {
 			dockerFilePath := filepath.Join(path, entry.Name())
-			file, err := os.Open(dockerFilePath)
+			ports, err := parsePortsInFile(dockerFilePath)
 			if err != nil {
-				return nil, fmt.Errorf("reading Dockerfile at %s: %w", dockerFilePath, err)
+				return nil, fmt.Errorf("parsing pors in file %s: %w", dockerFilePath, err)
 			}
-			defer file.Close()
-			scanner := bufio.NewScanner(file)
-
-			var ports []Port
-			for scanner.Scan() {
-				line := strings.TrimSpace(scanner.Text())
-				if strings.HasPrefix(line, "EXPOSE") {
-					parsedPorts, err := parsePortsInLine(line[len("EXPOSE"):])
-					if err != nil {
-						log.Printf("parsing Dockerfile at %s: %v", dockerFilePath, err)
-					}
-					ports = append(ports, parsedPorts...)
-				}
-			}
-
 			return &Docker{
 				Path:  dockerFilePath,
 				Ports: ports,
@@ -42,6 +27,28 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 	}
 
 	return nil, nil
+}
+
+func parsePortsInFile(dockerFilePath string) ([]Port, error) {
+	file, err := os.Open(dockerFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading Dockerfile at %s: %w", dockerFilePath, err)
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+
+	var ports []Port
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "EXPOSE") {
+			parsedPorts, err := parsePortsInLine(line[len("EXPOSE"):])
+			if err != nil {
+				log.Printf("parsing Dockerfile at %s: %v", dockerFilePath, err)
+			}
+			ports = append(ports, parsedPorts...)
+		}
+	}
+	return ports, nil
 }
 
 func parsePortsInLine(s string) ([]Port, error) {

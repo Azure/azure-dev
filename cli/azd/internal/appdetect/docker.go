@@ -2,6 +2,7 @@ package appdetect
 
 import (
 	"bufio"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -50,7 +51,7 @@ func parsePorts(s string) ([]Port, error) {
 			parts := strings.Split(portSpec, "/")
 			portNumber, err := strconv.Atoi(parts[0])
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("parsing port number: %w", err)
 			}
 			protocol := parts[1]
 			ports = append(ports, Port{portNumber, protocol})

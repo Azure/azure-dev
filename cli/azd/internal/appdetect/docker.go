@@ -58,7 +58,7 @@ func parsePorts(s string) ([]Port, error) {
 		} else {
 			portNumber, err := strconv.Atoi(portSpec)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("parsing port number: %w", err)
 			}
 			ports = append(ports, Port{portNumber, "tcp"})
 		}

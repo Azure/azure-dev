@@ -17,7 +17,7 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 			dockerFilePath := filepath.Join(path, entry.Name())
 			ports, err := parsePortsInFile(dockerFilePath)
 			if err != nil {
-				return nil, fmt.Errorf("parsing pors in file %s: %w", dockerFilePath, err)
+				return nil, fmt.Errorf("parsing ports in file %s: %w", dockerFilePath, err)
 			}
 			return &Docker{
 				Path:  dockerFilePath,

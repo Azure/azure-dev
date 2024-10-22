@@ -24,7 +24,7 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 
 			var ports []Port
 			for scanner.Scan() {
-				line := scanner.Text()
+				line := strings.TrimSpace(scanner.Text())
 				if strings.HasPrefix(line, "EXPOSE") {
 					parsedPorts, err := parsePorts(line[len("EXPOSE"):])
 					if err != nil {

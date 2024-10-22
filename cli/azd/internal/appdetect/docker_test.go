@@ -18,7 +18,8 @@ func TestParsePorts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.portString, func(t *testing.T) {
-			actual, _ := parsePorts(tt.portString)
+			actual, err := parsePorts(tt.portString)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedPorts, actual)
 		})
 	}

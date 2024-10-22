@@ -344,7 +344,7 @@ func newTemplateSourceAddCmd() *cobra.Command {
 				"The key can be any value that uniquely identifies the template source, with the exception of the following"+
 				" reserved, well-known key values:\n"+
 				"   ・default: Default templates\n"+
-				"   ・awesome-azd: Templates from http://aka.ms/awesome-azd",
+				"   ・awesome-azd: Templates from https://aka.ms/awesome-azd",
 			output.WithWarningFormat("(Beta)")),
 		Args: cobra.ExactArgs(1),
 	}

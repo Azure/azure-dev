@@ -3,7 +3,7 @@ Adds an azd template source with the specified key. (Beta)
 The key can be any value that uniquely identifies the template source, with the exception of the following:
 
   • default: Default templates
-  • awesome-azd: Templates from http://aka.ms/awesome-azd
+  • awesome-azd: Templates from https://aka.ms/awesome-azd
 
 Usage
   azd template source add <key> [flags]

@@ -17,7 +17,7 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 			dockerFilePath := filepath.Join(path, entry.Name())
 			file, err := os.Open(dockerFilePath)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("reading Dockerfile at %s: %w", dockerFilePath, err)
 			}
 			defer file.Close()
 			scanner := bufio.NewScanner(file)

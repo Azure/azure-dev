@@ -62,9 +62,9 @@ func NewContainerHelper(
 // DefaultImageName returns a default image name generated from the service name and environment name.
 func (ch *ContainerHelper) DefaultImageName(serviceConfig *ServiceConfig) string {
 	return fmt.Sprintf("%s/%s-%s",
-		strings.ToLower(serviceConfig.Project.Name),
-		strings.ToLower(serviceConfig.Name),
-		strings.ToLower(ch.env.Name()))
+		strings.TrimSpace(strings.ToLower(serviceConfig.Project.Name)),
+		strings.TrimSpace(strings.ToLower(serviceConfig.Name)),
+		strings.TrimSpace(strings.ToLower(ch.env.Name())))
 }
 
 // DefaultImageTag returns a default image tag generated from the current time.

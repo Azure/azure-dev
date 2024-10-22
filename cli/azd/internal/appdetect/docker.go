@@ -26,7 +26,7 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 			for scanner.Scan() {
 				line := strings.TrimSpace(scanner.Text())
 				if strings.HasPrefix(line, "EXPOSE") {
-					parsedPorts, err := parsePorts(line[len("EXPOSE"):])
+					parsedPorts, err := parsePortsInLine(line[len("EXPOSE"):])
 					if err != nil {
 						log.Printf("parsing Dockerfile at %s: %v", dockerFilePath, err)
 					}
@@ -44,7 +44,7 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 	return nil, nil
 }
 
-func parsePorts(s string) ([]Port, error) {
+func parsePortsInLine(s string) ([]Port, error) {
 	var ports []Port
 	portSpecs := strings.Fields(s)
 	for _, portSpec := range portSpecs {

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestParsePorts(t *testing.T) {
+func TestParsePortsInLine(t *testing.T) {
 	tests := []struct {
 		portString    string
 		expectedPorts []Port
@@ -18,7 +18,7 @@ func TestParsePorts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.portString, func(t *testing.T) {
-			actual, err := parsePorts(tt.portString)
+			actual, err := parsePortsInLine(tt.portString)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedPorts, actual)
 		})

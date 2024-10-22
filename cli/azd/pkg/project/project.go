@@ -18,7 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
-	"gopkg.in/yaml.v3"
+	"github.com/braydonk/yaml"
 )
 
 const (

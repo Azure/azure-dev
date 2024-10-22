@@ -350,7 +350,7 @@ func prjConfigFromDetect(
 	root string,
 	detect detectConfirm) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
-		Name: filepath.Base(root),
+		Name: LabelName(filepath.Base(root)),
 		Metadata: &project.ProjectMetadata{
 			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
 		},
@@ -415,6 +415,7 @@ func prjConfigFromDetect(
 		if name == "." {
 			name = config.Name
 		}
+		name = LabelName(name)
 		config.Services[name] = &svc
 	}
 

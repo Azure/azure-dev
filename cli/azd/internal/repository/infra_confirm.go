@@ -123,7 +123,7 @@ func (i *Initializer) infraSpecFromDetect(
 	}
 
 	for _, svc := range detect.Services {
-		name := filepath.Base(svc.Path)
+		name := LabelName(filepath.Base(svc.Path))
 		serviceSpec := scaffold.ServiceSpec{
 			Name: name,
 			Port: -1,

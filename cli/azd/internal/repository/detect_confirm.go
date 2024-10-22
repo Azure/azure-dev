@@ -308,6 +308,7 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 		confirm, err := d.console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
 				"Remove %s in %s?", projectDisplayName(svc), relSafe(d.root, svc.Path)),
+			DefaultValue: true,
 		})
 		if err != nil {
 			return err
@@ -325,6 +326,7 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 		confirm, err := d.console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
 				"Remove %s?", db.Display()),
+			DefaultValue: true,
 		})
 		if err != nil {
 			return err

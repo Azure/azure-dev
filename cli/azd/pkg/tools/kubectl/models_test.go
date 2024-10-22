@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func Test_Port_TargetPort_Unmarshalling(t *testing.T) {

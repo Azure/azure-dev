@@ -200,18 +200,6 @@ func getCmdTemplateHelpDescription(*cobra.Command) string {
 		})
 }
 
-func getCmdTemplateSourceAddHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription(
-		fmt.Sprintf(
-			"Adds an azd template source with the specified key. %s\nThe key can be any value that uniquely "+
-				"identifies the template source, with the exception of the following:",
-			output.WithWarningFormat("(Beta)")),
-		[]string{
-			formatHelpNote("default: Default templates"),
-			formatHelpNote("awesome-azd: Templates from http://aka.ms/awesome-azd"),
-		})
-}
-
 func getCmdTemplateSourceHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
 		fmt.Sprintf(

@@ -43,9 +43,8 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 }
 
 func parsePorts(s string) ([]Port, error) {
-	s = strings.TrimSpace(s)
 	var ports []Port
-	portSpecs := strings.Split(s, " ")
+	portSpecs := strings.Fields(s)
 	for _, portSpec := range portSpecs {
 		if strings.Contains(portSpec, "/") {
 			parts := strings.Split(portSpec, "/")

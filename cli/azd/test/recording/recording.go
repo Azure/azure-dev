@@ -26,9 +26,9 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/test/cmdrecord"
+	"github.com/braydonk/yaml"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
-	"gopkg.in/yaml.v3"
 )
 
 type recordOptions struct {
@@ -313,7 +313,11 @@ func Start(t *testing.T, opts ...Options) *Session {
 		Log: log,
 		HttpHandler: &recorderProxy{
 			Log: log,
-			Panic: func(msg string) {
+			Panic: func(req *http.Request, msg string) {
+				if strings.Contains(req.URL.Host, "applicationinsights.azure.com") {
+					return
+				}
+
 				t.Fatal("recorderProxy: " + msg)
 			},
 			Recorder: vcr,

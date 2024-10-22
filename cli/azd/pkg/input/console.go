@@ -932,13 +932,22 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 }
 
 // consoleWidth the number of columns in the active console window
-func consoleWidth() int {
-	width, _ := consolesize.GetConsoleSize()
-	return width
+func consoleWidth() int32 {
+	widthInt, _ := consolesize.GetConsoleSize()
+
+	// Suppress G115: integer overflow conversion int -> int32 below.
+	// Explanation:
+	// consolesize.GetConsoleSize() returns an int, but the underlying implementation actually is a uint16 on both
+	// Windows and unix systems.
+	//
+	// In practice, console width is the number of columns (text) in the active console window.
+	// We don't ever expect this to be larger than math.MaxInt32, so we can safely cast to int32.
+	// nolint:gosec // G115
+	return int32(widthInt)
 }
 
-func (c *AskerConsole) handleResize(width int) {
-	c.consoleWidth.Store(int32(width))
+func (c *AskerConsole) handleResize(width int32) {
+	c.consoleWidth.Store(width)
 
 	c.spinnerLineMu.Lock()
 	if c.spinner.Status() == yacspin.SpinnerRunning {
@@ -1052,7 +1061,7 @@ func NewConsole(
 	c.spinner, _ = yacspin.New(spinnerConfig)
 	c.spinnerTerminalMode = spinnerConfig.TerminalMode
 	if isTerminal {
-		c.consoleWidth = atomic.NewInt32(int32(consoleWidth()))
+		c.consoleWidth = atomic.NewInt32(consoleWidth())
 		watchTerminalResize(c)
 		watchTerminalInterrupt(c)
 	}

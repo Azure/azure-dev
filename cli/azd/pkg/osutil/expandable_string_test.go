@@ -6,8 +6,8 @@ package osutil
 import (
 	"testing"
 
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/yaml.v3"
 )
 
 func TestExpandableStringYaml(t *testing.T) {

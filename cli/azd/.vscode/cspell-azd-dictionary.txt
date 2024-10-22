@@ -95,6 +95,7 @@ endregion
 entraid
 envlist
 envname
+envsubst
 errcheck
 errorinfo
 errorlint
@@ -200,6 +201,7 @@ stdouttrace
 STRINGSLICE
 struct
 structs
+subst
 substr
 swacli
 Syncer

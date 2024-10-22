@@ -73,5 +73,5 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.6.0' = {
 }
 
 output connectionStringKey string = connectionStringKey
-output databaseName string = cosmos.outputs.name
+output databaseName string = actualDatabaseName
 output endpoint string = cosmos.outputs.endpoint

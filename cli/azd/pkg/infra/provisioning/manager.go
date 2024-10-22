@@ -22,7 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
-	"gopkg.in/yaml.v3"
+	"github.com/braydonk/yaml"
 )
 
 type DefaultProviderResolver func() (ProviderKind, error)

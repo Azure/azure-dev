@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,7 +28,7 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 				if strings.HasPrefix(line, "EXPOSE") {
 					parsedPorts, err := parsePorts(line[len("EXPOSE"):])
 					if err != nil {
-						return nil, err
+						log.Printf("parsing Dockerfile at %s: %v", dockerFilePath, err)
 					}
 					ports = append(ports, parsedPorts...)
 				}

@@ -1,7 +1,9 @@
 package appdetect
 
 import (
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/stretchr/testify/assert"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -28,20 +30,29 @@ func TestParsePortsInLine(t *testing.T) {
 
 func TestParsePortsInFile(t *testing.T) {
 	tests := []struct {
-		dockerFileName string
-		expectedPorts  []Port
+		dockerFileContent string
+		expectedPorts     []Port
 	}{
-		{"DockerfileNoPort", nil},
-		{"DockerfileSinglePort", []Port{{80, "tcp"}}},
-		{"DockerfileMultiPortsInSingleLine", []Port{{80, "tcp"}, {3100, "tcp"}}},
-		{"DockerfileMultiPortsInMultiLines", []Port{{80, "tcp"}, {3100, "tcp"}}},
-		{"DockerfileMultiPortsInMultiLinesDifferentProtocol", []Port{{80, "tcp"}, {3100, "udp"}}},
-		{"DockerfileMultiPortsInMultiLinesDifferentProtocolWithWhitespacePrefix", []Port{{80, "tcp"}, {3100, "udp"}}},
+		{"", nil},
+		{"# EXPOSE 80", nil},
+		{"EXPOSE 80", []Port{{80, "tcp"}}},
+		{"EXPOSE 80 3100", []Port{{80, "tcp"}, {3100, "tcp"}}},
+		{"EXPOSE 80\nEXPOSE 3100", []Port{{80, "tcp"}, {3100, "tcp"}}},
+		{"EXPOSE 80/tcp\nEXPOSE 3100/udp", []Port{{80, "tcp"}, {3100, "udp"}}},
+		{"\n  EXPOSE 80/tcp\n    EXPOSE 3100/udp", []Port{{80, "tcp"}, {3100, "udp"}}},
 	}
 	for _, tt := range tests {
-		t.Run(tt.dockerFileName, func(t *testing.T) {
-			fileName := filepath.Join("testdata", "Dockerfile", tt.dockerFileName)
-			actual, err := parsePortsInFile(fileName)
+		t.Run(tt.dockerFileContent, func(t *testing.T) {
+			tempDir := t.TempDir()
+			tempFile := filepath.Join(tempDir, "Dockerfile")
+			file, err := os.Create(tempFile)
+			assert.NoError(t, err)
+			file.Close()
+
+			err = os.WriteFile(tempFile, []byte(tt.dockerFileContent), osutil.PermissionFile)
+			assert.NoError(t, err)
+
+			actual, err := parsePortsInFile(tempFile)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedPorts, actual)
 		})

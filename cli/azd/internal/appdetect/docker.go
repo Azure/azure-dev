@@ -51,21 +51,21 @@ func parsePortsInLine(s string) ([]Port, error) {
 	var ports []Port
 	portSpecs := strings.Fields(s)
 	for _, portSpec := range portSpecs {
+		var portString string
+		var protocol string
 		if strings.Contains(portSpec, "/") {
 			parts := strings.Split(portSpec, "/")
-			portNumber, err := strconv.Atoi(parts[0])
-			if err != nil {
-				return nil, fmt.Errorf("parsing port number: %w", err)
-			}
-			protocol := parts[1]
-			ports = append(ports, Port{portNumber, protocol})
+			portString = parts[0]
+			protocol = parts[1]
 		} else {
-			portNumber, err := strconv.Atoi(portSpec)
-			if err != nil {
-				return nil, fmt.Errorf("parsing port number: %w", err)
-			}
-			ports = append(ports, Port{portNumber, "tcp"})
+			portString = portSpec
+			protocol = "tcp"
 		}
+		portNumber, err := strconv.Atoi(portString)
+		if err != nil {
+			return nil, fmt.Errorf("parsing port number: %w", err)
+		}
+		ports = append(ports, Port{portNumber, protocol})
 	}
 	return ports, nil
 }

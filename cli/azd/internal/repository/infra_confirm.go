@@ -108,7 +108,7 @@ func (i *Initializer) infraSpecFromDetect(
 		} else {
 			ports := svc.Docker.Ports
 			if len(ports) == 0 {
-				port, err := i.getPortByPrompt(ctx, serviceSpec.Name)
+				port, err := i.getPortByPrompt(ctx, "What port does '"+serviceSpec.Name+"' listen on?")
 				if err != nil {
 					return scaffold.InfraSpec{}, err
 				}
@@ -132,7 +132,7 @@ func (i *Initializer) infraSpecFromDetect(
 				if selection < len(ports) {
 					serviceSpec.Port = ports[selection].Number
 				} else {
-					port, err := i.getPortByPrompt(ctx, serviceSpec.Name)
+					port, err := i.getPortByPrompt(ctx, "Provide the port number for '"+serviceSpec.Name+"':")
 					if err != nil {
 						return scaffold.InfraSpec{}, err
 					}
@@ -201,11 +201,11 @@ func (i *Initializer) infraSpecFromDetect(
 	return spec, nil
 }
 
-func (i *Initializer) getPortByPrompt(ctx context.Context, serviceName string) (int, error) {
+func (i *Initializer) getPortByPrompt(ctx context.Context, promptMessage string) (int, error) {
 	var port int
 	for {
 		val, err := i.console.Prompt(ctx, input.ConsoleOptions{
-			Message: "Provide the port number for '" + serviceName + "':",
+			Message: promptMessage,
 		})
 		if err != nil {
 			return -1, err

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/internal/label"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -95,7 +95,7 @@ func (i *Initializer) infraSpecFromDetect(
 	}
 
 	for _, svc := range detect.Services {
-		name := label.LabelName(filepath.Base(svc.Path))
+		name := names.LabelName(filepath.Base(svc.Path))
 		serviceSpec := scaffold.ServiceSpec{
 			Name: name,
 			Port: -1,

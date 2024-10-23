@@ -1,4 +1,4 @@
-package label
+package names
 
 import "strings"
 

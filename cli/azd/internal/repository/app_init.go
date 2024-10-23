@@ -346,7 +346,7 @@ func prjConfigFromDetect(
 	root string,
 	detect detectConfirm) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
-		Name: names.LabelName(filepath.Base(root)),
+		Name: azdcontext.ProjectName(root),
 		Metadata: &project.ProjectMetadata{
 			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
 		},

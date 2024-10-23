@@ -37,8 +37,9 @@ func (c *AzdContext) EnvironmentDirectory() string {
 	return filepath.Join(c.ProjectDirectory(), EnvironmentDirectoryName)
 }
 
-func (c *AzdContext) GetDefaultProjectName() string {
-	return names.LabelName(filepath.Base(c.ProjectDirectory()))
+// ProjectName returns a suitable project name from the given project directory.
+func ProjectName(projectDirectory string) string {
+	return names.LabelName(filepath.Base(projectDirectory))
 }
 
 func (c *AzdContext) EnvironmentRoot(name string) string {

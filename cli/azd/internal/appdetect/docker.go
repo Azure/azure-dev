@@ -15,21 +15,14 @@ func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "dockerfile" {
 			dockerFilePath := filepath.Join(path, entry.Name())
-			ports, err := parsePortsInFile(dockerFilePath)
-			if err != nil {
-				return nil, fmt.Errorf("parsing ports in file %s: %w", dockerFilePath, err)
-			}
-			return &Docker{
-				Path:  dockerFilePath,
-				Ports: ports,
-			}, nil
+			return detectDockerFromFile(dockerFilePath)
 		}
 	}
 
 	return nil, nil
 }
 
-func parsePortsInFile(dockerFilePath string) ([]Port, error) {
+func detectDockerFromFile(dockerFilePath string) (*Docker, error) {
 	file, err := os.Open(dockerFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading Dockerfile at %s: %w", dockerFilePath, err)
@@ -48,7 +41,10 @@ func parsePortsInFile(dockerFilePath string) ([]Port, error) {
 			ports = append(ports, parsedPorts...)
 		}
 	}
-	return ports, nil
+	return &Docker{
+		Path:  dockerFilePath,
+		Ports: ports,
+	}, nil
 }
 
 func parsePortsInLine(s string) ([]Port, error) {

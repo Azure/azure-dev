@@ -28,7 +28,7 @@ func TestParsePortsInLine(t *testing.T) {
 	}
 }
 
-func TestParsePortsInFile(t *testing.T) {
+func TestDetectDockerFromFile(t *testing.T) {
 	tests := []struct {
 		dockerFileContent string
 		expectedPorts     []Port
@@ -52,8 +52,9 @@ func TestParsePortsInFile(t *testing.T) {
 			err = os.WriteFile(tempFile, []byte(tt.dockerFileContent), osutil.PermissionFile)
 			assert.NoError(t, err)
 
-			actual, err := parsePortsInFile(tempFile)
+			docker, err := detectDockerFromFile(tempFile)
 			assert.NoError(t, err)
+			actual := docker.Ports
 			assert.Equal(t, tt.expectedPorts, actual)
 		})
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -37,7 +38,7 @@ func (c *AzdContext) EnvironmentDirectory() string {
 }
 
 func (c *AzdContext) GetDefaultProjectName() string {
-	return filepath.Base(c.ProjectDirectory())
+	return names.LabelName(filepath.Base(c.ProjectDirectory()))
 }
 
 func (c *AzdContext) EnvironmentRoot(name string) string {

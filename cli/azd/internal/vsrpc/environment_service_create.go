@@ -67,7 +67,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
 
-		projectName := strings.TrimSuffix(filepath.Base(c.azdContext.ProjectDirectory()), ".AppHost")
+		projectName := strings.TrimSuffix(c.azdContext.GetDefaultProjectName(), ".AppHost")
 
 		// Write an azure.yaml file to the project.
 		files, err := apphost.GenerateProjectArtifacts(

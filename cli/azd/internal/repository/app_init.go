@@ -177,7 +177,7 @@ func (i *Initializer) InitFromApp(
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
 			azdCtx.ProjectDirectory(),
-			filepath.Base(azdCtx.ProjectDirectory()),
+			azdCtx.GetDefaultProjectName(),
 			appHostManifests[appHost.Path],
 			appHost.Path,
 		)

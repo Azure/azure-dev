@@ -226,7 +226,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	s.console.MessageUxItem(ctx, &ux.Show{
-		AppName:         s.azdCtx.GetDefaultProjectName(),
+		AppName:         s.projectConfig.Name,
 		Services:        uxServices,
 		Environments:    uxEnvironments,
 		AzurePortalLink: azurePortalLink(s.portalUrlBase, subId, rgName),

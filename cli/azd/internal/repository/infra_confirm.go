@@ -33,46 +33,9 @@ func (i *Initializer) infraSpecFromDetect(
 
 	dbPrompt:
 		for {
-			dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Input the name of the app database (%s)", database.Display()),
-				Help: "Hint: App database name\n\n" +
-					"Name of the database that the app connects to. " +
-					"This database will be created after running azd provision or azd up." +
-					"\nYou may be able to skip this step by hitting enter, in which case the database will not be created.",
-			})
+			dbName, err := i.promptDbName(ctx, database)
 			if err != nil {
 				return scaffold.InfraSpec{}, err
-			}
-
-			if strings.ContainsAny(dbName, " ") {
-				i.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: "Database name contains whitespace. This might not be allowed by the database server.",
-				})
-				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
-				})
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-
-				if !confirm {
-					continue dbPrompt
-				}
-			} else if !wellFormedDbNameRegex.MatchString(dbName) {
-				i.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: "Database name contains special characters. " +
-						"This might not be allowed by the database server.",
-				})
-				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
-				})
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-
-				if !confirm {
-					continue dbPrompt
-				}
 			}
 
 			switch database {
@@ -228,4 +191,52 @@ func (i *Initializer) getPortByPrompt(ctx context.Context, promptMessage string)
 		break
 	}
 	return port, nil
+}
+
+func (i *Initializer) promptDbName(ctx context.Context, database appdetect.DatabaseDep) (string, error) {
+	for {
+		dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the name of the app database (%s)", database.Display()),
+			Help: "Hint: App database name\n\n" +
+				"Name of the database that the app connects to. " +
+				"This database will be created after running azd provision or azd up." +
+				"\nYou may be able to skip this step by hitting enter, in which case the database will not be created.",
+		})
+		if err != nil {
+			return "", err
+		}
+
+		if strings.ContainsAny(dbName, " ") {
+			i.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: "Database name contains whitespace. This might not be allowed by the database server.",
+			})
+			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Continue with name '%s'?", dbName),
+			})
+			if err != nil {
+				return "", err
+			}
+
+			if !confirm {
+				continue
+			}
+		} else if !wellFormedDbNameRegex.MatchString(dbName) {
+			i.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: "Database name contains special characters. " +
+					"This might not be allowed by the database server.",
+			})
+			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Continue with name '%s'?", dbName),
+			})
+			if err != nil {
+				return "", err
+			}
+
+			if !confirm {
+				continue
+			}
+		}
+
+		return dbName, nil
+	}
 }

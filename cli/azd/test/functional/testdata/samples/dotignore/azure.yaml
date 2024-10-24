@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: dotignoretest
+services:
+  service_python:
+    project: src/service_python
+    language: python
+    host: appservice
+  service_node:
+    project: src/service_node
+    language: js
+    host: appservice
+  service_function:
+    project: src/service_function
+    language: python
+    host: function
+  service_python_pycache:
+    project: src/service_python_pycache
+    language: python
+    host: appservice

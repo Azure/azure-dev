@@ -25,7 +25,9 @@ func (i *Initializer) infraSpecFromDetect(
 	detect detectConfirm) (scaffold.InfraSpec, error) {
 	spec := scaffold.InfraSpec{}
 	for database := range detect.Databases {
-		if database == appdetect.DbRedis { // no configuration needed for redis
+		if database == appdetect.DbRedis {
+			spec.DbRedis = &scaffold.DatabaseRedis{}
+			// no further configuration needed for redis
 			continue
 		}
 

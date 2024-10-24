@@ -24,15 +24,20 @@ Configure environment variables for running services by updating `settings` in [
 {{- if or .DbPostgres .DbCosmosMongo .DbRedis }}
 
 #### Database connections for `{{.Name}}`
+
+The following environment variables are set for `{{.Name}}` in [resources.bicep](./infra/resources.bicep).
+They allow connection to the database instances, and can be modified or adapted to your service's needs:
 {{ end}}
 {{- if .DbPostgres }}
-- `POSTGRES_*` environment variables are configured in [{{.Name}}.bicep](./infra/app/{{.Name}}.bicep) to connect to the Postgres database. Modify these variables to match your application's needs.
+- `POSTGRES_URL` - The URL of the Azure Postgres Flexible Server database instance.
+Individual components are also available as: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`.
 {{- end}}
 {{- if .DbCosmosMongo }}
-- `AZURE_COSMOS_MONGODB_CONNECTION_STRING` environment variable is configured in [{{.Name}}.bicep](./infra/app/{{.Name}}.bicep) to connect to the MongoDB database. Modify this variable to match your application's needs.
+- `MONGODB_URL` - The URL of the Azure Cosmos DB (MongoDB) instance.
 {{- end}}
 {{- if .DbRedis }}
-- Environment variables for connecting to Redis are available implicitly as: `REDIS_ENDPOINT`, `REDIS_HOST`, `REDIS_PASSWORD`, and `REDIS_PORT`.
+- `REDIS_URL` - The URL of the Azure Cache for Redis instance.
+Individual components are also available as: `REDIS_HOST`, `REDIS_PASSWORD`, and `REDIS_PORT`.
 {{- end}}
 {{- end}}
 
@@ -50,27 +55,28 @@ Configure environment variables for running services by updating `settings` in [
 To describe the infrastructure and application, `azure.yaml` along with Infrastructure as Code files using Bicep were added with the following directory structure:
 
 ```yaml
-- azure.yaml     # azd project configuration
-- infra/         # Infrastructure as Code (bicep) files
-  - main.bicep   # main deployment module
-  - app/         # Application resource modules
-  - shared/      # Shared resource modules
-  - modules/     # Library modules
+- azure.yaml        # azd project configuration
+- infra/            # Infrastructure-as-code Bicep files
+  - main.bicep      # Subscription level resources
+  - resources.bicep # Primary resource group resources
+  - modules/        # Library modules
 ```
 
-Each bicep file declares resources to be provisioned. The resources are provisioned when running `azd up` or `azd provision`.
+The resources declared in [resources.bicep](./infra/resources.bicep) are provisioned when running `azd up` or `azd provision`.
+This includes:
+
 {{range .Services}}
-- [app/{{.Name}}.bicep](./infra/app/{{.Name}}.bicep) - Azure Container Apps resources to host the '{{.Name}}' service.
+- Azure Container App to host the '{{.Name}}' service.
 {{- end}}
 {{- if .DbPostgres}}
-- [app/db-postgre.bicep](./infra/app/db-postgre.bicep) - Azure Postgres Flexible Server to host the '{{.DbPostgres.DatabaseName}}' database.
+- Azure Postgres Flexible Server to host the '{{.DbPostgres.DatabaseName}}' database.
 {{- end}}
 {{- if .DbCosmosMongo}}
-- [app/db-cosmos.bicep](./infra/app/db-cosmos.bicep) - Azure Cosmos DB (MongoDB) to host the '{{.DbCosmosMongo.DatabaseName}}' database.
+- Azure Cosmos DB (MongoDB) to host the '{{.DbCosmosMongo.DatabaseName}}' database.
 {{- end}}
-- [shared/keyvault.bicep](./infra/shared/keyvault.bicep) - Azure KeyVault to store secrets.
-- [shared/monitoring.bicep](./infra/shared/monitoring.bicep) - Azure Log Analytics workspace and Application Insights to log and store instrumentation logs.
-- [shared/registry.bicep](./infra/shared/registry.bicep) - Azure Container Registry to store docker images.
+{{- if .DbRedis}}
+- Azure Cache for Redis to host the redis database.
+{{- end}}
 
 More information about [Bicep](https://aka.ms/bicep) language.
 

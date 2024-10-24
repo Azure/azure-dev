@@ -90,7 +90,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 			slices.Contains(args.Args, "--getProperty:IsAspireHost")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.RunResult{
-			Stdout:   "true",
+			Stdout:   aspireAppHostSniffResult,
 			ExitCode: 0,
 		}, nil
 	})
@@ -143,7 +143,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 			slices.Contains(args.Args, "--getProperty:IsAspireHost")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.RunResult{
-			Stdout:   "true",
+			Stdout:   aspireAppHostSniffResult,
 			ExitCode: 0,
 		}, nil
 	})
@@ -275,7 +275,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 			slices.Contains(args.Args, "--getProperty:IsAspireHost")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.RunResult{
-			Stdout:   "true",
+			Stdout:   aspireAppHostSniffResult,
 			ExitCode: 0,
 		}, nil
 	})
@@ -371,3 +371,52 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	require.NoError(t, e)
 	require.Equal(t, 1, manifestInvokeCount)
 }
+
+// aspireAppHostSniffResult is mock data that would be returned by `dotnet msbuild` when fetching information about an
+// Aspire project. This is used to simulate the scenario where a project is an Aspire project. A real Aspire project would
+// have many entries in the ProjectCapability array (unrelated to the Aspire capability), but most have been omitted for
+// simplicity. An unrelated entry is included to ensure we are looking at the entire array of capabilities.
+// nolint: lll
+var aspireAppHostSniffResult string = `{
+  "Properties": {
+    "IsAspireHost": "true"
+  },
+  "Items": {
+    "ProjectCapability": [
+      {
+        "Identity": "LocalUserSecrets",
+        "FullPath": "/Users/matell/dd/ellismg/AspireBicep/AspireStarter/AspireStarter.AppHost/LocalUserSecrets",
+        "RootDir": "/",
+        "Filename": "LocalUserSecrets",
+        "Extension": "",
+        "RelativeDir": "",
+        "Directory": "Users/matell/dd/ellismg/AspireBicep/AspireStarter/AspireStarter.AppHost/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/Users/matell/.nuget/packages/microsoft.extensions.configuration.usersecrets/8.0.0/buildTransitive/net6.0/Microsoft.Extensions.Configuration.UserSecrets.props",
+        "DefiningProjectDirectory": "/Users/matell/.nuget/packages/microsoft.extensions.configuration.usersecrets/8.0.0/buildTransitive/net6.0/",
+        "DefiningProjectName": "Microsoft.Extensions.Configuration.UserSecrets",
+        "DefiningProjectExtension": ".props"
+      },	
+      {
+        "Identity": "Aspire",
+        "FullPath": "/Users/matell/dd/ellismg/AspireBicep/AspireStarter/AspireStarter.AppHost/Aspire",
+        "RootDir": "/",
+        "Filename": "Aspire",
+        "Extension": "",
+        "RelativeDir": "",
+        "Directory": "Users/matell/dd/ellismg/AspireBicep/AspireStarter/AspireStarter.AppHost/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/Users/matell/.nuget/packages/aspire.hosting.apphost/8.2.0/build/Aspire.Hosting.AppHost.targets",
+        "DefiningProjectDirectory": "/Users/matell/.nuget/packages/aspire.hosting.apphost/8.2.0/build/",
+        "DefiningProjectName": "Aspire.Hosting.AppHost",
+        "DefiningProjectExtension": ".targets"
+      }
+    ]
+  }
+}`

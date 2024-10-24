@@ -46,8 +46,10 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
+						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
 					},
 				},
 				{
@@ -130,8 +132,10 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
+						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
 					},
 				},
 				{
@@ -163,8 +167,10 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
+						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
 					},
 				},
 				{
@@ -199,8 +205,10 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
+						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
 					},
 				},
 				{
@@ -277,6 +285,24 @@ func TestDetectNested(t *testing.T) {
 		Path:          filepath.Join(src, "dotnet"),
 		DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 	})
+}
+
+func TestAnalyzeJavaSpringProject(t *testing.T) {
+	var properties = readProperties(filepath.Join("testdata", "java-spring", "project-one"))
+	require.Equal(t, "", properties["not.exist"])
+	require.Equal(t, "jdbc:h2:mem:testdb", properties["spring.datasource.url"])
+
+	properties = readProperties(filepath.Join("testdata", "java-spring", "project-two"))
+	require.Equal(t, "", properties["not.exist"])
+	require.Equal(t, "jdbc:h2:mem:testdb", properties["spring.datasource.url"])
+
+	properties = readProperties(filepath.Join("testdata", "java-spring", "project-three"))
+	require.Equal(t, "", properties["not.exist"])
+	require.Equal(t, "HTML", properties["spring.thymeleaf.mode"])
+
+	properties = readProperties(filepath.Join("testdata", "java-spring", "project-four"))
+	require.Equal(t, "", properties["not.exist"])
+	require.Equal(t, "mysql", properties["database"])
 }
 
 func copyTestDataDir(glob string, dst string) error {

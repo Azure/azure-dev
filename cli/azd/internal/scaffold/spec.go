@@ -11,7 +11,11 @@ type InfraSpec struct {
 
 	// Databases to create
 	DbPostgres    *DatabasePostgres
+	DbMySql       *DatabaseMySql
 	DbCosmosMongo *DatabaseCosmosMongo
+
+	// Azure Service Bus
+	AzureServiceBus *AzureDepServiceBus
 }
 
 type Parameter struct {
@@ -22,13 +26,41 @@ type Parameter struct {
 }
 
 type DatabasePostgres struct {
-	DatabaseUser string
-	DatabaseName string
+	DatabaseUser              string
+	DatabaseName              string
+	AuthUsingManagedIdentity  bool
+	AuthUsingUsernamePassword bool
+}
+
+type DatabaseMySql struct {
+	DatabaseUser              string
+	DatabaseName              string
+	AuthUsingManagedIdentity  bool
+	AuthUsingUsernamePassword bool
 }
 
 type DatabaseCosmosMongo struct {
 	DatabaseName string
 }
+
+type AzureDepServiceBus struct {
+	Name                      string
+	Queues                    []string
+	TopicsAndSubscriptions    map[string][]string
+	AuthUsingConnectionString bool
+	AuthUsingManagedIdentity  bool
+}
+
+// AuthType defines different authentication types.
+type AuthType int32
+
+const (
+	AUTH_TYPE_UNSPECIFIED AuthType = 0
+	// Username and password, or key based authentication, or connection string
+	AuthType_PASSWORD AuthType = 1
+	// Microsoft EntraID token credential
+	AuthType_TOKEN_CREDENTIAL AuthType = 2
+)
 
 type ServiceSpec struct {
 	Name string
@@ -42,8 +74,12 @@ type ServiceSpec struct {
 
 	// Connection to a database
 	DbPostgres    *DatabaseReference
+	DbMySql       *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
+
+	// Azure Service Bus
+	AzureServiceBus *AzureDepServiceBus
 }
 
 type Frontend struct {
@@ -59,7 +95,9 @@ type ServiceReference struct {
 }
 
 type DatabaseReference struct {
-	DatabaseName string
+	DatabaseName              string
+	AuthUsingManagedIdentity  bool
+	AuthUsingUsernamePassword bool
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

@@ -131,6 +131,20 @@ func (db DatabaseDep) Display() string {
 	return ""
 }
 
+//type AzureDep string
+
+type AzureDep interface {
+	ResourceDisplay() string
+}
+
+type AzureDepServiceBus struct {
+	Queues []string
+}
+
+func (a AzureDepServiceBus) ResourceDisplay() string {
+	return "Azure Service Bus"
+}
+
 type Project struct {
 	// The language associated with the project.
 	Language Language
@@ -140,6 +154,9 @@ type Project struct {
 
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
+
+	// Experimental: Azure dependencies inferred through heuristics while scanning dependencies in the project.
+	AzureDeps []AzureDep
 
 	// The path to the project directory.
 	Path string

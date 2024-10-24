@@ -178,8 +178,14 @@ func (p *Project) HasWebUIFramework() bool {
 	return false
 }
 
+type Port struct {
+	Number   int
+	Protocol string
+}
+
 type Docker struct {
-	Path string
+	Path  string
+	Ports []Port
 }
 
 type projectDetector interface {

@@ -135,6 +135,11 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		svc.OutputPath = filepath.FromSlash(svc.OutputPath)
 	}
 
+	for key, svc := range projectConfig.Resources {
+		svc.Name = key
+		svc.Project = &projectConfig
+	}
+
 	return &projectConfig, nil
 }
 

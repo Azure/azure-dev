@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -181,7 +182,7 @@ func (i *Initializer) InitFromApp(
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
 			azdCtx.ProjectDirectory(),
-			filepath.Base(azdCtx.ProjectDirectory()),
+			azdcontext.ProjectName(azdCtx.ProjectDirectory()),
 			appHostManifests[appHost.Path],
 			appHost.Path,
 		)
@@ -350,7 +351,7 @@ func prjConfigFromDetect(
 	root string,
 	detect detectConfirm) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
-		Name: LabelName(filepath.Base(root)),
+		Name: azdcontext.ProjectName(root),
 		Metadata: &project.ProjectMetadata{
 			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
 		},
@@ -415,7 +416,7 @@ func prjConfigFromDetect(
 		if name == "." {
 			name = config.Name
 		}
-		name = LabelName(name)
+		name = names.LabelName(name)
 		config.Services[name] = &svc
 	}
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -225,27 +224,4 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			require.Equal(t, tt.want, spec)
 		})
 	}
-}
-
-func TestDetectPortInDockerfile(t *testing.T) {
-	i := &Initializer{
-		console: input.NewConsole(
-			false,
-			false,
-			input.Writers{Output: os.Stdout},
-			input.ConsoleHandles{
-				Stderr: os.Stderr,
-				Stdin:  os.Stdin,
-				Stdout: os.Stdout,
-			},
-			nil,
-			nil),
-	}
-	var port int
-	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "Dockerfile1"))
-	require.Equal(t, 80, port)
-	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "Dockerfile2"))
-	require.Equal(t, 3100, port)
-	port = i.detectPortInDockerfile(filepath.Join("testdata", "Dockerfile", "Dockerfile3"))
-	require.Equal(t, -1, port)
 }

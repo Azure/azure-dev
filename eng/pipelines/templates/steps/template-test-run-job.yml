@@ -76,6 +76,13 @@ steps:
               ARM_TENANT_ID=$(arm-tenant-id-test-tenant)
               SUBSCRIPTION_ID=$(SubscriptionId-test-tenant)
 
+              # Service Connection Configuration
+              AZURESUBSCRIPTION_CLIENT_ID=$(arm-client-id-test-tenant)
+              AZURESUBSCRIPTION_TENANT_ID=$(arm-tenant-id-test-tenant)
+              AZURESUBSCRIPTION_SERVICE_CONNECTION_ID="3d79cc98-46f2-428c-bdd5-861414f85602"
+              SYSTEM_OIDCREQUESTURI=$(System.OidcRequestUri)
+              SYSTEM_ACCESSTOKEN=$(System.AccessToken)
+
               # Pass in TemplateRunEnvironmentVariables
               $(VARIABLE_LIST)
 
@@ -115,8 +122,8 @@ steps:
               # Login azd
               azd auth login \
                 --client-id "$(arm-client-id-test-tenant)" \
-                --client-secret "$(arm-client-secret-test-tenant)" \
-                --tenant-id "$(arm-tenant-id-test-tenant)"
+                --tenant-id "$(arm-tenant-id-test-tenant)" \
+                --federated-auth-provider azure-pipelines
 
               # Login az CLI (required for scenarios where az is invoked)
               az login \

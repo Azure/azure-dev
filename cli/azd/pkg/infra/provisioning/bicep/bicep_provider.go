@@ -1888,6 +1888,7 @@ func (p *BicepProvider) ensureParameters(
 			// Prompt user to select an existing resource to link to the template
 			selectedResource, err := p.prompters.PromptResource(ctx, prompt.PromptResourceOptions{
 				ResourceType: azdMetadata.Resource.Type,
+				Kinds:        azdMetadata.Resource.Kinds,
 				DisplayName:  azdMetadata.Resource.DisplayName,
 				Description:  azdMetadata.Resource.Description,
 			})

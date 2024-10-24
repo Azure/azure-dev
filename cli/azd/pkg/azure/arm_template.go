@@ -100,9 +100,10 @@ type AutoGenInput struct {
 // ResourceInputMetadata is set on ARM/Bicep parameter properties
 // This metadata is used to generate a resource picker in the CLI
 type ResourceInputMetadata struct {
-	DisplayName string `json:"displayName"`
-	Description string `json:"description"`
-	Type        string `json:"type"`
+	DisplayName string   `json:"displayName"`
+	Description string   `json:"description"`
+	Type        string   `json:"type"`
+	Kinds       []string `json:"kind"`
 }
 
 // OptionalResource is used to represent a resource that may or may not exist in the Azure subscription.

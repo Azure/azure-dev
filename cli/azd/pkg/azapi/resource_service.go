@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 type Resource struct {
@@ -84,7 +85,7 @@ func (rs *ResourceService) ListSubscriptionResources(
 	ctx context.Context,
 	subscriptionId string,
 	listOptions *armresources.ClientListOptions,
-) ([]*Resource, error) {
+) ([]*ResourceExtended, error) {
 	client, err := rs.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -97,7 +98,7 @@ func (rs *ResourceService) ListSubscriptionResources(
 		options.Filter = listOptions.Filter
 	}
 
-	resources := []*Resource{}
+	resources := []*ResourceExtended{}
 	pager := client.NewListPager(&options)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -106,11 +107,14 @@ func (rs *ResourceService) ListSubscriptionResources(
 		}
 
 		for _, resource := range page.ResourceListResult.Value {
-			resources = append(resources, &Resource{
-				Id:       *resource.ID,
-				Name:     *resource.Name,
-				Type:     *resource.Type,
-				Location: *resource.Location,
+			resources = append(resources, &ResourceExtended{
+				Resource: Resource{
+					Id:       *resource.ID,
+					Name:     *resource.Name,
+					Type:     *resource.Type,
+					Location: *resource.Location,
+				},
+				Kind: convert.ToValueWithDefault(resource.Kind, ""),
 			})
 		}
 	}

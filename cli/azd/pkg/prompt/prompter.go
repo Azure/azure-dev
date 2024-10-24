@@ -30,7 +30,7 @@ type Prompter interface {
 	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
 	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
 	PromptResourceGroup(ctx context.Context) (string, error)
-	PromptResource(ctx context.Context, options PromptResourceOptions) (*azapi.Resource, error)
+	PromptResource(ctx context.Context, options PromptResourceOptions) (*azapi.ResourceExtended, error)
 }
 
 type DefaultPrompter struct {
@@ -166,6 +166,7 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 
 type PromptResourceOptions struct {
 	ResourceType string
+	Kinds        []string
 	DisplayName  string
 	Description  string
 }
@@ -173,9 +174,13 @@ type PromptResourceOptions struct {
 // PromptResource prompts the user to select a resource with the specified resource type.
 // If the user selects to create a new resource, the user will be prompted to enter a name for the new resource.
 // This new resource is intended to be created in the Bicep deployment
-func (p *DefaultPrompter) PromptResource(ctx context.Context, options PromptResourceOptions) (*azapi.Resource, error) {
-	resourceListOptions := armresources.ClientListOptions{
-		Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", options.ResourceType)),
+func (p *DefaultPrompter) PromptResource(
+	ctx context.Context,
+	options PromptResourceOptions,
+) (*azapi.ResourceExtended, error) {
+	resourceListOptions := &armresources.ClientListOptions{}
+	if options.ResourceType != "" {
+		resourceListOptions.Filter = to.Ptr(fmt.Sprintf("resourceType eq '%s'", options.ResourceType))
 	}
 
 	if options.DisplayName == "" {
@@ -184,19 +189,28 @@ func (p *DefaultPrompter) PromptResource(ctx context.Context, options PromptReso
 
 	resourceTypeDisplayName := strings.ToLower(options.DisplayName)
 
-	resources, err := p.resourceService.ListSubscriptionResources(ctx, p.env.GetSubscriptionId(), &resourceListOptions)
+	resources, err := p.resourceService.ListSubscriptionResources(ctx, p.env.GetSubscriptionId(), resourceListOptions)
 	if err != nil {
 		return nil, fmt.Errorf("listing subscription resources: %w", err)
 	}
 
-	slices.SortFunc(resources, func(a, b *azapi.Resource) int {
+	slices.SortFunc(resources, func(a, b *azapi.ResourceExtended) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 
-	choices := make([]string, len(resources)+1)
+	filteredResources := []*azapi.ResourceExtended{}
+	for _, resource := range resources {
+		if len(options.Kinds) > 0 && !slices.Contains(options.Kinds, resource.Kind) {
+			continue
+		}
+
+		filteredResources = append(filteredResources, resource)
+	}
+
+	choices := make([]string, len(filteredResources)+1)
 	choices[0] = fmt.Sprintf("Create a new %s", resourceTypeDisplayName)
 
-	for idx, resource := range resources {
+	for idx, resource := range filteredResources {
 		parsedResource, err := arm.ParseResourceID(resource.Id)
 		if err != nil {
 			return nil, fmt.Errorf("parsing resource id: %w", err)
@@ -215,7 +229,7 @@ func (p *DefaultPrompter) PromptResource(ctx context.Context, options PromptReso
 	}
 
 	if selectedIndex > 0 {
-		return resources[selectedIndex-1], nil
+		return filteredResources[selectedIndex-1], nil
 	}
 
 	name, err := p.console.Prompt(ctx, input.ConsoleOptions{
@@ -225,8 +239,11 @@ func (p *DefaultPrompter) PromptResource(ctx context.Context, options PromptReso
 		return nil, fmt.Errorf("prompting for %s name: %w", resourceTypeDisplayName, err)
 	}
 
-	return &azapi.Resource{
-		Name: name,
+	return &azapi.ResourceExtended{
+		Resource: azapi.Resource{
+			Name: name,
+			Type: options.ResourceType,
+		},
 	}, nil
 }
 

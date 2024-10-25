@@ -389,6 +389,16 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 }
 
 func (la *loginAction) login(ctx context.Context) error {
+	if la.flags.federatedTokenProvider == string(auth.AzurePipelinesFederatedTokenProvider) {
+		if la.flags.clientID == "" {
+			la.flags.clientID = os.Getenv(auth.AzurePipelinesClientIDEnvVarName)
+		}
+
+		if la.flags.tenantID == "" {
+			la.flags.clientID = os.Getenv(auth.AzurePipelinesTenantIDEnvVarName)
+		}
+	}
+
 	if la.flags.managedIdentity {
 		if _, err := la.authManager.LoginWithManagedIdentity(
 			ctx, la.flags.clientID,
@@ -451,9 +461,22 @@ func (la *loginAction) login(ctx context.Context) error {
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.federatedTokenProvider != "":
-			if _, err := la.authManager.LoginWithServicePrincipalFederatedTokenProvider(
-				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedTokenProvider,
+		case la.flags.federatedTokenProvider == string(auth.GitHubFederatedTokenProvider):
+			if _, err := la.authManager.LoginWithGitHubFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		case la.flags.federatedTokenProvider == string(auth.AzurePipelinesFederatedTokenProvider):
+			serviceConnectionID := os.Getenv(auth.AzurePipelinesServiceConnectionIDEnvVarName)
+
+			if serviceConnectionID == "" {
+				return fmt.Errorf("must set %s for azure-pipelines federated token provider",
+					auth.AzurePipelinesServiceConnectionIDEnvVarName)
+			}
+
+			if _, err := la.authManager.LoginWithAzurePipelinesFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID, serviceConnectionID,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}

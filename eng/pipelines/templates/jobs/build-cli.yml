@@ -115,6 +115,7 @@ jobs:
         env:
           # AZD live test setup variables
           CI: true
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
           AZD_TEST_CLI_VERSION: $(CLI_VERSION)
           AZD_TEST_CLIENT_ID: $(arm-client-id)
           AZD_TEST_TENANT_ID: $(arm-tenant-id)

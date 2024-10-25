@@ -300,6 +300,9 @@ func (at *dotnetContainerAppTarget) Deploy(
 		return nil, fmt.Errorf("failed executing template file: %w", err)
 	}
 
+	// default name for the container app is the service name. This is how this work for using YAML definition where
+	// azd owns the ACA definition. When using bicep, the name is defined in the bicep file and is set after deployment.
+	acaName := serviceConfig.Name
 	if useBicepForContainerApps {
 		// Compile the bicep template
 		compiled, params, err := func() (azure.RawArmTemplate, azure.ArmParameters, error) {
@@ -382,7 +385,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		armTemplate = &compiled
 		armParams = params
 
-		_, err = at.deploymentService.DeployToResourceGroup(
+		deploymentResult, err := at.deploymentService.DeployToResourceGroup(
 			ctx,
 			at.env.GetSubscriptionId(),
 			targetResource.ResourceGroupName(),
@@ -393,6 +396,26 @@ func (at *dotnetContainerAppTarget) Deploy(
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
 		}
+		// set the name of the container app to the name of the deployment
+		if len(deploymentResult.Resources) == 0 {
+			return nil, fmt.Errorf("no resources found after deployment. Expected at least one Azure Container App")
+		}
+		acaCount := 0
+		for _, res := range deploymentResult.Resources {
+			if res.ID == nil {
+				continue
+			}
+			resourceId := *res.ID
+			if strings.Contains(resourceId, "providers/Microsoft.App/containerApps") {
+				acaCount++
+				acaName = resourceId
+			}
+		}
+		if acaCount != 1 {
+			return nil, fmt.Errorf("expected exactly one Azure Container App resource, found %d", acaCount)
+		}
+		// take the last part of the resource id as the name
+		acaName = acaName[strings.LastIndex(acaName, "/")+1:]
 	} else {
 		containerAppOptions := containerapps.ContainerAppOptions{
 			ApiVersion: serviceConfig.ApiVersion,
@@ -416,7 +439,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 	containerAppTarget := environment.NewTargetResource(
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
-		serviceConfig.Name,
+		acaName,
 		string(azapi.AzureResourceTypeContainerApp))
 
 	endpoints, err := at.Endpoints(ctx, serviceConfig, containerAppTarget)

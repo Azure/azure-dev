@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+set -x
 
 # Default to user HOME directory if not specified
 FOLDER_PATH=$HOME

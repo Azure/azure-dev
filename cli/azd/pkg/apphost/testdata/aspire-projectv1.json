@@ -22,7 +22,10 @@
           "cache_volumes_0_storage": "{cache.volumes.0.storage}",
           "outputs_azure_container_registry_managed_identity_id": "{.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
           "outputs_managed_identity_client_id": "{.outputs.MANAGED_IDENTITY_CLIENT_ID}",
-          "outputs_azure_container_apps_environment_id": "{.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}"
+          "outputs_azure_container_apps_environment_id": "{.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
+          "host": "{cache.bindings.tcp.host}",
+          "protocol": "{cache.bindings.tcp.protocol}",
+          "complex": "{cache.bindings.tcp.protocol}:{cache.bindings.tcp.host}/foo"
         }
       },
       "args": [

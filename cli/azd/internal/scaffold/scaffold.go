@@ -115,44 +115,14 @@ func ExecInfra(
 		return err
 	}
 
-	if spec.DbCosmosMongo != nil {
-		err = Execute(t, "db-cosmos-mongo.bicep", spec.DbCosmosMongo, filepath.Join(infraApp, "db-cosmos-mongo.bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding cosmos mongodb: %w", err)
-		}
-	}
-
-	if spec.DbPostgres != nil {
-		err = Execute(t, "db-postgres.bicep", spec.DbPostgres, filepath.Join(infraApp, "db-postgres.bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding postgres: %w", err)
-		}
-	}
-
-	if spec.DbMySql != nil {
-		err = Execute(t, "db-mysql.bicep", spec.DbMySql, filepath.Join(infraApp, "db-mysql.bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding mysql: %w", err)
-		}
-	}
-
-	if spec.AzureServiceBus != nil {
-		err = Execute(t, "azure-service-bus.bicep", spec.AzureServiceBus, filepath.Join(infraApp, "azure-service-bus.bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding service bus: %w", err)
-		}
-	}
-
-	for _, svc := range spec.Services {
-		err = Execute(t, "host-containerapp.bicep", svc, filepath.Join(infraApp, svc.Name+".bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding containerapp: %w", err)
-		}
-	}
-
 	err = Execute(t, "main.bicep", spec, filepath.Join(infraRoot, "main.bicep"))
 	if err != nil {
 		return fmt.Errorf("scaffolding main.bicep: %w", err)
+	}
+
+	err = Execute(t, "resources.bicep", spec, filepath.Join(infraRoot, "resources.bicep"))
+	if err != nil {
+		return fmt.Errorf("scaffolding resources.bicep: %w", err)
 	}
 
 	err = Execute(t, "main.parameters.json", spec, filepath.Join(infraRoot, "main.parameters.json"))

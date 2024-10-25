@@ -13,6 +13,7 @@ type InfraSpec struct {
 	DbPostgres    *DatabasePostgres
 	DbMySql       *DatabaseMySql
 	DbCosmosMongo *DatabaseCosmosMongo
+	DbRedis       *DatabaseRedis
 
 	// Azure Service Bus
 	AzureServiceBus *AzureDepServiceBus
@@ -41,6 +42,9 @@ type DatabaseMySql struct {
 
 type DatabaseCosmosMongo struct {
 	DatabaseName string
+}
+
+type DatabaseRedis struct {
 }
 
 type AzureDepServiceBus struct {

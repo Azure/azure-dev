@@ -177,20 +177,7 @@ func NewRootCmd(
 		Command:        logout,
 		ActionResolver: newLogoutAction,
 	})
-
-	root.Add("orchestrate", &actions.ActionDescriptorOptions{
-		Command:        newOrchestrateCmd(),
-		FlagsResolver:  newOrchestrateFlags,
-		ActionResolver: newOrchestrateAction,
-		HelpOptions: actions.ActionHelpOptions{
-			Description: getCmdOrchestrateHelpDescription,
-			Footer:      getCmdOrchestrateHelpFooter,
-		},
-		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
-		},
-	})
-
+	
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
 		FlagsResolver:  newInitFlags,

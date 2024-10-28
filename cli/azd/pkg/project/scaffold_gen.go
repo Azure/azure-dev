@@ -165,6 +165,23 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			}
 
 			infraSpec.Services = append(infraSpec.Services, svcSpec)
+		case ResourceTypeOpenAiModel:
+			props := res.Props.(AIModelProps)
+			if len(props.Model.Name) == 0 {
+				return nil, fmt.Errorf("resources.%s.model is required", res.Name)
+			}
+
+			if len(props.Model.Version) == 0 {
+				return nil, fmt.Errorf("resources.%s.version is required", res.Name)
+			}
+
+			infraSpec.AIModels = append(infraSpec.AIModels, scaffold.AIModel{
+				Name: res.Name,
+				Model: scaffold.AIModelModel{
+					Name:    props.Model.Name,
+					Version: props.Model.Version,
+				},
+			})
 		}
 	}
 

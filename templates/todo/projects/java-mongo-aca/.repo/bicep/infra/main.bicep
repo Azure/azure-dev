@@ -30,6 +30,9 @@ param apiAppExists bool = false
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
+@description('Hostname suffix for container registry. Set when deploying to sovereign clouds')
+param containerRegistryHostSuffix string = 'azurecr.io'
+
 @description('API Management SKU to use if APIM is enabled')
 param apimSku string = 'Consumption'
 
@@ -86,10 +89,10 @@ module web 'br/public:avm/ptn/azd/container-app-upsert:0.1.0' = {
     location: location
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
+    exists: webAppExists
+    containerRegistryHostSuffix: containerRegistryHostSuffix
     ingressEnabled: true
     identityType: 'UserAssigned'
-    exists: webAppExists
-    containerName: 'main'
     identityName: webIdentity.name
     userAssignedIdentityResourceId: webIdentity.outputs.resourceId
     containerMinReplicas: 1
@@ -142,14 +145,9 @@ module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.0' = {
     containerMemory: '2.0Gi'
     targetPort: 3100
     containerMinReplicas: 1
-    ingressEnabled: true
-    containerName: 'main'
     userAssignedIdentityResourceId: apiIdentity.outputs.resourceId
     identityPrincipalId: apiIdentity.outputs.principalId
   }
-  dependsOn: [
-    keyVault
-  ]
 }
 
 // The application database

@@ -10,6 +10,12 @@
 
 ### Other Changes
 
+## 0.8.4 (2024-10-28)
+
+### Other Changes
+ - [[#4420]](https://github.com/Azure/azure-dev/pull/4420) Add option to suppress readme
+ - [[#3894]](https://github.com/Azure/azure-dev/pull/3894) Add agent skill wrapping for down command
+
 ## 0.8.3 (2024-05-07)
 
 ### Other Changes

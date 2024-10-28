@@ -181,7 +181,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.5.1' = {
 
 // Monitor application with Azure Monitor
 module monitoring 'br/public:avm/ptn/azd/monitoring:0.1.0' = {
-  name: 'monitoringDeployment'
+  name: 'monitoring'
   scope: rg
   params: {
     applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'

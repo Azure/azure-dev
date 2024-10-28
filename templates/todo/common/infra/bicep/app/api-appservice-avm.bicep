@@ -40,7 +40,10 @@ module api 'br/public:avm/res/web/site:0.6.0' = {
       }
       appCommandLine: appCommandLine
     })
-    appSettingsKeyValuePairs: union(appSettings, { ENABLE_ORYX_BUILD: true })
+    appSettingsKeyValuePairs: union(
+      appSettings,
+      { ENABLE_ORYX_BUILD: true, ApplicationInsightsAgent_EXTENSION_VERSION: contains(kind, 'linux') ? '~3' : '~2' }
+    )
     logsConfiguration: {
       applicationLogs: { fileSystem: { level: 'Verbose' } }
       detailedErrorMessages: { enabled: true }

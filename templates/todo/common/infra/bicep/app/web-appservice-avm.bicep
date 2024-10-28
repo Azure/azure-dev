@@ -3,14 +3,15 @@ param location string = resourceGroup().location
 param tags object = {}
 param serviceName string = 'web'
 param appCommandLine string = 'pm2 serve /home/site/wwwroot --no-daemon --spa'
-param appInsightResourceId string 
+param appInsightResourceId string
 param appServicePlanId string
 param linuxFxVersion string
+param kind string = 'app,linux'
 
 module web 'br/public:avm/res/web/site:0.6.0' = {
   name: '${name}-deployment'
   params: {
-    kind: 'app'
+    kind: kind
     name: name
     serverFarmResourceId: appServicePlanId
     tags: union(tags, { 'azd-service-name': serviceName })
@@ -27,6 +28,7 @@ module web 'br/public:avm/res/web/site:0.6.0' = {
       failedRequestsTracing: { enabled: true }
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
+    appSettingsKeyValuePairs: { ApplicationInsightsAgent_EXTENSION_VERSION: contains(kind, 'linux') ? '~3' : '~2' }
   }
 }
 

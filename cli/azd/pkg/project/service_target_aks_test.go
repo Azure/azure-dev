@@ -35,9 +35,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func Test_NewAksTarget(t *testing.T) {

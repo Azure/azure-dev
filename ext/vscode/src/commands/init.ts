@@ -13,6 +13,7 @@ interface InitCommandOptions {
     templateUrl?: string;
     useExistingSource?: boolean;
     environmentName?: string;
+    suppressReadme?: boolean;
 }
 
 /**
@@ -74,6 +75,8 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
         cwd: workspacePath.fsPath,
         env: azureCli.env
     }, TelemetryId.InitCli).then(() => {
-        void showReadmeFile(workspacePath);
+        if (!options?.suppressReadme) {
+            void showReadmeFile(workspacePath);
+        }
     });
 }

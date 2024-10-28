@@ -10,6 +10,12 @@
 
 ### Other Changes
 
+## 1.10.3 (2024-10-16)
+
+### Bugs Fixed
+
+- [[4450]](https://github.com/Azure/azure-dev/pull/4450) fix `persistSettings` alpha feature.
+
 ## 1.10.2 (2024-10-08)
 
 ### Features Added

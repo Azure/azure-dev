@@ -436,7 +436,7 @@ func verifyFileContent(t *testing.T, file string, content string) {
 }
 
 func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content string) {
-	content = strings.Replace(content, "<project>", azdCtx.GetDefaultProjectName(), 1)
+	content = strings.Replace(content, "<project>", azdcontext.ProjectName(azdCtx.ProjectDirectory()), 1)
 	verifyFileContent(t, azdCtx.ProjectPath(), content)
 
 	_, err := project.Load(context.Background(), azdCtx.ProjectPath())

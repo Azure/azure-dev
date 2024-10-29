@@ -17,6 +17,8 @@ type InfraSpec struct {
 
 	// Azure Service Bus
 	AzureServiceBus *AzureDepServiceBus
+	// Azure EventHubs
+	AzureEventHubs *AzureDepEventHubs
 }
 
 type Parameter struct {
@@ -55,6 +57,13 @@ type AzureDepServiceBus struct {
 	AuthUsingManagedIdentity  bool
 }
 
+type AzureDepEventHubs struct {
+	Name                      string
+	EventHubNames             []string
+	AuthUsingConnectionString bool
+	AuthUsingManagedIdentity  bool
+}
+
 // AuthType defines different authentication types.
 type AuthType int32
 
@@ -84,6 +93,8 @@ type ServiceSpec struct {
 
 	// Azure Service Bus
 	AzureServiceBus *AzureDepServiceBus
+	// Azure Service Bus
+	AzureEventHubs *AzureDepEventHubs
 }
 
 type Frontend struct {

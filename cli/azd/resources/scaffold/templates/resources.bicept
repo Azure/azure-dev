@@ -126,7 +126,47 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
   }
 }
 {{- end}}
+{{- if .AzureEventHubs }}
 
+module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.7.1' = {
+  name: 'eventHubNamespace'
+  params: {
+    name: '${abbrs.eventHubNamespaces}${resourceToken}'
+    location: location
+    roleAssignments: [
+      {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingManagedIdentity) }}
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f526a384-b230-433a-b45c-95f59c4a2dec')
+      }
+      {{- end}}
+      {{- end}}
+    ]
+    {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+    disableLocalAuth: false
+    {{- end}}
+    eventhubs: [
+      {{- range $eventHubName := .AzureEventHubs.EventHubNames}}
+      {
+        name: '{{ $eventHubName }}'
+      }
+      {{- end}}
+    ]
+  }
+}
+{{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+module eventHubsConnectionString './modules/set-event-hubs-namespace-connection-string.bicep' = {
+  name: 'eventHubsConnectionString'
+  params: {
+    eventHubsNamespaceName: eventHubNamespace.outputs.name
+    connectionStringSecretName: 'EVENT-HUBS-CONNECTION-STRING'
+    keyVaultName: keyVault.outputs.name
+  }
+}
+{{end}}
+{{end}}
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
@@ -205,6 +245,13 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
         }
         {{- end}}
+        {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+        {
+          name: 'event-hubs-connection-string'
+          identity:{{bicepName .Name}}Identity.outputs.resourceId
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/EVENT-HUBS-CONNECTION-STRING'
+        }
+        {{- end}}
       ],
       map({{bicepName .Name}}Secrets, secret => {
         name: secret.secretRef
@@ -280,6 +327,40 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'REDIS_PASSWORD'
             secretRef: 'redis-pass'
+          }
+          {{- end}}
+          {{- if .AzureEventHubs }}
+          {
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_NAMESPACE'
+            value: eventHubNamespace.outputs.name
+          }
+          {{- end}}
+          {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingManagedIdentity) }}
+          {
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CONNECTION_STRING'
+            value: ''
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            value: 'true'
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_CLIENTID'
+            value: {{bicepName .Name}}Identity.outputs.clientId
+          }
+          {{- end}}
+          {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+          {
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CONNECTION_STRING'
+            secretRef: 'event-hubs-connection-string'
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            value: 'false'
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_CLIENTID'
+            value: ''
           }
           {{- end}}
           {{- if .Frontend}}
@@ -391,5 +472,8 @@ output AZURE_CACHE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
 output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = postgreServer.outputs.resourceId
+{{- end}}
+{{- if .AzureEventHubs }}
+output AZURE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceId
 {{- end}}
 {{ end}}

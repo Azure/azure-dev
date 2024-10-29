@@ -59,4 +59,7 @@ output AZURE_CACHE_REDIS_ID string = resources.outputs.AZURE_CACHE_REDIS_ID
 {{- if .DbPostgres}}
 output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = resources.outputs.AZURE_POSTGRES_FLEXIBLE_SERVER_ID
 {{- end}}
+{{- if .AzureEventHubs }}
+output AZURE_EVENT_HUBS_ID string = resources.outputs.AZURE_EVENT_HUBS_ID
+{{- end}}
 {{ end}}

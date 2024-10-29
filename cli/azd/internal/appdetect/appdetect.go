@@ -145,6 +145,14 @@ func (a AzureDepServiceBus) ResourceDisplay() string {
 	return "Azure Service Bus"
 }
 
+type AzureDepEventHubs struct {
+	Names []string
+}
+
+func (a AzureDepEventHubs) ResourceDisplay() string {
+	return "Azure Event Hubs"
+}
+
 type Project struct {
 	// The language associated with the project.
 	Language Language

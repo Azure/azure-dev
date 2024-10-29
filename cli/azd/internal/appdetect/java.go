@@ -178,6 +178,18 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 				Queues: destinations,
 			})
 		}
+
+		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-stream-binder-eventhubs" {
+			bindingDestinations := findBindingDestinations(applicationProperties)
+			destinations := make([]string, 0, len(bindingDestinations))
+			for bindingName, destination := range bindingDestinations {
+				destinations = append(destinations, destination)
+				log.Printf("Event Hubs [%s] found for binding [%s]", destination, bindingName)
+			}
+			project.AzureDeps = append(project.AzureDeps, AzureDepEventHubs{
+				Names: destinations,
+			})
+		}
 	}
 
 	if len(databaseDepMap) > 0 {

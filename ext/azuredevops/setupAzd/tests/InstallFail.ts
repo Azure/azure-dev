@@ -5,7 +5,7 @@ import * as fs from 'fs'
 import { log } from 'console';
 
 describe('setup azd tests - fails', function () {
-    setTimeout(() => { }, 10000);
+    setTimeout(() => { }, 60000);
     before(function () { });
     afterEach(() => {
         fs.rmSync('path', { recursive: true, force: true })

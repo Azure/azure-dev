@@ -2,10 +2,30 @@ param(
     [switch] $ShortMode,
     [string] $UnitTestCoverageDir = 'cover-unit',
     [string] $IntegrationTestTimeout = '120m',
-    [string] $IntegrationTestCoverageDir = 'cover-int'
+    [string] $IntegrationTestCoverageDir = 'cover-int',
+    [flag]$AzCliAuth
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($AzCliAuth) {
+    $azdCliPath = "$PSScriptRoot/azd"
+    if ($IsWindows) {
+        $azdCliPath += ".exe"
+    }
+
+    & $azdCliPath config set auth.useAzCliAuth true
+    if ($LASTEXITCODE) {
+        throw "Failed to set azd auth.useAzCliAuth to true"
+    }
+
+    # Set environment variables based on az auth information from AzureCLI@2
+    # step in the pipeline.
+    $azAccountJson = az account show -o json
+    $env:AZD_TEST_AZURE_SUBSCRIPTION_ID = ($azAccountJson | ConvertFrom-Json -AsHashtable)['id']
+    $env:ARM_CLIENT_ID = $env:servicePrincipalId
+    $env:ARM_TENANT_ID = $env:tenantId
+}
 
 $gopath = go env GOPATH
 if ($LASTEXITCODE) {

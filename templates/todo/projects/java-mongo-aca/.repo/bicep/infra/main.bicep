@@ -80,7 +80,7 @@ module webIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.
 }
 
 // Web frontend
-module web 'br/public:avm/ptn/azd/container-app-upsert:0.1.0' = {
+module web 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
   name: 'web-container-app'
   scope: rg
   params: {
@@ -111,7 +111,7 @@ module apiIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.
 }
 
 // Api backend
-module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.0' = {
+module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
   name: 'api-container-app'
   scope: rg
   params: {

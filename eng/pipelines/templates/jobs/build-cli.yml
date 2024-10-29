@@ -102,11 +102,12 @@ jobs:
           visibleAzLogin: false
           scriptType: pscore
           scriptLocation: scriptPath
-          scriptPath: cli/azd/ci-test.ps1 -AzCliAuth
+          scriptPath: cli/azd/ci-test.ps1
           workingDirectory: cli/azd
           scriptArguments: >-
             -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
             -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
+            -AzCliAuth
         displayName: Test Go Binary
         env:
           # AZD live test setup variables

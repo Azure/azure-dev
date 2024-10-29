@@ -92,7 +92,7 @@ jobs:
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
-          azureSubscription: azure-sdk-tests
+          azureSubscription: azure-sdk-tests-public
           # keepAzSessionActive is required when the service connection uses Workload Identity Federation authentication scheme
           # and the script will run for more than 10 minutes.
           # the ci-test.ps1 script runs for a long time and the service connection `azure-sdk-tests` use Workload Identity Federation.

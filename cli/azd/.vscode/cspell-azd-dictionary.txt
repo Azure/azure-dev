@@ -161,6 +161,7 @@ overriden
 paketobuildpacks
 patternmatcher
 pflag
+pgadmin
 posix
 preinit
 proxying

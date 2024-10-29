@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
@@ -162,6 +163,17 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
+	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(alpha.FeatureId(alpha.Compose))
+	if composeEnabled && len(projectConfig.Resources) > 0 {
+		return tempInfra(ctx, projectConfig)
+	}
+
+	if !composeEnabled && len(projectConfig.Resources) > 0 {
+		return nil, fmt.Errorf(
+			"compose is currently under alpha support and must be explicitly enabled."+
+				" Run `%s` to enable this feature", alpha.GetEnableCommand(alpha.Compose))
+	}
+
 	return &Infra{}, nil
 }
 
@@ -180,6 +192,8 @@ func pathHasModule(path, module string) (bool, error) {
 
 }
 
+// SynthAllInfrastructure returns a file system containing all infrastructure for the project,
+// rooted at the project directory.
 func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
@@ -189,6 +203,17 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 
 			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig)
 		}
+	}
+
+	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(alpha.FeatureId(alpha.Compose))
+	if composeEnabled && len(projectConfig.Resources) > 0 {
+		return infraFsForProject(ctx, projectConfig)
+	}
+
+	if !composeEnabled && len(projectConfig.Resources) > 0 {
+		return nil, fmt.Errorf(
+			"compose is currently under alpha support and must be explicitly enabled."+
+				" Run `%s` to enable this feature", alpha.GetEnableCommand(alpha.Compose))
 	}
 
 	return nil, fmt.Errorf("this project does not contain any infrastructure to synthesize")

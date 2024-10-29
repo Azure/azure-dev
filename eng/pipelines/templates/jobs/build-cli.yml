@@ -89,9 +89,9 @@ jobs:
       - bash: dotnet nuget add source --name dotnet8 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8/nuget/v3/index.json
         displayName: Add internal dotnet nuget feed
 
-      - template: /eng/pipelines/templates/steps/azd-login.yml
-        parameters:
-          AzdDirectory: cli/azd
+      - pwsh: azd config set auth.useAzCliAuth true
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        displayName: Azure Dev Login
 
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

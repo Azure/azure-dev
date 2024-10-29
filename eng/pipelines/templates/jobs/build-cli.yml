@@ -102,7 +102,7 @@ jobs:
           visibleAzLogin: false
           scriptType: pscore
           scriptLocation: scriptPath
-          scriptPath: cli/azd/ci-test.ps1
+          scriptPath: cli/azd/ci-test.ps1 -AzCliAuth
           workingDirectory: cli/azd
           scriptArguments: >-
             -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'

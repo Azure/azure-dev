@@ -3,7 +3,7 @@ param(
     [string] $UnitTestCoverageDir = 'cover-unit',
     [string] $IntegrationTestTimeout = '120m',
     [string] $IntegrationTestCoverageDir = 'cover-int',
-    [flag]$AzCliAuth
+    [switch]$AzCliAuth
 )
 
 $ErrorActionPreference = 'Stop'

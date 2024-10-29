@@ -9,6 +9,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($AzCliAuth) {
+    Write-Host 'Using Azure CLI for authentication'
+
     $azdCliPath = "$PSScriptRoot/azd"
     if ($IsWindows) {
         $azdCliPath += ".exe"

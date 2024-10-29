@@ -199,6 +199,7 @@ func Test_CLI_Init_From_App(t *testing.T) {
 		"Use code in the current directory\n"+
 			"Confirm and continue initializing my app\n"+
 			"appdb\n"+
+			"Use user assigned managed identity\n"+
 			"TESTENV\n",
 		"init",
 	)

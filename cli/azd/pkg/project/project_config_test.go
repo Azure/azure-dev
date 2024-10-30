@@ -13,8 +13,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
+	"github.com/braydonk/yaml"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 // Tests invalid project configurations.
@@ -556,4 +557,35 @@ func Test_Hooks_Config_Yaml_Marshalling(t *testing.T) {
 		require.Equal(t, expected.Hooks, actual.Hooks)
 		require.Equal(t, expected.Services["api"].Hooks, actual.Services["api"].Hooks)
 	})
+}
+
+func Test_Resources_Marshal_Unmarshal(t *testing.T) {
+	const doc = `
+name: test-proj
+resources:
+  api:
+    type: host.containerapp
+    port: 8080
+    env:
+    - name: FOO
+      value: BAR
+`
+
+	prj := ProjectConfig{}
+	err := yaml.Unmarshal([]byte(doc), &prj)
+	require.NoError(t, err)
+
+	marshaled, err := yaml.Marshal(prj)
+	require.NoError(t, err)
+	assert.YAMLEq(t, doc, string(marshaled))
+
+	roundTripped := ProjectConfig{}
+	err = yaml.Unmarshal(marshaled, &roundTripped)
+	require.NoError(t, err)
+
+	cap, ok := roundTripped.Resources["api"].Props.(ContainerAppProps)
+	require.True(t, ok)
+	require.Equal(t, 8080, cap.Port)
+	require.Equal(t, "FOO", cap.Env[0].Name)
+	require.Equal(t, "BAR", cap.Env[0].Value)
 }

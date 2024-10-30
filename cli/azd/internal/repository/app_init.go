@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -176,7 +177,7 @@ func (i *Initializer) InitFromApp(
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
 			azdCtx.ProjectDirectory(),
-			filepath.Base(azdCtx.ProjectDirectory()),
+			azdcontext.ProjectName(azdCtx.ProjectDirectory()),
 			appHostManifests[appHost.Path],
 			appHost.Path,
 		)
@@ -241,7 +242,7 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
 
 	// Create the infra spec
-	spec, err := i.infraSpecFromDetect(ctx, detect)
+	infraSpec, err := i.infraSpecFromDetect(ctx, detect)
 	if err != nil {
 		return err
 	}
@@ -255,16 +256,32 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
 	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
+	title = "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
+	i.console.ShowSpinner(ctx, title, input.Step)
 	err = i.genProjectFile(ctx, azdCtx, detect)
 	if err != nil {
+		i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 		return err
 	}
+	i.console.StopSpinner(ctx, title, input.StepDone)
 
-	infra := filepath.Join(azdCtx.ProjectDirectory(), "infra")
 	title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
 	i.console.ShowSpinner(ctx, title, input.Step)
-	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
+	err = i.genFromInfra(ctx, azdCtx, infraSpec)
+	if err != nil {
+		i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
+		return err
+	}
+	i.console.StopSpinner(ctx, title, input.StepDone)
 
+	return nil
+}
+
+func (i *Initializer) genFromInfra(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	spec scaffold.InfraSpec) error {
+	infra := filepath.Join(azdCtx.ProjectDirectory(), "infra")
 	staging, err := os.MkdirTemp("", "azd-infra")
 	if err != nil {
 		return fmt.Errorf("mkdir temp: %w", err)
@@ -318,12 +335,6 @@ func (i *Initializer) genProjectFile(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	detect detectConfirm) error {
-	title := "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
-
-	i.console.ShowSpinner(ctx, title, input.Step)
-	var err error
-	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
-
 	config, err := prjConfigFromDetect(azdCtx.ProjectDirectory(), detect)
 	if err != nil {
 		return fmt.Errorf("converting config: %w", err)
@@ -345,7 +356,7 @@ func prjConfigFromDetect(
 	root string,
 	detect detectConfirm) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
-		Name: LabelName(filepath.Base(root)),
+		Name: azdcontext.ProjectName(root),
 		Metadata: &project.ProjectMetadata{
 			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
 		},
@@ -410,7 +421,7 @@ func prjConfigFromDetect(
 		if name == "." {
 			name = config.Name
 		}
-		name = LabelName(name)
+		name = names.LabelName(name)
 		config.Services[name] = &svc
 	}
 

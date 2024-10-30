@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/test/cmdrecord"
+	"github.com/braydonk/yaml"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
-	"gopkg.in/yaml.v3"
 )
 
 type ErrExitCode struct {

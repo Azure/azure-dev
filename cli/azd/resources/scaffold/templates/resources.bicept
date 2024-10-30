@@ -197,11 +197,57 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
     ]
     networkAcls: {
       defaultAction: 'Allow'
-    }
+  }
     tags: tags
   }
 }
 {{end}}
+
+{{- if .AzureServiceBus }}
+
+module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.10.0' = {
+  name: 'serviceBusNamespace'
+  params: {
+    // Required parameters
+    name: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    // Non-required parameters
+    location: location
+    roleAssignments: [
+      {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity) }}
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
+      }
+      {{- end}}
+      {{- end}}
+    ]
+    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) }}
+    disableLocalAuth: false
+    {{- end}}
+    queues: [
+      {{- range $queue := .AzureServiceBus.Queues}}
+      {
+        name: '{{ $queue }}'
+      }
+      {{- end}}
+    ]
+  }
+}
+
+{{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) }}
+module serviceBusConnectionString './modules/set-servicebus-namespace-connection-string.bicep' = {
+  name: 'serviceBusConnectionString'
+  params: {
+    serviceBusNamespaceName: serviceBusNamespace.outputs.name
+    connectionStringSecretName: 'SERVICEBUS-CONNECTION-STRING'
+    keyVaultName: keyVault.outputs.name
+  }
+}
+{{end}}
+{{end}}
+
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
@@ -234,7 +280,7 @@ var {{bicepName .Name}}Env = map(filter({{bicepName .Name}}AppSettingsArray, i =
 module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
   name: '{{bicepName .Name}}'
   params: {
-    name: '{{.Name}}'
+    name: '{{containerAppName .Name}}'
     {{- if ne .Port 0}}
     ingressTargetPort: {{.Port}}
     {{- end}}
@@ -285,6 +331,13 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           name: 'event-hubs-connection-string'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
           keyVaultUrl: '${keyVault.outputs.uri}secrets/EVENT-HUBS-CONNECTION-STRING'
+        }
+        {{- end}}
+        {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) }}
+        {
+          name: 'servicebus-connection-string'
+          identity:{{bicepName .Name}}Identity.outputs.resourceId
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/SERVICEBUS-CONNECTION-STRING'
         }
         {{- end}}
       ],
@@ -414,6 +467,42 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
           {{- end}}
+
+          {{- if .AzureServiceBus }}
+          {
+            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE'
+            value: serviceBusNamespace.outputs.name
+          }
+          {{- end}}
+          {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity) }}
+          {
+            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTION_STRING'
+            value: ''
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            value: 'true'
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_CLIENTID'
+            value: {{bicepName .Name}}Identity.outputs.clientId
+          }
+          {{- end}}
+          {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) }}
+          {
+            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTION_STRING'
+            secretRef: 'servicebus-connection-string'
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            value: 'false'
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_CLIENTID'
+            value: ''
+          }
+          {{- end}}
+
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
           {
@@ -526,5 +615,8 @@ output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = postgreServer.outputs.resource
 {{- end}}
 {{- if .AzureEventHubs }}
 output AZURE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceId
+{{- end}}
+{{- if .AzureServiceBus }}
+output AZURE_SERVICE_BUS_ID string = serviceBusNamespace.outputs.resourceId
 {{- end}}
 {{ end}}

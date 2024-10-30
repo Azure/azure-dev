@@ -35,6 +35,13 @@ overrides:
       - cloudapp
       - mediaservices
       - msecnd
+  - filename: internal/tracing/fields/fields.go
+    words:
+      - azuredeps
+  - filename: internal/appdetect/java.go
+    words:
+      - springframework
+      - eventhubs
   - filename: docs/docgen.go
     words:
       - alexwolf

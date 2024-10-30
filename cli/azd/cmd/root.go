@@ -177,7 +177,7 @@ func NewRootCmd(
 		Command:        logout,
 		ActionResolver: newLogoutAction,
 	})
-	
+
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
 		FlagsResolver:  newInitFlags,

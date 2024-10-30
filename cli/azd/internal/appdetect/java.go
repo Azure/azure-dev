@@ -127,9 +127,11 @@ func readMavenProject(filePath string) (*mavenProject, error) {
 func detectDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
 	// how can we tell it's a Spring Boot project?
 	// 1. It has a parent with a groupId of org.springframework.boot and an artifactId of spring-boot-starter-parent
-	// 2. It has a dependency with a groupId of org.springframework.boot and an artifactId that starts with spring-boot-starter
+	// 2. It has a dependency with a groupId of org.springframework.boot and an artifactId that starts with
+	// spring-boot-starter
 	isSpringBoot := false
-	if mavenProject.Parent.GroupId == "org.springframework.boot" && mavenProject.Parent.ArtifactId == "spring-boot-starter-parent" {
+	if mavenProject.Parent.GroupId == "org.springframework.boot" &&
+		mavenProject.Parent.ArtifactId == "spring-boot-starter-parent" {
 		isSpringBoot = true
 	}
 	for _, dep := range mavenProject.Dependencies {
@@ -181,14 +183,26 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 
 		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-stream-binder-eventhubs" {
 			bindingDestinations := findBindingDestinations(applicationProperties)
-			destinations := make([]string, 0, len(bindingDestinations))
+			var destinations []string
+			containsInBinding := false
 			for bindingName, destination := range bindingDestinations {
-				destinations = append(destinations, destination)
-				log.Printf("Event Hubs [%s] found for binding [%s]", destination, bindingName)
+				if strings.Contains(bindingName, "-in-") { // Example: consume-in-0
+					containsInBinding = true
+				}
+				if !contains(destinations, destination) {
+					destinations = append(destinations, destination)
+					log.Printf("Event Hubs [%s] found for binding [%s]", destination, bindingName)
+				}
 			}
 			project.AzureDeps = append(project.AzureDeps, AzureDepEventHubs{
 				Names: destinations,
 			})
+			if containsInBinding {
+				project.AzureDeps = append(project.AzureDeps, AzureDepStorageAccount{
+					ContainerNames: []string{
+						applicationProperties["spring.cloud.azure.eventhubs.processor.checkpoint-store.container-name"]},
+				})
+			}
 		}
 	}
 
@@ -210,7 +224,8 @@ func readProperties(projectPath string) map[string]string {
 	readPropertiesInYamlFile(filepath.Join(projectPath, "/src/main/resources/application.yaml"), result)
 	profile, profileSet := result["spring.profiles.active"]
 	if profileSet {
-		readPropertiesInPropertiesFile(filepath.Join(projectPath, "/src/main/resources/application-"+profile+".properties"), result)
+		readPropertiesInPropertiesFile(
+			filepath.Join(projectPath, "/src/main/resources/application-"+profile+".properties"), result)
 		readPropertiesInYamlFile(filepath.Join(projectPath, "/src/main/resources/application-"+profile+".yml"), result)
 		readPropertiesInYamlFile(filepath.Join(projectPath, "/src/main/resources/application-"+profile+".yaml"), result)
 	}
@@ -320,4 +335,13 @@ func findBindingDestinations(properties map[string]string) map[string]string {
 	}
 
 	return result
+}
+
+func contains(array []string, str string) bool {
+	for _, v := range array {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }

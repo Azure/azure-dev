@@ -214,6 +214,8 @@ func (i *Initializer) infraSpecFromDetect(
 				serviceSpec.AzureServiceBus = spec.AzureServiceBus
 			case appdetect.AzureDepEventHubs:
 				serviceSpec.AzureEventHubs = spec.AzureEventHubs
+			case appdetect.AzureDepStorageAccount:
+				serviceSpec.AzureStorageAccount = spec.AzureStorageAccount
 			}
 		}
 		spec.Services = append(spec.Services, serviceSpec)
@@ -346,26 +348,36 @@ azureDepPrompt:
 			}
 		}
 
+		authType := scaffold.AuthType(0)
 		switch azureDep.(type) {
 		case appdetect.AzureDepServiceBus:
-			authType, err := i.chooseAuthType(ctx, azureDepName)
+			_authType, err := i.console.Prompt(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Input the authentication type you want for (%s), "+
+					"1 for connection string, 2 for managed identity", azureDep.ResourceDisplay()),
+				Help: "Authentication type:\n\n" +
+					"Enter 1 if you want to use connection string to connect to the Service Bus.\n" +
+					"Enter 2 if you want to use user assigned managed identity to connect to the Service Bus.",
+			})
 			if err != nil {
 				return err
 			}
+
+			if _authType != "1" && _authType != "2" {
+				i.console.Message(ctx, "Invalid authentication type. Please enter 0 or 1.")
+				continue azureDepPrompt
+			}
+			if _authType == "1" {
+				authType = scaffold.AuthType_PASSWORD
+			} else {
+				authType = scaffold.AuthType_TOKEN_CREDENTIAL
+			}
+		}
+
+		switch dependency := azureDep.(type) {
+		case appdetect.AzureDepServiceBus:
 			spec.AzureServiceBus = &scaffold.AzureDepServiceBus{
 				Name:                      azureDepName,
-				Queues:                    azureDep.(appdetect.AzureDepServiceBus).Queues,
-				AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
-				AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
-			}
-		case appdetect.AzureDepEventHubs:
-			authType, err := i.chooseAuthType(ctx, azureDepName)
-			if err != nil {
-				return err
-			}
-			spec.AzureEventHubs = &scaffold.AzureDepEventHubs{
-				Name:                      azureDepName,
-				EventHubNames:             azureDep.(appdetect.AzureDepEventHubs).Names,
+				Queues:                    dependency.Queues,
 				AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
 				AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
 			}
@@ -374,23 +386,4 @@ azureDepPrompt:
 		break azureDepPrompt
 	}
 	return nil
-}
-
-func (i *Initializer) chooseAuthType(ctx context.Context, serviceName string) (scaffold.AuthType, error) {
-	portOptions := []string{
-		"User assigned managed identity",
-		"Connection string",
-	}
-	selection, err := i.console.Select(ctx, input.ConsoleOptions{
-		Message: "Choose auth type for '" + serviceName + "'?",
-		Options: portOptions,
-	})
-	if err != nil {
-		return scaffold.AUTH_TYPE_UNSPECIFIED, err
-	}
-	if selection == 0 {
-		return scaffold.AuthType_TOKEN_CREDENTIAL, nil
-	} else {
-		return scaffold.AuthType_PASSWORD, nil
-	}
 }

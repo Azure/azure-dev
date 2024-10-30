@@ -15,10 +15,9 @@ type InfraSpec struct {
 	DbCosmosMongo *DatabaseCosmosMongo
 	DbRedis       *DatabaseRedis
 
-	// Azure Service Bus
-	AzureServiceBus *AzureDepServiceBus
-	// Azure EventHubs
-	AzureEventHubs *AzureDepEventHubs
+	AzureServiceBus     *AzureDepServiceBus
+	AzureEventHubs      *AzureDepEventHubs
+	AzureStorageAccount *AzureDepStorageAccount
 }
 
 type Parameter struct {
@@ -64,6 +63,13 @@ type AzureDepEventHubs struct {
 	AuthUsingManagedIdentity  bool
 }
 
+type AzureDepStorageAccount struct {
+	Name                      string
+	ContainerNames            []string
+	AuthUsingConnectionString bool
+	AuthUsingManagedIdentity  bool
+}
+
 // AuthType defines different authentication types.
 type AuthType int32
 
@@ -91,10 +97,9 @@ type ServiceSpec struct {
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
 
-	// Azure Service Bus
-	AzureServiceBus *AzureDepServiceBus
-	// Azure Service Bus
-	AzureEventHubs *AzureDepEventHubs
+	AzureServiceBus     *AzureDepServiceBus
+	AzureEventHubs      *AzureDepEventHubs
+	AzureStorageAccount *AzureDepStorageAccount
 }
 
 type Frontend struct {

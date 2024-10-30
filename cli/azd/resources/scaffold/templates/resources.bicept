@@ -167,6 +167,41 @@ module eventHubsConnectionString './modules/set-event-hubs-namespace-connection-
 }
 {{end}}
 {{end}}
+{{- if .AzureStorageAccount }}
+var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
+module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
+  name: 'storageAccount'
+  params: {
+    name: storageAccountName
+    publicNetworkAccess: 'Enabled'
+    blobServices: {
+      containers: [
+        {{- range $index, $element := .AzureStorageAccount.ContainerNames}}
+        {
+          name: '{{ $element }}'
+        }
+        {{- end}}
+      ]
+    }
+    location: location
+    roleAssignments: [
+      {{- if (and .AzureStorageAccount .AzureStorageAccount.AuthUsingManagedIdentity) }}
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+      }
+      {{- end}}
+      {{- end}}
+    ]
+    networkAcls: {
+      defaultAction: 'Allow'
+    }
+    tags: tags
+  }
+}
+{{end}}
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
@@ -361,6 +396,22 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_CLIENTID'
             value: ''
+          }
+          {{- end}}
+          {{- if .AzureStorageAccount }}
+          {
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_PROCESSOR_CHECKPOINTSTORE_ACCOUNTNAME'
+            value: storageAccountName
+          }
+          {{- end}}
+          {{- if (and .AzureStorageAccount .AzureStorageAccount.AuthUsingManagedIdentity) }}
+          {
+            name: 'SPRING_CLOUD_AZURE_STORAGE_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            value: 'true'
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_STORAGE_CREDENTIAL_CLIENTID'
+            value: {{bicepName .Name}}Identity.outputs.clientId
           }
           {{- end}}
           {{- if .Frontend}}

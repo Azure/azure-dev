@@ -153,6 +153,14 @@ func (a AzureDepEventHubs) ResourceDisplay() string {
 	return "Azure Event Hubs"
 }
 
+type AzureDepStorageAccount struct {
+	ContainerNames []string
+}
+
+func (a AzureDepStorageAccount) ResourceDisplay() string {
+	return "Azure Storage Account"
+}
+
 type Project struct {
 	// The language associated with the project.
 	Language Language

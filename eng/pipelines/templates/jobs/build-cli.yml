@@ -100,6 +100,7 @@ jobs:
           keepAzSessionActive: true
           # hiding log in output because keepAzSessionActive will keep displaying the output constantly.
           visibleAzLogin: false
+          addSpnToEnvironment: true
           scriptType: pscore
           scriptLocation: scriptPath
           scriptPath: cli/azd/ci-test.ps1

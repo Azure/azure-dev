@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -797,14 +799,22 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 			Template:                  armTemplate,
 		},
 	}
-	poller, err := client.BeginValidateStackAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
+
+	var rawResponse *http.Response
+	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
+
+	poller, err := client.BeginValidateStackAtResourceGroup(ctxWithResp, resourceGroup, deploymentName, stack, nil)
 	if err != nil {
-		return err
+		return validatePreflightError(rawResponse, err, "resource group")
 	}
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return err
+		deploymentError := createDeploymentError(err)
+		return fmt.Errorf(
+			"validating preflight to resource group:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
 	}
 
 	return nil
@@ -856,14 +866,22 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 			Template:                  armTemplate,
 		},
 	}
-	poller, err := client.BeginValidateStackAtSubscription(ctx, deploymentName, stack, nil)
+
+	var rawResponse *http.Response
+	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
+
+	poller, err := client.BeginValidateStackAtSubscription(ctxWithResp, deploymentName, stack, nil)
 	if err != nil {
-		return err
+		return validatePreflightError(rawResponse, err, "subscription")
 	}
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return err
+		deploymentError := createDeploymentError(err)
+		return fmt.Errorf(
+			"validating preflight to subscription:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
 	}
 
 	return nil

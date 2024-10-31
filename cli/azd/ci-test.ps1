@@ -29,6 +29,9 @@ if ($AzCliAuth) {
     Write-Host "ARM_CLIENT_ID: $($env:ARM_CLIENT_ID)"
     $env:ARM_TENANT_ID = $env:tenantId
     Write-Host "ARM_TENANT_ID: $($env:ARM_TENANT_ID)"
+
+    # Set default subscription for azd
+    & $azdCliPath config set defaults.subscription $env:AZD_TEST_AZURE_SUBSCRIPTION_ID
 }
 
 $gopath = go env GOPATH

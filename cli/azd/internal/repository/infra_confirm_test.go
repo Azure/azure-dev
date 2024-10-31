@@ -162,6 +162,10 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				},
 			},
 			interactions: []string{
+				"my app db",
+				"n",
+				"my$special$db",
+				"n",
 				"myappdb", // fill in db name
 			},
 			want: scaffold.InfraSpec{

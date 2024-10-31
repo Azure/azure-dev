@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -242,9 +243,13 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
 
 	// Create the infra spec
-	infraSpec, err := i.infraSpecFromDetect(ctx, detect)
-	if err != nil {
-		return err
+	var infraSpec *scaffold.InfraSpec
+	if !i.features.IsEnabled(alpha.Compose) { // backwards compatibility
+		spec, err := i.infraSpecFromDetect(ctx, detect)
+		if err != nil {
+			return err
+		}
+		infraSpec = &spec
 	}
 
 	// Prompt for environment before proceeding with generation
@@ -265,14 +270,16 @@ func (i *Initializer) InitFromApp(
 	}
 	i.console.StopSpinner(ctx, title, input.StepDone)
 
-	title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
-	i.console.ShowSpinner(ctx, title, input.Step)
-	err = i.genFromInfra(ctx, azdCtx, infraSpec)
-	if err != nil {
-		i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
-		return err
+	if infraSpec != nil {
+		title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
+		i.console.ShowSpinner(ctx, title, input.Step)
+		err = i.genFromInfra(ctx, azdCtx, *infraSpec)
+		if err != nil {
+			i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
+			return err
+		}
+		i.console.StopSpinner(ctx, title, input.StepDone)
 	}
-	i.console.StopSpinner(ctx, title, input.StepDone)
 
 	return nil
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -20,15 +19,8 @@ func Test_DevCenter_Client(t *testing.T) {
 	t.Skip("azure/azure-dev#2944")
 
 	publicCloud := cloud.AzurePublic()
-
-	clientOptionsBuilder := azsdk.NewClientOptionsBuilder().
-		WithTransport(http.DefaultClient).
-		WithCloud(publicCloud.Configuration)
-
-	armClientOptions := clientOptionsBuilder.BuildArmClientOptions()
-	coreClientOptions := clientOptionsBuilder.BuildCoreClientOptions()
-
 	mockContext := mocks.NewMockContext(context.Background())
+
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	authManager, err := auth.NewManager(
 		fileConfigManager,
@@ -43,12 +35,12 @@ func Test_DevCenter_Client(t *testing.T) {
 	credentials, err := authManager.CredentialForCurrentUser(*mockContext.Context, nil)
 	require.NoError(t, err)
 
-	resourceGraphClient, err := armresourcegraph.NewClient(credentials, armClientOptions)
+	resourceGraphClient, err := armresourcegraph.NewClient(credentials, mockContext.ArmClientOptions)
 	require.NoError(t, err)
 
 	client, err := NewDevCenterClient(
 		credentials,
-		coreClientOptions,
+		mockContext.CoreClientOptions,
 		resourceGraphClient,
 		publicCloud,
 	)

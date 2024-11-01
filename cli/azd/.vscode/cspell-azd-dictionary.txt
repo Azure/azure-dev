@@ -86,6 +86,7 @@ devcenters
 devcentersdk
 devdeviceid
 devel
+diffmatchpatch
 discarder
 docf
 dockerfiles
@@ -94,6 +95,7 @@ doublestar
 dskip
 eastus
 endregion
+entra
 entraid
 envlist
 envname
@@ -192,6 +194,7 @@ semconv
 serverfarms
 servicebus
 setenvs
+skus
 snapshotter
 springapp
 sqlserver

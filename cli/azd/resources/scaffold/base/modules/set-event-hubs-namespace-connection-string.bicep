@@ -14,7 +14,6 @@ resource connectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' =
   name: connectionStringSecretName
   parent: keyVault
   properties: {
-    value: listKeys(concat(resourceId('Microsoft.EventHub/namespaces', eventHubsNamespaceName), '/AuthorizationRules/RootManageSharedAccessKey'), '2024-01-01').primaryConnectionString
+    value: listKeys(concat(resourceId('Microsoft.EventHub/namespaces', eventHubsNamespaceName), '/AuthorizationRules/RootManageSharedAccessKey'), eventHubsNamespace.apiVersion).primaryConnectionString
   }
 }
-

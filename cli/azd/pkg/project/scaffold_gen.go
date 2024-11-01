@@ -154,7 +154,7 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				Port: -1,
 			}
 
-			err := mapContainerApp(res, &svcSpec)
+			err := mapContainerApp(res, &svcSpec, &infraSpec)
 			if err != nil {
 				return nil, err
 			}
@@ -203,17 +203,36 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	return &infraSpec, nil
 }
 
-func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec) error {
+func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec) error {
 	props := res.Props.(ContainerAppProps)
 	for _, envVar := range props.Env {
+		if len(envVar.Value) == 0 && len(envVar.Secret) == 0 {
+			return fmt.Errorf(
+				"environment variable %s for host %s is invalid: both value and secret are empty",
+				envVar.Name,
+				res.Name)
+		}
+
+		if len(envVar.Value) > 0 && len(envVar.Secret) > 0 {
+			return fmt.Errorf(
+				"environment variable %s for host %s is invalid: both value and secret are set",
+				envVar.Name,
+				res.Name)
+		}
+
 		isSecret := len(envVar.Secret) > 0
 		value := envVar.Value
 		if isSecret {
-			// TODO: handle secrets
-			continue
+			value = envVar.Secret
 		}
 
-		svcSpec.Env[envVar.Name] = value
+		// Notice that we derive isSecret from its usage.
+		// This is generally correct, except for the case where:
+		// - CONNECTION_STRING: ${DB_HOST}:${DB_SECRET}
+		// Here, DB_HOST is not a secret, but DB_SECRET is. And yet, DB_HOST will be marked as a secret.
+		// This is a limitation of the current implementation, but it's safer to mark both as secrets above.
+		evaluatedValue := genBicepParamsFromEnvSubst(value, isSecret, infraSpec)
+		svcSpec.Env[envVar.Name] = evaluatedValue
 	}
 
 	port := props.Port
@@ -255,4 +274,74 @@ func mapHostUses(
 	}
 
 	return nil
+}
+
+func setParameter(spec *scaffold.InfraSpec, name string, value string, isSecret bool) {
+	for _, parameters := range spec.Parameters {
+		if parameters.Name == name { // handle existing parameter
+			if isSecret && !parameters.Secret {
+				// escalate the parameter to a secret
+				parameters.Secret = true
+			}
+
+			// prevent auto-generated parameters from being overwritten with different values
+			if valStr, ok := parameters.Value.(string); !ok || ok && valStr != value {
+				// if you are a maintainer and run into this error, consider using a different, unique name
+				panic(fmt.Sprintf(
+					"parameter collision: parameter %s already set to %s, cannot set to %s", name, parameters.Value, value))
+			}
+
+			return
+		}
+	}
+
+	spec.Parameters = append(spec.Parameters, scaffold.Parameter{
+		Name:   name,
+		Value:  value,
+		Type:   "string",
+		Secret: isSecret,
+	})
+}
+
+// genBicepParamsFromEnvSubst generates Bicep input parameters from a string containing envsubst expression(s),
+// returning the substituted string that references these parameters.
+//
+// If the string is a literal, it is returned as is.
+// If isSecret is true, the parameter is marked as a secret.
+func genBicepParamsFromEnvSubst(
+	s string,
+	isSecret bool,
+	infraSpec *scaffold.InfraSpec) string {
+	names, locations := parseEnvSubstVariables(s)
+
+	// add all expressions as parameters
+	for i, name := range names {
+		expression := s[locations[i].start : locations[i].stop+1]
+		setParameter(infraSpec, scaffold.BicepName(name), expression, isSecret)
+	}
+
+	var result string
+	if len(names) == 0 {
+		// literal string with no expressions, quote the value as a Bicep string
+		result = "'" + s + "'"
+	} else if len(names) == 1 {
+		// single expression, return the bicep parameter name to reference the expression
+		result = scaffold.BicepName(names[0])
+	} else {
+		// multiple expressions
+		// construct the string with all expressions replaced by parameter references as a Bicep interpolated string
+		previous := 0
+		result = "'"
+		for i, loc := range locations {
+			// replace each expression with references by variable name
+			result += s[previous:loc.start]
+			result += "${"
+			result += scaffold.BicepName(names[i])
+			result += "}"
+			previous = loc.stop + 1
+		}
+		result += "'"
+	}
+
+	return result
 }

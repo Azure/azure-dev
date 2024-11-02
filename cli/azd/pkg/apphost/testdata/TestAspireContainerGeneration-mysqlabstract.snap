@@ -30,21 +30,25 @@ properties:
         value: '{{ securedParameter "mysqlabstract_pas_sw_ord" }}'
   template:
     volumes:
-      - name: mysqlabstract-projectapphost-volumeone
+      - name: mysqlabstract-projectapphostvolumeone
         storageType: AzureFile
-        storageName: {{ .Env.SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME }} 
+        storageName: {{ .Env.SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOSTVOLUMEONE_NAME }} 
     containers:
       - image: {{ .Image }}
         name: mysqlabstract
         env:
           - name: AZURE_CLIENT_ID
             value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
+          - name: EMPTY_VALUE
+            value: '{{ parameterWithDefault "param_with_empty_value" ""}}'
+          - name: WITH_VALUE
+            value: '{{ parameterWithDefault "param_with_value" "default value for param"}}'
           - name: MYSQL_ROOT_PASSWORD
             secretRef: mysql-root-password
           - name: SpecialChar
             secretRef: specialchar
         volumeMounts:
-          - volumeName: mysqlabstract-projectapphost-volumeone
+          - volumeName: mysqlabstract-projectapphostvolumeone
             mountPath: /data/db
     scale:
       minReplicas: 1

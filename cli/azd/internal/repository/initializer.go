@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -32,6 +33,7 @@ type Initializer struct {
 	console        input.Console
 	gitCli         *git.Cli
 	dotnetCli      *dotnet.Cli
+	features       *alpha.FeatureManager
 	lazyEnvManager *lazy.Lazy[environment.Manager]
 }
 
@@ -39,6 +41,7 @@ func NewInitializer(
 	console input.Console,
 	gitCli *git.Cli,
 	dotnetCli *dotnet.Cli,
+	features *alpha.FeatureManager,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 ) *Initializer {
 	return &Initializer{
@@ -46,6 +49,7 @@ func NewInitializer(
 		gitCli:         gitCli,
 		lazyEnvManager: lazyEnvManager,
 		dotnetCli:      dotnetCli,
+		features:       features,
 	}
 }
 
@@ -425,7 +429,7 @@ func (i *Initializer) writeFileSafe(
 func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
 	if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
-		_, err = project.New(ctx, azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
+		_, err = project.New(ctx, azdCtx.ProjectPath(), azdcontext.ProjectName(azdCtx.ProjectDirectory()))
 		if err != nil {
 			return fmt.Errorf("failed to create a project file: %w", err)
 		}

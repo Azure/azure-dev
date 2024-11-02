@@ -307,9 +307,20 @@ func Test_CLI_ProvisionState(t *testing.T) {
 
 	expectedOutputContains := "There are no changes to provision for your application."
 
+	// Provision preview should show creation of storage account
+	preview, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--preview")
+	require.NoError(t, err)
+	require.Contains(t, preview.Stdout, "Create : Storage account")
+
+	// First provision creates all resources
 	initial, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 	require.NotContains(t, initial.Stdout, expectedOutputContains)
+
+	// Second preview shows no changes required for storage account
+	secondPreview, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--preview")
+	require.NoError(t, err)
+	require.NotContains(t, secondPreview.Stdout, "Skip : Storage account")
 
 	// Second provision should use cache
 	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")

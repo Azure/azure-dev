@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/braydonk/yaml"
 	"github.com/sethvargo/go-retry"
-	"gopkg.in/yaml.v3"
 )
 
 var (

@@ -77,6 +77,51 @@ func TestExecInfra(t *testing.T) {
 			},
 		},
 		{
+			"All",
+			InfraSpec{
+				DbPostgres: &DatabasePostgres{
+					DatabaseName: "appdb",
+				},
+				DbCosmosMongo: &DatabaseCosmosMongo{
+					DatabaseName: "appdb",
+				},
+				DbRedis: &DatabaseRedis{},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						Backend: &Backend{
+							Frontends: []ServiceReference{
+								{
+									Name: "web",
+								},
+							},
+						},
+						DbCosmosMongo: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+						DbRedis: &DatabaseReference{
+							DatabaseName: "redis",
+						},
+						DbPostgres: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+					},
+					{
+						Name: "web",
+						Port: 3101,
+						Frontend: &Frontend{
+							Backends: []ServiceReference{
+								{
+									Name: "api",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			"API with Postgres",
 			InfraSpec{
 				DbPostgres: &DatabasePostgres{
@@ -114,6 +159,7 @@ func TestExecInfra(t *testing.T) {
 		{
 			"API with Redis",
 			InfraSpec{
+				DbRedis: &DatabaseRedis{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",

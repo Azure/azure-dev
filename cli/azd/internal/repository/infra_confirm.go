@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -24,52 +25,17 @@ func (i *Initializer) infraSpecFromDetect(
 	detect detectConfirm) (scaffold.InfraSpec, error) {
 	spec := scaffold.InfraSpec{}
 	for database := range detect.Databases {
-		if database == appdetect.DbRedis { // no configuration needed for redis
+		if database == appdetect.DbRedis {
+			spec.DbRedis = &scaffold.DatabaseRedis{}
+			// no further configuration needed for redis
 			continue
 		}
 
 	dbPrompt:
 		for {
-			dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Input the name of the app database (%s)", database.Display()),
-				Help: "Hint: App database name\n\n" +
-					"Name of the database that the app connects to. " +
-					"This database will be created after running azd provision or azd up." +
-					"\nYou may be able to skip this step by hitting enter, in which case the database will not be created.",
-			})
+			dbName, err := i.promptDbName(ctx, database)
 			if err != nil {
 				return scaffold.InfraSpec{}, err
-			}
-
-			if strings.ContainsAny(dbName, " ") {
-				i.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: "Database name contains whitespace. This might not be allowed by the database server.",
-				})
-				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
-				})
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-
-				if !confirm {
-					continue dbPrompt
-				}
-			} else if !wellFormedDbNameRegex.MatchString(dbName) {
-				i.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: "Database name contains special characters. " +
-						"This might not be allowed by the database server.",
-				})
-				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
-				})
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-
-				if !confirm {
-					continue dbPrompt
-				}
 			}
 
 			switch database {
@@ -77,7 +43,6 @@ func (i *Initializer) infraSpecFromDetect(
 				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
 					DatabaseName: dbName,
 				}
-
 				break dbPrompt
 			case appdetect.DbPostgres:
 				if dbName == "" {
@@ -94,7 +59,7 @@ func (i *Initializer) infraSpecFromDetect(
 	}
 
 	for _, svc := range detect.Services {
-		name := filepath.Base(svc.Path)
+		name := names.LabelName(filepath.Base(svc.Path))
 		serviceSpec := scaffold.ServiceSpec{
 			Name: name,
 			Port: -1,
@@ -103,9 +68,42 @@ func (i *Initializer) infraSpecFromDetect(
 		if svc.Docker == nil || svc.Docker.Path == "" {
 			// default builder always specifies port 80
 			serviceSpec.Port = 80
-
 			if svc.Language == appdetect.Java {
 				serviceSpec.Port = 8080
+			}
+		} else {
+			ports := svc.Docker.Ports
+			if len(ports) == 0 {
+				port, err := i.getPortByPrompt(ctx, "What port does '"+serviceSpec.Name+"' listen on?")
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				serviceSpec.Port = port
+			} else if len(ports) == 1 {
+				serviceSpec.Port = ports[0].Number
+			} else {
+				var portOptions []string
+				for _, port := range ports {
+					portOptions = append(portOptions, strconv.Itoa(port.Number))
+				}
+				inputAnotherPortOption := "Other"
+				portOptions = append(portOptions, inputAnotherPortOption)
+				selection, err := i.console.Select(ctx, input.ConsoleOptions{
+					Message: "What port does '" + serviceSpec.Name + "' listen on?",
+					Options: portOptions,
+				})
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				if selection < len(ports) {
+					serviceSpec.Port = ports[selection].Number
+				} else {
+					port, err := i.getPortByPrompt(ctx, "Provide the port number for '"+serviceSpec.Name+"':")
+					if err != nil {
+						return scaffold.InfraSpec{}, err
+					}
+					serviceSpec.Port = port
+				}
 			}
 		}
 
@@ -142,32 +140,6 @@ func (i *Initializer) infraSpecFromDetect(
 	backends := []scaffold.ServiceReference{}
 	frontends := []scaffold.ServiceReference{}
 	for idx := range spec.Services {
-		if spec.Services[idx].Port == -1 {
-			var port int
-			for {
-				val, err := i.console.Prompt(ctx, input.ConsoleOptions{
-					Message: "What port does '" + spec.Services[idx].Name + "' listen on?",
-				})
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-
-				port, err = strconv.Atoi(val)
-				if err != nil {
-					i.console.Message(ctx, "Port must be an integer.")
-					continue
-				}
-
-				if port < 1 || port > 65535 {
-					i.console.Message(ctx, "Port must be a value between 1 and 65535.")
-					continue
-				}
-
-				break
-			}
-			spec.Services[idx].Port = port
-		}
-
 		if spec.Services[idx].Frontend == nil && spec.Services[idx].Port != 0 {
 			backends = append(backends, scaffold.ServiceReference{
 				Name: spec.Services[idx].Name,
@@ -193,4 +165,78 @@ func (i *Initializer) infraSpecFromDetect(
 	}
 
 	return spec, nil
+}
+
+func (i *Initializer) getPortByPrompt(ctx context.Context, promptMessage string) (int, error) {
+	var port int
+	for {
+		val, err := i.console.Prompt(ctx, input.ConsoleOptions{
+			Message: promptMessage,
+		})
+		if err != nil {
+			return -1, err
+		}
+
+		port, err = strconv.Atoi(val)
+		if err != nil {
+			i.console.Message(ctx, "Port must be an integer.")
+			continue
+		}
+
+		if port < 1 || port > 65535 {
+			i.console.Message(ctx, "Port must be a value between 1 and 65535.")
+			continue
+		}
+
+		break
+	}
+	return port, nil
+}
+
+func (i *Initializer) promptDbName(ctx context.Context, database appdetect.DatabaseDep) (string, error) {
+	for {
+		dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the name of the app database (%s)", database.Display()),
+			Help: "Hint: App database name\n\n" +
+				"Name of the database that the app connects to. " +
+				"This database will be created after running azd provision or azd up." +
+				"\nYou may be able to skip this step by hitting enter, in which case the database will not be created.",
+		})
+		if err != nil {
+			return "", err
+		}
+
+		if strings.ContainsAny(dbName, " ") {
+			i.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: "Database name contains whitespace. This might not be allowed by the database server.",
+			})
+			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Continue with name '%s'?", dbName),
+			})
+			if err != nil {
+				return "", err
+			}
+
+			if !confirm {
+				continue
+			}
+		} else if !wellFormedDbNameRegex.MatchString(dbName) {
+			i.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: "Database name contains special characters. " +
+					"This might not be allowed by the database server.",
+			})
+			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("Continue with name '%s'?", dbName),
+			})
+			if err != nil {
+				return "", err
+			}
+
+			if !confirm {
+				continue
+			}
+		}
+
+		return dbName, nil
+	}
 }

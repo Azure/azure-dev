@@ -61,6 +61,15 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
     name: '${abbrs.appManagedEnvironments}${resourceToken}'
     location: location
     zoneRedundant: false
+    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
   }
 }
 {{- end}}
@@ -96,8 +105,8 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
 {{- end}}
 
 {{- if .DbPostgres}}
-var databaseName = '{{ .DbPostgres.DatabaseName }}'
-var databaseUser = 'psqladmin'
+var postgreSqlDatabaseName = '{{ .DbPostgres.DatabaseName }}'
+var postgreSqlDatabaseUser = 'psqladmin'
 module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
   name: 'postgreServer'
   params: {
@@ -106,8 +115,8 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     skuName: 'Standard_B1ms'
     tier: 'Burstable'
     // Non-required parameters
-    administratorLogin: databaseUser
-    administratorLoginPassword: databasePassword
+    administratorLogin: postgreSqlDatabaseUser
+    administratorLoginPassword: postgreSqlDatabasePassword
     geoRedundantBackup: 'Disabled'
     passwordAuth:'Enabled'
     firewallRules: [
@@ -119,12 +128,52 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     ]
     databases: [
       {
-        name: databaseName
+        name: postgreSqlDatabaseName
       }
     ]
     location: location
+    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
   }
 }
+{{- end}}
+{{- if (or (and .DbMySql .DbMySql.AuthUsingManagedIdentity) (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity))}}
+
+module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
+  name: 'connectionCreatorIdentity'
+  params: {
+    name: '${abbrs.managedIdentityUserAssignedIdentities}cci-${resourceToken}'
+    location: location
+  }
+}
+{{- end}}
+{{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+{{- range .Services}}
+module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
+  name: '{{bicepName .Name}}CreateConnectionToPostgreSql'
+  params: {
+    kind: 'AzureCLI'
+    name: '${abbrs.deploymentScript}{{bicepName .Name}}-connection-to-pg-${resourceToken}'
+    azCliVersion: '2.63.0'
+    location: location
+    managedIdentities: {
+      userAssignedResourcesIds: [
+        connectionCreatorIdentity.outputs.resourceId
+      ]
+    }
+    runOnce: false
+    retentionInterval: 'P1D'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create postgres-flexible --connection appLinkToPostgres --source-id ${ {{bicepName .Name}}.outputs.resourceId} --target-id ${postgreServer.outputs.resourceId}/databases/${postgreSqlDatabaseName} --client-type springBoot --user-identity client-id=${ {{bicepName .Name}}Identity.outputs.clientId} subs-id=${subscription().subscriptionId} user-object-id=${connectionCreatorIdentity.outputs.principalId} -c main --yes;'
+  }
+}
+{{- end}}
 {{- end}}
 {{- if .AzureEventHubs }}
 
@@ -266,6 +315,15 @@ module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assi
   params: {
     name: '${abbrs.managedIdentityUserAssignedIdentities}{{bicepName .Name}}-${resourceToken}'
     location: location
+    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
   }
 }
 
@@ -315,14 +373,14 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           keyVaultUrl: '${keyVault.outputs.uri}secrets/MONGODB-URL'
         }
         {{- end}}
-        {{- if .DbPostgres}}
+        {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword) }}
         {
-          name: 'db-pass'
-          value: databasePassword
+          name: 'postgresql-password'
+          value: postgreSqlDatabasePassword
         }
         {
-          name: 'db-url'
-          value: 'postgresql://${databaseUser}:${databasePassword}@${postgreServer.outputs.fqdn}:5432/${databaseName}'
+          name: 'postgresql-db-url'
+          value: 'postgresql://${postgreSqlDatabaseUser}:${postgreSqlDatabasePassword}@${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'
         }
         {{- end}}
         {{- if .DbRedis}}
@@ -393,24 +451,38 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: postgreServer.outputs.fqdn
           }
           {
-            name: 'POSTGRES_USERNAME'
-            value: databaseUser
-          }
-          {
             name: 'POSTGRES_DATABASE'
-            value: databaseName
-          }
-          {
-            name: 'POSTGRES_PASSWORD'
-            secretRef: 'db-pass'
-          }
-          {
-            name: 'POSTGRES_URL'
-            secretRef: 'db-url'
+            value: postgreSqlDatabaseName
           }
           {
             name: 'POSTGRES_PORT'
             value: '5432'
+          }
+          {
+            name: 'SPRING_DATASOURCE_URL'
+            value: 'jdbc:postgresql://${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'
+          }
+          {{- end}}
+          {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword) }}
+          {
+            name: 'POSTGRES_URL'
+            secretRef: 'postgresql-db-url'
+          }
+          {
+            name: 'POSTGRES_USERNAME'
+            value: postgreSqlDatabaseUser
+          }
+          {
+            name: 'POSTGRES_PASSWORD'
+            secretRef: 'postgresql-password'
+          }
+          {
+            name: 'SPRING_DATASOURCE_USERNAME'
+            value: postgreSqlDatabaseUser
+          }
+          {
+            name: 'SPRING_DATASOURCE_PASSWORD'
+            secretRef: 'postgresql-password'
           }
           {{- end}}
           {{- if .DbRedis}}
@@ -574,6 +646,15 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     environmentResourceId: containerAppsEnvironment.outputs.resourceId
     location: location
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
+    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
   }
 }
 {{- end}}
@@ -627,10 +708,10 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
       {{- end}}
     ]
     secrets: [
-      {{- if .DbPostgres}}
+      {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword) }}
       {
-        name: 'db-pass'
-        value: databasePassword
+        name: 'postgresql-password'
+        value: postgreSqlDatabasePassword
       }
       {{- end}}
     ]

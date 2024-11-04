@@ -135,11 +135,20 @@ func ExecInfra(
 
 func preExecExpand(spec *InfraSpec) {
 	// postgres and mysql requires specific password seeding parameters
-	if spec.DbPostgres != nil || spec.DbMySql != nil {
+	if spec.DbPostgres != nil {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
-				Name:   "databasePassword",
-				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} databasePassword)",
+				Name:   "postgreSqlDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} postgreSqlDatabasePassword)",
+				Type:   "string",
+				Secret: true,
+			})
+	}
+	if spec.DbMySql != nil {
+		spec.Parameters = append(spec.Parameters,
+			Parameter{
+				Name:   "mysqlDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} mysqlDatabasePassword)",
 				Type:   "string",
 				Secret: true,
 			})

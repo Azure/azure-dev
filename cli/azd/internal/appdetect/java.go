@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/braydonk/yaml"
 	"io/fs"
@@ -27,6 +29,7 @@ func (jd *javaDetector) Language() Language {
 func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "pom.xml" {
+			tracing.SetUsageAttributes(fields.AppInitJavaDetect.String("start"))
 			pomFile := filepath.Join(path, entry.Name())
 			project, err := readMavenProject(pomFile)
 			if err != nil {
@@ -58,6 +61,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				return nil, fmt.Errorf("detecting dependencies: %w", err)
 			}
 
+			tracing.SetUsageAttributes(fields.AppInitJavaDetect.String("finish"))
 			return result, nil
 		}
 	}

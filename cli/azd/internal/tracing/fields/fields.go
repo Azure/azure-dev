@@ -250,6 +250,9 @@ const (
 	AppInitModifyAddCount    = attribute.Key("appinit.modify_add.count")
 	AppInitModifyRemoveCount = attribute.Key("appinit.modify_remove.count")
 
+	// AppInitJavaDetect indicates if java detector has started or finished
+	AppInitJavaDetect = attribute.Key("appinit.java.detect")
+
 	// The last step recorded during the app init process.
 	AppInitLastStep = attribute.Key("appinit.lastStep")
 )

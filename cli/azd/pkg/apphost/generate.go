@@ -28,8 +28,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/braydonk/yaml"
 	"github.com/psanford/memfs"
-	"gopkg.in/yaml.v3"
 )
 
 const RedisContainerAppService = "redis"
@@ -1816,7 +1816,13 @@ func (b *infraGenerator) buildDeployBlock(
 				}
 			}
 		}
-
+		// make sure resolved value is quoted.
+		// We can't ask EvalString() to quote strings b/c it depends on evalBindingRef() which can return complex
+		// expressions where each part might be quoted or not.
+		// Instead, before setting the deploy parameter, we just verify that it's quoted.
+		if !strings.HasPrefix(resolvedValue, "'") {
+			resolvedValue = "'" + resolvedValue + "'"
+		}
 		manifestCtx.DeployParams[k] = resolvedValue
 	}
 

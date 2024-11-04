@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/psanford/memfs"
 )
 
 const baseRoot = "scaffold/base"
@@ -54,11 +55,11 @@ func copyFS(embedFs fs.FS, root string, target string) error {
 // To execute a named template, call Execute with the defined name.
 func Load() (*template.Template, error) {
 	funcMap := template.FuncMap{
-		"bicepName":         BicepName,
-		"containerAppInfix": ContainerAppInfix,
-		"upper":             strings.ToUpper,
-		"lower":             strings.ToLower,
-		"formatParam":       FormatParameter,
+		"bicepName":        BicepName,
+		"containerAppName": ContainerAppName,
+		"upper":            strings.ToUpper,
+		"lower":            strings.ToLower,
+		"formatParam":      FormatParameter,
 	}
 
 	t, err := template.New("templates").
@@ -115,35 +116,94 @@ func ExecInfra(
 		return err
 	}
 
-	if spec.DbCosmosMongo != nil {
-		err = Execute(t, "db-cosmos-mongo.bicep", spec.DbCosmosMongo, filepath.Join(infraApp, "db-cosmos-mongo.bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding cosmos mongodb: %w", err)
-		}
-	}
-
-	if spec.DbPostgres != nil {
-		err = Execute(t, "db-postgres.bicep", spec.DbPostgres, filepath.Join(infraApp, "db-postgres.bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding postgres: %w", err)
-		}
-	}
-
-	for _, svc := range spec.Services {
-		err = Execute(t, "host-containerapp.bicep", svc, filepath.Join(infraApp, svc.Name+".bicep"))
-		if err != nil {
-			return fmt.Errorf("scaffolding containerapp: %w", err)
-		}
-	}
-
 	err = Execute(t, "main.bicep", spec, filepath.Join(infraRoot, "main.bicep"))
 	if err != nil {
 		return fmt.Errorf("scaffolding main.bicep: %w", err)
 	}
 
+	err = Execute(t, "resources.bicep", spec, filepath.Join(infraRoot, "resources.bicep"))
+	if err != nil {
+		return fmt.Errorf("scaffolding resources.bicep: %w", err)
+	}
+
 	err = Execute(t, "main.parameters.json", spec, filepath.Join(infraRoot, "main.parameters.json"))
 	if err != nil {
 		return fmt.Errorf("scaffolding main.parameters.json: %w", err)
+	}
+
+	return nil
+}
+
+// ExecInfraFs scaffolds infrastructure files for the given spec, using the loaded templates in t. The resulting files
+// are written to the in-memory filesystem.
+func ExecInfraFs(
+	t *template.Template,
+	spec InfraSpec) (*memfs.FS, error) {
+	fs := memfs.New()
+
+	// Pre-execution expansion. Additional parameters are added, derived from the initial spec.
+	preExecExpand(&spec)
+
+	err := copyFsToMemFs(resources.ScaffoldBase, fs, baseRoot, ".")
+	if err != nil {
+		return nil, err
+	}
+
+	err = executeToFS(fs, t, "main.bicep", "main.bicep", spec)
+	if err != nil {
+		return nil, fmt.Errorf("scaffolding main.bicep: %w", err)
+	}
+
+	err = executeToFS(fs, t, "resources.bicep", "resources.bicep", spec)
+	if err != nil {
+		return nil, fmt.Errorf("scaffolding resources.bicep: %w", err)
+	}
+
+	err = executeToFS(fs, t, "main.parameters.json", "main.parameters.json", spec)
+	if err != nil {
+		return nil, fmt.Errorf("scaffolding main.parameters.json: %w", err)
+	}
+
+	return fs, nil
+}
+
+func copyFsToMemFs(embedFs fs.FS, targetFs *memfs.FS, root string, target string) error {
+	return fs.WalkDir(embedFs, root, func(name string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		targetPath := name[len(root):]
+		if target != "" {
+			targetPath = path.Join(target, name[len(root):])
+		}
+
+		if d.IsDir() {
+			return targetFs.MkdirAll(targetPath, osutil.PermissionDirectory)
+		}
+
+		contents, err := fs.ReadFile(embedFs, name)
+		if err != nil {
+			return fmt.Errorf("reading file: %w", err)
+		}
+		return targetFs.WriteFile(targetPath, contents, osutil.PermissionFile)
+	})
+}
+
+// executeToFS executes the given template with the given name and context, and writes the result to the given path in
+// the given target filesystem.
+func executeToFS(targetFS *memfs.FS, tmpl *template.Template, name string, path string, context any) error {
+	buf := bytes.NewBufferString("")
+
+	if err := tmpl.ExecuteTemplate(buf, name, context); err != nil {
+		return fmt.Errorf("executing template: %w", err)
+	}
+
+	if err := targetFS.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	if err := targetFS.WriteFile(path, buf.Bytes(), osutil.PermissionFile); err != nil {
+		return fmt.Errorf("writing file: %w", err)
 	}
 
 	return nil

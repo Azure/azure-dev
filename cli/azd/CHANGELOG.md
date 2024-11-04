@@ -10,6 +10,32 @@
 
 ### Other Changes
 
+## 1.10.3 (2024-10-16)
+
+### Bugs Fixed
+
+- [[4450]](https://github.com/Azure/azure-dev/pull/4450) fix `persistSettings` alpha feature.
+
+## 1.10.2 (2024-10-08)
+
+### Features Added
+
+- [[4272]](https://github.com/Azure/azure-dev/pull/4272) Supports configurable `api-version` for container app deployments.
+- [[4286]](https://github.com/Azure/azure-dev/pull/4286) Adds `alpha` feature `alpha.aspire.useBicepForContainerApps` to use bicep for container app deployment.
+- [[4371]](https://github.com/Azure/azure-dev/pull/4371) Adds support for `default.value` for `parameter.v0`.
+
+### Bugs Fixed
+
+- [[4375]](https://github.com/Azure/azure-dev/pull/4375) Enables remote build support for AKS.
+- [[4363]](https://github.com/Azure/azure-dev/pull/4363) Fix environment variables to be evaluated too early for `main.parameters.json`.
+
+### Other Changes
+
+- [[4336]](https://github.com/Azure/azure-dev/pull/4336) Adds spinner to `azd down`.
+- [[4357]](https://github.com/Azure/azure-dev/pull/4357) Updates `azure.yaml.json` for `remoteBuild`.
+- [[4369]](https://github.com/Azure/azure-dev/pull/4369) Updates docker `buildargs` to expandable strings.
+- [[4331]](https://github.com/Azure/azure-dev/pull/4331) Exposes configurable settings for `actionOnUnmanage` and `denySettings` for Azure Deployment Stacks (alpha).
+
 ## 1.10.1 (2024-09-05)
 
 ### Bugs Fixed

@@ -12,7 +12,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
-	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azadmin/rbac"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -206,24 +205,6 @@ func (kvs *keyVaultService) createSecretsDataClient(
 	}
 
 	return azsecrets.NewClient(vaultUrl, credential, options)
-}
-
-func (kvs *keyVaultService) createRbacClient(
-	ctx context.Context,
-	subscriptionId string,
-	vaultUrl string,
-) (*rbac.Client, error) {
-	credential, err := kvs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := &rbac.ClientOptions{
-		ClientOptions:                        *kvs.coreClientOptions,
-		DisableChallengeResourceVerification: false,
-	}
-
-	return rbac.NewClient(vaultUrl, credential, options)
 }
 
 type Vault struct {

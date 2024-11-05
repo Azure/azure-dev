@@ -7,7 +7,7 @@ interactions:
         - --username
         - 00000000-0000-0000-0000-000000000000
         - --password-stdin
-        - crsf5eumltrz36q.azurecr.io
+        - crhppqpnqio3zhy.azurecr.io
       exitCode: 0
       stdout: |
         Login Succeeded
@@ -15,28 +15,28 @@ interactions:
     - id: 1
       args:
         - push
-        - crsf5eumltrz36q.azurecr.io/containerapp/web-azdtest-w962778:azd-deploy-1724378473
+        - crhppqpnqio3zhy.azurecr.io/containerapp/web-azdtest-w8fae78:azd-deploy-1730776024
       exitCode: 0
       stdout: |
-        The push refers to repository [crsf5eumltrz36q.azurecr.io/containerapp/web-azdtest-w962778]
-        b7b31a6def4a: Preparing
-        f1eb51fe2419: Preparing
-        4b5f9ea48c8a: Preparing
-        8b270f8da824: Preparing
-        9102fd62231f: Preparing
-        e74c54caa59e: Preparing
-        f553d2208193: Preparing
-        9853575bc4f9: Preparing
-        f553d2208193: Waiting
-        9853575bc4f9: Waiting
-        e74c54caa59e: Waiting
-        b7b31a6def4a: Pushed
-        8b270f8da824: Pushed
-        f1eb51fe2419: Pushed
-        e74c54caa59e: Pushed
-        4b5f9ea48c8a: Pushed
-        f553d2208193: Pushed
-        9102fd62231f: Pushed
-        9853575bc4f9: Pushed
-        azd-deploy-1724378473: digest: sha256:0f7ab317d9babc433903bf13ac1333ab71fb25164850f97c10b3c1d0772d8109 size: 1995
+        The push refers to repository [crhppqpnqio3zhy.azurecr.io/containerapp/web-azdtest-w8fae78]
+        b5e97fa6565f: Preparing
+        70577ded96cb: Preparing
+        e6ffb4bfae03: Preparing
+        a82429eb8d3e: Preparing
+        869ab4bfb259: Preparing
+        63b82d419b18: Preparing
+        a990240cee6d: Preparing
+        98b5f35ea9d3: Preparing
+        63b82d419b18: Waiting
+        a990240cee6d: Waiting
+        98b5f35ea9d3: Waiting
+        70577ded96cb: Pushed
+        b5e97fa6565f: Pushed
+        a82429eb8d3e: Pushed
+        63b82d419b18: Pushed
+        869ab4bfb259: Pushed
+        a990240cee6d: Pushed
+        e6ffb4bfae03: Pushed
+        98b5f35ea9d3: Pushed
+        azd-deploy-1730776024: digest: sha256:ce8636f07b9d7412a5d8bc10bd46a9c84116828e902d8a65102796f7da0782e3 size: 1995
       stderr: ""

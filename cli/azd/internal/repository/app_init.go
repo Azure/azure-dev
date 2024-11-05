@@ -263,7 +263,7 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
 	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
-	err = i.genProjectFile(ctx, azdCtx, detect)
+	err = i.genProjectFile(ctx, azdCtx, detect, spec)
 	if err != nil {
 		return err
 	}
@@ -325,14 +325,15 @@ func (i *Initializer) InitFromApp(
 func (i *Initializer) genProjectFile(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	detect detectConfirm) error {
+	detect detectConfirm,
+	spec scaffold.InfraSpec) error {
 	title := "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
 
 	i.console.ShowSpinner(ctx, title, input.Step)
 	var err error
 	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 
-	config, err := prjConfigFromDetect(azdCtx.ProjectDirectory(), detect)
+	config, err := prjConfigFromDetect(azdCtx.ProjectDirectory(), detect, spec)
 	if err != nil {
 		return fmt.Errorf("converting config: %w", err)
 	}
@@ -351,13 +352,15 @@ const InitGenTemplateId = "azd-init"
 
 func prjConfigFromDetect(
 	root string,
-	detect detectConfirm) (project.ProjectConfig, error) {
+	detect detectConfirm,
+	spec scaffold.InfraSpec) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
 		Name: azdcontext.ProjectName(root),
 		Metadata: &project.ProjectMetadata{
 			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
 		},
-		Services: map[string]*project.ServiceConfig{},
+		Services:  map[string]*project.ServiceConfig{},
+		Resources: map[string]*project.ResourceConfig{},
 	}
 	for _, prj := range detect.Services {
 		rel, err := filepath.Rel(root, prj.Path)
@@ -410,6 +413,33 @@ func prjConfigFromDetect(
 					// angular uses dist/<project name>
 					svc.OutputPath = "dist/" + filepath.Base(rel)
 					break loop
+				}
+			}
+		}
+
+		for _, db := range prj.DatabaseDeps {
+			switch db {
+			case appdetect.DbMongo:
+				config.Resources["mongo"] = &project.ResourceConfig{
+					Type: project.ResourceTypeDbMongo,
+					Name: spec.DbCosmosMongo.DatabaseName,
+				}
+			case appdetect.DbPostgres:
+				config.Resources["postgres"] = &project.ResourceConfig{
+					Type: project.ResourceTypeDbPostgres,
+					Name: spec.DbPostgres.DatabaseName,
+				}
+			case appdetect.DbMySql:
+				config.Resources["mysql"] = &project.ResourceConfig{
+					Type: project.ResourceTypeDbMySQL,
+					Props: project.MySQLProps{
+						DatabaseName: spec.DbMySql.DatabaseName,
+						AuthType:     "managedIdentity",
+					},
+				}
+			case appdetect.DbRedis:
+				config.Resources["redis"] = &project.ResourceConfig{
+					Type: project.ResourceTypeDbRedis,
 				}
 			}
 		}

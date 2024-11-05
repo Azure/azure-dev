@@ -14,6 +14,7 @@ type ResourceType string
 const (
 	ResourceTypeDbRedis          ResourceType = "db.redis"
 	ResourceTypeDbPostgres       ResourceType = "db.postgres"
+	ResourceTypeDbMySQL          ResourceType = "db.mysql"
 	ResourceTypeDbMongo          ResourceType = "db.mongo"
 	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
 	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
@@ -25,6 +26,8 @@ func (r ResourceType) String() string {
 		return "Redis"
 	case ResourceTypeDbPostgres:
 		return "PostgreSQL"
+	case ResourceTypeDbMySQL:
+		return "MySQL"
 	case ResourceTypeDbMongo:
 		return "MongoDB"
 	case ResourceTypeHostContainerApp:
@@ -79,6 +82,11 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeDbMySQL:
+		err := marshalRawProps(raw.Props.(MySQLProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -118,6 +126,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeDbMySQL:
+		mp := MySQLProps{}
+		if err := unmarshalProps(&mp); err != nil {
+			return err
+		}
+		raw.Props = mp
 	}
 
 	*r = ResourceConfig(raw)
@@ -144,4 +158,9 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type MySQLProps struct {
+	DatabaseName string `yaml:"databaseName,omitempty"`
+	AuthType     string `yaml:"authType,omitempty"`
 }

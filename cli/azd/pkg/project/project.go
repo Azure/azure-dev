@@ -252,6 +252,13 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		copy.Services[name] = &svcCopy
 	}
 
+	for name, resource := range projectConfig.Resources {
+		resourceCopy := *resource
+		resourceCopy.Project = &copy
+
+		copy.Resources[name] = &resourceCopy
+	}
+
 	projectBytes, err := yaml.Marshal(copy)
 	if err != nil {
 		return fmt.Errorf("marshalling project yaml: %w", err)

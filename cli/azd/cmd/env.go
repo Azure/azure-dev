@@ -226,7 +226,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	if !willCreateNewSecret {
 		// reassign messages for selecting existing secret
 		pickSubscription = "Select the subscription where the Key Vault Secret is"
-		pickKvAccount = "Select the Key Vault where the secret is"
+		pickKvAccount = "Select the Key Vault where the secret is (requires Key Vault access)"
 	}
 
 	subId, err := e.prompter.PromptSubscription(ctx, pickSubscription)
@@ -327,7 +327,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			if err != nil {
 				return nil, fmt.Errorf("getting current principal ID: %w", err)
 			}
-			err = e.entraIdService.CreateRbac(ctx, subId, kvAccount.Id, keyvault.KeyVaultAdministrator, principalId)
+			err = e.entraIdService.CreateRbac(ctx, subId, kvAccount.Id, keyvault.RoleIdKeyVaultAdministrator, principalId)
 			if err != nil {
 				return nil, fmt.Errorf("creating Key Vault RBAC: %w", err)
 			}
@@ -335,11 +335,52 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 		}
 	}
 
-	// set the secret
+	var kvSecretName string
+	if willCreateNewSecret {
+		kvSecretName, err = e.console.Prompt(ctx, input.ConsoleOptions{
+			Message:      "Enter the name of the key vault secret",
+			DefaultValue: "my-kv-secret",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("prompting for secret name: %w", err)
+		}
+		kvSecretValue, err := e.console.Prompt(ctx, input.ConsoleOptions{
+			Message:    "Enter the value of the key vault secret",
+			IsPassword: true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("prompting for secret value: %w", err)
+		}
+		err = e.kvService.CreateKeyVaultSecret(ctx, subId, kvAccount.Name, kvSecretName, kvSecretValue)
+		if err != nil {
+			return nil, fmt.Errorf("setting Key Vault secret: %w", err)
+		}
+	} else {
+		secretsInKv, err := e.kvService.ListKeyVaultSecrets(ctx, subId, kvAccount.Name)
+		if err != nil {
+			return nil, fmt.Errorf("listing Key Vault secrets: %w", err)
+		}
+		if len(secretsInKv) == 0 {
+			return nil, fmt.Errorf("no secrets found in the selected Key Vault")
+		}
+		options := make([]string, len(secretsInKv))
+		for i, secret := range secretsInKv {
+			options[i] = fmt.Sprintf("%2d. %s", i+1, secret)
+		}
+		secretSelectionIndex, err := e.console.Select(ctx, input.ConsoleOptions{
+			Message:      "Select the Key Vault Secret",
+			Options:      options,
+			DefaultValue: options[0],
+		})
+		if err != nil {
+			return nil, fmt.Errorf("selecting Key Vault secret: %w", err)
+		}
+		kvSecretName = secretsInKv[secretSelectionIndex]
+	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "Selection: " + kvAccount.Name,
+			Header:   "Selection: " + kvAccount.Name + " secret " + kvSecretName,
 			FollowUp: "Not implemented yet",
 		},
 	}, nil

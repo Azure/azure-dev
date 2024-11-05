@@ -59,6 +59,18 @@ type KeyVaultService interface {
 		location string,
 		vaultName string,
 	) (Vault, error)
+	ListKeyVaultSecrets(
+		ctx context.Context,
+		subscriptionId string,
+		vaultName string,
+	) ([]string, error)
+	CreateKeyVaultSecret(
+		ctx context.Context,
+		subscriptionId string,
+		vaultName string,
+		secretName string,
+		secretValue string,
+	) error
 }
 
 type keyVaultService struct {
@@ -66,6 +78,19 @@ type keyVaultService struct {
 	armClientOptions   *arm.ClientOptions
 	coreClientOptions  *azcore.ClientOptions
 	cloud              *cloud.Cloud
+}
+
+// CreateKeyVaultSecret implements KeyVaultService.
+func (kvs *keyVaultService) CreateKeyVaultSecret(
+	ctx context.Context, subscriptionId string, vaultName string, secretName string, secretValue string) error {
+	client, err := kvs.createSecretsDataClient(ctx, subscriptionId, vaultName)
+	if err != nil {
+		return err
+	}
+	_, err = client.SetSecret(ctx, secretName, azsecrets.SetSecretParameters{
+		Value: to.Ptr(secretValue),
+	}, nil)
+	return err
 }
 
 // NewKeyVaultService creates a new KeyVault service
@@ -119,12 +144,7 @@ func (kvs *keyVaultService) GetKeyVaultSecret(
 	vaultName string,
 	secretName string,
 ) (*Secret, error) {
-	vaultUrl := vaultName
-	if !strings.Contains(strings.ToLower(vaultName), "https://") {
-		vaultUrl = fmt.Sprintf("https://%s.vault.azure.net", vaultName)
-	}
-
-	client, err := kvs.createSecretsDataClient(ctx, subscriptionId, vaultUrl)
+	client, err := kvs.createSecretsDataClient(ctx, subscriptionId, vaultName)
 	if err != nil {
 		return nil, nil
 	}
@@ -143,6 +163,31 @@ func (kvs *keyVaultService) GetKeyVaultSecret(
 		Name:  response.SecretBundle.ID.Name(),
 		Value: *response.SecretBundle.Value,
 	}, nil
+}
+
+func (kvs *keyVaultService) ListKeyVaultSecrets(
+	ctx context.Context,
+	subscriptionId string,
+	vaultName string,
+) ([]string, error) {
+	client, err := kvs.createSecretsDataClient(ctx, subscriptionId, vaultName)
+	if err != nil {
+		return nil, nil
+	}
+
+	secretsPager := client.NewListSecretsPager(nil)
+	result := []string{}
+	for secretsPager.More() {
+		secretsPage, err := secretsPager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing key vault secrets: %w", err)
+		}
+
+		for _, secret := range secretsPage.Value {
+			result = append(result, secret.ID.Name())
+		}
+	}
+	return result, nil
 }
 
 func (kvs *keyVaultService) PurgeKeyVault(
@@ -192,8 +237,12 @@ func (kvs *keyVaultService) createKeyVaultClient(
 func (kvs *keyVaultService) createSecretsDataClient(
 	ctx context.Context,
 	subscriptionId string,
-	vaultUrl string,
+	vaultName string,
 ) (*azsecrets.Client, error) {
+	vaultUrl := vaultName
+	if !strings.Contains(strings.ToLower(vaultName), "https://") {
+		vaultUrl = fmt.Sprintf("https://%s.%s", vaultName, kvs.cloud.KeyVaultEndpointSuffix)
+	}
 	credential, err := kvs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -282,36 +331,7 @@ func (kvs *keyVaultService) CreateVault(
 // Built-in roles for Key Vault RBAC
 // https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
 const (
-	KeyVaultAdministrator string = "/providers/Microsoft.Authorization/roleDefinitions/00482a5a-887f-4fb3-b363-3b7fe8e74483"
+	resourceIdPathPrefix        string = "/providers/Microsoft.Authorization/roleDefinitions/"
+	RoleIdKeyVaultAdministrator string = resourceIdPathPrefix + "00482a5a-887f-4fb3-b363-3b7fe8e74483"
+	RoleIdKeyVaultSecretsUser   string = resourceIdPathPrefix + "4633458b-17de-408a-b874-0445c86b69e6"
 )
-
-// func (kvs *keyVaultService) CreateRbac(
-// 	ctx context.Context,
-// 	subscriptionId string,
-// 	kvAccountName string,
-// 	principalId string,
-// 	roleId RbacId,
-// ) error {
-// 	serviceUrl := fmt.Sprintf("https://%s.%s", kvAccountName, kvs.cloud.KeyVaultEndpointSuffix)
-// 	client, err := kvs.createRbacClient(ctx, subscriptionId, serviceUrl)
-// 	if err != nil {
-// 		return fmt.Errorf("creating RBAC client: %w", err)
-// 	}
-// 	scope := rbac.RoleScopeKeys
-// 	name := uuid.New().String()
-// 	_, err = client.CreateRoleAssignment(
-// 		ctx,
-// 		scope,
-// 		name,
-// 		rbac.RoleAssignmentCreateParameters{
-// 			Properties: &rbac.RoleAssignmentProperties{
-// 				PrincipalID:      to.Ptr(principalId),
-// 				RoleDefinitionID: to.Ptr(string(roleId)),
-// 			},
-// 		},
-// 		nil)
-// 	if err != nil {
-// 		return fmt.Errorf("creating RBAC: %w", err)
-// 	}
-// 	return nil
-// }

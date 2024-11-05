@@ -352,6 +352,63 @@
                 ]
             }
         },
+        "resources": {
+            "type": "object",
+            "title": "Definition of resources that the application depends on",
+            "description": "Optional. Provides additional configuration for Azure resources that the application depends on.",
+            "minProperties": 1,
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "type"
+                ],
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "title": "Required. The type of Azure resource that the application depends on",
+                        "description": "The Azure resource type that the application depends on",
+                        "enum": [
+                            "db.mysql",
+                            "db.redis",
+                            "db.postgres",
+                            "db.mongo"
+                        ]
+                    },
+                    "authType": {
+                        "type": "string",
+                        "title": "The authentication type of Azure resource used for the application",
+                        "description": "The application uses this kind of authentication to connect to the Azure resource.",
+                        "enum": [
+                            "managedIdentity",
+                            "usernamePassword"
+                        ]
+                    },
+                    "databaseName": {
+                        "type": "string",
+                        "title": "The name of Azure resource that the application depends on",
+                        "description": "The Azure resource that will be accessed during application runtime."
+                    }
+                },
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.mysql"
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": [
+                                "authType",
+                                "databaseName"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
         "pipeline": {
             "type": "object",
             "title": "Definition of continuous integration pipeline",

@@ -61,7 +61,7 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
     name: '${abbrs.appManagedEnvironments}${resourceToken}'
     location: location
     zoneRedundant: false
-    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+    {{- if (or (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) (and .DbMySql .DbMySql.AuthUsingManagedIdentity))}}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -103,8 +103,8 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
   }
 }
 {{- end}}
-
 {{- if .DbPostgres}}
+
 var postgreSqlDatabaseName = '{{ .DbPostgres.DatabaseName }}'
 var postgreSqlDatabaseUser = 'psqladmin'
 module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
@@ -144,7 +144,69 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
   }
 }
 {{- end}}
-{{- if (or (and .DbMySql .DbMySql.AuthUsingManagedIdentity) (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity))}}
+{{- if .DbMySql}}
+
+var mysqlDatabaseName = '{{ .DbMySql.DatabaseName }}'
+var mysqlDatabaseUser = 'mysqladmin'
+{{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity) }}
+module mysqlIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
+  name: 'mysqlIdentity'
+  params: {
+    name: '${abbrs.managedIdentityUserAssignedIdentities}mysql-${resourceToken}'
+    location: location
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+  }
+}
+{{- end}}
+module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.4.1' = {
+  name: 'mysqlServer'
+  params: {
+    // Required parameters
+    name: '${abbrs.dBforMySQLServers}${resourceToken}'
+    skuName: 'Standard_B1ms'
+    tier: 'Burstable'
+    // Non-required parameters
+    administratorLogin: mysqlDatabaseUser
+    administratorLoginPassword: mysqlDatabasePassword
+    geoRedundantBackup: 'Disabled'
+    firewallRules: [
+      {
+        name: 'AllowAllIps'
+        startIpAddress: '0.0.0.0'
+        endIpAddress: '255.255.255.255'
+      }
+    ]
+    databases: [
+      {
+        name: mysqlDatabaseName
+      }
+    ]
+    location: location
+    highAvailability: 'Disabled'
+    {{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity) }}
+    managedIdentities: {
+      userAssignedResourceIds: [
+        mysqlIdentity.outputs.resourceId
+      ]
+    }
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
+  }
+}
+{{- end}}
+{{- if (or (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) (and .DbMySql .DbMySql.AuthUsingManagedIdentity))}}
 
 module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
   name: 'connectionCreatorIdentity'
@@ -170,7 +232,28 @@ module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resour
     }
     runOnce: false
     retentionInterval: 'P1D'
-    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create postgres-flexible --connection appLinkToPostgres --source-id ${ {{bicepName .Name}}.outputs.resourceId} --target-id ${postgreServer.outputs.resourceId}/databases/${postgreSqlDatabaseName} --client-type springBoot --user-identity client-id=${ {{bicepName .Name}}Identity.outputs.clientId} subs-id=${subscription().subscriptionId} user-object-id=${connectionCreatorIdentity.outputs.principalId} -c main --yes;'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create postgres-flexible --connection appConnectToPostgres --source-id ${ {{bicepName .Name}}.outputs.resourceId} --target-id ${postgreServer.outputs.resourceId}/databases/${postgreSqlDatabaseName} --client-type springBoot --user-identity client-id=${ {{bicepName .Name}}Identity.outputs.clientId} subs-id=${subscription().subscriptionId} user-object-id=${connectionCreatorIdentity.outputs.principalId} -c main --yes;'
+  }
+}
+{{- end}}
+{{- end}}
+{{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity) }}
+{{- range .Services}}
+module {{bicepName .Name}}CreateConnectionToMysql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
+  name: '{{bicepName .Name}}CreateConnectionToMysql'
+  params: {
+    kind: 'AzureCLI'
+    name: '${abbrs.deploymentScript}{{bicepName .Name}}-connection-to-mysql-${resourceToken}'
+    azCliVersion: '2.63.0'
+    location: location
+    managedIdentities: {
+      userAssignedResourcesIds: [
+        connectionCreatorIdentity.outputs.resourceId
+      ]
+    }
+    runOnce: false
+    retentionInterval: 'P1D'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection appConnectToMysql --source-id ${ {{bicepName .Name}}.outputs.resourceId} --target-id ${mysqlServer.outputs.resourceId}/databases/${mysqlDatabaseName} --client-type springBoot --user-identity client-id=${ {{bicepName .Name}}Identity.outputs.clientId} subs-id=${subscription().subscriptionId} user-object-id=${connectionCreatorIdentity.outputs.principalId} mysql-identity-id=${mysqlIdentity.outputs.resourceId} -c main --yes;'
   }
 }
 {{- end}}
@@ -315,7 +398,7 @@ module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assi
   params: {
     name: '${abbrs.managedIdentityUserAssignedIdentities}{{bicepName .Name}}-${resourceToken}'
     location: location
-    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+    {{- if (or (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) (and .DbMySql .DbMySql.AuthUsingManagedIdentity))}}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -381,6 +464,16 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {
           name: 'postgresql-db-url'
           value: 'postgresql://${postgreSqlDatabaseUser}:${postgreSqlDatabasePassword}@${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'
+        }
+        {{- end}}
+        {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword) }}
+        {
+          name: 'mysql-password'
+          value: mysqlDatabasePassword
+        }
+        {
+          name: 'mysql-db-url'
+          value: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
         }
         {{- end}}
         {{- if .DbRedis}}
@@ -483,6 +576,46 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'SPRING_DATASOURCE_PASSWORD'
             secretRef: 'postgresql-password'
+          }
+          {{- end}}
+          {{- if .DbMySql}}
+          {
+            name: 'MYSQL_HOST'
+            value: mysqlServer.outputs.fqdn
+          }
+          {
+            name: 'MYSQL_DATABASE'
+            value: mysqlDatabaseName
+          }
+          {
+            name: 'MYSQL_PORT'
+            value: '3306'
+          }
+          {
+            name: 'SPRING_DATASOURCE_URL'
+            value: 'jdbc:mysql://${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
+          }
+          {{- end}}
+          {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword) }}
+          {
+            name: 'MYSQL_URL'
+            secretRef: 'mysql-db-url'
+          }
+          {
+            name: 'MYSQL_USERNAME'
+            value: mysqlDatabaseUser
+          }
+          {
+            name: 'MYSQL_PASSWORD'
+            secretRef: 'mysql-password'
+          }
+          {
+            name: 'SPRING_DATASOURCE_USERNAME'
+            value: mysqlDatabaseUser
+          }
+          {
+            name: 'SPRING_DATASOURCE_PASSWORD'
+            secretRef: 'mysql-password'
           }
           {{- end}}
           {{- if .DbRedis}}
@@ -646,7 +779,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     environmentResourceId: containerAppsEnvironment.outputs.resourceId
     location: location
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
-    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+    {{- if (or (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) (and .DbMySql .DbMySql.AuthUsingManagedIdentity))}}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -714,6 +847,12 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
         value: postgreSqlDatabasePassword
       }
       {{- end}}
+      {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword) }}
+      {
+        name: 'mysql-password'
+        value: mysqlDatabasePassword
+      }
+      {{- end}}
     ]
   }
 }
@@ -729,6 +868,9 @@ output AZURE_CACHE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
 output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = postgreServer.outputs.resourceId
+{{- end}}
+{{- if .DbMySql}}
+output AZURE_MYSQL_FLEXIBLE_SERVER_ID string = mysqlServer.outputs.resourceId
 {{- end}}
 {{- if .AzureEventHubs }}
 output AZURE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceId

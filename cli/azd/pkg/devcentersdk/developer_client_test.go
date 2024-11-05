@@ -18,12 +18,14 @@ import (
 func Test_DevCenter_Client(t *testing.T) {
 	t.Skip("azure/azure-dev#2944")
 
+	publicCloud := cloud.AzurePublic()
 	mockContext := mocks.NewMockContext(context.Background())
+
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	authManager, err := auth.NewManager(
 		fileConfigManager,
 		config.NewUserConfigManager(fileConfigManager),
-		cloud.AzurePublic(),
+		publicCloud,
 		http.DefaultClient,
 		mockContext.Console,
 		auth.ExternalAuthConfiguration{},
@@ -40,9 +42,15 @@ func Test_DevCenter_Client(t *testing.T) {
 		credentials,
 		mockContext.CoreClientOptions,
 		resourceGraphClient,
-		cloud.AzurePublic(),
+		publicCloud,
 	)
 	require.NoError(t, err)
+
+	devCenterName := "dc-azd-o2pst6gaydv5o"
+	catalogName := "wbreza"
+	projectName := "Project-1"
+	environmentDefinitionName := "HelloWorld"
+	environmentTypeName := "Dev"
 
 	// Get dev center list
 	devCenterList, err := client.
@@ -52,7 +60,6 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, devCenterList)
 
-	devCenterName := "wabrez-devcenter"
 	devCenterClient := client.DevCenterByName(devCenterName)
 
 	// Get project list
@@ -63,7 +70,6 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, projectList)
 
-	projectName := "Project1"
 	projectClient := devCenterClient.ProjectByName(projectName)
 
 	// Get project by name
@@ -90,7 +96,7 @@ func Test_DevCenter_Client(t *testing.T) {
 
 	// Get Catalog by name
 	catalog, err := projectClient.
-		CatalogByName("SampleCatalog").
+		CatalogByName(catalogName).
 		Get(*mockContext.Context)
 
 	require.NoError(t, err)
@@ -106,7 +112,7 @@ func Test_DevCenter_Client(t *testing.T) {
 
 	// Get Environment type list by catalog
 	environmentTypeListByCatalog, err := projectClient.
-		CatalogByName("SampleCatalog").
+		CatalogByName(catalogName).
 		EnvironmentDefinitions().
 		Get(*mockContext.Context)
 
@@ -141,14 +147,42 @@ func Test_DevCenter_Client(t *testing.T) {
 	envName := fmt.Sprintf("env-%d", time.Now().Unix())
 
 	envSpec := EnvironmentSpec{
-		CatalogName:               "SampleCatalog",
-		EnvironmentDefinitionName: "Sandbox",
-		EnvironmentType:           "Dev",
+		CatalogName:               catalogName,
+		EnvironmentDefinitionName: environmentDefinitionName,
+		EnvironmentType:           environmentTypeName,
 		Parameters: map[string]interface{}{
 			"environmentName": envName,
+			"repoUrl":         "https://github.com/wbreza/azd-hello-world",
 		},
 	}
 
+	err = projectClient.
+		EnvironmentsByMe().
+		EnvironmentByName(envName).
+		Put(*mockContext.Context, envSpec)
+
+	require.NoError(t, err)
+
+	// Get environment by name
+	existingEnv, err := projectClient.
+		EnvironmentsByMe().
+		EnvironmentByName(envName).
+		Get(*mockContext.Context)
+
+	require.NoError(t, err)
+	require.NotNil(t, existingEnv)
+
+	// Get environment outputs
+	outputs, err := projectClient.
+		EnvironmentsByMe().
+		EnvironmentByName(envName).
+		Outputs().
+		Get(*mockContext.Context)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, outputs)
+
+	// Update environment
 	err = projectClient.
 		EnvironmentsByMe().
 		EnvironmentByName(envName).
@@ -161,13 +195,6 @@ func Test_DevCenter_Client(t *testing.T) {
 		EnvironmentsByMe().
 		EnvironmentByName(envName).
 		Delete(*mockContext.Context)
-
-	require.NoError(t, err)
-
-	err = projectClient.
-		EnvironmentsByMe().
-		EnvironmentByName(envName).
-		Put(*mockContext.Context, envSpec)
 
 	require.NoError(t, err)
 

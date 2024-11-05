@@ -23,6 +23,8 @@ if ($AzCliAuth) {
 
     # Set environment variables based on az auth information from AzureCLI@2
     # step in the pipeline.
+    az account show | Write-Host
+    exit 1
     $env:AZD_TEST_AZURE_SUBSCRIPTION_ID = (az account show -o json | ConvertFrom-Json -AsHashtable)['id']
     Write-Host "AZD_TEST_AZURE_SUBSCRIPTION_ID: $($env:AZD_TEST_AZURE_SUBSCRIPTION_ID)"
     $env:ARM_CLIENT_ID = $env:servicePrincipalId

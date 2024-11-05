@@ -23,7 +23,11 @@ if ($AzCliAuth) {
 
     # Set environment variables based on az auth information from AzureCLI@2
     # step in the pipeline.
-    $env:AZD_TEST_AZURE_SUBSCRIPTION_ID = (az account show -o json | ConvertFrom-Json -AsHashtable)['id']
+    $subscriptionId = (az account show -o json | ConvertFrom-Json -AsHashtable)['id']
+
+    $env:AZURE_SUBSCRIPTION_ID = $subscriptionId
+    Write-Host "AZURE_SUBSCRIPTION_ID: $($env:AZURE_SUBSCRIPTION_ID)"
+    $env:AZD_TEST_AZURE_SUBSCRIPTION_ID = $subscriptionId
     Write-Host "AZD_TEST_AZURE_SUBSCRIPTION_ID: $($env:AZD_TEST_AZURE_SUBSCRIPTION_ID)"
     $env:ARM_CLIENT_ID = $env:servicePrincipalId
     Write-Host "ARM_CLIENT_ID: $($env:ARM_CLIENT_ID)"
@@ -31,7 +35,7 @@ if ($AzCliAuth) {
     Write-Host "ARM_TENANT_ID: $($env:ARM_TENANT_ID)"
 
     # Set default subscription for azd
-    & $azdCliPath config set defaults.subscription $env:AZD_TEST_AZURE_SUBSCRIPTION_ID
+    & $azdCliPath config set defaults.subscription $subscriptionId
 }
 
 $gopath = go env GOPATH

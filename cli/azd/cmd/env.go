@@ -12,15 +12,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -177,18 +181,168 @@ func (f *envSetSecretFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCo
 }
 
 type envSetSecretAction struct {
-	console    input.Console
-	azdCtx     *azdcontext.AzdContext
-	env        *environment.Environment
-	envManager environment.Manager
-	flags      *envSetFlags
-	args       []string
+	console            input.Console
+	azdCtx             *azdcontext.AzdContext
+	env                *environment.Environment
+	envManager         environment.Manager
+	flags              *envSetFlags
+	args               []string
+	prompter           prompt.Prompter
+	kvService          keyvault.KeyVaultService
+	entraIdService     entraid.EntraIdService
+	subResolver        account.SubscriptionTenantResolver
+	userProfileService *azcli.UserProfileService
 }
 
 func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
-	e.console.Message(ctx, "Not implemented yet")
-	return nil, nil
+	if len(e.args) < 1 {
+		return nil, fmt.Errorf(
+			"no secret name provided. Please provide a secret name to set like 'azd env set <secret name>'")
+	}
+	secretName := e.args[0]
+	e.console.Message(ctx, "Setting secret: "+secretName)
+
+	createNewStrategy := "Create a new Key Vault Secret"
+	selectExistingStrategy := "Select an existing Key Vault Secret"
+	setSecretStrategies := []string{createNewStrategy, selectExistingStrategy}
+	selectedStrategyIndex, err := e.console.Select(
+		ctx,
+		input.ConsoleOptions{
+			Message:      "How do you want to set the secret",
+			Options:      setSecretStrategies,
+			DefaultValue: createNewStrategy,
+		})
+	if err != nil {
+		return nil, fmt.Errorf("selecting secret setting strategy: %w", err)
+	}
+
+	willCreateNewSecret := setSecretStrategies[selectedStrategyIndex] == createNewStrategy
+
+	// default messages based on willCreateNewSecret == true
+	pickSubscription := "Select a subscription to create the Key Vault Secret"
+	pickKvAccount := "Select the Key Vault to create the secret"
+
+	if !willCreateNewSecret {
+		// reassign messages for selecting existing secret
+		pickSubscription = "Select the subscription where the Key Vault Secret is"
+		pickKvAccount = "Select the Key Vault where the secret is"
+	}
+
+	subId, err := e.prompter.PromptSubscription(ctx, pickSubscription)
+	if err != nil {
+		return nil, fmt.Errorf("prompting for subscription: %w", err)
+	}
+	tenantId, err := e.subResolver.LookupTenant(ctx, subId)
+	if err != nil {
+		return nil, fmt.Errorf("looking up tenant for subscription: %w", err)
+	}
+
+	e.console.ShowSpinner(ctx, "Getting the list of vaults from the selected subscription", input.Step)
+	vaultsList, err := e.kvService.ListSubscriptionVaults(ctx, subId)
+	if err != nil {
+		return nil, fmt.Errorf("getting the list of vaults: %w", err)
+	}
+	// prompt for vault selection
+	e.console.StopSpinner(ctx, "", input.Step)
+
+	atLeastOneKvAccountExists := len(vaultsList) > 0
+	if !atLeastOneKvAccountExists && !willCreateNewSecret {
+		e.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: "No Key Vaults found in the selected subscription",
+		})
+		// update the flow to offer creating a new Key Vault
+		willCreateNewSecret = true
+	}
+
+	createNewKvAccountOption := " 1. Create a new Key Vault"
+	selectKvAccountOptions := []string{}
+	// indexOffset makes the ids to start from 1 instead of 0 when displaying the options
+	indexOffset := 1
+	if willCreateNewSecret {
+		selectKvAccountOptions = append(selectKvAccountOptions, createNewKvAccountOption)
+		// have to offset 2 since we have added the first option with 1 for createNewKvAccountOption
+		indexOffset = 2
+	}
+	for index, vault := range vaultsList {
+		selectKvAccountOptions = append(selectKvAccountOptions, fmt.Sprintf("%2d. %s", index+indexOffset, vault.Name))
+	}
+
+	kvAccountSelectionIndex, err := e.console.Select(ctx, input.ConsoleOptions{
+		Message:      pickKvAccount,
+		Options:      selectKvAccountOptions,
+		DefaultValue: selectKvAccountOptions[0],
+	})
+	if err != nil {
+		return nil, fmt.Errorf("selecting Key Vault: %w", err)
+	}
+
+	willCreateNewKvAccount := selectKvAccountOptions[kvAccountSelectionIndex] == createNewKvAccountOption
+	if willCreateNewSecret && !willCreateNewKvAccount {
+		// when willCreateNewSecret is true, we added a new option at the beginning of the list
+		// to recover the original kv account name
+		kvAccountSelectionIndex--
+	}
+
+	var kvAccount keyvault.Vault
+	if atLeastOneKvAccountExists {
+		kvAccount = vaultsList[kvAccountSelectionIndex]
+	}
+
+	if willCreateNewKvAccount {
+		location, err := e.prompter.PromptLocation(ctx, subId, "Select the location for the Key Vault", nil)
+		if err != nil {
+			return nil, fmt.Errorf("prompting for Key Vault location: %w", err)
+		}
+		rg, err := e.prompter.PromptResourceGroupFrom(ctx, subId, location, prompt.PromptResourceGroupFromOptions{
+			DefaultName: "rg-for-my-kv-account",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("prompting for resource group: %w", err)
+		}
+		for {
+			kvAccountName, err := e.console.Prompt(ctx, input.ConsoleOptions{
+				Message: "Enter the name of the Key Vault",
+			})
+			if err != nil {
+				return nil, fmt.Errorf("prompting for Key Vault name: %w", err)
+			}
+			if kvAccountName == "" {
+				e.console.Message(ctx, "Key Vault name cannot be empty")
+				continue
+			}
+			e.console.ShowSpinner(ctx, "Creating Key Vault Account", input.Step)
+			vault, err := e.kvService.CreateVault(ctx, tenantId, subId, rg, location, kvAccountName)
+			e.console.StopSpinner(ctx, "", input.Step)
+			if err != nil {
+				e.console.Message(ctx, fmt.Sprintf("Error creating Key Vault: %v", err))
+				continue
+			}
+			kvAccount = vault
+
+			// RBAC role assignment
+			e.console.ShowSpinner(ctx, "Adding Administrator Role", input.Step)
+			principalId, err := azureutil.GetCurrentPrincipalId(ctx, e.userProfileService, tenantId)
+			e.console.StopSpinner(ctx, "", input.Step)
+			if err != nil {
+				return nil, fmt.Errorf("getting current principal ID: %w", err)
+			}
+			err = e.entraIdService.CreateRbac(ctx, subId, kvAccount.Id, keyvault.KeyVaultAdministrator, principalId)
+			if err != nil {
+				return nil, fmt.Errorf("creating Key Vault RBAC: %w", err)
+			}
+			break
+		}
+	}
+
+	// set the secret
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   "Selection: " + kvAccount.Name,
+			FollowUp: "Not implemented yet",
+		},
+	}, nil
 }
 
 func newEnvSetSecretAction(
@@ -198,14 +352,24 @@ func newEnvSetSecretAction(
 	console input.Console,
 	flags *envSetFlags,
 	args []string,
+	prompter prompt.Prompter,
+	kvService keyvault.KeyVaultService,
+	entraIdService entraid.EntraIdService,
+	subResolver account.SubscriptionTenantResolver,
+	userProfileService *azcli.UserProfileService,
 ) actions.Action {
 	return &envSetSecretAction{
-		console:    console,
-		azdCtx:     azdCtx,
-		env:        env,
-		envManager: envManager,
-		flags:      flags,
-		args:       args,
+		console:            console,
+		azdCtx:             azdCtx,
+		env:                env,
+		envManager:         envManager,
+		flags:              flags,
+		args:               args,
+		prompter:           prompter,
+		kvService:          kvService,
+		entraIdService:     entraIdService,
+		subResolver:        subResolver,
+		userProfileService: userProfileService,
 	}
 }
 

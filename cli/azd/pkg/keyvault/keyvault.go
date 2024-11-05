@@ -10,9 +10,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azadmin/rbac"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
@@ -48,12 +51,22 @@ type KeyVaultService interface {
 		secretName string,
 	) (*Secret, error)
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	ListSubscriptionVaults(ctx context.Context, subscriptionId string) ([]Vault, error)
+	CreateVault(
+		ctx context.Context,
+		tenantId string,
+		subscriptionId string,
+		resourceGroupName string,
+		location string,
+		vaultName string,
+	) (Vault, error)
 }
 
 type keyVaultService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
 	coreClientOptions  *azcore.ClientOptions
+	cloud              *cloud.Cloud
 }
 
 // NewKeyVaultService creates a new KeyVault service
@@ -61,11 +74,13 @@ func NewKeyVaultService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	armClientOptions *arm.ClientOptions,
 	coreClientOptions *azcore.ClientOptions,
+	cloud *cloud.Cloud,
 ) KeyVaultService {
 	return &keyVaultService{
 		credentialProvider: credentialProvider,
 		armClientOptions:   armClientOptions,
 		coreClientOptions:  coreClientOptions,
+		cloud:              cloud,
 	}
 }
 
@@ -192,3 +207,130 @@ func (kvs *keyVaultService) createSecretsDataClient(
 
 	return azsecrets.NewClient(vaultUrl, credential, options)
 }
+
+func (kvs *keyVaultService) createRbacClient(
+	ctx context.Context,
+	subscriptionId string,
+	vaultUrl string,
+) (*rbac.Client, error) {
+	credential, err := kvs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := &rbac.ClientOptions{
+		ClientOptions:                        *kvs.coreClientOptions,
+		DisableChallengeResourceVerification: false,
+	}
+
+	return rbac.NewClient(vaultUrl, credential, options)
+}
+
+type Vault struct {
+	Id   string
+	Name string
+}
+
+func (kvs *keyVaultService) ListSubscriptionVaults(
+	ctx context.Context,
+	subscriptionId string,
+) ([]Vault, error) {
+	client, err := kvs.createKeyVaultClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating Resource client: %w", err)
+	}
+	result := []Vault{}
+	pager := client.NewListPager(nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing vaults: %w", err)
+		}
+		for _, vault := range page.Value {
+			result = append(result, Vault{
+				Id:   *vault.ID,
+				Name: *vault.Name,
+			})
+		}
+	}
+	return result, nil
+}
+
+func (kvs *keyVaultService) CreateVault(
+	ctx context.Context,
+	tenantId string,
+	subscriptionId string,
+	resourceGroupName string,
+	location string,
+	vaultName string,
+) (Vault, error) {
+	client, err := kvs.createKeyVaultClient(ctx, subscriptionId)
+	if err != nil {
+		return Vault{}, fmt.Errorf("creating Resource client: %w", err)
+	}
+	accountPoller, err := client.BeginCreateOrUpdate(
+		ctx,
+		resourceGroupName,
+		vaultName,
+		armkeyvault.VaultCreateOrUpdateParameters{
+			Location: to.Ptr(location),
+			Properties: &armkeyvault.VaultProperties{
+				SKU: &armkeyvault.SKU{
+					Family: to.Ptr(armkeyvault.SKUFamilyA),
+					Name:   to.Ptr(armkeyvault.SKUNameStandard),
+				},
+				TenantID:                to.Ptr(tenantId),
+				EnableRbacAuthorization: to.Ptr(true),
+			},
+		},
+		nil)
+	if err != nil {
+		return Vault{}, fmt.Errorf("creating Key Vault: %w", err)
+	}
+	response, err := accountPoller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return Vault{}, fmt.Errorf("creating Key Vault: %w", err)
+	}
+
+	return Vault{
+		Id:   *response.Vault.ID,
+		Name: *response.Vault.Name,
+	}, nil
+}
+
+// Built-in roles for Key Vault RBAC
+// https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
+const (
+	KeyVaultAdministrator string = "/providers/Microsoft.Authorization/roleDefinitions/00482a5a-887f-4fb3-b363-3b7fe8e74483"
+)
+
+// func (kvs *keyVaultService) CreateRbac(
+// 	ctx context.Context,
+// 	subscriptionId string,
+// 	kvAccountName string,
+// 	principalId string,
+// 	roleId RbacId,
+// ) error {
+// 	serviceUrl := fmt.Sprintf("https://%s.%s", kvAccountName, kvs.cloud.KeyVaultEndpointSuffix)
+// 	client, err := kvs.createRbacClient(ctx, subscriptionId, serviceUrl)
+// 	if err != nil {
+// 		return fmt.Errorf("creating RBAC client: %w", err)
+// 	}
+// 	scope := rbac.RoleScopeKeys
+// 	name := uuid.New().String()
+// 	_, err = client.CreateRoleAssignment(
+// 		ctx,
+// 		scope,
+// 		name,
+// 		rbac.RoleAssignmentCreateParameters{
+// 			Properties: &rbac.RoleAssignmentProperties{
+// 				PrincipalID:      to.Ptr(principalId),
+// 				RoleDefinitionID: to.Ptr(string(roleId)),
+// 			},
+// 		},
+// 		nil)
+// 	if err != nil {
+// 		return fmt.Errorf("creating RBAC: %w", err)
+// 	}
+// 	return nil
+// }

@@ -27,6 +27,8 @@ type Prompter interface {
 	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
 	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
 	PromptResourceGroup(ctx context.Context) (string, error)
+	PromptResourceGroupFrom(
+		ctx context.Context, subscriptionId string, location string, options PromptResourceGroupFromOptions) (string, error)
 }
 
 type DefaultPrompter struct {
@@ -112,8 +114,27 @@ func (p *DefaultPrompter) PromptLocation(
 }
 
 func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, error) {
+	return p.PromptResourceGroupFrom(
+		ctx,
+		p.env.GetSubscriptionId(),
+		p.env.GetLocation(),
+		PromptResourceGroupFromOptions{
+			Tags: map[string]string{
+				azure.TagKeyAzdEnvName: p.env.Name(),
+			},
+			DefaultName: fmt.Sprintf("rg-%s", p.env.Name()),
+		})
+}
+
+type PromptResourceGroupFromOptions struct {
+	Tags        map[string]string
+	DefaultName string
+}
+
+func (p *DefaultPrompter) PromptResourceGroupFrom(
+	ctx context.Context, subscriptionId string, location string, options PromptResourceGroupFromOptions) (string, error) {
 	// Get current resource groups
-	groups, err := p.resourceService.ListResourceGroup(ctx, p.env.GetSubscriptionId(), nil)
+	groups, err := p.resourceService.ListResourceGroup(ctx, subscriptionId, nil)
 	if err != nil {
 		return "", fmt.Errorf("listing resource groups: %w", err)
 	}
@@ -142,17 +163,18 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 
 	name, err := p.console.Prompt(ctx, input.ConsoleOptions{
 		Message:      "Enter a name for the new resource group:",
-		DefaultValue: fmt.Sprintf("rg-%s", p.env.Name()),
+		DefaultValue: options.DefaultName,
 	})
 	if err != nil {
 		return "", fmt.Errorf("prompting for resource group name: %w", err)
 	}
 
-	err = p.resourceService.CreateOrUpdateResourceGroup(ctx, p.env.GetSubscriptionId(), name, p.env.GetLocation(),
-		map[string]*string{
-			azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
-		},
-	)
+	tagsParam := make(map[string]*string, len(options.Tags))
+	for k, v := range options.Tags {
+		tagsParam[k] = to.Ptr(v)
+	}
+
+	err = p.resourceService.CreateOrUpdateResourceGroup(ctx, subscriptionId, name, location, tagsParam)
 	if err != nil {
 		return "", fmt.Errorf("creating resource group: %w", err)
 	}

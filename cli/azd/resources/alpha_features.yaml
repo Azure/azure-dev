@@ -12,3 +12,5 @@
   description: "Do not change Ingress Session Affinity when deploying Azure Container Apps."
 - id: deployment.stacks
   description: "Enables Azure deployment stacks for ARM/Bicep based deployments."
+- id: compose
+  description: "Enable simplified app-centric modeling. Run `azd add` to add Azure components to your project."

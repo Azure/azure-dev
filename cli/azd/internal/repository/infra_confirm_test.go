@@ -162,7 +162,11 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				},
 			},
 			interactions: []string{
-				"myappdb",                            // fill in db name
+				"my app db",
+				"n",
+				"my$special$db",
+				"n",
+				"myappdb", // fill in db name
 				"Use user assigned managed identity", // confirm db authentication
 			},
 			want: scaffold.InfraSpec{

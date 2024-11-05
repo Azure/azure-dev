@@ -15,9 +15,13 @@ type InfraSpec struct {
 	DbCosmosMongo *DatabaseCosmosMongo
 	DbRedis       *DatabaseRedis
 
+	// ai models
+	AIModels []AIModel
+
 	AzureServiceBus     *AzureDepServiceBus
 	AzureEventHubs      *AzureDepEventHubs
 	AzureStorageAccount *AzureDepStorageAccount
+
 }
 
 type Parameter struct {
@@ -46,6 +50,20 @@ type DatabaseCosmosMongo struct {
 }
 
 type DatabaseRedis struct {
+}
+
+// AIModel represents a deployed, ready to use AI model.
+type AIModel struct {
+	Name  string
+	Model AIModelModel
+}
+
+// AIModelModel represents a model that backs the AIModel.
+type AIModelModel struct {
+	// The name of the underlying model.
+	Name string
+	// The version of the underlying model.
+	Version string
 }
 
 type AzureDepServiceBus struct {
@@ -85,6 +103,8 @@ type ServiceSpec struct {
 	Name string
 	Port int
 
+	Env map[string]string
+
 	// Front-end properties.
 	Frontend *Frontend
 
@@ -96,6 +116,9 @@ type ServiceSpec struct {
 	DbMySql       *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
+
+	// AI model connections
+	AIModels []AIModelReference
 
 	AzureServiceBus     *AzureDepServiceBus
 	AzureEventHubs      *AzureDepEventHubs
@@ -118,6 +141,10 @@ type DatabaseReference struct {
 	DatabaseName              string
 	AuthUsingManagedIdentity  bool
 	AuthUsingUsernamePassword bool
+}
+
+type AIModelReference struct {
+	Name string
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

@@ -95,6 +95,7 @@ endregion
 entraid
 envlist
 envname
+envsubst
 errcheck
 errorinfo
 errorlint
@@ -161,6 +162,7 @@ overriden
 paketobuildpacks
 patternmatcher
 pflag
+pgadmin
 posix
 preinit
 proxying
@@ -199,6 +201,7 @@ stdouttrace
 STRINGSLICE
 struct
 structs
+subst
 substr
 swacli
 Syncer
@@ -227,5 +230,6 @@ webfrontend
 westus2
 wireinject
 yacspin
+yamlnode
 ymlt
 zerr

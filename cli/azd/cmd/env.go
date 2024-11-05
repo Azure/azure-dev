@@ -300,6 +300,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 		if err != nil {
 			return nil, fmt.Errorf("prompting for resource group: %w", err)
 		}
+
 		for {
 			kvAccountName, err := e.console.Prompt(ctx, input.ConsoleOptions{
 				Message: "Enter the name of the Key Vault",
@@ -376,6 +377,13 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			return nil, fmt.Errorf("selecting Key Vault secret: %w", err)
 		}
 		kvSecretName = secretsInKv[secretSelectionIndex]
+	}
+
+	// akvs -> Azure Key Vault Secret (akvs://<keyvault-name>/<secret-name>)
+	envValue := fmt.Sprintf("%s%s/%s", keyvault.VaultSchemaAkvs, kvAccount.Name, kvSecretName)
+	e.env.DotenvSet(secretName, envValue)
+	if err := e.envManager.Save(ctx, e.env); err != nil {
+		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
 	return &actions.ActionResult{

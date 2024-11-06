@@ -9,7 +9,6 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -25,8 +24,6 @@ import (
 )
 
 type upFlags struct {
-	cmd.ProvisionFlags
-	cmd.DeployFlags
 	global *internal.GlobalCommandOptions
 	internal.EnvFlag
 }
@@ -34,11 +31,6 @@ type upFlags struct {
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	u.EnvFlag.Bind(local, global)
 	u.global = global
-
-	u.ProvisionFlags.BindNonCommon(local, global)
-	u.ProvisionFlags.SetCommon(&u.EnvFlag)
-	u.DeployFlags.BindNonCommon(local, global)
-	u.DeployFlags.SetCommon(&u.EnvFlag)
 }
 
 func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {
@@ -71,7 +63,7 @@ var defaultUpWorkflow = &workflow.Workflow{
 	Name: "up",
 	Steps: []*workflow.Step{
 		{AzdCommand: workflow.Command{Args: []string{"package", "--all"}}},
-		{AzdCommand: workflow.Command{Args: []string{"provision"}}},
+		{AzdCommand: workflow.Command{Args: []string{"provision", "--all"}}},
 		{AzdCommand: workflow.Command{Args: []string{"deploy", "--all"}}},
 	},
 }

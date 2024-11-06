@@ -89,25 +89,12 @@ jobs:
       - bash: dotnet nuget add source --name dotnet8 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8/nuget/v3/index.json
         displayName: Add internal dotnet nuget feed
 
-      - task: AzureCLI@2
-        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-        inputs:
-          azureSubscription: azd-service-connection
-          scriptType: pscore
-          scriptLocation: inlineScript
-          inlineScript: |
-            $subscriptionId = (az account show -o json | ConvertFrom-Json -AsHashtable)['id']
-
-            Write-Host "##vso[task.setvariable variable=AzureSubscriptionClientId;issecret=false]$($env:AZURESUBSCRIPTION_CLIENT_ID)"
-            Write-Host "##vso[task.setvariable variable=AzureSubscriptionTenantId;issecret=false]$($env:AZURESUBSCRIPTION_TENANT_ID)"
-            Write-Host "##vso[task.setvariable variable=AzureSubscriptionServiceConnectionId;issecret=false]$($env:AZURESUBSCRIPTION_SERVICE_CONNECTION_ID)"
-            Write-Host "##vso[task.setvariable variable=SubscriptionId;issecret=false]$($subscriptionId)"
-        displayName: Configure OIDC Authentication
+      - template: /eng/pipelines/templates/steps/configure-oidc-auth.yml
 
       - pwsh: |
             ./azd auth login --federated-credential-provider "azure-pipelines"
-            ./azd auth token --output json
             ./azd config set defaults.subscription $(SubscriptionId)
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         workingDirectory: cli/azd
         env:
           AZURESUBSCRIPTION_CLIENT_ID: $(AzureSubscriptionClientId)

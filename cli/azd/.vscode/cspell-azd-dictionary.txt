@@ -145,6 +145,7 @@ mysqldb
 nobanner
 nodeapp
 nolint
+nologo
 notrail
 omitempty
 oneauth

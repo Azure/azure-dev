@@ -316,6 +316,7 @@ func newDotNetRunArgs(args ...string) exec.RunArgs {
 
 	runArgs = runArgs.WithEnv([]string{
 		"DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1",
+		"DOTNET_NOLOGO=1",
 	})
 
 	return runArgs

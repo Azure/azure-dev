@@ -100,18 +100,26 @@ jobs:
 
             Write-Host "##vso[task.setvariable variable=AzureSubscriptionClientId;issecret=false]$($env:AZURESUBSCRIPTION_CLIENT_ID)"
             Write-Host "##vso[task.setvariable variable=AzureSubscriptionTenantId;issecret=false]$($env:AZURESUBSCRIPTION_TENANT_ID)"
+            Write-Host "##vso[task.setvariable variable=AzureSubscriptionServiceConnectionId;issecret=false]$($env:AZURESUBSCRIPTION_SERVICE_CONNECTION_ID)"
             Write-Host "##vso[task.setvariable variable=SubscriptionId;issecret=false]$($subscriptionId)"
-
-            ./azd auth login --federated-credential-provider "azure-pipelines"
-            ./azd config set defaults.subscription $subscriptionId
-          workingDirectory: cli/azd
         displayName: Configure OIDC Authentication
 
+      - pwsh: |
+            ./azd auth login --federated-credential-provider "azure-pipelines"
+            ./azd auth token --output json
+            ./azd config set defaults.subscription $(SubscriptionId)
+        workingDirectory: cli/azd
+        env:
+          AZURESUBSCRIPTION_CLIENT_ID: $(AzureSubscriptionClientId)
+          AZURESUBSCRIPTION_TENANT_ID: $(AzureSubscriptionTenantId)
+          AZURESUBSCRIPTION_SERVICE_CONNECTION_ID: $(AzureSubscriptionServiceConnectionId)
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        displayName: AZD Login
 
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
-          azureSubscription: azure-sdk-tests
+          azureSubscription: azd-service-connection
           # keepAzSessionActive is required when the service connection uses Workload Identity Federation authentication scheme
           # and the script will run for more than 10 minutes.
           # the ci-test.ps1 script runs for a long time and the service connection `azure-sdk-tests` use Workload Identity Federation.

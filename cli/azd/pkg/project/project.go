@@ -23,7 +23,8 @@ import (
 
 const (
 	//nolint:lll
-	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
+	// todo(haozhan): update this line for sjad private preview, need to revert it when merge into azure-dev/main branch
+	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/azure-javaee/azure-dev/feature/sjad/schemas/alpha/azure.yaml.json"
 )
 
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {

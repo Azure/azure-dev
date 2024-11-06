@@ -1,5 +1,6 @@
 AADSTS
 ABRT
+ACCESSTOKEN
 aiomysql
 aiopg
 akvs
@@ -51,6 +52,7 @@ AZURECLI
 azureedge
 azureml
 azurestaticapps
+AZURESUBSCRIPTION
 azuretools
 azureutil
 azureyaml

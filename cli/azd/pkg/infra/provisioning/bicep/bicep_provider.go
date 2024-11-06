@@ -1836,27 +1836,11 @@ func (p *BicepProvider) ensureParameters(
 				if stringValue, isString := paramValue.(string); isString && param.Secure() {
 					// For secure parameters using a string value, azd checks if the string is an Azure Key Vault Secret
 					// and if yes, it fetches the secret value from the Key Vault.
-					if strings.HasPrefix(stringValue, keyvault.VaultSchemaAkvs) {
-						noSchema := strings.TrimPrefix(stringValue, keyvault.VaultSchemaAkvs)
-						vaultParts := strings.Split(noSchema, "/")
-						if len(vaultParts) != 2 {
-							return nil, fmt.Errorf(
-								"invalid Azure Key Vault Secret reference: %s. Expected format: %s",
-								stringValue,
-								keyvault.VaultSchemaAkvs+"<vault-name>/<secret-name>",
-							)
-						}
-						vaultName, secretName := vaultParts[0], vaultParts[1]
-						subscriptionId := p.env.GetSubscriptionId()
-						// subscriptionId is required by the Key Vault service to figure the TenantId for the
-						// tokenCredential. The assumption here is that the user has access to the Tenant
-						// used to deploy the app and to whatever Tenant the Key Vault is in. And the tokenCredential
-						// can use any of the Tenant ids.
-						secretValue, err := p.keyvaultService.GetKeyVaultSecret(ctx, subscriptionId, vaultName, secretName)
+					if keyvault.IsAkvs(stringValue) {
+						paramValue, err = p.keyvaultService.SecretFromAkvs(ctx, p.env.GetSubscriptionId(), stringValue)
 						if err != nil {
-							return nil, fmt.Errorf("fetching secret value from key vault: %w", err)
+							return nil, err
 						}
-						paramValue = secretValue.Value
 					}
 				}
 

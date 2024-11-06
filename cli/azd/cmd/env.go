@@ -380,7 +380,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	// akvs -> Azure Key Vault Secret (akvs://<keyvault-name>/<secret-name>)
-	envValue := fmt.Sprintf("%s%s/%s", keyvault.VaultSchemaAkvs, kvAccount.Name, kvSecretName)
+	envValue := keyvault.NewAkvs(kvAccount.Name, kvSecretName)
 	e.env.DotenvSet(secretName, envValue)
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)

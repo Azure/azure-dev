@@ -71,6 +71,7 @@ type KeyVaultService interface {
 		secretName string,
 		secretValue string,
 	) error
+	SecretFromAkvs(ctx context.Context, subscriptionId, akvs string) (string, error)
 }
 
 type keyVaultService struct {
@@ -331,8 +332,42 @@ func (kvs *keyVaultService) CreateVault(
 // Built-in roles for Key Vault RBAC
 // https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
 const (
+	vaultSchemaAkvs             string = "akvs://"
 	resourceIdPathPrefix        string = "/providers/Microsoft.Authorization/roleDefinitions/"
 	RoleIdKeyVaultAdministrator string = resourceIdPathPrefix + "00482a5a-887f-4fb3-b363-3b7fe8e74483"
 	RoleIdKeyVaultSecretsUser   string = resourceIdPathPrefix + "4633458b-17de-408a-b874-0445c86b69e6"
-	VaultSchemaAkvs             string = "akvs://"
 )
+
+func IsAkvs(id string) bool {
+	return strings.HasPrefix(id, vaultSchemaAkvs)
+}
+
+func NewAkvs(vaultName, secretName string) string {
+	return vaultSchemaAkvs + vaultName + "/" + secretName
+}
+
+func (kvs *keyVaultService) SecretFromAkvs(ctx context.Context, subscriptionId, akvs string) (string, error) {
+	if !IsAkvs(akvs) {
+		return "", fmt.Errorf("invalid Azure Key Vault Secret reference: %s", akvs)
+	}
+
+	noSchema := strings.TrimPrefix(akvs, vaultSchemaAkvs)
+	vaultParts := strings.Split(noSchema, "/")
+	if len(vaultParts) != 2 {
+		return "", fmt.Errorf(
+			"invalid Azure Key Vault Secret reference: %s. Expected format: %s",
+			akvs,
+			vaultSchemaAkvs+"<vault-name>/<secret-name>",
+		)
+	}
+	vaultName, secretName := vaultParts[0], vaultParts[1]
+	// subscriptionId is required by the Key Vault service to figure the TenantId for the
+	// tokenCredential. The assumption here is that the user has access to the Tenant
+	// used to deploy the app and to whatever Tenant the Key Vault is in. And the tokenCredential
+	// can use any of the Tenant ids.
+	secretValue, err := kvs.GetKeyVaultSecret(ctx, subscriptionId, vaultName, secretName)
+	if err != nil {
+		return "", fmt.Errorf("fetching secret value from key vault: %w", err)
+	}
+	return secretValue.Value, nil
+}

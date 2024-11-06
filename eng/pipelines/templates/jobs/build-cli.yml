@@ -148,6 +148,7 @@ jobs:
           ARM_USE_CLI: true
           # Code Coverage: Generate junit report to publish results
           GOTESTSUM_JUNITFILE: junitTestReport.xml
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
       - task: PublishTestResults@2
         inputs:

@@ -89,9 +89,24 @@ jobs:
       - bash: dotnet nuget add source --name dotnet8 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8/nuget/v3/index.json
         displayName: Add internal dotnet nuget feed
 
-      - template: /eng/pipelines/templates/steps/azd-login.yml
-        parameters:
-          AzdDirectory: cli/azd
+      - task: AzureCLI@2
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        inputs:
+          azureSubscription: azd-service-connection
+          scriptType: pscore
+          scriptLocation: inlineScript
+          inlineScript: |
+            $subscriptionId = (az account show -o json | ConvertFrom-Json -AsHashtable)['id']
+
+            Write-Host "##vso[task.setvariable variable=AzureSubscriptionClientId;issecret=false]$($env:AZURESUBSCRIPTION_CLIENT_ID)"
+            Write-Host "##vso[task.setvariable variable=AzureSubscriptionTenantId;issecret=false]$($env:AZURESUBSCRIPTION_TENANT_ID)"
+            Write-Host "##vso[task.setvariable variable=SubscriptionId;issecret=false]$($subscriptionId)"
+
+            ./azd auth login --federated-credential-provider "azure-pipelines"
+            ./azd config set defaults.subscription $subscriptionId
+          workingDirectory: cli/azd
+        displayName: Configure OIDC Authentication
+
 
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
@@ -116,14 +131,13 @@ jobs:
           # AZD live test setup variables
           CI: true
           AZD_TEST_CLI_VERSION: $(CLI_VERSION)
-          AZD_TEST_CLIENT_ID: $(arm-client-id)
-          AZD_TEST_TENANT_ID: $(arm-tenant-id)
+          AZD_TEST_CLIENT_ID: $(AzureSubscriptionClientId)
+          AZD_TEST_TENANT_ID: $(AzureSubscriptionTenantId)
           AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
           AZD_TEST_AZURE_LOCATION: eastus2
           AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
           # AZD Live Test: Terraform authentication via `az`
           ARM_USE_CLI: true
-          ARM_TENANT_ID: $(arm-tenant-id)
           # Code Coverage: Generate junit report to publish results
           GOTESTSUM_JUNITFILE: junitTestReport.xml
 

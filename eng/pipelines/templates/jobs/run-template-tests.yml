@@ -126,7 +126,7 @@ jobs:
 
     steps:
       - pwsh: |
-          if ('$(TemplateName)' -contains 'terraform') { 
+          if ('$(TemplateName)' -like '*terraform*') { 
             Write-Host "##vso[task.complete result=Skipped;]SKIPPING BECAUSE THIS IS A TERRAFORM JOB ($(TemplateName))"
           }
       - checkout: self

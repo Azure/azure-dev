@@ -101,6 +101,7 @@ jobs:
           AZURESUBSCRIPTION_TENANT_ID: $(AzureSubscriptionTenantId)
           AZURESUBSCRIPTION_SERVICE_CONNECTION_ID: $(AzureSubscriptionServiceConnectionId)
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+          AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH: true
         displayName: AZD Login
 
       - task: AzureCLI@2

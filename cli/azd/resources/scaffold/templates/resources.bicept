@@ -209,6 +209,11 @@ var {{bicepName .Name}}Env = map(filter({{bicepName .Name}}AppSettingsArray, i =
 
 module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
   name: '{{bicepName .Name}}'
+  dependsOn: [
+    {{- if .DbCosmosMongo}}
+    cosmos
+    {{- end}}
+  ]
   params: {
     name: '{{.Name}}'
     {{- if ne .Port 0}}
@@ -220,6 +225,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {{- range .Backend.Frontends}}
         'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
         {{- end}}
+      ]
+      allowedMethods: [
+        'GET'
+        'PUT'
+        'POST'
+        'DELETE'
       ]
     }
     {{- end}}
@@ -343,7 +354,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- range $i, $e := .Frontend.Backends}}
           {
             name: '{{upper .Name}}_BASE_URL'
-            value: 'https://{{.Name}}.internal.${containerAppsEnvironment.outputs.defaultDomain}'
+            value: 'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
           }
           {{- end}}
           {{- end}}

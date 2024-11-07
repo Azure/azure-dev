@@ -141,7 +141,7 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscription, error) {
 	res, err := m.getSubscriptions(ctx)
 	if err != nil {
-		return nil, err
+		log.Panicf("getSubscriptions: %v", err)
 	}
 
 	return res.subscriptions, nil
@@ -181,7 +181,7 @@ func (m *SubscriptionsManager) getSubscriptions(ctx context.Context) (getSubscri
 func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
 	subscriptions, err := m.GetSubscriptions(ctx)
 	if err != nil {
-		return nil, err
+		log.Panicf("getSubscriptions: %v", err)
 	}
 
 	for _, sub := range subscriptions {
@@ -189,7 +189,13 @@ func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscription
 			return &sub, nil
 		}
 	}
-	return m.getSubscription(ctx, subscriptionId)
+
+	sub, err := m.getSubscription(ctx, subscriptionId)
+	if err != nil {
+		log.Panicf("getSubscription: %v", err)
+	}
+
+	return sub, nil
 }
 
 type tenantSubsResult struct {

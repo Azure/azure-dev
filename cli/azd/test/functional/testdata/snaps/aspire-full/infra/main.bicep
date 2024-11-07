@@ -12,6 +12,12 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
+@metadata({azd: {
+  type: 'needForDeploy'
+  config: {}
+  }
+})
+param goversion string = '1.22'
 
 var tags = {
   'azd-env-name': environmentName

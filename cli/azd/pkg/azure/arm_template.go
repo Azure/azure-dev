@@ -102,6 +102,7 @@ type AzdMetadataType string
 const AzdMetadataTypeLocation AzdMetadataType = "location"
 const AzdMetadataTypeGenerate AzdMetadataType = "generate"
 const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
+const AzdMetadataTypeNeedForDeploy AzdMetadataType = "needForDeploy"
 
 type AzdMetadata struct {
 	Type               *AzdMetadataType `json:"type,omitempty"`

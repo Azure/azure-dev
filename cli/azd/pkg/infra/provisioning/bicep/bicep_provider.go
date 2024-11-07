@@ -1826,6 +1826,7 @@ func (p *BicepProvider) ensureParameters(
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
 		parameterType := p.mapBicepTypeToInterfaceType(param.Type)
+		azdMetadata, hasMetadata := param.AzdMetadata()
 
 		// If a value is explicitly configured via a parameters file, use it.
 		// unless the parameter value inference is nil/empty
@@ -1834,6 +1835,10 @@ func (p *BicepProvider) ensureParameters(
 			if paramValue != nil {
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: paramValue,
+				}
+				if hasMetadata && azdMetadata.Type != nil && *azdMetadata.Type == azure.AzdMetadataTypeNeedForDeploy {
+					mustSetParamAsConfig(key, paramValue, p.env.Config, param.Secure())
+					configModified = true
 				}
 				continue
 			}
@@ -1863,7 +1868,6 @@ func (p *BicepProvider) ensureParameters(
 
 		// If the parameter is tagged with {type: "generate"}, skip prompting.
 		// We generate it once, then save to config for next attempts.`.
-		azdMetadata, hasMetadata := param.AzdMetadata()
 		if hasMetadata && parameterType == provisioning.ParameterTypeString && azdMetadata.Type != nil &&
 			*azdMetadata.Type == azure.AzdMetadataTypeGenerate {
 
@@ -1999,7 +2003,7 @@ func armParameterFileValue(paramType provisioning.ParameterType, value any, defa
 
 		defaultVal, hasDefault := defaultValue.(string)
 		if hasDefault && paramValid && paramVal != defaultVal {
-			return paramVal
+			return defaultVal
 		}
 	default:
 		return value

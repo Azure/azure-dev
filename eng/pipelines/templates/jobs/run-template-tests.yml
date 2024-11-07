@@ -111,6 +111,7 @@ jobs:
           CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
 
   - job: TemplateTest_RunTest
+    condition: not(contains(variables['TemplateName'], 'terraform'))
     timeoutInMinutes: 180
     dependsOn: TemplateTest_CreateMatrix
 

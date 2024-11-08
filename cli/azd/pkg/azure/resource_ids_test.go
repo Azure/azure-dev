@@ -8,7 +8,7 @@ import (
 
 func Test_GetResourceGroupName(t *testing.T) {
 	t.Run("WithMatch", func(t *testing.T) {
-		test := "/subscriptions/70a036f6-8e4d-4615-bad6-149c02e7720d/" +
+		test := "/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/" +
 			"resourceGroups/RESOURCE_GROUP_NAME/providers/" +
 			"Microsoft.ContainerRegistry/registries/REGISTRY_NAME"
 		resourceGroup := GetResourceGroupName(test)
@@ -17,7 +17,7 @@ func Test_GetResourceGroupName(t *testing.T) {
 	})
 
 	t.Run("WithMatchLower", func(t *testing.T) {
-		test := "/subscriptions/70a036f6-8e4d-4615-bad6-149c02e7720d/" +
+		test := "/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/" +
 			"resourcegroups/RESOURCE_GROUP_NAME/providers/Microsoft.ContainerRegistry/" +
 			"registries/REGISTRY_NAME"
 		resourceGroup := GetResourceGroupName(test)

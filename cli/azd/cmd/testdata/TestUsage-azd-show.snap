@@ -8,6 +8,7 @@ Flags
         --docs               	: Opens the documentation for azd show in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for show.
+        --show-secrets       	: Unmask secrets in output.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

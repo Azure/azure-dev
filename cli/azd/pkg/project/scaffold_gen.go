@@ -270,6 +270,8 @@ func mapHostUses(
 			svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
 				scaffold.ServiceReference{Name: use})
 			backendMapping[use] = res.Name // record the backend -> frontend mapping
+		case ResourceTypeOpenAiModel:
+			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
 		}
 	}
 

@@ -757,9 +757,9 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 	t.Run("references used when no output resources", func(t *testing.T) {
 		mockDeployment := &azapi.ResourceDeployment{
 			//nolint:lll
-			Id: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
+			Id: "/subscriptions/70a036f6-8e4d-4615-bad6-149c02e7720d/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
 			//nolint:lll
-			DeploymentId: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
+			DeploymentId: "/subscriptions/70a036f6-8e4d-4615-bad6-149c02e7720d/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
 			Name:         "matell-2508",
 			Type:         "Microsoft.Resources/deployments",
 			Tags: map[string]*string{
@@ -771,7 +771,7 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 				{
 					//nolint:lll
 					ID: to.Ptr(
-						"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg/providers/Microsoft.Resources/deployments/resources",
+						"/subscriptions/70a036f6-8e4d-4615-bad6-149c02e7720d/resourceGroups/matell-2508-rg/providers/Microsoft.Resources/deployments/resources",
 					),
 					ResourceName: to.Ptr("resources"),
 					ResourceType: to.Ptr("Microsoft.Resources/deployments"),
@@ -779,7 +779,7 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 						{
 							//nolint:lll
 							ID: to.Ptr(
-								"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg",
+								"/subscriptions/70a036f6-8e4d-4615-bad6-149c02e7720d/resourceGroups/matell-2508-rg",
 							),
 							ResourceName: to.Ptr("matell-2508-rg"),
 							ResourceType: to.Ptr("Microsoft.Resources/resourceGroups"),

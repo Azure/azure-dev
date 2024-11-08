@@ -399,8 +399,8 @@ resources:
 `
 
 func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
-	alpha.SetDefaultEnablement(string(alpha.Compose), true)
-	t.Cleanup(func() { alpha.SetDefaultEnablement(string(alpha.Compose), false) })
+	alpha.SetDefaultEnablement(string(featureCompose), true)
+	t.Cleanup(func() { alpha.SetDefaultEnablement(string(featureCompose), false) })
 
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
@@ -423,15 +423,15 @@ func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, "resources.bicep"))
 
 	// Disable the alpha feature and check that an error is returned
-	alpha.SetDefaultEnablement(string(alpha.Compose), false)
+	alpha.SetDefaultEnablement(string(featureCompose), false)
 
 	_, err = im.ProjectInfrastructure(context.Background(), prjConfig)
 	assert.Error(t, err)
 }
 
 func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
-	alpha.SetDefaultEnablement(string(alpha.Compose), true)
-	t.Cleanup(func() { alpha.SetDefaultEnablement(string(alpha.Compose), false) })
+	alpha.SetDefaultEnablement(string(featureCompose), true)
+	t.Cleanup(func() { alpha.SetDefaultEnablement(string(featureCompose), false) })
 
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
@@ -457,7 +457,7 @@ func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
 	}
 
 	// Disable the alpha feature
-	alpha.SetDefaultEnablement(string(alpha.Compose), false)
+	alpha.SetDefaultEnablement(string(featureCompose), false)
 
 	_, err = im.SynthAllInfrastructure(context.Background(), prjConfig)
 	assert.Error(t, err)

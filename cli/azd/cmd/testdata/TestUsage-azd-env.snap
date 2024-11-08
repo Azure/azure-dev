@@ -17,6 +17,7 @@ Available Commands
   refresh   	: Refresh environment settings by using information from a previous infrastructure provision.
   select    	: Set the default environment.
   set       	: Manage your environment settings.
+  set-secret	: Set a Key Vault secret in the environment.
 
 Flags
         --docs 	: Opens the documentation for azd env in your web browser.

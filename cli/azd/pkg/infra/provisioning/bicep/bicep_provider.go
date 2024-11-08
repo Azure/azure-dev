@@ -1832,6 +1832,18 @@ func (p *BicepProvider) ensureParameters(
 		if v, has := parameters[key]; has {
 			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
 			if paramValue != nil {
+
+				if stringValue, isString := paramValue.(string); isString && param.Secure() {
+					// For secure parameters using a string value, azd checks if the string is an Azure Key Vault Secret
+					// and if yes, it fetches the secret value from the Key Vault.
+					if keyvault.IsAkvs(stringValue) {
+						paramValue, err = p.keyvaultService.SecretFromAkvs(ctx, p.env.GetSubscriptionId(), stringValue)
+						if err != nil {
+							return nil, err
+						}
+					}
+				}
+
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: paramValue,
 				}

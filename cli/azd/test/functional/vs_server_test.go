@@ -139,8 +139,6 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 }
 
 func Test_CLI_VsServer(t *testing.T) {
-	t.Skip("Issue with ACA not updating provisioning state for aspire dashboard.")
-
 	testDir := filepath.Join("testdata", "vs-server", "tests")
 	// List all tests
 	var stdout, stderr bytes.Buffer

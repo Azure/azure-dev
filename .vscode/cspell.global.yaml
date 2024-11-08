@@ -150,6 +150,7 @@ ignoreWords:
     - tfstate
     - tfvars
     - traf
+    - unmanage
     - useragent
     - versioncontrol
     - vmss

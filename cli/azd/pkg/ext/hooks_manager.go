@@ -2,6 +2,7 @@ package ext
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -81,6 +82,10 @@ func (h *HooksManager) filterConfigs(
 		}
 
 		for _, hook := range hooks {
+			if hook == nil {
+				log.Printf("hook configuration for '%s' is missing", scriptName)
+				continue
+			}
 
 			if predicate != nil && !predicate(scriptName, hook) {
 				continue

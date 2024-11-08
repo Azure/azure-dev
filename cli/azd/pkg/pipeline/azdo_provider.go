@@ -771,10 +771,10 @@ func (p *AzdoCiProvider) configureConnection(
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
 	servicePrincipal *graphsdk.ServicePrincipal,
-	authType PipelineAuthType,
+	credentialOptions *CredentialOptions,
 	credentials *entraid.AzureCredentials,
 ) error {
-	if authType == "" || authType == AuthTypeFederated {
+	if credentialOptions.EnableFederatedCredentials {
 		// default and federated credentials are set up in credentialOptions
 		return nil
 	}

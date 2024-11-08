@@ -53,7 +53,7 @@ resource volumesAccountRoleAssignment 'Microsoft.Authorization/roleAssignments@2
 
 resource mySqlAbstractProjectAppHostVolumeTwoFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
-  name: take('${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}', 32)
+  name: take('${toLower('my-sql-abstract')}-${toLower('ProjectAppHostvolumetwo')}', 60)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -61,7 +61,7 @@ resource mySqlAbstractProjectAppHostVolumeTwoFileShare 'Microsoft.Storage/storag
 }
 resource mysqlabstractProjectAppHostVolumeOneFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
-  name: take('${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}', 32)
+  name: take('${toLower('mysqlabstract')}-${toLower('ProjectAppHostvolumeOne')}', 60)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -69,7 +69,7 @@ resource mysqlabstractProjectAppHostVolumeOneFileShare 'Microsoft.Storage/storag
 }
 resource noVolumeBm0FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
-  name: take('${toLower('noVolume')}-${toLower('bm0')}', 32)
+  name: take('${toLower('noVolume')}-${toLower('bm0')}', 60)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -77,7 +77,7 @@ resource noVolumeBm0FileShare 'Microsoft.Storage/storageAccounts/fileServices/sh
 }
 resource noVolumeBm1FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
-  name: take('${toLower('noVolume')}-${toLower('bm1')}', 32)
+  name: take('${toLower('noVolume')}-${toLower('bm1')}', 60)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -122,10 +122,10 @@ resource explicitContributorUserRoleAssignment 'Microsoft.Authorization/roleAssi
 
 resource mySqlAbstractProjectAppHostVolumeTwoStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   parent: containerAppEnvironment
-  name: take('${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}', 32)
+  name: take('${toLower('my-sql-abstract')}-${toLower('ProjectAppHostvolumetwo')}', 32)
   properties: {
     azureFile: {
-      shareName: '${toLower('my-sql-abstract')}-${toLower('ProjectAppHost-volume-two')}'
+      shareName: mySqlAbstractProjectAppHostVolumeTwoFileShare.name
       accountName: storageVolume.name
       accountKey: storageVolume.listKeys().keys[0].value
       accessMode: 'ReadOnly'
@@ -135,10 +135,10 @@ resource mySqlAbstractProjectAppHostVolumeTwoStore 'Microsoft.App/managedEnviron
 
 resource mysqlabstractProjectAppHostVolumeOneStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   parent: containerAppEnvironment
-  name: take('${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}', 32)
+  name: take('${toLower('mysqlabstract')}-${toLower('ProjectAppHostvolumeOne')}', 32)
   properties: {
     azureFile: {
-      shareName: '${toLower('mysqlabstract')}-${toLower('ProjectAppHost-volumeOne')}'
+      shareName: mysqlabstractProjectAppHostVolumeOneFileShare.name
       accountName: storageVolume.name
       accountKey: storageVolume.listKeys().keys[0].value
       accessMode: 'ReadWrite'
@@ -151,7 +151,7 @@ resource noVolumeBm0Store 'Microsoft.App/managedEnvironments/storages@2023-05-01
   name: take('${toLower('noVolume')}-${toLower('bm0')}', 32)
   properties: {
     azureFile: {
-      shareName: '${toLower('noVolume')}-${toLower('bm0')}'
+      shareName: noVolumeBm0FileShare.name
       accountName: storageVolume.name
       accountKey: storageVolume.listKeys().keys[0].value
       accessMode: 'ReadWrite'
@@ -164,7 +164,7 @@ resource noVolumeBm1Store 'Microsoft.App/managedEnvironments/storages@2023-05-01
   name: take('${toLower('noVolume')}-${toLower('bm1')}', 32)
   properties: {
     azureFile: {
-      shareName: '${toLower('noVolume')}-${toLower('bm1')}'
+      shareName: noVolumeBm1FileShare.name
       accountName: storageVolume.name
       accountKey: storageVolume.listKeys().keys[0].value
       accessMode: 'ReadOnly'
@@ -180,8 +180,8 @@ output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspace.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = containerAppEnvironment.name
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain
-output SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME string = mySqlAbstractProjectAppHostVolumeTwoStore.name
-output SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOST_VOLUMEONE_NAME string = mysqlabstractProjectAppHostVolumeOneStore.name
+output SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOSTVOLUMETWO_NAME string = mySqlAbstractProjectAppHostVolumeTwoStore.name
+output SERVICE_MYSQLABSTRACT_VOLUME_PROJECTAPPHOSTVOLUMEONE_NAME string = mysqlabstractProjectAppHostVolumeOneStore.name
 output SERVICE_NOVOLUME_VOLUME_BM0_NAME string = noVolumeBm0Store.name
 output SERVICE_NOVOLUME_FILE_SHARE_BM0_NAME string = noVolumeBm0FileShare.name
 output SERVICE_NOVOLUME_VOLUME_BM1_NAME string = noVolumeBm1Store.name

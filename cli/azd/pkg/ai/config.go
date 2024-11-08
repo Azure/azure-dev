@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"gopkg.in/yaml.v3"
+	"github.com/braydonk/yaml"
 )
 
 // ComponentConfig is a base configuration structure used by multiple AI components

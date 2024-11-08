@@ -83,7 +83,7 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bo
 		return v.is, v.err
 	}
 
-	value, err := ai.dotnetCli.GetMsBuildProperty(ctx, projectPath, "IsAspireHost")
+	isAppHost, err := ai.dotnetCli.IsAspireHostProject(ctx, projectPath)
 	if err != nil {
 		ai.hostCheck[projectPath] = hostCheckResult{
 			is:  false,
@@ -94,11 +94,11 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bo
 	}
 
 	ai.hostCheck[projectPath] = hostCheckResult{
-		is:  strings.TrimSpace(value) == "true",
+		is:  isAppHost,
 		err: nil,
 	}
 
-	return strings.TrimSpace(value) == "true", nil
+	return isAppHost, nil
 }
 
 func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *ServiceConfig) (*Infra, error) {
@@ -177,6 +177,23 @@ func mapToStringSlice(m map[string]string, separator string) []string {
 	return result
 }
 
+// mapToExpandableStringSlice converts a map of strings to a slice of expandable strings.
+// Each key-value pair in the map is converted to a string in the format "key:value",
+// where the separator is specified by the `separator` parameter.
+// If the value is an empty string, only the key is included in the resulting slice.
+// The resulting slice is returned without any string interpolation performed.
+func mapToExpandableStringSlice(m map[string]string, separator string) []osutil.ExpandableString {
+	var result []osutil.ExpandableString
+	for key, value := range m {
+		if value == "" {
+			result = append(result, osutil.NewExpandableString(key))
+		} else {
+			result = append(result, osutil.NewExpandableString(key+separator+value))
+		}
+	}
+	return result
+}
+
 func (ai *DotNetImporter) Services(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (map[string]*ServiceConfig, error) {
@@ -234,7 +251,7 @@ func (ai *DotNetImporter) Services(
 			Docker: DockerProjectOptions{
 				Path:      dockerfile.Path,
 				Context:   dockerfile.Context,
-				BuildArgs: mapToStringSlice(dockerfile.BuildArgs, "="),
+				BuildArgs: mapToExpandableStringSlice(dockerfile.BuildArgs, "="),
 			},
 		}
 
@@ -314,7 +331,7 @@ func (ai *DotNetImporter) Services(
 			dOptions = DockerProjectOptions{
 				Path:         bContainer.Build.Dockerfile,
 				Context:      bContainer.Build.Context,
-				BuildArgs:    mapToStringSlice(bArgs, "="),
+				BuildArgs:    mapToExpandableStringSlice(bArgs, "="),
 				BuildSecrets: bArgsArray,
 				BuildEnv:     reqEnv,
 			}
@@ -442,8 +459,7 @@ func evaluateSingleExpressionMatch(
 	return fmt.Sprintf("{%s%s}", infraParametersKey, resourceName), nil
 }
 
-func (ai *DotNetImporter) SynthAllInfrastructure(
-	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
+func (ai *DotNetImporter) SynthAllInfrastructure(ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
 	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
@@ -507,16 +523,11 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return nil, err
 	}
 
-	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
-	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
+	// writeManifestForResource writes the containerApp.tmpl.yaml or containerApp.bicepparam for the given resource to the
+	// generated filesystem. The manifest is written to a file name "containerApp.tmpl.yaml" or
+	// "containerApp.tmpl.bicepparam" in the same directory as the project that produces the
 	// container we will deploy.
 	writeManifestForResource := func(name string) error {
-		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			manifest, name, apphost.AppHostOptions{})
-		if err != nil {
-			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
-		}
-
 		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
 		if err != nil {
 			return err
@@ -527,13 +538,28 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
+		containerAppManifest, manifestType, err := apphost.ContainerAppManifestTemplateForProject(
+			manifest, name, apphost.AppHostOptions{})
+		if err != nil {
+			return fmt.Errorf("generating containerApp deployment manifest for resource %s: %w", name, err)
+		}
+
 		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.tmpl.yaml", name))
+		if manifestType == apphost.ContainerAppManifestTypeBicep {
+			manifestPath = filepath.Join(
+				filepath.Dir(projectRelPath), "infra", name, fmt.Sprintf("%s.tmpl.bicepparam", name))
+		}
 
 		if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
 			return err
 		}
 
-		return generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		err = generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	}
 
 	for name := range apphost.ProjectPaths(manifest) {

@@ -116,6 +116,12 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
+### Contributing as Microsoft template author
+
+Microsoft employees and partners who want to contribute templates to our official collections, must follow the standardization guidelines for template scaffolding and validation published [here](https://github.com/Azure-Samples/azd-template-artifacts)
+
+*Important Disclaimer*: The standardization artifacts, definitions and recommendations, are frequently updated.Please make sure to visit the site often, to follow the latest best practices.
+
 ## Trademark Notice
 
 Trademarks This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow Microsoft’s Trademark & Brand Guidelines. Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party’s policies.

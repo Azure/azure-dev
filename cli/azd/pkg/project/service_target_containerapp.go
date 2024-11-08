@@ -86,6 +86,10 @@ func (at *containerAppTarget) Deploy(
 		return nil, err
 	}
 
+	containerAppOptions := containerapps.ContainerAppOptions{
+		ApiVersion: serviceConfig.ApiVersion,
+	}
+
 	imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
 	progress.SetProgress(NewServiceProgress("Updating container app revision"))
 	err = at.containerAppService.AddRevision(
@@ -94,6 +98,7 @@ func (at *containerAppTarget) Deploy(
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
 		imageName,
+		&containerAppOptions,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("updating container app service: %w", err)
@@ -123,11 +128,16 @@ func (at *containerAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	containerAppOptions := containerapps.ContainerAppOptions{
+		ApiVersion: serviceConfig.ApiVersion,
+	}
+
 	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
+		&containerAppOptions,
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {

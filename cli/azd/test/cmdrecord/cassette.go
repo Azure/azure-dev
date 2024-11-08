@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"gopkg.in/yaml.v3"
+	"github.com/braydonk/yaml"
 )
 
 const InteractionIdFile = "int-id.txt"

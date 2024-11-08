@@ -5,9 +5,6 @@
         "ghcr.io/devcontainers/features/go:1": {
             "version": "1.23"
         },
-        "ghcr.io/guiyomh/features/golangci-lint:0":{
-            "version": "1.60.1"
-        },
         "ghcr.io/devcontainers/features/docker-in-docker:2.11.0": {
             "version": "latest",
             "moby": true

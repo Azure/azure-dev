@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-	"unsafe"
 
 	"github.com/golobby/container/v3"
 )
@@ -90,11 +89,11 @@ func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
 }
 
 func getUnexportedField(field reflect.Value) interface{} {
-	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
+	return reflect.NewAt(field.Type(), field.Addr().UnsafePointer()).Elem().Interface()
 }
 
 func setUnexportedField(field reflect.Value, value interface{}) {
-	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).
+	reflect.NewAt(field.Type(), field.Addr().UnsafePointer()).
 		Elem().
 		Set(reflect.ValueOf(value))
 }

@@ -54,6 +54,8 @@ func Test_CLI_AuthLoginStatus(t *testing.T) {
 }
 
 func Test_CLI_LoginServicePrincipal(t *testing.T) {
+	t.Skip("azure/azure-dev#4341")
+
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -62,7 +64,7 @@ func Test_CLI_LoginServicePrincipal(t *testing.T) {
 	cli := azdcli.NewCLI(t)
 	// Isolate login to a separate configuration directory
 	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
-	if cfg.ClientID == "" || cfg.TenantID == "" || cfg.ClientSecret == "" {
+	if cfg.ClientID == "" || cfg.TenantID == "" /* || cfg.ClientSecret == "" */ {
 		if cfg.CI {
 			panic("Service principal is not configured. AZD_TEST_* variables are required to be set for live testing.")
 		}
@@ -78,7 +80,7 @@ func Test_CLI_LoginServicePrincipal(t *testing.T) {
 	_, err := cli.RunCommand(ctx,
 		"auth", "login",
 		"--client-id", cfg.ClientID,
-		"--client-secret", cfg.ClientSecret,
+		//		"--client-secret", cfg.ClientSecret,
 		"--tenant-id", cfg.TenantID)
 	require.NoError(t, err)
 

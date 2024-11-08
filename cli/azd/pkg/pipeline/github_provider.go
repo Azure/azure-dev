@@ -459,16 +459,11 @@ func (p *GitHubCiProvider) configureConnection(
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
 	servicePrincipal *graphsdk.ServicePrincipal,
-	authType PipelineAuthType,
+	credentialOptions *CredentialOptions,
 	credentials *entraid.AzureCredentials,
 ) error {
-	// Default auth type to client-credentials for terraform
-	if infraOptions.Provider == provisioning.Terraform && authType == "" {
-		authType = AuthTypeClientCredentials
-	}
-
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-	if authType == AuthTypeClientCredentials {
+	if credentialOptions.EnableClientCredentials {
 		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, credentials)
 		if err != nil {
 			return fmt.Errorf("configuring client credentials auth: %w", err)

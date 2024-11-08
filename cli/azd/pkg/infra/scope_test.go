@@ -177,7 +177,7 @@ func TestScopeDeploy(t *testing.T) {
 		)
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
-		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
+		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil, nil)
 		require.NoError(t, err)
 	})
 
@@ -208,7 +208,7 @@ func TestScopeDeploy(t *testing.T) {
 		)
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
-		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
+		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil, nil)
 		require.NoError(t, err)
 	})
 }

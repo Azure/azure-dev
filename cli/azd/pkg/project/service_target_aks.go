@@ -200,7 +200,7 @@ func (t *aksTarget) Deploy(
 	// Only deploy the container image if a package output has been defined
 	// Empty package details is a valid scenario for any AKS deployment that does not build any containers
 	// Ex) Helm charts, or other manifests that reference external images
-	if packageOutput.Details != nil || packageOutput.PackagePath != "" {
+	if serviceConfig.Docker.RemoteBuild || packageOutput.Details != nil || packageOutput.PackagePath != "" {
 		// Login, tag & push container image to ACR
 		_, err := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true, progress)
 		if err != nil {

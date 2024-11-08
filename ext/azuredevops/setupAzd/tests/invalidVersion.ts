@@ -16,5 +16,5 @@ tmr.setAnswers({
         }
     }
 });
-tmr.setInput('version', '1.99.0');
+tmr.setInput('version', '1.9999999.0');
 tmr.run();

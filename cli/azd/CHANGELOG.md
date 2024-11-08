@@ -1,6 +1,6 @@
 # Release History
 
-## 1.10.0-beta.1 (Unreleased)
+## 1.11.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,74 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.10.4 (2024-11-06)
+
+### Bugs Fixed
+
+- [[4039]](https://github.com/Azure/azure-dev/pull/4039) Use DOTNET_CONTAINER.
+- [[4426]](https://github.com/Azure/azure-dev/pull/4426) Show inner error description for stack deployments.
+- [[4472]](https://github.com/Azure/azure-dev/pull/4472) Fix projects with empty spaces.
+- [[4458]](https://github.com/Azure/azure-dev/pull/4458) Fix panic on empty hooks.
+- [[4484]](https://github.com/Azure/azure-dev/pull/4484) Fix missing quotes in Aspire projects.
+- [[4515]](https://github.com/Azure/azure-dev/pull/4515) Use DOTNET_NOLOGO for Aspire projects.
+
+## 1.10.3 (2024-10-16)
+
+### Bugs Fixed
+
+- [[4450]](https://github.com/Azure/azure-dev/pull/4450) fix `persistSettings` alpha feature.
+
+## 1.10.2 (2024-10-08)
+
+### Features Added
+
+- [[4272]](https://github.com/Azure/azure-dev/pull/4272) Supports configurable `api-version` for container app deployments.
+- [[4286]](https://github.com/Azure/azure-dev/pull/4286) Adds `alpha` feature `alpha.aspire.useBicepForContainerApps` to use bicep for container app deployment.
+- [[4371]](https://github.com/Azure/azure-dev/pull/4371) Adds support for `default.value` for `parameter.v0`.
+
+### Bugs Fixed
+
+- [[4375]](https://github.com/Azure/azure-dev/pull/4375) Enables remote build support for AKS.
+- [[4363]](https://github.com/Azure/azure-dev/pull/4363) Fix environment variables to be evaluated too early for `main.parameters.json`.
+
+### Other Changes
+
+- [[4336]](https://github.com/Azure/azure-dev/pull/4336) Adds spinner to `azd down`.
+- [[4357]](https://github.com/Azure/azure-dev/pull/4357) Updates `azure.yaml.json` for `remoteBuild`.
+- [[4369]](https://github.com/Azure/azure-dev/pull/4369) Updates docker `buildargs` to expandable strings.
+- [[4331]](https://github.com/Azure/azure-dev/pull/4331) Exposes configurable settings for `actionOnUnmanage` and `denySettings` for Azure Deployment Stacks (alpha).
+
+## 1.10.1 (2024-09-05)
+
+### Bugs Fixed
+
+- [[4299]](https://github.com/Azure/azure-dev/pull/4299) Fixes issue in vs-server for Aspire projects.
+- [[4294]](https://github.com/Azure/azure-dev/pull/4294) Fixes azd pipeline config on Codespaces.
+- [[4295]](https://github.com/Azure/azure-dev/pull/4295) Fixes azd pipeline config for Terraform.
+
+## 1.10.0 (2024-09-04)
+
+### Features Added
+
+- [[4165]](https://github.com/Azure/azure-dev/pull/4165) Add support for `alpha` feature Azure Deployment stacks.
+- [[4236]](https://github.com/Azure/azure-dev/pull/4236) Support `args` on `container.{v0,v1}`.
+- [[4257]](https://github.com/Azure/azure-dev/pull/4257) Add support for multiple hooks per event.
+- [[4190]](https://github.com/Azure/azure-dev/pull/4190) Add support for `.azuredevops` folder.
+- [[4161]](https://github.com/Azure/azure-dev/pull/4161) Add remote builds support with Azure Container Registry.
+- [[4254]](https://github.com/Azure/azure-dev/pull/4254) Add support for environment variable substitution for source container image.
+- [[4203]](https://github.com/Azure/azure-dev/pull/4203) Add GitHub as template source configuration option.
+- [[4208]](https://github.com/Azure/azure-dev/pull/4208) Add support for Java Azure Functions.
+
+### Bugs Fixed
+
+- [[4237]](https://github.com/Azure/azure-dev/pull/4237) Fix pipeline config failing bug.
+- [[4263]](https://github.com/Azure/azure-dev/pull/4263) Fix `azd infra synth` ignored by `azd deploy` in azdo CI/CD pipeline bug.
+- [[4281]](https://github.com/Azure/azure-dev/pull/4281) Fix failed provision with the STG location.
+
+### Other Changes
+
+- [[4243]](https://github.com/Azure/azure-dev/pull/4243) Add AI services model deployments to provisioning display.
 
 ## 1.9.6 (2024-08-13)
 

@@ -381,8 +381,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env,
-		"AZURE_LOCATION=eastus2",
-		"AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS=true")
+		"AZURE_LOCATION=eastus2")
 
 	cred := azdcli.NewTestCredential(cli)
 

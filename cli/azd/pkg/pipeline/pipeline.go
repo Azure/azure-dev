@@ -122,7 +122,7 @@ type CiProvider interface {
 		gitRepo *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
 		servicePrincipal *graphsdk.ServicePrincipal,
-		authType PipelineAuthType,
+		credentialOptions *CredentialOptions,
 		credentials *entraid.AzureCredentials,
 	) error
 	// Gets the credential options that should be configured for the provider

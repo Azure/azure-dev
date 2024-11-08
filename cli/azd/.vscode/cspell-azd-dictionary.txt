@@ -1,5 +1,6 @@
 AADSTS
 ABRT
+ACCESSTOKEN
 aiomysql
 aiopg
 alphafeatures
@@ -50,6 +51,7 @@ AZURECLI
 azureedge
 azureml
 azurestaticapps
+AZURESUBSCRIPTION
 azuretools
 azureutil
 azureyaml
@@ -59,6 +61,7 @@ blockblob
 BOOLSLICE
 BUILDID
 BUILDNUMBER
+buildargs
 buildpacks
 byoi
 cflags
@@ -94,6 +97,7 @@ endregion
 entraid
 envlist
 envname
+envsubst
 errcheck
 errorinfo
 errorlint
@@ -142,6 +146,7 @@ mysqldb
 nobanner
 nodeapp
 nolint
+nologo
 notrail
 omitempty
 oneauth
@@ -160,6 +165,7 @@ overriden
 paketobuildpacks
 patternmatcher
 pflag
+pgadmin
 posix
 preinit
 proxying
@@ -198,6 +204,7 @@ stdouttrace
 STRINGSLICE
 struct
 structs
+subst
 substr
 swacli
 Syncer
@@ -226,5 +233,6 @@ webfrontend
 westus2
 wireinject
 yacspin
+yamlnode
 ymlt
 zerr

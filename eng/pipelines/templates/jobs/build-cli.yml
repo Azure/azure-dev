@@ -117,14 +117,12 @@ jobs:
           CI: true
           AZD_TEST_CLI_VERSION: $(CLI_VERSION)
           AZD_TEST_CLIENT_ID: $(arm-client-id)
-          AZD_TEST_CLIENT_SECRET: $(arm-client-secret)
           AZD_TEST_TENANT_ID: $(arm-tenant-id)
           AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
           AZD_TEST_AZURE_LOCATION: eastus2
           AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
-          # AZD Live Test: Terraform service principal authentication
-          ARM_CLIENT_ID: $(arm-client-id)
-          ARM_CLIENT_SECRET: $(arm-client-secret)
+          # AZD Live Test: Terraform authentication via `az`
+          ARM_USE_CLI: true
           ARM_TENANT_ID: $(arm-tenant-id)
           # Code Coverage: Generate junit report to publish results
           GOTESTSUM_JUNITFILE: junitTestReport.xml

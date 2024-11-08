@@ -150,9 +150,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 		cloud: cloud.AzurePublic(),
 	}
 
-	cred, err := m.LoginWithServicePrincipalFederatedTokenProvider(
-		context.Background(), "testClientId", "testTenantId", "github",
-	)
+	cred, err := m.LoginWithGitHubFederatedTokenProvider(context.Background(), "testClientId", "testTenantId")
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)

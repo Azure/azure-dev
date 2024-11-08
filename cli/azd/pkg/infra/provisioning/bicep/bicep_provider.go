@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -72,20 +71,12 @@ type BicepProvider struct {
 	deploymentManager     *infra.DeploymentManager
 	prompters             prompt.Prompter
 	curPrincipal          provisioning.CurrentPrincipalIdProvider
-	alphaFeatureManager   *alpha.FeatureManager
 	ignoreDeploymentState bool
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
-	// prevent resolving parameters multiple times in the same azd run.
-	ensureParamsInMemoryCache azure.ArmParameters
-	keyvaultService           keyvault.KeyVaultService
-	portalUrlBase             string
+	keyvaultService         keyvault.KeyVaultService
+	portalUrlBase           string
 }
-
-var ErrResourceGroupScopeNotSupported = fmt.Errorf(
-	"resource group scoped deployments are currently under alpha support and need to be explicitly enabled."+
-		" Run `%s` to enable this feature.", alpha.GetEnableCommand(ResourceGroupDeploymentFeature),
-)
 
 // Name gets the name of the infra provider
 func (p *BicepProvider) Name() string {
@@ -170,12 +161,6 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	}
 
 	if scope == azure.DeploymentScopeResourceGroup {
-		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
-			return ErrResourceGroupScopeNotSupported
-		}
-
-		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
-
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
 			rgName, err := p.prompters.PromptResourceGroup(ctx)
 			if err != nil {
@@ -214,7 +199,6 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var err error
 	spinnerMessage := "Loading Bicep template"
-	// TODO: Report progress, "Loading Bicep template"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	defer func() {
 		// Make sure we stop the spinner if an error occurs with the last message.
@@ -251,7 +235,6 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 		outputs = azure.ArmTemplateOutputs{}
 	}
 
-	// TODO: Report progress, "Retrieving Azure deployment"
 	spinnerMessage = "Retrieving Azure deployment"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
@@ -347,8 +330,6 @@ func (p *BicepProvider) createDeploymentFromArmDeployment(
 	return nil, errors.New("unsupported deployment scope")
 }
 
-var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
-
 const bicepFileExtension = ".bicep"
 const bicepparamFileExtension = ".bicepparam"
 
@@ -365,7 +346,6 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 
 	modulePath := p.modulePath()
-	// TODO: Report progress, "Compiling Bicep template"
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
@@ -619,12 +599,19 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
 	}
+
+	optionsMap, err := convert.ToMap(p.options)
+	if err != nil {
+		return nil, err
+	}
+
 	deployResult, err := p.deployModule(
 		ctx,
 		bicepDeploymentData.Target,
 		bicepDeploymentData.CompiledBicep.RawArmTemplate,
 		bicepDeploymentData.CompiledBicep.Parameters,
 		deploymentTags,
+		optionsMap,
 	)
 	if err != nil {
 		return nil, err
@@ -745,7 +732,8 @@ func (p *BicepProvider) Destroy(
 	options provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
 	modulePath := p.modulePath()
-	// TODO: Report progress, "Compiling Bicep template"
+	p.console.ShowSpinner(ctx, "Discovering resources to delete...", input.Step)
+	defer p.console.StopSpinner(ctx, "", input.StepDone)
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
@@ -779,7 +767,7 @@ func (p *BicepProvider) Destroy(
 	}
 
 	if len(groupedResources) == 0 {
-		return nil, fmt.Errorf("no resources found for deployment, '%s'", deploymentToDelete.Name())
+		return nil, fmt.Errorf("%w, '%s'", infra.ErrDeploymentResourcesNotFound, deploymentToDelete.Name())
 	}
 
 	keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
@@ -807,6 +795,7 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
 	}
 
+	p.console.StopSpinner(ctx, "", input.StepDone)
 	if err := p.destroyDeploymentWithConfirmation(
 		ctx,
 		options,
@@ -1052,7 +1041,12 @@ func (p *BicepProvider) destroyDeploymentWithConfirmation(
 			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
 		}
 	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		return deployment.Delete(ctx, progress)
+		optionsMap, err := convert.ToMap(p.options)
+		if err != nil {
+			return err
+		}
+
+		return deployment.Delete(ctx, optionsMap, progress)
 	})
 
 	if err != nil {
@@ -1731,8 +1725,9 @@ func (p *BicepProvider) deployModule(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*azapi.ResourceDeployment, error) {
-	return target.Deploy(ctx, armTemplate, armParameters, tags)
+	return target.Deploy(ctx, armTemplate, armParameters, tags, options)
 }
 
 // Returns either the bicep or bicepparam module file located in the infrastructure root.
@@ -1809,10 +1804,6 @@ func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
-	if p.ensureParamsInMemoryCache != nil {
-		return maps.Clone(p.ensureParamsInMemoryCache), nil
-	}
-
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
@@ -1938,19 +1929,15 @@ func (p *BicepProvider) ensureParameters(
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: value,
 				}
-				configuredParameters[prompt.key] = azure.ArmParameterValue{
-					Value: value,
-				}
 			}
 		}
 	}
 
 	if configModified {
 		if err := p.envManager.Save(ctx, p.env); err != nil {
-			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
+			return nil, fmt.Errorf("saving prompt values: %w", err)
 		}
 	}
-	p.ensureParamsInMemoryCache = maps.Clone(configuredParameters)
 	return configuredParameters, nil
 }
 
@@ -2067,22 +2054,20 @@ func NewBicepProvider(
 	console input.Console,
 	prompters prompt.Prompter,
 	curPrincipal provisioning.CurrentPrincipalIdProvider,
-	alphaFeatureManager *alpha.FeatureManager,
 	keyvaultService keyvault.KeyVaultService,
 	cloud *cloud.Cloud,
 ) provisioning.Provider {
 	return &BicepProvider{
-		envManager:          envManager,
-		env:                 env,
-		console:             console,
-		azCli:               azCli,
-		bicepCli:            bicepCli,
-		resourceService:     resourceService,
-		deploymentManager:   deploymentManager,
-		prompters:           prompters,
-		curPrincipal:        curPrincipal,
-		alphaFeatureManager: alphaFeatureManager,
-		keyvaultService:     keyvaultService,
-		portalUrlBase:       cloud.PortalUrlBase,
+		envManager:        envManager,
+		env:               env,
+		console:           console,
+		azCli:             azCli,
+		bicepCli:          bicepCli,
+		resourceService:   resourceService,
+		deploymentManager: deploymentManager,
+		prompters:         prompters,
+		curPrincipal:      curPrincipal,
+		keyvaultService:   keyvaultService,
+		portalUrlBase:     cloud.PortalUrlBase,
 	}
 }

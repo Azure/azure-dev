@@ -184,10 +184,6 @@ func TestBicepDestroy(t *testing.T) {
 func TestPlanForResourceGroup(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
-	// Enable the feature
-	err := mockContext.Config.Set("alpha.resourceGroupDeployments", "on")
-	require.NoError(t, err)
-
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -292,7 +288,6 @@ func TestPlanForResourceGroup(t *testing.T) {
 	})
 
 	infraProvider := createBicepProvider(t, mockContext)
-	require.NoError(t, err)
 	// The computed plan should target the resource group we picked.
 
 	planResult, err := infraProvider.plan(*mockContext.Context)
@@ -378,7 +373,6 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
-		mockContext.AlphaFeaturesManager,
 		keyvault.NewKeyVaultService(
 			mockaccount.SubscriptionCredentialProviderFunc(
 				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
@@ -963,7 +957,6 @@ func TestUserDefinedTypes(t *testing.T) {
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, cloud.AzurePublic()),
 		&mockCurrentPrincipal{},
-		mockContext.AlphaFeaturesManager,
 		keyvault.NewKeyVaultService(
 			mockaccount.SubscriptionCredentialProviderFunc(
 				func(_ context.Context, _ string) (azcore.TokenCredential, error) {

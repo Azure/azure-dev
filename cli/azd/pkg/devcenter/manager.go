@@ -284,8 +284,6 @@ func (m *manager) LatestArmDeployment(
 }
 
 // Outputs gets the outputs for the latest deployment of the specified environment
-// Right now this will retrieve the outputs from the latest azure deployment
-// Long term this will call into ADE Outputs API
 func (m *manager) Outputs(
 	ctx context.Context,
 	config *Config,
@@ -296,14 +294,21 @@ func (m *manager) Outputs(
 		return nil, fmt.Errorf("failed parsing resource group id: %w", err)
 	}
 
-	latestDeployment, err := m.LatestArmDeployment(ctx, config, env, func(d *azapi.ResourceDeployment) bool {
-		return d.ProvisioningState == azapi.DeploymentProvisioningStateSucceeded
-	})
+	outputsResponse, err := m.client.DevCenterByName(config.Name).
+		ProjectByName(config.Project).
+		EnvironmentsByUser(env.User).
+		EnvironmentByName(env.Name).
+		Outputs().
+		Get(ctx)
+
 	if err != nil {
-		return nil, fmt.Errorf("failed getting latest deployment: %w", err)
+		return nil, fmt.Errorf("failed getting outputs: %w", err)
 	}
 
-	outputs := createOutputParameters(azapi.CreateDeploymentOutput(latestDeployment.Outputs))
+	outputs, err := createOutputParameters(outputsResponse)
+	if err != nil {
+		return nil, fmt.Errorf("failed resolving output parameters: %w", err)
+	}
 
 	// Set up AZURE_SUBSCRIPTION_ID and AZURE_RESOURCE_GROUP environment variables
 	// These are required for azd deploy to work as expected
@@ -322,4 +327,49 @@ func (m *manager) Outputs(
 	}
 
 	return outputs, nil
+}
+
+func mapDevCenterTypeToParamType(devCenterType devcentersdk.OutputParameterType) (provisioning.ParameterType, error) {
+	switch strings.ToLower(string(devCenterType)) {
+	case string(devcentersdk.OutputParameterTypeString):
+		return provisioning.ParameterTypeString, nil
+	case string(devcentersdk.OutputParameterTypeBoolean):
+		return provisioning.ParameterTypeBoolean, nil
+	case string(devcentersdk.OutputParameterTypeNumber):
+		return provisioning.ParameterTypeNumber, nil
+	case string(devcentersdk.OutputParameterTypeObject):
+		return provisioning.ParameterTypeObject, nil
+	case string(devcentersdk.OutputParameterTypeArray):
+		return provisioning.ParameterTypeArray, nil
+	default:
+		return "", fmt.Errorf("unexpected output parameter type: '%s'", string(devCenterType))
+	}
+}
+
+// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
+// casings.
+func createOutputParameters(
+	outputsResponse *devcentersdk.OutputListResponse,
+) (map[string]provisioning.OutputParameter, error) {
+	outputParams := map[string]provisioning.OutputParameter{}
+
+	for key, devCenterParam := range outputsResponse.Outputs {
+		// To support BYOI (bring your own infrastructure) scenarios we will default to UPPER when canonical casing
+		// is not found in the parameters file to workaround strange azure behavior with OUTPUT values that look
+		// like `azurE_RESOURCE_GROUP`
+		paramName := strings.ToUpper(key)
+		value := devCenterParam.Value
+
+		paramType, err := mapDevCenterTypeToParamType(devCenterParam.Type)
+		if err != nil {
+			return nil, err
+		}
+
+		outputParams[paramName] = provisioning.OutputParameter{
+			Type:  paramType,
+			Value: value,
+		}
+	}
+
+	return outputParams, nil
 }

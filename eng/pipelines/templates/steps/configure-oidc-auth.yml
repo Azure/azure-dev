@@ -1,0 +1,16 @@
+parameters:
+  ServiceConnectionName: "azd-service-connection"
+
+steps:
+  - task: AzureCLI@2
+    condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+    inputs:
+      azureSubscription: ${{ parameters.ServiceConnectionName }}
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        Write-Host "##vso[task.setvariable variable=AzureSubscriptionClientId;issecret=false]$($env:AZURESUBSCRIPTION_CLIENT_ID)"
+        Write-Host "##vso[task.setvariable variable=AzureSubscriptionTenantId;issecret=false]$($env:AZURESUBSCRIPTION_TENANT_ID)"
+        Write-Host "##vso[task.setvariable variable=AzureSubscriptionServiceConnectionId;issecret=false]$($env:AZURESUBSCRIPTION_SERVICE_CONNECTION_ID)"
+        Write-Host "##vso[task.setvariable variable=SubscriptionId;issecret=false]$((az account show -o json | ConvertFrom-Json -AsHashtable)['id'])"
+    displayName: Configure OIDC Authentication

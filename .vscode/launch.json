@@ -2,6 +2,11 @@
     // Use IntelliSense to learn about possible attributes.
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+
+    // You can run `git update-index --skip-worktree .vscode/launch.json` to have git
+    // ignore changes to this file so you don't need to worry about commiting your edits. If you ever
+    // need to merge this file afterwards, you'll need to run `git update-index --no-skip-worktree .vscode/launch.json`
+    // to ensure git tracks changes to this file again.
     "version": "0.2.0",
     "configurations": [
         // If you set `AZD_DEBUG=true` in your environment, `azd` will pause early in start up and allow you to attach

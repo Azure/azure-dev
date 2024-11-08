@@ -202,13 +202,11 @@ func getCmdTemplateHelpDescription(*cobra.Command) string {
 
 func getCmdTemplateSourceAddHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		fmt.Sprintf(
-			"Adds an azd template source with the specified key. %s\nThe key can be any value that uniquely "+
-				"identifies the template source, with the exception of the following:",
-			output.WithWarningFormat("(Beta)")),
+		fmt.Sprintf("Adds an azd template source with the specified key. %s\n", output.WithWarningFormat("(Beta)"))+
+			"The key can be any value that uniquely identifies the template source, with well-known values being:",
 		[]string{
 			formatHelpNote("default: Default templates"),
-			formatHelpNote("awesome-azd: Templates from http://aka.ms/awesome-azd"),
+			formatHelpNote("awesome-azd: Templates from https://aka.ms/awesome-azd"),
 		})
 }
 
@@ -350,14 +348,11 @@ func (a *templateSourceListAction) Run(ctx context.Context) (*actions.ActionResu
 
 func newTemplateSourceAddCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "add <key>",
-		Short: fmt.Sprintf(
-			"Adds an azd template source with the specified key. %s\n"+
-				"The key can be any value that uniquely identifies the template source, with the exception of the following"+
-				" reserved, well-known key values:\n"+
-				"   ・default: Default templates\n"+
-				"   ・awesome-azd: Templates from http://aka.ms/awesome-azd",
-			output.WithWarningFormat("(Beta)")),
+		Use:   "add <key>",
+		Short: fmt.Sprintf("Adds an azd template source with the specified key. %s", output.WithWarningFormat("(Beta)")),
+		Long: "The key can be any value that uniquely identifies the template source, with well-known values being:\n" +
+			"   ・default: Default templates\n" +
+			"   ・awesome-azd: Templates from https://aka.ms/awesome-azd",
 		Args: cobra.ExactArgs(1),
 	}
 }

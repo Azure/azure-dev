@@ -40,3 +40,4 @@ overrides:
           - azdev
           - myimage
           - azureai
+          - entra

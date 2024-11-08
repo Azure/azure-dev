@@ -12,6 +12,7 @@ words:
   - azcloud
   - usgovcloudapi
   - chinacloudapi
+  - unmarshals
 languageSettings:
   - languageId: go
     ignoreRegExpList:

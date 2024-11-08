@@ -23,6 +23,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
+	"github.com/braydonk/yaml"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -90,7 +92,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 			slices.Contains(args.Args, "--getProperty:IsAspireHost")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.RunResult{
-			Stdout:   "true",
+			Stdout:   aspireAppHostSniffResult,
 			ExitCode: 0,
 		}, nil
 	})
@@ -143,7 +145,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 			slices.Contains(args.Args, "--getProperty:IsAspireHost")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.RunResult{
-			Stdout:   "true",
+			Stdout:   aspireAppHostSniffResult,
 			ExitCode: 0,
 		}, nil
 	})
@@ -181,7 +183,8 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-		hostCheck: make(map[string]hostCheckResult),
+		hostCheck:           make(map[string]hostCheckResult),
+		alphaFeatureManager: mockContext.AlphaFeaturesManager,
 	})
 
 	// Get defaults and error b/c no infra found and no Aspire project
@@ -275,7 +278,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 			slices.Contains(args.Args, "--getProperty:IsAspireHost")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.RunResult{
-			Stdout:   "true",
+			Stdout:   aspireAppHostSniffResult,
 			ExitCode: 0,
 		}, nil
 	})
@@ -371,3 +374,140 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	require.NoError(t, e)
 	require.Equal(t, 1, manifestInvokeCount)
 }
+
+const prjWithResources = `
+name: myproject
+resources:
+  api:
+    type: host.containerapp
+    port: 80
+    uses:
+      - postgresdb
+      - mongodb
+      - redis
+  web:
+    type: host.containerapp
+    port: 80
+    uses:
+    - api
+  postgresdb:
+    type: db.postgres
+  mongodb:
+    type: db.mongo
+  redis:
+    type: db.redis
+`
+
+func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
+	alpha.SetDefaultEnablement(string(featureCompose), true)
+	t.Cleanup(func() { alpha.SetDefaultEnablement(string(featureCompose), false) })
+
+	im := &ImportManager{
+		dotNetImporter: &DotNetImporter{
+			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		},
+	}
+
+	prjConfig := &ProjectConfig{}
+	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
+	require.NoError(t, err)
+
+	infra, err := im.ProjectInfrastructure(context.Background(), prjConfig)
+	assert.NoError(t, err)
+
+	assert.NotNil(t, infra.cleanupDir, "should be a temp dir")
+
+	dir := infra.Options.Path
+	assert.FileExists(t, filepath.Join(dir, "main.bicep"))
+	assert.FileExists(t, filepath.Join(dir, "main.parameters.json"))
+	assert.FileExists(t, filepath.Join(dir, "resources.bicep"))
+
+	// Disable the alpha feature and check that an error is returned
+	alpha.SetDefaultEnablement(string(featureCompose), false)
+
+	_, err = im.ProjectInfrastructure(context.Background(), prjConfig)
+	assert.Error(t, err)
+}
+
+func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
+	alpha.SetDefaultEnablement(string(featureCompose), true)
+	t.Cleanup(func() { alpha.SetDefaultEnablement(string(featureCompose), false) })
+
+	im := &ImportManager{
+		dotNetImporter: &DotNetImporter{
+			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		},
+	}
+
+	prjConfig := &ProjectConfig{}
+	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
+	require.NoError(t, err)
+
+	projectFs, err := im.SynthAllInfrastructure(context.Background(), prjConfig)
+	require.NoError(t, err)
+
+	files := []string{
+		"main.bicep",
+		"main.parameters.json",
+		"resources.bicep",
+	}
+	for _, f := range files {
+		_, err := projectFs.Open(filepath.Join(DefaultPath, f))
+		assert.NoError(t, err, "file %s should exist", f)
+	}
+
+	// Disable the alpha feature
+	alpha.SetDefaultEnablement(string(featureCompose), false)
+
+	_, err = im.SynthAllInfrastructure(context.Background(), prjConfig)
+	assert.Error(t, err)
+}
+
+// aspireAppHostSniffResult is mock data that would be returned by `dotnet msbuild` when fetching information about an
+// Aspire project. This is used to simulate the scenario where a project is an Aspire project. A real Aspire project would
+// have many entries in the ProjectCapability array (unrelated to the Aspire capability), but most have been omitted for
+// simplicity. An unrelated entry is included to ensure we are looking at the entire array of capabilities.
+// nolint: lll
+var aspireAppHostSniffResult string = `{
+  "Properties": {
+    "IsAspireHost": "true"
+  },
+  "Items": {
+    "ProjectCapability": [
+      {
+        "Identity": "LocalUserSecrets",
+        "FullPath": "/Users/matell/dd/ellismg/AspireBicep/AspireStarter/AspireStarter.AppHost/LocalUserSecrets",
+        "RootDir": "/",
+        "Filename": "LocalUserSecrets",
+        "Extension": "",
+        "RelativeDir": "",
+        "Directory": "Users/matell/dd/ellismg/AspireBicep/AspireStarter/AspireStarter.AppHost/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/Users/matell/.nuget/packages/microsoft.extensions.configuration.usersecrets/8.0.0/buildTransitive/net6.0/Microsoft.Extensions.Configuration.UserSecrets.props",
+        "DefiningProjectDirectory": "/Users/matell/.nuget/packages/microsoft.extensions.configuration.usersecrets/8.0.0/buildTransitive/net6.0/",
+        "DefiningProjectName": "Microsoft.Extensions.Configuration.UserSecrets",
+        "DefiningProjectExtension": ".props"
+      },	
+      {
+        "Identity": "Aspire",
+        "FullPath": "/Users/matell/dd/ellismg/AspireBicep/AspireStarter/AspireStarter.AppHost/Aspire",
+        "RootDir": "/",
+        "Filename": "Aspire",
+        "Extension": "",
+        "RelativeDir": "",
+        "Directory": "Users/matell/dd/ellismg/AspireBicep/AspireStarter/AspireStarter.AppHost/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "/Users/matell/.nuget/packages/aspire.hosting.apphost/8.2.0/build/Aspire.Hosting.AppHost.targets",
+        "DefiningProjectDirectory": "/Users/matell/.nuget/packages/aspire.hosting.apphost/8.2.0/build/",
+        "DefiningProjectName": "Aspire.Hosting.AppHost",
+        "DefiningProjectExtension": ".targets"
+      }
+    ]
+  }
+}`

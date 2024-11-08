@@ -49,15 +49,15 @@ func (s *environmentService) refreshEnvironmentAsync(
 	}
 
 	var c struct {
-		projectManager       project.ProjectManager      `container:"type"`
-		projectConfig        *project.ProjectConfig      `container:"type"`
-		importManager        *project.ImportManager      `container:"type"`
-		bicep                provisioning.Provider       `container:"name"`
-		azureResourceManager *infra.AzureResourceManager `container:"type"`
-		resourceService      *azapi.ResourceService      `container:"type"`
-		resourceManager      project.ResourceManager     `container:"type"`
-		serviceManager       project.ServiceManager      `container:"type"`
-		envManager           environment.Manager         `container:"type"`
+		projectManager       project.ProjectManager  `container:"type"`
+		projectConfig        *project.ProjectConfig  `container:"type"`
+		importManager        *project.ImportManager  `container:"type"`
+		bicep                provisioning.Provider   `container:"name"`
+		azureResourceManager infra.ResourceManager   `container:"type"`
+		resourceService      *azapi.ResourceService  `container:"type"`
+		resourceManager      project.ResourceManager `container:"type"`
+		serviceManager       project.ServiceManager  `container:"type"`
+		envManager           environment.Manager     `container:"type"`
 	}
 
 	container.MustRegisterScoped(func() internal.EnvFlag {

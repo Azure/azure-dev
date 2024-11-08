@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	ErrDeploymentsNotFound = errors.New("no deployments found")
+	ErrDeploymentsNotFound         = errors.New("no deployments found")
+	ErrDeploymentResourcesNotFound = errors.New("no resources found for deployment")
 )
 
 type DeploymentManager struct {

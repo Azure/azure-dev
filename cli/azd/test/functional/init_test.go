@@ -174,7 +174,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "README.md"))
 }
 
-func Test_CLI_Init_From_App(t *testing.T) {
+func Test_CLI_Init_From_App_With_Infra(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -189,6 +189,7 @@ func Test_CLI_Init_From_App(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
+	cli.Env = append(cli.Env, "AZD_ALPHA_ENABLE_COMPOSE=0")
 	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
 
 	err = copySample(appDir, "py-postgres")
@@ -205,7 +206,7 @@ func Test_CLI_Init_From_App(t *testing.T) {
 	require.NoError(t, err)
 
 	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
+	require.FileExists(t, filepath.Join(dir, "infra", "resources.bicep"))
 	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
-	require.FileExists(t, filepath.Join(dir, "infra", "app", "app.bicep"))
-	require.FileExists(t, filepath.Join(dir, "infra", "app", "db-postgres.bicep"))
 }

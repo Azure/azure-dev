@@ -172,6 +172,8 @@ func (m *SubscriptionsManager) getSubscriptions(ctx context.Context) (getSubscri
 		}
 	}
 
+	fmt.Printf("subscriptions: %v\n", subscriptions)
+
 	return getSubscriptionsResult{
 		subscriptions: subscriptions,
 		userClaims:    claims,

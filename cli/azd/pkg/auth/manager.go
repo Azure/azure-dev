@@ -925,6 +925,7 @@ func (m *Manager) saveLoginForServicePrincipal(tenantId, clientId string, secret
 		return err
 	}
 
+	fmt.Printf("saveLoginForServicePrincipal: saved tenantID: %s, clientID: %s\n", tenantId, clientId)
 	if err := m.saveUserProperties(&userProperties{ClientID: &clientId, TenantID: &tenantId}); err != nil {
 		return err
 	}

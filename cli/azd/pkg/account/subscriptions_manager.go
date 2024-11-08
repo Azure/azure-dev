@@ -111,6 +111,7 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 	}
 
 	if principalTenantId != nil {
+		fmt.Printf("LookupTenant: GetLoggedInServicePrincipalTenantID returned tenantId: %s", *principalTenantId)
 		return *principalTenantId, nil
 	}
 
@@ -186,11 +187,17 @@ func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscription
 		log.Panicf("getSubscriptions: %v", err)
 	}
 
+	fmt.Printf("GetSubscription: loaded subscriptions from cache: %v\n", subscriptions)
+
 	for _, sub := range subscriptions {
+		fmt.Printf("GetSubscription: matching %v with cached value %v\n", subscriptionId, sub.Id)
+
 		if sub.Id == subscriptionId {
 			return &sub, nil
 		}
 	}
+
+	fmt.Printf("GetSubscription: could not find existing entry for %v\n", subscriptionId)
 
 	sub, err := m.getSubscription(ctx, subscriptionId)
 	if err != nil {

@@ -61,6 +61,8 @@ func (s *SubscriptionsService) ListSubscriptions(
 	ctx context.Context,
 	tenantId string,
 ) ([]*armsubscriptions.Subscription, error) {
+	fmt.Printf("listSubscriptions: using tenantId: %s\n", tenantId)
+
 	client, err := s.createSubscriptionsClient(ctx, tenantId)
 	if err != nil {
 		return nil, err

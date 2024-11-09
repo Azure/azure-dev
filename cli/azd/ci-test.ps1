@@ -37,10 +37,10 @@ Write-Host "Running unit tests..."
 # See https://github.com/golang/go/issues/51430#issuecomment-1344711300
 #
 # This may be improved in go1.21 with an official 'go test' flag.
-# & $gotestsum -- ./... -short -v -cover -args --test.gocoverdir="$($unitCoverDir.FullName)"
-# if ($LASTEXITCODE) {
-#     exit $LASTEXITCODE
-# }
+& $gotestsum -- ./... -short -v -cover -args --test.gocoverdir="$($unitCoverDir.FullName)"
+if ($LASTEXITCODE) {
+    exit $LASTEXITCODE
+}
 
 if ($ShortMode) {
     Write-Host "Short mode, skipping integration tests"
@@ -61,7 +61,7 @@ $env:GOCOVERDIR = $intCoverDir.FullName
 $env:GOEXPERIMENT="loopvar"
 
 try {
-    & $gotestsum -- -run ^Test_CLI_Aspire_DetectGen$ github.com/azure/azure-dev/cli/azd/test/functional -v -timeout $IntegrationTestTimeout
+    & $gotestsum -- ./test/... -v -timeout $IntegrationTestTimeout
     if ($LASTEXITCODE) {
         exit $LASTEXITCODE
     }    

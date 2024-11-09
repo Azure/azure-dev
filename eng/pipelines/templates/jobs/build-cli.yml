@@ -80,6 +80,11 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/install-docker.yml
 
+      - task: UseDotNet@2
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        inputs:
+          version: 8.x
+
       # Live testing uses dotnet 9.0.x in the WebApp project deployment
       - task: UseDotNet@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

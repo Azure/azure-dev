@@ -1,5 +1,5 @@
 <Project>
     <PropertyGroup>
-        <AspireVersion>9.0.0-preview.4.24474.5</AspireVersion>
+        <AspireVersion>9.0.0-rc.1.24511.1</AspireVersion>
     </PropertyGroup>
 </Project>

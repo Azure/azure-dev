@@ -84,9 +84,9 @@ jobs:
       - task: UseDotNet@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
-          version: 8.0.x
+          version: 9.0.0-preview.4.24474.5
 
-      - bash: dotnet nuget add source --name dotnet8 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8/nuget/v3/index.json
+      - bash: dotnet nuget add source --name dotnet9 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json
         displayName: Add internal dotnet nuget feed
 
       - template: /eng/pipelines/templates/steps/azd-login.yml

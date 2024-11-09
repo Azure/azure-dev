@@ -569,19 +569,45 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 			}
 		}
 	}
-	for _, value := range resource.Env {
-		outputs, err := evaluateForOutputs(value)
+
+	feedFrom := func(from map[string]string, to *genBicepTemplateContext) error {
+		for _, value := range from {
+			outputs, err := evaluateForOutputs(value)
+			if err != nil {
+				return err
+			}
+			for key, output := range outputs {
+				if strings.Contains(output.Value, ".outputs.") {
+					to.OutputParameters[key] = output
+				} else {
+					to.OutputSecretParameters[key] = output
+				}
+			}
+
+		}
+		return nil
+	}
+	err := feedFrom(resource.Env, &b.bicepContext)
+	if err != nil {
+		return err
+	}
+
+	if resource.Deployment != nil {
+		// Taking only the string values from the deployment parameters. There could be other types like int or object there.
+		// Only string type could be referencing outputs.
+		deploymentParams := map[string]string{}
+		for k, v := range resource.Deployment.Params {
+			stringValue, castOk := v.(string)
+			if !castOk {
+				continue
+			}
+			deploymentParams[k] = stringValue
+		}
+
+		err = feedFrom(deploymentParams, &b.bicepContext)
 		if err != nil {
 			return err
 		}
-		for key, output := range outputs {
-			if strings.Contains(output.Value, ".outputs.") {
-				b.bicepContext.OutputParameters[key] = output
-			} else {
-				b.bicepContext.OutputSecretParameters[key] = output
-			}
-		}
-
 	}
 	return nil
 }

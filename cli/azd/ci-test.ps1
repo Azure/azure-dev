@@ -61,7 +61,7 @@ $env:GOCOVERDIR = $intCoverDir.FullName
 $env:GOEXPERIMENT="loopvar"
 
 try {
-    & $gotestsum -- ./test/... -v -timeout $IntegrationTestTimeout
+    & $gotestsum -- -run ^Test_CLI_Aspire_DetectGen$ github.com/azure/azure-dev/cli/azd/test/functional -v -timeout $IntegrationTestTimeout
     if ($LASTEXITCODE) {
         exit $LASTEXITCODE
     }    

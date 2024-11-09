@@ -26,6 +26,7 @@ type LocationFilterPredicate func(loc account.Location) bool
 type Prompter interface {
 	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
 	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
+	PromptResource(ctx context.Context, subId string, msg string, resourceType string) (string, error)
 	PromptResourceGroup(ctx context.Context) (string, error)
 }
 
@@ -109,6 +110,47 @@ func (p *DefaultPrompter) PromptLocation(
 	}
 
 	return loc, nil
+}
+
+// PromptResource uses the console (or external) prompter to allow the user to select a resource
+// of optional type `resourceType`. The selected resource Name will be returned.
+// The Name can be used with the ARM or Bicep template function `reference` or in an existing resource template's name
+// to get provisioned state data from a resource, or passed to the `resourceId` function to get the full resource ID
+// if you know the `resourceType`.
+func (p *DefaultPrompter) PromptResource(
+	ctx context.Context,
+	subId string,
+	msg string,
+	resourceType string,
+) (string, error) {
+	options := azapi.ListResourcesOptions{
+		ResourceType: resourceType,
+	}
+	resources, err := p.resourceService.ListResources(ctx, p.env.GetSubscriptionId(), &options)
+	if err != nil {
+		return "", fmt.Errorf("listing resources: %w", err)
+	}
+
+	slices.SortFunc(resources, func(a, b *azapi.Resource) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	// TODO: Add `optional` field to allow something like "Create a new resource" (similar to resources groups below) and return ""?
+	choices := make([]string, len(resources))
+	for idx, resource := range resources {
+		// TODO: Get location display names from account manager instead?
+		choices[idx] = fmt.Sprintf("%d. %s (%s)", idx+1, resource.Name, resource.Location)
+	}
+
+	choice, err := p.console.Select(ctx, input.ConsoleOptions{
+		Message: msg,
+		Options: choices,
+	})
+	if err != nil {
+		return "", fmt.Errorf("selecting resource: %w", err)
+	}
+
+	return resources[choice].Name, nil
 }
 
 func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, error) {

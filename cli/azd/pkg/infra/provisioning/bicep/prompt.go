@@ -143,6 +143,16 @@ func (p *BicepProvider) promptForParameter(
 			}
 			value = genValue
 		}
+	} else if paramType == provisioning.ParameterTypeString &&
+		azdMetadata.Type != nil &&
+		*azdMetadata.Type == azure.AzdMetadataTypeResource {
+
+		resourceId, err := p.prompters.PromptResource(ctx, p.env.GetSubscriptionId(), msg, *azdMetadata.ResourceType)
+		if err != nil {
+			return nil, err
+		}
+
+		value = resourceId
 	} else if param.AllowedValues != nil {
 		options := make([]string, 0, len(*param.AllowedValues))
 		for _, option := range *param.AllowedValues {

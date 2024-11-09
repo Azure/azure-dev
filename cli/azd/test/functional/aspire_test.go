@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -29,8 +28,6 @@ import (
 // (fast) go test -run ^Test_CLI_Aspire_DetectGen - Detection + generation acceptance tests.
 // (slow, > 10 mins) go test -run ^Test_CLI_Aspire_Deploy -timeout 30m - Full deployment acceptance tests.
 // (all) go test -run ^Test_CLI_Aspire -timeout 30m - Runs all tests.
-
-var dotnetWorkloadInstallOnce sync.Once
 
 // Test_CLI_Aspire_DetectGen tests the detection and generation of an Aspire project.
 func Test_CLI_Aspire_DetectGen(t *testing.T) {

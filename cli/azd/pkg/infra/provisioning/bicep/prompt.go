@@ -147,6 +147,13 @@ func (p *BicepProvider) promptForParameter(
 		azdMetadata.Type != nil &&
 		*azdMetadata.Type == azure.AzdMetadataTypeResource {
 
+		// Require a resource type for templates. It would be practically useless without knowing the type e.g.,
+		// you couldn't use it in a `reference()` or `resourceId()` template function, nor could you use it in an
+		// `existing` resource Bicep template.
+		if azdMetadata.ResourceType == nil || *azdMetadata.ResourceType == "" {
+			return nil, fmt.Errorf("resourceType required for parameter '%s'", key)
+		}
+
 		resourceId, err := p.prompters.PromptResource(ctx, p.env.GetSubscriptionId(), msg, *azdMetadata.ResourceType)
 		if err != nil {
 			return nil, err

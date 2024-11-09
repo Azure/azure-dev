@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 type Resource struct {
@@ -78,6 +79,47 @@ func (rs *ResourceService) GetResource(
 		},
 		Kind: *res.Kind,
 	}, nil
+}
+
+func (rs *ResourceService) ListSubscriptionResources(
+	ctx context.Context,
+	subscriptionId string,
+	listOptions *armresources.ClientListOptions,
+) ([]*ResourceExtended, error) {
+	client, err := rs.createResourcesClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter expression on the underlying REST API are different from --query param in az cli.
+	// https://learn.microsoft.com/en-us/rest/api/resources/resources/list-by-resource-group#uri-parameters
+	options := armresources.ClientListOptions{}
+	if listOptions != nil && *listOptions.Filter != "" {
+		options.Filter = listOptions.Filter
+	}
+
+	resources := []*ResourceExtended{}
+	pager := client.NewListPager(&options)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, resource := range page.ResourceListResult.Value {
+			resources = append(resources, &ResourceExtended{
+				Resource: Resource{
+					Id:       *resource.ID,
+					Name:     *resource.Name,
+					Type:     *resource.Type,
+					Location: *resource.Location,
+				},
+				Kind: convert.ToValueWithDefault(resource.Kind, ""),
+			})
+		}
+	}
+
+	return resources, nil
 }
 
 func (rs *ResourceService) ListResourceGroupResources(

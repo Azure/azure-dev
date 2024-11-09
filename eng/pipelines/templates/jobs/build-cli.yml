@@ -80,11 +80,11 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/install-docker.yml
 
-      # Live testing uses dotnet 8.0.x in the WebApp project deployment
+      # Live testing uses dotnet 9.0.x in the WebApp project deployment
       - task: UseDotNet@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
-          version: 9.0.x
+          version: 9.0.100-rc.2.24474.11
           includePreviewVersions: true
 
       - bash: dotnet nuget add source --name dotnet9 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json

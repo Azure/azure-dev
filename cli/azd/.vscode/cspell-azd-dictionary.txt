@@ -1,6 +1,7 @@
 AADSTS
 ABRT
 ACCESSTOKEN
+actix
 aiomysql
 aiopg
 alphafeatures
@@ -30,6 +31,7 @@ aspnet
 aspnetcore
 asyncmy
 asyncpg
+axum
 azapi
 azblob
 AZCLI
@@ -234,5 +236,6 @@ westus2
 wireinject
 yacspin
 yamlnode
+yew
 ymlt
 zerr

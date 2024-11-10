@@ -100,6 +100,15 @@ func TestDetect(t *testing.T) {
 					},
 				},
 				{
+					Language:      Rust,
+					Path:          "rust",
+					DetectionRule: "Inferred by presence of: Cargo.toml",
+					Dependencies: []Dependency{
+						RsActix,
+						RsYew,
+					},
+				},
+				{
 					Language:      TypeScript,
 					Path:          "typescript",
 					DetectionRule: "Inferred by presence of: package.json",
@@ -146,6 +155,7 @@ func TestDetect(t *testing.T) {
 			[]DetectOption{
 				WithoutJavaScript(),
 				WithoutPython(),
+				WithoutRust(),
 			},
 			[]Project{
 				{
@@ -212,6 +222,15 @@ func TestDetect(t *testing.T) {
 					Language:      Python,
 					Path:          "python",
 					DetectionRule: "Inferred by presence of: requirements.txt",
+				},
+				{
+					Language:      Rust,
+					Path:          "rust",
+					DetectionRule: "Inferred by presence of: Cargo.toml",
+					Dependencies: []Dependency{
+						RsActix,
+						RsYew,
+					},
 				},
 			},
 		},

@@ -29,6 +29,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azfile v1.2.2
 	github.com/Azure/azure-storage-file-go v0.8.0
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2
+	github.com/BurntSushi/toml v1.4.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/adam-lavrik/go-imath v0.0.0-20210910152346-265a42a96f0b
 	github.com/benbjohnson/clock v1.3.0

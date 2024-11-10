@@ -26,7 +26,7 @@ type LocationFilterPredicate func(loc account.Location) bool
 type Prompter interface {
 	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
 	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
-	PromptResource(ctx context.Context, subId string, msg string, resourceType string) (string, error)
+	PromptResource(ctx context.Context, msg string, resourceType string) (string, error)
 	PromptResourceGroup(ctx context.Context) (string, error)
 }
 
@@ -114,12 +114,13 @@ func (p *DefaultPrompter) PromptLocation(
 
 // PromptResource uses the console (or external) prompter to allow the user to select a resource
 // of optional type `resourceType`. The selected resource Name will be returned.
+// If no resources of that type were found, an empty string is returned.
+//
 // The Name can be used with the ARM or Bicep template function `reference` or in an existing resource template's name
 // to get provisioned state data from a resource, or passed to the `resourceId` function to get the full resource ID
 // if you know the `resourceType`.
 func (p *DefaultPrompter) PromptResource(
 	ctx context.Context,
-	subId string,
 	msg string,
 	resourceType string,
 ) (string, error) {
@@ -129,6 +130,9 @@ func (p *DefaultPrompter) PromptResource(
 	resources, err := p.resourceService.ListResources(ctx, p.env.GetSubscriptionId(), &options)
 	if err != nil {
 		return "", fmt.Errorf("listing resources: %w", err)
+	}
+	if len(resources) == 0 {
+		return "", nil
 	}
 
 	slices.SortFunc(resources, func(a, b *azapi.Resource) int {

@@ -154,9 +154,16 @@ func (p *BicepProvider) promptForParameter(
 			return nil, fmt.Errorf("resourceType required for parameter '%s'", key)
 		}
 
-		resourceId, err := p.prompters.PromptResource(ctx, p.env.GetSubscriptionId(), msg, *azdMetadata.ResourceType)
+		resourceId, err := p.prompters.PromptResource(ctx, msg, *azdMetadata.ResourceType)
 		if err != nil {
 			return nil, err
+		}
+		if resourceId == "" {
+			return nil, fmt.Errorf(
+				"no resources of type '%s' were found for parameter '%s'",
+				*azdMetadata.ResourceType,
+				key,
+			)
 		}
 
 		value = resourceId

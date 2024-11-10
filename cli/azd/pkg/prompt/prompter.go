@@ -135,7 +135,7 @@ func (p *DefaultPrompter) PromptResource(
 		return strings.Compare(a.Name, b.Name)
 	})
 
-	// TODO: Add `optional` field to allow something like "Create a new resource" (similar to resources groups below) and return ""?
+	// TODO: Add `optional` field to allow "None" and return ""?
 	choices := make([]string, len(resources))
 	for idx, resource := range resources {
 		// TODO: Get location display names from account manager instead?

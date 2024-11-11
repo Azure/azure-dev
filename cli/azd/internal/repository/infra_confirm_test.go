@@ -3,7 +3,10 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/stretchr/testify/assert"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -229,6 +232,75 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, tt.want, spec)
+		})
+	}
+}
+
+func TestDetectCosmosSqlDatabaseContainerInFile(t *testing.T) {
+	tests := []struct {
+		javaFileContent    string
+		expectedContainers scaffold.CosmosSqlDatabaseContainer
+	}{
+		{
+			javaFileContent: "",
+			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
+				ContainerName:     "",
+				PartitionKeyPaths: []string{},
+			},
+		},
+		{
+			javaFileContent: "@Container(containerName = \"users\")",
+			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
+				ContainerName:     "users",
+				PartitionKeyPaths: []string{},
+			},
+		},
+		{
+			javaFileContent: "" +
+				"@Container(containerName = \"users\")\n" +
+				"public class User {\n" +
+				"    @Id\n    " +
+				"private String id;\n" +
+				"    private String firstName;\n" +
+				"    @PartitionKey\n" +
+				"    private String lastName;",
+			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
+				ContainerName: "users",
+				PartitionKeyPaths: []string{
+					"/last_name",
+				},
+			},
+		},
+		{
+			javaFileContent: "" +
+				"@Container(containerName = \"users\")\n" +
+				"public class User {\n" +
+				"    @Id\n    " +
+				"private String id;\n" +
+				"    private String firstName;\n" +
+				"    @PartitionKey private String lastName;",
+			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
+				ContainerName: "users",
+				PartitionKeyPaths: []string{
+					"/last_name",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.javaFileContent, func(t *testing.T) {
+			tempDir := t.TempDir()
+			tempFile := filepath.Join(tempDir, "Example.java")
+			file, err := os.Create(tempFile)
+			assert.NoError(t, err)
+			file.Close()
+
+			err = os.WriteFile(tempFile, []byte(tt.javaFileContent), osutil.PermissionFile)
+			assert.NoError(t, err)
+
+			container, err := detectCosmosSqlDatabaseContainerInFile(tempFile)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedContainers, container)
 		})
 	}
 }

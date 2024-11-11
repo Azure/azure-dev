@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -74,6 +75,24 @@ func (i *Initializer) infraSpecFromDetect(
 					AuthUsingUsernamePassword: authType == scaffold.AuthType_PASSWORD,
 				}
 				break dbPrompt
+			case appdetect.DbCosmos:
+				if dbName == "" {
+					i.console.Message(ctx, "Database name is required.")
+					continue
+				}
+				containers, err := detectCosmosSqlDatabaseContainersInDirectory(detect.root)
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				spec.DbCosmos = &scaffold.DatabaseCosmosAccount{
+					// todo:
+					// Now all services (except aca) are named by '${abbrs.xxx}${resourceToken}'
+					// Consider to name it by AccountName defined here.
+					AccountName:  "not used for now",
+					DatabaseName: dbName,
+					Containers:   containers,
+				}
+				break dbPrompt
 			}
 			break dbPrompt
 		}
@@ -128,6 +147,8 @@ func (i *Initializer) infraSpecFromDetect(
 					AuthUsingManagedIdentity:  spec.DbMySql.AuthUsingManagedIdentity,
 					AuthUsingUsernamePassword: spec.DbMySql.AuthUsingUsernamePassword,
 				}
+			case appdetect.DbCosmos:
+				serviceSpec.DbCosmos = spec.DbCosmos
 			case appdetect.DbRedis:
 				serviceSpec.DbRedis = &scaffold.DatabaseReference{
 					DatabaseName: "redis",
@@ -433,4 +454,50 @@ func (i *Initializer) chooseAuthType(ctx context.Context, serviceName string) (s
 	} else {
 		return scaffold.AuthType_PASSWORD, nil
 	}
+}
+
+func detectCosmosSqlDatabaseContainersInDirectory(root string) ([]scaffold.CosmosSqlDatabaseContainer, error) {
+	var result []scaffold.CosmosSqlDatabaseContainer
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".java" {
+			container, err := detectCosmosSqlDatabaseContainerInFile(path)
+			if err != nil {
+				return err
+			}
+			if len(container.ContainerName) != 0 {
+				result = append(result, container)
+			}
+		}
+		return nil
+	})
+	return result, err
+}
+
+func detectCosmosSqlDatabaseContainerInFile(filePath string) (scaffold.CosmosSqlDatabaseContainer, error) {
+	var result scaffold.CosmosSqlDatabaseContainer
+	result.PartitionKeyPaths = make([]string, 0)
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return result, err
+	}
+	// todo:
+	// 1. Maybe "@Container" is not "com.azure.spring.data.cosmos.core.mapping.Container"
+	// 2. Maybe "@Container" is imported by "com.azure.spring.data.cosmos.core.mapping.*"
+	containerRegex := regexp.MustCompile(`@Container\s*\(containerName\s*=\s*"([^"]+)"\)`)
+	partitionKeyRegex := regexp.MustCompile(`@PartitionKey\s*(?:\n\s*)?(?:private|public|protected)?\s*\w+\s+(\w+);`)
+
+	matches := containerRegex.FindAllStringSubmatch(string(content), -1)
+	if len(matches) != 1 {
+		return result, nil
+	}
+	result.ContainerName = matches[0][1]
+
+	matches = partitionKeyRegex.FindAllStringSubmatch(string(content), -1)
+	for _, match := range matches {
+		result.PartitionKeyPaths = append(result.PartitionKeyPaths, match[1])
+	}
+	return result, nil
 }

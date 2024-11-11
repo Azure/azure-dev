@@ -108,6 +108,56 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
   }
 }
 {{- end}}
+{{- if .DbCosmos }}
+
+module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
+  name: 'cosmos'
+  params: {
+    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    tags: tags
+    location: location
+    locations: [
+      {
+        failoverPriority: 0
+        isZoneRedundant: false
+        locationName: location
+      }
+    ]
+    networkRestrictions: {
+      ipRules: []
+      virtualNetworkRules: []
+      publicNetworkAccess: 'Enabled'
+    }
+    sqlDatabases: [
+      {
+        name: '{{ .DbCosmos.DatabaseName }}'
+        containers: [
+          {{- range .DbCosmos.Containers}}
+          {
+            name: '{{ .ContainerName }}'
+            paths: [
+              {{- range $path := .PartitionKeyPaths}}
+              '{{ $path }}'
+              {{- end}}
+            ]
+          }
+          {{- end}}
+        ]
+      }
+    ]
+    sqlRoleAssignmentsPrincipalIds: [
+      {{- range .Services}}
+      {{bicepName .Name}}Identity.outputs.principalId
+      {{- end}}
+    ]
+    sqlRoleDefinitions: [
+      {
+        name: 'service-access-cosmos-sql-role'
+      }
+    ]
+  }
+}
+{{- end}}
 {{- if .DbPostgres}}
 
 var postgreSqlDatabaseName = '{{ .DbPostgres.DatabaseName }}'
@@ -683,6 +733,16 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'SPRING_DATASOURCE_PASSWORD'
             secretRef: 'mysql-password'
+          }
+          {{- end}}
+          {{- if .DbCosmos }}
+          {
+            name: 'SPRING_CLOUD_AZURE_COSMOS_ENDPOINT'
+            value: cosmos.outputs.endpoint
+          }
+          {
+            name: 'SPRING_CLOUD_AZURE_COSMOS_DATABASE'
+            value: '{{ .DbCosmos.DatabaseName }}'
           }
           {{- end}}
           {{- if .DbRedis}}

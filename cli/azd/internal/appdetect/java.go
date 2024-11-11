@@ -159,6 +159,10 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 			databaseDepMap[DbPostgres] = struct{}{}
 		}
 
+		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-data-cosmos" {
+			databaseDepMap[DbCosmos] = struct{}{}
+		}
+
 		if dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-redis" {
 			databaseDepMap[DbRedis] = struct{}{}
 		}

@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -116,60 +117,62 @@ var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
 // values are unset. This also requires that the Bicep module can be compiled.
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
-	modulePath := p.modulePath()
+	modulePaths := p.modulePaths()
 
-	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
-	// which can reference these values
-	if isBicepParamFile(modulePath) {
-		if err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {
-			return err
-		}
-	}
-
-	compileResult, compileErr := p.compileBicep(ctx, modulePath)
-	if compileErr != nil {
-		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
-	}
-
-	// for .bicep, azd must load a parameters.json file and create the ArmParameters
-	if isBicepFile(modulePath) {
-		var filterLocation = func(loc account.Location) bool {
-			if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
-				if locationParam.AllowedValues != nil {
-					return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
-						allowedValueString, goodCast := allowedValue.(string)
-						return goodCast && loc.Name == allowedValueString
-					}) != -1
-				}
+	for _, modulePath := range modulePaths {
+		// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
+		// which can reference these values
+		if isBicepParamFile(modulePath) {
+			if err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {
+				return err
 			}
-			return true
 		}
 
-		err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation)
-		if err != nil {
-			return err
+		compileResult, compileErr := p.compileBicep(ctx, modulePath)
+		if compileErr != nil {
+			return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
 		}
 
-		if _, err := p.ensureParameters(ctx, compileResult.Template); err != nil {
-			return err
-		}
-	}
+		// for .bicep, azd must load a parameters.json file and create the ArmParameters
+		if isBicepFile(modulePath) {
+			var filterLocation = func(loc account.Location) bool {
+				if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
+					if locationParam.AllowedValues != nil {
+						return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
+							allowedValueString, goodCast := allowedValue.(string)
+							return goodCast && loc.Name == allowedValueString
+						}) != -1
+					}
+				}
+				return true
+			}
 
-	scope, err := compileResult.Template.TargetScope()
-	if err != nil {
-		return err
-	}
-
-	if scope == azure.DeploymentScopeResourceGroup {
-		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
-			rgName, err := p.prompters.PromptResourceGroup(ctx)
+			err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation)
 			if err != nil {
 				return err
 			}
 
-			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-			if err := p.envManager.Save(ctx, p.env); err != nil {
-				return fmt.Errorf("saving resource group name: %w", err)
+			if _, err := p.ensureParameters(ctx, compileResult.Template); err != nil {
+				return err
+			}
+		}
+
+		scope, err := compileResult.Template.TargetScope()
+		if err != nil {
+			return err
+		}
+
+		if scope == azure.DeploymentScopeResourceGroup {
+			if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+				rgName, err := p.prompters.PromptResourceGroup(ctx)
+				if err != nil {
+					return err
+				}
+
+				p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+				if err := p.envManager.Save(ctx, p.env); err != nil {
+					return fmt.Errorf("saving resource group name: %w", err)
+				}
 			}
 		}
 	}
@@ -177,8 +180,8 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	return nil
 }
 
-func (p *BicepProvider) LastDeployment(ctx context.Context) (*azapi.ResourceDeployment, error) {
-	modulePath := p.modulePath()
+func (p *BicepProvider) LastRootDeployment(ctx context.Context) (*azapi.ResourceDeployment, error) {
+	modulePath := p.rootModulePath()
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("compiling bicep template: %w", err)
@@ -189,7 +192,8 @@ func (p *BicepProvider) LastDeployment(ctx context.Context) (*azapi.ResourceDepl
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
 
-	return p.latestDeploymentResult(ctx, scope)
+	moduleName := moduleNameFromPaths(modulePath, p.rootModulePath())
+	return p.latestDeploymentResult(ctx, scope, moduleName)
 }
 
 func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOptions) (*provisioning.StateResult, error) {
@@ -211,102 +215,112 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 	var outputs azure.ArmTemplateOutputs
 	var scopeErr error
 
-	modulePath := p.modulePath()
-	if _, err := os.Stat(modulePath); err == nil {
-		compileResult, err := p.compileBicep(ctx, modulePath)
-		if err != nil {
-			return nil, fmt.Errorf("compiling bicep template: %w", err)
-		}
+	modulePaths := p.modulePaths()
+	rootModulePath := p.rootModulePath()
 
-		scope, err = p.scopeForTemplate(compileResult.Template)
-		if err != nil {
-			return nil, fmt.Errorf("computing deployment scope: %w", err)
-		}
-
-		outputs = compileResult.Template.Outputs
-	} else if errors.Is(err, os.ErrNotExist) {
-		// To support BYOI (bring your own infrastructure)
-		// We need to support the case where there template does not contain an `infra` folder.
-		scope, scopeErr = p.inferScopeFromEnv()
-		if scopeErr != nil {
-			return nil, fmt.Errorf("computing deployment scope: %w", err)
-		}
-
-		outputs = azure.ArmTemplateOutputs{}
+	state := provisioning.State{
+		Resources: []provisioning.Resource{},
+		Outputs:   map[string]provisioning.OutputParameter{},
 	}
+	for _, modulePath := range modulePaths {
+		if _, err := os.Stat(modulePath); err == nil {
+			compileResult, err := p.compileBicep(ctx, modulePath)
+			if err != nil {
+				return nil, fmt.Errorf("compiling bicep template: %w", err)
+			}
 
-	spinnerMessage = "Retrieving Azure deployment"
-	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+			scope, err = p.scopeForTemplate(compileResult.Template)
+			if err != nil {
+				return nil, fmt.Errorf("computing deployment scope: %w", err)
+			}
 
-	var deployment *azapi.ResourceDeployment
+			outputs = compileResult.Template.Outputs
+		} else if errors.Is(err, os.ErrNotExist) {
+			// To support BYOI (bring your own infrastructure)
+			// We need to support the case where there template does not contain an `infra` folder.
+			scope, scopeErr = p.inferScopeFromEnv()
+			if scopeErr != nil {
+				return nil, fmt.Errorf("computing deployment scope: %w", err)
+			}
 
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), options.Hint())
-	p.console.StopSpinner(ctx, "", input.StepDone)
+			outputs = azure.ArmTemplateOutputs{}
+		}
 
-	if err != nil {
-		p.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
-		return nil, fmt.Errorf("retrieving deployment: %w", err)
-	} else {
+		spinnerMessage = "Retrieving Azure deployment"
+		p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+		var deployment *azapi.ResourceDeployment
+
+		moduleName := moduleNameFromPaths(modulePath, rootModulePath)
+		deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), moduleName, options.Hint())
 		p.console.StopSpinner(ctx, "", input.StepDone)
-	}
 
-	if len(deployments) > 1 {
-		deploymentOptions := getDeploymentOptions(deployments)
-
-		p.console.Message(ctx, output.WithWarningFormat("WARNING: Multiple matching deployments were found\n"))
-
-		promptConfig := input.ConsoleOptions{
-			Message: "Select a deployment to continue:",
-			Options: deploymentOptions,
+		if err != nil {
+			p.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+			return nil, fmt.Errorf("retrieving deployment: %w", err)
+		} else {
+			p.console.StopSpinner(ctx, "", input.StepDone)
 		}
 
-		selectedDeployment, err := p.console.Select(ctx, promptConfig)
+		if len(deployments) > 1 {
+			deploymentOptions := getDeploymentOptions(deployments)
+
+			p.console.Message(ctx, output.WithWarningFormat("WARNING: Multiple matching deployments were found\n"))
+
+			promptConfig := input.ConsoleOptions{
+				Message: "Select a deployment to continue:",
+				Options: deploymentOptions,
+			}
+
+			selectedDeployment, err := p.console.Select(ctx, promptConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			deployment = deployments[selectedDeployment]
+			p.console.Message(ctx, "")
+		} else {
+			deployment = deployments[0]
+		}
+
+		azdDeployment, err := p.createDeploymentFromArmDeployment(scope, deployment.Name)
 		if err != nil {
 			return nil, err
 		}
 
-		deployment = deployments[selectedDeployment]
-		p.console.Message(ctx, "")
-	} else {
-		deployment = deployments[0]
-	}
+		p.console.MessageUxItem(ctx, &ux.DoneMessage{
+			Message: fmt.Sprintf("Retrieving Azure deployment (%s)", output.WithHighLightFormat(deployment.Name)),
+		})
 
-	azdDeployment, err := p.createDeploymentFromArmDeployment(scope, deployment.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	p.console.MessageUxItem(ctx, &ux.DoneMessage{
-		Message: fmt.Sprintf("Retrieving Azure deployment (%s)", output.WithHighLightFormat(deployment.Name)),
-	})
-
-	state := provisioning.State{}
-	state.Resources = make([]provisioning.Resource, len(deployment.Resources))
-
-	for idx, res := range deployment.Resources {
-		state.Resources[idx] = provisioning.Resource{
-			Id: *res.ID,
+		for _, res := range deployment.Resources {
+			state.Resources = append(state.Resources, provisioning.Resource{
+				Id: *res.ID,
+			})
 		}
-	}
 
-	state.Outputs = p.createOutputParameters(
-		outputs,
-		azapi.CreateDeploymentOutput(deployment.Outputs),
-	)
+		outputs := p.createOutputParameters(
+			outputs,
+			azapi.CreateDeploymentOutput(deployment.Outputs),
+		)
+
+		for key, value := range outputs {
+			state.Outputs[key] = value
+		}
+
+		outputsUrl, err := azdDeployment.OutputsUrl(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		p.console.Message(ctx, fmt.Sprintf(
+			"\nFetched Azure infrastructure deployment: %s",
+			output.WithHyperlink(outputsUrl, deployment.Name),
+		))
+	}
 
 	p.console.MessageUxItem(ctx, &ux.DoneMessage{
 		Message: fmt.Sprintf("Updated %d environment variables", len(state.Outputs)),
 	})
-
-	outputsUrl, err := azdDeployment.OutputsUrl(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	p.console.Message(ctx, fmt.Sprintf(
-		"\nPopulated environment from Azure infrastructure deployment: %s",
-		output.WithHyperlink(outputsUrl, deployment.Name),
-	))
 
 	return &provisioning.StateResult{
 		State: &state,
@@ -342,10 +356,9 @@ func isBicepParamFile(modulePath string) bool {
 }
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
+func (p *BicepProvider) plan(ctx context.Context, modulePath string) (*deploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 
-	modulePath := p.modulePath()
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
@@ -365,7 +378,12 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 		return nil, err
 	}
 
-	target, err := p.deploymentFromScopeType(deploymentScope)
+	name := p.env.Name()
+	moduleName := moduleNameFromPaths(modulePath, p.rootModulePath())
+	if moduleName != "" {
+		name += "-" + moduleName
+	}
+	target, err := p.deploymentFromScopeType(deploymentScope, name)
 	if err != nil {
 		return nil, err
 	}
@@ -376,8 +394,10 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 	}, nil
 }
 
-func (p *BicepProvider) deploymentFromScopeType(deploymentScopeType azure.DeploymentScope) (infra.Deployment, error) {
-	deploymentName := p.deploymentManager.GenerateDeploymentName(p.env.Name())
+func (p *BicepProvider) deploymentFromScopeType(
+	deploymentScopeType azure.DeploymentScope,
+	baseName string) (infra.Deployment, error) {
+	deploymentName := p.deploymentManager.GenerateDeploymentName(baseName)
 
 	if deploymentScopeType == azure.DeploymentScopeSubscription {
 		scope := p.deploymentManager.SubscriptionScope(p.env.GetSubscriptionId(), p.env.GetLocation())
@@ -395,16 +415,34 @@ func (p *BicepProvider) deploymentFromScopeType(deploymentScopeType azure.Deploy
 	return nil, fmt.Errorf("unsupported scope: %s", deploymentScopeType)
 }
 
+// moduleNameFromPaths returns the module name from the provided paths.
+// This name is suitable for use in Azure deployments.
+// It returns empty if the modulePath is the root module.
+func moduleNameFromPaths(modulePath string, rootModulePath string) string {
+	rootModuleDir := filepath.Dir(rootModulePath)
+	moduleDir := filepath.Dir(modulePath)
+	if !strings.HasPrefix(moduleDir, rootModuleDir) {
+		panic(fmt.Sprintf("moduleDir %s does not start with rootModuleDir %s", moduleDir, rootModuleDir))
+	}
+
+	subModulePath := moduleDir[len(rootModuleDir):]
+	subModulePath = strings.TrimPrefix(subModulePath, string(os.PathSeparator))
+
+	// Replace all path separators with a dash to allow use for Azure deployment names
+	name := strings.ReplaceAll(subModulePath, string(os.PathSeparator), "-")
+	return name
+}
+
 // deploymentState returns the latests deployment if it is the same as the deployment within deploymentData or an error
 // otherwise.
 func (p *BicepProvider) deploymentState(
 	ctx context.Context,
 	deploymentData *deploymentDetails,
+	moduleName string,
 	currentParamsHash string,
 ) (*azapi.ResourceDeployment, error) {
-
 	p.console.ShowSpinner(ctx, "Comparing deployment state", input.Step)
-	prevDeploymentResult, err := p.latestDeploymentResult(ctx, deploymentData.Target)
+	prevDeploymentResult, err := p.latestDeploymentResult(ctx, deploymentData.Target, moduleName)
 	if err != nil {
 		return nil, fmt.Errorf("deployment state error: %w", err)
 	}
@@ -436,8 +474,9 @@ func (p *BicepProvider) deploymentState(
 func (p *BicepProvider) latestDeploymentResult(
 	ctx context.Context,
 	scope infra.Scope,
+	moduleName string,
 ) (*azapi.ResourceDeployment, error) {
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), moduleName, "")
 	// findCompletedDeployments returns error if no deployments are found
 	// No need to check for empty list
 	if err != nil {
@@ -521,171 +560,258 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		logDS("Azure Deployment State is disabled by --no-state arg.")
 	}
 
-	bicepDeploymentData, err := p.plan(ctx)
-	if err != nil {
-		return nil, err
+	rootModulePath := p.rootModulePath()
+	modulePaths := p.modulePaths()
+
+	// plannedDeployment is a deployment that is planned to be executed
+	type plannedDeployment struct {
+		*provisioning.Deployment
+		moduleName string
+		details    *deploymentDetails
+		hash       string
+
+		skippedFromState bool
 	}
 
-	deployment, err := p.convertToDeployment(bicepDeploymentData.CompiledBicep.Template)
-	if err != nil {
-		return nil, err
-	}
+	deployments := make([]*plannedDeployment, len(modulePaths))
 
-	// parameters hash is required for doing deployment state validation check but also to set the hash
-	// after a successful deployment.
-	currentParamsHash, parametersHashErr := parametersHash(
-		bicepDeploymentData.CompiledBicep.Template.Parameters, bicepDeploymentData.CompiledBicep.Parameters)
-	if parametersHashErr != nil {
-		// fail to hash parameters won't stop the operation. It only disables deployment state and recording parameters hash
-		logDS("%s", parametersHashErr.Error())
-	}
+	// plan all deployments
+	for i, modulePath := range modulePaths {
+		pd := plannedDeployment{}
+		pd.moduleName = moduleNameFromPaths(modulePath, rootModulePath)
 
-	if !p.ignoreDeploymentState && parametersHashErr == nil {
-		deploymentState, err := p.deploymentState(ctx, bicepDeploymentData, currentParamsHash)
-		if err == nil {
-			deployment.Outputs = p.createOutputParameters(
-				bicepDeploymentData.CompiledBicep.Template.Outputs,
-				azapi.CreateDeploymentOutput(deploymentState.Outputs),
-			)
-
-			return &provisioning.DeployResult{
-				Deployment:    deployment,
-				SkippedReason: provisioning.DeploymentStateSkipped,
-			}, nil
+		plannedBicep, err := p.plan(ctx, modulePath)
+		if err != nil {
+			return nil, err
 		}
-		logDS("%s", err.Error())
-	}
+		pd.details = plannedBicep
 
-	cancelProgress := make(chan bool)
-	defer func() { cancelProgress <- true }()
-	go func() {
-		// Disable reporting progress if needed
-		if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
-			log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
-			<-cancelProgress
-			return
+		deployment, err := p.convertToDeployment(plannedBicep.CompiledBicep.Template)
+		if err != nil {
+			return nil, err
+		}
+		pd.Deployment = deployment
+
+		// parameters hash is required for doing deployment state validation check but also to set the hash
+		// after a successful deployment.
+		currentParamsHash, parametersHashErr := parametersHash(
+			plannedBicep.CompiledBicep.Template.Parameters, plannedBicep.CompiledBicep.Parameters)
+		if parametersHashErr != nil {
+			// Failing to hash parameters doesn't stop the provisioning.
+			// It only disables deployment state and recording parameters hash
+			logDS("%s", parametersHashErr.Error())
+		}
+		pd.hash = currentParamsHash
+
+		if !p.ignoreDeploymentState && parametersHashErr == nil {
+			moduleName := moduleNameFromPaths(modulePath, rootModulePath)
+			deploymentState, err := p.deploymentState(ctx, plannedBicep, moduleName, currentParamsHash)
+			if err == nil {
+				deployment.Outputs = p.createOutputParameters(
+					plannedBicep.CompiledBicep.Template.Outputs,
+					azapi.CreateDeploymentOutput(deploymentState.Outputs),
+				)
+				pd.skippedFromState = true
+				deployments[i] = &pd
+				continue
+			}
+			logDS("%s", err.Error())
 		}
 
-		// Report incremental progress
-		progressDisplay := p.deploymentManager.ProgressDisplay(bicepDeploymentData.Target)
-		// Make initial delay shorter to be more responsive in displaying initial progress
-		initialDelay := 3 * time.Second
-		regularDelay := 10 * time.Second
-		timer := time.NewTimer(initialDelay)
-		queryStartTime := time.Now()
+		deployments[i] = &pd
+	}
 
-		for {
-			select {
-			case <-cancelProgress:
-				timer.Stop()
-				return
-			case <-timer.C:
-				if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
-					// We don't want to fail the whole deployment if a progress reporting error occurs
-					log.Printf("error while reporting progress: %s", err.Error())
-				}
-
-				timer.Reset(regularDelay)
+	// Disable reporting progress if needed
+	var progressDisplay *infra.ProvisioningProgressDisplay
+	if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
+		log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
+	} else {
+		demoMode, _ := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE"))
+		totalDeployments := 0
+		for _, p := range deployments {
+			if !p.skippedFromState {
+				totalDeployments++
 			}
 		}
-	}()
 
-	// Start the deployment
+		if totalDeployments > 0 {
+			progressDisplay = p.deploymentManager.ProgressDisplay(demoMode, totalDeployments)
+		}
+	}
+
+	var activeDeploymentDisplay chan infra.Deployment
+	if progressDisplay != nil {
+		activeDeploymentDisplay = make(chan infra.Deployment)
+		cancelProgress := make(chan bool)
+		defer func() { cancelProgress <- true }()
+		go func() {
+			// Make initial delay shorter to be more responsive in displaying initial progress
+			initialDelay := 3 * time.Second
+			regularDelay := 10 * time.Second
+			timer := time.NewTimer(initialDelay)
+			queryStartTime := time.Now()
+			deployment := <-activeDeploymentDisplay
+
+			for {
+				select {
+				case deployment = <-activeDeploymentDisplay: // update the deployment to report progress for
+				case <-cancelProgress:
+					timer.Stop()
+					return
+				case <-timer.C:
+					if err := progressDisplay.ReportProgress(ctx, deployment, &queryStartTime); err != nil {
+						// We don't want to fail the whole deployment if a progress reporting error occurs
+						log.Printf("error while reporting progress: %s", err.Error())
+					}
+
+					timer.Reset(regularDelay)
+				}
+			}
+		}()
+	}
+
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
+	for _, deployment := range deployments {
+		if deployment.skippedFromState {
+			log.Printf(
+				"Deployment '%s' skipped, restored outputs: %+v",
+				deployment.moduleName,
+				deployment.Outputs)
+			continue
+		}
+		bicepDeploymentData := deployment.details
 
-	deploymentTags := map[string]*string{
-		azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
+		deploymentTags := map[string]*string{
+			azure.TagKeyAzdEnvName:    to.Ptr(p.env.Name()),
+			azure.TagKeyAzdModuleName: to.Ptr(deployment.moduleName),
+		}
+
+		if deployment.hash != "" {
+			deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(deployment.hash)
+		}
+
+		optionsMap, err := convert.ToMap(p.options)
+		if err != nil {
+			return nil, err
+		}
+
+		if activeDeploymentDisplay != nil {
+			activeDeploymentDisplay <- bicepDeploymentData.Target
+		}
+
+		deployResult, err := bicepDeploymentData.Target.Deploy(
+			ctx,
+			bicepDeploymentData.CompiledBicep.RawArmTemplate,
+			bicepDeploymentData.CompiledBicep.Parameters,
+			deploymentTags,
+			optionsMap,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		deployment.Outputs = p.createOutputParameters(
+			bicepDeploymentData.CompiledBicep.Template.Outputs,
+			azapi.CreateDeploymentOutput(deployResult.Outputs),
+		)
+
+		log.Printf(
+			"Deployment '%s' completed with outputs: %+v",
+			deployment.moduleName,
+			deployment.Outputs)
 	}
-	if parametersHashErr == nil {
-		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
+
+	result := &provisioning.DeployResult{}
+	merged := &provisioning.Deployment{
+		Parameters: make(map[string]provisioning.InputParameter),
+		Outputs:    make(map[string]provisioning.OutputParameter),
 	}
 
-	optionsMap, err := convert.ToMap(p.options)
-	if err != nil {
-		return nil, err
+	allSkipped := true
+	// Merge all deployments
+	for _, deployment := range deployments {
+		for key, value := range deployment.Outputs {
+			merged.Outputs[key] = value
+		}
+
+		allSkipped = allSkipped && deployment.skippedFromState
 	}
 
-	deployResult, err := p.deployModule(
-		ctx,
-		bicepDeploymentData.Target,
-		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.CompiledBicep.Parameters,
-		deploymentTags,
-		optionsMap,
-	)
-	if err != nil {
-		return nil, err
+	result.Deployment = merged
+	if allSkipped {
+		result.SkippedReason = provisioning.DeploymentStateSkipped
 	}
 
-	deployment.Outputs = p.createOutputParameters(
-		bicepDeploymentData.CompiledBicep.Template.Outputs,
-		azapi.CreateDeploymentOutput(deployResult.Outputs),
-	)
-
-	return &provisioning.DeployResult{
-		Deployment: deployment,
-	}, nil
+	return result, nil
 }
 
 // Preview runs deploy using the what-if argument
 func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
-	bicepDeploymentData, err := p.plan(ctx)
-	if err != nil {
-		return nil, err
-	}
+	var changes []*provisioning.DeploymentPreviewChange
 
-	p.console.ShowSpinner(ctx, "Generating infrastructure preview", input.Step)
+	for _, modulePath := range p.modulePaths() {
+		bicepDeploymentData, err := p.plan(ctx, modulePath)
+		if err != nil {
+			return nil, err
+		}
 
-	targetScope := bicepDeploymentData.Target
-	deployPreviewResult, err := targetScope.DeployPreview(
-		ctx,
-		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.CompiledBicep.Parameters,
-	)
-	if err != nil {
-		return nil, err
-	}
+		p.console.ShowSpinner(ctx, "Generating infrastructure preview", input.Step)
 
-	if deployPreviewResult.Error != nil {
-		deploymentErr := *deployPreviewResult.Error
-		errDetailsList := make([]string, len(deploymentErr.Details))
-		for index, errDetail := range deploymentErr.Details {
-			errDetailsList[index] = fmt.Sprintf(
-				"code: %s, message: %s",
-				convert.ToValueWithDefault(errDetail.Code, ""),
-				convert.ToValueWithDefault(errDetail.Message, ""),
+		targetScope := bicepDeploymentData.Target
+		deployPreviewResult, err := targetScope.DeployPreview(
+			ctx,
+			bicepDeploymentData.CompiledBicep.RawArmTemplate,
+			bicepDeploymentData.CompiledBicep.Parameters,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if deployPreviewResult.Error != nil {
+			deploymentErr := *deployPreviewResult.Error
+			errDetailsList := make([]string, len(deploymentErr.Details))
+			for index, errDetail := range deploymentErr.Details {
+				errDetailsList[index] = fmt.Sprintf(
+					"code: %s, message: %s",
+					convert.ToValueWithDefault(errDetail.Code, ""),
+					convert.ToValueWithDefault(errDetail.Message, ""),
+				)
+			}
+
+			var errDetails string
+			if len(errDetailsList) > 0 {
+				errDetails = fmt.Sprintf(" Details: %s", strings.Join(errDetailsList, "\n"))
+			}
+			return nil, fmt.Errorf(
+				"generating preview: error code: %s, message: %s.%s",
+				convert.ToValueWithDefault(deploymentErr.Code, ""),
+				convert.ToValueWithDefault(deploymentErr.Message, ""),
+				errDetails,
 			)
 		}
 
-		var errDetails string
-		if len(errDetailsList) > 0 {
-			errDetails = fmt.Sprintf(" Details: %s", strings.Join(errDetailsList, "\n"))
+		for _, change := range deployPreviewResult.Properties.Changes {
+			resourceAfter := change.After.(map[string]interface{})
+
+			if !slices.ContainsFunc(changes, func(c *provisioning.DeploymentPreviewChange) bool {
+				return c.ChangeType == provisioning.ChangeType(*change.ChangeType) &&
+					c.ResourceId.Id == *change.ResourceID
+			}) {
+				changes = append(changes, &provisioning.DeploymentPreviewChange{
+					ChangeType: provisioning.ChangeType(*change.ChangeType),
+					ResourceId: provisioning.Resource{
+						Id: *change.ResourceID,
+					},
+					ResourceType: resourceAfter["type"].(string),
+					Name:         resourceAfter["name"].(string),
+				})
+			}
 		}
-		return nil, fmt.Errorf(
-			"generating preview: error code: %s, message: %s.%s",
-			convert.ToValueWithDefault(deploymentErr.Code, ""),
-			convert.ToValueWithDefault(deploymentErr.Message, ""),
-			errDetails,
-		)
-	}
-
-	var changes []*provisioning.DeploymentPreviewChange
-	for _, change := range deployPreviewResult.Properties.Changes {
-		resourceAfter := change.After.(map[string]interface{})
-
-		changes = append(changes, &provisioning.DeploymentPreviewChange{
-			ChangeType: provisioning.ChangeType(*change.ChangeType),
-			ResourceId: provisioning.Resource{
-				Id: *change.ResourceID,
-			},
-			ResourceType: resourceAfter["type"].(string),
-			Name:         resourceAfter["name"].(string),
-		})
 	}
 
 	return &provisioning.DeployPreviewResult{
 		Preview: &provisioning.DeploymentPreview{
-			Status: *deployPreviewResult.Status,
+			Status: "done",
 			Properties: &provisioning.DeploymentPreviewProperties{
 				Changes: changes,
 			},
@@ -731,43 +857,67 @@ func (p *BicepProvider) Destroy(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
-	modulePath := p.modulePath()
-	p.console.ShowSpinner(ctx, "Discovering resources to delete...", input.Step)
-	defer p.console.StopSpinner(ctx, "", input.StepDone)
-	compileResult, err := p.compileBicep(ctx, modulePath)
-	if err != nil {
-		return nil, fmt.Errorf("creating template: %w", err)
+	modulePaths := p.modulePaths()
+	rootModulePath := p.rootModulePath()
+	invalidatedEnvKeys := map[string]bool{}
+
+	deploymentsToDelete := make([]infra.Deployment, 0, len(modulePaths))
+	allResourcesToDelete := []*armresources.ResourceReference{}
+	compileResults := make([]*compileBicepResult, 0, len(modulePaths))
+	mostRecentDeployments := make([]*azapi.ResourceDeployment, 0, len(modulePaths))
+	scopes := make([]infra.Scope, 0, len(modulePaths))
+	for _, modulePath := range modulePaths {
+		p.console.ShowSpinner(ctx, "Discovering resources to delete...", input.Step)
+		defer p.console.StopSpinner(ctx, "", input.StepDone)
+		compileResult, err := p.compileBicep(ctx, modulePath)
+		if err != nil {
+			return nil, fmt.Errorf("creating template: %w", err)
+		}
+
+		scope, err := p.scopeForTemplate(compileResult.Template)
+		if err != nil {
+			return nil, fmt.Errorf("computing deployment scope: %w", err)
+		}
+
+		subModuleName := moduleNameFromPaths(modulePath, rootModulePath)
+		completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), subModuleName, "")
+		if err != nil {
+			return nil, fmt.Errorf("finding completed deployments: %w", err)
+		}
+
+		if len(completedDeployments) == 0 {
+			return nil, fmt.Errorf("no deployments found for environment, '%s'", p.env.Name())
+		}
+
+		mostRecentDeployment := completedDeployments[0]
+		deploymentToDelete := scope.Deployment(mostRecentDeployment.Name)
+
+		resourcesToDelete, err := deploymentToDelete.Resources(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("getting resources to delete: %w", err)
+		}
+
+		allResourcesToDelete = append(allResourcesToDelete, resourcesToDelete...)
+		deploymentsToDelete = append(deploymentsToDelete, deploymentToDelete)
+		compileResults = append(compileResults, compileResult)
+		mostRecentDeployments = append(mostRecentDeployments, mostRecentDeployment)
+		scopes = append(scopes, scope)
 	}
 
-	scope, err := p.scopeForTemplate(compileResult.Template)
-	if err != nil {
-		return nil, fmt.Errorf("computing deployment scope: %w", err)
-	}
-
-	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
-	if err != nil {
-		return nil, fmt.Errorf("finding completed deployments: %w", err)
-	}
-
-	if len(completedDeployments) == 0 {
-		return nil, fmt.Errorf("no deployments found for environment, '%s'", p.env.Name())
-	}
-
-	mostRecentDeployment := completedDeployments[0]
-	deploymentToDelete := scope.Deployment(mostRecentDeployment.Name)
-
-	resourcesToDelete, err := deploymentToDelete.Resources(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting resources to delete: %w", err)
-	}
-
-	groupedResources, err := azapi.GroupByResourceGroup(resourcesToDelete)
+	groupedResources, err := azapi.GroupByResourceGroup(allResourcesToDelete)
 	if err != nil {
 		return nil, fmt.Errorf("mapping resources to resource groups: %w", err)
 	}
 
 	if len(groupedResources) == 0 {
-		return nil, fmt.Errorf("%w, '%s'", infra.ErrDeploymentResourcesNotFound, deploymentToDelete.Name())
+		deploymentNames := make([]string, len(deploymentsToDelete))
+		for i, deployment := range deploymentsToDelete {
+			deploymentNames[i] = deployment.Name()
+		}
+		return nil, fmt.Errorf(
+			"%w, '%s'",
+			infra.ErrDeploymentResourcesNotFound,
+			strings.Join(deploymentNames, ", "))
 	}
 
 	keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
@@ -796,12 +946,13 @@ func (p *BicepProvider) Destroy(
 	}
 
 	p.console.StopSpinner(ctx, "", input.StepDone)
+
 	if err := p.destroyDeploymentWithConfirmation(
 		ctx,
 		options,
-		deploymentToDelete,
+		deploymentsToDelete,
 		groupedResources,
-		len(resourcesToDelete),
+		len(allResourcesToDelete),
 	); err != nil {
 		return nil, fmt.Errorf("deleting resource groups: %w", err)
 	}
@@ -860,21 +1011,24 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("purging resources: %w", err)
 	}
 
+	for i := range deploymentsToDelete {
+		envKeysInvalidated := p.createOutputParameters(
+			compileResults[i].Template.Outputs,
+			azapi.CreateDeploymentOutput(mostRecentDeployments[i].Outputs))
+		// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
+		// so it will be removed from the .env file.
+		if _, ok := scopes[i].(*infra.ResourceGroupScope); ok {
+			envKeysInvalidated[environment.ResourceGroupEnvVarName] = provisioning.OutputParameter{}
+		}
+
+		for key := range envKeysInvalidated {
+			invalidatedEnvKeys[key] = true
+		}
+	}
+
 	destroyResult := &provisioning.DestroyResult{
-		InvalidatedEnvKeys: slices.Collect(maps.Keys(p.createOutputParameters(
-			compileResult.Template.Outputs,
-			azapi.CreateDeploymentOutput(mostRecentDeployment.Outputs),
-		))),
+		InvalidatedEnvKeys: slices.Collect(maps.Keys(invalidatedEnvKeys)),
 	}
-
-	// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
-	// so it will be removed from the .env file.
-	if _, ok := scope.(*infra.ResourceGroupScope); ok {
-		destroyResult.InvalidatedEnvKeys = append(
-			destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName,
-		)
-	}
-
 	return destroyResult, nil
 }
 
@@ -1003,7 +1157,7 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 func (p *BicepProvider) destroyDeploymentWithConfirmation(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
-	deployment infra.Deployment,
+	deployments []infra.Deployment,
 	groupedResources map[string][]*azapi.Resource,
 	resourceCount int,
 ) error {
@@ -1041,12 +1195,18 @@ func (p *BicepProvider) destroyDeploymentWithConfirmation(
 			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
 		}
 	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		optionsMap, err := convert.ToMap(p.options)
-		if err != nil {
-			return err
-		}
+		for _, deployment := range deployments {
+			optionsMap, err := convert.ToMap(p.options)
+			if err != nil {
+				return err
+			}
 
-		return deployment.Delete(ctx, optionsMap, progress)
+			err = deployment.Delete(ctx, optionsMap, progress)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 
 	if err != nil {
@@ -1719,21 +1879,9 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*p
 	return &template, nil
 }
 
-// Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
-func (p *BicepProvider) deployModule(
-	ctx context.Context,
-	target infra.Deployment,
-	armTemplate azure.RawArmTemplate,
-	armParameters azure.ArmParameters,
-	tags map[string]*string,
-	options map[string]any,
-) (*azapi.ResourceDeployment, error) {
-	return target.Deploy(ctx, armTemplate, armParameters, tags, options)
-}
-
 // Returns either the bicep or bicepparam module file located in the infrastructure root.
 // The bicepparam file is preferred over bicep file.
-func (p *BicepProvider) modulePath() string {
+func (p *BicepProvider) rootModulePath() string {
 	infraRoot := p.options.Path
 	moduleName := p.options.Module
 
@@ -1751,6 +1899,41 @@ func (p *BicepProvider) modulePath() string {
 	// fallback to .bicep
 	moduleFilename = moduleName + bicepFileExtension
 	return filepath.Join(infraRoot, moduleFilename)
+}
+
+// Returns the path to the module file located in infra/azd, if it exists.
+// An empty string is returned if the file does not exist.
+func (p *BicepProvider) azdModulePath() string {
+	infraRoot := p.options.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(p.projectPath, infraRoot)
+	}
+
+	moduleDir := filepath.Join(infraRoot, "azd")
+	moduleFile := filepath.Join(moduleDir, "main.bicepparam")
+	if _, err := os.Stat(moduleFile); err == nil {
+		return moduleFile
+	}
+
+	moduleFile = filepath.Join(moduleDir, "main.bicep")
+	if _, err := os.Stat(moduleFile); err == nil {
+		return moduleFile
+	}
+
+	return ""
+}
+
+// modulePaths returns the paths to all module files available for deployment.
+func (p *BicepProvider) modulePaths() []string {
+	result := []string{
+		p.rootModulePath(),
+	}
+
+	if moduleFile := p.azdModulePath(); moduleFile != "" {
+		result = append(result, moduleFile)
+	}
+
+	return result
 }
 
 // inputsParameter generates and updates input parameters for the Azure Resource Manager (ARM) template.
@@ -2075,16 +2258,17 @@ func NewBicepProvider(
 	cloud *cloud.Cloud,
 ) provisioning.Provider {
 	return &BicepProvider{
-		envManager:        envManager,
-		env:               env,
-		console:           console,
-		azCli:             azCli,
-		bicepCli:          bicepCli,
-		resourceService:   resourceService,
-		deploymentManager: deploymentManager,
-		prompters:         prompters,
-		curPrincipal:      curPrincipal,
-		keyvaultService:   keyvaultService,
-		portalUrlBase:     cloud.PortalUrlBase,
+		envManager:              envManager,
+		env:                     env,
+		console:                 console,
+		azCli:                   azCli,
+		bicepCli:                bicepCli,
+		resourceService:         resourceService,
+		deploymentManager:       deploymentManager,
+		prompters:               prompters,
+		curPrincipal:            curPrincipal,
+		keyvaultService:         keyvaultService,
+		portalUrlBase:           cloud.PortalUrlBase,
+		compileBicepMemoryCache: make(map[string]compileBicepResult),
 	}
 }

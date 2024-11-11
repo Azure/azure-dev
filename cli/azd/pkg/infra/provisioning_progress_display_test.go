@@ -139,8 +139,8 @@ func TestReportProgress(t *testing.T) {
 	startTime := time.Now()
 	outputLength := 0
 	mockResourceManager := mockResourceManager{}
-	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, deployment)
-	err := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, false, 1)
+	err := progressDisplay.ReportProgress(*mockContext.Context, deployment, &startTime)
 	require.NoError(t, err)
 
 	outputLength++
@@ -148,7 +148,7 @@ func TestReportProgress(t *testing.T) {
 	assert.Contains(t, mockContext.Console.Output()[0], "You can view detailed progress in the Azure Portal:")
 
 	mockResourceManager.AddInProgressOperation()
-	err = progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	err = progressDisplay.ReportProgress(*mockContext.Context, deployment, &startTime)
 	require.NoError(t, err)
 	assert.Len(t, mockContext.Console.Output(), outputLength)
 }

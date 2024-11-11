@@ -141,6 +141,8 @@ func (i *Initializer) infraSpecFromDetect(
 				serviceSpec.AzureServiceBus = spec.AzureServiceBus
 			case appdetect.AzureDepEventHubs:
 				serviceSpec.AzureEventHubs = spec.AzureEventHubs
+			case appdetect.AzureDepEventHubsForKafka:
+				serviceSpec.AzureEventHubsForKafka = spec.AzureEventHubsForKafka
 			case appdetect.AzureDepStorageAccount:
 				serviceSpec.AzureStorageAccount = spec.AzureStorageAccount
 			}
@@ -394,6 +396,17 @@ azureDepPrompt:
 				return err
 			}
 			spec.AzureEventHubs = &scaffold.AzureDepEventHubs{
+				Name:                      azureDepName,
+				EventHubNames:             dependency.Names,
+				AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
+				AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
+			}
+		case appdetect.AzureDepEventHubsForKafka:
+			authType, err := i.chooseAuthType(ctx, azureDepName)
+			if err != nil {
+				return err
+			}
+			spec.AzureEventHubsForKafka = &scaffold.AzureDepEventHubsForKafka{
 				Name:                      azureDepName,
 				EventHubNames:             dependency.Names,
 				AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,

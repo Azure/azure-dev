@@ -41,9 +41,10 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 }
 
 var azureDepMap = map[string]struct{}{
-	appdetect.AzureDepServiceBus{}.ResourceDisplay():     {},
-	appdetect.AzureDepEventHubs{}.ResourceDisplay():      {},
-	appdetect.AzureDepStorageAccount{}.ResourceDisplay(): {},
+	appdetect.AzureDepServiceBus{}.ResourceDisplay():        {},
+	appdetect.AzureDepEventHubs{}.ResourceDisplay():         {},
+	appdetect.AzureDepEventHubsForKafka{}.ResourceDisplay(): {},
+	appdetect.AzureDepStorageAccount{}.ResourceDisplay():    {},
 }
 
 // InitFromApp initializes the infra directory and project file from the current existing app.

@@ -258,7 +258,7 @@ module {{bicepName .Name}}CreateConnectionToMysql 'br/public:avm/res/resources/d
 }
 {{- end}}
 {{- end}}
-{{- if .AzureEventHubs }}
+{{- if (or .AzureEventHubs .AzureEventHubsForKafka) }}
 
 module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.7.1' = {
   name: 'eventHubNamespace'
@@ -266,7 +266,7 @@ module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.7.1' = {
     name: '${abbrs.eventHubNamespaces}${resourceToken}'
     location: location
     roleAssignments: [
-      {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingManagedIdentity) }}
+      {{- if (or (and .AzureEventHubs .AzureEventHubs.AuthUsingManagedIdentity) (and .AzureEventHubsForKafka .AzureEventHubsForKafka.AuthUsingManagedIdentity)) }}
       {{- range .Services}}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
@@ -276,19 +276,28 @@ module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.7.1' = {
       {{- end}}
       {{- end}}
     ]
-    {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+    {{- if (or (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) (and .AzureEventHubsForKafka .AzureEventHubsForKafka.AuthUsingConnectionString)) }}
     disableLocalAuth: false
     {{- end}}
     eventhubs: [
+      {{- if (and .AzureEventHubs .AzureEventHubs.EventHubNames) }}
       {{- range $eventHubName := .AzureEventHubs.EventHubNames}}
       {
         name: '{{ $eventHubName }}'
       }
       {{- end}}
+      {{- end}}
+      {{- if (and .AzureEventHubsForKafka .AzureEventHubsForKafka.EventHubNames) }}
+      {{- range $eventHubName := .AzureEventHubsForKafka.EventHubNames}}
+      {
+        name: '{{ $eventHubName }}'
+      }
+      {{- end}}
+      {{- end}}
     ]
   }
 }
-{{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+{{- if (or (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) (and .AzureEventHubsForKafka .AzureEventHubsForKafka.AuthUsingConnectionString)) }}
 module eventHubsConnectionString './modules/set-event-hubs-namespace-connection-string.bicep' = {
   name: 'eventHubsConnectionString'
   params: {
@@ -539,7 +548,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
         }
         {{- end}}
-        {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+        {{- if (or (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) (and .AzureEventHubsForKafka .AzureEventHubsForKafka.AuthUsingConnectionString)) }}
         {
           name: 'event-hubs-connection-string'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
@@ -703,11 +712,13 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: eventHubNamespace.outputs.name
           }
           {{- end}}
-          {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingManagedIdentity) }}
+          {{- if .AzureEventHubsForKafka }}
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CONNECTIONSTRING'
-            value: ''
+            name: 'SPRING_CLOUD_STREAM_KAFKA_BINDER_BROKERS'
+            value: '${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'
           }
+          {{- end}}
+          {{- if (or (and .AzureEventHubs .AzureEventHubs.AuthUsingManagedIdentity) (and .AzureEventHubsForKafka .AzureEventHubsForKafka.AuthUsingManagedIdentity)) }}
           {
             name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_MANAGEDIDENTITYENABLED'
             value: 'true'
@@ -717,18 +728,10 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
           {{- end}}
-          {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+          {{- if (or (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) (and .AzureEventHubsForKafka .AzureEventHubsForKafka.AuthUsingConnectionString)) }}
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CONNECTIONSTRING'
+            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CONNECTION_STRING'
             secretRef: 'event-hubs-connection-string'
-          }
-          {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_MANAGEDIDENTITYENABLED'
-            value: 'false'
-          }
-          {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_CLIENTID'
-            value: ''
           }
           {{- end}}
           {{- if .AzureStorageAccount }}

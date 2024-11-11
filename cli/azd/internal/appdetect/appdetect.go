@@ -153,6 +153,14 @@ func (a AzureDepEventHubs) ResourceDisplay() string {
 	return "Azure Event Hubs"
 }
 
+type AzureDepEventHubsForKafka struct {
+	Names []string
+}
+
+func (a AzureDepEventHubsForKafka) ResourceDisplay() string {
+	return "Azure Event Hubs for Apache Kafka"
+}
+
 type AzureDepStorageAccount struct {
 	ContainerNames []string
 }

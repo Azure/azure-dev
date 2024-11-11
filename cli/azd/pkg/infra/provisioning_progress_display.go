@@ -30,16 +30,19 @@ type ProvisioningProgressDisplay struct {
 	resourceManager    ResourceManager
 	console            input.Console
 	deployment         Deployment
+	moduleName         string
 }
 
 func NewProvisioningProgressDisplay(
 	rm ResourceManager,
 	console input.Console,
 	deployment Deployment,
+	moduleName string,
 ) *ProvisioningProgressDisplay {
 	return &ProvisioningProgressDisplay{
 		displayedResources: map[string]bool{},
 		deployment:         deployment,
+		moduleName:         moduleName,
 		resourceManager:    rm,
 		console:            console,
 	}
@@ -77,6 +80,10 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 				"You can view detailed progress in the Azure Portal.",
 				"\n",
 			}
+		}
+
+		if display.moduleName != "" {
+			lines = append([]string{fmt.Sprintf("Module: %s", display.moduleName)}, lines...)
 		}
 
 		display.console.MessageUxItem(

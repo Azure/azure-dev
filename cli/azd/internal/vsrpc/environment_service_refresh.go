@@ -92,7 +92,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 
 	_ = observer.OnNext(ctx, newInfoProgressMessage("Loading latest deployment information"))
 
-	deployment, err := bicepProvider.LastDeployment(ctx)
+	deployment, err := bicepProvider.LastRootDeployment(ctx)
 	if err != nil {
 		log.Printf("failed to get latest deployment result: %v", err)
 	} else {

@@ -64,7 +64,7 @@ func (s *deploymentService) GetDeployment(
 		return nil, err
 	}
 
-	latestDeployment, err := bicepProvider.LastDeployment(ctx)
+	latestDeployment, err := bicepProvider.LastRootDeployment(ctx)
 	if err != nil {
 		return nil, err
 	}

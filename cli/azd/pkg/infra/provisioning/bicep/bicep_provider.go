@@ -72,7 +72,7 @@ type BicepProvider struct {
 	curPrincipal          provisioning.CurrentPrincipalIdProvider
 	ignoreDeploymentState bool
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
-	compileBicepMemoryCache *compileBicepResult
+	compileBicepMemoryCache map[string]compileBicepResult
 	keyvaultService         keyvault.KeyVaultService
 	portalUrlBase           string
 	subscriptionManager     *account.SubscriptionsManager
@@ -1654,8 +1654,8 @@ type compileBicepResult struct {
 func (p *BicepProvider) compileBicep(
 	ctx context.Context, modulePath string,
 ) (*compileBicepResult, error) {
-	if p.compileBicepMemoryCache != nil {
-		return p.compileBicepMemoryCache, nil
+	if val, ok := p.compileBicepMemoryCache[modulePath]; ok {
+		return &val, nil
 	}
 
 	var compiled string
@@ -1756,13 +1756,14 @@ func (p *BicepProvider) compileBicep(
 			}
 		}
 	}
-	p.compileBicepMemoryCache = &compileBicepResult{
+	result := compileBicepResult{
 		RawArmTemplate: rawTemplate,
 		Template:       template,
 		Parameters:     parameters,
 	}
 
-	return p.compileBicepMemoryCache, nil
+	p.compileBicepMemoryCache[modulePath] = result
+	return &result, nil
 }
 
 func combineMetadata(base map[string]json.RawMessage, override map[string]json.RawMessage) map[string]json.RawMessage {

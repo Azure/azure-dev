@@ -17,6 +17,12 @@ import (
 // When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
+	// Metadata that specifies the schema version.
+	//
+	// This is currently only used during [Save] to write the file schema annotation for intellisense.
+	// This should include the "v" prefix used in official version numbers.
+	MetaSchemaVersion string `yaml:"-"`
+
 	RequiredVersions  *RequiredVersions          `yaml:"requiredVersions,omitempty"`
 	Name              string                     `yaml:"name"`
 	ResourceGroupName osutil.ExpandableString    `yaml:"resourceGroup,omitempty"`

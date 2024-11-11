@@ -75,9 +75,11 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
 {{- end}}
 
 {{- if .DbCosmosMongo}}
-module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
+module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
   name: 'cosmos'
   params: {
+    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    location: location
     tags: tags
     locations: [
       {
@@ -86,8 +88,11 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
         locationName: location
       }
     ]
-    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-    location: location
+    networkRestrictions: {
+      ipRules: []
+      virtualNetworkRules: []
+      publicNetworkAccess: 'Enabled'
+    }
     {{- if .DbCosmosMongo.DatabaseName}}
     mongodbDatabases: [
       {
@@ -95,8 +100,8 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
       }
     ]
     {{- end}}
-    secretsKeyVault: {
-      keyVaultName: keyVault.outputs.name
+    secretsExportConfiguration: {
+      keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: 'MONGODB-URL'
     }
     capabilitiesToAdd: [ 'EnableServerless' ]
@@ -494,6 +499,9 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
         {{- end}}
       ]
+      allowedMethods: [
+        '*'
+      ]
     }
     {{- end}}
     scaleMinReplicas: 1
@@ -504,7 +512,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {
           name: 'mongodb-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/MONGODB-URL'
+          keyVaultUrl: cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri
         }
         {{- end}}
         {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword) }}
@@ -587,6 +595,14 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'MONGODB_URL'
             secretRef: 'mongodb-url'
+          }
+          {
+            name: 'SPRING_DATA_MONGODB_URI'
+            secretRef: 'mongodb-url'
+          }
+          {
+            name: 'SPRING_DATA_MONGODB_DATABASE'
+            value: '{{ .DbCosmosMongo.DatabaseName }}'
           }
           {{- end}}
           {{- if .DbPostgres}}
@@ -805,7 +821,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- range $i, $e := .Frontend.Backends}}
           {
             name: '{{upper .Name}}_BASE_URL'
-            value: 'https://{{.Name}}.internal.${containerAppsEnvironment.outputs.defaultDomain}'
+            value: 'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
           }
           {{- end}}
           {{- end}}

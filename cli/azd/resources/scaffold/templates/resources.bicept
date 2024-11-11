@@ -766,6 +766,10 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'REDIS_PASSWORD'
             secretRef: 'redis-pass'
           }
+          {
+            name: 'SPRING_DATA_REDIS_URL'
+            secretRef: 'redis-url'
+          }
           {{- end}}
           {{- if .AIModels}}
           {

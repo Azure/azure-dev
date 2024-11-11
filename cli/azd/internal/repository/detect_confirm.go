@@ -240,7 +240,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		case appdetect.DbMongo:
 			recommendedServices = append(recommendedServices, "Azure CosmosDB API for MongoDB")
 		case appdetect.DbRedis:
-			recommendedServices = append(recommendedServices, "Azure Container Apps Redis add-on")
+			recommendedServices = append(recommendedServices, "Azure Cache for Redis")
 		}
 
 		status := ""

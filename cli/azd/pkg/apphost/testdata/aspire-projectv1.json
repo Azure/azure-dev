@@ -25,7 +25,9 @@
           "outputs_azure_container_apps_environment_id": "{.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
           "host": "{cache.bindings.tcp.host}",
           "protocol": "{cache.bindings.tcp.protocol}",
-          "complex": "{cache.bindings.tcp.protocol}:{cache.bindings.tcp.host}/foo"
+          "complex": "{cache.bindings.tcp.protocol}:{cache.bindings.tcp.host}/foo",
+          "inputFromBicepModuleOutput": "{storage.outputs.thisIsAnOutput}",
+          "secretInputFromBicepModuleOutput": "{storage.secretOutputs.thisIsSecretOutput}"
         }
       },
       "args": [

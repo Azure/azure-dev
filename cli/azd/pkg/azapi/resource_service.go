@@ -42,6 +42,10 @@ type ListResourceGroupResourcesOptions struct {
 	Filter *string
 }
 
+type ListResourcesOptions struct {
+	ResourceType string
+}
+
 type ResourceService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
@@ -165,6 +169,45 @@ func (rs *ResourceService) ListResourceGroup(
 	}
 
 	return groups, nil
+}
+
+// ListResources returns a slice of resources - optionally filtered on fields in `ListResourcesOptions` - including the
+// ID, Name, Type, and Location of each resource.
+func (rs *ResourceService) ListResources(
+	ctx context.Context,
+	subscriptionId string,
+	listOptions *ListResourcesOptions,
+) ([]*Resource, error) {
+	client, err := rs.createResourcesClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := armresources.ClientListOptions{}
+	if listOptions != nil && listOptions.ResourceType != "" {
+		filter := fmt.Sprintf("resourceType eq '%s'", listOptions.ResourceType)
+		options.Filter = &filter
+	}
+
+	resources := []*Resource{}
+	pager := client.NewListPager(&options)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, resource := range page.ResourceListResult.Value {
+			resources = append(resources, &Resource{
+				Id:       *resource.ID,
+				Name:     *resource.Name,
+				Type:     *resource.Type,
+				Location: *resource.Location,
+			})
+		}
+	}
+	return resources, nil
 }
 
 func (rs *ResourceService) CreateOrUpdateResourceGroup(

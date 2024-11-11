@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/otiai10/copy"
 )
 
 type ImportManager struct {
@@ -139,8 +141,63 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
+	moduleExists, moduleErr := pathHasModule(infraRoot, projectConfig.Infra.Module)
+
+	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(featureCompose)
+	if composeEnabled && len(projectConfig.Resources) > 0 {
+		if moduleErr == nil && moduleExists {
+			azdModuleExists, err := pathHasModule(filepath.Join(infraRoot, "azd"), projectConfig.Infra.Module)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("checking if module exists: %w", err)
+			}
+
+			if azdModuleExists {
+				log.Printf("using fully-synthesized infrastructure from %s directory", infraRoot)
+				return &Infra{
+					Options: projectConfig.Infra,
+				}, nil
+			}
+		}
+
+		// copy the infra directory to a temporary directory and synthesize the azd directory
+		tmpDir, err := os.MkdirTemp("", "azd-infra")
+		if err != nil {
+			return nil, fmt.Errorf("creating temporary directory: %w", err)
+		}
+
+		azdInfraDir := tmpDir
+		if moduleErr == nil && moduleExists {
+			// Copy the base infra directory
+			if err := copy.Copy(infraRoot, tmpDir); err != nil {
+				return nil, fmt.Errorf("copying infra directory: %w", err)
+			}
+
+			azdInfraDir = filepath.Join(tmpDir, "azd")
+		}
+
+		err = infraFsToDir(ctx, projectConfig, azdInfraDir)
+		if err != nil {
+			return nil, err
+		}
+
+		return &Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+				Path:     tmpDir,
+				Module:   DefaultModule,
+			},
+			cleanupDir: tmpDir,
+		}, nil
+	}
+
+	if !composeEnabled && len(projectConfig.Resources) > 0 {
+		return nil, fmt.Errorf(
+			"compose is currently under alpha support and must be explicitly enabled."+
+				" Run `%s` to enable this feature", alpha.GetEnableCommand(featureCompose))
+	}
+
 	// Allow overriding the infrastructure only when path and module exists.
-	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
+	if moduleErr == nil && moduleExists {
 		log.Printf("using infrastructure from %s directory", infraRoot)
 		return &Infra{
 			Options: projectConfig.Infra,
@@ -163,17 +220,6 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
 			}
 		}
-	}
-
-	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(featureCompose)
-	if composeEnabled && len(projectConfig.Resources) > 0 {
-		return tempInfra(ctx, projectConfig)
-	}
-
-	if !composeEnabled && len(projectConfig.Resources) > 0 {
-		return nil, fmt.Errorf(
-			"compose is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature", alpha.GetEnableCommand(featureCompose))
 	}
 
 	return &Infra{}, nil

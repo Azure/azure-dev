@@ -169,7 +169,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				"n",
 				"my$special$db",
 				"n",
-				"myappdb", // fill in db name
+				"myappdb",                            // fill in db name
 				"Use user assigned managed identity", // confirm db authentication
 			},
 			want: scaffold.InfraSpec{
@@ -267,7 +267,7 @@ func TestDetectCosmosSqlDatabaseContainerInFile(t *testing.T) {
 			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
 				ContainerName: "users",
 				PartitionKeyPaths: []string{
-					"/last_name",
+					"lastName",
 				},
 			},
 		},
@@ -282,7 +282,7 @@ func TestDetectCosmosSqlDatabaseContainerInFile(t *testing.T) {
 			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
 				ContainerName: "users",
 				PartitionKeyPaths: []string{
-					"/last_name",
+					"lastName",
 				},
 			},
 		},

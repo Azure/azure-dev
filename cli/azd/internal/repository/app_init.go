@@ -460,29 +460,31 @@ func (i *Initializer) prjConfigFromDetect(
 			}
 		}
 
-		for _, db := range prj.DatabaseDeps {
-			switch db {
-			case appdetect.DbMongo:
-				config.Resources["mongo"] = &project.ResourceConfig{
-					Type: project.ResourceTypeDbMongo,
-					Name: spec.DbCosmosMongo.DatabaseName,
-				}
-			case appdetect.DbPostgres:
-				config.Resources["postgres"] = &project.ResourceConfig{
-					Type: project.ResourceTypeDbPostgres,
-					Name: spec.DbPostgres.DatabaseName,
-				}
-			case appdetect.DbMySql:
-				config.Resources["mysql"] = &project.ResourceConfig{
-					Type: project.ResourceTypeDbMySQL,
-					Props: project.MySQLProps{
-						DatabaseName: spec.DbMySql.DatabaseName,
-						AuthType:     "managedIdentity",
-					},
-				}
-			case appdetect.DbRedis:
-				config.Resources["redis"] = &project.ResourceConfig{
-					Type: project.ResourceTypeDbRedis,
+		if !addResources {
+			for _, db := range prj.DatabaseDeps {
+				switch db {
+				case appdetect.DbMongo:
+					config.Resources["mongo"] = &project.ResourceConfig{
+						Type: project.ResourceTypeDbMongo,
+						Name: spec.DbCosmosMongo.DatabaseName,
+					}
+				case appdetect.DbPostgres:
+					config.Resources["postgres"] = &project.ResourceConfig{
+						Type: project.ResourceTypeDbPostgres,
+						Name: spec.DbPostgres.DatabaseName,
+					}
+				case appdetect.DbMySql:
+					config.Resources["mysql"] = &project.ResourceConfig{
+						Type: project.ResourceTypeDbMySQL,
+						Props: project.MySQLProps{
+							DatabaseName: spec.DbMySql.DatabaseName,
+							AuthType:     "managedIdentity",
+						},
+					}
+				case appdetect.DbRedis:
+					config.Resources["redis"] = &project.ResourceConfig{
+						Type: project.ResourceTypeDbRedis,
+					}
 				}
 			}
 		}

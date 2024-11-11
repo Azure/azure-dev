@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"os"
 	"path/filepath"
 	"strings"
@@ -308,6 +309,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 				context.Background(),
 				dir,
 				tt.detect,
+				scaffold.InfraSpec{},
 				true)
 
 			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,

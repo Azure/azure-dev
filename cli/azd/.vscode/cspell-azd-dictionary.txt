@@ -1,5 +1,6 @@
 AADSTS
 ABRT
+ACCESSTOKEN
 aiomysql
 aiopg
 alphafeatures
@@ -50,6 +51,7 @@ AZURECLI
 azureedge
 azureml
 azurestaticapps
+AZURESUBSCRIPTION
 azuretools
 azureutil
 azureyaml
@@ -144,6 +146,7 @@ mysqldb
 nobanner
 nodeapp
 nolint
+nologo
 notrail
 omitempty
 oneauth

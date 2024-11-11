@@ -12,14 +12,10 @@ steps:
       parameters:
           Version: $(AzdVersion)
 
-    - template: /eng/pipelines/templates/steps/azd-login.yml
-
-    # Java pre-requisites that isn't met
-    # TODO: Use azd container as a form of validation that the container works
-    - template: /eng/pipelines/templates/steps/install-ms-openjdk.yml
-
     # Required to clone repos that are not yet public
     - template: /eng/pipelines/templates/steps/set-git-credentials.yml
+
+    - template: /eng/pipelines/templates/steps/configure-oidc-auth.yml
 
     - pwsh: |
           # Get the name without any path
@@ -69,29 +65,18 @@ steps:
     - task: DevcontainersCI@0
       inputs:
           env: |
-              # Required secrets for Terraform service principal authentication
-              # $(arm-*) secrets are set by azd-login.yml
-              ARM_CLIENT_ID=$(arm-client-id-test-tenant)
-              ARM_CLIENT_SECRET=$(arm-client-secret-test-tenant)
-              ARM_TENANT_ID=$(arm-tenant-id-test-tenant)
-              SUBSCRIPTION_ID=$(SubscriptionId-test-tenant)
+              # Service Connection Configuration
+              AZURESUBSCRIPTION_CLIENT_ID=$(AzureSubscriptionClientId)
+              AZURESUBSCRIPTION_TENANT_ID=$(AzureSubscriptionTenantId)
+              AZURESUBSCRIPTION_SERVICE_CONNECTION_ID=$(AzureSubscriptionServiceConnectionId)
+              SYSTEM_ACCESSTOKEN=$(System.AccessToken)
+              SYSTEM_OIDCREQUESTURI=$(System.OidcRequestUri)
 
               # Pass in TemplateRunEnvironmentVariables
               $(VARIABLE_LIST)
 
-              # Bash Script parameters
-              BRANCH_NAME=$(TemplateBranchName)
-              ENV_NAME_PREFIX=$(EnvPrefixName)
-              TEMPLATE_NAME=$(TemplateName)
-              VALIDATE=$(TemplateName)
-              PLAYWRIGHT_REPORTER='list'
-              LOCATION=$(AzureLocation)
-              SUBSCRIPTION=$(SubscriptionId-test-tenant)
-              ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
-              CLEANUP=$(SynchronousCleanup)
-
-              AZD_VERSION=$(AzdVersion)
-              AZD_DEBUG_FORCE_NO_TTY="1"
+              # Force no TTY in CI
+              AZD_DEBUG_FORCE_NO_TTY=1
           subFolder: "$(Build.SourcesDirectory)/temp"
           runCmd: |
               # Uninstall azd version
@@ -113,23 +98,7 @@ steps:
               azd version
 
               # Login azd
-              azd auth login \
-                --client-id "$(arm-client-id-test-tenant)" \
-                --client-secret "$(arm-client-secret-test-tenant)" \
-                --tenant-id "$(arm-tenant-id-test-tenant)"
-
-              # Login az CLI (required for scenarios where az is invoked)
-              az login \
-                --service-principal \
-                -u "$(arm-client-id-test-tenant)" \
-                -p="$(arm-client-secret-test-tenant)" \
-                --tenant "$(arm-tenant-id-test-tenant)"
-
-              # set default sub for az to be the same used by azd
-              az account set --subscription "$(SubscriptionId-test-tenant)"
-
-              # enable alpha features
-              azd config set alpha.all on
+              azd auth login --federated-credential-provider azure-pipelines
 
               # Install these packages for playwright tests. Otherwise, it will cause a error of playwright missing libraries
               sudo add-apt-repository ppa:gstreamer-developers/ppa
@@ -143,21 +112,21 @@ steps:
                 -e '$(EnvPrefixName)' \
                 -t '$(TemplateName)' \
                 -b '$(TemplateBranchName)' \
-                -s '$(SubscriptionId-test-tenant)' \
+                -s '$(SubscriptionId)' \
                 -u '$(Build.BuildId)-$(System.JobAttempt)' \
                 -l '$(AzureLocation)' \
                 -p 'list' \
                 -c '$(SynchronousCleanup)' \
                 -v "$RUN_VALIDATION" \
 
-      displayName: Test templates in Devcontainer
+      displayName: Run template-test.sh in Devcontainer
 
     # First tag the resource group (if exists) so that it can get cleaned up
     # by the cleanup pipeline. Then attempt to delete the resource group
     # directly. If the delete fails the cleanup pipeline will delete it.
     - task: AzureCLI@2
       inputs:
-        azureSubscription: azure-sdk-tests
+        azureSubscription: azd-service-connection
         keepAzSessionActive: true
         scriptType: pscore
         scriptLocation: inlineScript

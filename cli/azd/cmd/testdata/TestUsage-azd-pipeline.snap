@@ -11,13 +11,11 @@ Usage
 Available Commands
   config	: Configure your deployment pipeline to connect securely to Azure. (Beta)
 
-Flags
-        --docs 	: Opens the documentation for azd pipeline in your web browser.
-    -h, --help 	: Gets help for pipeline.
-
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd pipeline in your web browser.
+    -h, --help       	: Gets help for pipeline.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Use azd pipeline [command] --help to view examples and more information about a specific command.

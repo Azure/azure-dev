@@ -647,11 +647,11 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             secretRef: 'mongodb-url'
           }
           {
-            name: 'SPRING_DATA_MONGODB_URI'
+            name: 'spring.data.mongodb.uri'
             secretRef: 'mongodb-url'
           }
           {
-            name: 'SPRING_DATA_MONGODB_DATABASE'
+            name: 'spring.data.mongodb.database'
             value: '{{ .DbCosmosMongo.DatabaseName }}'
           }
           {{- end}}
@@ -683,15 +683,15 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             secretRef: 'postgresql-password'
           }
           {
-            name: 'SPRING_DATASOURCE_URL'
+            name: 'spring.datasource.url'
             value: 'jdbc:postgresql://${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'
           }
           {
-            name: 'SPRING_DATASOURCE_USERNAME'
+            name: 'spring.datasource.username'
             value: postgreSqlDatabaseUser
           }
           {
-            name: 'SPRING_DATASOURCE_PASSWORD'
+            name: 'spring.datasource.password'
             secretRef: 'postgresql-password'
           }
           {{- end}}
@@ -723,25 +723,25 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             secretRef: 'mysql-password'
           }
           {
-            name: 'SPRING_DATASOURCE_URL'
+            name: 'spring.datasource.url'
             value: 'jdbc:mysql://${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
           }
           {
-            name: 'SPRING_DATASOURCE_USERNAME'
+            name: 'spring.datasource.username'
             value: mysqlDatabaseUser
           }
           {
-            name: 'SPRING_DATASOURCE_PASSWORD'
+            name: 'spring.datasource.password'
             secretRef: 'mysql-password'
           }
           {{- end}}
           {{- if .DbCosmos }}
           {
-            name: 'SPRING_CLOUD_AZURE_COSMOS_ENDPOINT'
+            name: 'spring.cloud.azure.cosmos.endpoint'
             value: cosmos.outputs.endpoint
           }
           {
-            name: 'SPRING_CLOUD_AZURE_COSMOS_DATABASE'
+            name: 'spring.cloud.azure.cosmos.database'
             value: '{{ .DbCosmos.DatabaseName }}'
           }
           {{- end}}
@@ -767,7 +767,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             secretRef: 'redis-pass'
           }
           {
-            name: 'SPRING_DATA_REDIS_URL'
+            name: 'spring.data.redis.url'
             secretRef: 'redis-url'
           }
           {{- end}}
@@ -779,7 +779,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- end}}
           {{- if (and .AzureEventHubs (not .AzureEventHubs.UseKafka)) }}
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_NAMESPACE'
+            name: 'spring.cloud.azure.eventhubs.namespace'
             value: eventHubNamespace.outputs.name
           }
           {{- end}}
@@ -819,80 +819,80 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- end}}
           {{- if .AzureStorageAccount }}
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_PROCESSOR_CHECKPOINTSTORE_ACCOUNTNAME'
+            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name'
             value: storageAccountName
           }
           {{- end}}
           {{- if (and .AzureStorageAccount .AzureStorageAccount.AuthUsingManagedIdentity) }}
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_PROCESSOR_CHECKPOINTSTORE_CONNECTIONSTRING'
+            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string'
             value: ''
           }
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_PROCESSOR_CHECKPOINTSTORE_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled'
             value: 'true'
           }
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_PROCESSOR_CHECKPOINTSTORE_CREDENTIAL_CLIENTID'
+            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id'
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
           {{- end}}
           {{- if (and .AzureStorageAccount .AzureStorageAccount.AuthUsingConnectionString) }}
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_PROCESSOR_CHECKPOINTSTORE_CONNECTIONSTRING'
+            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string'
             secretRef: 'storage-account-connection-string'
           }
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_PROCESSOR_CHECKPOINTSTORE_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled'
             value: 'false'
           }
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_PROCESSOR_CHECKPOINTSTORE_CREDENTIAL_CLIENTID'
+            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id'
             value: ''
           }
           {{- end}}
 
           {{- if and .AzureServiceBus (not .AzureServiceBus.IsJms)}}
           {
-            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE'
+            name: 'spring.cloud.azure.servicebus.namespace'
             value: serviceBusNamespace.outputs.name
           }
           {{- end}}
           {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity) }}
           {
-            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTIONSTRING'
+            name: 'spring.cloud.azure.servicebus.connection-string'
             value: ''
           }
           {
-            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            name: 'spring.cloud.azure.servicebus.credential.managed-identity-enabled'
             value: 'true'
           }
           {
-            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_CLIENTID'
+            name: 'spring.cloud.azure.servicebus.credential.client-id'
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
           {{- end}}
           {{- if (and (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) (not .AzureServiceBus.IsJms)) }}
           {
-            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTIONSTRING'
+            name: 'spring.cloud.azure.servicebus.connection-string'
             secretRef: 'servicebus-connection-string'
           }
           {
-            name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            name: 'spring.cloud.azure.servicebus.credential.managed-identity-enabled'
             value: 'false'
           }
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_CLIENTID'
+            name: 'spring.cloud.azure.eventhubs.credential.client-id'
             value: ''
           }
           {{- end}}
           {{- if (and (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) .AzureServiceBus.IsJms) }}
           {
-            name: 'SPRING_JMS_SERVICEBUS_CONNECTIONSTRING'
+            name: 'spring.jms.servicebus.connection-string'
             secretRef: 'servicebus-connection-string'
           }
           {
-            name: 'SPRING_JMS_SERVICEBUS_PRICINGTIER'
+            name: 'spring.jms.servicebus.pricing-tier'
             value: 'premium'
           }
           {{- end}}

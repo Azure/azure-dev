@@ -20,7 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
-// doubleQuoteSpecialChars defines the characters that need to be escaped.
+// DoubleQuoteSpecialChars defines the characters that need to be escaped.
 const doubleQuoteSpecialChars = "\\\n\r\""
 
 // EnvNameEnvVarName is the name of the key used to store the envname property in the environment.
@@ -309,7 +309,7 @@ func Marshal(envMap map[string]string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// doubleQuoteEscape escapes special characters in the string to ensure it is safely quoted
+// DoubleQuoteEscape escapes special characters in the string to ensure it is safely quoted
 // for a dotenv file. It escapes characters like newlines, carriage returns,
 // and any other special characters defined in `doubleQuoteSpecialChars`
 func doubleQuoteEscape(line string) string {

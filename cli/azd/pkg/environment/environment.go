@@ -14,9 +14,14 @@ import (
 
 	"maps"
 
+	"sort"
+	"strconv"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/joho/godotenv"
 )
+
+// doubleQuoteSpecialChars defines the characters that need to be escaped.
+const doubleQuoteSpecialChars = "\\\n\r\""
 
 // EnvNameEnvVarName is the name of the key used to store the envname property in the environment.
 const EnvNameEnvVarName = "AZURE_ENV_NAME"
@@ -281,10 +286,42 @@ func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
 // Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
 // that were incorrectly unquoted.
 func marshallDotEnv(env *Environment) (string, error) {
-	marshalled, err := godotenv.Marshal(env.dotenv)
+	marshalled, err := Marshal(env.dotenv)
 	if err != nil {
 		return "", fmt.Errorf("marshalling .env: %w", err)
 	}
 
 	return fixupUnquotedDotenv(env.dotenv, marshalled), nil
+}
+
+// Marshal outputs the given environment as a dotenv-formatted environment file.
+// Each line is in the format: KEY="VALUE" where VALUE is backslash-escaped.
+func Marshal(envMap map[string]string) (string, error) {
+	lines := make([]string, 0, len(envMap))
+	for k, v := range envMap {
+		if d, err := strconv.Atoi(v); err == nil {
+			lines = append(lines, fmt.Sprintf(`%s=%d`, k, d))
+		} else {
+			lines = append(lines, fmt.Sprintf(`%s="%s"`, k, doubleQuoteEscape(v)))
+		}
+	}
+	sort.Strings(lines)
+	return strings.Join(lines, "\n"), nil
+}
+
+// doubleQuoteEscape escapes special characters in the string to ensure it is safely quoted
+// for a dotenv file. It escapes characters like newlines, carriage returns,
+// and any other special characters defined in `doubleQuoteSpecialChars`
+func doubleQuoteEscape(line string) string {
+	for _, c := range doubleQuoteSpecialChars {
+		toReplace := "\\" + string(c)
+		if c == '\n' {
+			toReplace = `\n`
+		}
+		if c == '\r' {
+			toReplace = `\r`
+		}
+		line = strings.Replace(line, string(c), toReplace, -1)
+	}
+	return line
 }

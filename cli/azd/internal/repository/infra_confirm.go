@@ -356,6 +356,7 @@ func (i *Initializer) buildInfraSpecByAzureDep(
 			return err
 		}
 		spec.AzureServiceBus = &scaffold.AzureDepServiceBus{
+			IsJms:                     dependency.IsJms,
 			Queues:                    dependency.Queues,
 			AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
 			AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,

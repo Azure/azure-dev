@@ -177,6 +177,13 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 			databaseDepMap[DbMongo] = struct{}{}
 		}
 
+		// we need to figure out multiple projects are using the same service bus
+		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-servicebus-jms" {
+			project.AzureDeps = append(project.AzureDeps, AzureDepServiceBus{
+				IsJms: true,
+			})
+		}
+
 		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-stream-binder-servicebus" {
 			bindingDestinations := findBindingDestinations(applicationProperties)
 			destinations := make([]string, 0, len(bindingDestinations))
@@ -186,6 +193,7 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 			}
 			project.AzureDeps = append(project.AzureDeps, AzureDepServiceBus{
 				Queues: destinations,
+				IsJms:  false,
 			})
 		}
 

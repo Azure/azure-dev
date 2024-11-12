@@ -81,6 +81,7 @@ type AzureDepServiceBus struct {
 	TopicsAndSubscriptions    map[string][]string
 	AuthUsingConnectionString bool
 	AuthUsingManagedIdentity  bool
+	IsJms                     bool
 }
 
 type AzureDepEventHubs struct {

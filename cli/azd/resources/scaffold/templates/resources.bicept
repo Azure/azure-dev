@@ -846,7 +846,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           }
           {{- end}}
 
-          {{- if .AzureServiceBus }}
+          {{- if and .AzureServiceBus (not .AzureServiceBus.IsJms)}}
           {
             name: 'SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE'
             value: serviceBusNamespace.outputs.name
@@ -866,7 +866,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
           {{- end}}
-          {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) }}
+          {{- if (and (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) (not .AzureServiceBus.IsJms)) }}
           {
             name: 'SPRING_CLOUD_AZURE_SERVICEBUS_CONNECTIONSTRING'
             secretRef: 'servicebus-connection-string'
@@ -878,6 +878,16 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_CLIENTID'
             value: ''
+          }
+          {{- end}}
+          {{- if (and (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) .AzureServiceBus.IsJms) }}
+          {
+            name: 'SPRING_JMS_SERVICEBUS_CONNECTIONSTRING'
+            secretRef: 'servicebus-connection-string'
+          }
+          {
+            name: 'SPRING_JMS_SERVICEBUS_PRICINGTIER'
+            value: 'premium'
           }
           {{- end}}
 

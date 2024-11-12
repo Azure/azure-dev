@@ -142,6 +142,7 @@ type AzureDep interface {
 
 type AzureDepServiceBus struct {
 	Queues []string
+	IsJms  bool
 }
 
 func (a AzureDepServiceBus) ResourceDisplay() string {

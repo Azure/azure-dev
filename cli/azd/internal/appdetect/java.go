@@ -211,7 +211,8 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 				}
 			}
 			project.AzureDeps = append(project.AzureDeps, AzureDepEventHubs{
-				Names: destinations,
+				Names:    destinations,
+				UseKafka: false,
 			})
 			if containsInBinding {
 				project.AzureDeps = append(project.AzureDeps, AzureDepStorageAccount{
@@ -219,6 +220,21 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 						applicationProperties["spring.cloud.azure.eventhubs.processor.checkpoint-store.container-name"]},
 				})
 			}
+		}
+
+		if dep.GroupId == "org.springframework.cloud" && dep.ArtifactId == "spring-cloud-starter-stream-kafka" {
+			bindingDestinations := findBindingDestinations(applicationProperties)
+			var destinations []string
+			for bindingName, destination := range bindingDestinations {
+				if !contains(destinations, destination) {
+					destinations = append(destinations, destination)
+					log.Printf("Kafka Topic [%s] found for binding [%s]", destination, bindingName)
+				}
+			}
+			project.AzureDeps = append(project.AzureDeps, AzureDepEventHubs{
+				Names:    destinations,
+				UseKafka: true,
+			})
 		}
 	}
 

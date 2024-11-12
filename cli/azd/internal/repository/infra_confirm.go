@@ -370,6 +370,7 @@ func (i *Initializer) buildInfraSpecByAzureDep(
 			EventHubNames:             dependency.Names,
 			AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
 			AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
+			UseKafka:                  dependency.UseKafka,
 		}
 	case appdetect.AzureDepStorageAccount:
 		authType, err := i.chooseAuthTypeByPrompt(ctx, azureDep.ResourceDisplay())

@@ -88,6 +88,7 @@ type AzureDepEventHubs struct {
 	EventHubNames             []string
 	AuthUsingConnectionString bool
 	AuthUsingManagedIdentity  bool
+	UseKafka                  bool
 }
 
 type AzureDepStorageAccount struct {

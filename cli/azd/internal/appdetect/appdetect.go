@@ -150,7 +150,8 @@ func (a AzureDepServiceBus) ResourceDisplay() string {
 }
 
 type AzureDepEventHubs struct {
-	Names []string
+	Names    []string
+	UseKafka bool
 }
 
 func (a AzureDepEventHubs) ResourceDisplay() string {

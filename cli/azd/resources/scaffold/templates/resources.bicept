@@ -777,37 +777,43 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: account.outputs.endpoint
           }
           {{- end}}
-          {{- if .AzureEventHubs }}
+          {{- if (and .AzureEventHubs (not .AzureEventHubs.UseKafka)) }}
           {
             name: 'SPRING_CLOUD_AZURE_EVENTHUBS_NAMESPACE'
             value: eventHubNamespace.outputs.name
           }
           {{- end}}
+          {{- if (and .AzureEventHubs .AzureEventHubs.UseKafka) }}
+          {
+            name: 'spring.cloud.stream.kafka.binder.brokers'
+            value: '${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'
+          }
+          {{- end}}
           {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingManagedIdentity) }}
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CONNECTIONSTRING'
-            value: ''
-          }
-          {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            name: 'spring.cloud.azure.eventhubs.credential.managed-identity-enabled'
             value: 'true'
           }
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_CLIENTID'
+            name: 'spring.cloud.azure.eventhubs.credential.client-id'
             value: {{bicepName .Name}}Identity.outputs.clientId
+          }
+          {
+            name: 'spring.cloud.azure.eventhubs.connection-string'
+            value: ''
           }
           {{- end}}
           {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CONNECTIONSTRING'
+            name: 'spring.cloud.azure.eventhubs.connection-string'
             secretRef: 'event-hubs-connection-string'
           }
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_MANAGEDIDENTITYENABLED'
+            name: 'spring.cloud.azure.eventhubs.credential.managed-identity-enabled'
             value: 'false'
           }
           {
-            name: 'SPRING_CLOUD_AZURE_EVENTHUBS_CREDENTIAL_CLIENTID'
+            name: 'spring.cloud.azure.eventhubs.credential.client-id'
             value: ''
           }
           {{- end}}

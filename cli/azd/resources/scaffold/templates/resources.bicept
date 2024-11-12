@@ -668,10 +668,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'POSTGRES_PORT'
             value: '5432'
           }
-          {
-            name: 'SPRING_DATASOURCE_URL'
-            value: 'jdbc:postgresql://${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'
-          }
           {{- end}}
           {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword) }}
           {
@@ -685,6 +681,10 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'POSTGRES_PASSWORD'
             secretRef: 'postgresql-password'
+          }
+          {
+            name: 'SPRING_DATASOURCE_URL'
+            value: 'jdbc:postgresql://${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'
           }
           {
             name: 'SPRING_DATASOURCE_USERNAME'
@@ -708,10 +708,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'MYSQL_PORT'
             value: '3306'
           }
-          {
-            name: 'SPRING_DATASOURCE_URL'
-            value: 'jdbc:mysql://${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
-          }
           {{- end}}
           {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword) }}
           {
@@ -725,6 +721,10 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'MYSQL_PASSWORD'
             secretRef: 'mysql-password'
+          }
+          {
+            name: 'SPRING_DATASOURCE_URL'
+            value: 'jdbc:mysql://${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
           }
           {
             name: 'SPRING_DATASOURCE_USERNAME'

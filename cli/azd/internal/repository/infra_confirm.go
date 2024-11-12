@@ -85,10 +85,6 @@ func (i *Initializer) infraSpecFromDetect(
 					return scaffold.InfraSpec{}, err
 				}
 				spec.DbCosmos = &scaffold.DatabaseCosmosAccount{
-					// todo:
-					// Now all services (except aca) are named by '${abbrs.xxx}${resourceToken}'
-					// Consider to name it by AccountName defined here.
-					AccountName:  "not used for now",
 					DatabaseName: dbName,
 					Containers:   containers,
 				}
@@ -99,7 +95,7 @@ func (i *Initializer) infraSpecFromDetect(
 	}
 
 	for _, azureDep := range detect.AzureDeps {
-		err := i.promptForAzureResource(ctx, azureDep.first, &spec)
+		err := i.buildInfraSpecByAzureDep(ctx, azureDep.first, &spec)
 		if err != nil {
 			return scaffold.InfraSpec{}, err
 		}
@@ -349,95 +345,46 @@ func (i *Initializer) getAuthType(ctx context.Context) (scaffold.AuthType, error
 	return authType, nil
 }
 
-func (i *Initializer) promptForAzureResource(
+func (i *Initializer) buildInfraSpecByAzureDep(
 	ctx context.Context,
 	azureDep appdetect.AzureDep,
 	spec *scaffold.InfraSpec) error {
-azureDepPrompt:
-	for {
-		azureDepName, err := i.console.Prompt(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Input the name of the Azure dependency (%s)", azureDep.ResourceDisplay()),
-			Help: "Azure dependency name\n\n" +
-				"Name of the Azure dependency that the app connects to. " +
-				"This dependency will be created after running azd provision or azd up." +
-				"\nYou may be able to skip this step by hitting enter, in which case the dependency will not be created.",
-		})
+	switch dependency := azureDep.(type) {
+	case appdetect.AzureDepServiceBus:
+		authType, err := i.chooseAuthTypeByPrompt(ctx, azureDep.ResourceDisplay())
 		if err != nil {
 			return err
 		}
-
-		if strings.ContainsAny(azureDepName, " ") {
-			i.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: "Dependency name contains whitespace. This might not be allowed by the Azure service.",
-			})
-			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Continue with name '%s'?", azureDepName),
-			})
-			if err != nil {
-				return err
-			}
-
-			if !confirm {
-				continue azureDepPrompt
-			}
-		} else if !wellFormedDbNameRegex.MatchString(azureDepName) {
-			i.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: "Dependency name contains special characters. " +
-					"This might not be allowed by the Azure service.",
-			})
-			confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Continue with name '%s'?", azureDepName),
-			})
-			if err != nil {
-				return err
-			}
-
-			if !confirm {
-				continue azureDepPrompt
-			}
+		spec.AzureServiceBus = &scaffold.AzureDepServiceBus{
+			Queues:                    dependency.Queues,
+			AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
+			AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
 		}
-
-		switch dependency := azureDep.(type) {
-		case appdetect.AzureDepServiceBus:
-			authType, err := i.chooseAuthType(ctx, azureDepName)
-			if err != nil {
-				return err
-			}
-			spec.AzureServiceBus = &scaffold.AzureDepServiceBus{
-				Name:                      azureDepName,
-				Queues:                    dependency.Queues,
-				AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
-				AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
-			}
-		case appdetect.AzureDepEventHubs:
-			authType, err := i.chooseAuthType(ctx, azureDepName)
-			if err != nil {
-				return err
-			}
-			spec.AzureEventHubs = &scaffold.AzureDepEventHubs{
-				Name:                      azureDepName,
-				EventHubNames:             dependency.Names,
-				AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
-				AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
-			}
-		case appdetect.AzureDepStorageAccount:
-			authType, err := i.chooseAuthType(ctx, azureDepName)
-			if err != nil {
-				return err
-			}
-			spec.AzureStorageAccount = &scaffold.AzureDepStorageAccount{
-				Name:                      azureDepName,
-				ContainerNames:            dependency.ContainerNames,
-				AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
-				AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
-			}
+	case appdetect.AzureDepEventHubs:
+		authType, err := i.chooseAuthTypeByPrompt(ctx, azureDep.ResourceDisplay())
+		if err != nil {
+			return err
 		}
-		break azureDepPrompt
+		spec.AzureEventHubs = &scaffold.AzureDepEventHubs{
+			EventHubNames:             dependency.Names,
+			AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
+			AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
+		}
+	case appdetect.AzureDepStorageAccount:
+		authType, err := i.chooseAuthTypeByPrompt(ctx, azureDep.ResourceDisplay())
+		if err != nil {
+			return err
+		}
+		spec.AzureStorageAccount = &scaffold.AzureDepStorageAccount{
+			ContainerNames:            dependency.ContainerNames,
+			AuthUsingConnectionString: authType == scaffold.AuthType_PASSWORD,
+			AuthUsingManagedIdentity:  authType == scaffold.AuthType_TOKEN_CREDENTIAL,
+		}
 	}
 	return nil
 }
 
-func (i *Initializer) chooseAuthType(ctx context.Context, serviceName string) (scaffold.AuthType, error) {
+func (i *Initializer) chooseAuthTypeByPrompt(ctx context.Context, serviceName string) (scaffold.AuthType, error) {
 	portOptions := []string{
 		"User assigned managed identity",
 		"Connection string",

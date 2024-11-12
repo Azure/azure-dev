@@ -22,7 +22,6 @@ type InfraSpec struct {
 	AzureServiceBus     *AzureDepServiceBus
 	AzureEventHubs      *AzureDepEventHubs
 	AzureStorageAccount *AzureDepStorageAccount
-
 }
 
 type Parameter struct {
@@ -52,7 +51,6 @@ type CosmosSqlDatabaseContainer struct {
 }
 
 type DatabaseCosmosAccount struct {
-	AccountName  string
 	DatabaseName string
 	Containers   []CosmosSqlDatabaseContainer
 }
@@ -79,7 +77,6 @@ type AIModelModel struct {
 }
 
 type AzureDepServiceBus struct {
-	Name                      string
 	Queues                    []string
 	TopicsAndSubscriptions    map[string][]string
 	AuthUsingConnectionString bool
@@ -87,14 +84,12 @@ type AzureDepServiceBus struct {
 }
 
 type AzureDepEventHubs struct {
-	Name                      string
 	EventHubNames             []string
 	AuthUsingConnectionString bool
 	AuthUsingManagedIdentity  bool
 }
 
 type AzureDepStorageAccount struct {
-	Name                      string
 	ContainerNames            []string
 	AuthUsingConnectionString bool
 	AuthUsingManagedIdentity  bool

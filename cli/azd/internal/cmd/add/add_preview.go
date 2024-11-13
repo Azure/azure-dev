@@ -24,7 +24,7 @@ type resourceMeta struct {
 	UseEnvVars []string
 }
 
-func metadata(r *project.ResourceConfig) resourceMeta {
+func Metadata(r *project.ResourceConfig) resourceMeta {
 	res := resourceMeta{}
 
 	// These are currently duplicated, static values maintained separately from the backend generation files
@@ -60,7 +60,7 @@ func metadata(r *project.ResourceConfig) resourceMeta {
 			"MONGODB_URL",
 		}
 	case project.ResourceTypeOpenAiModel:
-		res.AzureResourceType = "Microsoft.CognitiveAccounts/accounts/deployments"
+		res.AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
 		res.UseEnvVars = []string{
 			"AZURE_OPENAI_ENDPOINT",
 		}
@@ -100,7 +100,7 @@ func (a *AddAction) previewProvision(
 	w := tabwriter.NewWriter(&previewWriter, 0, 0, 5, ' ', 0)
 
 	fmt.Fprintln(w, "b  Name\tResource type")
-	meta := metadata(resourceToAdd)
+	meta := Metadata(resourceToAdd)
 	fmt.Fprintf(w, "+  %s\t%s\n", resourceToAdd.Name, meta.AzureResourceType)
 
 	w.Flush()
@@ -111,7 +111,7 @@ func (a *AddAction) previewProvision(
 			if res, ok := prjConfig.Resources[use]; ok {
 				fmt.Fprintf(w, "   %s -> %s\n", resourceToAdd.Name, output.WithBold("%s", use))
 
-				meta := metadata(res)
+				meta := Metadata(res)
 				for _, envVar := range meta.UseEnvVars {
 					fmt.Fprintf(w, "g   + %s\n", envVar)
 				}
@@ -120,7 +120,7 @@ func (a *AddAction) previewProvision(
 			}
 		}
 	} else {
-		meta := metadata(resourceToAdd)
+		meta := Metadata(resourceToAdd)
 
 		for _, usedBy := range usedBy {
 			fmt.Fprintf(w, "   %s -> %s\n", usedBy, output.WithBold("%s", resourceToAdd.Name))

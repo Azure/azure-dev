@@ -18,10 +18,27 @@ extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:
     stages:
-    - template: /eng/pipelines/templates/stages/vscode-build-and-test.yml
+    - stage: OutputAttributes
+      jobs:
+        - job: OutputAttributes
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
+            os: linux
+          steps:
+            - task: AzureCLI@2
+              displayName: 'Get AzDO User ID'
+              inputs:
+                azureSubscription: 'azure-sdk-vsmarketplace'
+                scriptType: pscore
+                scriptLocation: inlineScript
+                inlineScript: |
+                  az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798
 
-    - template: /eng/pipelines/templates/stages/vscode-sign.yml
+    # - template: /eng/pipelines/templates/stages/vscode-build-and-test.yml
 
-    - template: /eng/pipelines/templates/stages/vscode-publish-manual.yml
+    # - template: /eng/pipelines/templates/stages/vscode-sign.yml
 
-    - template: /eng/pipelines/templates/stages/vscode-publish-integration.yml
+    # - template: /eng/pipelines/templates/stages/vscode-publish-manual.yml
+
+    # - template: /eng/pipelines/templates/stages/vscode-publish-integration.yml

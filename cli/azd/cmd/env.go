@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -142,12 +143,34 @@ func newEnvSetAction(
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	e.env.DotenvSet(e.args[0], e.args[1])
+	// Check for case-insensitive key conflicts
+	checkKeyCaseConflict(e.env, e.args[0])
 
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
 	return nil, nil
+}
+
+// Check if there are any case-insensitive match conflicts in the environment name
+func checkKeyCaseConflict(env *environment.Environment, key string) {
+	lowerKey := strings.ToLower(key)
+
+	var duplicateKeys []string
+
+	for existingKey := range env.Dotenv() {
+		if existingKey == key {
+			continue
+		}
+		if strings.ToLower(existingKey) == lowerKey {
+			duplicateKeys = append(duplicateKeys, existingKey)
+		}
+	}
+
+	if len(duplicateKeys) > 0 {
+		fmt.Printf("WARN: Key '%v' already exists in the environment variables (case-insensitive match).\n", key)
+	}
 }
 
 func newEnvSelectCmd() *cobra.Command {

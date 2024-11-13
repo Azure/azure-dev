@@ -163,7 +163,9 @@ func checkKeyCaseConflict(env *environment.Environment, key string) {
 		}
 
 		if strings.ToLower(existingKey) == lowerKey {
-			fmt.Printf("WARN: The environment variable '%v' already exists in the .env file with a different case.\n", existingKey)
+			fmt.Printf(
+				"WARN: The environment variable '%v' already exists in the .env file with a different case.\n",
+				existingKey)
 			return
 		}
 	}

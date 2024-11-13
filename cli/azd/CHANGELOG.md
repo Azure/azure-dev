@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[4527]](https://github.com/Azure/azure-dev/pull/4527) Add command `azd add`.
+- [[4527]](https://github.com/Azure/azure-dev/pull/4527) Add new `alpha` command `azd add`.
 
 ### Bugs Fixed
 

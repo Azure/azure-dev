@@ -19,6 +19,8 @@ As of `1.9.3`, each Azure Developer CLI feature has been evaluated and assigned 
 | Command      | up                       | Stable    |
 | Command      | version                  | Stable    |
 | Command      | package                  | Beta      |
+| Command      | add                      | Alpha     |
+| Command      | infra synth              | Alpha     |
 | Language     | Python                   | Stable    |
 | Language     | JavaScript/TypeScript    | Stable    |
 | Language     | Java                     | Stable    |

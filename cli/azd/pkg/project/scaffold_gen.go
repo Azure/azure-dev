@@ -147,6 +147,45 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
 				DatabaseName: res.Name,
 				DatabaseUser: "pgadmin",
+				AuthType:     res.Props.(PostgresProps).AuthType,
+			}
+		case ResourceTypeDbMySQL:
+			infraSpec.DbMySql = &scaffold.DatabaseMySql{
+				DatabaseName: res.Name,
+				DatabaseUser: "mysqladmin",
+				AuthType:     res.Props.(MySQLProps).AuthType,
+			}
+		case ResourceTypeDbCosmos:
+			infraSpec.DbCosmos = &scaffold.DatabaseCosmosAccount{
+				DatabaseName: res.Name,
+			}
+			containers := res.Props.(CosmosDBProps).Containers
+			for _, container := range containers {
+				infraSpec.DbCosmos.Containers = append(infraSpec.DbCosmos.Containers, scaffold.CosmosSqlDatabaseContainer{
+					ContainerName:     container.ContainerName,
+					PartitionKeyPaths: container.PartitionKeyPaths,
+				})
+			}
+		case ResourceTypeMessagingServiceBus:
+			props := res.Props.(ServiceBusProps)
+			infraSpec.AzureServiceBus = &scaffold.AzureDepServiceBus{
+				Queues:   props.Queues,
+				AuthType: props.AuthType,
+				IsJms:    props.IsJms,
+			}
+		case ResourceTypeMessagingEventHubs:
+			props := res.Props.(EventHubsProps)
+			infraSpec.AzureEventHubs = &scaffold.AzureDepEventHubs{
+				EventHubNames: props.EventHubNames,
+				AuthType:      props.AuthType,
+				UseKafka:      false,
+			}
+		case ResourceTypeMessagingKafka:
+			props := res.Props.(KafkaProps)
+			infraSpec.AzureEventHubs = &scaffold.AzureDepEventHubs{
+				EventHubNames: props.Topics,
+				AuthType:      props.AuthType,
+				UseKafka:      true,
 			}
 		case ResourceTypeHostContainerApp:
 			svcSpec := scaffold.ServiceSpec{

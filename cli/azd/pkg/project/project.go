@@ -161,15 +161,16 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed getting hooks from infra path, %w", err)
 	}
-	if len(hooksDefinedAtInfraPath) > 0 && len(projectConfig.Hooks) > 0 {
-		return nil, fmt.Errorf(
-			"project hooks defined in both %s and azure.yaml configuration,"+
-				" please remove one of them",
-			filepath.Join(projectConfig.Infra.Path, "azd.hooks.yaml"),
-		)
-	}
-	if projectConfig.Hooks == nil {
-		projectConfig.Hooks = hooksDefinedAtInfraPath
+	// Merge the hooks defined at the infra path with the hooks defined in the project configuration
+	for hookName, externalHookList := range hooksDefinedAtInfraPath {
+		if hookListFromAzureYaml, hookExists := projectConfig.Hooks[hookName]; hookExists {
+			mergedHooks := make([]*ext.HookConfig, 0, len(hookListFromAzureYaml)+len(externalHookList))
+			mergedHooks = append(mergedHooks, hookListFromAzureYaml...)
+			mergedHooks = append(mergedHooks, externalHookList...)
+			projectConfig.Hooks[hookName] = mergedHooks
+		} else {
+			projectConfig.Hooks[hookName] = externalHookList
+		}
 	}
 
 	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {
@@ -195,20 +196,6 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		for _, svcConfig := range projectConfig.Services {
 			hosts[i] = string(svcConfig.Host)
 			languages[i] = string(svcConfig.Language)
-
-			// complement service level hooks
-			hooksDefinedAtServicePath, err := hooksFromFolderPath(svcConfig.RelativePath)
-			if err != nil {
-				return nil, err
-			}
-			if svcConfig.Hooks != nil && hooksDefinedAtServicePath != nil {
-				return nil, fmt.Errorf("service %s has hooks defined in both azd.hooks.yaml and azure.yaml, "+
-					"please remove one of them.", svcConfig.Name)
-			}
-			if svcConfig.Hooks == nil {
-				svcConfig.Hooks = hooksDefinedAtServicePath
-			}
-
 			i++
 		}
 

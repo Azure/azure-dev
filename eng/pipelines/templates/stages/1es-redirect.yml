@@ -7,7 +7,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/heads/djurek/vsix-signing
+      ref: refs/tags/azure-sdk-build-tools_20241025.1
 
 parameters:
 - name: stages

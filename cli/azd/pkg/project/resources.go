@@ -5,6 +5,7 @@ package project
 
 import (
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 
 	"github.com/braydonk/yaml"
 )
@@ -12,12 +13,17 @@ import (
 type ResourceType string
 
 const (
-	ResourceTypeDbRedis          ResourceType = "db.redis"
-	ResourceTypeDbPostgres       ResourceType = "db.postgres"
-	ResourceTypeDbMySQL          ResourceType = "db.mysql"
-	ResourceTypeDbMongo          ResourceType = "db.mongo"
-	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
-	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
+	ResourceTypeDbRedis             ResourceType = "db.redis"
+	ResourceTypeDbPostgres          ResourceType = "db.postgres"
+	ResourceTypeDbMySQL             ResourceType = "db.mysql"
+	ResourceTypeDbMongo             ResourceType = "db.mongo"
+	ResourceTypeDbCosmos            ResourceType = "db.cosmos"
+	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
+	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
+	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
+	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
+	ResourceTypeMessagingKafka      ResourceType = "messaging.kafka"
+	ResourceTypeStorage             ResourceType = "storage"
 )
 
 func (r ResourceType) String() string {
@@ -30,10 +36,18 @@ func (r ResourceType) String() string {
 		return "MySQL"
 	case ResourceTypeDbMongo:
 		return "MongoDB"
+	case ResourceTypeDbCosmos:
+		return "CosmosDB"
 	case ResourceTypeHostContainerApp:
 		return "Container App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
+	case ResourceTypeMessagingServiceBus:
+		return "Service Bus"
+	case ResourceTypeMessagingEventHubs:
+		return "Event Hubs"
+	case ResourceTypeMessagingKafka:
+		return "Kafka"
 	}
 
 	return ""
@@ -132,6 +146,36 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = mp
+	case ResourceTypeDbPostgres:
+		pp := PostgresProps{}
+		if err := unmarshalProps(&pp); err != nil {
+			return err
+		}
+		raw.Props = pp
+	case ResourceTypeDbMongo:
+		mp := MongoDBProps{}
+		if err := unmarshalProps(&mp); err != nil {
+			return err
+		}
+		raw.Props = mp
+	case ResourceTypeDbCosmos:
+		cp := CosmosDBProps{}
+		if err := unmarshalProps(&cp); err != nil {
+			return err
+		}
+		raw.Props = cp
+	case ResourceTypeMessagingServiceBus:
+		sb := ServiceBusProps{}
+		if err := unmarshalProps(&sb); err != nil {
+			return err
+		}
+		raw.Props = sb
+	case ResourceTypeMessagingEventHubs:
+		eh := EventHubsProps{}
+		if err := unmarshalProps(&eh); err != nil {
+			return err
+		}
+		raw.Props = eh
 	}
 
 	*r = ResourceConfig(raw)
@@ -161,6 +205,42 @@ type AIModelPropsModel struct {
 }
 
 type MySQLProps struct {
+	DatabaseName string            `yaml:"databaseName,omitempty"`
+	AuthType     internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type PostgresProps struct {
+	DatabaseName string            `yaml:"databaseName,omitempty"`
+	AuthType     internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type MongoDBProps struct {
 	DatabaseName string `yaml:"databaseName,omitempty"`
-	AuthType     string `yaml:"authType,omitempty"`
+}
+
+type CosmosDBProps struct {
+	Containers   []CosmosDBContainerProps `yaml:"containers,omitempty"`
+	DatabaseName string                   `yaml:"databaseName,omitempty"`
+	AuthType     internal.AuthType        `yaml:"authType,omitempty"`
+}
+
+type CosmosDBContainerProps struct {
+	ContainerName     string   `yaml:"containerName,omitempty"`
+	PartitionKeyPaths []string `yaml:"partitionKeyPaths,omitempty"`
+}
+
+type ServiceBusProps struct {
+	Queues   []string          `yaml:"queues,omitempty"`
+	IsJms    bool              `yaml:"isJms,omitempty"`
+	AuthType internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type EventHubsProps struct {
+	EventHubNames []string          `yaml:"EventHubNames,omitempty"`
+	AuthType      internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type KafkaProps struct {
+	Topics   []string          `yaml:"topics,omitempty"`
+	AuthType internal.AuthType `yaml:"authType,omitempty"`
 }

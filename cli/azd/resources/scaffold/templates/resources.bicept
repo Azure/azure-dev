@@ -61,7 +61,7 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
     name: '${abbrs.appManagedEnvironments}${resourceToken}'
     location: location
     zoneRedundant: false
-    {{- if (or (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) (and .DbMySql .DbMySql.AuthUsingManagedIdentity))}}
+    {{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")))}}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -187,7 +187,7 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
       }
     ]
     location: location
-    {{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+    {{- if (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) }}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -203,7 +203,7 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
 
 var mysqlDatabaseName = '{{ .DbMySql.DatabaseName }}'
 var mysqlDatabaseUser = 'mysqladmin'
-{{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity) }}
+{{- if (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")) }}
 module mysqlIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
   name: 'mysqlIdentity'
   params: {
@@ -244,7 +244,7 @@ module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.4.1' = {
     ]
     location: location
     highAvailability: 'Disabled'
-    {{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity) }}
+    {{- if (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")) }}
     managedIdentities: {
       userAssignedResourceIds: [
         mysqlIdentity.outputs.resourceId
@@ -261,7 +261,7 @@ module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.4.1' = {
   }
 }
 {{- end}}
-{{- if (or (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) (and .DbMySql .DbMySql.AuthUsingManagedIdentity))}}
+{{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")))}}
 
 module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
   name: 'connectionCreatorIdentity'
@@ -271,7 +271,7 @@ module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assign
   }
 }
 {{- end}}
-{{- if (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) }}
+{{- if (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) }}
 {{- range .Services}}
 module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
   name: '{{bicepName .Name}}CreateConnectionToPostgreSql'
@@ -292,7 +292,7 @@ module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resour
 }
 {{- end}}
 {{- end}}
-{{- if (and .DbMySql .DbMySql.AuthUsingManagedIdentity) }}
+{{- if (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")) }}
 {{- range .Services}}
 module {{bicepName .Name}}CreateConnectionToMysql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
   name: '{{bicepName .Name}}CreateConnectionToMysql'
@@ -321,7 +321,7 @@ module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.7.1' = {
     name: '${abbrs.eventHubNamespaces}${resourceToken}'
     location: location
     roleAssignments: [
-      {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingManagedIdentity) }}
+      {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "MANAGED_IDENTITY")) }}
       {{- range .Services}}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
@@ -331,7 +331,7 @@ module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.7.1' = {
       {{- end}}
       {{- end}}
     ]
-    {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+    {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "CONNECTION_STRING")) }}
     disableLocalAuth: false
     {{- end}}
     eventhubs: [
@@ -343,7 +343,7 @@ module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.7.1' = {
     ]
   }
 }
-{{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+{{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "CONNECTION_STRING")) }}
 module eventHubsConnectionString './modules/set-event-hubs-namespace-connection-string.bicep' = {
   name: 'eventHubsConnectionString'
   params: {
@@ -372,7 +372,7 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
     }
     location: location
     roleAssignments: [
-      {{- if (and .AzureStorageAccount .AzureStorageAccount.AuthUsingManagedIdentity) }}
+      {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "MANAGED_IDENTITY")) }}
       {{- range .Services}}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
@@ -389,7 +389,7 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
   }
 }
 
-{{- if (and .AzureStorageAccount .AzureStorageAccount.AuthUsingConnectionString) }}
+{{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "CONNECTION_STRING")) }}
 module storageAccountConnectionString './modules/set-storage-account-connection-string.bicep' = {
   name: 'storageAccountConnectionString'
   params: {
@@ -411,7 +411,7 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.10.0' = {
     // Non-required parameters
     location: location
     roleAssignments: [
-      {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity) }}
+      {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "MANAGED_IDENTITY")) }}
       {{- range .Services}}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
@@ -421,7 +421,7 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.10.0' = {
       {{- end}}
       {{- end}}
     ]
-    {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) }}
+    {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "CONNECTION_STRING")) }}
     disableLocalAuth: false
     {{- end}}
     queues: [
@@ -434,7 +434,7 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.10.0' = {
   }
 }
 
-{{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) }}
+{{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "CONNECTION_STRING")) }}
 module serviceBusConnectionString './modules/set-servicebus-namespace-connection-string.bicep' = {
   name: 'serviceBusConnectionString'
   params: {
@@ -493,7 +493,7 @@ module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assi
   params: {
     name: '${abbrs.managedIdentityUserAssignedIdentities}{{bicepName .Name}}-${resourceToken}'
     location: location
-    {{- if (or (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) (and .DbMySql .DbMySql.AuthUsingManagedIdentity))}}
+    {{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")))}}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -565,7 +565,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           keyVaultUrl: cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri
         }
         {{- end}}
-        {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword) }}
+        {{- if (and .DbPostgres (eq .DbPostgres.AuthType "PASSWORD")) }}
         {
           name: 'postgresql-password'
           value: postgreSqlDatabasePassword
@@ -575,7 +575,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           value: 'postgresql://${postgreSqlDatabaseUser}:${postgreSqlDatabasePassword}@${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'
         }
         {{- end}}
-        {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword) }}
+        {{- if (and .DbMySql (eq .DbMySql.AuthType "PASSWORD")) }}
         {
           name: 'mysql-password'
           value: mysqlDatabasePassword
@@ -597,21 +597,21 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
         }
         {{- end}}
-        {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+        {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "CONNECTION_STRING")) }}
         {
           name: 'event-hubs-connection-string'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
           keyVaultUrl: '${keyVault.outputs.uri}secrets/EVENT-HUBS-CONNECTION-STRING'
         }
         {{- end}}
-        {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) }}
+        {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "CONNECTION_STRING")) }}
         {
           name: 'servicebus-connection-string'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
           keyVaultUrl: '${keyVault.outputs.uri}secrets/SERVICEBUS-CONNECTION-STRING'
         }
         {{- end}}
-        {{- if (and .AzureStorageAccount .AzureStorageAccount.AuthUsingConnectionString) }}
+        {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "CONNECTION_STRING")) }}
         {
           name: 'storage-account-connection-string'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
@@ -669,7 +669,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: '5432'
           }
           {{- end}}
-          {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword) }}
+          {{- if (and .DbPostgres (eq .DbPostgres.AuthType "PASSWORD")) }}
           {
             name: 'POSTGRES_URL'
             secretRef: 'postgresql-db-url'
@@ -709,7 +709,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: '3306'
           }
           {{- end}}
-          {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword) }}
+          {{- if (and .DbMySql (eq .DbMySql.AuthType "PASSWORD")) }}
           {
             name: 'MYSQL_URL'
             secretRef: 'mysql-db-url'
@@ -789,7 +789,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: '${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'
           }
           {{- end}}
-          {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingManagedIdentity) }}
+          {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "MANAGED_IDENTITY")) }}
           {
             name: 'spring.cloud.azure.eventhubs.credential.managed-identity-enabled'
             value: 'true'
@@ -803,7 +803,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: ''
           }
           {{- end}}
-          {{- if (and .AzureEventHubs .AzureEventHubs.AuthUsingConnectionString) }}
+          {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "CONNECTION_STRING")) }}
           {
             name: 'spring.cloud.azure.eventhubs.connection-string'
             secretRef: 'event-hubs-connection-string'
@@ -823,7 +823,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: storageAccountName
           }
           {{- end}}
-          {{- if (and .AzureStorageAccount .AzureStorageAccount.AuthUsingManagedIdentity) }}
+          {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "MANAGED_IDENTITY")) }}
           {
             name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string'
             value: ''
@@ -837,7 +837,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
           {{- end}}
-          {{- if (and .AzureStorageAccount .AzureStorageAccount.AuthUsingConnectionString) }}
+          {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "CONNECTION_STRING")) }}
           {
             name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string'
             secretRef: 'storage-account-connection-string'
@@ -858,7 +858,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: serviceBusNamespace.outputs.name
           }
           {{- end}}
-          {{- if (and .AzureServiceBus .AzureServiceBus.AuthUsingManagedIdentity) }}
+          {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "MANAGED_IDENTITY")) }}
           {
             name: 'spring.cloud.azure.servicebus.connection-string'
             value: ''
@@ -872,7 +872,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
           {{- end}}
-          {{- if (and (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) (not .AzureServiceBus.IsJms)) }}
+          {{- if (and (and .AzureServiceBus (eq .AzureServiceBus.AuthType "CONNECTION_STRING")) (not .AzureServiceBus.IsJms)) }}
           {
             name: 'spring.cloud.azure.servicebus.connection-string'
             secretRef: 'servicebus-connection-string'
@@ -886,7 +886,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: ''
           }
           {{- end}}
-          {{- if (and (and .AzureServiceBus .AzureServiceBus.AuthUsingConnectionString) .AzureServiceBus.IsJms) }}
+          {{- if (and (and .AzureServiceBus (eq .AzureServiceBus.AuthType "CONNECTION_STRING")) .AzureServiceBus.IsJms) }}
           {
             name: 'spring.jms.servicebus.connection-string'
             secretRef: 'servicebus-connection-string'
@@ -932,7 +932,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     environmentResourceId: containerAppsEnvironment.outputs.resourceId
     location: location
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
-    {{- if (or (and .DbPostgres .DbPostgres.AuthUsingManagedIdentity) (and .DbMySql .DbMySql.AuthUsingManagedIdentity))}}
+    {{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")))}}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -994,13 +994,13 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
       {{- end}}
     ]
     secrets: [
-      {{- if (and .DbPostgres .DbPostgres.AuthUsingUsernamePassword) }}
+      {{- if (and .DbPostgres (eq .DbPostgres.AuthType "PASSWORD")) }}
       {
         name: 'postgresql-password'
         value: postgreSqlDatabasePassword
       }
       {{- end}}
-      {{- if (and .DbMySql .DbMySql.AuthUsingUsernamePassword) }}
+      {{- if (and .DbMySql (eq .DbMySql.AuthType "PASSWORD")) }}
       {
         name: 'mysql-password'
         value: mysqlDatabasePassword

@@ -309,7 +309,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 				context.Background(),
 				dir,
 				tt.detect,
-				scaffold.InfraSpec{},
+				&scaffold.InfraSpec{},
 				true)
 
 			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,

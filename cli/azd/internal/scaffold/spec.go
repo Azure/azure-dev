@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"strings"
 )
 
@@ -32,17 +33,15 @@ type Parameter struct {
 }
 
 type DatabasePostgres struct {
-	DatabaseUser              string
-	DatabaseName              string
-	AuthUsingManagedIdentity  bool
-	AuthUsingUsernamePassword bool
+	DatabaseUser string
+	DatabaseName string
+	AuthType     internal.AuthType
 }
 
 type DatabaseMySql struct {
-	DatabaseUser              string
-	DatabaseName              string
-	AuthUsingManagedIdentity  bool
-	AuthUsingUsernamePassword bool
+	DatabaseUser string
+	DatabaseName string
+	AuthType     internal.AuthType
 }
 
 type CosmosSqlDatabaseContainer struct {
@@ -77,36 +76,22 @@ type AIModelModel struct {
 }
 
 type AzureDepServiceBus struct {
-	Queues                    []string
-	TopicsAndSubscriptions    map[string][]string
-	AuthUsingConnectionString bool
-	AuthUsingManagedIdentity  bool
-	IsJms                     bool
+	Queues                 []string
+	TopicsAndSubscriptions map[string][]string
+	AuthType               internal.AuthType
+	IsJms                  bool
 }
 
 type AzureDepEventHubs struct {
-	EventHubNames             []string
-	AuthUsingConnectionString bool
-	AuthUsingManagedIdentity  bool
-	UseKafka                  bool
+	EventHubNames []string
+	AuthType      internal.AuthType
+	UseKafka      bool
 }
 
 type AzureDepStorageAccount struct {
-	ContainerNames            []string
-	AuthUsingConnectionString bool
-	AuthUsingManagedIdentity  bool
+	ContainerNames []string
+	AuthType       internal.AuthType
 }
-
-// AuthType defines different authentication types.
-type AuthType int32
-
-const (
-	AUTH_TYPE_UNSPECIFIED AuthType = 0
-	// Username and password, or key based authentication, or connection string
-	AuthType_PASSWORD AuthType = 1
-	// Microsoft EntraID token credential
-	AuthType_TOKEN_CREDENTIAL AuthType = 2
-)
 
 type ServiceSpec struct {
 	Name string
@@ -148,9 +133,8 @@ type ServiceReference struct {
 }
 
 type DatabaseReference struct {
-	DatabaseName              string
-	AuthUsingManagedIdentity  bool
-	AuthUsingUsernamePassword bool
+	DatabaseName string
+	AuthType     internal.AuthType
 }
 
 type AIModelReference struct {

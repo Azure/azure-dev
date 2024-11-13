@@ -13,7 +13,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -114,8 +113,8 @@ type Console interface {
 	PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error)
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
-	// Prompts the user for a directory path.
-	PromptDir(ctx context.Context, options ConsoleOptions) (string, error)
+	// PromptFs prompts the user for a filesystem path or directory.
+	PromptFs(ctx context.Context, options ConsoleOptions, fsOptions FsOptions) (string, error)
 	// Prompts the user to select a single value from a set of values
 	Select(ctx context.Context, options ConsoleOptions) (int, error)
 	// Prompts the user to select zero or more values from a set of values
@@ -141,8 +140,15 @@ type AskerConsole struct {
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
-	writer     io.Writer
-	formatter  output.Formatter
+	writer    io.Writer
+	formatter output.Formatter
+
+	// isTerminal controls whether terminal-style input/output will be used.
+	//
+	// When isTerminal is false, the following notable behaviors apply:
+	//   - Spinner progress will be written as standard newline messages.
+	//   - Prompting assumes a non-terminal environment, where output written and input received are machine-friendly text,
+	//     stripped of formatting characters.
 	isTerminal bool
 	noPrompt   bool
 	// when non nil, use this client instead of prompting ourselves on the console.
@@ -614,53 +620,6 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	return response, nil
 }
 
-// Prompts the user for a single value
-func (c *AskerConsole) PromptDir(ctx context.Context, options ConsoleOptions) (string, error) {
-	var response string
-
-	if c.promptClient != nil {
-		opts := promptOptions{
-			Type: "directory",
-			Options: promptOptionsOptions{
-				Message: options.Message,
-				Help:    options.Help,
-			},
-		}
-
-		if value, ok := options.DefaultValue.(string); ok {
-			opts.Options.DefaultValue = to.Ptr[any](value)
-		}
-
-		result, err := c.promptClient.Prompt(ctx, opts)
-		if errors.Is(err, promptCancelledErr) {
-			return "", terminal.InterruptErr
-		} else if err != nil {
-			return "", err
-		}
-
-		if err := json.Unmarshal(result, &response); err != nil {
-			return "", fmt.Errorf("unmarshalling response: %w", err)
-		}
-
-		return response, nil
-	}
-
-	err := c.doInteraction(func(c *AskerConsole) error {
-		prompt := &survey.Input{
-			Message: options.Message,
-			Help:    options.Help,
-			Suggest: dirSuggestions,
-		}
-
-		return c.asker(prompt, &response)
-	})
-	if err != nil {
-		return response, err
-	}
-	c.updateLastBytes(afterIoSentinel)
-	return response, nil
-}
-
 func choicesFromOptions(options ConsoleOptions) []promptChoice {
 	choices := make([]promptChoice, len(options.Options))
 	for i, option := range options.Options {
@@ -925,13 +884,22 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 }
 
 // consoleWidth the number of columns in the active console window
-func consoleWidth() int {
-	width, _ := consolesize.GetConsoleSize()
-	return width
+func consoleWidth() int32 {
+	widthInt, _ := consolesize.GetConsoleSize()
+
+	// Suppress G115: integer overflow conversion int -> int32 below.
+	// Explanation:
+	// consolesize.GetConsoleSize() returns an int, but the underlying implementation actually is a uint16 on both
+	// Windows and unix systems.
+	//
+	// In practice, console width is the number of columns (text) in the active console window.
+	// We don't ever expect this to be larger than math.MaxInt32, so we can safely cast to int32.
+	// nolint:gosec // G115
+	return int32(widthInt)
 }
 
-func (c *AskerConsole) handleResize(width int) {
-	c.consoleWidth.Store(int32(width))
+func (c *AskerConsole) handleResize(width int32) {
+	c.consoleWidth.Store(width)
 
 	c.spinnerLineMu.Lock()
 	if c.spinner.Status() == yacspin.SpinnerRunning {
@@ -1045,7 +1013,7 @@ func NewConsole(
 	c.spinner, _ = yacspin.New(spinnerConfig)
 	c.spinnerTerminalMode = spinnerConfig.TerminalMode
 	if isTerminal {
-		c.consoleWidth = atomic.NewInt32(int32(consoleWidth()))
+		c.consoleWidth = atomic.NewInt32(consoleWidth())
 		watchTerminalResize(c)
 		watchTerminalInterrupt(c)
 	}
@@ -1056,24 +1024,15 @@ func NewConsole(
 // IsTerminal returns true if the given file descriptors are attached to a terminal,
 // taking into account of environment variables that force TTY behavior.
 func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
-	// User override to force non-TTY behavior
-	if ok, _ := strconv.ParseBool(os.Getenv("AZD_DEBUG_FORCE_NO_TTY")); ok {
-		return false
+	// User override to force TTY behavior
+	if forceTty, err := strconv.ParseBool(os.Getenv("AZD_FORCE_TTY")); err == nil {
+		return forceTty
 	}
 
 	// By default, detect if we are running on CI and force no TTY mode if we are.
-	// Allow for an override if this is not desired.
-	shouldDetectCI := true
-	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
-		skip, err := strconv.ParseBool(strVal)
-		if err != nil {
-			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
-		} else if skip {
-			shouldDetectCI = false
-		}
-	}
-
-	if shouldDetectCI && resource.IsRunningOnCI() {
+	// If this is affecting you locally while debugging on a CI machine,
+	// use the override AZD_FORCE_TTY=true.
+	if resource.IsRunningOnCI() {
 		return false
 	}
 
@@ -1086,22 +1045,6 @@ func GetStepResultFormat(result error) SpinnerUxType {
 		formatResult = StepFailed
 	}
 	return formatResult
-}
-
-// dirSuggestions provides suggestion completions for directories given the current input directory.
-func dirSuggestions(input string) []string {
-	completions := []string{}
-	if input == "" {
-		completions = append(completions, ".")
-	}
-
-	matches, _ := filepath.Glob(input + "*")
-	for _, match := range matches {
-		if fs, err := os.Stat(match); err == nil && fs.IsDir() {
-			completions = append(completions, match)
-		}
-	}
-	return completions
 }
 
 // Handle doing interactive calls. It checks if there's a spinner running to pause it before doing interactive actions.

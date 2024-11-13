@@ -150,9 +150,9 @@ func (c *MockConsole) Prompt(ctx context.Context, options input.ConsoleOptions) 
 	return value.(string), err
 }
 
-func (c *MockConsole) PromptDir(ctx context.Context, options input.ConsoleOptions) (string, error) {
+func (c *MockConsole) PromptFs(ctx context.Context, options input.ConsoleOptions, fs input.FsOptions) (string, error) {
 	c.log = append(c.log, options.Message)
-	value, err := c.respond("PromptDir", options)
+	value, err := c.respond("PromptFs", options)
 	return value.(string), err
 }
 

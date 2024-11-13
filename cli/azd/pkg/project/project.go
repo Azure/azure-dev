@@ -18,12 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
-	"gopkg.in/yaml.v3"
-)
-
-const (
-	//nolint:lll
-	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
+	"github.com/braydonk/yaml"
 )
 
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {
@@ -133,6 +128,11 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 
 		svc.OutputPath = filepath.FromSlash(svc.OutputPath)
+	}
+
+	for key, svc := range projectConfig.Resources {
+		svc.Name = key
+		svc.Project = &projectConfig
 	}
 
 	return &projectConfig, nil
@@ -283,7 +283,15 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
-	projectFileContents := bytes.NewBufferString(projectSchemaAnnotation + "\n\n")
+	version := "v1.0"
+	if projectConfig.MetaSchemaVersion != "" {
+		version = projectConfig.MetaSchemaVersion
+	}
+
+	annotation := fmt.Sprintf(
+		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/%s/azure.yaml.json",
+		version)
+	projectFileContents := bytes.NewBufferString(annotation + "\n\n")
 	_, err = projectFileContents.Write(projectBytes)
 	if err != nil {
 		return fmt.Errorf("preparing new project file contents: %w", err)

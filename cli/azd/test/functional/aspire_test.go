@@ -4,13 +4,10 @@
 package cli_test
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/stretchr/testify/require"
@@ -31,44 +29,8 @@ import (
 // (slow, > 10 mins) go test -run ^Test_CLI_Aspire_Deploy -timeout 30m - Full deployment acceptance tests.
 // (all) go test -run ^Test_CLI_Aspire -timeout 30m - Runs all tests.
 
-var dotnetWorkloadInstallOnce sync.Once
-
-func restoreDotnetWorkload(t *testing.T) {
-	dotnetWorkloadInstallOnce.Do(func() {
-		dir := t.TempDir()
-		err := copySample(dir, "aspire-full")
-		require.NoError(t, err, "failed expanding sample")
-
-		ctx := context.Background()
-		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
-
-		wr := logWriter{initialTime: time.Now(), t: t, prefix: "restore: "}
-		commandRunner := exec.NewCommandRunner(nil)
-		cmd := "dotnet"
-		args := []string{"workload", "restore", "--skip-sign-check"}
-
-		// On platforms where the system requires `sudo` to install workloads (e.g. macOS and Linux when using system wide
-		// installations), you can configure sudo to allow passwordless execution of the `dotnet` command by adding something
-		// like the following to /etc/sudoers:
-		//
-		// matell ALL=(ALL) NOPASSWD: /usr/local/share/dotnet/dotnet
-		//
-		// and then set AZD_TEST_DOTNET_WORKLOAD_USE_SUDO=1 when running the tests, and we'll run `dotnet workload restore`
-		// via sudo.
-		if v, err := strconv.ParseBool(os.Getenv("AZD_TEST_DOTNET_WORKLOAD_USE_SUDO")); err == nil && v {
-			args = append([]string{cmd}, args...)
-			cmd = "sudo"
-		}
-
-		runArgs := newRunArgs(cmd, args...).WithCwd(appHostProject).WithStdOut(&wr)
-		_, err = commandRunner.Run(ctx, runArgs)
-		require.NoError(t, err)
-	})
-}
-
 // Test_CLI_Aspire_DetectGen tests the detection and generation of an Aspire project.
 func Test_CLI_Aspire_DetectGen(t *testing.T) {
-	restoreDotnetWorkload(t)
 
 	sn := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(""))
 	snRoot := filepath.Join("testdata", "snaps", "aspire-full")
@@ -236,8 +198,6 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 // Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
 func Test_CLI_Aspire_Deploy(t *testing.T) {
 
-	restoreDotnetWorkload(t)
-
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -257,13 +217,15 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 		}
 	}()
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+	envName := randomOrStoredEnvName(session)
+	_ = cfgOrStoredSubscription(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
 	err = copySample(dir, "aspire-full")
 	require.NoError(t, err, "failed expanding sample")
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
@@ -274,80 +236,9 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up")
 	require.NoError(t, err)
 
-	//env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	//require.NoError(t, err)
-
-	//domain, has := env["AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"]
-	//require.True(t, has, "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN should be in environment after deploy")
-
-	//endpoint := fmt.Sprintf("https://%s.%s", "webfrontend", domain)
-	//runLiveDotnetPlaywright(t, ctx, filepath.Join(dir, "AspireAzdTests"), endpoint)
-
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
-
-// func runLiveDotnetPlaywright(
-// 	t *testing.T,
-// 	ctx context.Context,
-// 	projDir string,
-// 	endpoint string) {
-// 	runner := exec.NewCommandRunner(nil)
-// 	run := func() (res exec.RunResult, err error) {
-// 		wr := logWriter{initialTime: time.Now(), t: t, prefix: "webfrontend: "}
-// 		res, err = runner.Run(ctx, exec.NewRunArgs(
-// 			"dotnet",
-// 			"test",
-// 			"--logger",
-// 			"console;verbosity=detailed",
-// 		).WithCwd(projDir).WithEnv(append(
-// 			os.Environ(),
-// 			"LIVE_APP_URL="+endpoint,
-// 		)).WithStdOut(&wr))
-// 		return
-// 	}
-
-// 	i := 0 // precautionary max retries
-// 	for {
-// 		res, err := run()
-// 		i++
-
-// 		if err != nil && i < 10 {
-// 			if strings.Contains(res.Stdout, "Permission denied") {
-// 				err := filepath.WalkDir(projDir, func(path string, d os.DirEntry, err error) error {
-// 					if err != nil {
-// 						return err
-// 					}
-
-// 					if !d.IsDir() && d.Name() == "playwright.sh" {
-// 						return os.Chmod(path, 0700)
-// 					}
-
-// 					return nil
-// 				})
-// 				require.NoError(t, err, "failed to recover from permission denied error")
-// 				continue
-// 			} else if strings.Contains(res.Stdout, "Please run the following command to download new browsers") {
-// 				res, err := runner.Run(ctx, exec.NewRunArgs(
-// 					"pwsh", filepath.Join(projDir, "bin/Debug/net8.0/playwright.ps1"), "install"))
-// 				require.NoError(t, err, "failed to install playwright, stdout: %v, stderr: %v", res.Stdout, res.Stderr)
-// 				continue
-// 			}
-// 		}
-
-// 		if cfg.CI {
-// 			require.NoError(t, err)
-// 		} else {
-// 			require.NoError(
-// 				t,
-// 				err,
-// 				"to troubleshoot, rerun `dotnet test` in %s with LIVE_APP_URL=%s",
-// 				projDir,
-// 				endpoint)
-// 		}
-// 		break
-// 	}
-// }
 
 // Snapshots a file located at targetPath. Saves the snapshot to snapshotRoot/rel, where rel is relative to targetRoot.
 func snapshotFile(

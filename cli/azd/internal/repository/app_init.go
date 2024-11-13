@@ -3,15 +3,20 @@ package repository
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -23,7 +28,7 @@ import (
 	"github.com/otiai10/copy"
 )
 
-var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
+var LanguageMap = map[appdetect.Language]project.ServiceLanguageKind{
 	appdetect.DotNet:     project.ServiceLanguageDotNet,
 	appdetect.Java:       project.ServiceLanguageJava,
 	appdetect.JavaScript: project.ServiceLanguageJavaScript,
@@ -36,6 +41,8 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 	appdetect.DbPostgres: {},
 	appdetect.DbRedis:    {},
 }
+
+var featureCompose = alpha.MustFeatureKey("compose")
 
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
@@ -176,7 +183,7 @@ func (i *Initializer) InitFromApp(
 		files, err := apphost.GenerateProjectArtifacts(
 			ctx,
 			azdCtx.ProjectDirectory(),
-			filepath.Base(azdCtx.ProjectDirectory()),
+			azdcontext.ProjectName(azdCtx.ProjectDirectory()),
 			appHostManifests[appHost.Path],
 			appHost.Path,
 		)
@@ -241,30 +248,67 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
 
 	// Create the infra spec
-	spec, err := i.infraSpecFromDetect(ctx, detect)
-	if err != nil {
-		return err
-	}
+	var infraSpec *scaffold.InfraSpec
+	composeEnabled := i.features.IsEnabled(featureCompose)
+	if !composeEnabled { // backwards compatibility
+		spec, err := i.infraSpecFromDetect(ctx, detect)
+		if err != nil {
+			return err
+		}
+		infraSpec = &spec
 
-	// Prompt for environment before proceeding with generation
-	_, err = initializeEnv()
-	if err != nil {
-		return err
+		// Prompt for environment before proceeding with generation
+		_, err = initializeEnv()
+		if err != nil {
+			return err
+		}
 	}
 
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
-	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
-	err = i.genProjectFile(ctx, azdCtx, detect)
+	title = "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
+	i.console.ShowSpinner(ctx, title, input.Step)
+	err = i.genProjectFile(ctx, azdCtx, detect, composeEnabled)
 	if err != nil {
+		i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 		return err
 	}
+	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
+	i.console.StopSpinner(ctx, title, input.StepDone)
 
+	if infraSpec != nil {
+		title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
+		i.console.ShowSpinner(ctx, title, input.Step)
+		err = i.genFromInfra(ctx, azdCtx, *infraSpec)
+		if err != nil {
+			i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
+			return err
+		}
+		i.console.StopSpinner(ctx, title, input.StepDone)
+	} else {
+		t, err := scaffold.Load()
+		if err != nil {
+			return fmt.Errorf("loading scaffold templates: %w", err)
+		}
+
+		err = scaffold.Execute(t, "next-steps-alpha.md", nil, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
+		if err != nil {
+			return err
+		}
+
+		i.console.MessageUxItem(ctx, &ux.DoneMessage{
+			Message: "Generating " + output.WithHighLightFormat("./next-steps.md"),
+		})
+	}
+
+	return nil
+}
+
+func (i *Initializer) genFromInfra(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	spec scaffold.InfraSpec) error {
 	infra := filepath.Join(azdCtx.ProjectDirectory(), "infra")
-	title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
-	i.console.ShowSpinner(ctx, title, input.Step)
-	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
-
 	staging, err := os.MkdirTemp("", "azd-infra")
 	if err != nil {
 		return fmt.Errorf("mkdir temp: %w", err)
@@ -317,14 +361,9 @@ func (i *Initializer) InitFromApp(
 func (i *Initializer) genProjectFile(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	detect detectConfirm) error {
-	title := "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
-
-	i.console.ShowSpinner(ctx, title, input.Step)
-	var err error
-	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
-
-	config, err := prjConfigFromDetect(azdCtx.ProjectDirectory(), detect)
+	detect detectConfirm,
+	addResources bool) error {
+	config, err := i.prjConfigFromDetect(ctx, azdCtx.ProjectDirectory(), detect, addResources)
 	if err != nil {
 		return fmt.Errorf("converting config: %w", err)
 	}
@@ -341,77 +380,201 @@ func (i *Initializer) genProjectFile(
 
 const InitGenTemplateId = "azd-init"
 
-func prjConfigFromDetect(
+func (i *Initializer) prjConfigFromDetect(
+	ctx context.Context,
 	root string,
-	detect detectConfirm) (project.ProjectConfig, error) {
+	detect detectConfirm,
+	addResources bool) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
-		Name: filepath.Base(root),
+		Name: azdcontext.ProjectName(root),
 		Metadata: &project.ProjectMetadata{
 			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
 		},
 		Services: map[string]*project.ServiceConfig{},
 	}
+
+	svcMapping := map[string]string{}
 	for _, prj := range detect.Services {
-		rel, err := filepath.Rel(root, prj.Path)
+		svc, err := ServiceFromDetect(root, "", prj)
 		if err != nil {
-			return project.ProjectConfig{}, err
+			return config, err
 		}
 
-		svc := project.ServiceConfig{}
-		svc.Host = project.ContainerAppTarget
-		svc.RelativePath = rel
+		config.Services[svc.Name] = &svc
+		svcMapping[prj.Path] = svc.Name
+	}
 
-		language, supported := languageMap[prj.Language]
-		if !supported {
-			continue
-		}
-		svc.Language = language
+	if addResources {
+		config.Resources = map[string]*project.ResourceConfig{}
+		dbNames := map[appdetect.DatabaseDep]string{}
 
-		if prj.Docker != nil {
-			relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
-			if err != nil {
-				return project.ProjectConfig{}, err
-			}
+		databases := slices.SortedFunc(maps.Keys(detect.Databases),
+			func(a appdetect.DatabaseDep, b appdetect.DatabaseDep) int {
+				return strings.Compare(string(a), string(b))
+			})
 
-			svc.Docker = project.DockerProjectOptions{
-				Path: relDocker,
-			}
-		}
-
-		if prj.HasWebUIFramework() {
-			// By default, use 'dist'. This is common for frameworks such as:
-			// - TypeScript
-			// - Vite
-			svc.OutputPath = "dist"
-
-		loop:
-			for _, dep := range prj.Dependencies {
-				switch dep {
-				case appdetect.JsNext:
-					// next.js works as SSR with default node configuration without static build output
-					svc.OutputPath = ""
-					break loop
-				case appdetect.JsVite:
-					svc.OutputPath = "dist"
-					break loop
-				case appdetect.JsReact:
-					// react from create-react-app uses 'build' when used, but this can be overridden
-					// by choice of build tool, such as when using Vite.
-					svc.OutputPath = "build"
-				case appdetect.JsAngular:
-					// angular uses dist/<project name>
-					svc.OutputPath = "dist/" + filepath.Base(rel)
-					break loop
+		for _, database := range databases {
+			if database == appdetect.DbRedis {
+				redis := project.ResourceConfig{
+					Type: project.ResourceTypeDbRedis,
+					Name: "redis",
 				}
+				config.Resources[redis.Name] = &redis
+				dbNames[database] = redis.Name
+				continue
+			}
+
+			var dbType project.ResourceType
+			switch database {
+			case appdetect.DbMongo:
+				dbType = project.ResourceTypeDbMongo
+			case appdetect.DbPostgres:
+				dbType = project.ResourceTypeDbPostgres
+			}
+
+			db := project.ResourceConfig{
+				Type: dbType,
+			}
+
+			for {
+				dbName, err := promptDbName(i.console, ctx, database)
+				if err != nil {
+					return config, err
+				}
+
+				if dbName == "" {
+					i.console.Message(ctx, "Database name is required.")
+					continue
+				}
+
+				db.Name = dbName
+				break
+			}
+
+			config.Resources[db.Name] = &db
+			dbNames[database] = db.Name
+		}
+
+		backends := []*project.ResourceConfig{}
+		frontends := []*project.ResourceConfig{}
+
+		for _, svc := range detect.Services {
+			name := svcMapping[svc.Path]
+			resSpec := project.ResourceConfig{
+				Type: project.ResourceTypeHostContainerApp,
+			}
+
+			props := project.ContainerAppProps{
+				Port: -1,
+			}
+
+			port, err := PromptPort(i.console, ctx, name, svc)
+			if err != nil {
+				return config, err
+			}
+			props.Port = port
+
+			for _, db := range svc.DatabaseDeps {
+				// filter out databases that were removed
+				if _, ok := detect.Databases[db]; !ok {
+					continue
+				}
+
+				resSpec.Uses = append(resSpec.Uses, dbNames[db])
+			}
+
+			resSpec.Name = name
+			resSpec.Props = props
+			config.Resources[name] = &resSpec
+
+			frontend := svc.HasWebUIFramework()
+			if frontend {
+				frontends = append(frontends, &resSpec)
+			} else {
+				backends = append(backends, &resSpec)
 			}
 		}
 
-		name := filepath.Base(rel)
-		if name == "." {
-			name = config.Name
+		for _, frontend := range frontends {
+			for _, backend := range backends {
+				frontend.Uses = append(frontend.Uses, backend.Name)
+			}
 		}
-		config.Services[name] = &svc
 	}
 
 	return config, nil
+}
+
+// ServiceFromDetect creates a ServiceConfig from an appdetect project.
+func ServiceFromDetect(
+	root string,
+	svcName string,
+	prj appdetect.Project) (project.ServiceConfig, error) {
+	svc := project.ServiceConfig{
+		Name: svcName,
+	}
+	rel, err := filepath.Rel(root, prj.Path)
+	if err != nil {
+		return svc, err
+	}
+
+	if svc.Name == "" {
+		dirName := filepath.Base(rel)
+		if dirName == "." {
+			dirName = filepath.Base(root)
+		}
+
+		svc.Name = names.LabelName(dirName)
+	}
+
+	svc.Host = project.ContainerAppTarget
+	svc.RelativePath = rel
+
+	language, supported := LanguageMap[prj.Language]
+	if !supported {
+		return svc, fmt.Errorf("unsupported language: %s", prj.Language)
+	}
+
+	svc.Language = language
+
+	if prj.Docker != nil {
+		relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
+		if err != nil {
+			return svc, err
+		}
+
+		svc.Docker = project.DockerProjectOptions{
+			Path: relDocker,
+		}
+	}
+
+	if prj.HasWebUIFramework() {
+		// By default, use 'dist'. This is common for frameworks such as:
+		// - TypeScript
+		// - Vite
+		svc.OutputPath = "dist"
+
+	loop:
+		for _, dep := range prj.Dependencies {
+			switch dep {
+			case appdetect.JsNext:
+				// next.js works as SSR with default node configuration without static build output
+				svc.OutputPath = ""
+				break loop
+			case appdetect.JsVite:
+				svc.OutputPath = "dist"
+				break loop
+			case appdetect.JsReact:
+				// react from create-react-app uses 'build' when used, but this can be overridden
+				// by choice of build tool, such as when using Vite.
+				svc.OutputPath = "build"
+			case appdetect.JsAngular:
+				// angular uses dist/<project name>
+				svc.OutputPath = "dist/" + filepath.Base(rel)
+				break loop
+			}
+		}
+	}
+
+	return svc, nil
 }

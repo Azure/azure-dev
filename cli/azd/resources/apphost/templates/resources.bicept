@@ -86,7 +86,7 @@ resource volumesAccountRoleAssignment 'Microsoft.Authorization/roleAssignments@2
 {{- range $volume := $value.Volumes}}
 resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
-  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}', 32)
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}', 60)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -96,7 +96,7 @@ resource {{mergeBicepName $name $volume.Name}}FileShare 'Microsoft.Storage/stora
 {{- range $bMount := $value.BindMounts}}
 resource {{mergeBicepName $name $bMount.Name}}FileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2022-05-01' = {
   parent: storageVolumeFileService
-  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}', 32)
+  name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}', 60)
   properties: {
     shareQuota: 1024
     enabledProtocols: 'SMB'
@@ -148,7 +148,7 @@ resource {{mergeBicepName $name $volume.Name}}Store 'Microsoft.App/managedEnviro
   name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}', 32)
   properties: {
     azureFile: {
-      shareName: '${toLower('{{$name}}')}-${toLower('{{removeDot $volume.Name}}')}'
+      shareName: {{mergeBicepName $name $volume.Name}}FileShare.name
       accountName: storageVolume.name
       accountKey: storageVolume.listKeys().keys[0].value
 {{- if $volume.ReadOnly }}
@@ -167,7 +167,7 @@ resource {{mergeBicepName $name $bMount.Name}}Store 'Microsoft.App/managedEnviro
   name: take('${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}', 32)
   properties: {
     azureFile: {
-      shareName: '${toLower('{{$name}}')}-${toLower('{{removeDot $bMount.Name}}')}'
+      shareName: {{mergeBicepName $name $bMount.Name}}FileShare.name
       accountName: storageVolume.name
       accountKey: storageVolume.listKeys().keys[0].value
 {{- if $bMount.ReadOnly }}
@@ -286,6 +286,7 @@ output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalyticsWorkspace.id
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id
+output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.name
 {{end -}}
 {{if .HasContainerEnvironment -}}
 output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = containerAppEnvironment.name

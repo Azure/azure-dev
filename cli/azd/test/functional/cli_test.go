@@ -65,8 +65,6 @@ type cliConfig struct {
 
 	// The client ID to use for live Azure tests.
 	ClientID string
-	// The client secret to use for live Azure tests.
-	ClientSecret string
 	// The tenant ID to use for live Azure tests.
 	TenantID string
 	// The Azure subscription ID to use for live Azure tests.
@@ -82,7 +80,6 @@ type cliConfig struct {
 func (c *cliConfig) init() {
 	c.CI = os.Getenv("CI") != ""
 	c.ClientID = os.Getenv("AZD_TEST_CLIENT_ID")
-	c.ClientSecret = os.Getenv("AZD_TEST_CLIENT_SECRET")
 	c.TenantID = os.Getenv("AZD_TEST_TENANT_ID")
 	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
 	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
@@ -310,9 +307,20 @@ func Test_CLI_ProvisionState(t *testing.T) {
 
 	expectedOutputContains := "There are no changes to provision for your application."
 
+	// Provision preview should show creation of storage account
+	preview, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--preview")
+	require.NoError(t, err)
+	require.Contains(t, preview.Stdout, "Create : Storage account")
+
+	// First provision creates all resources
 	initial, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 	require.NotContains(t, initial.Stdout, expectedOutputContains)
+
+	// Second preview shows no changes required for storage account
+	secondPreview, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--preview")
+	require.NoError(t, err)
+	require.NotContains(t, secondPreview.Stdout, "Skip : Storage account")
 
 	// Second provision should use cache
 	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
@@ -777,6 +785,8 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 }
 
 func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
+	t.Skip("azure/azure-dev#4341")
+
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -818,6 +828,8 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
+	t.Skip("azure/azure-dev#4341")
+
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 

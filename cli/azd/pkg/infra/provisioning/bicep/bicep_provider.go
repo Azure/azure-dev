@@ -74,10 +74,8 @@ type BicepProvider struct {
 	ignoreDeploymentState bool
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
-	// prevent resolving parameters multiple times in the same azd run.
-	ensureParamsInMemoryCache azure.ArmParameters
-	keyvaultService           keyvault.KeyVaultService
-	portalUrlBase             string
+	keyvaultService         keyvault.KeyVaultService
+	portalUrlBase           string
 }
 
 // Name gets the name of the infra provider
@@ -201,7 +199,6 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var err error
 	spinnerMessage := "Loading Bicep template"
-	// TODO: Report progress, "Loading Bicep template"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	defer func() {
 		// Make sure we stop the spinner if an error occurs with the last message.
@@ -238,7 +235,6 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 		outputs = azure.ArmTemplateOutputs{}
 	}
 
-	// TODO: Report progress, "Retrieving Azure deployment"
 	spinnerMessage = "Retrieving Azure deployment"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
@@ -350,7 +346,6 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 
 	modulePath := p.modulePath()
-	// TODO: Report progress, "Compiling Bicep template"
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
@@ -604,12 +599,19 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
 	}
+
+	optionsMap, err := convert.ToMap(p.options)
+	if err != nil {
+		return nil, err
+	}
+
 	deployResult, err := p.deployModule(
 		ctx,
 		bicepDeploymentData.Target,
 		bicepDeploymentData.CompiledBicep.RawArmTemplate,
 		bicepDeploymentData.CompiledBicep.Parameters,
 		deploymentTags,
+		optionsMap,
 	)
 	if err != nil {
 		return nil, err
@@ -730,7 +732,8 @@ func (p *BicepProvider) Destroy(
 	options provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
 	modulePath := p.modulePath()
-	// TODO: Report progress, "Compiling Bicep template"
+	p.console.ShowSpinner(ctx, "Discovering resources to delete...", input.Step)
+	defer p.console.StopSpinner(ctx, "", input.StepDone)
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
@@ -792,6 +795,7 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
 	}
 
+	p.console.StopSpinner(ctx, "", input.StepDone)
 	if err := p.destroyDeploymentWithConfirmation(
 		ctx,
 		options,
@@ -1037,7 +1041,12 @@ func (p *BicepProvider) destroyDeploymentWithConfirmation(
 			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
 		}
 	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		return deployment.Delete(ctx, progress)
+		optionsMap, err := convert.ToMap(p.options)
+		if err != nil {
+			return err
+		}
+
+		return deployment.Delete(ctx, optionsMap, progress)
 	})
 
 	if err != nil {
@@ -1716,8 +1725,9 @@ func (p *BicepProvider) deployModule(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*azapi.ResourceDeployment, error) {
-	return target.Deploy(ctx, armTemplate, armParameters, tags)
+	return target.Deploy(ctx, armTemplate, armParameters, tags, options)
 }
 
 // Returns either the bicep or bicepparam module file located in the infrastructure root.
@@ -1794,10 +1804,6 @@ func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
-	if p.ensureParamsInMemoryCache != nil {
-		return maps.Clone(p.ensureParamsInMemoryCache), nil
-	}
-
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
@@ -1820,14 +1826,31 @@ func (p *BicepProvider) ensureParameters(
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
 		parameterType := p.mapBicepTypeToInterfaceType(param.Type)
+		azdMetadata, hasMetadata := param.AzdMetadata()
 
 		// If a value is explicitly configured via a parameters file, use it.
 		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
 			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
+
 			if paramValue != nil {
+				needForDeployParameter := hasMetadata &&
+					azdMetadata.Type != nil &&
+					*azdMetadata.Type == azure.AzdMetadataTypeNeedForDeploy
+				if needForDeployParameter && paramValue == "" && param.DefaultValue != nil {
+					// Parameters with needForDeploy metadata don't support overriding with empty values when a default
+					// value is present. If the value is empty, we'll use the default value instead.
+					defValue, castOk := param.DefaultValue.(string)
+					if castOk {
+						paramValue = defValue
+					}
+				}
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: paramValue,
+				}
+				if needForDeployParameter {
+					mustSetParamAsConfig(key, paramValue, p.env.Config, param.Secure())
+					configModified = true
 				}
 				continue
 			}
@@ -1857,7 +1880,6 @@ func (p *BicepProvider) ensureParameters(
 
 		// If the parameter is tagged with {type: "generate"}, skip prompting.
 		// We generate it once, then save to config for next attempts.`.
-		azdMetadata, hasMetadata := param.AzdMetadata()
 		if hasMetadata && parameterType == provisioning.ParameterTypeString && azdMetadata.Type != nil &&
 			*azdMetadata.Type == azure.AzdMetadataTypeGenerate {
 
@@ -1923,19 +1945,15 @@ func (p *BicepProvider) ensureParameters(
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: value,
 				}
-				configuredParameters[prompt.key] = azure.ArmParameterValue{
-					Value: value,
-				}
 			}
 		}
 	}
 
 	if configModified {
 		if err := p.envManager.Save(ctx, p.env); err != nil {
-			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
+			return nil, fmt.Errorf("saving prompt values: %w", err)
 		}
 	}
-	p.ensureParamsInMemoryCache = maps.Clone(configuredParameters)
 	return configuredParameters, nil
 }
 

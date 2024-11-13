@@ -181,18 +181,16 @@ func (tm *TemplateManager) createSourcesFromConfig(
 }
 
 // PromptTemplate asks the user to select a template.
-// An empty Template can be returned if the user selects the minimal template. This corresponds to the minimal azd template.
-// See
 func PromptTemplate(
 	ctx context.Context,
 	message string,
 	templateManager *TemplateManager,
 	console input.Console,
 	options *ListOptions,
-) (*Template, error) {
+) (Template, error) {
 	templates, err := templateManager.ListTemplates(ctx, options)
 	if err != nil {
-		return nil, fmt.Errorf("prompting for template: %w", err)
+		return Template{}, fmt.Errorf("prompting for template: %w", err)
 	}
 
 	templateChoices := []*Template{}
@@ -213,12 +211,6 @@ func PromptTemplate(
 
 	templateNames := make([]string, 0, len(templates)+1)
 	templateDetails := make([]string, 0, len(templates)+1)
-
-	// Prepend the minimal template option to guarantee first selection
-	minimalChoice := "Minimal"
-
-	templateNames = append(templateNames, minimalChoice)
-	templateDetails = append(templateDetails, "")
 
 	for _, template := range templates {
 		templateChoice := template.Name
@@ -248,15 +240,11 @@ func PromptTemplate(
 	console.Message(ctx, "")
 
 	if err != nil {
-		return nil, fmt.Errorf("prompting for template: %w", err)
+		return Template{}, fmt.Errorf("prompting for template: %w", err)
 	}
 
-	if selected == 0 {
-		return nil, nil
-	}
-
-	template := templates[selected-1]
+	template := templates[selected]
 	log.Printf("Selected template: %s", fmt.Sprint(template.RepositoryPath))
 
-	return template, nil
+	return *template, nil
 }

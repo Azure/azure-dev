@@ -27,9 +27,9 @@ properties:
         value: '{{ securedParameter "my_sql_abstract_pas_sw_ord" }}'
   template:
     volumes:
-      - name: my-sql-abstract-projectapphost-volume-two
+      - name: my-sql-abstract-projectapphostvolumetwo
         storageType: AzureFile
-        storageName: {{ .Env.SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOST_VOLUME_TWO_NAME }} 
+        storageName: {{ .Env.SERVICE_MY_SQL_ABSTRACT_VOLUME_PROJECTAPPHOSTVOLUMETWO_NAME }} 
     containers:
       - image: {{ .Image }}
         name: my-sql-abstract
@@ -45,7 +45,7 @@ properties:
           - name: SpecialChar
             secretRef: specialchar
         volumeMounts:
-          - volumeName: my-sql-abstract-projectapphost-volume-two
+          - volumeName: my-sql-abstract-projectapphostvolumetwo
             mountPath: /data/db
     scale:
       minReplicas: 1

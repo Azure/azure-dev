@@ -18,6 +18,8 @@ pr:
       - cli/
       - eng/pipelines/release-cli.yml
       - eng/pipelines/templates/steps/publish-cli.yml
+    exclude:
+      - cli/azd/docs/**
 
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml

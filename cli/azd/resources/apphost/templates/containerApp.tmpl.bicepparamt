@@ -1,0 +1,6 @@
+{{define "containerApp.tmpl.bicepparam" -}}
+using './{{ .DeploySource }}'
+{{ range $name, $exp := .DeployParams }}
+param {{ $name }} = {{ $exp }}
+{{- end}}
+{{ end}}

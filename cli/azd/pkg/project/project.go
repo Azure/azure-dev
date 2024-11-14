@@ -77,6 +77,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		projectConfig.Infra.Path = "infra"
 	}
 
+	if projectConfig.Infra.Module == "" {
+		projectConfig.Infra.Module = DefaultModule
+	}
+
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {
 		projectConfig.Infra.Path = strings.ReplaceAll(projectConfig.Infra.Path, "\\", "/")
 	}
@@ -156,21 +160,27 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 
 	projectConfig.Path = filepath.Dir(projectFilePath)
 
-	// complement the project config with azd.hooks files if they exist
-	hooksDefinedAtInfraPath, err := hooksFromFolderPath(filepath.Join(projectConfig.Path, projectConfig.Infra.Path))
+	// complement the project config with hooks defined in the infra path using the syntax `<moduleName>.hooks.yaml`
+	// for example `main.hooks.yaml`
+	hooksDefinedAtInfraPath, err := hooksFromInfraModule(
+		filepath.Join(projectConfig.Path, projectConfig.Infra.Path),
+		projectConfig.Infra.Module)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting hooks from infra path, %w", err)
 	}
 	// Merge the hooks defined at the infra path with the hooks defined in the project configuration
+	if len(hooksDefinedAtInfraPath) > 0 && projectConfig.Hooks == nil {
+		projectConfig.Hooks = make(map[string][]*ext.HookConfig)
+	}
 	for hookName, externalHookList := range hooksDefinedAtInfraPath {
 		if hookListFromAzureYaml, hookExists := projectConfig.Hooks[hookName]; hookExists {
 			mergedHooks := make([]*ext.HookConfig, 0, len(hookListFromAzureYaml)+len(externalHookList))
 			mergedHooks = append(mergedHooks, hookListFromAzureYaml...)
 			mergedHooks = append(mergedHooks, externalHookList...)
 			projectConfig.Hooks[hookName] = mergedHooks
-		} else {
-			projectConfig.Hooks[hookName] = externalHookList
+			continue
 		}
+		projectConfig.Hooks[hookName] = externalHookList
 	}
 
 	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {
@@ -294,25 +304,10 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 	return nil
 }
 
-// hooksFromFolderPath check if there is file named azd.hooks.yaml in the service path
+// hooksFromInfraModule check if there is file named azd.hooks.yaml in the service path
 // and return the hooks configuration.
-func hooksFromFolderPath(servicePath string) (HooksConfig, error) {
-	hooksPath := filepath.Join(servicePath, "azd.hooks.yaml")
-
-	// due to projects depending on a ProjectImporter like Aspire, we need to ignore all type of errors related to
-	// the path is either not found, not accessible or any other error that might occur.
-	// In case of Aspire, the servicePath points out to the C# project, and not to the directory.
-	// We could handle Aspire Project here but that's not the purpose of this function.
-	// The right thing might be to use the ProjectImporter and get the list of services from Aspire and check for hooks at
-	// each path, but hooks for Aspire services are not even supported on azure.yaml.
-	if _, err := os.Stat(hooksPath); err != nil {
-		hooksPath = filepath.Join(servicePath, "azd.hooks.yml")
-		if _, err := os.Stat(hooksPath); err != nil {
-			log.Println("error trying to read hooks file for service in path: ", servicePath, ". Error:", err)
-			return nil, nil
-		}
-	}
-
+func hooksFromInfraModule(infraPath, moduleName string) (HooksConfig, error) {
+	hooksPath := filepath.Join(infraPath, moduleName+".hooks.yaml")
 	hooksFile, err := os.ReadFile(hooksPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading hooks from '%s', %w", hooksPath, err)

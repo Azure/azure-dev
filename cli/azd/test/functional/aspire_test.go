@@ -4,13 +4,10 @@
 package cli_test
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -32,44 +29,8 @@ import (
 // (slow, > 10 mins) go test -run ^Test_CLI_Aspire_Deploy -timeout 30m - Full deployment acceptance tests.
 // (all) go test -run ^Test_CLI_Aspire -timeout 30m - Runs all tests.
 
-var dotnetWorkloadInstallOnce sync.Once
-
-func restoreDotnetWorkload(t *testing.T) {
-	dotnetWorkloadInstallOnce.Do(func() {
-		dir := t.TempDir()
-		err := copySample(dir, "aspire-full")
-		require.NoError(t, err, "failed expanding sample")
-
-		ctx := context.Background()
-		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
-
-		wr := logWriter{initialTime: time.Now(), t: t, prefix: "restore: "}
-		commandRunner := exec.NewCommandRunner(nil)
-		cmd := "dotnet"
-		args := []string{"workload", "restore", "--skip-sign-check"}
-
-		// On platforms where the system requires `sudo` to install workloads (e.g. macOS and Linux when using system wide
-		// installations), you can configure sudo to allow passwordless execution of the `dotnet` command by adding something
-		// like the following to /etc/sudoers:
-		//
-		// matell ALL=(ALL) NOPASSWD: /usr/local/share/dotnet/dotnet
-		//
-		// and then set AZD_TEST_DOTNET_WORKLOAD_USE_SUDO=1 when running the tests, and we'll run `dotnet workload restore`
-		// via sudo.
-		if v, err := strconv.ParseBool(os.Getenv("AZD_TEST_DOTNET_WORKLOAD_USE_SUDO")); err == nil && v {
-			args = append([]string{cmd}, args...)
-			cmd = "sudo"
-		}
-
-		runArgs := newRunArgs(cmd, args...).WithCwd(appHostProject).WithStdOut(&wr)
-		_, err = commandRunner.Run(ctx, runArgs)
-		require.NoError(t, err)
-	})
-}
-
 // Test_CLI_Aspire_DetectGen tests the detection and generation of an Aspire project.
 func Test_CLI_Aspire_DetectGen(t *testing.T) {
-	restoreDotnetWorkload(t)
 
 	sn := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(""))
 	snRoot := filepath.Join("testdata", "snaps", "aspire-full")
@@ -236,7 +197,6 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 // Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
 func Test_CLI_Aspire_Deploy(t *testing.T) {
-	restoreDotnetWorkload(t)
 
 	t.Parallel()
 	ctx, cancel := newTestContext(t)

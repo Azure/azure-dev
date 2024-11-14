@@ -27,6 +27,7 @@ func TestLabelName(t *testing.T) {
 		{"MixedWithNumbers", "my2Project3", "my2-project3"},
 		{"SpecialCharacters", "my_project!@#", "my-project"},
 		{"EmptyString", "", ""},
+		{"DotOnly", ".", ""},
 		{"OnlySpecialCharacters", "@#$%^&*", ""},
 	}
 

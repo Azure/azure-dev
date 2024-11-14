@@ -71,7 +71,7 @@ func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 	d.root = root
 
 	for _, project := range projects {
-		if _, supported := languageMap[project.Language]; supported {
+		if _, supported := LanguageMap[project.Language]; supported {
 			d.Services = append(d.Services, project)
 		}
 
@@ -357,7 +357,7 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 }
 
 func (d *detectConfirm) add(ctx context.Context) error {
-	languages := slices.SortedFunc(maps.Keys(languageMap),
+	languages := slices.SortedFunc(maps.Keys(LanguageMap),
 		func(a, b appdetect.Language) int {
 			return strings.Compare(a.Display(), b.Display())
 		})

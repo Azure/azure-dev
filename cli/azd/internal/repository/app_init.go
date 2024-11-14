@@ -28,7 +28,7 @@ import (
 	"github.com/otiai10/copy"
 )
 
-var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
+var LanguageMap = map[appdetect.Language]project.ServiceLanguageKind{
 	appdetect.DotNet:     project.ServiceLanguageDotNet,
 	appdetect.Java:       project.ServiceLanguageJava,
 	appdetect.JavaScript: project.ServiceLanguageJavaScript,
@@ -406,58 +406,9 @@ func (i *Initializer) prjConfigFromDetect(
 
 	svcMapping := map[string]string{}
 	for _, prj := range detect.Services {
-		rel, err := filepath.Rel(root, prj.Path)
+		svc, err := ServiceFromDetect(root, "", prj)
 		if err != nil {
-			return project.ProjectConfig{}, err
-		}
-
-		svc := project.ServiceConfig{}
-		svc.Host = project.ContainerAppTarget
-		svc.RelativePath = rel
-
-		language, supported := languageMap[prj.Language]
-		if !supported {
-			continue
-		}
-		svc.Language = language
-
-		if prj.Docker != nil {
-			relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
-			if err != nil {
-				return project.ProjectConfig{}, err
-			}
-
-			svc.Docker = project.DockerProjectOptions{
-				Path: relDocker,
-			}
-		}
-
-		if prj.HasWebUIFramework() {
-			// By default, use 'dist'. This is common for frameworks such as:
-			// - TypeScript
-			// - Vite
-			svc.OutputPath = "dist"
-
-		loop:
-			for _, dep := range prj.Dependencies {
-				switch dep {
-				case appdetect.JsNext:
-					// next.js works as SSR with default node configuration without static build output
-					svc.OutputPath = ""
-					break loop
-				case appdetect.JsVite:
-					svc.OutputPath = "dist"
-					break loop
-				case appdetect.JsReact:
-					// react from create-react-app uses 'build' when used, but this can be overridden
-					// by choice of build tool, such as when using Vite.
-					svc.OutputPath = "build"
-				case appdetect.JsAngular:
-					// angular uses dist/<project name>
-					svc.OutputPath = "dist/" + filepath.Base(rel)
-					break loop
-				}
-			}
+			return config, err
 		}
 
 		if !addResources {
@@ -539,15 +490,9 @@ func (i *Initializer) prjConfigFromDetect(
 				}
 			}
 		}
-		name := filepath.Base(rel)
-		if name == "." {
-			name = config.Name
-		}
-		name = names.LabelName(name)
-		svc.Name = name
-		config.Services[name] = &svc
 
-		svcMapping[prj.Path] = name
+		config.Services[svc.Name] = &svc
+		svcMapping[prj.Path] = svc.Name
 	}
 
 	if addResources {
@@ -677,7 +622,7 @@ func (i *Initializer) prjConfigFromDetect(
 				Port: -1,
 			}
 
-			port, err := promptPort(i.console, ctx, name, svc)
+			port, err := PromptPort(i.console, ctx, name, svc)
 			if err != nil {
 				return config, err
 			}
@@ -748,4 +693,78 @@ func chooseAuthTypeByPrompt(
 		return internal.AuthTypeUnspecified, err
 	}
 	return authOptions[selection], nil
+}
+
+// ServiceFromDetect creates a ServiceConfig from an appdetect project.
+func ServiceFromDetect(
+	root string,
+	svcName string,
+	prj appdetect.Project) (project.ServiceConfig, error) {
+	svc := project.ServiceConfig{
+		Name: svcName,
+	}
+	rel, err := filepath.Rel(root, prj.Path)
+	if err != nil {
+		return svc, err
+	}
+
+	if svc.Name == "" {
+		dirName := filepath.Base(rel)
+		if dirName == "." {
+			dirName = filepath.Base(root)
+		}
+
+		svc.Name = names.LabelName(dirName)
+	}
+
+	svc.Host = project.ContainerAppTarget
+	svc.RelativePath = rel
+
+	language, supported := LanguageMap[prj.Language]
+	if !supported {
+		return svc, fmt.Errorf("unsupported language: %s", prj.Language)
+	}
+
+	svc.Language = language
+
+	if prj.Docker != nil {
+		relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
+		if err != nil {
+			return svc, err
+		}
+
+		svc.Docker = project.DockerProjectOptions{
+			Path: relDocker,
+		}
+	}
+
+	if prj.HasWebUIFramework() {
+		// By default, use 'dist'. This is common for frameworks such as:
+		// - TypeScript
+		// - Vite
+		svc.OutputPath = "dist"
+
+	loop:
+		for _, dep := range prj.Dependencies {
+			switch dep {
+			case appdetect.JsNext:
+				// next.js works as SSR with default node configuration without static build output
+				svc.OutputPath = ""
+				break loop
+			case appdetect.JsVite:
+				svc.OutputPath = "dist"
+				break loop
+			case appdetect.JsReact:
+				// react from create-react-app uses 'build' when used, but this can be overridden
+				// by choice of build tool, such as when using Vite.
+				svc.OutputPath = "build"
+			case appdetect.JsAngular:
+				// angular uses dist/<project name>
+				svc.OutputPath = "dist/" + filepath.Base(rel)
+				break loop
+			}
+		}
+	}
+
+	return svc, nil
 }

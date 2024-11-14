@@ -52,12 +52,20 @@ module resources 'resources.bicep' = {
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.AZURE_KEY_VAULT_ENDPOINT
 output AZURE_KEY_VAULT_NAME string = resources.outputs.AZURE_KEY_VAULT_NAME
+{{- range .Services}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
+{{- end}}
+{{- end}}
+{{- if  .AIModels}}
+{{- range .AIModels}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
+{{- end}}
 {{- end}}
 {{- if .DbRedis}}
-output AZURE_CACHE_REDIS_ID string = resources.outputs.AZURE_CACHE_REDIS_ID
+output AZURE_RESOURCE_REDIS_ID string = resources.outputs.AZURE_RESOURCE_REDIS_ID
 {{- end}}
 {{- if .DbPostgres}}
-output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = resources.outputs.AZURE_POSTGRES_FLEXIBLE_SERVER_ID
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID
 {{- end}}
 {{- if .DbMySql}}
 output AZURE_MYSQL_FLEXIBLE_SERVER_ID string = resources.outputs.AZURE_MYSQL_FLEXIBLE_SERVER_ID

@@ -27,6 +27,7 @@ otiai10
 pamelafox
 pbnj
 sebastianmattar
+sergi
 sethvargo
 stretchr
 theckman

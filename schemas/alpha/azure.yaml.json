@@ -359,52 +359,66 @@
             "minProperties": 1,
             "additionalProperties": {
                 "type": "object",
-                "additionalProperties": false,
                 "required": [
                     "type"
                 ],
                 "properties": {
                     "type": {
                         "type": "string",
-                        "title": "Required. The type of Azure resource that the application depends on",
-                        "description": "The Azure resource type that the application depends on",
+                        "title": "Type of resource",
+                        "description": "The type of resource to be created. (Example: db.postgres)",
                         "enum": [
+                            "db.postgres",
                             "db.mysql",
                             "db.redis",
-                            "db.postgres",
-                            "db.mongo"
+                            "db.mongo",
+                            "ai.openai.model",
+                            "host.containerapp"
                         ]
+                    },
+                    "uses": {
+                        "type": "array",
+                        "title": "Other resources that this resource uses",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true
                     },
                     "authType": {
-                        "type": "string",
-                        "title": "The authentication type of Azure resource used for the application",
-                        "description": "The application uses this kind of authentication to connect to the Azure resource.",
-                        "enum": [
-                            "managedIdentity",
-                            "usernamePassword"
-                        ]
+                      "type": "string",
+                      "title": "The authentication type of Azure resource used for the application",
+                      "description": "The application uses this kind of authentication to connect to the Azure resource.",
+                      "enum": [
+                        "managedIdentity",
+                        "usernamePassword"
+                      ]
                     },
                     "databaseName": {
-                        "type": "string",
-                        "title": "The name of Azure resource that the application depends on",
-                        "description": "The Azure resource that will be accessed during application runtime."
+                      "type": "string",
+                      "title": "The name of Azure resource that the application depends on",
+                      "description": "The Azure resource that will be accessed during application runtime."
                     }
                 },
                 "allOf": [
+                    { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
+                    { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
+                    { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} }，,
                     {
-                        "if": {
-                            "properties": {
-                                "type": {
-                                    "const": "db.mysql"
-                                }
-                            }
-                        },
-                        "then": {
-                            "required": [
-                                "authType",
-                                "databaseName"
-                            ]
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "db.mysql"
+                          }
                         }
+                      },
+                      "then": {
+                        "required": [
+                          "authType",
+                          "databaseName"
+                        ]
+                      }
                     }
                 ]
             }
@@ -1212,6 +1226,107 @@
                         "excludedPrincipals": {
                             "type": "array",
                             "title": "List of Entra ID principal IDs excluded from the lock. Up to 5 principals are permitted."
+                        }
+                    }
+                }
+            }
+        },
+        "resource": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "title": "Type of resource",
+                    "description": "The type of resource to be created. (Example: db.postgres)",
+                    "enum": [
+                        "db.postgres",
+                        "db.redis",
+                        "db.mongo",
+                        "host.containerapp",
+                        "ai.openai.model"
+                    ]
+                },
+                "uses": {
+                    "type": "array",
+                    "title": "Other resources that this resource uses",
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "containerAppResource": {
+            "type": "object",
+            "description": "A Docker-based container app.",
+            "additionalProperties": false,
+            "required": [
+                "port"
+            ],
+            "properties": {
+                "type": true,
+                "uses": true,
+                "port": {
+                    "type": "integer",
+                    "title": "Port that the container app listens on",
+                    "description": "Optional. The port that the container app listens on. (Default: 80)"
+                },
+                "env": {
+                    "type": "array",
+                    "title": "Environment variables to set for the container app",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "name"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "title": "Name of the environment variable"
+                            },
+                            "value": {
+                                "type": "string",
+                                "title": "Value of the environment variable. Supports environment variable substitution."
+                            },
+                            "secret": {
+                                "type": "string",
+                                "title": "Secret value of the environment variable. Supports environment variable substitution."
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "aiModelResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use AI model.",
+            "additionalProperties": false,
+            "required": [
+                "model"
+            ],
+            "properties": {
+                "type": true,
+                "uses": true,
+                "model": {
+                    "type": "object",
+                    "description": "The underlying AI model.",
+                    "additionalProperties": false,
+                    "required": [
+                        "name",
+                        "version"
+                    ],
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "title": "The name of the AI model.",
+                            "description": "Required. The name of the AI model."
+                        },
+                        "version": {
+                            "type": "string",
+                            "title": "The version of the AI model.",
+                            "description": "Required. The version of the AI model."
                         }
                     }
                 }

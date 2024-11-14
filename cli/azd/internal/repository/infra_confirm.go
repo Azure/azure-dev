@@ -115,7 +115,7 @@ func (i *Initializer) infraSpecFromDetect(
 			Port: -1,
 		}
 
-		port, err := promptPort(i.console, ctx, name, svc)
+		port, err := PromptPort(i.console, ctx, name, svc)
 		if err != nil {
 			return scaffold.InfraSpec{}, err
 		}
@@ -274,7 +274,8 @@ func promptDbName(console input.Console, ctx context.Context, database appdetect
 	}
 }
 
-func promptPort(
+// PromptPort prompts for port selection from an appdetect project.
+func PromptPort(
 	console input.Console,
 	ctx context.Context,
 	name string,

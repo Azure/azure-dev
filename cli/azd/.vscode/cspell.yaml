@@ -114,6 +114,9 @@ overrides:
   - filename: docs/proxy-configuration.md
     words:
       - Telerik
+  - filename: test/recording/recording.go
+    words:
+      - oidctoken
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore

@@ -1826,14 +1826,31 @@ func (p *BicepProvider) ensureParameters(
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
 		parameterType := p.mapBicepTypeToInterfaceType(param.Type)
+		azdMetadata, hasMetadata := param.AzdMetadata()
 
 		// If a value is explicitly configured via a parameters file, use it.
 		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
 			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
+
 			if paramValue != nil {
+				needForDeployParameter := hasMetadata &&
+					azdMetadata.Type != nil &&
+					*azdMetadata.Type == azure.AzdMetadataTypeNeedForDeploy
+				if needForDeployParameter && paramValue == "" && param.DefaultValue != nil {
+					// Parameters with needForDeploy metadata don't support overriding with empty values when a default
+					// value is present. If the value is empty, we'll use the default value instead.
+					defValue, castOk := param.DefaultValue.(string)
+					if castOk {
+						paramValue = defValue
+					}
+				}
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: paramValue,
+				}
+				if needForDeployParameter {
+					mustSetParamAsConfig(key, paramValue, p.env.Config, param.Secure())
+					configModified = true
 				}
 				continue
 			}
@@ -1863,7 +1880,6 @@ func (p *BicepProvider) ensureParameters(
 
 		// If the parameter is tagged with {type: "generate"}, skip prompting.
 		// We generate it once, then save to config for next attempts.`.
-		azdMetadata, hasMetadata := param.AzdMetadata()
 		if hasMetadata && parameterType == provisioning.ParameterTypeString && azdMetadata.Type != nil &&
 			*azdMetadata.Type == azure.AzdMetadataTypeGenerate {
 

@@ -308,6 +308,9 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 // and return the hooks configuration.
 func hooksFromInfraModule(infraPath, moduleName string) (HooksConfig, error) {
 	hooksPath := filepath.Join(infraPath, moduleName+".hooks.yaml")
+	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+		return nil, nil
+	}
 	hooksFile, err := os.ReadFile(hooksPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading hooks from '%s', %w", hooksPath, err)

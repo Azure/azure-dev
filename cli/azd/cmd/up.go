@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -65,6 +66,7 @@ type upAction struct {
 	prompters           prompt.Prompter
 	importManager       *project.ImportManager
 	workflowRunner      *workflow.Runner
+	docker              *docker.Cli
 }
 
 var defaultUpWorkflow = &workflow.Workflow{
@@ -87,6 +89,7 @@ func newUpAction(
 	prompters prompt.Prompter,
 	importManager *project.ImportManager,
 	workflowRunner *workflow.Runner,
+	docker *docker.Cli,
 ) actions.Action {
 	return &upAction{
 		flags:               flags,
@@ -98,6 +101,7 @@ func newUpAction(
 		prompters:           prompters,
 		importManager:       importManager,
 		workflowRunner:      workflowRunner,
+		docker:              docker,
 	}
 }
 
@@ -119,6 +123,14 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	} else if err != nil {
 		return nil, err
+	}
+
+	for _, service := range u.projectConfig.Services {
+		if service.Host == "containerapp" && !service.Docker.RemoteBuild {
+			if err := u.docker.IsDockerRunning(ctx); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	startTime := time.Now()

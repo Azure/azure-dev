@@ -379,7 +379,7 @@ postbuild:
 		require.NoError(t, err)
 
 		expectedHooks := HooksConfig{
-			"pre-build": {{
+			"prebuild": {{
 				Name:            "",
 				Shell:           ext.ShellTypeBash,
 				Run:             "./pre-build.sh",
@@ -388,7 +388,7 @@ postbuild:
 				Windows:         nil,
 				Posix:           nil,
 			}},
-			"post-build": {{
+			"postbuild": {{
 				Name:            "",
 				Shell:           ext.ShellTypePowershell,
 				Run:             "./post-build.ps1",

@@ -156,6 +156,7 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 // Check if there are any case-insensitive match conflicts in the environment name
 func checkKeyCaseConflict(env *environment.Environment, key string) {
 	lowerKey := strings.ToLower(key)
+	var conflictKeys []string
 
 	for existingKey := range env.Dotenv() {
 		if existingKey == key {
@@ -163,12 +164,16 @@ func checkKeyCaseConflict(env *environment.Environment, key string) {
 		}
 
 		if strings.ToLower(existingKey) == lowerKey {
-			fmt.Print(
-				output.WithWarningFormat(
-					"WARNING: The environment variable '%v' already exists in the .env file with a different case.\n",
-					existingKey))
-			return
+			conflictKeys = append(conflictKeys, fmt.Sprintf(`"%s"`, existingKey))
 		}
+	}
+
+	if len(conflictKeys) > 0 {
+		conflictKeysStr := strings.Join(conflictKeys, " and ")
+		fmt.Print(
+			output.WithWarningFormat(
+				"WARNING: The environment variable %s already exists in the .env file with a different case.\n",
+				conflictKeysStr))
 	}
 }
 

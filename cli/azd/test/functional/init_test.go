@@ -28,11 +28,13 @@ func Test_CLI_Init_Minimal(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(os.Environ(),
+		"AZURE_LOCATION=eastus2",
+		"AZD_ALPHA_ENABLE_COMPOSE=0")
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
+		"Create a minimal project\nTESTENV\n",
 		"init",
 	)
 	require.NoError(t, err)
@@ -60,7 +62,9 @@ func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(os.Environ(),
+		"AZURE_LOCATION=eastus2",
+		"AZD_ALPHA_ENABLE_COMPOSE=0")
 
 	err := os.MkdirAll(filepath.Join(dir, "infra"), osutil.PermissionDirectory)
 	require.NoError(t, err)
@@ -79,9 +83,7 @@ func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
 
 	_, err = cli.RunCommandWithStdIn(
 		ctx,
-		"Select a template\n"+
-			"y\n"+ // Say yes to initialize in existing folder
-			"Minimal\n"+ // Choose minimal
+		"Create a minimal project\n"+
 			"TESTENV\n", // Provide environment name
 		"init",
 	)
@@ -118,12 +120,13 @@ func Test_CLI_Init_WithinExistingProject(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(os.Environ(),
+		"AZURE_LOCATION=eastus2")
 
 	// Setup: Create a project
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
+		"Create a minimal project\nTESTENV\n",
 		"init",
 	)
 	require.NoError(t, err)
@@ -134,7 +137,7 @@ func Test_CLI_Init_WithinExistingProject(t *testing.T) {
 	// Verify init within a nested directory. This should end up creating a new project.
 	_, err = cli.RunCommandWithStdIn(
 		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
+		"Create a minimal project\nTESTENV\n",
 		"init",
 		"--cwd",
 		"nested",

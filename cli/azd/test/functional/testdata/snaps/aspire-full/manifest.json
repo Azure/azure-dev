@@ -1,6 +1,18 @@
 {
   "$schema": "https://json.schemastore.org/aspire-8.0.json",
   "resources": {
+    "goversion": {
+      "type": "parameter.v0",
+      "value": "{goversion.inputs.value}",
+      "inputs": {
+        "value": {
+          "type": "string",
+          "default": {
+            "value": "1.22"
+          }
+        }
+      }
+    },
     "pubsub": {
       "type": "container.v0",
       "connectionString": "{pubsub.bindings.tcp.host}:{pubsub.bindings.tcp.port}",
@@ -89,7 +101,8 @@
         "ConnectionStrings__messages": "{messages.connectionString}",
         "services__apiservice__http__0": "{apiservice.bindings.http.url}",
         "services__apiservice__https__0": "{apiservice.bindings.https.url}",
-        "ConnectionStrings__cosmos": "{cosmos.connectionString}"
+        "ConnectionStrings__cosmos": "{cosmos.connectionString}",
+        "GOVERSION": "{goversion.value}"
       },
       "bindings": {
         "http": {

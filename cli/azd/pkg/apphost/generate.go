@@ -321,6 +321,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 
 	// order to be deterministic when writing bicep
 	genParametersKeys := slices.Sorted(maps.Keys(generator.bicepContext.InputParameters))
+	metadataType := azure.AzdMetadataTypeGenerate
 	for _, key := range genParametersKeys {
 		parameter := generator.bicepContext.InputParameters[key]
 		parameterMetadata := ""
@@ -328,8 +329,11 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		if parameter.Default != nil {
 			// main.bicep template handles *string for default.Value. If the value is nil, it will be ignored.
 			// if not nil, like empty string or any other string, it is used as `= '<value>'`
-			parameterDefaultValue = parameter.Default.Value
-			if parameter.Default.Generate != nil {
+			if parameter.Default.Value != nil {
+				parameterDefaultValue = parameter.Default.Value
+				metadataType = azure.AzdMetadataTypeNeedForDeploy
+				parameterMetadata = "{}"
+			} else if parameter.Default.Generate != nil { // Note: .Value and .Generate are mutually exclusive
 				pMetadata, err := inputMetadata(*parameter.Default.Generate)
 				if err != nil {
 					return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
@@ -343,7 +347,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		parameters = append(parameters, autoGenInput{
 			genInput:       input,
 			MetadataConfig: parameterMetadata,
-			MetadataType:   azure.AzdMetadataTypeGenerate})
+			MetadataType:   metadataType})
 		if slices.Contains(generator.bicepContext.mappedParameters, strings.ReplaceAll(key, "-", "_")) {
 			mapToResourceParams = append(mapToResourceParams, input)
 		}
@@ -565,19 +569,45 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 			}
 		}
 	}
-	for _, value := range resource.Env {
-		outputs, err := evaluateForOutputs(value)
+
+	feedFrom := func(from map[string]string, to *genBicepTemplateContext) error {
+		for _, value := range from {
+			outputs, err := evaluateForOutputs(value)
+			if err != nil {
+				return err
+			}
+			for key, output := range outputs {
+				if strings.Contains(output.Value, ".outputs.") {
+					to.OutputParameters[key] = output
+				} else {
+					to.OutputSecretParameters[key] = output
+				}
+			}
+
+		}
+		return nil
+	}
+	err := feedFrom(resource.Env, &b.bicepContext)
+	if err != nil {
+		return err
+	}
+
+	if resource.Deployment != nil {
+		// Taking only the string values from the deployment parameters. There could be other types like int or object there.
+		// Only string type could be referencing outputs.
+		deploymentParams := map[string]string{}
+		for k, v := range resource.Deployment.Params {
+			stringValue, castOk := v.(string)
+			if !castOk {
+				continue
+			}
+			deploymentParams[k] = stringValue
+		}
+
+		err = feedFrom(deploymentParams, &b.bicepContext)
 		if err != nil {
 			return err
 		}
-		for key, output := range outputs {
-			if strings.Contains(output.Value, ".outputs.") {
-				b.bicepContext.OutputParameters[key] = output
-			} else {
-				b.bicepContext.OutputSecretParameters[key] = output
-			}
-		}
-
 	}
 	return nil
 }

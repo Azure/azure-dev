@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/otiai10/copy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -186,7 +187,7 @@ func TestExecInfra(t *testing.T) {
 				err := os.MkdirAll(dest, 0700)
 				require.NoError(t, err)
 
-				err = copyFS(os.DirFS(filepath.Dir(dir)), filepath.Base(dir), dest)
+				err = copy.Copy(dir, dest)
 				require.NoError(t, err)
 			}
 

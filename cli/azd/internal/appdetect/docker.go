@@ -11,18 +11,19 @@ import (
 	"strings"
 )
 
-func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
+func detectDockerInDirectory(path string, entries []fs.DirEntry) (*Docker, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "dockerfile" {
 			dockerFilePath := filepath.Join(path, entry.Name())
-			return detectDockerFromFile(dockerFilePath)
+			return AnalyzeDocker(dockerFilePath)
 		}
 	}
 
 	return nil, nil
 }
 
-func detectDockerFromFile(dockerFilePath string) (*Docker, error) {
+// AnalyzeDocker analyzes the Dockerfile and returns the Docker result.
+func AnalyzeDocker(dockerFilePath string) (*Docker, error) {
 	file, err := os.Open(dockerFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading Dockerfile at %s: %w", dockerFilePath, err)

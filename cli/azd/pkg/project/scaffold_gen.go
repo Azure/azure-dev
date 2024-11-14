@@ -225,13 +225,41 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	}
 
 	// create reverse frontends -> backends mapping
-	for _, svc := range infraSpec.Services {
+	for i := range infraSpec.Services {
+		svc := &infraSpec.Services[i]
 		if front, ok := backendMapping[svc.Name]; ok {
 			if svc.Backend == nil {
 				svc.Backend = &scaffold.Backend{}
 			}
-
 			svc.Backend.Frontends = append(svc.Backend.Frontends, scaffold.ServiceReference{Name: front})
+		}
+		if infraSpec.DbPostgres != nil {
+			svc.DbPostgres = &scaffold.DatabaseReference{
+				DatabaseName: infraSpec.DbPostgres.DatabaseName,
+				AuthType:     infraSpec.DbPostgres.AuthType,
+			}
+		}
+		if infraSpec.DbMySql != nil {
+			svc.DbMySql = &scaffold.DatabaseReference{
+				DatabaseName: infraSpec.DbMySql.DatabaseName,
+				AuthType:     infraSpec.DbMySql.AuthType,
+			}
+		}
+		if infraSpec.DbRedis != nil {
+			svc.DbRedis = &scaffold.DatabaseReference{
+				DatabaseName: "redis",
+			}
+		}
+		if infraSpec.DbCosmosMongo != nil {
+			svc.DbCosmosMongo = &scaffold.DatabaseReference{
+				DatabaseName: infraSpec.DbCosmosMongo.DatabaseName,
+			}
+		}
+		if infraSpec.DbCosmos != nil {
+			svc.DbCosmos = &scaffold.DatabaseCosmosAccount{
+				DatabaseName: infraSpec.DbCosmos.DatabaseName,
+				Containers:   infraSpec.DbCosmos.Containers,
+			}
 		}
 	}
 

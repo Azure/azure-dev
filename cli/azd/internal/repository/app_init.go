@@ -560,54 +560,81 @@ func (i *Initializer) prjConfigFromDetect(
 			})
 
 		for _, database := range databases {
+			var resourceConfig project.ResourceConfig
+			var databaseName string
 			if database == appdetect.DbRedis {
-				redis := project.ResourceConfig{
-					Type: project.ResourceTypeDbRedis,
-					Name: "redis",
-				}
-				config.Resources[redis.Name] = &redis
-				dbNames[database] = redis.Name
-				continue
-			}
-
-			var dbType project.ResourceType
-			switch database {
-			case appdetect.DbMongo:
-				dbType = project.ResourceTypeDbMongo
-			case appdetect.DbPostgres:
-				dbType = project.ResourceTypeDbPostgres
-			case appdetect.DbMySql:
-				dbType = project.ResourceTypeDbMySQL
-			case appdetect.DbCosmos:
-				dbType = project.ResourceTypeDbCosmos
-			}
-
-			db := project.ResourceConfig{
-				Type: dbType,
-			}
-
-			for {
-				dbName, err := promptDbName(i.console, ctx, database)
+				databaseName = "redis"
+			} else {
+				var err error
+				databaseName, err = i.getDatabaseNameByPrompt(ctx, database)
 				if err != nil {
 					return config, err
 				}
-
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-
-				db.Name = dbName
-				break
 			}
-
-			config.Resources[db.Name] = &db
-			dbNames[database] = db.Name
+			var authType = internal.AuthTypeUnspecified
+			if database == appdetect.DbPostgres || database == appdetect.DbMySql {
+				var err error
+				authType, err = chooseAuthTypeByPrompt(
+					databaseName,
+					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
+					ctx,
+					i.console)
+				if err != nil {
+					return config, err
+				}
+			}
+			switch database {
+			case appdetect.DbRedis:
+				resourceConfig = project.ResourceConfig{
+					Type: project.ResourceTypeDbRedis,
+					Name: "redis",
+				}
+			case appdetect.DbMongo:
+				resourceConfig = project.ResourceConfig{
+					Type: project.ResourceTypeDbMongo,
+					Name: "mongo",
+					Props: project.MongoDBProps{
+						DatabaseName: databaseName,
+					},
+				}
+			case appdetect.DbCosmos:
+				resourceConfig = project.ResourceConfig{
+					Type: project.ResourceTypeDbCosmos,
+					Name: "cosmos",
+					Props: project.CosmosDBProps{
+						DatabaseName: databaseName,
+					},
+				}
+			case appdetect.DbPostgres:
+				resourceConfig = project.ResourceConfig{
+					Type: project.ResourceTypeDbPostgres,
+					Name: "postgresql",
+					Props: project.PostgresProps{
+						DatabaseName: databaseName,
+						AuthType:     authType,
+					},
+				}
+			case appdetect.DbMySql:
+				resourceConfig = project.ResourceConfig{
+					Type: project.ResourceTypeDbMySQL,
+					Name: "mysql",
+					Props: project.MySQLProps{
+						DatabaseName: databaseName,
+						AuthType:     authType,
+					},
+				}
+			}
+			config.Resources[resourceConfig.Name] = &resourceConfig
+			dbNames[database] = resourceConfig.Name
 		}
 
 		for _, azureDepPair := range detect.AzureDeps {
 			azureDep := azureDepPair.first
-			authType, err := i.chooseAuthTypeByPrompt(ctx, azureDep.ResourceDisplay())
+			authType, err := chooseAuthTypeByPrompt(
+				azureDep.ResourceDisplay(),
+				[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString},
+				ctx,
+				i.console)
 			if err != nil {
 				return config, err
 			}
@@ -685,4 +712,40 @@ func (i *Initializer) prjConfigFromDetect(
 	}
 
 	return config, nil
+}
+
+func (i *Initializer) getDatabaseNameByPrompt(ctx context.Context, database appdetect.DatabaseDep) (string, error) {
+	var result string
+	for {
+		dbName, err := promptDbName(i.console, ctx, database)
+		if err != nil {
+			return dbName, err
+		}
+		if dbName == "" {
+			i.console.Message(ctx, "Database name is required.")
+			continue
+		}
+		result = dbName
+		break
+	}
+	return result, nil
+}
+
+func chooseAuthTypeByPrompt(
+	name string,
+	authOptions []internal.AuthType,
+	ctx context.Context,
+	console input.Console) (internal.AuthType, error) {
+	var options []string
+	for _, option := range authOptions {
+		options = append(options, internal.GetAuthTypeDescription(option))
+	}
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Choose auth type for '" + name + "'?",
+		Options: options,
+	})
+	if err != nil {
+		return internal.AuthTypeUnspecified, err
+	}
+	return authOptions[selection], nil
 }

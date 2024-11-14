@@ -61,7 +61,7 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
     name: '${abbrs.appManagedEnvironments}${resourceToken}'
     location: location
     zoneRedundant: false
-    {{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")))}}
+    {{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")))}}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -161,7 +161,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
 {{- if .DbPostgres}}
 
 var postgreSqlDatabaseName = '{{ .DbPostgres.DatabaseName }}'
-var postgreSqlDatabaseUser = 'psqladmin'
+var postgreSqlDatabaseUser = '{{ .DbPostgres.DatabaseUser }}'
 module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
   name: 'postgreServer'
   params: {
@@ -187,7 +187,7 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
       }
     ]
     location: location
-    {{- if (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) }}
+    {{- if (and .DbPostgres (eq .DbPostgres.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -202,8 +202,8 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
 {{- if .DbMySql}}
 
 var mysqlDatabaseName = '{{ .DbMySql.DatabaseName }}'
-var mysqlDatabaseUser = 'mysqladmin'
-{{- if (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")) }}
+var mysqlDatabaseUser = '{{ .DbMySql.DatabaseUser }}'
+{{- if (and .DbMySql (eq .DbMySql.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
 module mysqlIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
   name: 'mysqlIdentity'
   params: {
@@ -244,7 +244,7 @@ module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.4.1' = {
     ]
     location: location
     highAvailability: 'Disabled'
-    {{- if (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")) }}
+    {{- if (and .DbMySql (eq .DbMySql.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
     managedIdentities: {
       userAssignedResourceIds: [
         mysqlIdentity.outputs.resourceId
@@ -261,7 +261,7 @@ module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.4.1' = {
   }
 }
 {{- end}}
-{{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")))}}
+{{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")))}}
 
 module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
   name: 'connectionCreatorIdentity'
@@ -271,7 +271,7 @@ module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assign
   }
 }
 {{- end}}
-{{- if (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) }}
+{{- if (and .DbPostgres (eq .DbPostgres.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
 {{- range .Services}}
 module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
   name: '{{bicepName .Name}}CreateConnectionToPostgreSql'
@@ -292,7 +292,7 @@ module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resour
 }
 {{- end}}
 {{- end}}
-{{- if (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")) }}
+{{- if (and .DbMySql (eq .DbMySql.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
 {{- range .Services}}
 module {{bicepName .Name}}CreateConnectionToMysql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
   name: '{{bicepName .Name}}CreateConnectionToMysql'
@@ -321,7 +321,7 @@ module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.7.1' = {
     name: '${abbrs.eventHubNamespaces}${resourceToken}'
     location: location
     roleAssignments: [
-      {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "MANAGED_IDENTITY")) }}
+      {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
       {{- range .Services}}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
@@ -372,7 +372,7 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
     }
     location: location
     roleAssignments: [
-      {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "MANAGED_IDENTITY")) }}
+      {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
       {{- range .Services}}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
@@ -411,7 +411,7 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.10.0' = {
     // Non-required parameters
     location: location
     roleAssignments: [
-      {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "MANAGED_IDENTITY")) }}
+      {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
       {{- range .Services}}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
@@ -493,7 +493,7 @@ module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assi
   params: {
     name: '${abbrs.managedIdentityUserAssignedIdentities}{{bicepName .Name}}-${resourceToken}'
     location: location
-    {{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")))}}
+    {{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")))}}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
@@ -789,7 +789,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: '${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'
           }
           {{- end}}
-          {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "MANAGED_IDENTITY")) }}
+          {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
           {
             name: 'spring.cloud.azure.eventhubs.credential.managed-identity-enabled'
             value: 'true'
@@ -823,7 +823,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: storageAccountName
           }
           {{- end}}
-          {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "MANAGED_IDENTITY")) }}
+          {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
           {
             name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string'
             value: ''
@@ -858,7 +858,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: serviceBusNamespace.outputs.name
           }
           {{- end}}
-          {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "MANAGED_IDENTITY")) }}
+          {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
           {
             name: 'spring.cloud.azure.servicebus.connection-string'
             value: ''
@@ -932,7 +932,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     environmentResourceId: containerAppsEnvironment.outputs.resourceId
     location: location
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
-    {{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "MANAGED_IDENTITY")))}}
+    {{- if (or (and .DbPostgres (eq .DbPostgres.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) (and .DbMySql (eq .DbMySql.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")))}}
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId

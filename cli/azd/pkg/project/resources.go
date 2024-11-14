@@ -221,7 +221,6 @@ type MongoDBProps struct {
 type CosmosDBProps struct {
 	Containers   []CosmosDBContainerProps `yaml:"containers,omitempty"`
 	DatabaseName string                   `yaml:"databaseName,omitempty"`
-	AuthType     internal.AuthType        `yaml:"authType,omitempty"`
 }
 
 type CosmosDBContainerProps struct {

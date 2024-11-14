@@ -141,23 +141,23 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
 		case ResourceTypeDbMongo:
 			infraSpec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
-				DatabaseName: res.Name,
+				DatabaseName: res.Props.(CosmosDBProps).DatabaseName,
 			}
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
-				DatabaseName: res.Name,
+				DatabaseName: res.Props.(PostgresProps).DatabaseName,
 				DatabaseUser: "pgadmin",
 				AuthType:     res.Props.(PostgresProps).AuthType,
 			}
 		case ResourceTypeDbMySQL:
 			infraSpec.DbMySql = &scaffold.DatabaseMySql{
-				DatabaseName: res.Name,
+				DatabaseName: res.Props.(MySQLProps).DatabaseName,
 				DatabaseUser: "mysqladmin",
 				AuthType:     res.Props.(MySQLProps).AuthType,
 			}
 		case ResourceTypeDbCosmos:
 			infraSpec.DbCosmos = &scaffold.DatabaseCosmosAccount{
-				DatabaseName: res.Name,
+				DatabaseName: res.Props.(CosmosDBProps).DatabaseName,
 			}
 			containers := res.Props.(CosmosDBProps).Containers
 			for _, container := range containers {

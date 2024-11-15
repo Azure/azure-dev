@@ -83,6 +83,12 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 			"AZD_DEBUG_PROVISION_PROGRESS_DISABLE=true",
 			"PATH="+strings.Join(opt.Session.CmdProxyPaths, string(os.PathListSeparator)))
 		cli.Env = append(cli.Env, env...)
+
+		if opt.Session.Playback {
+			if subId, has := opt.Session.Variables[recording.SubscriptionIdKey]; has {
+				cli.Env = append(cli.Env, fmt.Sprintf("AZD_DEBUG_SYNTHETIC_SUBSCRIPTION=%s", subId))
+			}
+		}
 	}
 
 	// Allow a override for custom build

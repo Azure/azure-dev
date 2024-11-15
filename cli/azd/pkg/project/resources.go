@@ -11,6 +11,16 @@ import (
 
 type ResourceType string
 
+func AllResourceTypes() []ResourceType {
+	return []ResourceType{
+		ResourceTypeDbRedis,
+		ResourceTypeDbPostgres,
+		ResourceTypeDbMongo,
+		ResourceTypeHostContainerApp,
+		ResourceTypeOpenAiModel,
+	}
+}
+
 const (
 	ResourceTypeDbRedis          ResourceType = "db.redis"
 	ResourceTypeDbPostgres       ResourceType = "db.postgres"

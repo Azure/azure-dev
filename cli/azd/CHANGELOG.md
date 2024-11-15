@@ -1,6 +1,6 @@
 # Release History
 
-## 1.11.0-beta.1 (Unreleased)
+## 1.12.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,16 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.11.0 (2024-11-13)
+
+### Features Added
+
+- [[4527]](https://github.com/Azure/azure-dev/pull/4527) Add new `alpha` command `azd add`.
+
+### Bugs Fixed
+
+- [[4524]](https://github.com/Azure/azure-dev/pull/4524) Fix using parameters for .NET Aspire deployment.
 
 ## 1.10.4 (2024-11-06)
 

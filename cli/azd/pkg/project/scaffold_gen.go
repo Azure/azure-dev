@@ -186,7 +186,8 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	}
 
 	// create reverse frontends -> backends mapping
-	for _, svc := range infraSpec.Services {
+	for i := range infraSpec.Services {
+		svc := &infraSpec.Services[i]
 		if front, ok := backendMapping[svc.Name]; ok {
 			if svc.Backend == nil {
 				svc.Backend = &scaffold.Backend{}
@@ -270,6 +271,8 @@ func mapHostUses(
 			svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
 				scaffold.ServiceReference{Name: use})
 			backendMapping[use] = res.Name // record the backend -> frontend mapping
+		case ResourceTypeOpenAiModel:
+			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
 		}
 	}
 

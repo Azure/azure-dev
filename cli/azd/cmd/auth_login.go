@@ -338,7 +338,12 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if la.flags.clientID == "" {
+	forceRefresh := false
+	if v, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH")); err == nil && v {
+		forceRefresh = true
+	}
+
+	if la.flags.clientID == "" || forceRefresh {
 		// Update the subscriptions cache for regular users (i.e. non-service-principals).
 		// The caching is done here to increase responsiveness of listing subscriptions in the application.
 		// It also allows an implicit command for the user to refresh cached subscriptions.

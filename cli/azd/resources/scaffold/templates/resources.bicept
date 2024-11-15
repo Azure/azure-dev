@@ -450,14 +450,19 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
+{{- range .Services}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = {{bicepName .Name}}.outputs.resourceId
+{{- end}}
 {{- end}}
 {{- if  .AIModels}}
-output AZURE_COGNITIVE_ACCOUNT_ID string = account.outputs.resourceId
+{{- range .AIModels}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = '${account.outputs.resourceId}/deployments/{{.Name}}'
+{{- end}}
 {{- end}}
 {{- if .DbRedis}}
-output AZURE_CACHE_REDIS_ID string = redis.outputs.resourceId
+output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
-output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = postgreServer.outputs.resourceId
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgreServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
 {{- end}}
 {{ end}}

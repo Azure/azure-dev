@@ -10,8 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -23,17 +30,25 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type showFlags struct {
-	global *internal.GlobalCommandOptions
+	global      *internal.GlobalCommandOptions
+	showSecrets bool
 	internal.EnvFlag
 }
 
 func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	s.EnvFlag.Bind(local, global)
+	local.BoolVar(
+		&s.showSecrets,
+		"show-secrets",
+		false,
+		"Unmask secrets in output.",
+	)
 	s.global = global
 }
 
@@ -63,6 +78,10 @@ type showAction struct {
 	infraResourceManager infra.ResourceManager
 	azdCtx               *azdcontext.AzdContext
 	flags                *showFlags
+	args                 []string
+	creds                account.SubscriptionCredentialProvider
+	armClientOptions     *arm.ClientOptions
+	featureManager       *alpha.FeatureManager
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
 	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
 	portalUrlBase        string
@@ -77,8 +96,12 @@ func newShowAction(
 	infraResourceManager infra.ResourceManager,
 	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
+	featureManager *alpha.FeatureManager,
+	armClientOptions *arm.ClientOptions,
+	creds account.SubscriptionCredentialProvider,
 	azdCtx *azdcontext.AzdContext,
 	flags *showFlags,
+	args []string,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
 	cloud *cloud.Cloud,
@@ -92,7 +115,11 @@ func newShowAction(
 		resourceService:      resourceService,
 		envManager:           envManager,
 		infraResourceManager: infraResourceManager,
+		featureManager:       featureManager,
+		armClientOptions:     armClientOptions,
+		creds:                creds,
 		azdCtx:               azdCtx,
+		args:                 args,
 		flags:                flags,
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
@@ -101,7 +128,6 @@ func newShowAction(
 }
 
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-
 	s.console.ShowSpinner(ctx, "Gathering information about your app and its resources...", input.Step)
 	defer s.console.StopSpinner(ctx, "", input.Step)
 
@@ -148,6 +174,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 	}
+
 	var subId, rgName string
 	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
 		if errors.Is(err, environment.ErrNotFound) && s.flags.EnvironmentName != "" {
@@ -166,6 +193,16 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 
 			envName := env.Name()
+
+			if s.featureManager.IsEnabled(composeFeature) && len(s.args) > 0 {
+				name := s.args[0]
+				err := s.showResource(ctx, name, env)
+				if err != nil {
+					return nil, err
+				}
+
+				return nil, nil
+			}
 
 			rgName, err = s.infraResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
 			if err == nil {
@@ -233,6 +270,164 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	})
 
 	return nil, nil
+}
+
+func (s *showAction) showResource(ctx context.Context, name string, env *environment.Environment) error {
+	id, err := infra.ResourceId(name, env)
+	if err != nil {
+		return fmt.Errorf("resolving '%s': %w", name, err)
+	}
+
+	subscriptionId := id.SubscriptionID
+	armOptions := s.armClientOptions
+
+	resourceOptions := showResourceOptions{
+		showSecrets: s.flags.showSecrets,
+		clientOpts:  armOptions,
+	}
+
+	credential, err := s.creds.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	resType := id.ResourceType.Namespace + "/" + id.ResourceType.Type
+	var item ux.UxItem
+	switch {
+	case strings.EqualFold(resType, "Microsoft.App/containerApps"):
+		item, err = showContainerApp(ctx, credential, id, resourceOptions)
+		if err != nil {
+			return err
+		}
+	case strings.EqualFold(resType, "Microsoft.CognitiveServices/accounts/deployments"):
+		err = showModelDeployment(ctx, s.console, credential, id.Parent, resourceOptions)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("resource type '%s' is not currently supported in alpha", resType)
+	}
+
+	if item != nil {
+		s.console.MessageUxItem(ctx, item)
+	}
+	return nil
+}
+
+type showResourceOptions struct {
+	showSecrets bool
+	clientOpts  *arm.ClientOptions
+}
+
+func showContainerApp(
+	ctx context.Context,
+	cred azcore.TokenCredential,
+	id *arm.ResourceID,
+	opts showResourceOptions) (*ux.ShowService, error) {
+	service := &ux.ShowService{
+		Name: id.Name,
+		Env:  make(map[string]string),
+	}
+	client, err := armappcontainers.NewContainerAppsClient(id.SubscriptionID, cred, opts.clientOpts)
+	if err != nil {
+		return nil, fmt.Errorf("creating container-apps client: %w", err)
+	}
+
+	app, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting container app: %w", err)
+	}
+
+	var secrets []*armappcontainers.ContainerAppSecret // secret name to value translations
+	if opts.showSecrets {
+		secretsRes, err := client.ListSecrets(ctx, id.ResourceGroupName, id.Name, nil)
+		if err != nil {
+			return nil, fmt.Errorf("listing secrets: %w", err)
+		}
+		secrets = secretsRes.Value
+	}
+
+	if len(app.Properties.Template.Containers) == 0 {
+		return service, nil
+	}
+
+	service.IngresUrl = fmt.Sprintf("https://%s", *app.Properties.Configuration.Ingress.Fqdn)
+
+	var container *armappcontainers.Container
+	if len(app.Properties.Template.Containers) == 1 {
+		container = app.Properties.Template.Containers[0]
+	} else {
+		for _, c := range app.Properties.Template.Containers {
+			if c.Name != nil && (strings.EqualFold(*c.Name, id.Name) || strings.EqualFold(*c.Name, "main")) {
+				container = c
+				break
+			}
+		}
+
+		if container == nil {
+			return nil, fmt.Errorf(
+				"container app %s has more than one container, and no containers match the name 'main' or '%s'",
+				id.Name,
+				id.Name)
+		}
+	}
+
+	envVar := container.Env
+	for _, env := range envVar {
+		if env.Name == nil {
+			continue
+		}
+
+		key := *env.Name
+		val := env.Value
+
+		if env.SecretRef != nil {
+			val = to.Ptr("*******")
+
+			// dereference the secret ref
+			for _, secret := range secrets {
+				if *env.SecretRef == *secret.Name {
+					val = secret.Value
+					break
+				}
+			}
+		}
+
+		service.Env[key] = *val
+	}
+
+	return service, nil
+}
+
+func showModelDeployment(
+	ctx context.Context,
+	console input.Console,
+	cred azcore.TokenCredential,
+	id *arm.ResourceID,
+	opts showResourceOptions) error {
+	client, err := armcognitiveservices.NewAccountsClient(id.SubscriptionID, cred, opts.clientOpts)
+	if err != nil {
+		return fmt.Errorf("creating accounts client: %w", err)
+	}
+
+	account, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	if err != nil {
+		return fmt.Errorf("getting account: %w", err)
+	}
+
+	if account.Properties.Endpoint != nil {
+		console.Message(ctx, color.HiMagentaString("%s (Azure AI Services Model Deployment)", id.Name))
+		console.Message(ctx, "  Endpoint:")
+		console.Message(ctx, color.HiBlueString(fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint)))
+		console.Message(ctx, "  Access:")
+		console.Message(ctx, "    Keyless (Microsoft Entra ID)")
+		//nolint:lll
+		console.Message(ctx, output.WithGrayFormat("        Hint: To access locally, use DefaultAzureCredential. To learn more, visit https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages"))
+
+		console.Message(ctx, "")
+	}
+
+	return nil
 }
 
 func (s *showAction) serviceEndpoint(

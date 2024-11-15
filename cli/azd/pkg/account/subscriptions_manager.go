@@ -172,6 +172,29 @@ func (m *SubscriptionsManager) getSubscriptions(ctx context.Context) (getSubscri
 		}
 	}
 
+	// When the integration test framework runs a test in playback mode, it sets AZD_DEBUG_SYNTHETIC_SUBSCRIPTION to the
+	// ID of the subscription that was used when recording the test. We ensure this subscription is always present in the
+	// list returned by `getSubscriptions` so that end to end tests can run successfully.
+	if syntheticId := os.Getenv("AZD_DEBUG_SYNTHETIC_SUBSCRIPTION"); syntheticId != "" {
+		found := false
+
+		for _, sub := range subscriptions {
+			if sub.Id == syntheticId {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			subscriptions = append(subscriptions, Subscription{
+				Id:                 syntheticId,
+				Name:               "AZD Synthetic Test Subscription",
+				TenantId:           claims.TenantId,
+				UserAccessTenantId: claims.TenantId,
+			})
+		}
+	}
+
 	return getSubscriptionsResult{
 		subscriptions: subscriptions,
 		userClaims:    claims,

@@ -132,8 +132,10 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	envValue := u.flags.EnvFlag.EnvironmentName
 	for _, step := range upWorkflow.Steps {
-		stepArgs := append(step.AzdCommand.Args, "-e", envValue)
-		step.AzdCommand.Args = stepArgs
+		if envValue != "" {
+			stepArgs := append(step.AzdCommand.Args, "-e", envValue)
+			step.AzdCommand.Args = stepArgs
+		}
 	}
 
 	if err := u.workflowRunner.Run(ctx, upWorkflow); err != nil {

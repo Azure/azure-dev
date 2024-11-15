@@ -141,7 +141,7 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
 		case ResourceTypeDbMongo:
 			infraSpec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
-				DatabaseName: res.Props.(CosmosDBProps).DatabaseName,
+				DatabaseName: res.Props.(MongoDBProps).DatabaseName,
 			}
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{

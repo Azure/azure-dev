@@ -106,8 +106,38 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeDbPostgres:
+		err := marshalRawProps(raw.Props.(PostgresProps))
+		if err != nil {
+			return nil, err
+		}
 	case ResourceTypeDbMySQL:
 		err := marshalRawProps(raw.Props.(MySQLProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeDbMongo:
+		err := marshalRawProps(raw.Props.(MongoDBProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeDbCosmos:
+		err := marshalRawProps(raw.Props.(CosmosDBProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeMessagingServiceBus:
+		err := marshalRawProps(raw.Props.(ServiceBusProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeMessagingEventHubs:
+		err := marshalRawProps(raw.Props.(EventHubsProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeMessagingKafka:
+		err := marshalRawProps(raw.Props.(KafkaProps))
 		if err != nil {
 			return nil, err
 		}

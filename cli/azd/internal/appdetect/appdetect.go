@@ -166,6 +166,13 @@ func (a AzureDepStorageAccount) ResourceDisplay() string {
 	return "Azure Storage Account"
 }
 
+type SpringCloudAzureDep struct {
+}
+
+func (a SpringCloudAzureDep) ResourceDisplay() string {
+	return "Spring Cloud Azure Starter"
+}
+
 type Project struct {
 	// The language associated with the project.
 	Language Language

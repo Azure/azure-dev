@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -128,9 +129,29 @@ func (i *Initializer) InitFromApp(
 	i.console.StopSpinner(ctx, title, input.StepDone)
 
 	var prjAppHost []appdetect.Project
-	for _, prj := range projects {
+	for index, prj := range projects {
 		if prj.Language == appdetect.DotNetAppHost {
 			prjAppHost = append(prjAppHost, prj)
+		}
+
+		if prj.Language == appdetect.Java {
+			var hasKafkaDep bool
+			var hasSpringCloudAzureDep bool
+			for _, dep := range prj.AzureDeps {
+				if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); ok && eventHubs.UseKafka {
+					hasKafkaDep = true
+				}
+				if _, ok := dep.(appdetect.SpringCloudAzureDep); ok {
+					hasSpringCloudAzureDep = true
+				}
+			}
+
+			if hasKafkaDep && !hasSpringCloudAzureDep {
+				err := processSpringCloudAzureDepByPrompt(i.console, ctx, &projects[index])
+				if err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -767,4 +788,36 @@ func ServiceFromDetect(
 	}
 
 	return svc, nil
+}
+
+func processSpringCloudAzureDepByPrompt(console input.Console, ctx context.Context, project *appdetect.Project) error {
+	continueOption, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Detected Kafka dependency but no spring-cloud-azure-starter found. Select an option",
+		Options: []string{
+			"Exit then I will manually add this dependency",
+			"Continue without this dependency, and provision Azure Event Hubs for Kafka",
+			"Continue without this dependency, and not provision Azure Event Hubs for Kafka",
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	switch continueOption {
+	case 0:
+		return errors.New("you have to manually add dependency com.azure.spring:spring-cloud-azure-starter by following https://github.com/Azure/azure-sdk-for-java/wiki/Spring-Versions-Mapping")
+	case 1:
+		return nil
+	case 2:
+		// remove Kafka Azure Dep
+		var result []appdetect.AzureDep
+		for _, dep := range project.AzureDeps {
+			if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); !(ok && eventHubs.UseKafka) {
+				result = append(result, dep)
+			}
+		}
+		project.AzureDeps = result
+		return nil
+	}
+	return nil
 }

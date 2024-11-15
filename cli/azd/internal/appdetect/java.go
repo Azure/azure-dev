@@ -236,6 +236,10 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 				UseKafka: true,
 			})
 		}
+
+		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter" {
+			project.AzureDeps = append(project.AzureDeps, SpringCloudAzureDep{})
+		}
 	}
 
 	if len(databaseDepMap) > 0 {

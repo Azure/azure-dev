@@ -785,8 +785,6 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 }
 
 func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
-	t.Skip("azure/azure-dev#4341")
-
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -828,7 +826,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
-	t.Skip("azure/azure-dev#4341")
+	t.Skip("azure/azure-dev#4564")
 
 	ctx, cancel := newTestContext(t)
 	defer cancel()

@@ -135,7 +135,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		stepArgs := append(step.AzdCommand.Args, "-e", envValue)
 		step.AzdCommand.Args = stepArgs
 	}
-	
+
 	if err := u.workflowRunner.Run(ctx, upWorkflow); err != nil {
 		return nil, err
 	}

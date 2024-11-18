@@ -27,6 +27,9 @@ Commands
     pipeline 	: Manage and configure your deployment pipelines. (Beta)
     show     	: Display information about your app and its resources.
 
+  Installed Extensions
+    ai       	: Manage AI model operations such as deploying AI models like GPT-4.
+
   About, help and upgrade
     version  	: Print the version number of Azure Developer CLI.
 

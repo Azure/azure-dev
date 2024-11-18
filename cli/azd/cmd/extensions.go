@@ -97,6 +97,8 @@ type extensionAction struct {
 	commandRunner    exec.CommandRunner
 	lazyEnv          *lazy.Lazy[*environment.Environment]
 	extensionManager *extensions.Manager
+	cmd              *cobra.Command
+	args             []string
 }
 
 func newExtensionAction(
@@ -104,17 +106,21 @@ func newExtensionAction(
 	commandRunner exec.CommandRunner,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	extensionManager *extensions.Manager,
+	cmd *cobra.Command,
+	args []string,
 ) actions.Action {
 	return &extensionAction{
 		console:          console,
 		commandRunner:    commandRunner,
 		lazyEnv:          lazyEnv,
 		extensionManager: extensionManager,
+		cmd:              cmd,
+		args:             args,
 	}
 }
 
 func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	extensionName := os.Args[1]
+	extensionName := a.cmd.Use
 
 	extension, err := a.extensionManager.GetInstalled(extensionName)
 	if err != nil {
@@ -134,9 +140,6 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, env.Environ()...)
 	}
 
-	allArgs := []string{}
-	allArgs = append(allArgs, os.Args[2:]...)
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)
@@ -155,7 +158,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	runArgs := exec.
-		NewRunArgs(extensionPath, allArgs...).
+		NewRunArgs(extensionPath, a.args...).
 		WithCwd(cwd).
 		WithEnv(allEnv).
 		WithStdIn(a.console.Handles().Stdin).

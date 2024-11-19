@@ -188,7 +188,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
-						DbPostgres: &scaffold.DatabaseReference{
+						DbPostgres: &scaffold.DatabasePostgres{
 							DatabaseName: "myappdb",
 							AuthType:     "USER_ASSIGNED_MANAGED_IDENTITY",
 						},

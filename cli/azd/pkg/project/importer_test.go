@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	_ "embed"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"os"
 	"path/filepath"
 	"slices"
@@ -43,7 +44,7 @@ func TestImportManagerHasService(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	})
+	}, mockinput.NewMockConsole())
 
 	// has service
 	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
@@ -85,7 +86,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}, mockinput.NewMockConsole())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet") &&
@@ -138,7 +139,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}, mockinput.NewMockConsole())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet") &&
@@ -185,7 +186,7 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 		}),
 		hostCheck:           make(map[string]hostCheckResult),
 		alphaFeatureManager: mockContext.AlphaFeaturesManager,
-	})
+	}, mockinput.NewMockConsole())
 
 	// Get defaults and error b/c no infra found and no Aspire project
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
@@ -234,7 +235,7 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}, mockinput.NewMockConsole())
 
 	// Do not use defaults
 	expectedDefaultFolder := "customFolder"
@@ -316,7 +317,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		hostCheck:           make(map[string]hostCheckResult),
 		cache:               make(map[manifestCacheKey]*apphost.Manifest),
 		alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-	})
+	}, mockinput.NewMockConsole())
 
 	// adding infra folder to test defaults
 	err := os.Mkdir(DefaultPath, os.ModePerm)

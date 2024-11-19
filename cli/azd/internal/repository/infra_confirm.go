@@ -135,25 +135,15 @@ func (i *Initializer) infraSpecFromDetect(
 
 			switch db {
 			case appdetect.DbMongo:
-				serviceSpec.DbCosmosMongo = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbCosmosMongo.DatabaseName,
-				}
+				serviceSpec.DbCosmosMongo = spec.DbCosmosMongo
 			case appdetect.DbPostgres:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
-					AuthType:     spec.DbPostgres.AuthType,
-				}
+				serviceSpec.DbPostgres = spec.DbPostgres
 			case appdetect.DbMySql:
-				serviceSpec.DbMySql = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbMySql.DatabaseName,
-					AuthType:     spec.DbMySql.AuthType,
-				}
+				serviceSpec.DbMySql = spec.DbMySql
 			case appdetect.DbCosmos:
 				serviceSpec.DbCosmos = spec.DbCosmos
 			case appdetect.DbRedis:
-				serviceSpec.DbRedis = &scaffold.DatabaseReference{
-					DatabaseName: "redis",
-				}
+				serviceSpec.DbRedis = spec.DbRedis
 			}
 		}
 

@@ -908,9 +908,16 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: 'premium'
           }
           {{- end}}
-
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
+          {
+            name: '{{upper .Name}}_BASE_URL'
+            value: 'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
+          }
+          {{- end}}
+          {{- end}}
+          {{- if .Backend}}
+          {{- range $i, $e := .Backend.Frontends}}
           {
             name: '{{upper .Name}}_BASE_URL'
             value: 'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'

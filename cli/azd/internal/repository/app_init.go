@@ -658,6 +658,17 @@ func (i *Initializer) prjConfigFromDetect(
 				resSpec.Uses = append(resSpec.Uses, dbNames[db])
 			}
 
+			for _, azureDep := range svc.AzureDeps {
+				switch azureDep.(type) {
+				case appdetect.AzureDepServiceBus:
+					resSpec.Uses = append(resSpec.Uses, "servicebus")
+				case appdetect.AzureDepEventHubs:
+					resSpec.Uses = append(resSpec.Uses, "eventhubs")
+				case appdetect.AzureDepStorageAccount:
+					resSpec.Uses = append(resSpec.Uses, "storage")
+				}
+			}
+
 			resSpec.Name = name
 			resSpec.Props = props
 			config.Resources[name] = &resSpec

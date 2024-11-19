@@ -3,6 +3,7 @@ package scaffold
 import (
 	"bytes"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"io/fs"
 	"os"
 	"path"
@@ -74,6 +75,18 @@ func supportingFiles(spec InfraSpec) []string {
 
 	if len(spec.Services) > 0 {
 		files = append(files, "/modules/fetch-container-image.bicep")
+	}
+
+	if spec.AzureServiceBus != nil && spec.AzureServiceBus.AuthType == internal.AuthTypeConnectionString {
+		files = append(files, "/modules/set-servicebus-namespace-connection-string.bicep")
+	}
+
+	if spec.AzureEventHubs != nil && spec.AzureEventHubs.AuthType == internal.AuthTypeConnectionString {
+		files = append(files, "/modules/set-event-hubs-namespace-connection-string.bicep")
+	}
+
+	if spec.AzureStorageAccount != nil && spec.AzureStorageAccount.AuthType == internal.AuthTypeConnectionString {
+		files = append(files, "/modules/set-storage-account-connection-string.bicep")
 	}
 
 	return files

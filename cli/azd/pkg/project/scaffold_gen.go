@@ -339,6 +339,13 @@ func mapHostUses(
 			backendMapping[use] = res.Name // record the backend -> frontend mapping
 		case ResourceTypeOpenAiModel:
 			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
+		case ResourceTypeMessagingServiceBus:
+			props := useRes.Props.(ServiceBusProps)
+			svcSpec.AzureServiceBus = &scaffold.AzureDepServiceBus{
+				Queues:   props.Queues,
+				AuthType: props.AuthType,
+				IsJms:    props.IsJms,
+			}
 		}
 	}
 

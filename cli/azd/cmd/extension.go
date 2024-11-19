@@ -219,7 +219,7 @@ type extensionShowItem struct {
 	LatestVersion    string
 	InstalledVersion string
 	Usage            string
-	Examples         []string
+	Examples         []extensions.ExtensionExample
 }
 
 func (t *extensionShowItem) Display(writer io.Writer) error {
@@ -241,7 +241,7 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 	}
 
 	for _, example := range t.Examples {
-		text = append(text, []string{"", "", example})
+		text = append(text, []string{"", "", example.Usage})
 	}
 
 	for _, line := range text {
@@ -364,7 +364,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		a.console.Message(ctx, output.WithBold("      Examples:"))
 
 		for _, example := range extensionVersion.Examples {
-			a.console.Message(ctx, "        "+output.WithHighLightFormat(example))
+			a.console.Message(ctx, "        "+output.WithHighLightFormat(example.Usage))
 		}
 	}
 
@@ -575,7 +575,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.Message(ctx, output.WithBold("      Examples:"))
 
 			for _, example := range extensionVersion.Examples {
-				a.console.Message(ctx, "        "+output.WithHighLightFormat(example))
+				a.console.Message(ctx, "        "+output.WithHighLightFormat(example.Usage))
 			}
 		}
 	}

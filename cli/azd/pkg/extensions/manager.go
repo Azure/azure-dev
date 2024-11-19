@@ -2,9 +2,18 @@ package extensions
 
 import (
 	"context"
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/sha512"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"log"
 	"net/http"
@@ -18,6 +27,7 @@ import (
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/cache"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
 const (
@@ -36,7 +46,7 @@ type Manager struct {
 	configManager config.UserConfigManager
 	userConfig    config.Config
 	pipeline      azruntime.Pipeline
-	registryCache *cache.FileCache[ExtensionRegistry]
+	registryCache *cache.FileCache[Registry]
 }
 
 // NewManager creates a new extension manager
@@ -101,7 +111,7 @@ func (m *Manager) GetInstalled(name string) (*Extension, error) {
 }
 
 // GetFromRegistry retrieves an extension from the registry by name
-func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*RegistryExtension, error) {
+func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*ExtensionMetadata, error) {
 	extensions, err := m.ListFromRegistry(ctx)
 	if err != nil {
 		return nil, err
@@ -116,52 +126,23 @@ func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*RegistryEx
 	return nil, fmt.Errorf("%s %w", name, ErrRegistryExtensionNotFound)
 }
 
-func (m *Manager) ListFromRegistry(ctx context.Context) ([]*RegistryExtension, error) {
+func (m *Manager) ListFromRegistry(ctx context.Context) ([]*ExtensionMetadata, error) {
 	registry, err := m.registryCache.Resolve(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := validateRegistry(registry); err != nil {
 		return nil, err
 	}
 
 	return registry.Extensions, nil
 }
 
-// loadRegistry retrieves a list of extensions from the registry
-func (m *Manager) loadRegistry(ctx context.Context) (*ExtensionRegistry, error) {
-	req, err := azruntime.NewRequest(ctx, http.MethodGet, extensionRegistryUrl)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := m.pipeline.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed for template source '%s', %w", extensionRegistryUrl, err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, azruntime.NewResponseError(resp)
-	}
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Unmarshal JSON into ExtensionRegistry struct
-	var registry *ExtensionRegistry
-	err = json.Unmarshal(body, &registry)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	// Return the registry
-	return registry, nil
-}
-
 // Install an extension by name and optional version
 // If no version is provided, the latest version is installed
 // Latest version is determined by the last element in the Versions slice
-func (m *Manager) Install(ctx context.Context, name string, version string) (*RegistryExtensionVersion, error) {
+func (m *Manager) Install(ctx context.Context, name string, version string) (*ExtensionVersion, error) {
 	installed, err := m.GetInstalled(name)
 	if err == nil && installed != nil {
 		return nil, fmt.Errorf("%s %w", name, ErrExtensionInstalled)
@@ -174,7 +155,7 @@ func (m *Manager) Install(ctx context.Context, name string, version string) (*Re
 	}
 
 	// Step 2: Determine the version to install
-	var selectedVersion *RegistryExtensionVersion
+	var selectedVersion *ExtensionVersion
 
 	if version == "" {
 		// Default to the latest version (last in the slice)
@@ -205,7 +186,7 @@ func (m *Manager) Install(ctx context.Context, name string, version string) (*Re
 	}
 
 	// Step 4: Download the binary to a temp location
-	tempFilePath, err := m.downloadBinary(ctx, binary.Url)
+	tempFilePath, err := m.downloadBinary(ctx, binary.URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download binary: %w", err)
 	}
@@ -218,23 +199,28 @@ func (m *Manager) Install(ctx context.Context, name string, version string) (*Re
 		return nil, fmt.Errorf("checksum validation failed: %w", err)
 	}
 
-	// Step 6: Copy the binary to the user's home directory
-	homeDir, err := os.UserHomeDir()
+	userHomeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user's home directory: %w", err)
 	}
 
-	targetDir := filepath.Join(homeDir, ".azd", "bin")
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user config directory: %w", err)
+	}
+
+	targetDir := filepath.Join(userConfigDir, "bin")
 	if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
 		return nil, fmt.Errorf("failed to create target directory: %w", err)
 	}
 
+	// Step 6: Copy the binary to the target directory
 	targetPath := filepath.Join(targetDir, filepath.Base(tempFilePath))
 	if err := copyFile(tempFilePath, targetPath); err != nil {
 		return nil, fmt.Errorf("failed to copy binary to target location: %w", err)
 	}
 
-	relativeExtensionPath, err := filepath.Rel(homeDir, targetPath)
+	relativeExtensionPath, err := filepath.Rel(userHomeDir, targetPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get relative path: %w", err)
 	}
@@ -311,7 +297,7 @@ func (m *Manager) Uninstall(name string) error {
 // Upgrade upgrades the extension to the specified version
 // This is a convenience method that uninstalls the existing extension and installs the new version
 // If the version is not specified, the latest version is installed
-func (m *Manager) Upgrade(ctx context.Context, name string, version string) (*RegistryExtensionVersion, error) {
+func (m *Manager) Upgrade(ctx context.Context, name string, version string) (*ExtensionVersion, error) {
 	if err := m.Uninstall(name); err != nil {
 		return nil, fmt.Errorf("failed to uninstall extension: %w", err)
 	}
@@ -324,32 +310,72 @@ func (m *Manager) Upgrade(ctx context.Context, name string, version string) (*Re
 	return extensionVersion, nil
 }
 
+// loadRegistry retrieves a list of extensions from the registry
+func (m *Manager) loadRegistry(ctx context.Context) (*Registry, error) {
+	// Fetch the registry JSON
+	req, err := azruntime.NewRequest(ctx, http.MethodGet, extensionRegistryUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := m.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed for template source '%s', %w", extensionRegistryUrl, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, azruntime.NewResponseError(resp)
+	}
+
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Unmarshal JSON into a map to extract the signature and registry content
+	var registry *Registry
+	if err := json.Unmarshal(body, &registry); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal raw registry JSON: %w", err)
+	}
+
+	return registry, nil
+}
+
+func validateRegistry(registry *Registry) error {
+	// Extract the signature
+	signature := registry.Signature
+	registry.Signature = ""
+
+	// Marshal the remaining registry content back to JSON
+	rawRegistry, err := json.MarshalIndent(registry, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal registry content: %w", err)
+	}
+
+	// Validate the registry signature
+	if err := verifySignature(rawRegistry, signature); err != nil {
+		return fmt.Errorf("registry signature validation failed: %w", err)
+	}
+
+	return nil
+}
+
 // Helper function to find the binary for the current OS
-func findBinaryForCurrentOS(version *RegistryExtensionVersion) (*Binary, error) {
+func findBinaryForCurrentOS(version *ExtensionVersion) (*ExtensionBinary, error) {
 	if version.Binaries == nil {
 		return nil, fmt.Errorf("no binaries available for this version")
 	}
 
-	var binary Binary
-	var exists bool
-
-	platform := runtime.GOOS
-
-	switch platform {
-	case "darwin":
-		binary, exists = version.Binaries["macos"]
-	case "linux":
-		binary, exists = version.Binaries["linux"]
-	case "windows":
-		binary, exists = version.Binaries["windows"]
-	}
+	binaryVersion := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
+	binary, exists := version.Binaries[binaryVersion]
 
 	if !exists {
-		return nil, fmt.Errorf("no binary available for platform: %s", platform)
+		return nil, fmt.Errorf("no binary available for platform: %s", binaryVersion)
 	}
 
-	if binary.Url == "" {
-		return nil, fmt.Errorf("binary URL is missing for platform: %s", platform)
+	if binary.URL == "" {
+		return nil, fmt.Errorf("binary URL is missing for platform: %s", binaryVersion)
 	}
 
 	return &binary, nil
@@ -398,48 +424,45 @@ func (m *Manager) downloadBinary(ctx context.Context, binaryUrl string) (string,
 }
 
 // validateChecksum validates the file at the given path against the expected checksum using the specified algorithm.
-func validateChecksum(filePath string, checksum *Checksum) error {
-	// TODO: Checksum optional for POC
+func validateChecksum(filePath string, checksum ExtensionChecksum) error {
+	// Check if checksum or required fields are nil
+	if checksum.Algorithm == "" || checksum.Value == "" {
+		return fmt.Errorf("invalid checksum data: algorithm and value must be specified")
+	}
+
+	var hashAlgo hash.Hash
+
+	// Select the hashing algorithm based on the input
+	switch checksum.Algorithm {
+	case "sha256":
+		hashAlgo = sha256.New()
+	case "sha512":
+		hashAlgo = sha512.New()
+	default:
+		return fmt.Errorf("unsupported checksum algorithm: %s", checksum.Algorithm)
+	}
+
+	// Open the file for reading
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file for checksum validation: %w", err)
+	}
+	defer file.Close()
+
+	// Compute the checksum
+	if _, err := io.Copy(hashAlgo, file); err != nil {
+		return fmt.Errorf("failed to compute checksum: %w", err)
+	}
+
+	// Convert the computed checksum to a hexadecimal string
+	computedChecksum := hex.EncodeToString(hashAlgo.Sum(nil))
+
+	// Compare the computed checksum with the expected checksum
+	if computedChecksum != checksum.Value {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", checksum.Value, computedChecksum)
+	}
+
 	return nil
-
-	// // Check if checksum or required fields are nil
-	// if checksum.Algorithm == "" || checksum.Value == "" {
-	// 	return fmt.Errorf("invalid checksum data: algorithm and value must be specified")
-	// }
-
-	// var hashAlgo hash.Hash
-
-	// // Select the hashing algorithm based on the input
-	// switch checksum.Algorithm {
-	// case "sha256":
-	// 	hashAlgo = sha256.New()
-	// case "sha512":
-	// 	hashAlgo = sha512.New()
-	// default:
-	// 	return fmt.Errorf("unsupported checksum algorithm: %s", checksum.Algorithm)
-	// }
-
-	// // Open the file for reading
-	// file, err := os.Open(filePath)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to open file for checksum validation: %w", err)
-	// }
-	// defer file.Close()
-
-	// // Compute the checksum
-	// if _, err := io.Copy(hashAlgo, file); err != nil {
-	// 	return fmt.Errorf("failed to compute checksum: %w", err)
-	// }
-
-	// // Convert the computed checksum to a hexadecimal string
-	// computedChecksum := hex.EncodeToString(hashAlgo.Sum(nil))
-
-	// // Compare the computed checksum with the expected checksum
-	// if computedChecksum != checksum.Value {
-	// 	return fmt.Errorf("checksum mismatch: expected %s, got %s", checksum.Value, computedChecksum)
-	// }
-
-	// return nil
 }
 
 // Helper function to copy a file to the target directory
@@ -462,4 +485,49 @@ func copyFile(src, dst string) error {
 	}
 
 	return nil
+}
+
+// Verify verifies the given data and its Base64-encoded signature
+func verifySignature(data []byte, signature string) error {
+	publicKey, err := loadPublicKey(resources.PublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to load public key: %w", err)
+	}
+
+	// Compute the SHA256 hash of the data
+	hash := sha256.Sum256(data)
+
+	// Decode the Base64-encoded signature
+	sigBytes, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return fmt.Errorf("failed to decode signature: %w", err)
+	}
+
+	// Verify the signature with the public key
+	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hash[:], sigBytes)
+	if err != nil {
+		return fmt.Errorf("signature verification failed: %w", err)
+	}
+
+	return nil
+}
+
+// loadPublicKey loads an RSA public key from a PEM file
+func loadPublicKey(data []byte) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode(data)
+	if block == nil || block.Type != "PUBLIC KEY" {
+		return nil, fmt.Errorf("invalid public key PEM format")
+	}
+
+	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+
+	rsaPubKey, ok := publicKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("public key is not RSA")
+	}
+
+	return rsaPubKey, nil
 }

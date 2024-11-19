@@ -30,3 +30,6 @@ var AiPythonApp embed.FS
 
 //go:embed pipeline/*
 var PipelineFiles embed.FS
+
+//go:embed public_key.pem
+var PublicKey []byte

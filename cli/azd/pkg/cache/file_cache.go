@@ -57,7 +57,7 @@ func (c *FileCache[T]) Resolve(ctx context.Context) (*T, error) {
 // Set sets the value in the cache.
 func (c *FileCache[T]) Set(value *T) error {
 	c.value = value
-	jsonValue, err := json.Marshal(c.value)
+	jsonValue, err := json.MarshalIndent(c.value, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal value: %w", err)
 	}

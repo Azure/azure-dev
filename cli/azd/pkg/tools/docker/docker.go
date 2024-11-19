@@ -263,6 +263,10 @@ func (d *Cli) CheckInstalled(ctx context.Context) error {
 	if !supported {
 		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
 	}
+	// Check if docker is running
+	if _, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "ps"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -304,13 +308,4 @@ func SplitDockerImage(fullImg string) (name string, tag string) {
 	}
 
 	return fullImg[:split], fullImg[split+1:]
-}
-
-func (d *Cli) IsDockerRunning(ctx context.Context) error {
-    _, err := d.executeCommand(ctx, "", "ps")
-    if err != nil {
-        return fmt.Errorf("docker is not running: %w", err)
-    }
-
-    return nil
 }

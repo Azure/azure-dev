@@ -323,7 +323,7 @@ func parseYAML(prefix string, node *yaml.Node, result map[string]string) {
 		}
 	case yaml.ScalarNode:
 		// If it's a scalar value, add it to the result map
-		result[prefix] = node.Value
+		result[prefix] = getEnvironmentVariablePlaceholderHandledValue(node.Value)
 	default:
 		// Handle other node types if necessary
 	}
@@ -349,10 +349,19 @@ func readPropertiesInPropertiesFile(propertiesFilePath string, result map[string
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) == 2 {
 			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
+			value := getEnvironmentVariablePlaceholderHandledValue(parts[1])
 			result[key] = value
 		}
 	}
+}
+
+func getEnvironmentVariablePlaceholderHandledValue(rawValue string) string {
+	trimmedRawValue := strings.TrimSpace(rawValue)
+	if strings.HasPrefix(trimmedRawValue, "${") && strings.HasSuffix(trimmedRawValue, "}") {
+		envVar := trimmedRawValue[2 : len(trimmedRawValue)-1]
+		return os.Getenv(envVar)
+	}
+	return trimmedRawValue
 }
 
 // Function to find all properties that match the pattern `spring.cloud.stream.bindings.<binding-name>.destination`

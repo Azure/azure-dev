@@ -32,7 +32,7 @@ import (
 
 const (
 	registryCacheFilePath = "registry.cache"
-	extensionRegistryUrl  = "https://raw.githubusercontent.com/wbreza/azd-extensions/refs/heads/main/registry/registry.json"
+	extensionRegistryUrl  = "https://aka.ms/azd/extensions/registry"
 )
 
 var (

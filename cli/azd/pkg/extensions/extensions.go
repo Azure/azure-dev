@@ -1,8 +1,11 @@
 package extensions
 
 import (
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
+
+var FeatureExtensions = alpha.MustFeatureKey("extensions")
 
 func Initialize(serviceLocator *ioc.NestedContainer) (map[string]*Extension, error) {
 	var manager *Manager

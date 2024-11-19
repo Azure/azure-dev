@@ -15,6 +15,7 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -127,7 +128,6 @@ func NewRootCmd(
 	templatesActions(root)
 	authActions(root)
 	hooksActions(root)
-	extensionActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -351,20 +351,28 @@ func NewRootCmd(
 	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 	registerCommonDependencies(rootContainer)
 
+	// Conditionally register the 'extension' commands if the feature is enabled
+	var alphaFeatureManager *alpha.FeatureManager
+	if err := rootContainer.Resolve(&alphaFeatureManager); err == nil {
+		if alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
+			extensionActions(root)
+
+			installedExtensions, err := extensions.Initialize(rootContainer)
+			if err != nil {
+				log.Printf("Failed to initialize extensions: %v", err)
+			}
+
+			if err := bindExtensions(rootContainer, root, installedExtensions); err != nil {
+				log.Printf("Failed to bind extensions: %v", err)
+			}
+		}
+	}
+
 	// Initialize the platform specific components for the IoC container
 	// Only container resolution errors will return an error
 	// Invalid configurations will fall back to default platform
 	if _, err := platform.Initialize(rootContainer, azd.PlatformKindDefault); err != nil {
 		panic(err)
-	}
-
-	installedExtensions, err := extensions.Initialize(rootContainer)
-	if err != nil {
-		log.Printf("Failed to initialize extensions: %v", err)
-	}
-
-	if err := bindExtensions(rootContainer, root, installedExtensions); err != nil {
-		log.Printf("Failed to bind extensions: %v", err)
 	}
 
 	// Compose the hierarchy of action descriptions into cobra commands

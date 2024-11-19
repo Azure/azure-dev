@@ -788,6 +788,18 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'spring.cloud.stream.kafka.binder.brokers'
             value: '${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'
           }
+          {{- if (hasPrefix .AzureEventHubs.SpringBootVersion "2.") }}
+          {
+            name: 'spring.cloud.stream.binders.kafka.environment.spring.main.sources'
+            value: 'com.azure.spring.cloud.autoconfigure.eventhubs.kafka.AzureEventHubsKafkaAutoConfiguration'
+          }
+          {{- end}}
+          {{- if (hasPrefix .AzureEventHubs.SpringBootVersion "3.") }}
+          {
+            name: 'spring.cloud.stream.binders.kafka.environment.spring.main.sources'
+            value: 'com.azure.spring.cloud.autoconfigure.implementation.eventhubs.kafka.AzureEventHubsKafkaAutoConfiguration'
+          }
+          {{- end}}
           {{- end}}
           {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
           {

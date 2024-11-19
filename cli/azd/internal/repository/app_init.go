@@ -137,9 +137,20 @@ func (i *Initializer) InitFromApp(
 		if prj.Language == appdetect.Java {
 			var hasKafkaDep bool
 			var hasSpringCloudAzureDep bool
-			for _, dep := range prj.AzureDeps {
+			for depIndex, dep := range prj.AzureDeps {
 				if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); ok && eventHubs.UseKafka {
 					hasKafkaDep = true
+					springBootVersion := eventHubs.SpringBootVersion
+
+					if springBootVersion == appdetect.UnknownSpringBootVersion {
+						var err error
+						springBootVersion, err = promptSpringBootVersion(i.console, ctx)
+						if err != nil {
+							return err
+						}
+						eventHubs.SpringBootVersion = springBootVersion
+						prj.AzureDeps[depIndex] = eventHubs
+					}
 				}
 				if _, ok := dep.(appdetect.SpringCloudAzureDep); ok {
 					hasSpringCloudAzureDep = true
@@ -831,4 +842,26 @@ func processSpringCloudAzureDepByPrompt(console input.Console, ctx context.Conte
 		return nil
 	}
 	return nil
+}
+
+func promptSpringBootVersion(console input.Console, ctx context.Context) (string, error) {
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "No spring boot version detected, what is your spring boot version?",
+		Options: []string{
+			"Spring Boot 2.x",
+			"Spring Boot 3.x",
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	switch selection {
+	case 0:
+		return "2.x", nil
+	case 1:
+		return "3.x", nil
+	default:
+		panic("unhandled selection")
+	}
 }

@@ -349,9 +349,10 @@ func (i *Initializer) buildInfraSpecByAzureDep(
 		}
 	case appdetect.AzureDepEventHubs:
 		spec.AzureEventHubs = &scaffold.AzureDepEventHubs{
-			EventHubNames: dependency.Names,
-			AuthType:      authType,
-			UseKafka:      dependency.UseKafka,
+			EventHubNames:     dependency.Names,
+			AuthType:          authType,
+			UseKafka:          dependency.UseKafka,
+			SpringBootVersion: dependency.SpringBootVersion,
 		}
 	case appdetect.AzureDepStorageAccount:
 		spec.AzureStorageAccount = &scaffold.AzureDepStorageAccount{

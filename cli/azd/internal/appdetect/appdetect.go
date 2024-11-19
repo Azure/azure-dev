@@ -150,8 +150,9 @@ func (a AzureDepServiceBus) ResourceDisplay() string {
 }
 
 type AzureDepEventHubs struct {
-	Names    []string
-	UseKafka bool
+	Names             []string
+	UseKafka          bool
+	SpringBootVersion string
 }
 
 func (a AzureDepEventHubs) ResourceDisplay() string {
@@ -172,6 +173,8 @@ type SpringCloudAzureDep struct {
 func (a SpringCloudAzureDep) ResourceDisplay() string {
 	return "Spring Cloud Azure Starter"
 }
+
+const UnknownSpringBootVersion string = "unknownSpringBootVersion"
 
 type Project struct {
 	// The language associated with the project.

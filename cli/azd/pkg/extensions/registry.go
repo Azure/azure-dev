@@ -1,30 +1,40 @@
 package extensions
 
-type Checksum struct {
-	Algorithm string `json:"algorithm" yaml:"algorithm"`
-	Value     string `json:"value"     yaml:"value"`
+type ExtensionExample struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Usage       string `json:"usage"`
 }
 
-type Binary struct {
-	Url      string    `json:"url"      yaml:"url"`
-	Checksum *Checksum `json:"checksum" yaml:"checksum"`
+// Registry represents the registry.json structure
+type Registry struct {
+	Extensions []*ExtensionMetadata `json:"extensions"`
+	Signature  string               `json:"signature,omitempty"`
 }
 
-type RegistryExtensionVersion struct {
-	Version  string            `json:"version"  yaml:"version"`
-	Usage    string            `json:"usage"    yaml:"usage"`
-	Examples []string          `json:"examples" yaml:"examples"`
-	Binaries map[string]Binary `json:"binaries" yaml:"binaries"` // Key: platform (windows, linux, macos)
+// Extension represents an extension in the registry
+type ExtensionMetadata struct {
+	Name        string             `json:"name"`
+	DisplayName string             `json:"displayName"`
+	Description string             `json:"description"`
+	Versions    []ExtensionVersion `json:"versions"`
 }
 
-type RegistryExtension struct {
-	Name        string                     `json:"name"        yaml:"name"`
-	DisplayName string                     `json:"displayName" yaml:"displayName"`
-	Description string                     `json:"description" yaml:"description"`
-	Versions    []RegistryExtensionVersion `json:"versions"    yaml:"versions"`
+// ExtensionVersion represents a version of an extension
+type ExtensionVersion struct {
+	Version  string                     `json:"version"`
+	Usage    string                     `json:"usage"`
+	Examples []ExtensionExample         `json:"examples"`
+	Binaries map[string]ExtensionBinary `json:"binaries"`
 }
 
-type ExtensionRegistry struct {
-	Extensions []*RegistryExtension `json:"extensions" yaml:"extensions"`
-	Signature  string               `json:"signature"  yaml:"signature"`
+// ExtensionBinary represents the binary information of an extension
+type ExtensionBinary struct {
+	URL      string            `json:"url"`
+	Checksum ExtensionChecksum `json:"checksum"`
+}
+
+type ExtensionChecksum struct {
+	Algorithm string `json:"algorithm"`
+	Value     string `json:"value"`
 }

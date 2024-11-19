@@ -14,3 +14,5 @@
   description: "Enables Azure deployment stacks for ARM/Bicep based deployments."
 - id: compose
   description: "Enable simplified app-centric modeling. Run `azd add` to add Azure components to your project."
+- id: extensions
+  description: "Enables the use of `azd` extension packages."

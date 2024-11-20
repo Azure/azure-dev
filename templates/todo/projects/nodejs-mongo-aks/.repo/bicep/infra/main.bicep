@@ -25,6 +25,7 @@ param cosmosAccountName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
+param nodeResourceGroupName string = 'rg_aks_node'
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -64,6 +65,7 @@ module aks 'br/public:avm/ptn/azd/aks:0.1.1' = {
     acrSku: 'Basic'
     systemPoolSize: systemPoolType
     disableLocalAccounts: false
+    nodeResourceGroupName: nodeResourceGroupName
   }
 }
 

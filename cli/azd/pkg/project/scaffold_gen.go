@@ -505,18 +505,18 @@ func getServiceSpecByName(infraSpec *scaffold.InfraSpec, name string) *scaffold.
 
 func printHintsAboutUsePostgres(authType internal.AuthType,
 	console *input.Console, context *context.Context) error {
-	(*console).Message(*context, "POSTGRES_HOST")
-	(*console).Message(*context, "POSTGRES_DATABASE")
-	(*console).Message(*context, "POSTGRES_PORT")
-	(*console).Message(*context, "spring.datasource.url")
-	(*console).Message(*context, "spring.datasource.username")
+	(*console).Message(*context, "POSTGRES_HOST=xxx")
+	(*console).Message(*context, "POSTGRES_DATABASE=xxx")
+	(*console).Message(*context, "POSTGRES_PORT=xxx")
+	(*console).Message(*context, "spring.datasource.url=xxx")
+	(*console).Message(*context, "spring.datasource.username=xxx")
 	if authType == internal.AuthTypePassword {
-		(*console).Message(*context, "POSTGRES_URL")
-		(*console).Message(*context, "POSTGRES_USERNAME")
-		(*console).Message(*context, "POSTGRES_PASSWORD")
-		(*console).Message(*context, "spring.datasource.password")
+		(*console).Message(*context, "POSTGRES_URL=xxx")
+		(*console).Message(*context, "POSTGRES_USERNAME=xxx")
+		(*console).Message(*context, "POSTGRES_PASSWORD=xxx")
+		(*console).Message(*context, "spring.datasource.password=xxx")
 	} else if authType == internal.AuthTypeUserAssignedManagedIdentity {
-		(*console).Message(*context, "spring.datasource.azure.passwordless-enabled")
+		(*console).Message(*context, "spring.datasource.azure.passwordless-enabled=true")
 		(*console).Message(*context, "CAUTION: To make sure passwordless work well in your spring boot application, ")
 		(*console).Message(*context, "make sure the following 2 things:")
 		(*console).Message(*context, "1. Add required dependency: spring-cloud-azure-starter-jdbc-postgresql.")
@@ -533,18 +533,18 @@ func printHintsAboutUsePostgres(authType internal.AuthType,
 
 func printHintsAboutUseMySql(authType internal.AuthType,
 	console *input.Console, context *context.Context) error {
-	(*console).Message(*context, "MYSQL_HOST")
-	(*console).Message(*context, "MYSQL_DATABASE")
-	(*console).Message(*context, "MYSQL_PORT")
-	(*console).Message(*context, "spring.datasource.url")
-	(*console).Message(*context, "spring.datasource.username")
+	(*console).Message(*context, "MYSQL_HOST=xxx")
+	(*console).Message(*context, "MYSQL_DATABASE=xxx")
+	(*console).Message(*context, "MYSQL_PORT=xxx")
+	(*console).Message(*context, "spring.datasource.url=xxx")
+	(*console).Message(*context, "spring.datasource.username=xxx")
 	if authType == internal.AuthTypePassword {
-		(*console).Message(*context, "MYSQL_URL")
-		(*console).Message(*context, "MYSQL_USERNAME")
-		(*console).Message(*context, "MYSQL_PASSWORD")
-		(*console).Message(*context, "spring.datasource.password")
+		(*console).Message(*context, "MYSQL_URL=xxx")
+		(*console).Message(*context, "MYSQL_USERNAME=xxx")
+		(*console).Message(*context, "MYSQL_PASSWORD=xxx")
+		(*console).Message(*context, "spring.datasource.password=xxx")
 	} else if authType == internal.AuthTypeUserAssignedManagedIdentity {
-		(*console).Message(*context, "spring.datasource.azure.passwordless-enabled")
+		(*console).Message(*context, "spring.datasource.azure.passwordless-enabled=true")
 		(*console).Message(*context, "CAUTION: To make sure passwordless work well in your spring boot application, ")
 		(*console).Message(*context, "Make sure the following 2 things:")
 		(*console).Message(*context, "1. Add required dependency: spring-cloud-azure-starter-jdbc-postgresql.")
@@ -559,38 +559,38 @@ func printHintsAboutUseMySql(authType internal.AuthType,
 }
 
 func printHintsAboutUseRedis(console *input.Console, context *context.Context) {
-	(*console).Message(*context, "REDIS_HOST")
-	(*console).Message(*context, "REDIS_PORT")
-	(*console).Message(*context, "REDIS_URL")
-	(*console).Message(*context, "REDIS_ENDPOINT")
-	(*console).Message(*context, "REDIS_PASSWORD")
-	(*console).Message(*context, "spring.data.redis.url")
+	(*console).Message(*context, "REDIS_HOST=xxx")
+	(*console).Message(*context, "REDIS_PORT=xxx")
+	(*console).Message(*context, "REDIS_URL=xxx")
+	(*console).Message(*context, "REDIS_ENDPOINT=xxx")
+	(*console).Message(*context, "REDIS_PASSWORD=xxx")
+	(*console).Message(*context, "spring.data.redis.url=xxx")
 }
 
 func printHintsAboutUseMongo(console *input.Console, context *context.Context) {
-	(*console).Message(*context, "MONGODB_URL")
-	(*console).Message(*context, "spring.data.mongodb.uri")
-	(*console).Message(*context, "spring.data.mongodb.database")
+	(*console).Message(*context, "MONGODB_URL=xxx")
+	(*console).Message(*context, "spring.data.mongodb.uri=xxx")
+	(*console).Message(*context, "spring.data.mongodb.database=xxx")
 }
 
 func printHintsAboutUseCosmos(console *input.Console, context *context.Context) {
-	(*console).Message(*context, "spring.cloud.azure.cosmos.endpoint")
-	(*console).Message(*context, "spring.cloud.azure.cosmos.database")
+	(*console).Message(*context, "spring.cloud.azure.cosmos.endpoint=xxx")
+	(*console).Message(*context, "spring.cloud.azure.cosmos.database=xxx")
 }
 
 func printHintsAboutUseServiceBus(isJms bool, authType internal.AuthType,
 	console *input.Console, context *context.Context) error {
 	if !isJms {
-		(*console).Message(*context, "spring.cloud.azure.servicebus.namespace")
+		(*console).Message(*context, "spring.cloud.azure.servicebus.namespace=xxx")
 	}
 	if authType == internal.AuthTypeUserAssignedManagedIdentity {
 		(*console).Message(*context, "spring.cloud.azure.servicebus.connection-string=''")
 		(*console).Message(*context, "spring.cloud.azure.servicebus.credential.managed-identity-enabled=true")
-		(*console).Message(*context, "spring.cloud.azure.servicebus.credential.client-id")
+		(*console).Message(*context, "spring.cloud.azure.servicebus.credential.client-id=xxx")
 	} else if authType == internal.AuthTypeConnectionString {
-		(*console).Message(*context, "spring.cloud.azure.servicebus.connection-string")
+		(*console).Message(*context, "spring.cloud.azure.servicebus.connection-string=xxx")
 		(*console).Message(*context, "spring.cloud.azure.servicebus.credential.managed-identity-enabled=false")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.client-id")
+		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.client-id=xxx")
 	} else {
 		return fmt.Errorf("unsupported auth type for Service Bus. Supported types are: %s, %s",
 			internal.GetAuthTypeDescription(internal.AuthTypeUserAssignedManagedIdentity),
@@ -602,18 +602,18 @@ func printHintsAboutUseServiceBus(isJms bool, authType internal.AuthType,
 func printHintsAboutUseEventHubs(UseKafka bool, authType internal.AuthType,
 	console *input.Console, context *context.Context) error {
 	if !UseKafka {
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.namespace")
+		(*console).Message(*context, "spring.cloud.azure.eventhubs.namespace=xxx")
 	} else {
-		(*console).Message(*context, "spring.cloud.stream.kafka.binder.brokers")
+		(*console).Message(*context, "spring.cloud.stream.kafka.binder.brokers=xxx")
 	}
 	if authType == internal.AuthTypeUserAssignedManagedIdentity {
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.connection-string=''")
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.managed-identity-enabled=true")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.client-id")
+		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.client-id=xxx")
 	} else if authType == internal.AuthTypeConnectionString {
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.connection-string")
+		(*console).Message(*context, "spring.cloud.azure.eventhubs.connection-string=xxx")
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.managed-identity-enabled=false")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.client-id")
+		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.client-id=xxx")
 	} else {
 		return fmt.Errorf("unsupported auth type for Event Hubs. Supported types: %s, %s",
 			internal.GetAuthTypeDescription(internal.AuthTypeUserAssignedManagedIdentity),
@@ -624,15 +624,15 @@ func printHintsAboutUseEventHubs(UseKafka bool, authType internal.AuthType,
 
 func printHintsAboutUseStorageAccount(authType internal.AuthType,
 	console *input.Console, context *context.Context) error {
-	(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name")
+	(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name=xxx")
 	if authType == internal.AuthTypeUserAssignedManagedIdentity {
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string=''")
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled=true")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id")
+		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id=xxx")
 	} else if authType == internal.AuthTypeConnectionString {
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string")
+		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string=xxx")
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled=false")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id")
+		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id=xxx")
 	} else {
 		return fmt.Errorf("unsupported auth type for Storage Account. Supported types: %s, %s",
 			internal.GetAuthTypeDescription(internal.AuthTypeUserAssignedManagedIdentity),
@@ -644,9 +644,9 @@ func printHintsAboutUseStorageAccount(authType internal.AuthType,
 func printHintsAboutUseHostContainerApp(userResourceName string, usedResourceName string,
 	console *input.Console, context *context.Context) {
 	(*console).Message(*context, fmt.Sprintf("Environemnt variables in %s:", userResourceName))
-	(*console).Message(*context, fmt.Sprintf("%s_BASE_URL", strings.ToUpper(usedResourceName)))
+	(*console).Message(*context, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(usedResourceName)))
 	(*console).Message(*context, fmt.Sprintf("Environemnt variables in %s:", usedResourceName))
-	(*console).Message(*context, fmt.Sprintf("%s_BASE_URL", strings.ToUpper(userResourceName)))
+	(*console).Message(*context, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(userResourceName)))
 }
 
 func printHintsAboutUseOpenAiModel(console *input.Console, context *context.Context) {

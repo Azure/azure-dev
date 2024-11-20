@@ -191,6 +191,12 @@ func infraSpec(projectConfig *ProjectConfig,
 				AuthType:      props.AuthType,
 				UseKafka:      true,
 			}
+		case ResourceTypeStorage:
+			props := resource.Props.(StorageProps)
+			infraSpec.AzureStorageAccount = &scaffold.AzureDepStorageAccount{
+				ContainerNames: props.Containers,
+				AuthType:       props.AuthType,
+			}
 		case ResourceTypeHostContainerApp:
 			serviceSpec := scaffold.ServiceSpec{
 				Name: resource.Name,

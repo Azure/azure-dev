@@ -141,6 +141,11 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeStorage:
+		err := marshalRawProps(raw.Props.(StorageProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -216,6 +221,18 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = eh
+	case ResourceTypeMessagingKafka:
+		kp := KafkaProps{}
+		if err := unmarshalProps(&kp); err != nil {
+			return err
+		}
+		raw.Props = kp
+	case ResourceTypeStorage:
+		sp := StorageProps{}
+		if err := unmarshalProps(&sp); err != nil {
+			return err
+		}
+		raw.Props = sp
 	}
 
 	*r = ResourceConfig(raw)
@@ -282,4 +299,9 @@ type EventHubsProps struct {
 type KafkaProps struct {
 	Topics   []string          `yaml:"topics,omitempty"`
 	AuthType internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type StorageProps struct {
+	Containers []string          `yaml:"containers,omitempty"`
+	AuthType   internal.AuthType `yaml:"authType,omitempty"`
 }

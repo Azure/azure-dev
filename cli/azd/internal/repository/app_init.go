@@ -627,16 +627,21 @@ func (i *Initializer) prjConfigFromDetect(
 					},
 				}
 			case appdetect.AzureDepEventHubs:
+				azureDepEventHubs := azureDep.(appdetect.AzureDepEventHubs)
 				config.Resources["eventhubs"] = &project.ResourceConfig{
 					Type: project.ResourceTypeMessagingEventHubs,
 					Props: project.EventHubsProps{
-						EventHubNames: spec.AzureEventHubs.EventHubNames,
+						EventHubNames: azureDepEventHubs.Names,
 						AuthType:      authType,
 					},
 				}
 			case appdetect.AzureDepStorageAccount:
 				config.Resources["storage"] = &project.ResourceConfig{
 					Type: project.ResourceTypeStorage,
+					Props: project.StorageProps{
+						Containers: azureDep.(appdetect.AzureDepStorageAccount).ContainerNames,
+						AuthType:   authType,
+					},
 				}
 			}
 		}

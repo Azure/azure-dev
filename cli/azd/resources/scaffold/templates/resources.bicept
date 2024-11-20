@@ -66,9 +66,11 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
 {{- end}}
 
 {{- if .DbCosmosMongo}}
-module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
+module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
   name: 'cosmos'
   params: {
+    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    location: location
     tags: tags
     locations: [
       {
@@ -77,8 +79,11 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
         locationName: location
       }
     ]
-    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-    location: location
+    networkRestrictions: {
+      ipRules: []
+      virtualNetworkRules: []
+      publicNetworkAccess: 'Enabled'
+    }
     {{- if .DbCosmosMongo.DatabaseName}}
     mongodbDatabases: [
       {
@@ -86,8 +91,8 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
       }
     ]
     {{- end}}
-    secretsKeyVault: {
-      keyVaultName: keyVault.outputs.name
+    secretsExportConfiguration: {
+      keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: 'MONGODB-URL'
     }
     capabilitiesToAdd: [ 'EnableServerless' ]
@@ -127,6 +132,46 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
 }
 {{- end}}
 
+{{- if .AIModels}}
+var accountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
+module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
+  name: 'accountDeployment'
+  params: {
+    tags: tags
+    kind: 'OpenAI'
+    name: accountName
+    deployments: [
+      {{- range .AIModels}}
+      {
+        name: '{{.Name}}'
+        model: {
+          format: 'OpenAI'
+          name: '{{.Model.Name}}'
+          version: '{{.Model.Version}}'
+        }
+        sku: {
+          capacity: 20
+          name: 'Standard'
+        }
+      }
+      {{- end}}
+    ]
+    location: location
+    customSubDomainName: accountName
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, resourceGroup().id, 'localUser', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+{{- end}}
+
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
@@ -136,6 +181,17 @@ module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assi
     location: location
   }
 }
+
+{{- if .AIModels }}
+resource {{bicepName .Name}}OpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, resourceGroup().id, '{{bicepName .Name}}identity', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+{{- end}}
 
 module {{bicepName .Name}}FetchLatestImage './modules/fetch-container-image.bicep' = {
   name: '{{bicepName .Name}}-fetch-image'
@@ -170,6 +226,9 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
         {{- end}}
       ]
+      allowedMethods: [
+        '*'
+      ]
     }
     {{- end}}
     scaleMinReplicas: 1
@@ -180,7 +239,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {
           name: 'mongodb-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/MONGODB-URL'
+          keyVaultUrl: cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri
         }
         {{- end}}
         {{- if .DbPostgres}}
@@ -282,11 +341,17 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             secretRef: 'redis-pass'
           }
           {{- end}}
+          {{- if .AIModels}}
+          {
+            name: 'AZURE_OPENAI_ENDPOINT'
+            value: account.outputs.endpoint
+          }
+          {{- end}}
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
           {
             name: '{{upper .Name}}_BASE_URL'
-            value: 'https://{{.Name}}.internal.${containerAppsEnvironment.outputs.defaultDomain}'
+            value: 'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
           }
           {{- end}}
           {{- end}}
@@ -385,11 +450,19 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
+{{- range .Services}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = {{bicepName .Name}}.outputs.resourceId
+{{- end}}
+{{- end}}
+{{- if  .AIModels}}
+{{- range .AIModels}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = '${account.outputs.resourceId}/deployments/{{.Name}}'
+{{- end}}
 {{- end}}
 {{- if .DbRedis}}
-output AZURE_CACHE_REDIS_ID string = redis.outputs.resourceId
+output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
-output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = postgreServer.outputs.resourceId
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgreServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
 {{- end}}
 {{ end}}

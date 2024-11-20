@@ -34,6 +34,25 @@ import (
 // The parent of the login command.
 const loginCmdParentAnnotation = "loginCmdParent"
 
+// azurePipelinesClientIDEnvVarName is the name of the environment variable that contains the client ID for the principal
+// to use when authenticating with Azure Pipelines via OIDC. It is set by both the AzureCLI@2 and AzurePowerShell@5 tasks
+// when using a service connection or can be set manually when not using these tasks.
+const azurePipelinesClientIDEnvVarName = "AZURESUBSCRIPTION_CLIENT_ID"
+
+// azurePipelinesTenantIDEnvVarName is the name of the environment variable that contains the tenant ID for the principal
+// to use when authenticating with Azure Pipelines via OIDC. It is set by both the AzureCLI@2 and AzurePowerShell@5 tasks
+// when using a service connection or can be set manually when not using these tasks.
+const azurePipelinesTenantIDEnvVarName = "AZURESUBSCRIPTION_TENANT_ID"
+
+// AzurePipelinesServiceConnectionNameEnvVarName is the name of the environment variable that contains the name of the
+// service connection to use when authenticating with Azure Pipelines via OIDC. It is set by both the AzureCLI@2 and
+// AzurePowerShell@5 tasks when using a service connection or can be set manually when not using these tasks.
+const azurePipelinesServiceConnectionIDEnvVarName = "AZURESUBSCRIPTION_SERVICE_CONNECTION_ID"
+
+// azurePipelinesProvider is the name of the federated token provider to use when authenticating with Azure Pipelines via
+// OIDC.
+const azurePipelinesProvider string = "azure-pipelines"
+
 type authLoginFlags struct {
 	loginFlags
 }
@@ -319,7 +338,12 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if la.flags.clientID == "" {
+	forceRefresh := false
+	if v, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH")); err == nil && v {
+		forceRefresh = true
+	}
+
+	if la.flags.clientID == "" || forceRefresh {
 		// Update the subscriptions cache for regular users (i.e. non-service-principals).
 		// The caching is done here to increase responsiveness of listing subscriptions in the application.
 		// It also allows an implicit command for the user to refresh cached subscriptions.
@@ -389,6 +413,18 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 }
 
 func (la *loginAction) login(ctx context.Context) error {
+	if la.flags.federatedTokenProvider == azurePipelinesProvider {
+		if la.flags.clientID == "" {
+			log.Printf("setting client id from environment variable %s", azurePipelinesClientIDEnvVarName)
+			la.flags.clientID = os.Getenv(azurePipelinesClientIDEnvVarName)
+		}
+
+		if la.flags.tenantID == "" {
+			log.Printf("setting tenant id from environment variable %s", azurePipelinesClientIDEnvVarName)
+			la.flags.tenantID = os.Getenv(azurePipelinesTenantIDEnvVarName)
+		}
+	}
+
 	if la.flags.managedIdentity {
 		if _, err := la.authManager.LoginWithManagedIdentity(
 			ctx, la.flags.clientID,
@@ -451,9 +487,22 @@ func (la *loginAction) login(ctx context.Context) error {
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.federatedTokenProvider != "":
-			if _, err := la.authManager.LoginWithServicePrincipalFederatedTokenProvider(
-				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedTokenProvider,
+		case la.flags.federatedTokenProvider == "github":
+			if _, err := la.authManager.LoginWithGitHubFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		case la.flags.federatedTokenProvider == azurePipelinesProvider:
+			serviceConnectionID := os.Getenv(azurePipelinesServiceConnectionIDEnvVarName)
+
+			if serviceConnectionID == "" {
+				return fmt.Errorf("must set %s for azure-pipelines federated token provider",
+					azurePipelinesServiceConnectionIDEnvVarName)
+			}
+
+			if _, err := la.authManager.LoginWithAzurePipelinesFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID, serviceConnectionID,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}

@@ -21,6 +21,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -320,6 +321,11 @@ func NewRootCmd(
 			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+	root.
+		Add("add", &actions.ActionDescriptorOptions{
+			Command:        add.NewAddCmd(),
+			ActionResolver: add.NewAddAction,
+		})
 
 	// Register any global middleware defined by the caller
 	if len(middlewareChain) > 0 {

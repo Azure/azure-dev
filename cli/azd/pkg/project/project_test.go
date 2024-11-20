@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -13,7 +14,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
@@ -341,4 +344,133 @@ services:
 	assert.Equal(t, filepath.FromSlash("./iac"), projectConfig.Infra.Path)
 	assert.Equal(t, filepath.FromSlash("src/api"), projectConfig.Services["api"].RelativePath)
 	assert.Equal(t, filepath.FromSlash("bin/api"), projectConfig.Services["api"].OutputPath)
+}
+
+func Test_HooksFromFolderPath(t *testing.T) {
+	t.Run("ProjectInfraHooks", func(t *testing.T) {
+		prj := &ProjectConfig{
+			Name:     "minimal",
+			Services: map[string]*ServiceConfig{},
+		}
+		contents, err := yaml.Marshal(prj)
+		require.NoError(t, err)
+
+		tempDir := t.TempDir()
+
+		azureYamlPath := filepath.Join(tempDir, "azure.yaml")
+		err = os.WriteFile(azureYamlPath, contents, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		infraPath := filepath.Join(tempDir, "infra")
+		err = os.Mkdir(infraPath, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		hooksPath := filepath.Join(infraPath, "main.hooks.yaml")
+		hooksContent := []byte(`
+prebuild:
+  shell: sh
+  run: ./pre-build.sh
+postbuild:
+  shell: pwsh
+  run: ./post-build.ps1
+`)
+
+		err = os.WriteFile(hooksPath, hooksContent, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		expectedHooks := HooksConfig{
+			"prebuild": {{
+				Name:            "",
+				Shell:           ext.ShellTypeBash,
+				Run:             "./pre-build.sh",
+				ContinueOnError: false,
+				Interactive:     false,
+				Windows:         nil,
+				Posix:           nil,
+			}},
+			"postbuild": {{
+				Name:            "",
+				Shell:           ext.ShellTypePowershell,
+				Run:             "./post-build.ps1",
+				ContinueOnError: false,
+				Interactive:     false,
+				Windows:         nil,
+				Posix:           nil,
+			},
+			}}
+
+		project, err := Load(context.Background(), azureYamlPath)
+		require.NoError(t, err)
+		require.Equal(t, expectedHooks, project.Hooks)
+	})
+
+	t.Run("DoubleDefintionHooks", func(t *testing.T) {
+		prj := &ProjectConfig{
+			Name:     "minimal",
+			Services: map[string]*ServiceConfig{},
+			Hooks: HooksConfig{
+				"prebuild": {{
+					Shell: ext.ShellTypeBash,
+					Run:   "./pre-build.sh",
+				}},
+			},
+		}
+		contents, err := yaml.Marshal(prj)
+		require.NoError(t, err)
+
+		tempDir := t.TempDir()
+
+		azureYamlPath := filepath.Join(tempDir, "azure.yaml")
+		err = os.WriteFile(azureYamlPath, contents, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		infraPath := filepath.Join(tempDir, "infra")
+		err = os.Mkdir(infraPath, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		hooksPath := filepath.Join(infraPath, "main.hooks.yaml")
+		hooksContent := []byte(`
+prebuild:
+  shell: sh
+  run: ./pre-build-external.sh
+postbuild:
+  shell: pwsh
+  run: ./post-build.ps1
+`)
+
+		err = os.WriteFile(hooksPath, hooksContent, osutil.PermissionDirectory)
+		require.NoError(t, err)
+
+		project, err := Load(context.Background(), azureYamlPath)
+		require.NoError(t, err)
+		expectedHooks := HooksConfig{
+			"prebuild": {{
+				Name:            "",
+				Shell:           ext.ShellTypeBash,
+				Run:             "./pre-build.sh",
+				ContinueOnError: false,
+				Interactive:     false,
+				Windows:         nil,
+				Posix:           nil,
+			}, {
+				Name:            "",
+				Shell:           ext.ShellTypeBash,
+				Run:             "./pre-build-external.sh",
+				ContinueOnError: false,
+				Interactive:     false,
+				Windows:         nil,
+				Posix:           nil,
+			}},
+			"postbuild": {{
+				Name:            "",
+				Shell:           ext.ShellTypePowershell,
+				Run:             "./post-build.ps1",
+				ContinueOnError: false,
+				Interactive:     false,
+				Windows:         nil,
+				Posix:           nil,
+			}},
+		}
+		require.Equal(t, expectedHooks, project.Hooks)
+	})
 }

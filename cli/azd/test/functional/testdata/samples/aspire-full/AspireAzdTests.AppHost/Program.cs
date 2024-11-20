@@ -2,6 +2,9 @@ using Aspire.Hosting.Azure;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
+// test param with default value
+var goVersion = builder.AddParameter("goversion", "1.22", publishValueAsDefault: true);
+
 // redis instance the app will use for simple messages
 var redisPubSub = builder.AddRedis("pubsub");
 
@@ -38,6 +41,7 @@ _ = builder
                             .WithReference(messageQueue)
                             .WithReference(apiservice)
                             .WithReference(cosmosDb)
-                            .WithReference(workerProj);
+                            .WithReference(workerProj)
+                            .WithEnvironment("GOVERSION", goVersion);
 
 builder.Build().Run();

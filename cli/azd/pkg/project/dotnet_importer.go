@@ -83,7 +83,7 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bo
 		return v.is, v.err
 	}
 
-	value, err := ai.dotnetCli.GetMsBuildProperty(ctx, projectPath, "IsAspireHost")
+	isAppHost, err := ai.dotnetCli.IsAspireHostProject(ctx, projectPath)
 	if err != nil {
 		ai.hostCheck[projectPath] = hostCheckResult{
 			is:  false,
@@ -94,11 +94,11 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bo
 	}
 
 	ai.hostCheck[projectPath] = hostCheckResult{
-		is:  strings.TrimSpace(value) == "true",
+		is:  isAppHost,
 		err: nil,
 	}
 
-	return strings.TrimSpace(value) == "true", nil
+	return isAppHost, nil
 }
 
 func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *ServiceConfig) (*Infra, error) {

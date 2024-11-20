@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -100,6 +101,7 @@ services:
 
 	npmCli := npm.NewCli(mockContext.CommandRunner)
 	docker := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 
 	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
@@ -107,7 +109,8 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
+		NewContainerHelper(
+			env, envManager, clock.NewMock(), nil, nil, docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -194,6 +197,7 @@ services:
 
 	npmCli := npm.NewCli(mockContext.CommandRunner)
 	docker := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
@@ -211,7 +215,8 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
+		NewContainerHelper(
+			env, envManager, clock.NewMock(), nil, nil, docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -444,6 +449,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			}
 
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
+			dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, tt.language)
 			serviceConfig.Project.Path = temp
 			serviceConfig.Docker = tt.dockerOptions
@@ -466,7 +472,8 @@ func Test_DockerProject_Build(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, dotnetCli, mockContext.Console,
+					cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
@@ -582,13 +589,15 @@ func Test_DockerProject_Package(t *testing.T) {
 
 			env := environment.NewWithValues("test", map[string]string{})
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
+			dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, dotnetCli, mockContext.Console,
+					cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)

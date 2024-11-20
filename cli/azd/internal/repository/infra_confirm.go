@@ -52,7 +52,7 @@ func (i *Initializer) infraSpecFromDetect(
 					continue
 				}
 				authType, err := chooseAuthTypeByPrompt(
-					dbName,
+					database.Display(),
 					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
 					ctx,
 					i.console)
@@ -70,7 +70,7 @@ func (i *Initializer) infraSpecFromDetect(
 					continue
 				}
 				authType, err := chooseAuthTypeByPrompt(
-					dbName,
+					database.Display(),
 					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
 					ctx,
 					i.console)
@@ -219,7 +219,9 @@ func promptPortNumber(console input.Console, ctx context.Context, promptMessage 
 func promptDbName(console input.Console, ctx context.Context, database appdetect.DatabaseDep) (string, error) {
 	for {
 		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Input the name of the app database (%s)", database.Display()),
+			Message: fmt.Sprintf("Input the databaseName for %s "+
+				"(Not databaseServerName. This url can explain the difference: "+
+				"'jdbc:mysql://databaseServerName:3306/databaseName'):", database.Display()),
 			Help: "Hint: App database name\n\n" +
 				"Name of the database that the app connects to. " +
 				"This database will be created after running azd provision or azd up." +

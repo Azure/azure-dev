@@ -58,6 +58,8 @@ func (r ResourceType) String() string {
 		return "Event Hubs"
 	case ResourceTypeMessagingKafka:
 		return "Kafka"
+	case ResourceTypeStorage:
+		return "Storage Account"
 	}
 
 	return ""

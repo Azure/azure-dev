@@ -518,6 +518,14 @@ func (i *Initializer) prjConfigFromDetect(
 							},
 						}
 					}
+				case appdetect.AzureDepStorageAccount:
+					config.Resources["storage"] = &project.ResourceConfig{
+						Type: project.ResourceTypeStorage,
+						Props: project.StorageProps{
+							Containers: spec.AzureStorageAccount.ContainerNames,
+							AuthType:   spec.AzureStorageAccount.AuthType,
+						},
+					}
 
 				}
 			}

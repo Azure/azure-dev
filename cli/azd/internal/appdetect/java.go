@@ -33,7 +33,9 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			pomFile := filepath.Join(path, entry.Name())
 			project, err := readMavenProject(pomFile)
 			if err != nil {
-				return nil, fmt.Errorf("error reading pom.xml: %w", err)
+				log.Printf("Please edit azure.yaml manually to satisfy your requirement. azd can not help you "+
+					"to that by detect your java project because error happened when reading pom.xml: %s. ", err)
+				return nil, nil
 			}
 
 			if len(project.Modules) > 0 {
@@ -58,7 +60,9 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				DetectionRule: "Inferred by presence of: pom.xml",
 			})
 			if err != nil {
-				return nil, fmt.Errorf("detecting dependencies: %w", err)
+				log.Printf("Please edit azure.yaml manually to satisfy your requirement. azd can not help you "+
+					"to that by detect your java project because error happened when detecting dependencies: %s", err)
+				return nil, nil
 			}
 
 			tracing.SetUsageAttributes(fields.AppInitJavaDetect.String("finish"))

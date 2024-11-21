@@ -875,6 +875,6 @@ func promptSpringBootVersion(console input.Console, ctx context.Context) (string
 	case 1:
 		return "3.x", nil
 	default:
-		panic("unhandled selection")
+		return appdetect.UnknownSpringBootVersion, nil
 	}
 }

@@ -23,6 +23,7 @@ func GetAuthTypeDescription(authType AuthType) string {
 		return "Connection string"
 	case AuthTypeUserAssignedManagedIdentity:
 		return "User assigned managed identity"
+	default:
+		return "Unspecified"
 	}
-	panic("unknown auth type")
 }

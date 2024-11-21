@@ -18,8 +18,6 @@ import (
 )
 
 func Test_DeploymentStacks(t *testing.T) {
-	t.Skip("azure/azure-dev#4341")
-
 	t.Run("Subscription_Scope_Up_Down", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := newTestContext(t)

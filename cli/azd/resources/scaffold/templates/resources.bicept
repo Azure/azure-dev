@@ -870,7 +870,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: serviceBusNamespace.outputs.name
           }
           {{- end}}
-          {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
+          {{- if (and (and .AzureServiceBus (eq .AzureServiceBus.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) (not .AzureServiceBus.IsJms)) }}
           {
             name: 'spring.cloud.azure.servicebus.connection-string'
             value: ''
@@ -908,6 +908,30 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: 'premium'
           }
           {{- end}}
+
+          {{- if (and (and .AzureServiceBus (eq .AzureServiceBus.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) .AzureServiceBus.IsJms) }}
+          {
+            name: 'spring.jms.servicebus.passwordless-enabled'
+            value: 'true'
+          }
+          {
+            name: 'spring.jms.servicebus.namespace'
+            value: serviceBusNamespace.outputs.name
+          }
+          {
+            name: 'spring.jms.servicebus.credential.managed-identity-enabled'
+            value: 'true'
+          }
+          {
+            name: 'spring.jms.servicebus.credential.client-id'
+            value: {{bicepName .Name}}Identity.outputs.clientId
+          }
+          {
+            name: 'spring.jms.servicebus.pricing-tier'
+            value: 'premium'
+          }
+          {{- end}}
+
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
           {

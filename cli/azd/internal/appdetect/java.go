@@ -165,28 +165,42 @@ func detectDependencies(currentRoot *mavenProject, mavenProject *mavenProject, p
 	for _, dep := range mavenProject.Dependencies {
 		if dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j" {
 			databaseDepMap[DbMySql] = struct{}{}
+			log.Printf("Detected 'db.mysql' because found this dependency in project: " +
+				"com.mysql:mysql-connector-j.")
 		}
 
 		if dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql" {
 			databaseDepMap[DbPostgres] = struct{}{}
+			log.Printf("Detected 'db.postgres' because found this dependency in project: " +
+				"org.postgresql:postgresql")
 		}
 
 		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-data-cosmos" {
 			databaseDepMap[DbCosmos] = struct{}{}
+			log.Printf("Detected 'db.cosmos' because found this dependency in project: " +
+				"com.azure.spring:spring-cloud-azure-starter-data-cosmos.")
 		}
 
 		if dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-redis" {
 			databaseDepMap[DbRedis] = struct{}{}
+			log.Printf("Detected 'db.redis' because found this dependency in project: " +
+				"org.springframework.boot:spring-boot-starter-data-redis.")
 		}
 		if dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-redis-reactive" {
 			databaseDepMap[DbRedis] = struct{}{}
+			log.Printf("Detected 'db.redis' because found this dependency in project: " +
+				"org.springframework.boot:spring-boot-starter-data-redis-reactive.")
 		}
 
 		if dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb" {
 			databaseDepMap[DbMongo] = struct{}{}
+			log.Printf("Detected 'db.mongo' because found this dependency in project: " +
+				"org.springframework.boot:spring-boot-starter-data-mongodb.")
 		}
 		if dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb-reactive" {
 			databaseDepMap[DbMongo] = struct{}{}
+			log.Printf("Detected 'db.mongo' because found this dependency in project: " +
+				"org.springframework.boot:spring-boot-starter-data-mongodb-reactive.")
 		}
 
 		// we need to figure out multiple projects are using the same service bus
@@ -194,19 +208,28 @@ func detectDependencies(currentRoot *mavenProject, mavenProject *mavenProject, p
 			project.AzureDeps = append(project.AzureDeps, AzureDepServiceBus{
 				IsJms: true,
 			})
+			log.Printf("Detected 'messaging.servicebus' because found this dependency in project: " +
+				"com.azure.spring:spring-cloud-azure-starter-servicebus-jms.")
 		}
 
 		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-stream-binder-servicebus" {
 			bindingDestinations := findBindingDestinations(applicationProperties)
 			destinations := make([]string, 0, len(bindingDestinations))
-			for bindingName, destination := range bindingDestinations {
-				destinations = append(destinations, destination)
-				log.Printf("Service Bus queue [%s] found for binding [%s]", destination, bindingName)
+			for _, destination := range bindingDestinations {
+				if !contains(destinations, destination) {
+					destinations = append(destinations, destination)
+				}
 			}
 			project.AzureDeps = append(project.AzureDeps, AzureDepServiceBus{
 				Queues: destinations,
 				IsJms:  false,
 			})
+			log.Printf("Detected 'messaging.servicebus' because found this dependency in project: " +
+				"com.azure.spring:spring-cloud-azure-stream-binder-servicebus")
+			for bindingName, destination := range bindingDestinations {
+				log.Printf("  Detected Service Bus queue [%s] for binding [%s] by analyzing property file.",
+					destination, bindingName)
+			}
 		}
 
 		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-stream-binder-eventhubs" {
@@ -219,28 +242,36 @@ func detectDependencies(currentRoot *mavenProject, mavenProject *mavenProject, p
 				}
 				if !contains(destinations, destination) {
 					destinations = append(destinations, destination)
-					log.Printf("Event Hubs [%s] found for binding [%s]", destination, bindingName)
 				}
 			}
 			project.AzureDeps = append(project.AzureDeps, AzureDepEventHubs{
 				Names:    destinations,
 				UseKafka: false,
 			})
+			log.Printf("Detected 'messaging.eventhubs' because found this dependency in project: " +
+				"com.azure.spring:spring-cloud-azure-stream-binder-eventhubs.")
+			for bindingName, destination := range bindingDestinations {
+				log.Printf("  Detected Event Hub [%s] for binding [%s] by analyzing property file.",
+					destination, bindingName)
+			}
 			if containsInBinding {
 				project.AzureDeps = append(project.AzureDeps, AzureDepStorageAccount{
 					ContainerNames: []string{
 						applicationProperties["spring.cloud.azure.eventhubs.processor.checkpoint-store.container-name"]},
 				})
+				log.Printf("Detected 'storage' because found this property in property file: " +
+					"spring.cloud.azure.eventhubs.processor.checkpoint-store.container-name.")
+				log.Printf("  Storage account container name: [%s].",
+					applicationProperties["spring.cloud.azure.eventhubs.processor.checkpoint-store.container-name"])
 			}
 		}
 
 		if dep.GroupId == "org.springframework.cloud" && dep.ArtifactId == "spring-cloud-starter-stream-kafka" {
 			bindingDestinations := findBindingDestinations(applicationProperties)
 			var destinations []string
-			for bindingName, destination := range bindingDestinations {
+			for _, destination := range bindingDestinations {
 				if !contains(destinations, destination) {
 					destinations = append(destinations, destination)
-					log.Printf("Kafka Topic [%s] found for binding [%s]", destination, bindingName)
 				}
 			}
 			project.AzureDeps = append(project.AzureDeps, AzureDepEventHubs{
@@ -248,6 +279,12 @@ func detectDependencies(currentRoot *mavenProject, mavenProject *mavenProject, p
 				UseKafka:          true,
 				SpringBootVersion: springBootVersion,
 			})
+			log.Printf("Detected 'messaging.eventhubs' because found this dependency in project: " +
+				"org.springframework.cloud:spring-cloud-starter-stream-kafka.")
+			for bindingName, destination := range bindingDestinations {
+				log.Printf("  Detected Kafka Topic [%s] for binding [%s] by analyzing property file.",
+					destination, bindingName)
+			}
 		}
 
 		if dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter" {

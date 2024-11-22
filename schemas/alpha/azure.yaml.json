@@ -401,7 +401,7 @@
                     { "if": { "properties": { "type": { "const": "messaging.servicebus"  }}}, "then": { "$ref": "#/definitions/serviceBusResource"} },
                     { "if": { "properties": { "type": { "const": "messaging.eventhubs"  }}}, "then": { "$ref": "#/definitions/eventHubsResource"} },
                     { "if": { "properties": { "type": { "const": "messaging.kafka"  }}}, "then": { "$ref": "#/definitions/kafkaResource"} },
-                    { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/resource"} }
+                    { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} }
                 ]
             }
         },
@@ -1370,6 +1370,34 @@
                     "type": "string",
                     "title": "The Azure MongoDB Name",
                     "description": "The name of Azure CosmosDB API for MongoDB."
+                }
+            }
+        },
+        "storageAccountResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Storage Account.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "authType": {
+                    "type": "string",
+                    "title": "Authentication Type",
+                    "description": "The type of authentication used for Azure Storage Account.",
+                    "enum": [
+                        "USER_ASSIGNED_MANAGED_IDENTITY",
+                        "CONNECTION_STRING"
+                    ]
+                },
+                "containers": {
+                    "type": "array",
+                    "title": "Azure Storage Account container names.",
+                    "description": "The container names of Azure Storage Account.",
+                    "items": {
+                        "type": "string",
+                        "title": "Azure Storage Account container name",
+                        "description": "The container name of Azure Storage Account."
+                    }
                 }
             }
         },

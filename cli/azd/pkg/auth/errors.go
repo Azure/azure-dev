@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
@@ -27,6 +28,8 @@ type ReLoginRequiredError struct {
 
 	// The scenario in which the login is required
 	scenario string
+
+	description string
 }
 
 // newReLoginRequiredError returns an error if the response indicates that the user needs to reauthenticate.
@@ -47,13 +50,15 @@ func newReLoginRequiredError(
 		"interaction_required":
 		err := ReLoginRequiredError{}
 		err.init(response, scopes, cloud)
-		return &err, true
+		errWithSuggestion := err.ErrorWithSuggestion()
+		return &errWithSuggestion, true
 	}
 
 	return nil, false
 }
 
 func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string, cloud *cloud.Cloud) {
+	e.description = response.ErrorDescription
 	e.scenario = "reauthentication required"
 	e.loginCmd = "azd auth login"
 	if !matchesLoginScopes(scopes, cloud) { // if matching default login scopes, no scopes need to be specified
@@ -68,7 +73,14 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 }
 
 func (e *ReLoginRequiredError) Error() string {
-	return fmt.Sprintf("%s, run `%s` to log in", e.scenario, e.loginCmd)
+	return e.description
+}
+
+func (e *ReLoginRequiredError) ErrorWithSuggestion() internal.ErrorWithSuggestion {
+	return internal.ErrorWithSuggestion {
+		Err: e,
+		Suggestion: fmt.Sprintf("Suggestion: %s, run `%s` to acquire a new token", e.scenario, e.loginCmd),
+	}
 }
 
 // matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.

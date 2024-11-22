@@ -587,12 +587,23 @@ func (i *Initializer) prjConfigFromDetect(
 					},
 				}
 			case appdetect.DbCosmos:
+				cosmosDBProps := project.CosmosDBProps{
+					DatabaseName: databaseName,
+				}
+				containers, err := detectCosmosSqlDatabaseContainersInDirectory(detect.root)
+				if err != nil {
+					return config, err
+				}
+				for _, container := range containers {
+					cosmosDBProps.Containers = append(cosmosDBProps.Containers, project.CosmosDBContainerProps{
+						ContainerName:     container.ContainerName,
+						PartitionKeyPaths: container.PartitionKeyPaths,
+					})
+				}
 				resourceConfig = project.ResourceConfig{
-					Type: project.ResourceTypeDbCosmos,
-					Name: "cosmos",
-					Props: project.CosmosDBProps{
-						DatabaseName: databaseName,
-					},
+					Type:  project.ResourceTypeDbCosmos,
+					Name:  "cosmos",
+					Props: cosmosDBProps,
 				}
 			case appdetect.DbPostgres:
 				resourceConfig = project.ResourceConfig{

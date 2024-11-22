@@ -310,9 +310,11 @@ func printHintsAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectCo
 				return fmt.Errorf("in azure.yaml, (%s) uses (%s), but (%s) doesn't",
 					userResourceName, usedResourceName, usedResourceName)
 			}
-			(*console).Message(*context, fmt.Sprintf("CAUTION: In azure.yaml, '%s' uses '%s'. "+
-				"After deployed, the 'uses' is achieved by providing these environment variables: ",
-				userResourceName, usedResourceName))
+			if *console != nil {
+				(*console).Message(*context, fmt.Sprintf("CAUTION: In azure.yaml, '%s' uses '%s'. "+
+					"After deployed, the 'uses' is achieved by providing these environment variables: ",
+					userResourceName, usedResourceName))
+			}
 			switch usedResource.Type {
 			case ResourceTypeDbPostgres:
 				err := printHintsAboutUsePostgres(userSpec.DbPostgres.AuthType, console, context)
@@ -356,7 +358,10 @@ func printHintsAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectCo
 					"which is doen't add necessary environment variable",
 					userResource.Name, usedResource.Name, usedResource.Name, usedResource.Type)
 			}
-			(*console).Message(*context, "Please make sure your application used the right environment variable name.\n")
+			if *console != nil {
+				(*console).Message(*context, "Please make sure your application used the right environment variable name.\n")
+			}
+
 		}
 	}
 	return nil
@@ -485,7 +490,7 @@ func fulfillFrontendBackend(
 
 	usedSpec := getServiceSpecByName(infraSpec, usedResource.Name)
 	if usedSpec == nil {
-		return fmt.Errorf("'%s' uses '%s', but %s doesn't", userSpec.Name, usedResource.Name, usedResource.Name)
+		return fmt.Errorf("'%s' uses '%s', but %s doesn't exist", userSpec.Name, usedResource.Name, usedResource.Name)
 	}
 	if usedSpec.Backend == nil {
 		usedSpec.Backend = &scaffold.Backend{}
@@ -506,6 +511,9 @@ func getServiceSpecByName(infraSpec *scaffold.InfraSpec, name string) *scaffold.
 
 func printHintsAboutUsePostgres(authType internal.AuthType,
 	console *input.Console, context *context.Context) error {
+	if *console == nil {
+		return nil
+	}
 	(*console).Message(*context, "POSTGRES_HOST=xxx")
 	(*console).Message(*context, "POSTGRES_DATABASE=xxx")
 	(*console).Message(*context, "POSTGRES_PORT=xxx")
@@ -534,6 +542,9 @@ func printHintsAboutUsePostgres(authType internal.AuthType,
 
 func printHintsAboutUseMySql(authType internal.AuthType,
 	console *input.Console, context *context.Context) error {
+	if *console == nil {
+		return nil
+	}
 	(*console).Message(*context, "MYSQL_HOST=xxx")
 	(*console).Message(*context, "MYSQL_DATABASE=xxx")
 	(*console).Message(*context, "MYSQL_PORT=xxx")
@@ -560,6 +571,9 @@ func printHintsAboutUseMySql(authType internal.AuthType,
 }
 
 func printHintsAboutUseRedis(console *input.Console, context *context.Context) {
+	if *console == nil {
+		return
+	}
 	(*console).Message(*context, "REDIS_HOST=xxx")
 	(*console).Message(*context, "REDIS_PORT=xxx")
 	(*console).Message(*context, "REDIS_URL=xxx")
@@ -569,18 +583,27 @@ func printHintsAboutUseRedis(console *input.Console, context *context.Context) {
 }
 
 func printHintsAboutUseMongo(console *input.Console, context *context.Context) {
+	if *console == nil {
+		return
+	}
 	(*console).Message(*context, "MONGODB_URL=xxx")
 	(*console).Message(*context, "spring.data.mongodb.uri=xxx")
 	(*console).Message(*context, "spring.data.mongodb.database=xxx")
 }
 
 func printHintsAboutUseCosmos(console *input.Console, context *context.Context) {
+	if *console == nil {
+		return
+	}
 	(*console).Message(*context, "spring.cloud.azure.cosmos.endpoint=xxx")
 	(*console).Message(*context, "spring.cloud.azure.cosmos.database=xxx")
 }
 
 func printHintsAboutUseServiceBus(isJms bool, authType internal.AuthType,
 	console *input.Console, context *context.Context) error {
+	if *console == nil {
+		return nil
+	}
 	if !isJms {
 		(*console).Message(*context, "spring.cloud.azure.servicebus.namespace=xxx")
 	}
@@ -602,6 +625,9 @@ func printHintsAboutUseServiceBus(isJms bool, authType internal.AuthType,
 
 func printHintsAboutUseEventHubs(UseKafka bool, authType internal.AuthType, springBootVersion string,
 	console *input.Console, context *context.Context) error {
+	if *console == nil {
+		return nil
+	}
 	if !UseKafka {
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.namespace=xxx")
 	} else {
@@ -630,6 +656,9 @@ func printHintsAboutUseEventHubs(UseKafka bool, authType internal.AuthType, spri
 
 func printHintsAboutUseStorageAccount(authType internal.AuthType,
 	console *input.Console, context *context.Context) error {
+	if *console == nil {
+		return nil
+	}
 	(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name=xxx")
 	if authType == internal.AuthTypeUserAssignedManagedIdentity {
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string=''")
@@ -649,6 +678,9 @@ func printHintsAboutUseStorageAccount(authType internal.AuthType,
 
 func printHintsAboutUseHostContainerApp(userResourceName string, usedResourceName string,
 	console *input.Console, context *context.Context) {
+	if *console == nil {
+		return
+	}
 	(*console).Message(*context, fmt.Sprintf("Environemnt variables in %s:", userResourceName))
 	(*console).Message(*context, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(usedResourceName)))
 	(*console).Message(*context, fmt.Sprintf("Environemnt variables in %s:", usedResourceName))
@@ -656,5 +688,8 @@ func printHintsAboutUseHostContainerApp(userResourceName string, usedResourceNam
 }
 
 func printHintsAboutUseOpenAiModel(console *input.Console, context *context.Context) {
+	if *console == nil {
+		return
+	}
 	(*console).Message(*context, "AZURE_OPENAI_ENDPOINT")
 }

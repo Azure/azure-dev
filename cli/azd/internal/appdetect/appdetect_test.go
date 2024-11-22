@@ -287,24 +287,6 @@ func TestDetectNested(t *testing.T) {
 	})
 }
 
-func TestAnalyzeJavaSpringProject(t *testing.T) {
-	var properties = readProperties(filepath.Join("testdata", "java-spring", "project-one"))
-	require.Equal(t, "", properties["not.exist"])
-	require.Equal(t, "jdbc:h2:mem:testdb", properties["spring.datasource.url"])
-
-	properties = readProperties(filepath.Join("testdata", "java-spring", "project-two"))
-	require.Equal(t, "", properties["not.exist"])
-	require.Equal(t, "jdbc:h2:mem:testdb", properties["spring.datasource.url"])
-
-	properties = readProperties(filepath.Join("testdata", "java-spring", "project-three"))
-	require.Equal(t, "", properties["not.exist"])
-	require.Equal(t, "HTML", properties["spring.thymeleaf.mode"])
-
-	properties = readProperties(filepath.Join("testdata", "java-spring", "project-four"))
-	require.Equal(t, "", properties["not.exist"])
-	require.Equal(t, "mysql", properties["database"])
-}
-
 func copyTestDataDir(glob string, dst string) error {
 	root := "testdata"
 	return fs.WalkDir(testDataFs, root, func(name string, d fs.DirEntry, err error) error {

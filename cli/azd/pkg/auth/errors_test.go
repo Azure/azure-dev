@@ -100,3 +100,21 @@ func TestReLoginRequired(t *testing.T) {
 		})
 	}
 }
+
+func TestReLoginRequiredDescription(t *testing.T) {
+	tests := []struct {
+		name string
+		resp *AadErrorResponse
+		want string
+	}{
+		{"invalid_grant", &AadErrorResponse{Error: "invalid_grant", ErrorDescription: "AADSTS50005"}, "AADSTS50005"},
+		{"interaction_required", &AadErrorResponse{Error: "interaction_required", ErrorDescription: "AADSTS50076"}, "AADSTS50076"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err, _ := newReLoginRequiredError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic())
+			got := err.Error()
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

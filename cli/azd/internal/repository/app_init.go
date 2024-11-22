@@ -450,6 +450,9 @@ func (i *Initializer) prjConfigFromDetect(
 					config.Resources["mongo"] = &project.ResourceConfig{
 						Type: project.ResourceTypeDbMongo,
 						Name: spec.DbCosmosMongo.DatabaseName,
+						Props: project.MongoDBProps{
+							DatabaseName: spec.DbCosmosMongo.DatabaseName,
+						},
 					}
 				case appdetect.DbPostgres:
 					config.Resources["postgres"] = &project.ResourceConfig{

@@ -294,7 +294,7 @@ type ServiceBusProps struct {
 }
 
 type EventHubsProps struct {
-	EventHubNames []string          `yaml:"EventHubNames,omitempty"`
+	EventHubNames []string          `yaml:"eventHubNames,omitempty"`
 	AuthType      internal.AuthType `yaml:"authType,omitempty"`
 }
 

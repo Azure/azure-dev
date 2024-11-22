@@ -368,10 +368,15 @@
                         "title": "Type of resource",
                         "description": "The type of resource to be created. (Example: db.postgres)",
                         "enum": [
-                            "db.postgres",
                             "db.mysql",
+                            "db.postgres",
                             "db.redis",
                             "db.mongo",
+                            "db.cosmos",
+                            "messaging.servicebus",
+                            "messaging.eventhubs",
+                            "messaging.kafka",
+                            "storage",
                             "ai.openai.model",
                             "host.containerapp"
                         ]
@@ -383,43 +388,20 @@
                             "type": "string"
                         },
                         "uniqueItems": true
-                    },
-                    "authType": {
-                      "type": "string",
-                      "title": "The authentication type of Azure resource used for the application",
-                      "description": "The application uses this kind of authentication to connect to the Azure resource.",
-                      "enum": [
-                        "managedIdentity",
-                        "usernamePassword"
-                      ]
-                    },
-                    "databaseName": {
-                      "type": "string",
-                      "title": "The name of Azure resource that the application depends on",
-                      "description": "The Azure resource that will be accessed during application runtime."
                     }
                 },
                 "allOf": [
                     { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
                     { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
-                    { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "db.mysql" }}}, "then": { "$ref": "#/definitions/mySqlDbResource"} },
+                    { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/postgreSqlDbResource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
-                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} }，,
-                    {
-                      "if": {
-                        "properties": {
-                          "type": {
-                            "const": "db.mysql"
-                          }
-                        }
-                      },
-                      "then": {
-                        "required": [
-                          "authType",
-                          "databaseName"
-                        ]
-                      }
-                    }
+                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/mongoDbResource"} },
+                    { "if": { "properties": { "type": { "const": "db.cosmos"  }}}, "then": { "$ref": "#/definitions/cosmosDbResource"} },
+                    { "if": { "properties": { "type": { "const": "messaging.servicebus"  }}}, "then": { "$ref": "#/definitions/serviceBusResource"} },
+                    { "if": { "properties": { "type": { "const": "messaging.eventhubs"  }}}, "then": { "$ref": "#/definitions/eventHubsResource"} },
+                    { "if": { "properties": { "type": { "const": "messaging.kafka"  }}}, "then": { "$ref": "#/definitions/kafkaResource"} },
+                    { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/resource"} }
                 ]
             }
         },
@@ -1238,11 +1220,10 @@
                 "type": {
                     "type": "string",
                     "title": "Type of resource",
-                    "description": "The type of resource to be created. (Example: db.postgres)",
+                    "description": "The type of resource to be created. (Example: db.redis)",
                     "enum": [
-                        "db.postgres",
                         "db.redis",
-                        "db.mongo",
+                        "storage",
                         "host.containerapp",
                         "ai.openai.model"
                     ]
@@ -1329,6 +1310,187 @@
                             "description": "Required. The version of the AI model."
                         }
                     }
+                }
+            }
+        },
+        "mySqlDbResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Database for MySQL flexible server.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "authType": {
+                    "type": "string",
+                    "title": "Authentication Type",
+                    "description": "The type of authentication used for Azure MySQL database.",
+                    "enum": [
+                        "USER_ASSIGNED_MANAGED_IDENTITY",
+                        "PASSWORD"
+                    ]
+                },
+                "databaseName": {
+                    "type": "string",
+                    "title": "The Azure MySQL Database Name",
+                    "description": "The name of Azure MySQL database."
+                }
+            }
+        },
+        "postgreSqlDbResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Database for PostgreSQL flexible server.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "authType": {
+                    "type": "string",
+                    "title": "Authentication Type",
+                    "description": "The type of authentication used for Azure PostgreSQL database.",
+                    "enum": [
+                        "USER_ASSIGNED_MANAGED_IDENTITY",
+                        "PASSWORD"
+                    ]
+                },
+                "databaseName": {
+                    "type": "string",
+                    "title": "The Azure PostgreSQL Database Name",
+                    "description": "The name of Azure PostgreSQL database."
+                }
+            }
+        },
+        "mongoDbResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure CosmosDB API for MongoDB.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "databaseName": {
+                    "type": "string",
+                    "title": "The Azure MongoDB Name",
+                    "description": "The name of Azure CosmosDB API for MongoDB."
+                }
+            }
+        },
+        "cosmosDbResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Cosmos DB for NoSQL.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "databaseName": {
+                    "type": "string",
+                    "title": "The Azure Cosmos DB Name",
+                    "description": "The name of Azure Cosmos DB."
+                },
+                "containers": {
+                    "type": "array",
+                    "title": "Azure Cosmos DB Containers",
+                    "description": "A list of containers in the Azure CosmosDB.",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "containerName": {
+                                "type": "string",
+                                "title": "Container Name",
+                                "description": "The name of the container."
+                            },
+                            "partitionKeyPaths": {
+                                "type": "array",
+                                "title": "Partition Key Paths",
+                                "description": "A list of partition key paths for the container.",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "serviceBusResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Service Bus.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "queues": {
+                    "type": "array",
+                    "title": "Service Bus Queues",
+                    "description": "A list of Service Bus queues.",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "isJms": {
+                    "type": "boolean",
+                    "title": "Is JMS",
+                    "description": "Indicates if JMS is enabled for the Service Bus."
+                },
+                "authType": {
+                    "type": "string",
+                    "title": "Authentication Type",
+                    "description": "The type of authentication used for the Service Bus.",
+                    "enum": [
+                        "USER_ASSIGNED_MANAGED_IDENTITY",
+                        "CONNECTION_STRING"
+                    ]
+                }
+            }
+        },
+        "eventHubsResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Event Hubs.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "eventHubNames": {
+                    "type": "array",
+                    "title": "Event Hub Names",
+                    "description": "A list of Event Hub names.",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "authType": {
+                    "type": "string",
+                    "title": "Authentication Type",
+                    "description": "The type of authentication used for Event Hubs.",
+                    "enum": [
+                        "USER_ASSIGNED_MANAGED_IDENTITY",
+                        "CONNECTION_STRING"
+                    ]
+                }
+            }
+        },
+        "kafkaResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Event Hubs for Apache Kafka.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "topics": {
+                    "type": "array",
+                    "title": "Topics",
+                    "description": "A list of Kafka topics.",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "authType": {
+                    "type": "string",
+                    "title": "Authentication Type",
+                    "description": "The type of authentication used for Kafka.",
+                    "enum": [
+                        "USER_ASSIGNED_MANAGED_IDENTITY",
+                        "CONNECTION_STRING"
+                    ]
                 }
             }
         }

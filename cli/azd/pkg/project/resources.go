@@ -299,8 +299,9 @@ type EventHubsProps struct {
 }
 
 type KafkaProps struct {
-	Topics   []string          `yaml:"topics,omitempty"`
-	AuthType internal.AuthType `yaml:"authType,omitempty"`
+	Topics            []string          `yaml:"topics,omitempty"`
+	AuthType          internal.AuthType `yaml:"authType,omitempty"`
+	SpringBootVersion string            `yaml:"springBootVersion,omitempty"`
 }
 
 type StorageProps struct {

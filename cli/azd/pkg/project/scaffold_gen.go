@@ -187,9 +187,10 @@ func infraSpec(projectConfig *ProjectConfig,
 		case ResourceTypeMessagingKafka:
 			props := resource.Props.(KafkaProps)
 			infraSpec.AzureEventHubs = &scaffold.AzureDepEventHubs{
-				EventHubNames: props.Topics,
-				AuthType:      props.AuthType,
-				UseKafka:      true,
+				EventHubNames:     props.Topics,
+				AuthType:          props.AuthType,
+				UseKafka:          true,
+				SpringBootVersion: props.SpringBootVersion,
 			}
 		case ResourceTypeStorage:
 			props := resource.Props.(StorageProps)
@@ -337,7 +338,7 @@ func printHintsAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectCo
 				}
 			case ResourceTypeMessagingEventHubs, ResourceTypeMessagingKafka:
 				err := printHintsAboutUseEventHubs(userSpec.AzureEventHubs.UseKafka,
-					userSpec.AzureEventHubs.AuthType, console, context)
+					userSpec.AzureEventHubs.AuthType, userSpec.AzureEventHubs.SpringBootVersion, console, context)
 				if err != nil {
 					return err
 				}
@@ -599,12 +600,17 @@ func printHintsAboutUseServiceBus(isJms bool, authType internal.AuthType,
 	return nil
 }
 
-func printHintsAboutUseEventHubs(UseKafka bool, authType internal.AuthType,
+func printHintsAboutUseEventHubs(UseKafka bool, authType internal.AuthType, springBootVersion string,
 	console *input.Console, context *context.Context) error {
 	if !UseKafka {
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.namespace=xxx")
 	} else {
 		(*console).Message(*context, "spring.cloud.stream.kafka.binder.brokers=xxx")
+		if strings.HasPrefix(springBootVersion, "2.") {
+			(*console).Message(*context, "spring.cloud.stream.binders.kafka.environment.spring.main.sources=com.azure.spring.cloud.autoconfigure.eventhubs.kafka.AzureEventHubsKafkaAutoConfiguration")
+		} else if strings.HasPrefix(springBootVersion, "3.") {
+			(*console).Message(*context, "spring.cloud.stream.binders.kafka.environment.spring.main.sources=com.azure.spring.cloud.autoconfigure.implementation.eventhubs.kafka.AzureEventHubsKafkaAutoConfiguration")
+		}
 	}
 	if authType == internal.AuthTypeUserAssignedManagedIdentity {
 		(*console).Message(*context, "spring.cloud.azure.eventhubs.connection-string=''")

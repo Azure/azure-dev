@@ -1491,6 +1491,11 @@
                         "USER_ASSIGNED_MANAGED_IDENTITY",
                         "CONNECTION_STRING"
                     ]
+                },
+                "springBootVersion": {
+                    "type": "string",
+                    "title": "Spring Boot Version",
+                    "description": "The Spring Boot version used in the project."
                 }
             }
         }

@@ -508,8 +508,9 @@ func (i *Initializer) prjConfigFromDetect(
 						config.Resources["kafka"] = &project.ResourceConfig{
 							Type: project.ResourceTypeMessagingKafka,
 							Props: project.KafkaProps{
-								Topics:   spec.AzureEventHubs.EventHubNames,
-								AuthType: spec.AzureEventHubs.AuthType,
+								Topics:            spec.AzureEventHubs.EventHubNames,
+								AuthType:          spec.AzureEventHubs.AuthType,
+								SpringBootVersion: spec.AzureEventHubs.SpringBootVersion,
 							},
 						}
 					} else {
@@ -639,12 +640,23 @@ func (i *Initializer) prjConfigFromDetect(
 				}
 			case appdetect.AzureDepEventHubs:
 				azureDepEventHubs := azureDep.(appdetect.AzureDepEventHubs)
-				config.Resources["eventhubs"] = &project.ResourceConfig{
-					Type: project.ResourceTypeMessagingEventHubs,
-					Props: project.EventHubsProps{
-						EventHubNames: azureDepEventHubs.Names,
-						AuthType:      authType,
-					},
+				if azureDepEventHubs.UseKafka {
+					config.Resources["kafka"] = &project.ResourceConfig{
+						Type: project.ResourceTypeMessagingKafka,
+						Props: project.KafkaProps{
+							Topics:            azureDepEventHubs.Names,
+							AuthType:          authType,
+							SpringBootVersion: azureDepEventHubs.SpringBootVersion,
+						},
+					}
+				} else {
+					config.Resources["eventhubs"] = &project.ResourceConfig{
+						Type: project.ResourceTypeMessagingEventHubs,
+						Props: project.EventHubsProps{
+							EventHubNames: azureDepEventHubs.Names,
+							AuthType:      authType,
+						},
+					}
 				}
 			case appdetect.AzureDepStorageAccount:
 				config.Resources["storage"] = &project.ResourceConfig{
@@ -690,7 +702,11 @@ func (i *Initializer) prjConfigFromDetect(
 				case appdetect.AzureDepServiceBus:
 					resSpec.Uses = append(resSpec.Uses, "servicebus")
 				case appdetect.AzureDepEventHubs:
-					resSpec.Uses = append(resSpec.Uses, "eventhubs")
+					if azureDep.(appdetect.AzureDepEventHubs).UseKafka {
+						resSpec.Uses = append(resSpec.Uses, "kafka")
+					} else {
+						resSpec.Uses = append(resSpec.Uses, "eventhubs")
+					}
 				case appdetect.AzureDepStorageAccount:
 					resSpec.Uses = append(resSpec.Uses, "storage")
 				}

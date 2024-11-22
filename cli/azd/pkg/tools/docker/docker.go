@@ -263,9 +263,9 @@ func (d *Cli) CheckInstalled(ctx context.Context) error {
 	if !supported {
 		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
 	}
-	// Check if docker is running
+	// Check if docker daemon is running
 	if _, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "ps"); err != nil {
-		return err
+		return fmt.Errorf("the Docker daemon is not running, please start the Docker service: %w", err)
 	}
 	return nil
 }

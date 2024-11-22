@@ -77,8 +77,8 @@ func (e *ReLoginRequiredError) Error() string {
 }
 
 func (e *ReLoginRequiredError) ErrorWithSuggestion() internal.ErrorWithSuggestion {
-	return internal.ErrorWithSuggestion {
-		Err: e,
+	return internal.ErrorWithSuggestion{
+		Err:        e,
 		Suggestion: fmt.Sprintf("Suggestion: %s, run `%s` to acquire a new token", e.scenario, e.loginCmd),
 	}
 }

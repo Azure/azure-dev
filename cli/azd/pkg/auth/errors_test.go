@@ -107,8 +107,22 @@ func TestReLoginRequiredDescription(t *testing.T) {
 		resp *AadErrorResponse
 		want string
 	}{
-		{"invalid_grant", &AadErrorResponse{Error: "invalid_grant", ErrorDescription: "AADSTS50005"}, "AADSTS50005"},
-		{"interaction_required", &AadErrorResponse{Error: "interaction_required", ErrorDescription: "AADSTS50076"}, "AADSTS50076"},
+		{
+			"invalid_grant",
+			&AadErrorResponse{
+				Error:            "invalid_grant",
+				ErrorDescription: "AADSTS50005",
+			},
+			"AADSTS50005",
+		},
+		{
+			"interaction_required",
+			&AadErrorResponse{
+				Error:            "interaction_required",
+				ErrorDescription: "AADSTS50076",
+			},
+			"AADSTS50076",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

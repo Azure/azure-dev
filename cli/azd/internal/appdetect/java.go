@@ -7,6 +7,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"

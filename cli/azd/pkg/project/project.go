@@ -265,13 +265,13 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
-	version := "v1.0"
+	version := "alpha"
 	if projectConfig.MetaSchemaVersion != "" {
 		version = projectConfig.MetaSchemaVersion
 	}
 
 	annotation := fmt.Sprintf(
-		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/%s/azure.yaml.json",
+		"# yaml-language-server: $schema=https://raw.githubusercontent.com/azure-javaee/azure-dev/feature/sjad/schemas/%s/azure.yaml.json",
 		version)
 	projectFileContents := bytes.NewBufferString(annotation + "\n\n")
 	_, err = projectFileContents.Write(projectBytes)

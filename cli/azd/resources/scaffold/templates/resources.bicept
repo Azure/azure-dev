@@ -520,7 +520,7 @@ module {{bicepName .Name}}FetchLatestImage './modules/fetch-container-image.bice
   name: '{{bicepName .Name}}-fetch-image'
   params: {
     exists: {{bicepName .Name}}Exists
-    name: '{{.Name}}'
+    name: '{{containerAppName .Name}}'
   }
 }
 

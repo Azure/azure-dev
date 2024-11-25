@@ -50,8 +50,10 @@ func newReLoginRequiredError(
 		"interaction_required":
 		err := ReLoginRequiredError{}
 		err.init(response, scopes, cloud)
-		errWithSuggestion := err.ErrorWithSuggestion()
-		return &errWithSuggestion, true
+		return &internal.ErrorWithSuggestion{
+			Err:        &err,
+			Suggestion: fmt.Sprintf("Suggestion: %s, run `%s` to acquire a new token", err.scenario, err.loginCmd),
+		}, true
 	}
 
 	return nil, false
@@ -74,13 +76,6 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 
 func (e *ReLoginRequiredError) Error() string {
 	return e.description
-}
-
-func (e *ReLoginRequiredError) ErrorWithSuggestion() internal.ErrorWithSuggestion {
-	return internal.ErrorWithSuggestion{
-		Err:        e,
-		Suggestion: fmt.Sprintf("Suggestion: %s, run `%s` to acquire a new token", e.scenario, e.loginCmd),
-	}
 }
 
 // matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.

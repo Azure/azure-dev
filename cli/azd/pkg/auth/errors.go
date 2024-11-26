@@ -75,15 +75,16 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 		}
 	}
 
-	// BadTokenDueToSignInFrequency - The refresh token has expired or is invalid due to sign-in frequency checks by Conditional Access.
+	// The refresh token has expired or is invalid due to sign-in frequency checks by Conditional Access.
 	if slices.Contains(response.ErrorCodes, 70043) {
 		e.scenario = "login expired"
 	}
 
-	// DevicePolicyError - User tried to sign in to a device from a platform not currently supported through Conditional Access policy
+	// User tried to sign in to a device from a platform not currently supported through Conditional Access policy
 	if slices.Contains((response.ErrorCodes), 50005) {
 		e.loginCmd += " --use-device-code=false"
 		// TODO: Use aka.ms short link
+		//nolint:lll
 		e.helpLink = "https://learn.microsoft.com/azure/developer/azure-developer-cli/troubleshoot#azd-pipeline-config-failure-due-to-conditional-access-policy"
 	}
 }

@@ -443,6 +443,7 @@ func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			console:             mocks.NewMockContext(context.Background()).Console,
 		},
 	}
 

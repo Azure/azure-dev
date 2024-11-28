@@ -17,3 +17,5 @@ resource connectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' =
     value: listKeys(concat(resourceId('Microsoft.EventHub/namespaces', eventHubsNamespaceName), '/AuthorizationRules/RootManageSharedAccessKey'), eventHubsNamespace.apiVersion).primaryConnectionString
   }
 }
+
+output keyVaultUrl string = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/${connectionStringSecretName}'

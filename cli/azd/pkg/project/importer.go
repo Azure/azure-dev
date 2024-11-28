@@ -6,7 +6,6 @@ package project
 import (
 	"context"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"io/fs"
 	"log"
 	"os"
@@ -20,13 +19,11 @@ import (
 
 type ImportManager struct {
 	dotNetImporter *DotNetImporter
-	console        input.Console
 }
 
-func NewImportManager(dotNetImporter *DotNetImporter, console input.Console) *ImportManager {
+func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,
-		console:        console,
 	}
 }
 
@@ -170,7 +167,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(featureCompose)
 	if composeEnabled && len(projectConfig.Resources) > 0 {
-		return tempInfra(ctx, projectConfig, &im.console, &ctx)
+		return tempInfra(ctx, projectConfig, im.dotNetImporter.console)
 	}
 
 	if !composeEnabled && len(projectConfig.Resources) > 0 {
@@ -212,7 +209,7 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 
 	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(featureCompose)
 	if composeEnabled && len(projectConfig.Resources) > 0 {
-		return infraFsForProject(ctx, projectConfig, &im.console, &ctx)
+		return infraFsForProject(ctx, projectConfig, im.dotNetImporter.console)
 	}
 
 	if !composeEnabled && len(projectConfig.Resources) > 0 {

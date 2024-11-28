@@ -98,7 +98,7 @@ type ServiceSpec struct {
 	Name string
 	Port int
 
-	Env map[string]string
+	Envs []Env
 
 	// Front-end properties.
 	Frontend *Frontend
@@ -120,6 +120,74 @@ type ServiceSpec struct {
 	AzureEventHubs      *AzureDepEventHubs
 	AzureStorageAccount *AzureDepStorageAccount
 }
+
+type Env struct {
+	Name  string
+	Value string
+}
+
+var resourceConnectionEnvPrefix = "$resource.connection"
+
+func isResourceConnectionEnv(env string) bool {
+	if !strings.HasPrefix(env, resourceConnectionEnvPrefix) {
+		return false
+	}
+	a := strings.Split(env, ":")
+	if len(a) != 3 {
+		return false
+	}
+	return a[0] != "" && a[1] != "" && a[2] != ""
+}
+
+func ToResourceConnectionEnv(resourceType ResourceType, resourceInfoType ResourceInfoType) string {
+	return fmt.Sprintf("%s:%s:%s", resourceConnectionEnvPrefix, resourceType, resourceInfoType)
+}
+
+func toResourceConnectionInfo(resourceConnectionEnv string) (resourceType ResourceType,
+	resourceInfoType ResourceInfoType) {
+	if !isResourceConnectionEnv(resourceConnectionEnv) {
+		return "", ""
+	}
+	a := strings.Split(resourceConnectionEnv, ":")
+	return ResourceType(a[1]), ResourceInfoType(a[2])
+}
+
+// todo merge ResourceType and project.ResourceType
+// Not use project.ResourceType because it will cause cycle import.
+// Not merge it in current PR to avoid conflict with upstream main branch.
+// Solution proposal: define a ResourceType in lower level that can be used both in scaffold and project package.
+
+type ResourceType string
+
+const (
+	ResourceTypeDbRedis             ResourceType = "db.redis"
+	ResourceTypeDbPostgres          ResourceType = "db.postgres"
+	ResourceTypeDbMySQL             ResourceType = "db.mysql"
+	ResourceTypeDbMongo             ResourceType = "db.mongo"
+	ResourceTypeDbCosmos            ResourceType = "db.cosmos"
+	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
+	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
+	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
+	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
+	ResourceTypeMessagingKafka      ResourceType = "messaging.kafka"
+	ResourceTypeStorage             ResourceType = "storage"
+)
+
+type ResourceInfoType string
+
+const (
+	ResourceInfoTypeHost             ResourceInfoType = "host"
+	ResourceInfoTypePort             ResourceInfoType = "port"
+	ResourceInfoTypeEndpoint         ResourceInfoType = "endpoint"
+	ResourceInfoTypeDatabaseName     ResourceInfoType = "databaseName"
+	ResourceInfoTypeNamespace        ResourceInfoType = "namespace"
+	ResourceInfoTypeAccountName      ResourceInfoType = "accountName"
+	ResourceInfoTypeUsername         ResourceInfoType = "username"
+	ResourceInfoTypePassword         ResourceInfoType = "password"
+	ResourceInfoTypeUrl              ResourceInfoType = "url"
+	ResourceInfoTypeJdbcUrl          ResourceInfoType = "jdbcUrl"
+	ResourceInfoTypeConnectionString ResourceInfoType = "connectionString"
+)
 
 type Frontend struct {
 	Backends []ServiceReference

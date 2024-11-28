@@ -75,6 +75,7 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
 {{- end}}
 
 {{- if .DbCosmosMongo}}
+var mongoDatabaseName = '{{ .DbCosmosMongo.DatabaseName }}'
 module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
   name: 'cosmos'
   params: {
@@ -93,13 +94,11 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
       virtualNetworkRules: []
       publicNetworkAccess: 'Enabled'
     }
-    {{- if .DbCosmosMongo.DatabaseName}}
     mongodbDatabases: [
       {
-        name: '{{ .DbCosmosMongo.DatabaseName }}'
+        name: mongoDatabaseName
       }
     ]
-    {{- end}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: 'MONGODB-URL'
@@ -109,7 +108,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
 }
 {{- end}}
 {{- if .DbCosmos }}
-
+var cosmosDatabaseName = '{{ .DbCosmos.DatabaseName }}'
 module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
   name: 'cosmos'
   params: {
@@ -147,7 +146,9 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
     ]
     sqlRoleAssignmentsPrincipalIds: [
       {{- range .Services}}
+      {{- if .DbCosmos }}
       {{bicepName .Name}}Identity.outputs.principalId
+      {{- end}}
       {{- end}}
     ]
     sqlRoleDefinitions: [
@@ -321,8 +322,8 @@ module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.7.1' = {
     name: '${abbrs.eventHubNamespaces}${resourceToken}'
     location: location
     roleAssignments: [
-      {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
       {{- range .Services}}
+      {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
         principalType: 'ServicePrincipal'
@@ -372,8 +373,8 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
     }
     location: location
     roleAssignments: [
-      {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
       {{- range .Services}}
+      {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
         principalType: 'ServicePrincipal'
@@ -411,8 +412,8 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.10.0' = {
     // Non-required parameters
     location: location
     roleAssignments: [
-      {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
       {{- range .Services}}
+      {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
         principalType: 'ServicePrincipal'
@@ -486,7 +487,7 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 }
 {{- end}}
 
-{{- range .Services}}
+{{- range $service := .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
   name: '{{bicepName .Name}}identity'
@@ -558,65 +559,22 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     scaleMaxReplicas: 10
     secrets: {
       secureList:  union([
-        {{- if .DbCosmosMongo}}
+        {{- range $env := .Envs}}
+        {{- if (shouldAddToBicepFile $service $env.Name) }}
+        {{- if (eq (toBicepEnv $env).BicepEnvType "keyVaultSecret") }}
         {
-          name: 'mongodb-url'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri
+          name: '{{ (toBicepEnv $env).SecretName }}'
+          identity:{{bicepName $service.Name}}Identity.outputs.resourceId
+          keyVaultUrl: {{ (toBicepEnv $env).SecretValue }}
         }
         {{- end}}
-        {{- if (and .DbPostgres (eq .DbPostgres.AuthType "PASSWORD")) }}
+        {{- if (eq (toBicepEnv $env).BicepEnvType "secret") }}
         {
-          name: 'postgresql-password'
-          value: postgreSqlDatabasePassword
-        }
-        {
-          name: 'postgresql-db-url'
-          value: 'postgresql://${postgreSqlDatabaseUser}:${postgreSqlDatabasePassword}@${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'
+          name: '{{ (toBicepEnv $env).SecretName }}'
+          value: {{ (toBicepEnv $env).SecretValue }}
         }
         {{- end}}
-        {{- if (and .DbMySql (eq .DbMySql.AuthType "PASSWORD")) }}
-        {
-          name: 'mysql-password'
-          value: mysqlDatabasePassword
-        }
-        {
-          name: 'mysql-db-url'
-          value: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
-        }
         {{- end}}
-        {{- if .DbRedis}}
-        {
-          name: 'redis-pass'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
-        }
-        {
-          name: 'redis-url'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
-        }
-        {{- end}}
-        {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "CONNECTION_STRING")) }}
-        {
-          name: 'event-hubs-connection-string'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/EVENT-HUBS-CONNECTION-STRING'
-        }
-        {{- end}}
-        {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "CONNECTION_STRING")) }}
-        {
-          name: 'servicebus-connection-string'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/SERVICEBUS-CONNECTION-STRING'
-        }
-        {{- end}}
-        {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "CONNECTION_STRING")) }}
-        {
-          name: 'storage-account-connection-string'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/STORAGE-ACCOUNT-CONNECTION-STRING'
-        }
         {{- end}}
       ],
       map({{bicepName .Name}}Secrets, secret => {
@@ -633,6 +591,26 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           memory: '1.0Gi'
         }
         env: union([
+          {{- range $env := .Envs }}
+          {{- if (shouldAddToBicepFile $service $env.Name) }}
+          {{- if (or (eq (toBicepEnv $env).BicepEnvType "keyVaultSecret") (eq (toBicepEnv $env).BicepEnvType "secret")) }}
+          {
+            name: '{{ (toBicepEnv $env).Name }}'
+            secretRef: '{{ (toBicepEnv $env).SecretName }}'
+          }
+          {{- end}}
+          {{- if (eq (toBicepEnv $env).BicepEnvType "plainText") }}
+          {
+            name: '{{ (toBicepEnv $env).Name }}'
+            {{- if (eq (toBicepEnv $env).PlainTextValue "'__PlaceHolderForServiceIdentityClientId'")}}
+            value: {{bicepName $service.Name}}Identity.outputs.clientId
+            {{- else}}
+            value: {{ (toBicepEnv $env).PlainTextValue }}
+            {{- end}}
+          }
+          {{- end}}
+          {{- end}}
+          {{- end}}
           {
             name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
             value: monitoring.outputs.applicationInsightsConnectionString
@@ -641,297 +619,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'AZURE_CLIENT_ID'
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
-          {{- if .DbCosmosMongo}}
-          {
-            name: 'MONGODB_URL'
-            secretRef: 'mongodb-url'
-          }
-          {
-            name: 'spring.data.mongodb.uri'
-            secretRef: 'mongodb-url'
-          }
-          {
-            name: 'spring.data.mongodb.database'
-            value: '{{ .DbCosmosMongo.DatabaseName }}'
-          }
-          {{- end}}
-          {{- if .DbPostgres}}
-          {
-            name: 'POSTGRES_HOST'
-            value: postgreServer.outputs.fqdn
-          }
-          {
-            name: 'POSTGRES_DATABASE'
-            value: postgreSqlDatabaseName
-          }
-          {
-            name: 'POSTGRES_PORT'
-            value: '5432'
-          }
-          {{- end}}
-          {{- if (and .DbPostgres (eq .DbPostgres.AuthType "PASSWORD")) }}
-          {
-            name: 'POSTGRES_URL'
-            secretRef: 'postgresql-db-url'
-          }
-          {
-            name: 'POSTGRES_USERNAME'
-            value: postgreSqlDatabaseUser
-          }
-          {
-            name: 'POSTGRES_PASSWORD'
-            secretRef: 'postgresql-password'
-          }
-          {
-            name: 'spring.datasource.url'
-            value: 'jdbc:postgresql://${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'
-          }
-          {
-            name: 'spring.datasource.username'
-            value: postgreSqlDatabaseUser
-          }
-          {
-            name: 'spring.datasource.password'
-            secretRef: 'postgresql-password'
-          }
-          {{- end}}
-          {{- if .DbMySql}}
-          {
-            name: 'MYSQL_HOST'
-            value: mysqlServer.outputs.fqdn
-          }
-          {
-            name: 'MYSQL_DATABASE'
-            value: mysqlDatabaseName
-          }
-          {
-            name: 'MYSQL_PORT'
-            value: '3306'
-          }
-          {{- end}}
-          {{- if (and .DbMySql (eq .DbMySql.AuthType "PASSWORD")) }}
-          {
-            name: 'MYSQL_URL'
-            secretRef: 'mysql-db-url'
-          }
-          {
-            name: 'MYSQL_USERNAME'
-            value: mysqlDatabaseUser
-          }
-          {
-            name: 'MYSQL_PASSWORD'
-            secretRef: 'mysql-password'
-          }
-          {
-            name: 'spring.datasource.url'
-            value: 'jdbc:mysql://${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
-          }
-          {
-            name: 'spring.datasource.username'
-            value: mysqlDatabaseUser
-          }
-          {
-            name: 'spring.datasource.password'
-            secretRef: 'mysql-password'
-          }
-          {{- end}}
-          {{- if .DbCosmos }}
-          {
-            name: 'spring.cloud.azure.cosmos.endpoint'
-            value: cosmos.outputs.endpoint
-          }
-          {
-            name: 'spring.cloud.azure.cosmos.database'
-            value: '{{ .DbCosmos.DatabaseName }}'
-          }
-          {{- end}}
-          {{- if .DbRedis}}
-          {
-            name: 'REDIS_HOST'
-            value: redis.outputs.hostName
-          }
-          {
-            name: 'REDIS_PORT'
-            value: string(redis.outputs.sslPort)
-          }
-          {
-            name: 'REDIS_URL'
-            secretRef: 'redis-url'
-          }
-          {
-            name: 'REDIS_ENDPOINT'
-            value: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
-          }
-          {
-            name: 'REDIS_PASSWORD'
-            secretRef: 'redis-pass'
-          }
-          {
-            name: 'spring.data.redis.url'
-            secretRef: 'redis-url'
-          }
-          {{- end}}
-          {{- if .AIModels}}
-          {
-            name: 'AZURE_OPENAI_ENDPOINT'
-            value: account.outputs.endpoint
-          }
-          {{- end}}
-          {{- if (and .AzureEventHubs (not .AzureEventHubs.UseKafka)) }}
-          {
-            name: 'spring.cloud.azure.eventhubs.namespace'
-            value: eventHubNamespace.outputs.name
-          }
-          {{- end}}
-          {{- if (and .AzureEventHubs .AzureEventHubs.UseKafka) }}
-          {
-            name: 'spring.cloud.stream.kafka.binder.brokers'
-            value: '${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'
-          }
-          {{- if (hasPrefix .AzureEventHubs.SpringBootVersion "2.") }}
-          {
-            name: 'spring.cloud.stream.binders.kafka.environment.spring.main.sources'
-            value: 'com.azure.spring.cloud.autoconfigure.eventhubs.kafka.AzureEventHubsKafkaAutoConfiguration'
-          }
-          {{- end}}
-          {{- if (hasPrefix .AzureEventHubs.SpringBootVersion "3.") }}
-          {
-            name: 'spring.cloud.stream.binders.kafka.environment.spring.main.sources'
-            value: 'com.azure.spring.cloud.autoconfigure.implementation.eventhubs.kafka.AzureEventHubsKafkaAutoConfiguration'
-          }
-          {{- end}}
-          {{- end}}
-          {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
-          {
-            name: 'spring.cloud.azure.eventhubs.credential.managed-identity-enabled'
-            value: 'true'
-          }
-          {
-            name: 'spring.cloud.azure.eventhubs.credential.client-id'
-            value: {{bicepName .Name}}Identity.outputs.clientId
-          }
-          {
-            name: 'spring.cloud.azure.eventhubs.connection-string'
-            value: ''
-          }
-          {{- end}}
-          {{- if (and .AzureEventHubs (eq .AzureEventHubs.AuthType "CONNECTION_STRING")) }}
-          {
-            name: 'spring.cloud.azure.eventhubs.connection-string'
-            secretRef: 'event-hubs-connection-string'
-          }
-          {
-            name: 'spring.cloud.azure.eventhubs.credential.managed-identity-enabled'
-            value: 'false'
-          }
-          {
-            name: 'spring.cloud.azure.eventhubs.credential.client-id'
-            value: ''
-          }
-          {{- end}}
-          {{- if .AzureStorageAccount }}
-          {
-            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name'
-            value: storageAccountName
-          }
-          {{- end}}
-          {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
-          {
-            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string'
-            value: ''
-          }
-          {
-            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled'
-            value: 'true'
-          }
-          {
-            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id'
-            value: {{bicepName .Name}}Identity.outputs.clientId
-          }
-          {{- end}}
-          {{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "CONNECTION_STRING")) }}
-          {
-            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string'
-            secretRef: 'storage-account-connection-string'
-          }
-          {
-            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled'
-            value: 'false'
-          }
-          {
-            name: 'spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id'
-            value: ''
-          }
-          {{- end}}
-
-          {{- if and .AzureServiceBus (not .AzureServiceBus.IsJms)}}
-          {
-            name: 'spring.cloud.azure.servicebus.namespace'
-            value: serviceBusNamespace.outputs.name
-          }
-          {{- end}}
-          {{- if (and (and .AzureServiceBus (eq .AzureServiceBus.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) (not .AzureServiceBus.IsJms)) }}
-          {
-            name: 'spring.cloud.azure.servicebus.connection-string'
-            value: ''
-          }
-          {
-            name: 'spring.cloud.azure.servicebus.credential.managed-identity-enabled'
-            value: 'true'
-          }
-          {
-            name: 'spring.cloud.azure.servicebus.credential.client-id'
-            value: {{bicepName .Name}}Identity.outputs.clientId
-          }
-          {{- end}}
-          {{- if (and (and .AzureServiceBus (eq .AzureServiceBus.AuthType "CONNECTION_STRING")) (not .AzureServiceBus.IsJms)) }}
-          {
-            name: 'spring.cloud.azure.servicebus.connection-string'
-            secretRef: 'servicebus-connection-string'
-          }
-          {
-            name: 'spring.cloud.azure.servicebus.credential.managed-identity-enabled'
-            value: 'false'
-          }
-          {
-            name: 'spring.cloud.azure.eventhubs.credential.client-id'
-            value: ''
-          }
-          {{- end}}
-          {{- if (and (and .AzureServiceBus (eq .AzureServiceBus.AuthType "CONNECTION_STRING")) .AzureServiceBus.IsJms) }}
-          {
-            name: 'spring.jms.servicebus.connection-string'
-            secretRef: 'servicebus-connection-string'
-          }
-          {
-            name: 'spring.jms.servicebus.pricing-tier'
-            value: 'premium'
-          }
-          {{- end}}
-
-          {{- if (and (and .AzureServiceBus (eq .AzureServiceBus.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) .AzureServiceBus.IsJms) }}
-          {
-            name: 'spring.jms.servicebus.passwordless-enabled'
-            value: 'true'
-          }
-          {
-            name: 'spring.jms.servicebus.namespace'
-            value: serviceBusNamespace.outputs.name
-          }
-          {
-            name: 'spring.jms.servicebus.credential.managed-identity-enabled'
-            value: 'true'
-          }
-          {
-            name: 'spring.jms.servicebus.credential.client-id'
-            value: {{bicepName .Name}}Identity.outputs.clientId
-          }
-          {
-            name: 'spring.jms.servicebus.pricing-tier'
-            value: 'premium'
-          }
-          {{- end}}
-
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
           {

@@ -27,3 +27,6 @@ resource urlSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
   }
 }
 
+output keyVaultUrlForPass string = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/${passwordSecretName}'
+output keyVaultUrlForUrl string = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/${urlSecretName}'
+

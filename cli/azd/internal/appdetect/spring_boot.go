@@ -188,7 +188,7 @@ func detectEventHubsAccordingToSpringCloudStreamBinderMavenDependency(
 
 func detectEventHubsAccordingToSpringCloudStreamKafkaMavenDependency(
 	azdProject *Project, springBootProject *SpringBootProject) {
-	var targetGroupId = "com.azure.spring"
+	var targetGroupId = "org.springframework.cloud"
 	var targetArtifactId = "spring-cloud-starter-stream-kafka"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
 		bindingDestinations := getBindingDestinationMap(springBootProject.applicationProperties)

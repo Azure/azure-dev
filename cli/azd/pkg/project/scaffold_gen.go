@@ -21,14 +21,13 @@ import (
 )
 
 // Generates the in-memory contents of an `infra` directory.
-func infraFs(_ context.Context, prjConfig *ProjectConfig,
-	console *input.Console, context *context.Context) (fs.FS, error) {
+func infraFs(cxt context.Context, prjConfig *ProjectConfig, console input.Console) (fs.FS, error) {
 	t, err := scaffold.Load()
 	if err != nil {
 		return nil, fmt.Errorf("loading scaffold templates: %w", err)
 	}
 
-	infraSpec, err := infraSpec(prjConfig, console, context)
+	infraSpec, err := infraSpec(prjConfig, console, cxt)
 	if err != nil {
 		return nil, fmt.Errorf("generating infrastructure spec: %w", err)
 	}
@@ -45,14 +44,13 @@ func infraFs(_ context.Context, prjConfig *ProjectConfig,
 func tempInfra(
 	ctx context.Context,
 	prjConfig *ProjectConfig,
-	console *input.Console,
-	context *context.Context) (*Infra, error) {
+	console input.Console) (*Infra, error) {
 	tmpDir, err := os.MkdirTemp("", "azd-infra")
 	if err != nil {
 		return nil, fmt.Errorf("creating temporary directory: %w", err)
 	}
 
-	files, err := infraFs(ctx, prjConfig, console, context)
+	files, err := infraFs(ctx, prjConfig, console)
 	if err != nil {
 		return nil, err
 	}
@@ -95,8 +93,8 @@ func tempInfra(
 // Generates the filesystem of all infrastructure files to be placed, rooted at the project directory.
 // The content only includes `./infra` currently.
 func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig,
-	console *input.Console, context *context.Context) (fs.FS, error) {
-	infraFS, err := infraFs(ctx, prjConfig, console, context)
+	console input.Console) (fs.FS, error) {
+	infraFS, err := infraFs(ctx, prjConfig, console)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +135,7 @@ func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig,
 }
 
 func infraSpec(projectConfig *ProjectConfig,
-	console *input.Console, context *context.Context) (*scaffold.InfraSpec, error) {
+	console input.Console, ctx context.Context) (*scaffold.InfraSpec, error) {
 	infraSpec := scaffold.InfraSpec{}
 	for _, resource := range projectConfig.Resources {
 		switch resource.Type {
@@ -233,7 +231,7 @@ func infraSpec(projectConfig *ProjectConfig,
 		return nil, err
 	}
 
-	err = printHintsAboutUses(&infraSpec, projectConfig, console, context)
+	err = printEnvListAboutUses(&infraSpec, projectConfig, console, ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -263,27 +261,63 @@ func mapUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig) error 
 			switch usedResource.Type {
 			case ResourceTypeDbPostgres:
 				userSpec.DbPostgres = infraSpec.DbPostgres
+				err := addUsageByEnv(infraSpec, userSpec, usedResource)
+				if err != nil {
+					return err
+				}
 			case ResourceTypeDbMySQL:
 				userSpec.DbMySql = infraSpec.DbMySql
+				err := addUsageByEnv(infraSpec, userSpec, usedResource)
+				if err != nil {
+					return err
+				}
 			case ResourceTypeDbRedis:
 				userSpec.DbRedis = infraSpec.DbRedis
+				err := addUsageByEnv(infraSpec, userSpec, usedResource)
+				if err != nil {
+					return err
+				}
 			case ResourceTypeDbMongo:
 				userSpec.DbCosmosMongo = infraSpec.DbCosmosMongo
+				err := addUsageByEnv(infraSpec, userSpec, usedResource)
+				if err != nil {
+					return err
+				}
 			case ResourceTypeDbCosmos:
 				userSpec.DbCosmos = infraSpec.DbCosmos
+				err := addUsageByEnv(infraSpec, userSpec, usedResource)
+				if err != nil {
+					return err
+				}
 			case ResourceTypeMessagingServiceBus:
 				userSpec.AzureServiceBus = infraSpec.AzureServiceBus
+				err := addUsageByEnv(infraSpec, userSpec, usedResource)
+				if err != nil {
+					return err
+				}
 			case ResourceTypeMessagingEventHubs, ResourceTypeMessagingKafka:
 				userSpec.AzureEventHubs = infraSpec.AzureEventHubs
+				err := addUsageByEnv(infraSpec, userSpec, usedResource)
+				if err != nil {
+					return err
+				}
 			case ResourceTypeStorage:
 				userSpec.AzureStorageAccount = infraSpec.AzureStorageAccount
-			case ResourceTypeHostContainerApp:
-				err := fulfillFrontendBackend(userSpec, usedResource, infraSpec)
+				err := addUsageByEnv(infraSpec, userSpec, usedResource)
 				if err != nil {
 					return err
 				}
 			case ResourceTypeOpenAiModel:
 				userSpec.AIModels = append(userSpec.AIModels, scaffold.AIModelReference{Name: usedResource.Name})
+				err := addUsageByEnv(infraSpec, userSpec, usedResource)
+				if err != nil {
+					return err
+				}
+			case ResourceTypeHostContainerApp:
+				err := fulfillFrontendBackend(userSpec, usedResource, infraSpec)
+				if err != nil {
+					return err
+				}
 			default:
 				return fmt.Errorf("resource (%s) uses (%s), but the type of (%s) is (%s), which is unsupported",
 					userResource.Name, usedResource.Name, usedResource.Name, usedResource.Type)
@@ -293,9 +327,44 @@ func mapUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig) error 
 	return nil
 }
 
-func printHintsAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig,
-	console *input.Console,
-	context *context.Context) error {
+func getAuthType(infraSpec *scaffold.InfraSpec, resourceType ResourceType) (internal.AuthType, error) {
+	switch resourceType {
+	case ResourceTypeDbPostgres:
+		return infraSpec.DbPostgres.AuthType, nil
+	case ResourceTypeDbMySQL:
+		return infraSpec.DbMySql.AuthType, nil
+	case ResourceTypeDbRedis:
+		return internal.AuthTypePassword, nil
+	case ResourceTypeDbMongo,
+		ResourceTypeDbCosmos,
+		ResourceTypeOpenAiModel,
+		ResourceTypeHostContainerApp:
+		return internal.AuthTypeUserAssignedManagedIdentity, nil
+	case ResourceTypeMessagingServiceBus:
+		return infraSpec.AzureServiceBus.AuthType, nil
+	case ResourceTypeMessagingEventHubs, ResourceTypeMessagingKafka:
+		return infraSpec.AzureEventHubs.AuthType, nil
+	case ResourceTypeStorage:
+		return infraSpec.AzureStorageAccount.AuthType, nil
+	default:
+		return internal.AuthTypeUnspecified, fmt.Errorf("can not get authType, resource type: %s", resourceType)
+	}
+}
+
+func addUsageByEnv(infraSpec *scaffold.InfraSpec, userSpec *scaffold.ServiceSpec, usedResource *ResourceConfig) error {
+	envs, err := getResourceConnectionEnvs(usedResource, infraSpec)
+	if err != nil {
+		return err
+	}
+	userSpec.Envs, err = mergeEnvWithDuplicationCheck(userSpec.Envs, envs)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func printEnvListAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig,
+	console input.Console, ctx context.Context) error {
 	for i := range infraSpec.Services {
 		userSpec := &infraSpec.Services[i]
 		userResourceName := userSpec.Name
@@ -310,62 +379,40 @@ func printHintsAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectCo
 				return fmt.Errorf("in azure.yaml, (%s) uses (%s), but (%s) doesn't",
 					userResourceName, usedResourceName, usedResourceName)
 			}
-			if *console != nil {
-				(*console).Message(*context, fmt.Sprintf("CAUTION: In azure.yaml, '%s' uses '%s'. "+
-					"After deployed, the 'uses' is achieved by providing these environment variables: ",
-					userResourceName, usedResourceName))
-			}
+			console.Message(ctx, fmt.Sprintf("\nInformation about environment variables:\n"+
+				"In azure.yaml, '%s' uses '%s'. \n"+
+				"The 'uses' relashipship is implemented by environment variables. \n"+
+				"Please make sure your application used the right environment variable. \n"+
+				"Here is the list of environment variables: ",
+				userResourceName, usedResourceName))
 			switch usedResource.Type {
-			case ResourceTypeDbPostgres:
-				err := printHintsAboutUsePostgres(userSpec.DbPostgres.AuthType, console, context)
+			case ResourceTypeDbPostgres, // do nothing. todo: add all other types
+				ResourceTypeDbMySQL,
+				ResourceTypeDbRedis,
+				ResourceTypeDbMongo,
+				ResourceTypeDbCosmos,
+				ResourceTypeMessagingServiceBus,
+				ResourceTypeMessagingEventHubs,
+				ResourceTypeMessagingKafka,
+				ResourceTypeStorage:
+				variables, err := getResourceConnectionEnvs(usedResource, infraSpec)
 				if err != nil {
 					return err
 				}
-			case ResourceTypeDbMySQL:
-				err := printHintsAboutUseMySql(userSpec.DbPostgres.AuthType, console, context)
-				if err != nil {
-					return err
-				}
-			case ResourceTypeDbRedis:
-				printHintsAboutUseRedis(console, context)
-			case ResourceTypeDbMongo:
-				printHintsAboutUseMongo(console, context)
-			case ResourceTypeDbCosmos:
-				printHintsAboutUseCosmos(console, context)
-			case ResourceTypeMessagingServiceBus:
-				err := printHintsAboutUseServiceBus(userSpec.AzureServiceBus.IsJms,
-					userSpec.AzureServiceBus.AuthType, console, context)
-				if err != nil {
-					return err
-				}
-			case ResourceTypeMessagingEventHubs, ResourceTypeMessagingKafka:
-				err := printHintsAboutUseEventHubs(userSpec.AzureEventHubs.UseKafka,
-					userSpec.AzureEventHubs.AuthType, userSpec.AzureEventHubs.SpringBootVersion, console, context)
-				if err != nil {
-					return err
-				}
-			case ResourceTypeStorage:
-				err := printHintsAboutUseStorageAccount(userSpec.AzureStorageAccount.AuthType, console, context)
-				if err != nil {
-					return err
+				for _, variable := range variables {
+					console.Message(ctx, fmt.Sprintf("  %s=xxx", variable.Name))
 				}
 			case ResourceTypeHostContainerApp:
-				printHintsAboutUseHostContainerApp(userResourceName, usedResourceName, console, context)
-			case ResourceTypeOpenAiModel:
-				printHintsAboutUseOpenAiModel(console, context)
+				printHintsAboutUseHostContainerApp(userResourceName, usedResourceName, console, ctx)
 			default:
 				return fmt.Errorf("resource (%s) uses (%s), but the type of (%s) is (%s), "+
 					"which is doen't add necessary environment variable",
 					userResource.Name, usedResource.Name, usedResource.Name, usedResource.Type)
 			}
-			if *console != nil {
-				(*console).Message(*context, "Please make sure your application used the right environment variable name.\n")
-			}
-
+			console.Message(ctx, "\n")
 		}
 	}
 	return nil
-
 }
 
 func handleContainerAppProps(
@@ -398,7 +445,11 @@ func handleContainerAppProps(
 		// Here, DB_HOST is not a secret, but DB_SECRET is. And yet, DB_HOST will be marked as a secret.
 		// This is a limitation of the current implementation, but it's safer to mark both as secrets above.
 		evaluatedValue := genBicepParamsFromEnvSubst(value, isSecret, infraSpec)
-		serviceSpec.Env[envVar.Name] = evaluatedValue
+		err := addNewEnvironmentVariable(serviceSpec, envVar.Name, evaluatedValue)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	port := props.Port
@@ -442,6 +493,7 @@ func setParameter(spec *scaffold.InfraSpec, name string, value string, isSecret 
 //
 // If the string is a literal, it is returned as is.
 // If isSecret is true, the parameter is marked as a secret.
+// The returned value is string, all expression inside are wrapped by "${}".
 func genBicepParamsFromEnvSubst(
 	s string,
 	isSecret bool,
@@ -456,16 +508,16 @@ func genBicepParamsFromEnvSubst(
 
 	var result string
 	if len(names) == 0 {
-		// literal string with no expressions, quote the value as a Bicep string
-		result = "'" + s + "'"
+		// literal string with no expressions
+		result = s
 	} else if len(names) == 1 {
 		// single expression, return the bicep parameter name to reference the expression
-		result = scaffold.BicepName(names[0])
+		result = "${" + scaffold.BicepName(names[0]) + "}"
 	} else {
 		// multiple expressions
 		// construct the string with all expressions replaced by parameter references as a Bicep interpolated string
 		previous := 0
-		result = "'"
+		result = ""
 		for i, loc := range locations {
 			// replace each expression with references by variable name
 			result += s[previous:loc.start]
@@ -474,7 +526,6 @@ func genBicepParamsFromEnvSubst(
 			result += "}"
 			previous = loc.stop + 1
 		}
-		result += "'"
 	}
 
 	return result
@@ -509,187 +560,13 @@ func getServiceSpecByName(infraSpec *scaffold.InfraSpec, name string) *scaffold.
 	return nil
 }
 
-func printHintsAboutUsePostgres(authType internal.AuthType,
-	console *input.Console, context *context.Context) error {
-	if *console == nil {
-		return nil
-	}
-	(*console).Message(*context, "POSTGRES_HOST=xxx")
-	(*console).Message(*context, "POSTGRES_DATABASE=xxx")
-	(*console).Message(*context, "POSTGRES_PORT=xxx")
-	(*console).Message(*context, "spring.datasource.url=xxx")
-	(*console).Message(*context, "spring.datasource.username=xxx")
-	if authType == internal.AuthTypePassword {
-		(*console).Message(*context, "POSTGRES_URL=xxx")
-		(*console).Message(*context, "POSTGRES_USERNAME=xxx")
-		(*console).Message(*context, "POSTGRES_PASSWORD=xxx")
-		(*console).Message(*context, "spring.datasource.password=xxx")
-	} else if authType == internal.AuthTypeUserAssignedManagedIdentity {
-		(*console).Message(*context, "spring.datasource.azure.passwordless-enabled=true")
-		(*console).Message(*context, "CAUTION: To make sure passwordless work well in your spring boot application, ")
-		(*console).Message(*context, "make sure the following 2 things:")
-		(*console).Message(*context, "1. Add required dependency: spring-cloud-azure-starter-jdbc-postgresql.")
-		(*console).Message(*context, "2. Delete property 'spring.datasource.password' in your property file.")
-		(*console).Message(*context, "Refs: https://learn.microsoft.com/en-us/azure/service-connector/")
-		(*console).Message(*context, "how-to-integrate-mysql?tabs=springBoot#sample-code-1")
-	} else {
-		return fmt.Errorf("unsupported auth type for PostgreSQL. Supported types: %s, %s",
-			internal.GetAuthTypeDescription(internal.AuthTypePassword),
-			internal.GetAuthTypeDescription(internal.AuthTypeUserAssignedManagedIdentity))
-	}
-	return nil
-}
-
-func printHintsAboutUseMySql(authType internal.AuthType,
-	console *input.Console, context *context.Context) error {
-	if *console == nil {
-		return nil
-	}
-	(*console).Message(*context, "MYSQL_HOST=xxx")
-	(*console).Message(*context, "MYSQL_DATABASE=xxx")
-	(*console).Message(*context, "MYSQL_PORT=xxx")
-	(*console).Message(*context, "spring.datasource.url=xxx")
-	(*console).Message(*context, "spring.datasource.username=xxx")
-	if authType == internal.AuthTypePassword {
-		(*console).Message(*context, "MYSQL_URL=xxx")
-		(*console).Message(*context, "MYSQL_USERNAME=xxx")
-		(*console).Message(*context, "MYSQL_PASSWORD=xxx")
-		(*console).Message(*context, "spring.datasource.password=xxx")
-	} else if authType == internal.AuthTypeUserAssignedManagedIdentity {
-		(*console).Message(*context, "spring.datasource.azure.passwordless-enabled=true")
-		(*console).Message(*context, "CAUTION: To make sure passwordless work well in your spring boot application, ")
-		(*console).Message(*context, "Make sure the following 2 things:")
-		(*console).Message(*context, "1. Add required dependency: spring-cloud-azure-starter-jdbc-postgresql.")
-		(*console).Message(*context, "2. Delete property 'spring.datasource.password' in your property file.")
-		(*console).Message(*context, "Refs: https://learn.microsoft.com/en-us/azure/service-connector/how-to-integrate-postgres?tabs=springBoot#sample-code-1")
-	} else {
-		return fmt.Errorf("unsupported auth type for MySql. Supported types are: %s, %s",
-			internal.GetAuthTypeDescription(internal.AuthTypePassword),
-			internal.GetAuthTypeDescription(internal.AuthTypeUserAssignedManagedIdentity))
-	}
-	return nil
-}
-
-func printHintsAboutUseRedis(console *input.Console, context *context.Context) {
-	if *console == nil {
-		return
-	}
-	(*console).Message(*context, "REDIS_HOST=xxx")
-	(*console).Message(*context, "REDIS_PORT=xxx")
-	(*console).Message(*context, "REDIS_URL=xxx")
-	(*console).Message(*context, "REDIS_ENDPOINT=xxx")
-	(*console).Message(*context, "REDIS_PASSWORD=xxx")
-	(*console).Message(*context, "spring.data.redis.url=xxx")
-}
-
-func printHintsAboutUseMongo(console *input.Console, context *context.Context) {
-	if *console == nil {
-		return
-	}
-	(*console).Message(*context, "MONGODB_URL=xxx")
-	(*console).Message(*context, "spring.data.mongodb.uri=xxx")
-	(*console).Message(*context, "spring.data.mongodb.database=xxx")
-}
-
-func printHintsAboutUseCosmos(console *input.Console, context *context.Context) {
-	if *console == nil {
-		return
-	}
-	(*console).Message(*context, "spring.cloud.azure.cosmos.endpoint=xxx")
-	(*console).Message(*context, "spring.cloud.azure.cosmos.database=xxx")
-}
-
-func printHintsAboutUseServiceBus(isJms bool, authType internal.AuthType,
-	console *input.Console, context *context.Context) error {
-	if *console == nil {
-		return nil
-	}
-	if !isJms {
-		(*console).Message(*context, "spring.cloud.azure.servicebus.namespace=xxx")
-	}
-	if authType == internal.AuthTypeUserAssignedManagedIdentity {
-		(*console).Message(*context, "spring.cloud.azure.servicebus.connection-string=''")
-		(*console).Message(*context, "spring.cloud.azure.servicebus.credential.managed-identity-enabled=true")
-		(*console).Message(*context, "spring.cloud.azure.servicebus.credential.client-id=xxx")
-	} else if authType == internal.AuthTypeConnectionString {
-		(*console).Message(*context, "spring.cloud.azure.servicebus.connection-string=xxx")
-		(*console).Message(*context, "spring.cloud.azure.servicebus.credential.managed-identity-enabled=false")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.client-id=xxx")
-	} else {
-		return fmt.Errorf("unsupported auth type for Service Bus. Supported types are: %s, %s",
-			internal.GetAuthTypeDescription(internal.AuthTypeUserAssignedManagedIdentity),
-			internal.GetAuthTypeDescription(internal.AuthTypeConnectionString))
-	}
-	return nil
-}
-
-func printHintsAboutUseEventHubs(UseKafka bool, authType internal.AuthType, springBootVersion string,
-	console *input.Console, context *context.Context) error {
-	if *console == nil {
-		return nil
-	}
-	if !UseKafka {
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.namespace=xxx")
-	} else {
-		(*console).Message(*context, "spring.cloud.stream.kafka.binder.brokers=xxx")
-		if strings.HasPrefix(springBootVersion, "2.") {
-			(*console).Message(*context, "spring.cloud.stream.binders.kafka.environment.spring.main.sources=com.azure.spring.cloud.autoconfigure.eventhubs.kafka.AzureEventHubsKafkaAutoConfiguration")
-		} else if strings.HasPrefix(springBootVersion, "3.") {
-			(*console).Message(*context, "spring.cloud.stream.binders.kafka.environment.spring.main.sources=com.azure.spring.cloud.autoconfigure.implementation.eventhubs.kafka.AzureEventHubsKafkaAutoConfiguration")
-		}
-	}
-	if authType == internal.AuthTypeUserAssignedManagedIdentity {
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.connection-string=''")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.managed-identity-enabled=true")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.client-id=xxx")
-	} else if authType == internal.AuthTypeConnectionString {
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.connection-string=xxx")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.managed-identity-enabled=false")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.credential.client-id=xxx")
-	} else {
-		return fmt.Errorf("unsupported auth type for Event Hubs. Supported types: %s, %s",
-			internal.GetAuthTypeDescription(internal.AuthTypeUserAssignedManagedIdentity),
-			internal.GetAuthTypeDescription(internal.AuthTypeConnectionString))
-	}
-	return nil
-}
-
-func printHintsAboutUseStorageAccount(authType internal.AuthType,
-	console *input.Console, context *context.Context) error {
-	if *console == nil {
-		return nil
-	}
-	(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name=xxx")
-	if authType == internal.AuthTypeUserAssignedManagedIdentity {
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string=''")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled=true")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id=xxx")
-	} else if authType == internal.AuthTypeConnectionString {
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string=xxx")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled=false")
-		(*console).Message(*context, "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.client-id=xxx")
-	} else {
-		return fmt.Errorf("unsupported auth type for Storage Account. Supported types: %s, %s",
-			internal.GetAuthTypeDescription(internal.AuthTypeUserAssignedManagedIdentity),
-			internal.GetAuthTypeDescription(internal.AuthTypeConnectionString))
-	}
-	return nil
-}
-
 func printHintsAboutUseHostContainerApp(userResourceName string, usedResourceName string,
-	console *input.Console, context *context.Context) {
-	if *console == nil {
+	console input.Console, ctx context.Context) {
+	if console == nil {
 		return
 	}
-	(*console).Message(*context, fmt.Sprintf("Environemnt variables in %s:", userResourceName))
-	(*console).Message(*context, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(usedResourceName)))
-	(*console).Message(*context, fmt.Sprintf("Environemnt variables in %s:", usedResourceName))
-	(*console).Message(*context, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(userResourceName)))
-}
-
-func printHintsAboutUseOpenAiModel(console *input.Console, context *context.Context) {
-	if *console == nil {
-		return
-	}
-	(*console).Message(*context, "AZURE_OPENAI_ENDPOINT")
+	console.Message(ctx, fmt.Sprintf("Environemnt variables in %s:", userResourceName))
+	console.Message(ctx, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(usedResourceName)))
+	console.Message(ctx, fmt.Sprintf("Environemnt variables in %s:", usedResourceName))
+	console.Message(ctx, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(userResourceName)))
 }

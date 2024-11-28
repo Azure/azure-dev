@@ -6,7 +6,6 @@ package pipeline
 import (
 	"context"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"os"
 	"path/filepath"
 	"strings"
@@ -775,8 +774,7 @@ func createPipelineManager(
 		args,
 		mockContext.Container,
 		project.NewImportManager(
-			project.NewDotNetImporter(nil, nil, nil, nil, mockContext.AlphaFeaturesManager),
-			mockinput.NewMockConsole()),
+			project.NewDotNetImporter(nil, nil, nil, nil, mockContext.AlphaFeaturesManager)),
 		&mockUserConfigManager{},
 	)
 }

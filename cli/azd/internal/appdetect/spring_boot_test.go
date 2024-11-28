@@ -1,7 +1,6 @@
 package appdetect
 
 import (
-	"encoding/xml"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -48,32 +47,6 @@ func TestDetectSpringBootVersion(t *testing.T) {
 			"2.x",
 		},
 		{
-			"project.dependencyManagement.property",
-			nil,
-			&mavenProject{
-				Properties: Properties{
-					Entries: []Property{
-						{
-							XMLName: xml.Name{
-								Local: "version.spring.boot",
-							},
-							Value: "2.x",
-						},
-					},
-				},
-				DependencyManagement: dependencyManagement{
-					Dependencies: []dependency{
-						{
-							GroupId:    "org.springframework.boot",
-							ArtifactId: "spring-boot-dependencies",
-							Version:    "${version.spring.boot}",
-						},
-					},
-				},
-			},
-			"2.x",
-		},
-		{
 			"root.parent",
 			&mavenProject{
 				Parent: parent{
@@ -99,32 +72,6 @@ func TestDetectSpringBootVersion(t *testing.T) {
 				},
 			},
 			nil,
-			"3.x",
-		},
-		{
-			"root.dependencyManagement.property",
-			nil,
-			&mavenProject{
-				Properties: Properties{
-					Entries: []Property{
-						{
-							XMLName: xml.Name{
-								Local: "version.spring.boot",
-							},
-							Value: "3.x",
-						},
-					},
-				},
-				DependencyManagement: dependencyManagement{
-					Dependencies: []dependency{
-						{
-							GroupId:    "org.springframework.boot",
-							ArtifactId: "spring-boot-dependencies",
-							Version:    "${version.spring.boot}",
-						},
-					},
-				},
-			},
 			"3.x",
 		},
 		{
@@ -165,52 +112,6 @@ func TestDetectSpringBootVersion(t *testing.T) {
 							GroupId:    "org.springframework.boot",
 							ArtifactId: "spring-boot-dependencies",
 							Version:    "3.x",
-						},
-					},
-				},
-			},
-			"3.x",
-		},
-		{
-			"both.root.and.project.dependencyManagement.property",
-			&mavenProject{
-				Properties: Properties{
-					Entries: []Property{
-						{
-							XMLName: xml.Name{
-								Local: "version.spring.boot",
-							},
-							Value: "2.x",
-						},
-					},
-				},
-				DependencyManagement: dependencyManagement{
-					Dependencies: []dependency{
-						{
-							GroupId:    "org.springframework.boot",
-							ArtifactId: "spring-boot-dependencies",
-							Version:    "${version.spring.boot}",
-						},
-					},
-				},
-			},
-			&mavenProject{
-				Properties: Properties{
-					Entries: []Property{
-						{
-							XMLName: xml.Name{
-								Local: "version.spring.boot",
-							},
-							Value: "3.x",
-						},
-					},
-				},
-				DependencyManagement: dependencyManagement{
-					Dependencies: []dependency{
-						{
-							GroupId:    "org.springframework.boot",
-							ArtifactId: "spring-boot-dependencies",
-							Version:    "${version.spring.boot}",
 						},
 					},
 				},

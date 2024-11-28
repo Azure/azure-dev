@@ -392,10 +392,13 @@ resources:
     - api
   postgresdb:
     type: db.postgres
+    authType: PASSWORD
   mongodb:
     type: db.mongo
+    authType: USER_ASSIGNED_MANAGED_IDENTITY
   redis:
     type: db.redis
+    authType: PASSWORD
 `
 
 func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
@@ -405,6 +408,7 @@ func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			console:             mocks.NewMockContext(context.Background()).Console,
 		},
 	}
 

@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"errors"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"strings"
 	"testing"
 
@@ -356,7 +355,7 @@ func runMiddleware(
 		lazyEnvManager,
 		lazyEnv,
 		lazyProjectConfig,
-		project.NewImportManager(nil, mockinput.NewMockConsole()),
+		project.NewImportManager(nil),
 		mockContext.CommandRunner,
 		mockContext.Console,
 		runOptions,

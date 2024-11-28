@@ -41,3 +41,5 @@ overrides:
           - myimage
           - azureai
           - entra
+          - servicebus
+          - eventhubs

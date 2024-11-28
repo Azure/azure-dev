@@ -6,7 +6,7 @@ on:
       - "cli/**"
       - ".github/workflows/cli-ci.yml"
       - "go.mod"
-    branches: [main]
+    branches: [main, feature/sjad]
 
 permissions:
   contents: read

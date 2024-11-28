@@ -20,67 +20,82 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		case internal.AuthTypePassword:
 			return []scaffold.Env{
 				{
-					Name:  "POSTGRES_USERNAME",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUsername),
+					Name: "POSTGRES_USERNAME",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUsername),
 				},
 				{
-					Name:  "POSTGRES_PASSWORD",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypePassword),
+					Name: "POSTGRES_PASSWORD",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypePassword),
 				},
 				{
-					Name:  "POSTGRES_HOST",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeHost),
+					Name: "POSTGRES_HOST",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeHost),
 				},
 				{
-					Name:  "POSTGRES_DATABASE",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeDatabaseName),
+					Name: "POSTGRES_DATABASE",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeDatabaseName),
 				},
 				{
-					Name:  "POSTGRES_PORT",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypePort),
+					Name: "POSTGRES_PORT",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypePort),
 				},
 				{
-					Name:  "POSTGRES_URL",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUrl),
+					Name: "POSTGRES_URL",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUrl),
 				},
 				{
-					Name:  "spring.datasource.url",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeJdbcUrl),
+					Name: "spring.datasource.url",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeJdbcUrl),
 				},
 				{
-					Name:  "spring.datasource.username",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUsername),
+					Name: "spring.datasource.username",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUsername),
 				},
 				{
-					Name:  "spring.datasource.password",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypePassword),
+					Name: "spring.datasource.password",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypePassword),
 				},
 			}, nil
 		case internal.AuthTypeUserAssignedManagedIdentity:
 			return []scaffold.Env{
 				{
-					Name:  "POSTGRES_USERNAME",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUsername),
+					Name: "POSTGRES_USERNAME",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUsername),
 				},
 				{
-					Name:  "POSTGRES_HOST",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeHost),
+					Name: "POSTGRES_HOST",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeHost),
 				},
 				{
-					Name:  "POSTGRES_DATABASE",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeDatabaseName),
+					Name: "POSTGRES_DATABASE",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeDatabaseName),
 				},
 				{
-					Name:  "POSTGRES_PORT",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypePort),
+					Name: "POSTGRES_PORT",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypePort),
 				},
 				{
-					Name:  "spring.datasource.url",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeJdbcUrl),
+					Name: "spring.datasource.url",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeJdbcUrl),
 				},
 				{
-					Name:  "spring.datasource.username",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUsername),
+					Name: "spring.datasource.username",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbPostgres, scaffold.ResourceInfoTypeUsername),
 				},
 				{
 					Name:  "spring.datasource.azure.passwordless-enabled",
@@ -95,67 +110,82 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		case internal.AuthTypePassword:
 			return []scaffold.Env{
 				{
-					Name:  "MYSQL_USERNAME",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUsername),
+					Name: "MYSQL_USERNAME",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUsername),
 				},
 				{
-					Name:  "MYSQL_PASSWORD",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypePassword),
+					Name: "MYSQL_PASSWORD",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypePassword),
 				},
 				{
-					Name:  "MYSQL_HOST",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeHost),
+					Name: "MYSQL_HOST",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeHost),
 				},
 				{
-					Name:  "MYSQL_DATABASE",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeDatabaseName),
+					Name: "MYSQL_DATABASE",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeDatabaseName),
 				},
 				{
-					Name:  "MYSQL_PORT",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypePort),
+					Name: "MYSQL_PORT",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypePort),
 				},
 				{
-					Name:  "MYSQL_URL",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUrl),
+					Name: "MYSQL_URL",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUrl),
 				},
 				{
-					Name:  "spring.datasource.url",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeJdbcUrl),
+					Name: "spring.datasource.url",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeJdbcUrl),
 				},
 				{
-					Name:  "spring.datasource.username",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUsername),
+					Name: "spring.datasource.username",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUsername),
 				},
 				{
-					Name:  "spring.datasource.password",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypePassword),
+					Name: "spring.datasource.password",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypePassword),
 				},
 			}, nil
 		case internal.AuthTypeUserAssignedManagedIdentity:
 			return []scaffold.Env{
 				{
-					Name:  "MYSQL_USERNAME",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUsername),
+					Name: "MYSQL_USERNAME",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUsername),
 				},
 				{
-					Name:  "MYSQL_HOST",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeHost),
+					Name: "MYSQL_HOST",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeHost),
 				},
 				{
-					Name:  "MYSQL_PORT",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypePort),
+					Name: "MYSQL_PORT",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypePort),
 				},
 				{
-					Name:  "MYSQL_DATABASE",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeDatabaseName),
+					Name: "MYSQL_DATABASE",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeDatabaseName),
 				},
 				{
-					Name:  "spring.datasource.url",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeJdbcUrl),
+					Name: "spring.datasource.url",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeJdbcUrl),
 				},
 				{
-					Name:  "spring.datasource.username",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUsername),
+					Name: "spring.datasource.username",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMySQL, scaffold.ResourceInfoTypeUsername),
 				},
 				{
 					Name:  "spring.datasource.azure.passwordless-enabled",
@@ -170,28 +200,34 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		case internal.AuthTypePassword:
 			return []scaffold.Env{
 				{
-					Name:  "REDIS_HOST",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypeHost),
+					Name: "REDIS_HOST",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypeHost),
 				},
 				{
-					Name:  "REDIS_PORT",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypePort),
+					Name: "REDIS_PORT",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypePort),
 				},
 				{
-					Name:  "REDIS_ENDPOINT",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypeEndpoint),
+					Name: "REDIS_ENDPOINT",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypeEndpoint),
 				},
 				{
-					Name:  "REDIS_URL",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypeUrl),
+					Name: "REDIS_URL",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypeUrl),
 				},
 				{
-					Name:  "REDIS_PASSWORD",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypePassword),
+					Name: "REDIS_PASSWORD",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypePassword),
 				},
 				{
-					Name:  "spring.data.redis.url",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypeUrl),
+					Name: "spring.data.redis.url",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbRedis, scaffold.ResourceInfoTypeUrl),
 				},
 			}, nil
 		default:
@@ -202,16 +238,19 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		case internal.AuthTypeUserAssignedManagedIdentity:
 			return []scaffold.Env{
 				{
-					Name:  "MONGODB_URL",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMongo, scaffold.ResourceInfoTypeUrl),
+					Name: "MONGODB_URL",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMongo, scaffold.ResourceInfoTypeUrl),
 				},
 				{
-					Name:  "spring.data.mongodb.uri",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMongo, scaffold.ResourceInfoTypeUrl),
+					Name: "spring.data.mongodb.uri",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMongo, scaffold.ResourceInfoTypeUrl),
 				},
 				{
-					Name:  "spring.data.mongodb.database",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbMongo, scaffold.ResourceInfoTypeDatabaseName),
+					Name: "spring.data.mongodb.database",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbMongo, scaffold.ResourceInfoTypeDatabaseName),
 				},
 			}, nil
 		default:
@@ -222,12 +261,14 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		case internal.AuthTypeUserAssignedManagedIdentity:
 			return []scaffold.Env{
 				{
-					Name:  "spring.cloud.azure.cosmos.endpoint",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbCosmos, scaffold.ResourceInfoTypeEndpoint),
+					Name: "spring.cloud.azure.cosmos.endpoint",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbCosmos, scaffold.ResourceInfoTypeEndpoint),
 				},
 				{
-					Name:  "spring.cloud.azure.cosmos.database",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeDbCosmos, scaffold.ResourceInfoTypeDatabaseName),
+					Name: "spring.cloud.azure.cosmos.database",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeDbCosmos, scaffold.ResourceInfoTypeDatabaseName),
 				},
 			}, nil
 		default:
@@ -255,8 +296,9 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 						Value: scaffold.PlaceHolderForServiceIdentityClientId(),
 					},
 					{
-						Name:  "spring.jms.servicebus.namespace",
-						Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeNamespace),
+						Name: "spring.jms.servicebus.namespace",
+						Value: scaffold.ToResourceConnectionEnv(
+							scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeNamespace),
 					},
 					{
 						Name:  "spring.jms.servicebus.connection-string",
@@ -270,8 +312,9 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 						Value: "premium",
 					},
 					{
-						Name:  "spring.jms.servicebus.connection-string",
-						Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeConnectionString),
+						Name: "spring.jms.servicebus.connection-string",
+						Value: scaffold.ToResourceConnectionEnv(
+							scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeConnectionString),
 					},
 					{
 						Name:  "spring.jms.servicebus.passwordless-enabled",
@@ -309,19 +352,22 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 						Value: scaffold.PlaceHolderForServiceIdentityClientId(),
 					},
 					{
-						Name:  "spring.cloud.azure.servicebus.namespace",
-						Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeNamespace),
+						Name: "spring.cloud.azure.servicebus.namespace",
+						Value: scaffold.ToResourceConnectionEnv(
+							scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeNamespace),
 					},
 				}, nil
 			case internal.AuthTypeConnectionString:
 				return []scaffold.Env{
 					{
-						Name:  "spring.cloud.azure.servicebus.namespace",
-						Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeNamespace),
+						Name: "spring.cloud.azure.servicebus.namespace",
+						Value: scaffold.ToResourceConnectionEnv(
+							scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeNamespace),
 					},
 					{
-						Name:  "spring.cloud.azure.servicebus.connection-string",
-						Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeConnectionString),
+						Name: "spring.cloud.azure.servicebus.connection-string",
+						Value: scaffold.ToResourceConnectionEnv(
+							scaffold.ResourceTypeMessagingServiceBus, scaffold.ResourceInfoTypeConnectionString),
 					},
 					{
 						Name:  "spring.cloud.azure.servicebus.credential.managed-identity-enabled",
@@ -349,8 +395,9 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		} else {
 			springBootVersionDecidedInformation = []scaffold.Env{
 				{
-					Name:  "spring.cloud.stream.binders.kafka.environment.spring.main.sources",
-					Value: "com.azure.spring.cloud.autoconfigure.implementation.eventhubs.kafka.AzureEventHubsKafkaAutoConfiguration",
+					Name: "spring.cloud.stream.binders.kafka.environment.spring.main.sources",
+					Value: "com.azure.spring.cloud.autoconfigure.implementation.eventhubs.kafka" +
+						".AzureEventHubsKafkaAutoConfiguration",
 				},
 			}
 		}
@@ -361,8 +408,9 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 				// Not add this: spring.cloud.azure.eventhubs.connection-string = ""
 				// because of this: https://github.com/Azure/azure-sdk-for-java/issues/42880
 				{
-					Name:  "spring.cloud.stream.kafka.binder.brokers",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingKafka, scaffold.ResourceInfoTypeEndpoint),
+					Name: "spring.cloud.stream.kafka.binder.brokers",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeMessagingKafka, scaffold.ResourceInfoTypeEndpoint),
 				},
 				{
 					Name:  "spring.cloud.azure.eventhubs.credential.managed-identity-enabled",
@@ -376,12 +424,14 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		case internal.AuthTypeConnectionString:
 			commonInformation = []scaffold.Env{
 				{
-					Name:  "spring.cloud.stream.kafka.binder.brokers",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingKafka, scaffold.ResourceInfoTypeEndpoint),
+					Name: "spring.cloud.stream.kafka.binder.brokers",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeMessagingKafka, scaffold.ResourceInfoTypeEndpoint),
 				},
 				{
-					Name:  "spring.cloud.azure.eventhubs.connection-string",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingKafka, scaffold.ResourceInfoTypeConnectionString),
+					Name: "spring.cloud.azure.eventhubs.connection-string",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeMessagingKafka, scaffold.ResourceInfoTypeConnectionString),
 				},
 				{
 					Name:  "spring.cloud.azure.eventhubs.credential.managed-identity-enabled",
@@ -411,19 +461,22 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 					Value: scaffold.PlaceHolderForServiceIdentityClientId(),
 				},
 				{
-					Name:  "spring.cloud.azure.eventhubs.namespace",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingEventHubs, scaffold.ResourceInfoTypeNamespace),
+					Name: "spring.cloud.azure.eventhubs.namespace",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeMessagingEventHubs, scaffold.ResourceInfoTypeNamespace),
 				},
 			}, nil
 		case internal.AuthTypeConnectionString:
 			return []scaffold.Env{
 				{
-					Name:  "spring.cloud.azure.eventhubs.namespace",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingEventHubs, scaffold.ResourceInfoTypeNamespace),
+					Name: "spring.cloud.azure.eventhubs.namespace",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeMessagingEventHubs, scaffold.ResourceInfoTypeNamespace),
 				},
 				{
-					Name:  "spring.cloud.azure.eventhubs.connection-string",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeMessagingEventHubs, scaffold.ResourceInfoTypeConnectionString),
+					Name: "spring.cloud.azure.eventhubs.connection-string",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeMessagingEventHubs, scaffold.ResourceInfoTypeConnectionString),
 				},
 				{
 					Name:  "spring.cloud.azure.eventhubs.credential.managed-identity-enabled",
@@ -442,8 +495,9 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		case internal.AuthTypeUserAssignedManagedIdentity:
 			return []scaffold.Env{
 				{
-					Name:  "spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeStorage, scaffold.ResourceInfoTypeAccountName),
+					Name: "spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeStorage, scaffold.ResourceInfoTypeAccountName),
 				},
 				{
 					Name:  "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled",
@@ -461,12 +515,14 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		case internal.AuthTypeConnectionString:
 			return []scaffold.Env{
 				{
-					Name:  "spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeStorage, scaffold.ResourceInfoTypeAccountName),
+					Name: "spring.cloud.azure.eventhubs.processor.checkpoint-store.account-name",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeStorage, scaffold.ResourceInfoTypeAccountName),
 				},
 				{
-					Name:  "spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeStorage, scaffold.ResourceInfoTypeConnectionString),
+					Name: "spring.cloud.azure.eventhubs.processor.checkpoint-store.connection-string",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeStorage, scaffold.ResourceInfoTypeConnectionString),
 				},
 				{
 					Name:  "spring.cloud.azure.eventhubs.processor.checkpoint-store.credential.managed-identity-enabled",
@@ -485,8 +541,9 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		case internal.AuthTypeUserAssignedManagedIdentity:
 			return []scaffold.Env{
 				{
-					Name:  "AZURE_OPENAI_ENDPOINT",
-					Value: scaffold.ToResourceConnectionEnv(scaffold.ResourceTypeOpenAiModel, scaffold.ResourceInfoTypeEndpoint),
+					Name: "AZURE_OPENAI_ENDPOINT",
+					Value: scaffold.ToResourceConnectionEnv(
+						scaffold.ResourceTypeOpenAiModel, scaffold.ResourceInfoTypeEndpoint),
 				},
 			}, nil
 		default:

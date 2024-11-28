@@ -21,12 +21,6 @@ import (
 	"github.com/braydonk/yaml"
 )
 
-const (
-	//nolint:lll
-	// todo(haozhan): update this line for sjad private preview, need to revert it when merge into azure-dev/main branch
-	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/azure-javaee/azure-dev/feature/sjad/schemas/alpha/azure.yaml.json"
-)
-
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {
 	newProject := &ProjectConfig{
 		Name: projectName,
@@ -298,9 +292,8 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		version = projectConfig.MetaSchemaVersion
 	}
 
-	annotation := fmt.Sprintf(
-		"# yaml-language-server: $schema=https://raw.githubusercontent.com/azure-javaee/azure-dev/feature/sjad/schemas/%s/azure.yaml.json",
-		version)
+	annotation := fmt.Sprintf("# yaml-language-server: $schema=https://raw.githubusercontent.com/azure-javaee/"+
+		"azure-dev/feature/sjad/schemas/%s/azure.yaml.json", version)
 	projectFileContents := bytes.NewBufferString(annotation + "\n\n")
 	_, err = projectFileContents.Write(projectBytes)
 	if err != nil {

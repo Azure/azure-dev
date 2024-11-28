@@ -13,6 +13,14 @@ words:
   - usgovcloudapi
   - chinacloudapi
   - unmarshals
+  - springframework
+  - eventhubs
+  - jdbc
+  - datasource
+  - passwordless
+  - postgre
+  - mysqladmin
+  - sjad
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -40,8 +48,7 @@ overrides:
       - azuredeps
   - filename: internal/appdetect/java.go
     words:
-      - springframework
-      - eventhubs
+      - chardata
   - filename: docs/docgen.go
     words:
       - alexwolf

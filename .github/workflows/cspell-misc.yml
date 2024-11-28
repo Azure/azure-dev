@@ -2,7 +2,7 @@ name: misc
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/sjad]
     paths-ignore:
       # Changes here should be kept in-sync with projects listed in cspell.misc.yaml
       - 'eng/**' # Not required

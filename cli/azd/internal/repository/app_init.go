@@ -638,33 +638,31 @@ func (i *Initializer) prjConfigFromDetect(
 			if err != nil {
 				return config, err
 			}
-			switch azureDep.(type) {
+			switch azureDep := azureDep.(type) {
 			case appdetect.AzureDepServiceBus:
-				azureDepServiceBus := azureDep.(appdetect.AzureDepServiceBus)
 				config.Resources["servicebus"] = &project.ResourceConfig{
 					Type: project.ResourceTypeMessagingServiceBus,
 					Props: project.ServiceBusProps{
-						Queues:   azureDepServiceBus.Queues,
-						IsJms:    azureDepServiceBus.IsJms,
+						Queues:   azureDep.Queues,
+						IsJms:    azureDep.IsJms,
 						AuthType: authType,
 					},
 				}
 			case appdetect.AzureDepEventHubs:
-				azureDepEventHubs := azureDep.(appdetect.AzureDepEventHubs)
-				if azureDepEventHubs.UseKafka {
+				if azureDep.UseKafka {
 					config.Resources["kafka"] = &project.ResourceConfig{
 						Type: project.ResourceTypeMessagingKafka,
 						Props: project.KafkaProps{
-							Topics:            azureDepEventHubs.Names,
+							Topics:            azureDep.Names,
 							AuthType:          authType,
-							SpringBootVersion: azureDepEventHubs.SpringBootVersion,
+							SpringBootVersion: azureDep.SpringBootVersion,
 						},
 					}
 				} else {
 					config.Resources["eventhubs"] = &project.ResourceConfig{
 						Type: project.ResourceTypeMessagingEventHubs,
 						Props: project.EventHubsProps{
-							EventHubNames: azureDepEventHubs.Names,
+							EventHubNames: azureDep.Names,
 							AuthType:      authType,
 						},
 					}
@@ -673,7 +671,7 @@ func (i *Initializer) prjConfigFromDetect(
 				config.Resources["storage"] = &project.ResourceConfig{
 					Type: project.ResourceTypeStorage,
 					Props: project.StorageProps{
-						Containers: azureDep.(appdetect.AzureDepStorageAccount).ContainerNames,
+						Containers: azureDep.ContainerNames,
 						AuthType:   authType,
 					},
 				}
@@ -709,11 +707,11 @@ func (i *Initializer) prjConfigFromDetect(
 			}
 
 			for _, azureDep := range svc.AzureDeps {
-				switch azureDep.(type) {
+				switch azureDep := azureDep.(type) {
 				case appdetect.AzureDepServiceBus:
 					resSpec.Uses = append(resSpec.Uses, "servicebus")
 				case appdetect.AzureDepEventHubs:
-					if azureDep.(appdetect.AzureDepEventHubs).UseKafka {
+					if azureDep.UseKafka {
 						resSpec.Uses = append(resSpec.Uses, "kafka")
 					} else {
 						resSpec.Uses = append(resSpec.Uses, "eventhubs")
@@ -870,7 +868,9 @@ func processSpringCloudAzureDepByPrompt(console input.Console, ctx context.Conte
 
 	switch continueOption {
 	case 0:
-		return errors.New("you have to manually add dependency com.azure.spring:spring-cloud-azure-starter by following https://github.com/Azure/azure-sdk-for-java/wiki/Spring-Versions-Mapping")
+		return errors.New("you have to manually add dependency com.azure.spring:spring-cloud-azure-starter. " +
+			"And use right version according to this page: " +
+			"https://github.com/Azure/azure-sdk-for-java/wiki/Spring-Versions-Mapping")
 	case 1:
 		return nil
 	case 2:

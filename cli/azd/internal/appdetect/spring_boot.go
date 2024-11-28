@@ -276,11 +276,11 @@ func detectSpringBootVersion(currentRoot *mavenProject, mavenProject *mavenProje
 
 func detectSpringBootVersionFromProject(project *mavenProject) string {
 	if project.Parent.ArtifactId == "spring-boot-starter-parent" {
-		return depVersion(project.Parent.Version, project.Properties)
+		return project.Parent.Version
 	} else {
 		for _, dep := range project.DependencyManagement.Dependencies {
 			if dep.ArtifactId == "spring-boot-dependencies" {
-				return depVersion(dep.Version, project.Properties)
+				return dep.Version
 			}
 		}
 	}
@@ -303,22 +303,6 @@ func isSpringBootApplication(mavenProject *mavenProject) bool {
 		}
 	}
 	return false
-}
-
-func depVersion(version string, properties Properties) string {
-	if strings.HasPrefix(version, "${") {
-		return parseProperties(properties)[version[2:len(version)-1]]
-	} else {
-		return version
-	}
-}
-
-func parseProperties(properties Properties) map[string]string {
-	result := make(map[string]string)
-	for _, entry := range properties.Entries {
-		result[entry.XMLName.Local] = entry.Value
-	}
-	return result
 }
 
 func distinctValues(input map[string]string) []string {

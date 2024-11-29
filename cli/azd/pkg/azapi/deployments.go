@@ -167,6 +167,26 @@ type DeploymentService interface {
 		resourceGroupName string,
 		deploymentName string,
 	) ([]*armresources.DeploymentOperation, error)
+	ValidatePreflightToSubscription(
+		ctx context.Context,
+		subscriptionId string,
+		location string,
+		deploymentName string,
+		armTemplate azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+		tags map[string]*string,
+		options map[string]any,
+	) error
+	ValidatePreflightToResourceGroup(
+		ctx context.Context,
+		subscriptionId,
+		resourceGroup,
+		deploymentName string,
+		armTemplate azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+		tags map[string]*string,
+		options map[string]any,
+	) error
 	WhatIfDeployToSubscription(
 		ctx context.Context,
 		subscriptionId string,

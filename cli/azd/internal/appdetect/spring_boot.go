@@ -267,8 +267,12 @@ func logServiceAddedAccordingToMavenDependencyAndExtraCondition(
 func detectSpringBootVersion(currentRoot *mavenProject, mavenProject *mavenProject) string {
 	// mavenProject prioritize than rootProject
 	if mavenProject != nil {
-		return detectSpringBootVersionFromProject(mavenProject)
-	} else if currentRoot != nil {
+		if version := detectSpringBootVersionFromProject(mavenProject); version != UnknownSpringBootVersion {
+			return version
+		}
+	}
+	// fallback to detect root project
+	if currentRoot != nil {
 		return detectSpringBootVersionFromProject(currentRoot)
 	}
 	return UnknownSpringBootVersion

@@ -18,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -132,8 +133,13 @@ func (m *Manager) ListFromRegistry(ctx context.Context) ([]*ExtensionMetadata, e
 		return nil, err
 	}
 
-	if err := validateRegistry(registry); err != nil {
-		return nil, err
+	if err := validateRegistry(*registry); err != nil {
+		allErrors := []error{err}
+		if err := m.registryCache.Remove(); err != nil {
+			allErrors = append(allErrors, err)
+		}
+
+		return nil, errors.Join(allErrors...)
 	}
 
 	return registry.Extensions, nil
@@ -342,7 +348,7 @@ func (m *Manager) loadRegistry(ctx context.Context) (*Registry, error) {
 	return registry, nil
 }
 
-func validateRegistry(registry *Registry) error {
+func validateRegistry(registry Registry) error {
 	// Extract the signature
 	signature := registry.Signature
 	registry.Signature = ""
@@ -353,12 +359,29 @@ func validateRegistry(registry *Registry) error {
 		return fmt.Errorf("failed to marshal registry content: %w", err)
 	}
 
-	// Validate the registry signature
-	if err := verifySignature(rawRegistry, signature); err != nil {
-		return fmt.Errorf("registry signature validation failed: %w", err)
+	publicKeys, err := loadPublicKeys()
+	if err != nil {
+		return fmt.Errorf("failed to load public keys: %w", err)
 	}
 
-	return nil
+	allErrors := []error{}
+
+	for keyName, publicKey := range publicKeys {
+		log.Printf("Verifying signature with public key: %s\n", keyName)
+
+		// Verify the signature with the public key
+		err = verifySignature(rawRegistry, signature, publicKey)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Errorf("signature verification failed: %w", err))
+			continue
+		}
+
+		// Signature verified successfully
+		log.Printf("Signature verified successfully with public key: %s\n", keyName)
+		return nil
+	}
+
+	return fmt.Errorf("signature verification failed with all public keys: %w", errors.Join(allErrors...))
 }
 
 // Helper function to find the binary for the current OS
@@ -488,12 +511,7 @@ func copyFile(src, dst string) error {
 }
 
 // Verify verifies the given data and its Base64-encoded signature
-func verifySignature(data []byte, signature string) error {
-	publicKey, err := loadPublicKey(resources.PublicKey)
-	if err != nil {
-		return fmt.Errorf("failed to load public key: %w", err)
-	}
-
+func verifySignature(data []byte, signature string, publicKey *rsa.PublicKey) error {
 	// Compute the SHA256 hash of the data
 	hash := sha256.Sum256(data)
 
@@ -512,8 +530,60 @@ func verifySignature(data []byte, signature string) error {
 	return nil
 }
 
-// loadPublicKey loads an RSA public key from a PEM file
-func loadPublicKey(data []byte) (*rsa.PublicKey, error) {
+func sign(data []byte, privateKey *rsa.PrivateKey) (string, error) {
+	// Check the key size
+	if privateKey.N.BitLen() < 2048 {
+		return "", fmt.Errorf("key size is too small, must be at least 2048 bits")
+	}
+
+	// Compute the SHA256 hash of the data
+	hash := sha256.Sum256(data)
+
+	// Sign the hash with the private key
+	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hash[:])
+	if err != nil {
+		return "", fmt.Errorf("failed to sign data: %w", err)
+	}
+
+	// Encode the signature to Base64
+	return base64.StdEncoding.EncodeToString(signature), nil
+}
+
+func loadPublicKeys() (map[string]*rsa.PublicKey, error) {
+	entries, err := resources.PublicKeys.ReadDir("keys")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read public keys directory: %w", err)
+	}
+
+	publicKeys := map[string]*rsa.PublicKey{}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		if !strings.HasSuffix(entry.Name(), ".pem") {
+			continue
+		}
+
+		publicKeyData, err := resources.PublicKeys.ReadFile(path.Join("keys", entry.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read public key file: %w", err)
+		}
+
+		publicKey, err := parsePublicKey(publicKeyData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse public key: %w", err)
+		}
+
+		publicKeys[entry.Name()] = publicKey
+	}
+
+	return publicKeys, nil
+}
+
+// parsePublicKey loads an RSA public key from a PEM file
+func parsePublicKey(data []byte) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode(data)
 	if block == nil || block.Type != "PUBLIC KEY" {
 		return nil, fmt.Errorf("invalid public key PEM format")

@@ -245,9 +245,8 @@ func detectSpringCloudAzure(azdProject *Project, springBootProject *SpringBootPr
 	var targetGroupId = "com.azure.spring"
 	var targetArtifactId = "spring-cloud-azure-starter"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
-		newDep := SpringCloudAzureDep{}
-		azdProject.AzureDeps = append(azdProject.AzureDeps, newDep)
-		logServiceAddedAccordingToMavenDependency(newDep.ResourceDisplay(), targetGroupId, targetArtifactId)
+		azdProject.MetaData.ContainsDependencySpringCloudAzureStarter = true
+		logMetadataUpdated("ContainsDependencySpringCloudAzureStarter = true")
 	}
 }
 
@@ -296,6 +295,10 @@ func logServiceAddedAccordingToMavenDependencyAndExtraCondition(
 	}
 	log.Printf("Detected '%s' because found dependency '%s:%s' in pom.xml file%s.",
 		resourceName, groupId, artifactId, insertedString)
+}
+
+func logMetadataUpdated(info string) {
+	log.Printf("Metadata updated. %s.", info)
 }
 
 func detectSpringBootVersion(currentRoot *mavenProject, mavenProject *mavenProject) string {

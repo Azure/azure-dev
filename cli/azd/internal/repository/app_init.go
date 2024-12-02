@@ -136,7 +136,6 @@ func (i *Initializer) InitFromApp(
 
 		if prj.Language == appdetect.Java {
 			var hasKafkaDep bool
-			var hasSpringCloudAzureDep bool
 			for depIndex, dep := range prj.AzureDeps {
 				if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); ok && eventHubs.UseKafka {
 					hasKafkaDep = true
@@ -152,12 +151,9 @@ func (i *Initializer) InitFromApp(
 						prj.AzureDeps[depIndex] = eventHubs
 					}
 				}
-				if _, ok := dep.(appdetect.SpringCloudAzureDep); ok {
-					hasSpringCloudAzureDep = true
-				}
 			}
 
-			if hasKafkaDep && !hasSpringCloudAzureDep {
+			if hasKafkaDep && !prj.MetaData.ContainsDependencySpringCloudAzureStarter {
 				err := processSpringCloudAzureDepByPrompt(i.console, ctx, &projects[index])
 				if err != nil {
 					return err

@@ -180,11 +180,8 @@ func (a AzureDepStorageAccount) ResourceDisplay() string {
 	return "Azure Storage Account"
 }
 
-type SpringCloudAzureDep struct {
-}
-
-func (a SpringCloudAzureDep) ResourceDisplay() string {
-	return "Spring Cloud Azure Starter"
+type MetaData struct {
+	ContainsDependencySpringCloudAzureStarter bool
 }
 
 const UnknownSpringBootVersion string = "unknownSpringBootVersion"
@@ -201,6 +198,9 @@ type Project struct {
 
 	// Experimental: Azure dependencies inferred through heuristics while scanning dependencies in the project.
 	AzureDeps []AzureDep
+
+	// Experimental: Metadata inferred through heuristics while scanning the project.
+	MetaData MetaData
 
 	// The path to the project directory.
 	Path string

@@ -69,6 +69,20 @@ func (c *FileCache[T]) Set(value *T) error {
 	return nil
 }
 
+// Remove removes the cache file.
+func (c *FileCache[T]) Remove() error {
+	// If the file does not exist, short-circuit
+	if _, err := os.Stat(c.filePath); os.IsNotExist(err) {
+		return nil
+	}
+
+	if err := os.Remove(c.filePath); err != nil {
+		return fmt.Errorf("failed to remove cache: %w", err)
+	}
+
+	return nil
+}
+
 // isValid checks if the cache is valid.
 func (c *FileCache[T]) isValid() bool {
 	val, has := os.LookupEnv("AZD_NO_CACHE")

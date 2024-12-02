@@ -84,6 +84,7 @@ func (c *encryptedCache) Read(key string) ([]byte, error) {
 		// structure, treat it as if the data was directly stored. The next call to Set will transparently upgrade
 		// to the new format.
 
+		// nolint:gosec
 		encryptedBlob = windows.DataBlob{
 			Size: uint32(len(val)),
 			Data: &val[0],
@@ -99,6 +100,7 @@ func (c *encryptedCache) Read(key string) ([]byte, error) {
 			return nil, fmt.Errorf("decoding base64 data: %w", err)
 		}
 
+		// nolint:gosec
 		encryptedBlob = windows.DataBlob{
 			Size: uint32(len(data)),
 			Data: &data[0],
@@ -128,6 +130,7 @@ func (c *encryptedCache) Set(key string, val []byte) error {
 		return c.inner.Set(key, val)
 	}
 
+	// nolint:gosec
 	plaintext := windows.DataBlob{
 		Size: uint32(len(val)),
 		Data: &val[0],

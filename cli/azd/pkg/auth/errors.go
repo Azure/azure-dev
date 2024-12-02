@@ -29,7 +29,7 @@ type ReLoginRequiredError struct {
 	// The scenario in which the login is required
 	scenario string
 
-	description string
+	errText string
 
 	helpLink string
 }
@@ -66,7 +66,7 @@ func newReLoginRequiredError(
 }
 
 func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string, cloud *cloud.Cloud) {
-	e.description = response.ErrorDescription
+	e.errText = response.ErrorDescription
 	e.scenario = "reauthentication required"
 	e.loginCmd = "azd auth login"
 	if !matchesLoginScopes(scopes, cloud) { // if matching default login scopes, no scopes need to be specified
@@ -81,7 +81,7 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 	}
 
 	// User tried to sign in to a device from a platform not currently supported through Conditional Access policy
-	if slices.Contains((response.ErrorCodes), 50005) {
+	if slices.Contains(response.ErrorCodes, 50005) {
 		e.loginCmd += " --use-device-code=false"
 		// TODO: Use aka.ms short link
 		//nolint:lll
@@ -90,7 +90,7 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 }
 
 func (e *ReLoginRequiredError) Error() string {
-	return e.description
+	return e.errText
 }
 
 // matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.

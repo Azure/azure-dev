@@ -101,7 +101,7 @@ func TestReLoginRequired(t *testing.T) {
 	}
 }
 
-func TestReLoginRequiredDescription(t *testing.T) {
+func TestReLoginRequiredError(t *testing.T) {
 	tests := []struct {
 		name string
 		resp *AadErrorResponse
@@ -111,17 +111,17 @@ func TestReLoginRequiredDescription(t *testing.T) {
 			"invalid_grant",
 			&AadErrorResponse{
 				Error:            "invalid_grant",
-				ErrorDescription: "AADSTS50005",
+				ErrorDescription: "description 1",
 			},
-			"AADSTS50005",
+			"description 1",
 		},
 		{
 			"interaction_required",
 			&AadErrorResponse{
 				Error:            "interaction_required",
-				ErrorDescription: "AADSTS50076",
+				ErrorDescription: "description 2",
 			},
-			"AADSTS50076",
+			"description 2",
 		},
 	}
 	for _, tt := range tests {

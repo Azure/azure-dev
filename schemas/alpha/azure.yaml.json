@@ -159,6 +159,14 @@
                         "type": "object",
                         "additionalProperties": true
                     },
+                    "env": {
+                        "type": "object",
+                        "title": "A map of key value pairs used to set as environment variables for the service.",
+                        "description": "Optional. Supports environment variable substitution.",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
                     "hooks": {
                         "type": "object",
                         "title": "Service level hooks",

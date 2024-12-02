@@ -21,6 +21,7 @@ words:
   - postgre
   - mysqladmin
   - sjad
+  - configserver
 languageSettings:
   - languageId: go
     ignoreRegExpList:

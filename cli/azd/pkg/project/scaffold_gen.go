@@ -6,13 +6,14 @@ package project
 import (
 	"context"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -205,6 +206,7 @@ func infraSpec(projectConfig *ProjectConfig,
 			if err != nil {
 				return nil, err
 			}
+			serviceSpec.Envs = append(serviceSpec.Envs, serviceConfigEnv(projectConfig.Services[resource.Name])...)
 			infraSpec.Services = append(infraSpec.Services, serviceSpec)
 		case ResourceTypeOpenAiModel:
 			props := resource.Props.(AIModelProps)
@@ -346,13 +348,16 @@ func getAuthType(infraSpec *scaffold.InfraSpec, resourceType ResourceType) (inte
 		return infraSpec.AzureEventHubs.AuthType, nil
 	case ResourceTypeStorage:
 		return infraSpec.AzureStorageAccount.AuthType, nil
+	case ResourceTypeJavaEurekaServer,
+		ResourceTypeJavaConfigServer:
+		return internal.AuthTypeUnspecified, nil
 	default:
 		return internal.AuthTypeUnspecified, fmt.Errorf("can not get authType, resource type: %s", resourceType)
 	}
 }
 
 func addUsageByEnv(infraSpec *scaffold.InfraSpec, userSpec *scaffold.ServiceSpec, usedResource *ResourceConfig) error {
-	envs, err := getResourceConnectionEnvs(usedResource, infraSpec)
+	envs, err := GetResourceConnectionEnvs(usedResource, infraSpec)
 	if err != nil {
 		return err
 	}
@@ -395,7 +400,7 @@ func printEnvListAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *Project
 				ResourceTypeMessagingEventHubs,
 				ResourceTypeMessagingKafka,
 				ResourceTypeStorage:
-				variables, err := getResourceConnectionEnvs(usedResource, infraSpec)
+				variables, err := GetResourceConnectionEnvs(usedResource, infraSpec)
 				if err != nil {
 					return err
 				}
@@ -568,4 +573,17 @@ func printHintsAboutUseHostContainerApp(userResourceName string, usedResourceNam
 	console.Message(ctx, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(usedResourceName)))
 	console.Message(ctx, fmt.Sprintf("Environment variables in %s:", usedResourceName))
 	console.Message(ctx, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(userResourceName)))
+}
+
+func serviceConfigEnv(svcConfig *ServiceConfig) []scaffold.Env {
+	var envs []scaffold.Env
+	if svcConfig != nil {
+		for key, val := range svcConfig.Env {
+			envs = append(envs, scaffold.Env{
+				Name:  key,
+				Value: val,
+			})
+		}
+	}
+	return envs
 }

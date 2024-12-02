@@ -59,6 +59,11 @@ const (
 	PyFlask   Dependency = "flask"
 	PyDjango  Dependency = "django"
 	PyFastApi Dependency = "fastapi"
+
+	JavaEurekaServer Dependency = "eureka-server"
+	JavaEurekaClient Dependency = "eureka-client"
+	JavaConfigServer Dependency = "config-server"
+	JavaConfigClient Dependency = "config-client"
 )
 
 var WebUIFrameworks = map[Dependency]struct{}{
@@ -89,6 +94,14 @@ func (f Dependency) Display() string {
 		return "Vite"
 	case JsNext:
 		return "Next.js"
+	case JavaEurekaServer:
+		return "JavaEurekaServer"
+	case JavaEurekaClient:
+		return "JavaEurekaClient"
+	case JavaConfigServer:
+		return "JavaConfigServer"
+	case JavaConfigClient:
+		return "JavaConfigClient"
 	}
 
 	return ""
@@ -312,7 +325,7 @@ func detectAny(ctx context.Context, detectors []projectDetector, path string, en
 		if project != nil {
 			log.Printf("Found project %s at %s", project.Language, path)
 
-			// docker is an optional property of a project, and thus is different than other detectors
+			// docker is an optional property of a project, and thus is different from other detectors
 			docker, err := detectDockerInDirectory(path, entries)
 			if err != nil {
 				return nil, fmt.Errorf("detecting docker project: %w", err)

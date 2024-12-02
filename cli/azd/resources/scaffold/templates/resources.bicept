@@ -272,8 +272,8 @@ module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assign
   }
 }
 {{- end}}
-{{- if (and .DbPostgres (eq .DbPostgres.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
 {{- range .Services}}
+{{- if (and .DbPostgres (eq .DbPostgres.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
 module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
   name: '{{bicepName .Name}}CreateConnectionToPostgreSql'
   params: {
@@ -293,8 +293,8 @@ module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resour
 }
 {{- end}}
 {{- end}}
-{{- if (and .DbMySql (eq .DbMySql.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
 {{- range .Services}}
+{{- if (and .DbMySql (eq .DbMySql.AuthType "USER_ASSIGNED_MANAGED_IDENTITY")) }}
 module {{bicepName .Name}}CreateConnectionToMysql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
   name: '{{bicepName .Name}}CreateConnectionToMysql'
   params: {

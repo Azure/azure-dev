@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func getResourceConnectionEnvs(usedResource *ResourceConfig,
+func GetResourceConnectionEnvs(usedResource *ResourceConfig,
 	infraSpec *scaffold.InfraSpec) ([]scaffold.Env, error) {
 	resourceType := usedResource.Type
 	authType, err := getAuthType(infraSpec, usedResource.Type)
@@ -556,6 +556,32 @@ func getResourceConnectionEnvs(usedResource *ResourceConfig,
 		default:
 			return []scaffold.Env{}, unsupportedAuthTypeError(resourceType, authType)
 		}
+	case ResourceTypeJavaEurekaServer:
+		return []scaffold.Env{
+			{
+				Name:  "eureka.client.register-with-eureka",
+				Value: "true",
+			},
+			{
+				Name:  "eureka.client.fetch-registry",
+				Value: "true",
+			},
+			{
+				Name:  "eureka.instance.prefer-ip-address",
+				Value: "true",
+			},
+			{
+				Name:  "eureka.client.serviceUrl.defaultZone",
+				Value: fmt.Sprintf("%s/eureka", scaffold.GetContainerAppHost(usedResource.Name)),
+			},
+		}, nil
+	case ResourceTypeJavaConfigServer:
+		return []scaffold.Env{
+			{
+				Name:  "spring.config.import",
+				Value: fmt.Sprintf("optional:configserver:%s", scaffold.GetContainerAppHost(usedResource.Name)),
+			},
+		}, nil
 	default:
 		return []scaffold.Env{}, unsupportedResourceTypeError(resourceType)
 	}

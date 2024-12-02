@@ -45,6 +45,8 @@ type ServiceConfig struct {
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
 	// Custom configuration for the service target
 	Config map[string]any `yaml:"config,omitempty"`
+	// Environment variables for service
+	Env map[string]string `yaml:"env,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }

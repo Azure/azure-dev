@@ -34,6 +34,9 @@ const (
 	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
 	ResourceTypeMessagingKafka      ResourceType = "messaging.kafka"
 	ResourceTypeStorage             ResourceType = "storage"
+
+	ResourceTypeJavaEurekaServer ResourceType = "java.eureka.server"
+	ResourceTypeJavaConfigServer ResourceType = "java.config.server"
 )
 
 func (r ResourceType) String() string {
@@ -60,6 +63,10 @@ func (r ResourceType) String() string {
 		return "Kafka"
 	case ResourceTypeStorage:
 		return "Storage Account"
+	case ResourceTypeJavaEurekaServer:
+		return "Java Eureka Server"
+	case ResourceTypeJavaConfigServer:
+		return "Java Config Server"
 	}
 
 	return ""

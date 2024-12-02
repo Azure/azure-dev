@@ -176,7 +176,17 @@ var bicepEnv = map[ResourceType]map[ResourceInfoType]string{
 	ResourceTypeOpenAiModel: {
 		ResourceInfoTypeEndpoint: "account.outputs.endpoint",
 	},
-	ResourceTypeHostContainerApp: {},
+	ResourceTypeHostContainerApp: {
+		ResourceInfoTypeHost: "https://{{BackendName}}.${containerAppsEnvironment.outputs.defaultDomain}",
+	},
+}
+
+func GetContainerAppHost(name string) string {
+	return strings.ReplaceAll(
+		bicepEnv[ResourceTypeHostContainerApp][ResourceInfoTypeHost],
+		"{{BackendName}}",
+		name,
+	)
 }
 
 func unsupportedType(env Env) string {

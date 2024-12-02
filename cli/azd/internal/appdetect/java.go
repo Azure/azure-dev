@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
 type javaDetector struct {
@@ -49,7 +50,6 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				}
 			}
 
-			_ = currentRoot // use currentRoot here in the analysis
 			result, err := detectDependencies(currentRoot, project, &Project{
 				Language:      Java,
 				Path:          path,

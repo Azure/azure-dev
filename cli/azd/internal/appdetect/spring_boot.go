@@ -101,12 +101,18 @@ func detectAzureDependenciesByAnalyzingSpringBootProject(
 	detectMetadata(azdProject, &springBootProject)
 	detectSpringCloudEureka(azdProject, &springBootProject)
 	detectSpringCloudConfig(azdProject, &springBootProject)
+	for _, p := range mavenProject.Build.Plugins {
+		if p.GroupId == "com.github.eirslett" && p.ArtifactId == "frontend-maven-plugin" {
+			azdProject.Dependencies = append(azdProject.Dependencies, SpringFrontend)
+			break
+		}
+	}
 }
 
 func detectSpringApplicationName(azdProject *Project, springBootProject *SpringBootProject) {
 	var targetSpringAppName = "spring.application.name"
 	if appName, ok := springBootProject.applicationProperties[targetSpringAppName]; ok {
-		azdProject.MetaData.Name = appName
+		azdProject.Metadata.Name = appName
 	}
 }
 

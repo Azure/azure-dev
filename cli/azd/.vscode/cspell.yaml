@@ -131,6 +131,9 @@ overrides:
   - filename: internal/vsrpc/handler.go
     words:
       - arity
+  - filename: internal/appdetect/spring_boot.go
+    words:
+      - eirslett
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

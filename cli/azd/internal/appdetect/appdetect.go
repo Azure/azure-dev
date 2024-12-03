@@ -60,6 +60,7 @@ const (
 	PyDjango  Dependency = "django"
 	PyFastApi Dependency = "fastapi"
 
+	SpringFrontend   Dependency = "springFrontend"
 	JavaEurekaServer Dependency = "eureka-server"
 	JavaEurekaClient Dependency = "eureka-client"
 	JavaConfigServer Dependency = "config-server"
@@ -67,10 +68,11 @@ const (
 )
 
 var WebUIFrameworks = map[Dependency]struct{}{
-	JsReact:   {},
-	JsAngular: {},
-	JsJQuery:  {},
-	JsVite:    {},
+	JsReact:        {},
+	JsAngular:      {},
+	JsJQuery:       {},
+	JsVite:         {},
+	SpringFrontend: {},
 }
 
 func (f Dependency) Language() Language {
@@ -181,7 +183,7 @@ func (a AzureDepStorageAccount) ResourceDisplay() string {
 }
 
 type Metadata struct {
-  Name                                                    string
+	Name                                                    string
 	ContainsDependencySpringCloudAzureStarter               bool
 	ContainsDependencySpringCloudAzureStarterJdbcPostgresql bool
 	ContainsDependencySpringCloudAzureStarterJdbcMysql      bool
@@ -208,6 +210,8 @@ type Project struct {
 
 	// The path to the project directory.
 	Path string
+
+	Options map[string]interface{}
 
 	// A short description of the detection rule applied.
 	DetectionRule string

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"maps"
 	"os"
 	"path/filepath"
@@ -439,12 +440,12 @@ func (i *Initializer) prjConfigFromDetect(
 		for _, dep := range svc.Dependencies {
 			switch dep {
 			case appdetect.JavaEurekaServer:
-				javaEurekaServerService, err = ServiceFromDetect(root, svc.MetaData.Name, svc)
+				javaEurekaServerService, err = ServiceFromDetect(root, svc.Metadata.Name, svc)
 				if err != nil {
 					return config, err
 				}
 			case appdetect.JavaConfigServer:
-				javaConfigServerService, err = ServiceFromDetect(root, svc.MetaData.Name, svc)
+				javaConfigServerService, err = ServiceFromDetect(root, svc.Metadata.Name, svc)
 				if err != nil {
 					return config, err
 				}
@@ -454,7 +455,7 @@ func (i *Initializer) prjConfigFromDetect(
 
 	svcMapping := map[string]string{}
 	for _, prj := range detect.Services {
-		svc, err := ServiceFromDetect(root, prj.MetaData.Name, prj)
+		svc, err := ServiceFromDetect(root, prj.Metadata.Name, prj)
 		if err != nil {
 			return config, err
 		}
@@ -576,6 +577,7 @@ func (i *Initializer) prjConfigFromDetect(
 
 		config.Services[svc.Name] = &svc
 		svcMapping[prj.Path] = svc.Name
+
 	}
 
 	if addResources {
@@ -794,6 +796,11 @@ func (i *Initializer) prjConfigFromDetect(
 				frontend.Uses = append(frontend.Uses, backend.Name)
 			}
 		}
+
+		err := i.addMavenBuildHook(*detect, &config)
+		if err != nil {
+			return config, err
+		}
 	}
 
 	return config, nil
@@ -859,6 +866,57 @@ func checkPasswordlessConfigurationAndContinueProvision(database appdetect.Datab
 		}
 	}
 	return true, nil
+}
+
+func (i *Initializer) addMavenBuildHook(
+	detect detectConfirm,
+	config *project.ProjectConfig) error {
+	wrapperPathMap := map[string][]string{}
+
+	for _, prj := range detect.Services {
+		if prj.Language == appdetect.Java && prj.Options["parentPath"] != nil {
+			parentPath := prj.Options[appdetect.JavaProjectOptionMavenParentPath].(string)
+			posixMavenWrapperPath := prj.Options[appdetect.JavaProjectOptionPosixMavenWrapperPath].(string)
+			winMavenWrapperPath := prj.Options[appdetect.JavaProjectOptionWinMavenWrapperPath].(string)
+			wrapperPathMap[parentPath] = []string{posixMavenWrapperPath, winMavenWrapperPath}
+		}
+	}
+
+	for _, wrapperPaths := range wrapperPathMap {
+		// Add hooks to build the Java project
+		if config.Hooks == nil {
+			config.Hooks = project.HooksConfig{}
+		}
+
+		config.Hooks["prepackage"] = append(config.Hooks["prepackage"], &ext.HookConfig{
+			Posix: &ext.HookConfig{
+				Shell: ext.ShellTypeBash,
+				Run:   getMavenExecutable(detect.root, wrapperPaths[0], true) + " clean package -DskipTests",
+			},
+			Windows: &ext.HookConfig{
+				Shell: ext.ShellTypePowershell,
+				Run:   getMavenExecutable(detect.root, wrapperPaths[1], false) + " clean package -DskipTests",
+			},
+		})
+	}
+	return nil
+}
+
+func getMavenExecutable(projectPath string, wrapperPath string, isPosix bool) string {
+	if wrapperPath == "" {
+		return "mvn"
+	}
+
+	rel, err := filepath.Rel(projectPath, wrapperPath)
+	if err != nil {
+		return "mvn"
+	}
+
+	if isPosix {
+		return "./" + rel
+	} else {
+		return ".\\" + rel
+	}
 }
 
 func (i *Initializer) getDatabaseNameByPrompt(ctx context.Context, database appdetect.DatabaseDep) (string, error) {
@@ -963,6 +1021,9 @@ func ServiceFromDetect(
 			case appdetect.JsAngular:
 				// angular uses dist/<project name>
 				svc.OutputPath = "dist/" + filepath.Base(rel)
+				break loop
+			case appdetect.SpringFrontend:
+				svc.OutputPath = ""
 				break loop
 			}
 		}

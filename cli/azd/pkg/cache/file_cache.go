@@ -3,7 +3,9 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strconv"
 	"time"
@@ -72,7 +74,7 @@ func (c *FileCache[T]) Set(value *T) error {
 // Remove removes the cache file.
 func (c *FileCache[T]) Remove() error {
 	// If the file does not exist, short-circuit
-	if _, err := os.Stat(c.filePath); os.IsNotExist(err) {
+	if _, err := os.Stat(c.filePath); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 
@@ -94,7 +96,7 @@ func (c *FileCache[T]) isValid() bool {
 	}
 
 	info, err := os.Stat(c.filePath)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, os.ErrPermission) {
 		return false
 	}
 

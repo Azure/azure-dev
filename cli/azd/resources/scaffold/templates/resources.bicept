@@ -623,7 +623,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- range $i, $e := .Frontend.Backends}}
           {
             name: '{{upper .Name}}_BASE_URL'
-            value: 'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
+            value: 'https://${ {{bicepName .Name}}.outputs.name}.${containerAppsEnvironment.outputs.defaultDomain}'
           }
           {{- end}}
           {{- end}}
@@ -631,11 +631,15 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- range $i, $e := .Backend.Frontends}}
           {
             name: '{{upper .Name}}_BASE_URL'
-            value: 'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
+            value: 'https://{{containerAppName .Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
           }
           {{- end}}
           {{- end}}
           {{- if ne .Port 0}}
+          {
+            name: 'server.port'
+            value: '{{ .Port }}'
+          }
           {
             name: 'PORT'
             value: '{{ .Port }}'

@@ -439,12 +439,12 @@ func (i *Initializer) prjConfigFromDetect(
 		for _, dep := range svc.Dependencies {
 			switch dep {
 			case appdetect.JavaEurekaServer:
-				javaEurekaServerService, err = ServiceFromDetect(root, "", svc)
+				javaEurekaServerService, err = ServiceFromDetect(root, svc.MetaData.Name, svc)
 				if err != nil {
 					return config, err
 				}
 			case appdetect.JavaConfigServer:
-				javaConfigServerService, err = ServiceFromDetect(root, "", svc)
+				javaConfigServerService, err = ServiceFromDetect(root, svc.MetaData.Name, svc)
 				if err != nil {
 					return config, err
 				}
@@ -454,7 +454,7 @@ func (i *Initializer) prjConfigFromDetect(
 
 	svcMapping := map[string]string{}
 	for _, prj := range detect.Services {
-		svc, err := ServiceFromDetect(root, "", prj)
+		svc, err := ServiceFromDetect(root, prj.MetaData.Name, prj)
 		if err != nil {
 			return config, err
 		}

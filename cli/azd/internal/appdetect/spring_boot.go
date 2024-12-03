@@ -93,6 +93,7 @@ func detectAzureDependenciesByAnalyzingSpringBootProject(
 		parentProject:         parentProject,
 		mavenProject:          mavenProject,
 	}
+	detectSpringApplicationName(azdProject, &springBootProject)
 	detectDatabases(azdProject, &springBootProject)
 	detectServiceBus(azdProject, &springBootProject)
 	detectEventHubs(azdProject, &springBootProject)
@@ -100,6 +101,13 @@ func detectAzureDependenciesByAnalyzingSpringBootProject(
 	detectSpringCloudAzure(azdProject, &springBootProject)
 	detectSpringCloudEureka(azdProject, &springBootProject)
 	detectSpringCloudConfig(azdProject, &springBootProject)
+}
+
+func detectSpringApplicationName(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetSpringAppName = "spring.application.name"
+	if appName, ok := springBootProject.applicationProperties[targetSpringAppName]; ok {
+		azdProject.MetaData.Name = appName
+	}
 }
 
 func detectDatabases(azdProject *Project, springBootProject *SpringBootProject) {

@@ -47,7 +47,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 						Type: project.ResourceTypeHostContainerApp,
 						Name: "dotnet",
 						Props: project.ContainerAppProps{
-							Port: 80,
+							Port: 8080,
 						},
 					},
 				},

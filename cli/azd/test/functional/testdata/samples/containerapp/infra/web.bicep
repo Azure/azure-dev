@@ -24,7 +24,7 @@ resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
       activeRevisionsMode: 'single'
       ingress: {
         external: true
-        targetPort: 3100
+        targetPort: 8080
         transport: 'auto'
       }
       secrets: [

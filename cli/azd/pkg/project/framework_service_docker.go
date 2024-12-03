@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -163,12 +164,8 @@ func (p *dockerProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (p *dockerProject) RequiredExternalTools(_ context.Context, sc *ServiceConfig) []tools.ExternalTool {
-	if sc.Docker.RemoteBuild {
-		return []tools.ExternalTool{}
-	}
-
-	return []tools.ExternalTool{p.docker}
+func (p *dockerProject) RequiredExternalTools(ctx context.Context, sc *ServiceConfig) []tools.ExternalTool {
+	return p.containerHelper.RequiredExternalTools(ctx, sc)
 }
 
 // Initializes the docker project
@@ -199,7 +196,7 @@ func (p *dockerProject) Build(
 	restoreOutput *ServiceRestoreResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
-	if serviceConfig.Docker.RemoteBuild {
+	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServiceBuildResult{Restore: restoreOutput}, nil
 	}
 
@@ -275,12 +272,12 @@ func (p *dockerProject) Build(
 		strings.ToLower(serviceConfig.Name),
 	)
 
-	path := dockerOptions.Path
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(serviceConfig.Path(), path)
+	dockerfilePath := dockerOptions.Path
+	if !filepath.IsAbs(dockerfilePath) {
+		dockerfilePath = filepath.Join(serviceConfig.Path(), dockerfilePath)
 	}
 
-	_, err = os.Stat(path)
+	_, err = os.Stat(dockerfilePath)
 	if errors.Is(err, os.ErrNotExist) && serviceConfig.Docker.Path == "" {
 		// Build the container from source when:
 		// 1. No Dockerfile path is specified, and
@@ -341,13 +338,43 @@ func (p *dockerProject) Build(
 	}, nil
 }
 
+func useDotnetPublishForDockerBuild(serviceConfig *ServiceConfig) bool {
+	if serviceConfig.useDotNetPublishForDockerBuild != nil {
+		return *serviceConfig.useDotNetPublishForDockerBuild
+	}
+
+	serviceConfig.useDotNetPublishForDockerBuild = to.Ptr(false)
+
+	if serviceConfig.Language.IsDotNet() {
+		projectPath := serviceConfig.Path()
+
+		dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+
+		dockerfilePath := dockerOptions.Path
+		if !filepath.IsAbs(dockerfilePath) {
+			s, err := os.Stat(projectPath)
+			if err == nil && s.IsDir() {
+				dockerfilePath = filepath.Join(projectPath, dockerfilePath)
+			} else {
+				dockerfilePath = filepath.Join(filepath.Dir(projectPath), dockerfilePath)
+			}
+		}
+
+		if _, err := os.Stat(dockerfilePath); errors.Is(err, os.ErrNotExist) {
+			serviceConfig.useDotNetPublishForDockerBuild = to.Ptr(true)
+		}
+	}
+
+	return *serviceConfig.useDotNetPublishForDockerBuild
+}
+
 func (p *dockerProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	if serviceConfig.Docker.RemoteBuild {
+	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServicePackageResult{Build: buildOutput}, nil
 	}
 

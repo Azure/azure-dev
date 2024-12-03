@@ -224,7 +224,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 					nil),
 			}
 
-			spec, err := i.infraSpecFromDetect(context.Background(), tt.detect)
+			spec, err := i.infraSpecFromDetect(context.Background(), &tt.detect)
 
 			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
 			// which may result in incorrect `gotestsum` reporting

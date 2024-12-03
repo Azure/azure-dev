@@ -98,7 +98,7 @@ func detectAzureDependenciesByAnalyzingSpringBootProject(
 	detectServiceBus(azdProject, &springBootProject)
 	detectEventHubs(azdProject, &springBootProject)
 	detectStorageAccount(azdProject, &springBootProject)
-	detectSpringCloudAzure(azdProject, &springBootProject)
+	detectMetadata(azdProject, &springBootProject)
 	detectSpringCloudEureka(azdProject, &springBootProject)
 	detectSpringCloudConfig(azdProject, &springBootProject)
 }
@@ -249,12 +249,45 @@ func detectStorageAccountAccordingToSpringCloudStreamBinderMavenDependencyAndPro
 	}
 }
 
-func detectSpringCloudAzure(azdProject *Project, springBootProject *SpringBootProject) {
+func detectMetadata(azdProject *Project, springBootProject *SpringBootProject) {
+	detectDependencySpringCloudAzureStarter(azdProject, springBootProject)
+	detectDependencySpringCloudAzureStarterJdbcPostgresql(azdProject, springBootProject)
+	detectDependencySpringCloudAzureStarterJdbcMysql(azdProject, springBootProject)
+	detectPropertySpringDatasourcePassword(azdProject, springBootProject)
+}
+
+func detectDependencySpringCloudAzureStarter(azdProject *Project, springBootProject *SpringBootProject) {
 	var targetGroupId = "com.azure.spring"
 	var targetArtifactId = "spring-cloud-azure-starter"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
-		azdProject.MetaData.ContainsDependencySpringCloudAzureStarter = true
+		azdProject.Metadata.ContainsDependencySpringCloudAzureStarter = true
 		logMetadataUpdated("ContainsDependencySpringCloudAzureStarter = true")
+	}
+}
+
+func detectDependencySpringCloudAzureStarterJdbcPostgresql(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetGroupId = "com.azure.spring"
+	var targetArtifactId = "spring-cloud-azure-starter-jdbc-postgresql"
+	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
+		azdProject.Metadata.ContainsDependencySpringCloudAzureStarterJdbcPostgresql = true
+		logMetadataUpdated("ContainsDependencySpringCloudAzureStarterJdbcPostgresql = true")
+	}
+}
+
+func detectDependencySpringCloudAzureStarterJdbcMysql(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetGroupId = "com.azure.spring"
+	var targetArtifactId = "spring-cloud-azure-starter-jdbc-mysql"
+	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
+		azdProject.Metadata.ContainsDependencySpringCloudAzureStarterJdbcMysql = true
+		logMetadataUpdated("ContainsDependencySpringCloudAzureStarterJdbcMysql = true")
+	}
+}
+
+func detectPropertySpringDatasourcePassword(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetProperty = "spring.datasource.password"
+	if _, ok := springBootProject.applicationProperties[targetProperty]; ok {
+		azdProject.Metadata.ContainsPropertySpringDatasourcePassword = true
+		logMetadataUpdated("ContainsPropertySpringDatasourcePassword = true")
 	}
 }
 

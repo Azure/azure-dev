@@ -316,7 +316,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			spec, err := i.prjConfigFromDetect(
 				context.Background(),
 				dir,
-				tt.detect,
+				&tt.detect,
 				&scaffold.InfraSpec{},
 				true)
 

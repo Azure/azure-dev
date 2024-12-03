@@ -392,13 +392,13 @@ resources:
     - api
   postgresdb:
     type: db.postgres
-    authType: PASSWORD
+    authType: Password
   mongodb:
     type: db.mongo
-    authType: USER_ASSIGNED_MANAGED_IDENTITY
+    authType: UserAssignedManagedIdentity
   redis:
     type: db.redis
-    authType: PASSWORD
+    authType: Password
 `
 
 func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {

@@ -807,19 +807,10 @@ func checkPasswordlessConfigurationAndContinueProvision(database appdetect.Datab
 		return true, nil
 	}
 	for i, prj := range detect.Services {
-		if prj.Language == appdetect.Java && !prj.Metadata.ContainsDependencySpringCloudAzureStarter {
-			message := fmt.Sprintf("You selected %s as auth type for %s.",
-				internal.AuthTypeUserAssignedManagedIdentity, database)
-			if database == appdetect.DbPostgres && !prj.Metadata.ContainsDependencySpringCloudAzureStarterJdbcPostgresql {
-				message = fmt.Sprintf("%s This dependency is required: "+
-					"'com.azure.spring:spring-cloud-azure-starter-jdbc-postgresql'. "+
-					"But this dependency is not found in your project: %s.", message, prj.Path)
-			}
-			if database == appdetect.DbMySql && !prj.Metadata.ContainsDependencySpringCloudAzureStarterJdbcMysql {
-				message = fmt.Sprintf("%s This dependency is required: "+
-					"'com.azure.spring:spring-cloud-azure-starter-jdbc-mysql'. "+
-					"But this dependency is not found in your project: %s.", message, prj.Path)
-			}
+		if lackedDep := lackedAzureStarterJdbcDependency(prj, database); lackedDep != "" {
+			message := fmt.Sprintf("You selected %s as auth type for %s. This dependency is required: '%s'. "+
+				"But this dependency is not found in your project: %s.",
+				internal.AuthTypeUserAssignedManagedIdentity, database, lackedDep, prj.Path)
 			continueOption, err := console.Select(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf("%s Select an option:", message),
 				Options: []string{
@@ -854,6 +845,30 @@ func checkPasswordlessConfigurationAndContinueProvision(database appdetect.Datab
 		}
 	}
 	return true, nil
+}
+
+func lackedAzureStarterJdbcDependency(project appdetect.Project, database appdetect.DatabaseDep) string {
+	if project.Language != appdetect.Java {
+		return ""
+	}
+
+	useDatabase := false
+	for _, db := range project.DatabaseDeps {
+		if db == database {
+			useDatabase = true
+			break
+		}
+	}
+	if !useDatabase {
+		return ""
+	}
+	if database == appdetect.DbMySql && !project.Metadata.ContainsDependencySpringCloudAzureStarterJdbcMysql {
+		return "com.azure.spring:spring-cloud-azure-starter-jdbc-mysql"
+	}
+	if database == appdetect.DbPostgres && !project.Metadata.ContainsDependencySpringCloudAzureStarterJdbcPostgresql {
+		return "com.azure.spring:spring-cloud-azure-starter-jdbc-postgresql"
+	}
+	return ""
 }
 
 func (i *Initializer) addMavenBuildHook(

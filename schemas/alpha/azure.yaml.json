@@ -1333,8 +1333,8 @@
                     "title": "Authentication Type",
                     "description": "The type of authentication used for Azure MySQL database.",
                     "enum": [
-                        "UserAssignedManagedIdentity",
-                        "Password"
+                        "userAssignedManagedIdentity",
+                        "password"
                     ]
                 },
                 "databaseName": {
@@ -1356,8 +1356,8 @@
                     "title": "Authentication Type",
                     "description": "The type of authentication used for Azure PostgreSQL database.",
                     "enum": [
-                        "UserAssignedManagedIdentity",
-                        "Password"
+                        "userAssignedManagedIdentity",
+                        "password"
                     ]
                 },
                 "databaseName": {
@@ -1393,8 +1393,8 @@
                     "title": "Authentication Type",
                     "description": "The type of authentication used for Azure Storage Account.",
                     "enum": [
-                        "UserAssignedManagedIdentity",
-                        "ConnectionString"
+                        "userAssignedManagedIdentity",
+                        "connectionString"
                     ]
                 },
                 "containers": {
@@ -1472,8 +1472,8 @@
                     "title": "Authentication Type",
                     "description": "The type of authentication used for the Service Bus.",
                     "enum": [
-                        "UserAssignedManagedIdentity",
-                        "ConnectionString"
+                        "userAssignedManagedIdentity",
+                        "connectionString"
                     ]
                 }
             }
@@ -1498,8 +1498,8 @@
                     "title": "Authentication Type",
                     "description": "The type of authentication used for Event Hubs.",
                     "enum": [
-                        "UserAssignedManagedIdentity",
-                        "ConnectionString"
+                        "userAssignedManagedIdentity",
+                        "connectionString"
                     ]
                 }
             }
@@ -1524,8 +1524,8 @@
                     "title": "Authentication Type",
                     "description": "The type of authentication used for Kafka.",
                     "enum": [
-                        "UserAssignedManagedIdentity",
-                        "ConnectionString"
+                        "userAssignedManagedIdentity",
+                        "connectionString"
                     ]
                 },
                 "springBootVersion": {

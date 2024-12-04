@@ -4,13 +4,13 @@ package internal
 type AuthType string
 
 const (
-	AuthTypeUnspecified AuthType = "Unspecified"
+	AuthTypeUnspecified AuthType = "unspecified"
 	// Username and password, or key based authentication
-	AuthTypePassword AuthType = "Password"
+	AuthTypePassword AuthType = "password"
 	// Connection string authentication
-	AuthTypeConnectionString AuthType = "ConnectionString"
+	AuthTypeConnectionString AuthType = "connectionString"
 	// Microsoft EntraID token credential
-	AuthTypeUserAssignedManagedIdentity AuthType = "UserAssignedManagedIdentity"
+	AuthTypeUserAssignedManagedIdentity AuthType = "userAssignedManagedIdentity"
 )
 
 func GetAuthTypeDescription(authType AuthType) string {

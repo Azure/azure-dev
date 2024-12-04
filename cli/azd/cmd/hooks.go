@@ -243,7 +243,7 @@ func (hra *hooksRunAction) execHook(
 		}
 	}
 	runOptions := &tools.ExecOptions{StdOut: previewer, IsRunProfile: isRunProfile}
-	
+
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)
 	if err != nil {
 		return err

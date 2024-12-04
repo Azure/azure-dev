@@ -807,9 +807,7 @@ func checkPasswordlessConfigurationAndContinueProvision(database appdetect.Datab
 		return true, nil
 	}
 	for i, prj := range detect.Services {
-		if prj.Language == appdetect.Java &&
-			(!prj.Metadata.ContainsDependencySpringCloudAzureStarter ||
-				prj.Metadata.ContainsPropertySpringDatasourcePassword) {
+		if prj.Language == appdetect.Java && !prj.Metadata.ContainsDependencySpringCloudAzureStarter {
 			message := fmt.Sprintf("You selected %s as auth type for %s.",
 				internal.AuthTypeUserAssignedManagedIdentity, database)
 			if database == appdetect.DbPostgres && !prj.Metadata.ContainsDependencySpringCloudAzureStarterJdbcPostgresql {
@@ -821,11 +819,6 @@ func checkPasswordlessConfigurationAndContinueProvision(database appdetect.Datab
 				message = fmt.Sprintf("%s This dependency is required: "+
 					"'com.azure.spring:spring-cloud-azure-starter-jdbc-mysql'. "+
 					"But this dependency is not found in your project: %s.", message, prj.Path)
-			}
-			if prj.Metadata.ContainsPropertySpringDatasourcePassword {
-				message = fmt.Sprintf("%s This property should be deleted: "+
-					"'spring.datasource.password'. "+
-					"But this property is found in your project: %s.", message, prj.Path)
 			}
 			continueOption, err := console.Select(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf("%s Select an option:", message),

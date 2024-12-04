@@ -175,7 +175,6 @@ type Metadata struct {
 	ContainsDependencySpringCloudAzureStarter               bool
 	ContainsDependencySpringCloudAzureStarterJdbcPostgresql bool
 	ContainsDependencySpringCloudAzureStarterJdbcMysql      bool
-	ContainsPropertySpringDatasourcePassword                bool
 	ContainsDependencySpringCloudEurekaServer               bool
 	ContainsDependencySpringCloudEurekaClient               bool
 	ContainsDependencySpringCloudConfigServer               bool

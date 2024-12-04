@@ -1,0 +1,34 @@
+name: Go Test
+
+on:
+  pull_request:
+    branches:
+      - feature/sjad
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.23.1
+
+      - name: Cache Go modules
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Run tests
+        run: |
+          cd ./cli/azd
+          go test $(go list ./... | grep -v github.com/azure/azure-dev/cli/azd/test/functional) -cover

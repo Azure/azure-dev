@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -22,7 +24,7 @@ var wellFormedDbNameRegex = regexp.MustCompile(`^[a-zA-Z\-_0-9]*$`)
 // prompting for additional inputs if necessary.
 func (i *Initializer) infraSpecFromDetect(
 	ctx context.Context,
-	detect detectConfirm) (scaffold.InfraSpec, error) {
+	detect *detectConfirm) (scaffold.InfraSpec, error) {
 	spec := scaffold.InfraSpec{}
 	for database := range detect.Databases {
 		if database == appdetect.DbRedis {
@@ -49,12 +51,79 @@ func (i *Initializer) infraSpecFromDetect(
 					i.console.Message(ctx, "Database name is required.")
 					continue
 				}
-
+				authType, err := chooseAuthTypeByPrompt(
+					database.Display(),
+					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
+					ctx,
+					i.console)
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database,
+					authType, detect, i.console, ctx)
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				if !continueProvision {
+					continue
+				}
 				spec.DbPostgres = &scaffold.DatabasePostgres{
 					DatabaseName: dbName,
+					AuthType:     authType,
 				}
+				break dbPrompt
+			case appdetect.DbMySql:
+				if dbName == "" {
+					i.console.Message(ctx, "Database name is required.")
+					continue
+				}
+				authType, err := chooseAuthTypeByPrompt(
+					database.Display(),
+					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
+					ctx,
+					i.console)
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database,
+					authType, detect, i.console, ctx)
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				if !continueProvision {
+					continue
+				}
+				spec.DbMySql = &scaffold.DatabaseMySql{
+					DatabaseName: dbName,
+					AuthType:     authType,
+				}
+				break dbPrompt
+			case appdetect.DbCosmos:
+				if dbName == "" {
+					i.console.Message(ctx, "Database name is required.")
+					continue
+				}
+				containers, err := detectCosmosSqlDatabaseContainersInDirectory(detect.root)
+				if err != nil {
+					return scaffold.InfraSpec{}, err
+				}
+				spec.DbCosmos = &scaffold.DatabaseCosmosAccount{
+					DatabaseName: dbName,
+					Containers:   containers,
+				}
+				break dbPrompt
 			}
 			break dbPrompt
+		}
+	}
+
+	for _, azureDep := range detect.AzureDeps {
+		err := i.buildInfraSpecByAzureDep(ctx, azureDep.first, &spec)
+		if err != nil {
+			return scaffold.InfraSpec{}, err
 		}
 	}
 
@@ -85,17 +154,26 @@ func (i *Initializer) infraSpecFromDetect(
 
 			switch db {
 			case appdetect.DbMongo:
-				serviceSpec.DbCosmosMongo = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbCosmosMongo.DatabaseName,
-				}
+				serviceSpec.DbCosmosMongo = spec.DbCosmosMongo
 			case appdetect.DbPostgres:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
-				}
+				serviceSpec.DbPostgres = spec.DbPostgres
+			case appdetect.DbMySql:
+				serviceSpec.DbMySql = spec.DbMySql
+			case appdetect.DbCosmos:
+				serviceSpec.DbCosmos = spec.DbCosmos
 			case appdetect.DbRedis:
-				serviceSpec.DbRedis = &scaffold.DatabaseReference{
-					DatabaseName: "redis",
-				}
+				serviceSpec.DbRedis = spec.DbRedis
+			}
+		}
+
+		for _, azureDep := range svc.AzureDeps {
+			switch azureDep.(type) {
+			case appdetect.AzureDepServiceBus:
+				serviceSpec.AzureServiceBus = spec.AzureServiceBus
+			case appdetect.AzureDepEventHubs:
+				serviceSpec.AzureEventHubs = spec.AzureEventHubs
+			case appdetect.AzureDepStorageAccount:
+				serviceSpec.AzureStorageAccount = spec.AzureStorageAccount
 			}
 		}
 		spec.Services = append(spec.Services, serviceSpec)
@@ -160,7 +238,9 @@ func promptPortNumber(console input.Console, ctx context.Context, promptMessage 
 func promptDbName(console input.Console, ctx context.Context, database appdetect.DatabaseDep) (string, error) {
 	for {
 		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Input the name of the app database (%s)", database.Display()),
+			Message: fmt.Sprintf("Input the databaseName for %s "+
+				"(Not databaseServerName. This url can explain the difference: "+
+				"'jdbc:mysql://databaseServerName:3306/databaseName'):", database.Display()),
 			Help: "Hint: App database name\n\n" +
 				"Name of the database that the app connects to. " +
 				"This database will be created after running azd provision or azd up." +
@@ -213,6 +293,12 @@ func PromptPort(
 	svc appdetect.Project) (int, error) {
 	if svc.Docker == nil || svc.Docker.Path == "" { // using default builder from azd
 		if svc.Language == appdetect.Java || svc.Language == appdetect.DotNet {
+			if svc.Metadata.ContainsDependencySpringCloudEurekaServer {
+				return 8761, nil
+			}
+			if svc.Metadata.ContainsDependencySpringCloudConfigServer {
+				return 8888, nil
+			}
 			return 8080, nil
 		}
 		return 80, nil
@@ -257,4 +343,85 @@ func PromptPort(
 	}
 
 	return port, nil
+}
+
+func (i *Initializer) buildInfraSpecByAzureDep(
+	ctx context.Context,
+	azureDep appdetect.AzureDep,
+	spec *scaffold.InfraSpec) error {
+	authType, err := chooseAuthTypeByPrompt(
+		azureDep.ResourceDisplay(),
+		[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString},
+		ctx,
+		i.console)
+	if err != nil {
+		return err
+	}
+	switch dependency := azureDep.(type) {
+	case appdetect.AzureDepServiceBus:
+		spec.AzureServiceBus = &scaffold.AzureDepServiceBus{
+			IsJms:    dependency.IsJms,
+			Queues:   dependency.Queues,
+			AuthType: authType,
+		}
+	case appdetect.AzureDepEventHubs:
+		spec.AzureEventHubs = &scaffold.AzureDepEventHubs{
+			EventHubNames:     dependency.Names,
+			AuthType:          authType,
+			UseKafka:          dependency.UseKafka,
+			SpringBootVersion: dependency.SpringBootVersion,
+		}
+	case appdetect.AzureDepStorageAccount:
+		spec.AzureStorageAccount = &scaffold.AzureDepStorageAccount{
+			ContainerNames: dependency.ContainerNames,
+			AuthType:       authType,
+		}
+	}
+	return nil
+}
+
+func detectCosmosSqlDatabaseContainersInDirectory(root string) ([]scaffold.CosmosSqlDatabaseContainer, error) {
+	var result []scaffold.CosmosSqlDatabaseContainer
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".java" {
+			container, err := detectCosmosSqlDatabaseContainerInFile(path)
+			if err != nil {
+				return err
+			}
+			if len(container.ContainerName) != 0 {
+				result = append(result, container)
+			}
+		}
+		return nil
+	})
+	return result, err
+}
+
+func detectCosmosSqlDatabaseContainerInFile(filePath string) (scaffold.CosmosSqlDatabaseContainer, error) {
+	var result scaffold.CosmosSqlDatabaseContainer
+	result.PartitionKeyPaths = make([]string, 0)
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return result, err
+	}
+	// todo:
+	// 1. Maybe "@Container" is not "com.azure.spring.data.cosmos.core.mapping.Container"
+	// 2. Maybe "@Container" is imported by "com.azure.spring.data.cosmos.core.mapping.*"
+	containerRegex := regexp.MustCompile(`@Container\s*\(containerName\s*=\s*"([^"]+)"\)`)
+	partitionKeyRegex := regexp.MustCompile(`@PartitionKey\s*(?:\n\s*)?(?:private|public|protected)?\s*\w+\s+(\w+);`)
+
+	matches := containerRegex.FindAllStringSubmatch(string(content), -1)
+	if len(matches) != 1 {
+		return result, nil
+	}
+	result.ContainerName = matches[0][1]
+
+	matches = partitionKeyRegex.FindAllStringSubmatch(string(content), -1)
+	for _, match := range matches {
+		result.PartitionKeyPaths = append(result.PartitionKeyPaths, match[1])
+	}
+	return result, nil
 }

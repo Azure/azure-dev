@@ -13,6 +13,15 @@ words:
   - usgovcloudapi
   - chinacloudapi
   - unmarshals
+  - springframework
+  - eventhubs
+  - jdbc
+  - datasource
+  - passwordless
+  - postgre
+  - mysqladmin
+  - sjad
+  - configserver
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -35,6 +44,12 @@ overrides:
       - cloudapp
       - mediaservices
       - msecnd
+  - filename: internal/tracing/fields/fields.go
+    words:
+      - azuredeps
+  - filename: internal/appdetect/java.go
+    words:
+      - chardata
   - filename: docs/docgen.go
     words:
       - alexwolf
@@ -116,6 +131,9 @@ overrides:
   - filename: internal/vsrpc/handler.go
     words:
       - arity
+  - filename: internal/appdetect/spring_boot.go
+    words:
+      - eirslett
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

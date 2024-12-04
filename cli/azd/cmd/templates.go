@@ -234,11 +234,11 @@ func getCmdTemplateSourceAddHelpFooter(*cobra.Command) string {
 		"Add default azd templates source.": output.WithHighLightFormat(
 			"azd template source add default",
 		),
-		"Add templates form a GitHub repository": output.WithHighLightFormat(
-			"azd template source add --type gh --location <GitHub URL>",
+		"Add templates from a GitHub repository": output.WithHighLightFormat(
+			"azd template source add <key> --type gh --location <GitHub URL>",
 		),
 		"Add templates from a public url": output.WithHighLightFormat(
-			"azd template source add --type url --location https://example.com/templates.json",
+			"azd template source add <key> --type url --location https://example.com/templates.json",
 		),
 	})
 }

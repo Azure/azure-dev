@@ -93,26 +93,20 @@ func detectAzureDependenciesByAnalyzingSpringBootProject(
 		parentProject:         parentProject,
 		mavenProject:          mavenProject,
 	}
-	detectSpringApplicationName(azdProject, &springBootProject)
 	detectDatabases(azdProject, &springBootProject)
 	detectServiceBus(azdProject, &springBootProject)
 	detectEventHubs(azdProject, &springBootProject)
 	detectStorageAccount(azdProject, &springBootProject)
 	detectMetadata(azdProject, &springBootProject)
-	detectSpringCloudEureka(azdProject, &springBootProject)
-	detectSpringCloudConfig(azdProject, &springBootProject)
-	for _, p := range mavenProject.Build.Plugins {
+	detectSpringFrontend(azdProject, &springBootProject)
+}
+
+func detectSpringFrontend(azdProject *Project, springBootProject *SpringBootProject) {
+	for _, p := range springBootProject.mavenProject.Build.Plugins {
 		if p.GroupId == "com.github.eirslett" && p.ArtifactId == "frontend-maven-plugin" {
 			azdProject.Dependencies = append(azdProject.Dependencies, SpringFrontend)
 			break
 		}
-	}
-}
-
-func detectSpringApplicationName(azdProject *Project, springBootProject *SpringBootProject) {
-	var targetSpringAppName = "spring.application.name"
-	if appName, ok := springBootProject.applicationProperties[targetSpringAppName]; ok {
-		azdProject.Metadata.Name = appName
 	}
 }
 
@@ -259,7 +253,10 @@ func detectMetadata(azdProject *Project, springBootProject *SpringBootProject) {
 	detectDependencySpringCloudAzureStarter(azdProject, springBootProject)
 	detectDependencySpringCloudAzureStarterJdbcPostgresql(azdProject, springBootProject)
 	detectDependencySpringCloudAzureStarterJdbcMysql(azdProject, springBootProject)
+	detectDependencySpringCloudEureka(azdProject, springBootProject)
+	detectDependencySpringCloudConfig(azdProject, springBootProject)
 	detectPropertySpringDatasourcePassword(azdProject, springBootProject)
+	detectPropertySpringApplicationName(azdProject, springBootProject)
 }
 
 func detectDependencySpringCloudAzureStarter(azdProject *Project, springBootProject *SpringBootProject) {
@@ -297,35 +294,42 @@ func detectPropertySpringDatasourcePassword(azdProject *Project, springBootProje
 	}
 }
 
-func detectSpringCloudEureka(azdProject *Project, springBootProject *SpringBootProject) {
+func detectPropertySpringApplicationName(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetSpringAppName = "spring.application.name"
+	if appName, ok := springBootProject.applicationProperties[targetSpringAppName]; ok {
+		azdProject.Metadata.ApplicationName = appName
+	}
+}
+
+func detectDependencySpringCloudEureka(azdProject *Project, springBootProject *SpringBootProject) {
 	var targetGroupId = "org.springframework.cloud"
 	var targetArtifactId = "spring-cloud-starter-netflix-eureka-server"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
-		azdProject.Dependencies = append(azdProject.Dependencies, JavaEurekaServer)
-		logServiceAddedAccordingToMavenDependency(JavaEurekaServer.Display(), targetGroupId, targetArtifactId)
+		azdProject.Metadata.ContainsDependencySpringCloudEurekaServer = true
+		logMetadataUpdated("ContainsDependencySpringCloudEurekaServer = true")
 	}
 
 	targetGroupId = "org.springframework.cloud"
 	targetArtifactId = "spring-cloud-starter-netflix-eureka-client"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
-		azdProject.Dependencies = append(azdProject.Dependencies, JavaEurekaClient)
-		logServiceAddedAccordingToMavenDependency(JavaEurekaClient.Display(), targetGroupId, targetArtifactId)
+		azdProject.Metadata.ContainsDependencySpringCloudEurekaClient = true
+		logMetadataUpdated("ContainsDependencySpringCloudEurekaClient = true")
 	}
 }
 
-func detectSpringCloudConfig(azdProject *Project, springBootProject *SpringBootProject) {
+func detectDependencySpringCloudConfig(azdProject *Project, springBootProject *SpringBootProject) {
 	var targetGroupId = "org.springframework.cloud"
 	var targetArtifactId = "spring-cloud-config-server"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
-		azdProject.Dependencies = append(azdProject.Dependencies, JavaConfigServer)
-		logServiceAddedAccordingToMavenDependency(JavaConfigServer.Display(), targetGroupId, targetArtifactId)
+		azdProject.Metadata.ContainsDependencySpringCloudConfigServer = true
+		logMetadataUpdated("ContainsDependencySpringCloudConfigServer = true")
 	}
 
 	targetGroupId = "org.springframework.cloud"
 	targetArtifactId = "spring-cloud-starter-config"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
-		azdProject.Dependencies = append(azdProject.Dependencies, JavaConfigClient)
-		logServiceAddedAccordingToMavenDependency(JavaConfigClient.Display(), targetGroupId, targetArtifactId)
+		azdProject.Metadata.ContainsDependencySpringCloudConfigClient = true
+		logMetadataUpdated("ContainsDependencySpringCloudConfigClient = true")
 	}
 }
 

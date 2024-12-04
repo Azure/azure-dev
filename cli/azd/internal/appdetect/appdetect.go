@@ -60,11 +60,7 @@ const (
 	PyDjango  Dependency = "django"
 	PyFastApi Dependency = "fastapi"
 
-	SpringFrontend   Dependency = "springFrontend"
-	JavaEurekaServer Dependency = "eureka-server"
-	JavaEurekaClient Dependency = "eureka-client"
-	JavaConfigServer Dependency = "config-server"
-	JavaConfigClient Dependency = "config-client"
+	SpringFrontend Dependency = "springFrontend"
 )
 
 var WebUIFrameworks = map[Dependency]struct{}{
@@ -96,14 +92,6 @@ func (f Dependency) Display() string {
 		return "Vite"
 	case JsNext:
 		return "Next.js"
-	case JavaEurekaServer:
-		return "JavaEurekaServer"
-	case JavaEurekaClient:
-		return "JavaEurekaClient"
-	case JavaConfigServer:
-		return "JavaConfigServer"
-	case JavaConfigClient:
-		return "JavaConfigClient"
 	}
 
 	return ""
@@ -183,11 +171,15 @@ func (a AzureDepStorageAccount) ResourceDisplay() string {
 }
 
 type Metadata struct {
-	Name                                                    string
+	ApplicationName                                         string
 	ContainsDependencySpringCloudAzureStarter               bool
 	ContainsDependencySpringCloudAzureStarterJdbcPostgresql bool
 	ContainsDependencySpringCloudAzureStarterJdbcMysql      bool
 	ContainsPropertySpringDatasourcePassword                bool
+	ContainsDependencySpringCloudEurekaServer               bool
+	ContainsDependencySpringCloudEurekaClient               bool
+	ContainsDependencySpringCloudConfigServer               bool
+	ContainsDependencySpringCloudConfigClient               bool
 }
 
 const UnknownSpringBootVersion string = "unknownSpringBootVersion"

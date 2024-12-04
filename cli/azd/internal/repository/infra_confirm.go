@@ -293,13 +293,11 @@ func PromptPort(
 	svc appdetect.Project) (int, error) {
 	if svc.Docker == nil || svc.Docker.Path == "" { // using default builder from azd
 		if svc.Language == appdetect.Java || svc.Language == appdetect.DotNet {
-			for _, dep := range svc.Dependencies {
-				switch dep {
-				case appdetect.JavaEurekaServer:
-					return 8761, nil
-				case appdetect.JavaConfigServer:
-					return 8888, nil
-				}
+			if svc.Metadata.ContainsDependencySpringCloudEurekaServer {
+				return 8761, nil
+			}
+			if svc.Metadata.ContainsDependencySpringCloudConfigServer {
+				return 8888, nil
 			}
 			return 8080, nil
 		}

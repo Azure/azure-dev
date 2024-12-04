@@ -815,8 +815,8 @@ func checkPasswordlessConfigurationAndContinueProvision(database appdetect.Datab
 				Message: fmt.Sprintf("%s Select an option:", message),
 				Options: []string{
 					"Exit azd and fix problem manually",
-					"Continue azd and provision " + database.Display(),
-					"Continue azd but not provision " + database.Display(),
+					fmt.Sprintf("Continue azd and use %s in this project: %s", database.Display(), prj.Path),
+					fmt.Sprintf("Continue azd and not use %s in this project: %s", database.Display(), prj.Path),
 				},
 			})
 			if err != nil {
@@ -827,7 +827,7 @@ func checkPasswordlessConfigurationAndContinueProvision(database appdetect.Datab
 			case 0:
 				os.Exit(0)
 			case 1:
-				return true, nil
+				continue
 			case 2:
 				// remove related database usage
 				var result []appdetect.DatabaseDep
@@ -838,9 +838,25 @@ func checkPasswordlessConfigurationAndContinueProvision(database appdetect.Datab
 				}
 				prj.DatabaseDeps = result
 				detect.Services[i] = prj
-				// delete database
-				delete(detect.Databases, database)
-				return false, nil
+				// delete database if no other service used
+				dbUsed := false
+				for _, svc := range detect.Services {
+					for _, db := range svc.DatabaseDeps {
+						if db == database {
+							dbUsed = true
+							break
+						}
+					}
+					if dbUsed {
+						break
+					}
+				}
+				if !dbUsed {
+					console.Message(ctx, fmt.Sprintf(
+						"Deleting database %s due to no service used", database.Display()))
+					delete(detect.Databases, database)
+					return false, nil
+				}
 			}
 		}
 	}

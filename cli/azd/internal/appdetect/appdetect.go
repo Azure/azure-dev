@@ -59,13 +59,16 @@ const (
 	PyFlask   Dependency = "flask"
 	PyDjango  Dependency = "django"
 	PyFastApi Dependency = "fastapi"
+
+	SpringFrontend Dependency = "springFrontend"
 )
 
 var WebUIFrameworks = map[Dependency]struct{}{
-	JsReact:   {},
-	JsAngular: {},
-	JsJQuery:  {},
-	JsVite:    {},
+	JsReact:        {},
+	JsAngular:      {},
+	JsJQuery:       {},
+	JsVite:         {},
+	SpringFrontend: {},
 }
 
 func (f Dependency) Language() Language {
@@ -110,6 +113,7 @@ const (
 	DbPostgres  DatabaseDep = "postgres"
 	DbMongo     DatabaseDep = "mongo"
 	DbMySql     DatabaseDep = "mysql"
+	DbCosmos    DatabaseDep = "cosmos"
 	DbSqlServer DatabaseDep = "sqlserver"
 	DbRedis     DatabaseDep = "redis"
 )
@@ -122,6 +126,8 @@ func (db DatabaseDep) Display() string {
 		return "MongoDB"
 	case DbMySql:
 		return "MySQL"
+	case DbCosmos:
+		return "Cosmos DB"
 	case DbSqlServer:
 		return "SQL Server"
 	case DbRedis:
@@ -130,6 +136,52 @@ func (db DatabaseDep) Display() string {
 
 	return ""
 }
+
+//type AzureDep string
+
+type AzureDep interface {
+	ResourceDisplay() string
+}
+
+type AzureDepServiceBus struct {
+	Queues []string
+	IsJms  bool
+}
+
+func (a AzureDepServiceBus) ResourceDisplay() string {
+	return "Azure Service Bus"
+}
+
+type AzureDepEventHubs struct {
+	Names             []string
+	UseKafka          bool
+	SpringBootVersion string
+}
+
+func (a AzureDepEventHubs) ResourceDisplay() string {
+	return "Azure Event Hubs"
+}
+
+type AzureDepStorageAccount struct {
+	ContainerNames []string
+}
+
+func (a AzureDepStorageAccount) ResourceDisplay() string {
+	return "Azure Storage Account"
+}
+
+type Metadata struct {
+	ApplicationName                                         string
+	ContainsDependencySpringCloudAzureStarter               bool
+	ContainsDependencySpringCloudAzureStarterJdbcPostgresql bool
+	ContainsDependencySpringCloudAzureStarterJdbcMysql      bool
+	ContainsDependencySpringCloudEurekaServer               bool
+	ContainsDependencySpringCloudEurekaClient               bool
+	ContainsDependencySpringCloudConfigServer               bool
+	ContainsDependencySpringCloudConfigClient               bool
+}
+
+const UnknownSpringBootVersion string = "unknownSpringBootVersion"
 
 type Project struct {
 	// The language associated with the project.
@@ -141,8 +193,16 @@ type Project struct {
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
 
+	// Experimental: Azure dependencies inferred through heuristics while scanning dependencies in the project.
+	AzureDeps []AzureDep
+
+	// Experimental: Metadata inferred through heuristics while scanning the project.
+	Metadata Metadata
+
 	// The path to the project directory.
 	Path string
+
+	Options map[string]interface{}
 
 	// A short description of the detection rule applied.
 	DetectionRule string
@@ -264,7 +324,7 @@ func detectAny(ctx context.Context, detectors []projectDetector, path string, en
 		if project != nil {
 			log.Printf("Found project %s at %s", project.Language, path)
 
-			// docker is an optional property of a project, and thus is different than other detectors
+			// docker is an optional property of a project, and thus is different from other detectors
 			docker, err := detectDockerInDirectory(path, entries)
 			if err != nil {
 				return nil, fmt.Errorf("detecting docker project: %w", err)

@@ -252,3 +252,37 @@ func (o *excludeJavaScript) applyLang(c languageConfig) languageConfig {
 func WithoutJavaScript() LanguageOption {
 	return &excludeJavaScript{}
 }
+
+type includeRust struct {
+}
+
+func (o *includeRust) apply(c detectConfig) detectConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, Rust)
+	return c
+}
+
+func (o *includeRust) applyLang(c languageConfig) languageConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, Rust)
+	return c
+}
+
+func WithRust() LanguageOption {
+	return &includeRust{}
+}
+
+type excludeRust struct {
+}
+
+func (o *excludeRust) apply(c detectConfig) detectConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, Rust)
+	return c
+}
+
+func (o *excludeRust) applyLang(c languageConfig) languageConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, Rust)
+	return c
+}
+
+func WithoutRust() LanguageOption {
+	return &excludeRust{}
+}

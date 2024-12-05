@@ -26,6 +26,7 @@ const (
 	JavaScript    Language = "js"
 	TypeScript    Language = "ts"
 	Python        Language = "python"
+	Rust          Language = "rust"
 )
 
 func (pt Language) Display() string {
@@ -42,6 +43,8 @@ func (pt Language) Display() string {
 		return "TypeScript"
 	case Python:
 		return "Python"
+	case Rust:
+		return "Rust"
 	}
 
 	return ""
@@ -59,6 +62,10 @@ const (
 	PyFlask   Dependency = "flask"
 	PyDjango  Dependency = "django"
 	PyFastApi Dependency = "fastapi"
+
+	RsYew   Dependency = "yew"
+	RsActix Dependency = "actix"
+	RsAxum  Dependency = "axum"
 )
 
 var WebUIFrameworks = map[Dependency]struct{}{
@@ -66,6 +73,8 @@ var WebUIFrameworks = map[Dependency]struct{}{
 	JsAngular: {},
 	JsJQuery:  {},
 	JsVite:    {},
+
+	RsYew: {},
 }
 
 func (f Dependency) Language() Language {
@@ -89,6 +98,13 @@ func (f Dependency) Display() string {
 		return "Vite"
 	case JsNext:
 		return "Next.js"
+
+	case RsActix:
+		return "Actix"
+	case RsAxum:
+		return "Axum"
+	case RsYew:
+		return "Yew"
 	}
 
 	return ""
@@ -189,6 +205,7 @@ var allDetectors = []projectDetector{
 	},
 	&pythonDetector{},
 	&javaScriptDetector{},
+	&rustDetector{},
 }
 
 // Detect detects projects located under a directory.

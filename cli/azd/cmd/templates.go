@@ -545,6 +545,9 @@ func getCmdTemplateSourceHelpFooter(*cobra.Command) string {
 		"Add a new url template source.": output.WithHighLightFormat(
 			"azd template source add <key> --type url --location <url>",
 		),
+		"Add a new GitHub template source.": output.WithHighLightFormat(
+			"azd template source add <key> --type gh --location <GitHub URL>",
+		),
 		"Remove a previously registered template source.": output.WithHighLightFormat(
 			"azd template source remove <key>",
 		),

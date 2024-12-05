@@ -233,7 +233,8 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-		hostCheck: make(map[string]hostCheckResult),
+		hostCheck:           make(map[string]hostCheckResult),
+		alphaFeatureManager: mockContext.AlphaFeaturesManager,
 	})
 
 	// Do not use defaults

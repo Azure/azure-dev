@@ -475,7 +475,8 @@ func (p *ProvisionProvider) pollForProgress(ctx context.Context, deployment infr
 	}
 
 	// Report incremental progress
-	progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
+	demoMode, _ := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE"))
+	progressDisplay := p.deploymentManager.ProgressDisplay(demoMode, 1)
 
 	initialDelay := 3 * time.Second
 	regularDelay := 10 * time.Second
@@ -488,7 +489,7 @@ func (p *ProvisionProvider) pollForProgress(ctx context.Context, deployment infr
 			timer.Stop()
 			return
 		case <-timer.C:
-			if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
+			if err := progressDisplay.ReportProgress(ctx, deployment, &queryStartTime); err != nil {
 				// We don't want to fail the whole deployment if a progress reporting error occurs
 				log.Printf("error while reporting progress: %s", err.Error())
 			}

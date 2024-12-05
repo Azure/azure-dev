@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/psanford/memfs"
 )
@@ -38,18 +38,10 @@ func infraFs(_ context.Context, prjConfig *ProjectConfig) (fs.FS, error) {
 	return files, nil
 }
 
-// Returns the infrastructure configuration that points to a temporary, generated `infra` directory on the filesystem.
-func tempInfra(
-	ctx context.Context,
-	prjConfig *ProjectConfig) (*Infra, error) {
-	tmpDir, err := os.MkdirTemp("", "azd-infra")
-	if err != nil {
-		return nil, fmt.Errorf("creating temporary directory: %w", err)
-	}
-
+func infraFsToDir(ctx context.Context, prjConfig *ProjectConfig, dir string) error {
 	files, err := infraFs(ctx, prjConfig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -61,7 +53,7 @@ func tempInfra(
 			return nil
 		}
 
-		target := filepath.Join(tmpDir, path)
+		target := filepath.Join(dir, path)
 		if err := os.MkdirAll(filepath.Dir(target), osutil.PermissionDirectoryOwnerOnly); err != nil {
 			return err
 		}
@@ -74,17 +66,10 @@ func tempInfra(
 		return os.WriteFile(target, contents, d.Type().Perm())
 	})
 	if err != nil {
-		return nil, fmt.Errorf("writing infrastructure: %w", err)
+		return fmt.Errorf("writing infrastructure: %w", err)
 	}
 
-	return &Infra{
-		Options: provisioning.Options{
-			Provider: provisioning.Bicep,
-			Path:     tmpDir,
-			Module:   DefaultModule,
-		},
-		cleanupDir: tmpDir,
-	}, nil
+	return nil
 }
 
 // Generates the filesystem of all infrastructure files to be placed, rooted at the project directory.
@@ -95,13 +80,32 @@ func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig) (fs.FS, er
 		return nil, err
 	}
 
-	infraPathPrefix := DefaultPath
+	infraPrefix := DefaultPath
 	if prjConfig.Infra.Path != "" {
-		infraPathPrefix = prjConfig.Infra.Path
+		infraPrefix = prjConfig.Infra.Path
 	}
 
-	// root the generated content at the project directory
+	infraRoot := infraPrefix
+	if !filepath.IsAbs(infraPrefix) {
+		infraRoot = filepath.Join(prjConfig.Path, infraPrefix)
+	}
+
+	infraDir, err := os.Stat(infraRoot)
+	if !errors.Is(err, os.ErrNotExist) && err != nil {
+		return nil, fmt.Errorf("error reading infra directory: %w", err)
+	}
+
+	fi, err := os.Stat(filepath.Join(infraRoot, ".azd"))
+	if !errors.Is(err, os.ErrNotExist) && err != nil {
+		return nil, fmt.Errorf("error reading .azd file in infra: %w", err)
+	}
+
+	if infraDir != nil && fi == nil { // if the infra directory is not managed by azd, generate it to infra/azd
+		infraPrefix = filepath.Join(infraPrefix, "azd")
+	}
+
 	generatedFS := memfs.New()
+	// root the generated content at the project directory
 	err = fs.WalkDir(infraFS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -111,7 +115,7 @@ func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig) (fs.FS, er
 			return nil
 		}
 
-		err = generatedFS.MkdirAll(filepath.Join(infraPathPrefix, filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
+		err = generatedFS.MkdirAll(filepath.Join(infraPrefix, filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
 		if err != nil {
 			return err
 		}
@@ -121,10 +125,18 @@ func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig) (fs.FS, er
 			return err
 		}
 
-		return generatedFS.WriteFile(filepath.Join(infraPathPrefix, path), contents, d.Type().Perm())
+		return generatedFS.WriteFile(filepath.Join(infraPrefix, path), contents, d.Type().Perm())
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("generating: %w", err)
+	}
+
+	if fi == nil {
+		// create a sentinel file to indicate that the infra directory is managed by azd
+		err = generatedFS.WriteFile(filepath.Join(infraPrefix, ".azd"), []byte{}, osutil.PermissionFileOwnerOnly)
+		if err != nil {
+			return nil, fmt.Errorf("writing sentinel: %w", err)
+		}
 	}
 
 	return generatedFS, nil

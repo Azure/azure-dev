@@ -7,9 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,71 +21,93 @@ import (
 
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
 type ProvisioningProgressDisplay struct {
+	// demo mode, controls whether links to Azure Portal are displayed
+	demoMode bool
 	// Whether the deployment has started
-	deploymentStarted bool
+	deploymentDisplayed map[string]bool
+	// Total number of deployments
+	totalDeployments int
 	// Keeps track of created resources
 	displayedResources map[string]bool
 	resourceManager    ResourceManager
 	console            input.Console
-	deployment         Deployment
 }
 
 func NewProvisioningProgressDisplay(
 	rm ResourceManager,
 	console input.Console,
-	deployment Deployment,
+	demoMode bool,
+	totalDeployments int,
 ) *ProvisioningProgressDisplay {
 	return &ProvisioningProgressDisplay{
-		displayedResources: map[string]bool{},
-		deployment:         deployment,
-		resourceManager:    rm,
-		console:            console,
+		displayedResources:  map[string]bool{},
+		deploymentDisplayed: map[string]bool{},
+		resourceManager:     rm,
+		console:             console,
+		demoMode:            demoMode,
+		totalDeployments:    totalDeployments,
 	}
 }
 
 // ReportProgress reports the current deployment progress, setting the currently executing operation title and logging
 // progress.
-func (display *ProvisioningProgressDisplay) ReportProgress(
-	ctx context.Context, queryStart *time.Time) error {
-	if !display.deploymentStarted {
-		_, err := display.deployment.Get(ctx)
-		if err != nil {
-			// Return default progress
-			log.Printf("error while reporting progress: %s", err.Error())
-			return nil
-		}
-
-		display.deploymentStarted = true
-		deploymentUrl, err := display.deployment.DeploymentUrl(ctx)
-		if err != nil {
-			return err
-		}
-
-		deploymentLink := fmt.Sprintf(output.WithLinkFormat("%s\n"), deploymentUrl)
-
-		display.console.EnsureBlankLine(ctx)
-
+func (d *ProvisioningProgressDisplay) ReportProgress(
+	ctx context.Context, deployment Deployment, queryStart *time.Time) error {
+	name := deployment.Name()
+	if d.demoMode && !d.deploymentDisplayed[name] {
 		lines := []string{
 			"You can view detailed progress in the Azure Portal:",
-			deploymentLink,
+			"\n",
 		}
 
-		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+		if d.totalDeployments > 1 {
 			lines = []string{
-				"You can view detailed progress in the Azure Portal.",
+				fmt.Sprintf("Deployment %d of %d:", len(d.deploymentDisplayed)+1, d.totalDeployments),
 				"\n",
 			}
 		}
 
-		display.console.MessageUxItem(
+		d.console.EnsureBlankLine(ctx)
+		d.console.MessageUxItem(
 			ctx,
 			&ux.MultilineMessage{
 				Lines: lines,
 			},
 		)
+		d.deploymentDisplayed[name] = true
+	} else if !d.deploymentDisplayed[name] {
+		deploymentUrl, err := deployment.DeploymentUrl(ctx)
+		if err != nil {
+			// Wait until deployment is live to display progress
+			return nil
+		}
+
+		deploymentLink := fmt.Sprintf(output.WithLinkFormat("%s\n"), deploymentUrl)
+		d.console.EnsureBlankLine(ctx)
+		lines := []string{
+			"You can view detailed progress in the Azure Portal:",
+			deploymentLink,
+		}
+
+		if d.totalDeployments > 1 {
+			lines = []string{
+				fmt.Sprintf(
+					"Deployment %d of %d. View detailed progress in the Azure Portal:",
+					len(d.deploymentDisplayed)+1, d.totalDeployments),
+				deploymentLink,
+			}
+		}
+		d.console.MessageUxItem(
+			ctx,
+			&ux.MultilineMessage{
+				Lines: lines,
+			},
+		)
+
+		d.deploymentDisplayed[name] = true
 	}
 
-	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.deployment, queryStart)
+	operations, err := d.resourceManager.GetDeploymentResourceOperations(ctx, deployment, queryStart)
 	if err != nil {
 		// Status display is best-effort activity.
 		return err
@@ -101,7 +121,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		if operations[i].Properties.TargetResource != nil {
 			resourceId := *operations[i].Properties.TargetResource.ResourceName
 
-			if !display.displayedResources[resourceId] {
+			if !d.displayedResources[resourceId] {
 				switch *operations[i].Properties.ProvisioningState {
 				case string(armresources.ProvisioningStateSucceeded):
 					newlyDeployedResources = append(newlyDeployedResources, operations[i])
@@ -122,20 +142,21 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 	})
 
 	displayedResources := append(newlyDeployedResources, newlyFailedResources...)
-	display.logNewlyCreatedResources(ctx, displayedResources, runningDeployments)
+	d.logNewlyCreatedResources(ctx, displayedResources, deployment, runningDeployments)
 	return nil
 }
 
 func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 	ctx context.Context,
 	resources []*armresources.DeploymentOperation,
+	deployment Deployment,
 	inProgressResources []*armresources.DeploymentOperation,
 ) {
 	for _, resource := range resources {
 		resourceTypeName := *resource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
 			ctx,
-			display.deployment.SubscriptionId(),
+			deployment.SubscriptionId(),
 			*resource.Properties.TargetResource.ID,
 			azapi.AzureResourceType(resourceTypeName),
 		)
@@ -180,7 +201,7 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		resourceTypeName := *inProgResource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
 			ctx,
-			display.deployment.SubscriptionId(),
+			deployment.SubscriptionId(),
 			*inProgResource.Properties.TargetResource.ID,
 			azapi.AzureResourceType(resourceTypeName),
 		)

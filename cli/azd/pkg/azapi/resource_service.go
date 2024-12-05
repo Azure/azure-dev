@@ -2,8 +2,11 @@ package azapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -194,6 +197,11 @@ func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscription
 	}
 
 	poller, err := client.BeginDelete(ctx, resourceGroupName, nil)
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) && respErr.StatusCode == 404 { // Resource group is already deleted
+		return nil
+	}
+
 	if err != nil {
 		return fmt.Errorf("beginning resource group deletion: %w", err)
 	}
@@ -259,12 +267,16 @@ func GroupByResourceGroup(resources []*armresources.ResourceReference) (map[stri
 
 		resourceType := resourceId.ResourceType.String()
 		if resourceType != string(AzureResourceTypeResourceGroup) {
-			groupResources = append(groupResources, &Resource{
-				Id:       *resource.ID,
-				Name:     resourceId.Name,
-				Type:     resourceType,
-				Location: resourceId.Location,
-			})
+			if !slices.ContainsFunc(groupResources, func(r *Resource) bool {
+				return r.Id == *resource.ID
+			}) {
+				groupResources = append(groupResources, &Resource{
+					Id:       *resource.ID,
+					Name:     resourceId.Name,
+					Type:     resourceType,
+					Location: resourceId.Location,
+				})
+			}
 		}
 
 		resourceMap[resourceId.ResourceGroupName] = groupResources

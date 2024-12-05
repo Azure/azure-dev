@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 
@@ -47,8 +48,8 @@ func (dm *DeploymentManager) CalculateTemplateHash(
 	return dm.deploymentService.CalculateTemplateHash(ctx, subscriptionId, template)
 }
 
-func (dm *DeploymentManager) ProgressDisplay(deployment Deployment) *ProvisioningProgressDisplay {
-	return NewProvisioningProgressDisplay(dm.resourceManager, dm.console, deployment)
+func (dm *DeploymentManager) ProgressDisplay(demoMode bool, totalDeployments int) *ProvisioningProgressDisplay {
+	return NewProvisioningProgressDisplay(dm.resourceManager, dm.console, demoMode, totalDeployments)
 }
 
 func (dm *DeploymentManager) SubscriptionScope(subscriptionId string, location string) *SubscriptionScope {
@@ -77,6 +78,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 	ctx context.Context,
 	scope Scope,
 	envName string,
+	moduleName string,
 	hint string,
 ) ([]*azapi.ResourceDeployment, error) {
 	deployments, err := scope.ListDeployments(ctx)
@@ -94,7 +96,8 @@ func (dm *DeploymentManager) CompletedDeployments(
 	}
 
 	// Environment matching strategy
-	// 1. Deployment with azd tagged env name
+	// 1. Deployment with azd tagged env name + module name
+	// 1.1 Deployment with azd tagged env name (legacy)
 	// 2. Exact match on environment name to deployment name (old azd strategy)
 	// 3. Multiple matching names based on specified hint (show user prompt)
 	matchingDeployments := []*azapi.ResourceDeployment{}
@@ -106,8 +109,23 @@ func (dm *DeploymentManager) CompletedDeployments(
 			continue
 		}
 
-		// Match on current azd strategy (tags) or old azd strategy (deployment name)
-		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName || deployment.Name == envName {
+		// Match on current azd strategy (tags)
+		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName {
+			moduleVal, hasModuleTag := deployment.Tags[azure.TagKeyAzdModuleName]
+			if hasModuleTag && *moduleVal == moduleName {
+				log.Printf("completedDeployments: matched deployment '%s' using moduleName: %s", deployment.Name, moduleName)
+				return []*azapi.ResourceDeployment{deployment}, nil
+			}
+
+			// LEGACY: the deployment is of an old format (no module tag), return the deployment based only on env tag
+			if !hasModuleTag {
+				log.Printf("completedDeployments: matched deployment '%s' using envName", deployment.Name)
+				return []*azapi.ResourceDeployment{deployment}, nil
+			}
+		}
+
+		// LEGACY: match on deployment name
+		if deployment.Name == envName {
 			return []*azapi.ResourceDeployment{deployment}, nil
 		}
 

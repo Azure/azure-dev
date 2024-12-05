@@ -285,6 +285,73 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
 }
 
+func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "containerapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Remove the Dockerfile so that we go down the `dotnet publish` path.
+	err = os.Remove(filepath.Join(dir, "src", "dotnet", "Dockerfile"))
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "dotnet"))
+	require.NoError(t, err)
+
+	// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
+	// (without the quotes). Validate that the application is working.
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	url, has := env["WEBSITE_URL"]
+	require.True(t, has, "WEBSITE_URL should be in environment after deploy")
+
+	if session == nil {
+		err = probeServiceHealth(
+			t, ctx, http.DefaultClient, retry.NewConstant(5*time.Second), url, expectedTestAppResponse)
+		require.NoError(t, err)
+	} else {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+
+		err = probeServiceHealth(
+			t, ctx, session.ProxyClient, retry.NewConstant(1*time.Millisecond), url, expectedTestAppResponse)
+		require.NoError(t, err)
+	}
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+
+	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
+	// have been removed from the environment.
+	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	_, has = env["WEBSITE_URL"]
+	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
+}
+
 func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
 	t.Parallel()
 

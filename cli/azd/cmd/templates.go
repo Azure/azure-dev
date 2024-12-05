@@ -240,6 +240,9 @@ func getCmdTemplateSourceAddHelpFooter(*cobra.Command) string {
 		"Add templates from a public url": output.WithHighLightFormat(
 			"azd template source add <key> --type url --location https://example.com/templates.json",
 		),
+		"Add templates from a file path": output.WithHighLightFormat(
+			"azd template source add <key> --type file --location /path/to/templates.json",
+		),
 	})
 }
 

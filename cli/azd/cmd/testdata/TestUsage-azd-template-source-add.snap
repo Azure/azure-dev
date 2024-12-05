@@ -27,6 +27,9 @@ Examples
   Add templates from a GitHub repository
     azd template source add <key> --type gh --location <GitHub URL>
 
+  Add templates from a file path
+    azd template source add <key> --type file --location /path/to/templates.json
+
   Add templates from a public url
     azd template source add <key> --type url --location https://example.com/templates.json
 

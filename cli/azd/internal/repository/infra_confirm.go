@@ -3,22 +3,17 @@ package repository
 import (
 	"context"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
-
-// A regex that matches against "likely" well-formed database names
-var wellFormedDbNameRegex = regexp.MustCompile(`^[a-zA-Z\-_0-9]*$`)
 
 // infraSpecFromDetect creates an InfraSpec from the results of app detection confirmation,
 // prompting for additional inputs if necessary.
@@ -27,96 +22,87 @@ func (i *Initializer) infraSpecFromDetect(
 	detect *detectConfirm) (scaffold.InfraSpec, error) {
 	spec := scaffold.InfraSpec{}
 	for database := range detect.Databases {
-		if database == appdetect.DbRedis {
+		switch database {
+		case appdetect.DbRedis:
 			spec.DbRedis = &scaffold.DatabaseRedis{}
-			// no further configuration needed for redis
-			continue
-		}
-
-	dbPrompt:
-		for {
-			dbName, err := promptDbName(i.console, ctx, database)
+		case appdetect.DbMongo:
+			dbName, err := getDatabaseName(database, detect, i.console, ctx)
 			if err != nil {
 				return scaffold.InfraSpec{}, err
 			}
-
-			switch database {
-			case appdetect.DbMongo:
-				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
-					DatabaseName: dbName,
-				}
-				break dbPrompt
-			case appdetect.DbPostgres:
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-				authType, err := chooseAuthTypeByPrompt(
-					database.Display(),
-					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
-					ctx,
-					i.console)
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-				continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database,
-					authType, detect, i.console, ctx)
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-				if !continueProvision {
-					continue
-				}
-				spec.DbPostgres = &scaffold.DatabasePostgres{
-					DatabaseName: dbName,
-					AuthType:     authType,
-				}
-				break dbPrompt
-			case appdetect.DbMySql:
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-				authType, err := chooseAuthTypeByPrompt(
-					database.Display(),
-					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
-					ctx,
-					i.console)
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-				continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database,
-					authType, detect, i.console, ctx)
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-				if !continueProvision {
-					continue
-				}
-				spec.DbMySql = &scaffold.DatabaseMySql{
-					DatabaseName: dbName,
-					AuthType:     authType,
-				}
-				break dbPrompt
-			case appdetect.DbCosmos:
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-				containers, err := detectCosmosSqlDatabaseContainersInDirectory(detect.root)
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-				spec.DbCosmos = &scaffold.DatabaseCosmosAccount{
-					DatabaseName: dbName,
-					Containers:   containers,
-				}
-				break dbPrompt
+			spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
+				DatabaseName: dbName,
 			}
-			break dbPrompt
+		case appdetect.DbPostgres:
+			dbName, err := getDatabaseName(database, detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			authType, err := chooseAuthTypeByPrompt(
+				database.Display(),
+				[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
+				ctx,
+				i.console)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database,
+				authType, detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			if !continueProvision {
+				continue
+			}
+			spec.DbPostgres = &scaffold.DatabasePostgres{
+				DatabaseName: dbName,
+				AuthType:     authType,
+			}
+		case appdetect.DbMySql:
+			dbName, err := getDatabaseName(database, detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			authType, err := chooseAuthTypeByPrompt(
+				database.Display(),
+				[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
+				ctx,
+				i.console)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database,
+				authType, detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			if !continueProvision {
+				continue
+			}
+			spec.DbMySql = &scaffold.DatabaseMySql{
+				DatabaseName: dbName,
+				AuthType:     authType,
+			}
+		case appdetect.DbCosmos:
+			dbName, err := getDatabaseName(database, detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			if dbName == "" {
+				i.console.Message(ctx, "Database name is required.")
+				continue
+			}
+			containers, err := detectCosmosSqlDatabaseContainersInDirectory(detect.root)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			spec.DbCosmos = &scaffold.DatabaseCosmosAccount{
+				DatabaseName: dbName,
+				Containers:   containers,
+			}
 		}
 	}
 
@@ -209,6 +195,49 @@ func (i *Initializer) infraSpecFromDetect(
 	return spec, nil
 }
 
+func getDatabaseName(database appdetect.DatabaseDep, detect *detectConfirm,
+	console input.Console, ctx context.Context) (string, error) {
+	dbName := getDatabaseNameFromProjectMetadata(detect, database)
+	if dbName != "" {
+		return dbName, nil
+	}
+	for {
+		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the databaseName for %s "+
+				"(Not databaseServerName. This url can explain the difference: "+
+				"'jdbc:mysql://databaseServerName:3306/databaseName'):", database.Display()),
+			Help: "Hint: App database name\n\n" +
+				"Name of the database that the app connects to. " +
+				"This database will be created after running azd provision or azd up.\n" +
+				"You may be able to skip this step by hitting enter, in which case the database will not be created.",
+		})
+		if err != nil {
+			return "", err
+		}
+		if appdetect.IsValidDatabaseName(dbName) {
+			return dbName, nil
+		} else {
+			console.Message(ctx, "Invalid database name. Please choose another name.")
+		}
+	}
+}
+
+func getDatabaseNameFromProjectMetadata(detect *detectConfirm, database appdetect.DatabaseDep) string {
+	result := ""
+	for _, service := range detect.Services {
+		name := service.Metadata.DatabaseNameInPropertySpringDatasourceUrl[database]
+		if name != result {
+			if result == "" {
+				result = name
+			} else {
+				// different project configured different db name, not use any of them.
+				return ""
+			}
+		}
+	}
+	return result
+}
+
 func promptPortNumber(console input.Console, ctx context.Context, promptMessage string) (int, error) {
 	var port int
 	for {
@@ -233,56 +262,6 @@ func promptPortNumber(console input.Console, ctx context.Context, promptMessage 
 		break
 	}
 	return port, nil
-}
-
-func promptDbName(console input.Console, ctx context.Context, database appdetect.DatabaseDep) (string, error) {
-	for {
-		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Input the databaseName for %s "+
-				"(Not databaseServerName. This url can explain the difference: "+
-				"'jdbc:mysql://databaseServerName:3306/databaseName'):", database.Display()),
-			Help: "Hint: App database name\n\n" +
-				"Name of the database that the app connects to. " +
-				"This database will be created after running azd provision or azd up." +
-				"\nYou may be able to skip this step by hitting enter, in which case the database will not be created.",
-		})
-		if err != nil {
-			return "", err
-		}
-
-		if strings.ContainsAny(dbName, " ") {
-			console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: "Database name contains whitespace. This might not be allowed by the database server.",
-			})
-			confirm, err := console.Confirm(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Continue with name '%s'?", dbName),
-			})
-			if err != nil {
-				return "", err
-			}
-
-			if !confirm {
-				continue
-			}
-		} else if !wellFormedDbNameRegex.MatchString(dbName) {
-			console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: "Database name contains special characters. " +
-					"This might not be allowed by the database server.",
-			})
-			confirm, err := console.Confirm(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Continue with name '%s'?", dbName),
-			})
-			if err != nil {
-				return "", err
-			}
-
-			if !confirm {
-				continue
-			}
-		}
-
-		return dbName, nil
-	}
 }
 
 // PromptPort prompts for port selection from an appdetect project.

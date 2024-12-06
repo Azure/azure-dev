@@ -593,7 +593,7 @@ func (i *Initializer) prjConfigFromDetect(
 				databaseName = "redis"
 			} else {
 				var err error
-				databaseName, err = i.getDatabaseNameByPrompt(ctx, database)
+				databaseName, err = getDatabaseName(database, detect, i.console, ctx)
 				if err != nil {
 					return config, err
 				}
@@ -936,23 +936,6 @@ func getMavenExecutable(projectPath string, wrapperPath string, isPosix bool) st
 	} else {
 		return ".\\" + rel
 	}
-}
-
-func (i *Initializer) getDatabaseNameByPrompt(ctx context.Context, database appdetect.DatabaseDep) (string, error) {
-	var result string
-	for {
-		dbName, err := promptDbName(i.console, ctx, database)
-		if err != nil {
-			return dbName, err
-		}
-		if dbName == "" {
-			i.console.Message(ctx, "Database name is required.")
-			continue
-		}
-		result = dbName
-		break
-	}
-	return result, nil
 }
 
 func chooseAuthTypeByPrompt(

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -250,12 +251,58 @@ func detectStorageAccountAccordingToSpringCloudStreamBinderMavenDependencyAndPro
 }
 
 func detectMetadata(azdProject *Project, springBootProject *SpringBootProject) {
+	detectPropertySpringApplicationName(azdProject, springBootProject)
+	detectPropertySpringDatasourceUrl(azdProject, springBootProject)
 	detectDependencySpringCloudAzureStarter(azdProject, springBootProject)
 	detectDependencySpringCloudAzureStarterJdbcPostgresql(azdProject, springBootProject)
 	detectDependencySpringCloudAzureStarterJdbcMysql(azdProject, springBootProject)
 	detectDependencySpringCloudEureka(azdProject, springBootProject)
 	detectDependencySpringCloudConfig(azdProject, springBootProject)
-	detectPropertySpringApplicationName(azdProject, springBootProject)
+}
+
+func detectPropertySpringDatasourceUrl(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetPropertyName = "spring.datasource.url"
+	propertyValue, ok := springBootProject.applicationProperties[targetPropertyName]
+	if !ok {
+		log.Printf("spring.datasource.url property not exist in project. Path = %s", azdProject.Path)
+		return
+	}
+	databaseName := getDatabaseName(propertyValue)
+	if databaseName == "" {
+		log.Printf("can not get database name from property: spring.datasource.url")
+		return
+	}
+	if azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl == nil {
+		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl = map[DatabaseDep]string{}
+	}
+	if strings.HasPrefix(propertyValue, "jdbc:postgresql") {
+		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl[DbPostgres] = databaseName
+	} else if strings.HasPrefix(propertyValue, "jdbc:mysql") {
+		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl[DbMySql] = databaseName
+	}
+}
+
+func getDatabaseName(datasourceURL string) string {
+	lastSlashIndex := strings.LastIndex(datasourceURL, "/")
+	if lastSlashIndex == -1 {
+		return ""
+	}
+	result := datasourceURL[lastSlashIndex+1:]
+	if idx := strings.Index(result, "?"); idx != -1 {
+		result = result[:idx]
+	}
+	if IsValidDatabaseName(result) {
+		return result
+	}
+	return ""
+}
+
+func IsValidDatabaseName(name string) bool {
+	if len(name) < 3 || len(name) > 63 {
+		return false
+	}
+	re := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	return re.MatchString(name)
 }
 
 func detectDependencySpringCloudAzureStarter(azdProject *Project, springBootProject *SpringBootProject) {
@@ -286,8 +333,8 @@ func detectDependencySpringCloudAzureStarterJdbcMysql(azdProject *Project, sprin
 }
 
 func detectPropertySpringApplicationName(azdProject *Project, springBootProject *SpringBootProject) {
-	var targetSpringAppName = "spring.application.name"
-	if appName, ok := springBootProject.applicationProperties[targetSpringAppName]; ok {
+	var targetPropertyName = "spring.application.name"
+	if appName, ok := springBootProject.applicationProperties[targetPropertyName]; ok {
 		azdProject.Metadata.ApplicationName = appName
 	}
 }

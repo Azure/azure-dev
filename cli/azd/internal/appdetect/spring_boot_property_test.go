@@ -56,6 +56,24 @@ func TestGetEnvironmentVariablePlaceholderHandledValue(t *testing.T) {
 			map[string]string{"VALUE_THREE": "valueThree"},
 			"valueThree",
 		},
+		{
+			"Has valid environment variable placeholder with default value, but environment variable not set",
+			"${VALUE_TWO:defaultValue}",
+			map[string]string{},
+			"defaultValue",
+		},
+		{
+			"Has valid environment variable placeholder with default value, and environment variable set",
+			"${VALUE_THREE:defaultValue}",
+			map[string]string{"VALUE_THREE": "valueThree"},
+			"valueThree",
+		},
+		{
+			"Has multiple environment variable placeholder with default value, and environment not variable set",
+			"jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:pet-clinic}",
+			map[string]string{},
+			"jdbc:mysql://localhost:3306/pet-clinic",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -114,11 +115,24 @@ func readPropertiesInPropertiesFile(propertiesFilePath string, result map[string
 	}
 }
 
+var environmentVariableRegex = regexp.MustCompile(`\$\{([^:}]+)(?::([^}]+))?}`)
+
 func getEnvironmentVariablePlaceholderHandledValue(rawValue string) string {
 	trimmedRawValue := strings.TrimSpace(rawValue)
-	if strings.HasPrefix(trimmedRawValue, "${") && strings.HasSuffix(trimmedRawValue, "}") {
-		envVar := trimmedRawValue[2 : len(trimmedRawValue)-1]
-		return os.Getenv(envVar)
+	matches := environmentVariableRegex.FindAllStringSubmatch(trimmedRawValue, -1)
+	result := trimmedRawValue
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		envVar := match[1]
+		defaultValue := match[2]
+		value := os.Getenv(envVar)
+		if value == "" {
+			value = defaultValue
+		}
+		placeholder := match[0]
+		result = strings.Replace(result, placeholder, value, -1)
 	}
-	return trimmedRawValue
+	return result
 }

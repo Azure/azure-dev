@@ -53,47 +53,6 @@ func Test_CLI_AuthLoginStatus(t *testing.T) {
 	}
 }
 
-func Test_CLI_LoginServicePrincipal(t *testing.T) {
-	t.Skip("azure/azure-dev#4341")
-
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := t.TempDir()
-
-	cli := azdcli.NewCLI(t)
-	// Isolate login to a separate configuration directory
-	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
-	if cfg.ClientID == "" || cfg.TenantID == "" /* || cfg.ClientSecret == "" */ {
-		if cfg.CI {
-			panic("Service principal is not configured. AZD_TEST_* variables are required to be set for live testing.")
-		}
-
-		t.Skip("Skipping test because service principal is not configured. " +
-			"Set the relevant AZD_TEST_* variables to run this test.")
-		return
-	}
-
-	loginState := loginStatus(t, ctx, cli)
-	require.Equal(t, contracts.LoginStatusUnauthenticated, loginState.Status)
-
-	_, err := cli.RunCommand(ctx,
-		"auth", "login",
-		"--client-id", cfg.ClientID,
-		//		"--client-secret", cfg.ClientSecret,
-		"--tenant-id", cfg.TenantID)
-	require.NoError(t, err)
-
-	loginState = loginStatus(t, ctx, cli)
-	require.Equal(t, contracts.LoginStatusSuccess, loginState.Status)
-
-	_, err = cli.RunCommand(ctx, "auth", "logout")
-	require.NoError(t, err)
-
-	loginState = loginStatus(t, ctx, cli)
-	require.Equal(t, contracts.LoginStatusUnauthenticated, loginState.Status)
-}
-
 func loginStatus(t *testing.T, ctx context.Context, cli *azdcli.CLI) contracts.LoginResult {
 	result, err := cli.RunCommand(ctx, "auth", "login", "--check-status", "--output", "json")
 	require.NoError(t, err)

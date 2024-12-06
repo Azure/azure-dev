@@ -32,7 +32,7 @@
     "dotenv": "^16.0.1",
     "express": "^4.21.1",
     "mongodb": "^4.17.0",
-    "mongoose": "^6.11.3",
+    "mongoose": "^8.8.3",
     "swagger-jsdoc": "^6.2.1",
     "swagger-ui-express": "^4.4.0",
     "winston": "^3.7.2",

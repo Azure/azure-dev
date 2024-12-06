@@ -18,7 +18,7 @@ To take full advantage of the CLI, code repositories need to conform to a well d
 
 ## Install/Upgrade Azure Developer CLI
 
-Install and Upgrade using the following scripts. Re-running the script will install the latest available version.
+Install and upgrade using the following scripts. Re-running the script will install the latest available version.
 
 For advanced install scenarios see [Azure Developer CLI Installer Scripts](cli/installer/README.md).
 
@@ -120,7 +120,7 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 
 Microsoft employees and partners who want to contribute templates to our official collections, must follow the standardization guidelines for template scaffolding and validation published [here](https://github.com/Azure-Samples/azd-template-artifacts)
 
-*Important Disclaimer*: The standardization artifacts, definitions and recommendations, are frequently updated.Please make sure to visit the site often, to follow the latest best practices.
+*Important Disclaimer*: The standardization artifacts, definitions, and recommendations are frequently updated. Please make sure to visit the site often to follow the latest recommended practices.
 
 ## Trademark Notice
 

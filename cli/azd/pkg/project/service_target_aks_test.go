@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -811,6 +812,7 @@ func createAksServiceTarget(
 	helmCli := helm.NewCli(mockContext.CommandRunner)
 	kustomizeCli := kustomize.NewCli(mockContext.CommandRunner)
 	dockerCli := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 	kubeLoginCli := kubelogin.NewCli(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
@@ -849,6 +851,7 @@ func createAksServiceTarget(
 		containerRegistryService,
 		remoteBuildManager,
 		dockerCli,
+		dotnetCli,
 		mockContext.Console,
 		cloud.AzurePublic(),
 	)

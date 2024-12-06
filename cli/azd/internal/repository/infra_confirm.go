@@ -212,7 +212,7 @@ func PromptPort(
 	name string,
 	svc appdetect.Project) (int, error) {
 	if svc.Docker == nil || svc.Docker.Path == "" { // using default builder from azd
-		if svc.Language == appdetect.Java {
+		if svc.Language == appdetect.Java || svc.Language == appdetect.DotNet {
 			return 8080, nil
 		}
 		return 80, nil

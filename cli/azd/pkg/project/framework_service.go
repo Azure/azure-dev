@@ -121,3 +121,7 @@ func validatePackageOutput(packagePath string) error {
 
 	return nil
 }
+
+func (slk ServiceLanguageKind) IsDotNet() bool {
+	return slk == ServiceLanguageDotNet || slk == ServiceLanguageCsharp || slk == ServiceLanguageFsharp
+}

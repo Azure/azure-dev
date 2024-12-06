@@ -80,8 +80,8 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 		e.scenario = "login expired"
 	}
 
-	// In a Codespaces environment, `azd auth login` defaults to device code flow, which can cause issues getting tokens if the
-	// the Entra tenant has Conditional Access Policies set.
+	// In a Codespaces environment, `azd auth login` defaults to device code flow, which can cause issues
+	// getting tokens if the Entra tenant has Conditional Access Policies set.
 	if slices.Contains(response.ErrorCodes, 50005) {
 		e.loginCmd += " --use-device-code=false"
 		e.helpLink = "https://aka.ms/azd/troubleshoot/conditional-access-policy"

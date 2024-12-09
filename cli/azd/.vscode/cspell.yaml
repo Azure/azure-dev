@@ -134,6 +134,11 @@ overrides:
   - filename: internal/appdetect/spring_boot.go
     words:
       - eirslett
+  - filename: test/internal/tfoidc/main.go
+    words:
+      - tfoidc
+      - OIDCREQUESTURI
+      - oidctoken
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

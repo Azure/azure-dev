@@ -13,6 +13,7 @@ words:
   - usgovcloudapi
   - chinacloudapi
   - unmarshals
+  - noprofile
 languageSettings:
   - languageId: go
     ignoreRegExpList:

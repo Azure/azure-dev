@@ -148,7 +148,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	if err := ra.projectManager.EnsureFrameworkTools(ctx, ra.projectConfig, func(svc *project.ServiceConfig) bool {
+	if err := ra.projectManager.EnsureRestoreTools(ctx, ra.projectConfig, func(svc *project.ServiceConfig) bool {
 		return targetServiceName == "" || svc.Name == targetServiceName
 	}); err != nil {
 		return nil, err

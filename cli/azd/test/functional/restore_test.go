@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -15,10 +14,6 @@ import (
 
 // test for errors when running restore in invalid working directories
 func Test_CLI_Restore_Err_WorkingDirectory(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("azure/azure-dev#4612")
-	}
-
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -84,10 +79,6 @@ func Test_CLI_Restore_Err_WorkingDirectory(t *testing.T) {
 
 // test restore in a service directory
 func Test_CLI_Restore_InServiceDirectory(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("azure/azure-dev#4612")
-	}
-
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -120,10 +111,6 @@ func Test_CLI_Restore_InServiceDirectory(t *testing.T) {
 
 // test restore using a service name passed explicitly
 func Test_CLI_Restore_UsingServiceName(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("azure/azure-dev#4612")
-	}
-
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -155,10 +142,6 @@ func Test_CLI_Restore_UsingServiceName(t *testing.T) {
 
 // test restore all in the project directory
 func Test_CLI_RestoreAll_InProjectDir(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("azure/azure-dev#4612")
-	}
-
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -193,10 +176,6 @@ func Test_CLI_RestoreAll_InProjectDir(t *testing.T) {
 
 // test restore --all
 func Test_CLI_RestoreAll_UsingFlags(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("azure/azure-dev#4612")
-	}
-
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)

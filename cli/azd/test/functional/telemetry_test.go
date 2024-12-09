@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -134,10 +133,6 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 
 // Verifies telemetry usage data generated when environments and projects are loaded.
 func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("azure/azure-dev#4612")
-	}
-
 	// CLI process and working directory are isolated
 	ctx, cancel := newTestContext(t)
 	defer cancel()

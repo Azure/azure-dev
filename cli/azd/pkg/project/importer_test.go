@@ -329,7 +329,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	require.NoError(t, err)
 	defer os.Remove(path)
 
-	// Use an a dotnet project and use the mock to simulate an Aspire project
+	// Use a dotnet project and use the mock to simulate an Aspire project
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
@@ -356,7 +356,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	// If we fetch the infrastructure again, we expect that the manifest is already cached and `dotnet run` on the apphost
 	// will not be invoked again.
 
-	// Use an a dotnet project and use the mock to simulate an Aspire project
+	// Use a dotnet project and use the mock to simulate an Aspire project
 	_, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {

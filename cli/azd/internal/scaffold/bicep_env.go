@@ -2,18 +2,19 @@ package scaffold
 
 import (
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
 )
 
 func ToBicepEnv(env Env) BicepEnv {
-	if isResourceConnectionEnv(env.Value) {
-		resourceType, resourceInfoType := toResourceConnectionInfo(env.Value)
-		value, ok := bicepEnv[resourceType][resourceInfoType]
+	if isServiceBindingEnvValue(env.Value) {
+		serviceType, infoType := toServiceTypeAndServiceBindingInfoType(env.Value)
+		value, ok := bicepEnv[serviceType][infoType]
 		if !ok {
 			panic(unsupportedType(env))
 		}
-		if isSecret(resourceInfoType) {
+		if isSecret(infoType) {
 			if isKeyVaultSecret(value) {
 				return BicepEnv{
 					BicepEnvType: BicepEnvTypeKeyVaultSecret,
@@ -121,89 +122,97 @@ const (
 
 // Note: The value is handled as variable.
 // If the value is string, it should contain quotation inside itself.
-var bicepEnv = map[ResourceType]map[ResourceInfoType]string{
-	ResourceTypeDbPostgres: {
-		ResourceInfoTypeHost:         "postgreServer.outputs.fqdn",
-		ResourceInfoTypePort:         "'5432'",
-		ResourceInfoTypeDatabaseName: "postgreSqlDatabaseName",
-		ResourceInfoTypeUsername:     "postgreSqlDatabaseUser",
-		ResourceInfoTypePassword:     "postgreSqlDatabasePassword",
-		ResourceInfoTypeUrl: "'postgresql://${postgreSqlDatabaseUser}:${postgreSqlDatabasePassword}@" +
+var bicepEnv = map[ServiceType]map[ServiceBindingInfoType]string{
+	ServiceTypeDbPostgres: {
+		ServiceBindingInfoTypeHost:         "postgreServer.outputs.fqdn",
+		ServiceBindingInfoTypePort:         "'5432'",
+		ServiceBindingInfoTypeDatabaseName: "postgreSqlDatabaseName",
+		ServiceBindingInfoTypeUsername:     "postgreSqlDatabaseUser",
+		ServiceBindingInfoTypePassword:     "postgreSqlDatabasePassword",
+		ServiceBindingInfoTypeUrl: "'postgresql://${postgreSqlDatabaseUser}:${postgreSqlDatabasePassword}@" +
 			"${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'",
-		ResourceInfoTypeJdbcUrl: "'jdbc:postgresql://${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'",
+		ServiceBindingInfoTypeJdbcUrl: "'jdbc:postgresql://${postgreServer.outputs.fqdn}:5432/" +
+			"${postgreSqlDatabaseName}'",
 	},
-	ResourceTypeDbMySQL: {
-		ResourceInfoTypeHost:         "mysqlServer.outputs.fqdn",
-		ResourceInfoTypePort:         "'3306'",
-		ResourceInfoTypeDatabaseName: "mysqlDatabaseName",
-		ResourceInfoTypeUsername:     "mysqlDatabaseUser",
-		ResourceInfoTypePassword:     "mysqlDatabasePassword",
-		ResourceInfoTypeUrl: "'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@" +
+	ServiceTypeDbMySQL: {
+		ServiceBindingInfoTypeHost:         "mysqlServer.outputs.fqdn",
+		ServiceBindingInfoTypePort:         "'3306'",
+		ServiceBindingInfoTypeDatabaseName: "mysqlDatabaseName",
+		ServiceBindingInfoTypeUsername:     "mysqlDatabaseUser",
+		ServiceBindingInfoTypePassword:     "mysqlDatabasePassword",
+		ServiceBindingInfoTypeUrl: "'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@" +
 			"${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'",
-		ResourceInfoTypeJdbcUrl: "'jdbc:mysql://${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'",
+		ServiceBindingInfoTypeJdbcUrl: "'jdbc:mysql://${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'",
 	},
-	ResourceTypeDbRedis: {
-		ResourceInfoTypeHost:     "redis.outputs.hostName",
-		ResourceInfoTypePort:     "string(redis.outputs.sslPort)",
-		ResourceInfoTypeEndpoint: "'${redis.outputs.hostName}:${redis.outputs.sslPort}'",
-		ResourceInfoTypePassword: wrapToKeyVaultSecretValue("redisConn.outputs.keyVaultUrlForPass"),
-		ResourceInfoTypeUrl:      wrapToKeyVaultSecretValue("redisConn.outputs.keyVaultUrlForUrl"),
+	ServiceTypeDbRedis: {
+		ServiceBindingInfoTypeHost:     "redis.outputs.hostName",
+		ServiceBindingInfoTypePort:     "string(redis.outputs.sslPort)",
+		ServiceBindingInfoTypeEndpoint: "'${redis.outputs.hostName}:${redis.outputs.sslPort}'",
+		ServiceBindingInfoTypePassword: wrapToKeyVaultSecretValue("redisConn.outputs.keyVaultUrlForPass"),
+		ServiceBindingInfoTypeUrl:      wrapToKeyVaultSecretValue("redisConn.outputs.keyVaultUrlForUrl"),
 	},
-	ResourceTypeDbMongo: {
-		ResourceInfoTypeDatabaseName: "mongoDatabaseName",
-		ResourceInfoTypeUrl:          wrapToKeyVaultSecretValue("cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri"),
+	ServiceTypeDbMongo: {
+		ServiceBindingInfoTypeDatabaseName: "mongoDatabaseName",
+		ServiceBindingInfoTypeUrl: wrapToKeyVaultSecretValue(
+			"cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri",
+		),
 	},
-	ResourceTypeDbCosmos: {
-		ResourceInfoTypeEndpoint:     "cosmos.outputs.endpoint",
-		ResourceInfoTypeDatabaseName: "cosmosDatabaseName",
+	ServiceTypeDbCosmos: {
+		ServiceBindingInfoTypeEndpoint:     "cosmos.outputs.endpoint",
+		ServiceBindingInfoTypeDatabaseName: "cosmosDatabaseName",
 	},
-	ResourceTypeMessagingServiceBus: {
-		ResourceInfoTypeNamespace:        "serviceBusNamespace.outputs.name",
-		ResourceInfoTypeConnectionString: wrapToKeyVaultSecretValue("serviceBusConnectionString.outputs.keyVaultUrl"),
+	ServiceTypeMessagingServiceBus: {
+		ServiceBindingInfoTypeNamespace: "serviceBusNamespace.outputs.name",
+		ServiceBindingInfoTypeConnectionString: wrapToKeyVaultSecretValue(
+			"serviceBusConnectionString.outputs.keyVaultUrl",
+		),
 	},
-	ResourceTypeMessagingEventHubs: {
-		ResourceInfoTypeNamespace:        "eventHubNamespace.outputs.name",
-		ResourceInfoTypeConnectionString: wrapToKeyVaultSecretValue("eventHubsConnectionString.outputs.keyVaultUrl"),
+	ServiceTypeMessagingEventHubs: {
+		ServiceBindingInfoTypeNamespace: "eventHubNamespace.outputs.name",
+		ServiceBindingInfoTypeEndpoint:  "'${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'",
+		ServiceBindingInfoTypeConnectionString: wrapToKeyVaultSecretValue(
+			"eventHubsConnectionString.outputs.keyVaultUrl",
+		),
 	},
-	ResourceTypeMessagingKafka: {
-		ResourceInfoTypeEndpoint:         "'${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'",
-		ResourceInfoTypeConnectionString: wrapToKeyVaultSecretValue("eventHubsConnectionString.outputs.keyVaultUrl"),
+	ServiceTypeStorage: {
+		ServiceBindingInfoTypeAccountName: "storageAccountName",
+		ServiceBindingInfoTypeConnectionString: wrapToKeyVaultSecretValue(
+			"storageAccountConnectionString.outputs.keyVaultUrl",
+		),
 	},
-	ResourceTypeStorage: {
-		ResourceInfoTypeAccountName:      "storageAccountName",
-		ResourceInfoTypeConnectionString: wrapToKeyVaultSecretValue("storageAccountConnectionString.outputs.keyVaultUrl"),
+	ServiceTypeOpenAiModel: {
+		ServiceBindingInfoTypeEndpoint: "account.outputs.endpoint",
 	},
-	ResourceTypeOpenAiModel: {
-		ResourceInfoTypeEndpoint: "account.outputs.endpoint",
-	},
-	ResourceTypeHostContainerApp: {
-		ResourceInfoTypeHost: "https://{{BackendName}}.${containerAppsEnvironment.outputs.defaultDomain}",
+	ServiceTypeHostContainerApp: {
+		ServiceBindingInfoTypeHost: "https://{{BackendName}}.${containerAppsEnvironment.outputs.defaultDomain}",
 	},
 }
 
 func GetContainerAppHost(name string) string {
 	return strings.ReplaceAll(
-		bicepEnv[ResourceTypeHostContainerApp][ResourceInfoTypeHost],
+		bicepEnv[ServiceTypeHostContainerApp][ServiceBindingInfoTypeHost],
 		"{{BackendName}}",
 		name,
 	)
 }
 
 func unsupportedType(env Env) string {
-	return fmt.Sprintf("unsupported connection info type for resource type. "+
-		"value = %s", env.Value)
+	return fmt.Sprintf(
+		"unsupported connection info type for resource type. value = %s", env.Value,
+	)
 }
 
 func PlaceHolderForServiceIdentityClientId() string {
 	return "__PlaceHolderForServiceIdentityClientId"
 }
 
-func isSecret(info ResourceInfoType) bool {
-	return info == ResourceInfoTypePassword || info == ResourceInfoTypeUrl || info == ResourceInfoTypeConnectionString
+func isSecret(info ServiceBindingInfoType) bool {
+	return info == ServiceBindingInfoTypePassword || info == ServiceBindingInfoTypeUrl ||
+		info == ServiceBindingInfoTypeConnectionString
 }
 
 func secretName(env Env) string {
-	resourceType, resourceInfoType := toResourceConnectionInfo(env.Value)
+	resourceType, resourceInfoType := toServiceTypeAndServiceBindingInfoType(env.Value)
 	name := fmt.Sprintf("%s-%s", resourceType, resourceInfoType)
 	lowerCaseName := strings.ToLower(name)
 	noDotName := strings.Replace(lowerCaseName, ".", "-", -1)

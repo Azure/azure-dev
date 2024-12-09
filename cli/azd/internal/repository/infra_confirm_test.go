@@ -3,12 +3,13 @@ package repository
 import (
 	"context"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
@@ -17,6 +18,11 @@ import (
 )
 
 func TestInitializer_infraSpecFromDetect(t *testing.T) {
+	dbPostgres := &scaffold.DatabasePostgres{
+		DatabaseName: "myappdb",
+		AuthType:     "userAssignedManagedIdentity",
+	}
+	envs, _ := scaffold.GetServiceBindingEnvsForPostgres(*dbPostgres)
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -188,10 +194,8 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
-						DbPostgres: &scaffold.DatabasePostgres{
-							DatabaseName: "myappdb",
-							AuthType:     "userAssignedManagedIdentity",
-						},
+						DbPostgres: dbPostgres,
+						Envs:       envs,
 					},
 					{
 						Name: "js",

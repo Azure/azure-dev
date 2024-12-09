@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
@@ -116,7 +115,8 @@ func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig,
 			return nil
 		}
 
-		err = generatedFS.MkdirAll(filepath.Join(infraPathPrefix, filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
+		err = generatedFS.MkdirAll(filepath.Join(infraPathPrefix, filepath.Dir(path)),
+			osutil.PermissionDirectoryOwnerOnly)
 		if err != nil {
 			return err
 		}
@@ -164,10 +164,11 @@ func infraSpec(projectConfig *ProjectConfig,
 			}
 			containers := resource.Props.(CosmosDBProps).Containers
 			for _, container := range containers {
-				infraSpec.DbCosmos.Containers = append(infraSpec.DbCosmos.Containers, scaffold.CosmosSqlDatabaseContainer{
-					ContainerName:     container.ContainerName,
-					PartitionKeyPaths: container.PartitionKeyPaths,
-				})
+				infraSpec.DbCosmos.Containers = append(infraSpec.DbCosmos.Containers,
+					scaffold.CosmosSqlDatabaseContainer{
+						ContainerName:     container.ContainerName,
+						PartitionKeyPaths: container.PartitionKeyPaths,
+					})
 			}
 		case ResourceTypeMessagingServiceBus:
 			props := resource.Props.(ServiceBusProps)
@@ -260,110 +261,41 @@ func mapUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig) error 
 				return fmt.Errorf("in azure.yaml, (%s) uses (%s), but (%s) doesn't",
 					userResourceName, usedResourceName, usedResourceName)
 			}
+			var err error
 			switch usedResource.Type {
 			case ResourceTypeDbPostgres:
-				userSpec.DbPostgres = infraSpec.DbPostgres
-				err := addUsageByEnv(infraSpec, userSpec, usedResource)
-				if err != nil {
-					return err
-				}
+				err = scaffold.BindToPostgres(userSpec, infraSpec.DbPostgres)
 			case ResourceTypeDbMySQL:
-				userSpec.DbMySql = infraSpec.DbMySql
-				err := addUsageByEnv(infraSpec, userSpec, usedResource)
-				if err != nil {
-					return err
-				}
-			case ResourceTypeDbRedis:
-				userSpec.DbRedis = infraSpec.DbRedis
-				err := addUsageByEnv(infraSpec, userSpec, usedResource)
-				if err != nil {
-					return err
-				}
+				err = scaffold.BindToMySql(userSpec, infraSpec.DbMySql)
 			case ResourceTypeDbMongo:
-				userSpec.DbCosmosMongo = infraSpec.DbCosmosMongo
-				err := addUsageByEnv(infraSpec, userSpec, usedResource)
-				if err != nil {
-					return err
-				}
+				err = scaffold.BindToMongoDb(userSpec, infraSpec.DbCosmosMongo)
 			case ResourceTypeDbCosmos:
-				userSpec.DbCosmos = infraSpec.DbCosmos
-				err := addUsageByEnv(infraSpec, userSpec, usedResource)
-				if err != nil {
-					return err
-				}
+				err = scaffold.BindToCosmosDb(userSpec, infraSpec.DbCosmos)
+			case ResourceTypeDbRedis:
+				err = scaffold.BindToRedis(userSpec, infraSpec.DbRedis)
 			case ResourceTypeMessagingServiceBus:
-				userSpec.AzureServiceBus = infraSpec.AzureServiceBus
-				err := addUsageByEnv(infraSpec, userSpec, usedResource)
-				if err != nil {
-					return err
-				}
-			case ResourceTypeMessagingEventHubs, ResourceTypeMessagingKafka:
-				userSpec.AzureEventHubs = infraSpec.AzureEventHubs
-				err := addUsageByEnv(infraSpec, userSpec, usedResource)
-				if err != nil {
-					return err
-				}
+				err = scaffold.BindToServiceBus(userSpec, infraSpec.AzureServiceBus)
+			case ResourceTypeMessagingKafka, ResourceTypeMessagingEventHubs:
+				err = scaffold.BindToEventHubs(userSpec, infraSpec.AzureEventHubs)
 			case ResourceTypeStorage:
-				userSpec.AzureStorageAccount = infraSpec.AzureStorageAccount
-				err := addUsageByEnv(infraSpec, userSpec, usedResource)
-				if err != nil {
-					return err
-				}
+				err = scaffold.BindToStorageAccount(userSpec, infraSpec.AzureStorageAccount)
 			case ResourceTypeOpenAiModel:
-				userSpec.AIModels = append(userSpec.AIModels, scaffold.AIModelReference{Name: usedResource.Name})
-				err := addUsageByEnv(infraSpec, userSpec, usedResource)
-				if err != nil {
-					return err
-				}
+				err = scaffold.BindToAIModels(userSpec, usedResource.Name)
 			case ResourceTypeHostContainerApp:
-				err := fulfillFrontendBackend(userSpec, usedResource, infraSpec)
-				if err != nil {
-					return err
+				usedSpec := getServiceSpecByName(infraSpec, usedResource.Name)
+				if usedSpec == nil {
+					return fmt.Errorf("'%s' uses '%s', but %s doesn't exist", userSpec.Name, usedResource.Name,
+						usedResource.Name)
 				}
+				scaffold.BindToContainerApp(userSpec, usedSpec)
 			default:
 				return fmt.Errorf("resource (%s) uses (%s), but the type of (%s) is (%s), which is unsupported",
 					userResource.Name, usedResource.Name, usedResource.Name, usedResource.Type)
 			}
+			if err != nil {
+				return err
+			}
 		}
-	}
-	return nil
-}
-
-func getAuthType(infraSpec *scaffold.InfraSpec, resourceType ResourceType) (internal.AuthType, error) {
-	switch resourceType {
-	case ResourceTypeDbPostgres:
-		return infraSpec.DbPostgres.AuthType, nil
-	case ResourceTypeDbMySQL:
-		return infraSpec.DbMySql.AuthType, nil
-	case ResourceTypeDbRedis:
-		return internal.AuthTypePassword, nil
-	case ResourceTypeDbMongo,
-		ResourceTypeDbCosmos,
-		ResourceTypeOpenAiModel,
-		ResourceTypeHostContainerApp:
-		return internal.AuthTypeUserAssignedManagedIdentity, nil
-	case ResourceTypeMessagingServiceBus:
-		return infraSpec.AzureServiceBus.AuthType, nil
-	case ResourceTypeMessagingEventHubs, ResourceTypeMessagingKafka:
-		return infraSpec.AzureEventHubs.AuthType, nil
-	case ResourceTypeStorage:
-		return infraSpec.AzureStorageAccount.AuthType, nil
-	case ResourceTypeJavaEurekaServer,
-		ResourceTypeJavaConfigServer:
-		return internal.AuthTypeUnspecified, nil
-	default:
-		return internal.AuthTypeUnspecified, fmt.Errorf("can not get authType, resource type: %s", resourceType)
-	}
-}
-
-func addUsageByEnv(infraSpec *scaffold.InfraSpec, userSpec *scaffold.ServiceSpec, usedResource *ResourceConfig) error {
-	envs, err := GetResourceConnectionEnvs(usedResource, infraSpec)
-	if err != nil {
-		return err
-	}
-	userSpec.Envs, err = mergeEnvWithDuplicationCheck(userSpec.Envs, envs)
-	if err != nil {
-		return err
 	}
 	return nil
 }
@@ -390,29 +322,37 @@ func printEnvListAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *Project
 				"Please make sure your application used the right environment variable. \n"+
 				"Here is the list of environment variables: ",
 				userResourceName, usedResourceName))
+			var variables []scaffold.Env
+			var err error
 			switch usedResource.Type {
-			case ResourceTypeDbPostgres, // do nothing. todo: add all other types
-				ResourceTypeDbMySQL,
-				ResourceTypeDbRedis,
-				ResourceTypeDbMongo,
-				ResourceTypeDbCosmos,
-				ResourceTypeMessagingServiceBus,
-				ResourceTypeMessagingEventHubs,
-				ResourceTypeMessagingKafka,
-				ResourceTypeStorage:
-				variables, err := GetResourceConnectionEnvs(usedResource, infraSpec)
-				if err != nil {
-					return err
-				}
-				for _, variable := range variables {
-					console.Message(ctx, fmt.Sprintf("  %s=xxx", variable.Name))
-				}
+			case ResourceTypeDbPostgres:
+				variables, err = scaffold.GetServiceBindingEnvsForPostgres(*infraSpec.DbPostgres)
+			case ResourceTypeDbMySQL:
+				variables, err = scaffold.GetServiceBindingEnvsForMysql(*infraSpec.DbMySql)
+			case ResourceTypeDbMongo:
+				variables = scaffold.GetServiceBindingEnvsForMongo()
+			case ResourceTypeDbCosmos:
+				variables = scaffold.GetServiceBindingEnvsForCosmos()
+			case ResourceTypeDbRedis:
+				variables = scaffold.GetServiceBindingEnvsForRedis()
+			case ResourceTypeMessagingServiceBus:
+				variables, err = scaffold.GetServiceBindingEnvsForServiceBus(*infraSpec.AzureServiceBus)
+			case ResourceTypeMessagingKafka, ResourceTypeMessagingEventHubs:
+				variables, err = scaffold.GetServiceBindingEnvsForEventHubs(*infraSpec.AzureEventHubs)
+			case ResourceTypeStorage:
+				variables, err = scaffold.GetServiceBindingEnvsForStorageAccount(*infraSpec.AzureStorageAccount)
 			case ResourceTypeHostContainerApp:
 				printHintsAboutUseHostContainerApp(userResourceName, usedResourceName, console, ctx)
 			default:
 				return fmt.Errorf("resource (%s) uses (%s), but the type of (%s) is (%s), "+
 					"which is doesn't add necessary environment variable",
 					userResource.Name, usedResource.Name, usedResource.Name, usedResource.Type)
+			}
+			if err != nil {
+				return err
+			}
+			for _, variable := range variables {
+				console.Message(ctx, fmt.Sprintf("  %s=xxx", variable.Name))
 			}
 			console.Message(ctx, "\n")
 		}
@@ -450,7 +390,7 @@ func handleContainerAppProps(
 		// Here, DB_HOST is not a secret, but DB_SECRET is. And yet, DB_HOST will be marked as a secret.
 		// This is a limitation of the current implementation, but it's safer to mark both as secrets above.
 		evaluatedValue := genBicepParamsFromEnvSubst(value, isSecret, infraSpec)
-		err := addNewEnvironmentVariable(serviceSpec, envVar.Name, evaluatedValue)
+		err := scaffold.AddNewEnvironmentVariable(serviceSpec, envVar.Name, evaluatedValue)
 		if err != nil {
 			return err
 		}
@@ -474,10 +414,11 @@ func setParameter(spec *scaffold.InfraSpec, name string, value string, isSecret 
 			}
 
 			// prevent auto-generated parameters from being overwritten with different values
-			if valStr, ok := parameters.Value.(string); !ok || ok && valStr != value {
+			if valStr, ok := parameters.Value.(string); !ok || valStr != value {
 				// if you are a maintainer and run into this error, consider using a different, unique name
 				panic(fmt.Sprintf(
-					"parameter collision: parameter %s already set to %s, cannot set to %s", name, parameters.Value, value))
+					"parameter collision: parameter %s already set to %s, cannot set to %s", name, parameters.Value,
+					value))
 			}
 
 			return
@@ -535,26 +476,6 @@ func genBicepParamsFromEnvSubst(
 	return result
 }
 
-func fulfillFrontendBackend(
-	userSpec *scaffold.ServiceSpec, usedResource *ResourceConfig, infraSpec *scaffold.InfraSpec) error {
-	if userSpec.Frontend == nil {
-		userSpec.Frontend = &scaffold.Frontend{}
-	}
-	userSpec.Frontend.Backends =
-		append(userSpec.Frontend.Backends, scaffold.ServiceReference{Name: usedResource.Name})
-
-	usedSpec := getServiceSpecByName(infraSpec, usedResource.Name)
-	if usedSpec == nil {
-		return fmt.Errorf("'%s' uses '%s', but %s doesn't exist", userSpec.Name, usedResource.Name, usedResource.Name)
-	}
-	if usedSpec.Backend == nil {
-		usedSpec.Backend = &scaffold.Backend{}
-	}
-	usedSpec.Backend.Frontends =
-		append(usedSpec.Backend.Frontends, scaffold.ServiceReference{Name: userSpec.Name})
-	return nil
-}
-
 func getServiceSpecByName(infraSpec *scaffold.InfraSpec, name string) *scaffold.ServiceSpec {
 	for i := range infraSpec.Services {
 		if infraSpec.Services[i].Name == name {
@@ -564,6 +485,7 @@ func getServiceSpecByName(infraSpec *scaffold.InfraSpec, name string) *scaffold.
 	return nil
 }
 
+// todo: merge it into scaffold.BindToContainerApp
 func printHintsAboutUseHostContainerApp(userResourceName string, usedResourceName string,
 	console input.Console, ctx context.Context) {
 	if console == nil {

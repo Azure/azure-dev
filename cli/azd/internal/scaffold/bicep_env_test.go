@@ -1,9 +1,10 @@
 package scaffold
 
 import (
+	"testing"
+
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestToBicepEnv(t *testing.T) {
@@ -40,7 +41,7 @@ func TestToBicepEnv(t *testing.T) {
 			name: "Plain text from EnvTypeResourceConnectionResourceInfo",
 			in: Env{
 				Name:  "POSTGRES_PORT",
-				Value: ToResourceConnectionEnv(ResourceTypeDbPostgres, ResourceInfoTypePort),
+				Value: ToServiceBindingEnvValue(ServiceTypeDbPostgres, ServiceBindingInfoTypePort),
 			},
 			want: BicepEnv{
 				BicepEnvType:   BicepEnvTypePlainText,
@@ -52,7 +53,7 @@ func TestToBicepEnv(t *testing.T) {
 			name: "Secret",
 			in: Env{
 				Name:  "POSTGRES_PASSWORD",
-				Value: ToResourceConnectionEnv(ResourceTypeDbPostgres, ResourceInfoTypePassword),
+				Value: ToServiceBindingEnvValue(ServiceTypeDbPostgres, ServiceBindingInfoTypePassword),
 			},
 			want: BicepEnv{
 				BicepEnvType: BicepEnvTypeSecret,
@@ -65,7 +66,7 @@ func TestToBicepEnv(t *testing.T) {
 			name: "KeuVault Secret",
 			in: Env{
 				Name:  "REDIS_PASSWORD",
-				Value: ToResourceConnectionEnv(ResourceTypeDbRedis, ResourceInfoTypePassword),
+				Value: ToServiceBindingEnvValue(ServiceTypeDbRedis, ServiceBindingInfoTypePassword),
 			},
 			want: BicepEnv{
 				BicepEnvType: BicepEnvTypeKeyVaultSecret,

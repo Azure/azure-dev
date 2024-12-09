@@ -82,7 +82,8 @@ func (i *Initializer) InitFromApp(
 		prj, err := appdetect.Detect(ctx, wd, appdetect.WithExcludePatterns([]string{
 			"**/eng",
 			"**/tool",
-			"**/tools"},
+			"**/tools",
+		},
 			false))
 		if err != nil {
 			i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
@@ -552,29 +553,19 @@ func (i *Initializer) prjConfigFromDetect(
 		}
 
 		if prj.Metadata.ContainsDependencySpringCloudEurekaClient {
-			err := appendJavaEurekaOrConfigClientEnv(
-				&svc,
-				javaEurekaServerService,
-				project.ResourceTypeJavaEurekaServer,
-				spec)
+			err := appendJavaEurekaServerEnv(&svc, javaEurekaServerService.Name)
 			if err != nil {
 				return config, err
 			}
 		}
 		if prj.Metadata.ContainsDependencySpringCloudConfigClient {
-			err := appendJavaEurekaOrConfigClientEnv(
-				&svc,
-				javaConfigServerService,
-				project.ResourceTypeJavaConfigServer,
-				spec)
+			err := appendJavaConfigServerEnv(&svc, javaConfigServerService.Name)
 			if err != nil {
 				return config, err
 			}
 		}
-
 		config.Services[svc.Name] = &svc
 		svcMapping[prj.Path] = svc.Name
-
 	}
 
 	if addResources {
@@ -1090,22 +1081,22 @@ func promptSpringBootVersion(console input.Console, ctx context.Context) (string
 	}
 }
 
-func appendJavaEurekaOrConfigClientEnv(svc *project.ServiceConfig,
-	javaEurekaOrConfigServerService project.ServiceConfig,
-	resourceType project.ResourceType,
-	infraSpec *scaffold.InfraSpec) error {
+func appendJavaEurekaServerEnv(svc *project.ServiceConfig, eurekaServerName string) error {
 	if svc.Env == nil {
 		svc.Env = map[string]string{}
 	}
-
-	clientEnvs, err := project.GetResourceConnectionEnvs(&project.ResourceConfig{
-		Name: javaEurekaOrConfigServerService.Name,
-		Type: resourceType,
-	}, infraSpec)
-	if err != nil {
-		return err
+	clientEnvs := scaffold.GetServiceBindingEnvsForEurekaServer(eurekaServerName)
+	for _, env := range clientEnvs {
+		svc.Env[env.Name] = env.Value
 	}
+	return nil
+}
 
+func appendJavaConfigServerEnv(svc *project.ServiceConfig, configServerName string) error {
+	if svc.Env == nil {
+		svc.Env = map[string]string{}
+	}
+	clientEnvs := scaffold.GetServiceBindingEnvsForConfigServer(configServerName)
 	for _, env := range clientEnvs {
 		svc.Env[env.Name] = env.Value
 	}

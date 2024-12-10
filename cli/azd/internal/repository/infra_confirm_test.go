@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
@@ -14,6 +18,11 @@ import (
 )
 
 func TestInitializer_infraSpecFromDetect(t *testing.T) {
+	dbPostgres := &scaffold.DatabasePostgres{
+		DatabaseName: "myappdb",
+		AuthType:     "userAssignedManagedIdentity",
+	}
+	envs, _ := scaffold.GetServiceBindingEnvsForPostgres(*dbPostgres)
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -166,11 +175,13 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				"n",
 				"my$special$db",
 				"n",
-				"myappdb", // fill in db name
+				"myappdb",                        // fill in db name
+				"User assigned managed identity", // confirm db authentication
 			},
 			want: scaffold.InfraSpec{
 				DbPostgres: &scaffold.DatabasePostgres{
 					DatabaseName: "myappdb",
+					AuthType:     "userAssignedManagedIdentity",
 				},
 				Services: []scaffold.ServiceSpec{
 					{
@@ -183,9 +194,8 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
-						DbPostgres: &scaffold.DatabaseReference{
-							DatabaseName: "myappdb",
-						},
+						DbPostgres: dbPostgres,
+						Envs:       envs,
 					},
 					{
 						Name: "js",
@@ -218,7 +228,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 					nil),
 			}
 
-			spec, err := i.infraSpecFromDetect(context.Background(), tt.detect)
+			spec, err := i.infraSpecFromDetect(context.Background(), &tt.detect)
 
 			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
 			// which may result in incorrect `gotestsum` reporting
@@ -226,6 +236,75 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, tt.want, spec)
+		})
+	}
+}
+
+func TestDetectCosmosSqlDatabaseContainerInFile(t *testing.T) {
+	tests := []struct {
+		javaFileContent    string
+		expectedContainers scaffold.CosmosSqlDatabaseContainer
+	}{
+		{
+			javaFileContent: "",
+			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
+				ContainerName:     "",
+				PartitionKeyPaths: []string{},
+			},
+		},
+		{
+			javaFileContent: "@Container(containerName = \"users\")",
+			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
+				ContainerName:     "users",
+				PartitionKeyPaths: []string{},
+			},
+		},
+		{
+			javaFileContent: "" +
+				"@Container(containerName = \"users\")\n" +
+				"public class User {\n" +
+				"    @Id\n    " +
+				"private String id;\n" +
+				"    private String firstName;\n" +
+				"    @PartitionKey\n" +
+				"    private String lastName;",
+			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
+				ContainerName: "users",
+				PartitionKeyPaths: []string{
+					"lastName",
+				},
+			},
+		},
+		{
+			javaFileContent: "" +
+				"@Container(containerName = \"users\")\n" +
+				"public class User {\n" +
+				"    @Id\n    " +
+				"private String id;\n" +
+				"    private String firstName;\n" +
+				"    @PartitionKey private String lastName;",
+			expectedContainers: scaffold.CosmosSqlDatabaseContainer{
+				ContainerName: "users",
+				PartitionKeyPaths: []string{
+					"lastName",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.javaFileContent, func(t *testing.T) {
+			tempDir := t.TempDir()
+			tempFile := filepath.Join(tempDir, "Example.java")
+			file, err := os.Create(tempFile)
+			assert.NoError(t, err)
+			file.Close()
+
+			err = os.WriteFile(tempFile, []byte(tt.javaFileContent), osutil.PermissionFile)
+			assert.NoError(t, err)
+
+			container, err := detectCosmosSqlDatabaseContainerInFile(tempFile)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedContainers, container)
 		})
 	}
 }

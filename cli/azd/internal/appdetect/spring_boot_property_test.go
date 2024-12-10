@@ -1,10 +1,11 @@
 package appdetect
 
 import (
-	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadProperties(t *testing.T) {
@@ -69,7 +70,7 @@ func TestGetEnvironmentVariablePlaceholderHandledValue(t *testing.T) {
 			"valueThree",
 		},
 		{
-			"Has multiple environment variable placeholder with default value, and environment not variable set",
+			"Has multiple environment variable placeholder with default value, and environment variable not set",
 			"jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:pet-clinic}",
 			map[string]string{},
 			"jdbc:mysql://localhost:3306/pet-clinic",

@@ -252,24 +252,50 @@ func detectStorageAccountAccordingToSpringCloudStreamBinderMavenDependencyAndPro
 
 func detectMetadata(azdProject *Project, springBootProject *SpringBootProject) {
 	detectPropertySpringApplicationName(azdProject, springBootProject)
+	detectPropertySpringCloudAzureCosmosDatabase(azdProject, springBootProject)
+	detectPropertySpringDataMongodbDatabase(azdProject, springBootProject)
+	detectPropertySpringDataMongodbUri(azdProject, springBootProject)
 	detectPropertySpringDatasourceUrl(azdProject, springBootProject)
+
 	detectDependencySpringCloudAzureStarter(azdProject, springBootProject)
-	detectDependencySpringCloudAzureStarterJdbcPostgresql(azdProject, springBootProject)
 	detectDependencySpringCloudAzureStarterJdbcMysql(azdProject, springBootProject)
-	detectDependencySpringCloudEureka(azdProject, springBootProject)
+	detectDependencySpringCloudAzureStarterJdbcPostgresql(azdProject, springBootProject)
 	detectDependencySpringCloudConfig(azdProject, springBootProject)
+	detectDependencySpringCloudEureka(azdProject, springBootProject)
+}
+
+func detectPropertySpringCloudAzureCosmosDatabase(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetPropertyName = "spring.cloud.azure.cosmos.database"
+	propertyValue, ok := springBootProject.applicationProperties[targetPropertyName]
+	if !ok {
+		log.Printf("%s property not exist in project. Path = %s", targetPropertyName, azdProject.Path)
+		return
+	}
+	databaseName := ""
+	if IsValidDatabaseName(propertyValue) {
+		databaseName = propertyValue
+	} else {
+		return
+	}
+	if azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl == nil {
+		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl = map[DatabaseDep]string{}
+	}
+	if azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl[DbCosmos] == "" {
+		// spring.data.mongodb.database has lower priority than spring.data.mongodb.uri
+		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl[DbCosmos] = databaseName
+	}
 }
 
 func detectPropertySpringDatasourceUrl(azdProject *Project, springBootProject *SpringBootProject) {
 	var targetPropertyName = "spring.datasource.url"
 	propertyValue, ok := springBootProject.applicationProperties[targetPropertyName]
 	if !ok {
-		log.Printf("spring.datasource.url property not exist in project. Path = %s", azdProject.Path)
+		log.Printf("%s property not exist in project. Path = %s", targetPropertyName, azdProject.Path)
 		return
 	}
 	databaseName := getDatabaseName(propertyValue)
 	if databaseName == "" {
-		log.Printf("can not get database name from property: spring.datasource.url")
+		log.Printf("can not get database name from property: %s", targetPropertyName)
 		return
 	}
 	if azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl == nil {
@@ -279,6 +305,46 @@ func detectPropertySpringDatasourceUrl(azdProject *Project, springBootProject *S
 		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl[DbPostgres] = databaseName
 	} else if strings.HasPrefix(propertyValue, "jdbc:mysql") {
 		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl[DbMySql] = databaseName
+	}
+}
+
+func detectPropertySpringDataMongodbUri(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetPropertyName = "spring.data.mongodb.uri"
+	propertyValue, ok := springBootProject.applicationProperties[targetPropertyName]
+	if !ok {
+		log.Printf("%s property not exist in project. Path = %s", targetPropertyName, azdProject.Path)
+		return
+	}
+	databaseName := getDatabaseName(propertyValue)
+	if databaseName == "" {
+		log.Printf("can not get database name from property: %s", targetPropertyName)
+		return
+	}
+	if azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl == nil {
+		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl = map[DatabaseDep]string{}
+	}
+	azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl[DbMongo] = databaseName
+}
+
+func detectPropertySpringDataMongodbDatabase(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetPropertyName = "spring.data.mongodb.database"
+	propertyValue, ok := springBootProject.applicationProperties[targetPropertyName]
+	if !ok {
+		log.Printf("%s property not exist in project. Path = %s", targetPropertyName, azdProject.Path)
+		return
+	}
+	databaseName := ""
+	if IsValidDatabaseName(propertyValue) {
+		databaseName = propertyValue
+	} else {
+		return
+	}
+	if azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl == nil {
+		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl = map[DatabaseDep]string{}
+	}
+	if azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl[DbMongo] == "" {
+		// spring.data.mongodb.database has lower priority than spring.data.mongodb.uri
+		azdProject.Metadata.DatabaseNameInPropertySpringDatasourceUrl[DbMongo] = databaseName
 	}
 }
 

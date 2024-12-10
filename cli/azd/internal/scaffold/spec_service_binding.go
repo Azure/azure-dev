@@ -264,6 +264,10 @@ func GetServiceBindingEnvsForPostgres(postgres DatabasePostgres) ([]Env, error) 
 				Value: ToServiceBindingEnvValue(ServiceTypeDbPostgres, ServiceBindingInfoTypeUsername),
 			},
 			{
+				Name:  "spring.datasource.password",
+				Value: "",
+			},
+			{
 				Name:  "spring.datasource.azure.passwordless-enabled",
 				Value: "true",
 			},
@@ -339,6 +343,10 @@ func GetServiceBindingEnvsForMysql(mysql DatabaseMySql) ([]Env, error) {
 			{
 				Name:  "spring.datasource.username",
 				Value: ToServiceBindingEnvValue(ServiceTypeDbMySQL, ServiceBindingInfoTypeUsername),
+			},
+			{
+				Name:  "spring.datasource.password",
+				Value: "",
 			},
 			{
 				Name:  "spring.datasource.azure.passwordless-enabled",

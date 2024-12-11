@@ -5,6 +5,7 @@ package project
 
 import (
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 
 	"github.com/braydonk/yaml"
 )
@@ -22,11 +23,20 @@ func AllResourceTypes() []ResourceType {
 }
 
 const (
-	ResourceTypeDbRedis          ResourceType = "db.redis"
-	ResourceTypeDbPostgres       ResourceType = "db.postgres"
-	ResourceTypeDbMongo          ResourceType = "db.mongo"
-	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
-	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
+	ResourceTypeDbRedis             ResourceType = "db.redis"
+	ResourceTypeDbPostgres          ResourceType = "db.postgres"
+	ResourceTypeDbMySQL             ResourceType = "db.mysql"
+	ResourceTypeDbMongo             ResourceType = "db.mongo"
+	ResourceTypeDbCosmos            ResourceType = "db.cosmos"
+	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
+	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
+	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
+	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
+	ResourceTypeMessagingKafka      ResourceType = "messaging.kafka"
+	ResourceTypeStorage             ResourceType = "storage"
+
+	ResourceTypeJavaEurekaServer ResourceType = "java.eureka.server"
+	ResourceTypeJavaConfigServer ResourceType = "java.config.server"
 )
 
 func (r ResourceType) String() string {
@@ -35,12 +45,28 @@ func (r ResourceType) String() string {
 		return "Redis"
 	case ResourceTypeDbPostgres:
 		return "PostgreSQL"
+	case ResourceTypeDbMySQL:
+		return "MySQL"
 	case ResourceTypeDbMongo:
 		return "MongoDB"
+	case ResourceTypeDbCosmos:
+		return "CosmosDB"
 	case ResourceTypeHostContainerApp:
 		return "Container App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
+	case ResourceTypeMessagingServiceBus:
+		return "Service Bus"
+	case ResourceTypeMessagingEventHubs:
+		return "Event Hubs"
+	case ResourceTypeMessagingKafka:
+		return "Kafka"
+	case ResourceTypeStorage:
+		return "Storage Account"
+	case ResourceTypeJavaEurekaServer:
+		return "Java Eureka Server"
+	case ResourceTypeJavaConfigServer:
+		return "Java Config Server"
 	}
 
 	return ""
@@ -89,6 +115,46 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeDbPostgres:
+		err := marshalRawProps(raw.Props.(PostgresProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeDbMySQL:
+		err := marshalRawProps(raw.Props.(MySQLProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeDbMongo:
+		err := marshalRawProps(raw.Props.(MongoDBProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeDbCosmos:
+		err := marshalRawProps(raw.Props.(CosmosDBProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeMessagingServiceBus:
+		err := marshalRawProps(raw.Props.(ServiceBusProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeMessagingEventHubs:
+		err := marshalRawProps(raw.Props.(EventHubsProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeMessagingKafka:
+		err := marshalRawProps(raw.Props.(KafkaProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeStorage:
+		err := marshalRawProps(raw.Props.(StorageProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -128,6 +194,54 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeDbMySQL:
+		mp := MySQLProps{}
+		if err := unmarshalProps(&mp); err != nil {
+			return err
+		}
+		raw.Props = mp
+	case ResourceTypeDbPostgres:
+		pp := PostgresProps{}
+		if err := unmarshalProps(&pp); err != nil {
+			return err
+		}
+		raw.Props = pp
+	case ResourceTypeDbMongo:
+		mp := MongoDBProps{}
+		if err := unmarshalProps(&mp); err != nil {
+			return err
+		}
+		raw.Props = mp
+	case ResourceTypeDbCosmos:
+		cp := CosmosDBProps{}
+		if err := unmarshalProps(&cp); err != nil {
+			return err
+		}
+		raw.Props = cp
+	case ResourceTypeMessagingServiceBus:
+		sb := ServiceBusProps{}
+		if err := unmarshalProps(&sb); err != nil {
+			return err
+		}
+		raw.Props = sb
+	case ResourceTypeMessagingEventHubs:
+		eh := EventHubsProps{}
+		if err := unmarshalProps(&eh); err != nil {
+			return err
+		}
+		raw.Props = eh
+	case ResourceTypeMessagingKafka:
+		kp := KafkaProps{}
+		if err := unmarshalProps(&kp); err != nil {
+			return err
+		}
+		raw.Props = kp
+	case ResourceTypeStorage:
+		sp := StorageProps{}
+		if err := unmarshalProps(&sp); err != nil {
+			return err
+		}
+		raw.Props = sp
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +268,50 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type MySQLProps struct {
+	DatabaseName string            `yaml:"databaseName,omitempty"`
+	AuthType     internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type PostgresProps struct {
+	DatabaseName string            `yaml:"databaseName,omitempty"`
+	AuthType     internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type MongoDBProps struct {
+	DatabaseName string `yaml:"databaseName,omitempty"`
+}
+
+type CosmosDBProps struct {
+	Containers   []CosmosDBContainerProps `yaml:"containers,omitempty"`
+	DatabaseName string                   `yaml:"databaseName,omitempty"`
+}
+
+type CosmosDBContainerProps struct {
+	ContainerName     string   `yaml:"containerName,omitempty"`
+	PartitionKeyPaths []string `yaml:"partitionKeyPaths,omitempty"`
+}
+
+type ServiceBusProps struct {
+	Queues   []string          `yaml:"queues,omitempty"`
+	IsJms    bool              `yaml:"isJms,omitempty"`
+	AuthType internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type EventHubsProps struct {
+	EventHubNames []string          `yaml:"eventHubNames,omitempty"`
+	AuthType      internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type KafkaProps struct {
+	Topics            []string          `yaml:"topics,omitempty"`
+	AuthType          internal.AuthType `yaml:"authType,omitempty"`
+	SpringBootVersion string            `yaml:"springBootVersion,omitempty"`
+}
+
+type StorageProps struct {
+	Containers []string          `yaml:"containers,omitempty"`
+	AuthType   internal.AuthType `yaml:"authType,omitempty"`
 }

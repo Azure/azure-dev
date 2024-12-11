@@ -773,7 +773,8 @@ func createPipelineManager(
 		mockContext.Console,
 		args,
 		mockContext.Container,
-		project.NewImportManager(project.NewDotNetImporter(nil, nil, nil, nil, mockContext.AlphaFeaturesManager)),
+		project.NewImportManager(
+			project.NewDotNetImporter(nil, nil, nil, nil, mockContext.AlphaFeaturesManager)),
 		&mockUserConfigManager{},
 	)
 }

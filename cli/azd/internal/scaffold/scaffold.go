@@ -3,6 +3,7 @@ package scaffold
 import (
 	"bytes"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"io/fs"
 	"os"
 	"path"
@@ -24,12 +25,15 @@ const templateRoot = "scaffold/templates"
 // To execute a named template, call Execute with the defined name.
 func Load() (*template.Template, error) {
 	funcMap := template.FuncMap{
-		"bicepName":        BicepName,
-		"containerAppName": ContainerAppName,
-		"upper":            strings.ToUpper,
-		"lower":            strings.ToLower,
-		"alphaSnakeUpper":  AlphaSnakeUpper,
-		"formatParam":      FormatParameter,
+		"bicepName":            BicepName,
+		"containerAppName":     ContainerAppName,
+		"upper":                strings.ToUpper,
+		"lower":                strings.ToLower,
+		"alphaSnakeUpper":      AlphaSnakeUpper,
+		"formatParam":          FormatParameter,
+		"hasPrefix":            strings.HasPrefix,
+		"toBicepEnv":           ToBicepEnv,
+		"shouldAddToBicepFile": ShouldAddToBicepFile,
 	}
 
 	t, err := template.New("templates").
@@ -74,6 +78,18 @@ func supportingFiles(spec InfraSpec) []string {
 
 	if len(spec.Services) > 0 {
 		files = append(files, "/modules/fetch-container-image.bicep")
+	}
+
+	if spec.AzureServiceBus != nil && spec.AzureServiceBus.AuthType == internal.AuthTypeConnectionString {
+		files = append(files, "/modules/set-servicebus-namespace-connection-string.bicep")
+	}
+
+	if spec.AzureEventHubs != nil && spec.AzureEventHubs.AuthType == internal.AuthTypeConnectionString {
+		files = append(files, "/modules/set-event-hubs-namespace-connection-string.bicep")
+	}
+
+	if spec.AzureStorageAccount != nil && spec.AzureStorageAccount.AuthType == internal.AuthTypeConnectionString {
+		files = append(files, "/modules/set-storage-account-connection-string.bicep")
 	}
 
 	return files
@@ -201,12 +217,21 @@ func executeToFS(targetFS *memfs.FS, tmpl *template.Template, name string, path 
 }
 
 func preExecExpand(spec *InfraSpec) {
-	// postgres requires specific password seeding parameters
+	// postgres and mysql requires specific password seeding parameters
 	if spec.DbPostgres != nil {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
-				Name:   "databasePassword",
-				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} databasePassword)",
+				Name:   "postgreSqlDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} postgreSqlDatabasePassword)",
+				Type:   "string",
+				Secret: true,
+			})
+	}
+	if spec.DbMySql != nil {
+		spec.Parameters = append(spec.Parameters,
+			Parameter{
+				Name:   "mysqlDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} mysqlDatabasePassword)",
 				Type:   "string",
 				Secret: true,
 			})

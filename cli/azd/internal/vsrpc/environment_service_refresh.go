@@ -76,6 +76,10 @@ func (s *environmentService) refreshEnvironmentAsync(
 		return nil, err
 	}
 
+	if err := c.projectManager.EnsureAllTools(ctx, c.projectConfig, nil); err != nil {
+		return nil, err
+	}
+
 	infra, err := c.importManager.ProjectInfrastructure(ctx, c.projectConfig)
 	if err != nil {
 		return nil, err

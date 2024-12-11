@@ -469,7 +469,7 @@ func (p *dockerProject) packBuild(
 				if err != nil {
 					return nil, err
 				}
-				environ = append(environ, fmt.Sprintf("BP_MAVEN_BUILT_MODULE=%s", svcRelPath))
+				environ = append(environ, fmt.Sprintf("BP_MAVEN_BUILT_MODULE=%s", filepath.ToSlash(svcRelPath)))
 			}
 		}
 

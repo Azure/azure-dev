@@ -43,6 +43,10 @@ var databaseDependencyRules = []DatabaseDependencyRule{
 				groupId:    "com.mysql",
 				artifactId: "mysql-connector-j",
 			},
+			{
+				groupId:    "com.azure.spring",
+				artifactId: "spring-cloud-azure-starter-jdbc-mysql",
+			},
 		},
 	},
 	{

@@ -1,4 +1,4 @@
-package azcli
+package azapi
 
 import (
 	"context"
@@ -17,7 +17,7 @@ type AzCliAppConfig struct {
 	} `json:"properties"`
 }
 
-func (cli *azCli) GetAppConfig(
+func (cli *AzureClient) GetAppConfig(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -45,7 +45,12 @@ func (cli *azCli) GetAppConfig(
 	}, nil
 }
 
-func (cli *azCli) PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error {
+func (cli *AzureClient) PurgeAppConfig(
+	ctx context.Context,
+	subscriptionId string,
+	configName string,
+	location string,
+) error {
 	appConfigStoresClient, err := cli.createAppConfigClient(ctx, subscriptionId)
 	if err != nil {
 		return err
@@ -65,7 +70,7 @@ func (cli *azCli) PurgeAppConfig(ctx context.Context, subscriptionId string, con
 }
 
 // Creates a AppConfig client for ARM control plane operations
-func (cli *azCli) createAppConfigClient(
+func (cli *AzureClient) createAppConfigClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappconfiguration.ConfigurationStoresClient, error) {

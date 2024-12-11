@@ -46,14 +46,26 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
+						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
+					},
+					Options: map[string]interface{}{
+						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
+					},
 				},
 				{
 					Language:      JavaScript,
@@ -130,14 +142,26 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
+						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
+					},
+					Options: map[string]interface{}{
+						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
+					},
 				},
 			},
 		},
@@ -163,14 +187,26 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
+						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
+					},
+					Options: map[string]interface{}{
+						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
+					},
 				},
 			},
 		},
@@ -199,14 +235,26 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
+						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
+					},
+					Options: map[string]interface{}{
+						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
+					},
 				},
 				{
 					Language:      Python,

@@ -56,7 +56,9 @@ func fillDatabaseName(
 
 	for {
 		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Input the name of the app database (%s)", r.Type.String()),
+			Message: fmt.Sprintf("Input the databaseName for %s "+
+				"(Not databaseServerName. This url can explain the difference: "+
+				"'jdbc:mysql://databaseServerName:3306/databaseName'):", r.Type.String()),
 			Help: "Hint: App database name\n\n" +
 				"Name of the database that the app connects to. " +
 				"This database will be created after running azd provision or azd up.",

@@ -4,6 +4,7 @@
 package cli_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -197,7 +200,6 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 // Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
 func Test_CLI_Aspire_Deploy(t *testing.T) {
-
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -230,6 +232,8 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
@@ -238,6 +242,47 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
+}
+
+// cleanupDeployments deletes all subscription level deployments tagged with `azd-env-name` equal to envName. If the session
+// indcates we are in playback mode, this function is a no-op.
+func cleanupDeployments(ctx context.Context, t *testing.T, azCLI *azdcli.CLI, session *recording.Session, envName string) {
+	if session != nil && session.Playback {
+		return
+	}
+
+	client, err := armresources.NewDeploymentsClient(cfg.SubscriptionID, azdcli.NewTestCredential(azCLI), nil)
+	if err != nil {
+		return
+	}
+
+	pager := client.NewListAtSubscriptionScopePager(nil)
+	var deploymentNames []string
+
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			t.Logf("cleanupDeployments: failed to list next deployments page: %v", err)
+			break
+		}
+
+		for _, deployment := range resp.Value {
+			if deployment != nil && deployment.Tags != nil {
+				tagVal := deployment.Tags[azure.TagKeyAzdEnvName]
+				if tagVal != nil && *tagVal == envName {
+					deploymentNames = append(deploymentNames, *deployment.Name)
+				}
+			}
+		}
+	}
+
+	for _, deploymentName := range deploymentNames {
+		t.Logf("cleanupDeployments: deleting deployment %s", deploymentName)
+		_, err := client.BeginDeleteAtSubscriptionScope(ctx, deploymentName, nil)
+		if err != nil {
+			t.Logf("cleanupDeployments: failed to delete deployment %s: %v", deploymentName, err)
+		}
+	}
 }
 
 // Snapshots a file located at targetPath. Saves the snapshot to snapshotRoot/rel, where rel is relative to targetRoot.

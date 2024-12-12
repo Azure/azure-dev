@@ -40,6 +40,8 @@ func Test_DeploymentStacks(t *testing.T) {
 			"AZURE_LOCATION=eastus2",
 		)
 
+		defer cleanupDeployments(ctx, t, cli, session, envName)
+
 		err := copySample(dir, "storage")
 		require.NoError(t, err, "failed expanding sample")
 

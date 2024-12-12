@@ -34,6 +34,10 @@ var databaseDependencyRules = []DatabaseDependencyRule{
 				groupId:    "org.postgresql",
 				artifactId: "postgresql",
 			},
+			{
+				groupId:    "com.azure.spring",
+				artifactId: "spring-cloud-azure-starter-jdbc-postgresql",
+			},
 		},
 	},
 	{

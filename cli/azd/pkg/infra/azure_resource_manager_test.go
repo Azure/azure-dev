@@ -20,7 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -169,7 +169,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(
 		scope,
@@ -226,7 +226,7 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(
 		scope,
@@ -288,7 +288,7 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(
 		scope,
@@ -344,7 +344,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(
 		scope,
@@ -476,7 +476,7 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 				mockContext.SubscriptionCredentialProvider,
 				mockContext.ArmClientOptions,
 			)
-			deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+			deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 
 			mockContext.HttpClient.When(func(request *http.Request) bool {
 				return request.Method == "GET" && strings.Contains(request.URL.Path, "/resourcegroups") &&

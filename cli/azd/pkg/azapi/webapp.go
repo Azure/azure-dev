@@ -1,4 +1,4 @@
-package azcli
+package azapi
 
 import (
 	"context"
@@ -17,7 +17,7 @@ type AzCliAppServiceProperties struct {
 	HostNames []string
 }
 
-func (cli *azCli) GetAppServiceProperties(
+func (cli *AzureClient) GetAppServiceProperties(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -33,7 +33,7 @@ func (cli *azCli) GetAppServiceProperties(
 	}, nil
 }
 
-func (cli *azCli) appService(
+func (cli *AzureClient) appService(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -115,7 +115,7 @@ func resumeDeployment(err error, progressLog func(msg string)) bool {
 	return false
 }
 
-func (cli *azCli) DeployAppServiceZip(
+func (cli *AzureClient) DeployAppServiceZip(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -160,7 +160,10 @@ func (cli *azCli) DeployAppServiceZip(
 	return to.Ptr(response.StatusText), nil
 }
 
-func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string) (*armappservice.WebAppsClient, error) {
+func (cli *AzureClient) createWebAppsClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappservice.WebAppsClient, error) {
 	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -174,7 +177,7 @@ func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string
 	return client, nil
 }
 
-func (cli *azCli) createZipDeployClient(
+func (cli *AzureClient) createZipDeployClient(
 	ctx context.Context,
 	subscriptionId string,
 	hostName string,

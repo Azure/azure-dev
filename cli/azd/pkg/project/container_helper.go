@@ -15,12 +15,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/benbjohnson/clock"
@@ -31,7 +31,7 @@ type ContainerHelper struct {
 	env                      *environment.Environment
 	envManager               environment.Manager
 	remoteBuildManager       *containerregistry.RemoteBuildManager
-	containerRegistryService azcli.ContainerRegistryService
+	containerRegistryService azapi.ContainerRegistryService
 	docker                   *docker.Cli
 	dotNetCli                *dotnet.Cli
 	clock                    clock.Clock
@@ -43,7 +43,7 @@ func NewContainerHelper(
 	env *environment.Environment,
 	envManager environment.Manager,
 	clock clock.Clock,
-	containerRegistryService azcli.ContainerRegistryService,
+	containerRegistryService azapi.ContainerRegistryService,
 	remoteBuildManager *containerregistry.RemoteBuildManager,
 	docker *docker.Cli,
 	dotNetCli *dotnet.Cli,
@@ -232,13 +232,13 @@ func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-) (*azcli.DockerCredentials, error) {
+) (*azapi.DockerCredentials, error) {
 	loginServer, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	var credential *azcli.DockerCredentials
+	var credential *azapi.DockerCredentials
 	credentialsError := retry.Do(
 		ctx,
 		// will retry just once after 1 minute based on:

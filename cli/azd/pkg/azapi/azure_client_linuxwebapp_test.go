@@ -1,7 +1,7 @@
 // // Copyright (c) Microsoft Corporation. All rights reserved.
 // // Licensed under the MIT License.
 
-package azcli
+package azapi
 
 import (
 	"bytes"
@@ -22,7 +22,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerIsLinuxWebAppMocks(mockContext, &ran)
 		registerLinuxWebAppZipDeployMocks(mockContext, &ran)
@@ -47,7 +47,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerIsLinuxWebAppMocks(mockContext, &ran)
 		registerLinuxWebAppZipDeployMocks(mockContext, &ran)
@@ -72,7 +72,7 @@ func Test_DeployTrackLinuxWebAppStatus(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerLogicAppMocks(mockContext, &ran)
 		registerLogicAppZipDeployMocks(mockContext, &ran)

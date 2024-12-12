@@ -12,11 +12,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -569,14 +569,14 @@ func (m *mockContainerRegistryServiceForRetry) Credentials(
 	ctx context.Context,
 	subscriptionId string,
 	loginServer string,
-) (*azcli.DockerCredentials, error) {
+) (*azapi.DockerCredentials, error) {
 	if m.retryCount < m.MaxRetry {
 		m.retryCount++
 		return nil, &azcore.ResponseError{
 			StatusCode: http.StatusNotFound,
 		}
 	}
-	return &azcli.DockerCredentials{}, nil
+	return &azapi.DockerCredentials{}, nil
 }
 
 func (m *mockContainerRegistryServiceForRetry) GetContainerRegistries(
@@ -684,9 +684,9 @@ func (m *mockContainerRegistryService) Credentials(
 	ctx context.Context,
 	subscriptionId string,
 	loginServer string,
-) (*azcli.DockerCredentials, error) {
+) (*azapi.DockerCredentials, error) {
 	args := m.Called(ctx, subscriptionId, loginServer)
-	return args.Get(0).(*azcli.DockerCredentials), args.Error(1)
+	return args.Get(0).(*azapi.DockerCredentials), args.Error(1)
 }
 
 func (m *mockContainerRegistryService) GetContainerRegistries(

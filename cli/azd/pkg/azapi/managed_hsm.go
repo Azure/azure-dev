@@ -1,4 +1,4 @@
-package azcli
+package azapi
 
 import (
 	"context"
@@ -18,7 +18,7 @@ type AzCliManagedHSM struct {
 	} `json:"properties"`
 }
 
-func (cli *azCli) GetManagedHSM(
+func (cli *AzureClient) GetManagedHSM(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -48,7 +48,7 @@ func (cli *azCli) GetManagedHSM(
 	}, nil
 }
 
-func (cli *azCli) PurgeManagedHSM(ctx context.Context, subscriptionId string, hsmName string, location string) error {
+func (cli *AzureClient) PurgeManagedHSM(ctx context.Context, subscriptionId string, hsmName string, location string) error {
 	client, err := cli.createManagedHSMClient(ctx, subscriptionId)
 	if err != nil {
 		return err
@@ -68,7 +68,7 @@ func (cli *azCli) PurgeManagedHSM(ctx context.Context, subscriptionId string, hs
 }
 
 // Creates a Managed HSM client for ARM control plane operations
-func (cli *azCli) createManagedHSMClient(
+func (cli *AzureClient) createManagedHSMClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armkeyvault.ManagedHsmsClient, error) {

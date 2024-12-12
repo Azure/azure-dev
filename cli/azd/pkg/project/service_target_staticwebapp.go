@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
 
@@ -25,14 +24,14 @@ const DefaultStaticWebAppEnvironmentName = "default"
 
 type staticWebAppTarget struct {
 	env *environment.Environment
-	cli azcli.AzCli
+	cli *azapi.AzureClient
 	swa *swa.Cli
 }
 
 // NewStaticWebAppTarget creates a new instance of the Static Web App target
 func NewStaticWebAppTarget(
 	env *environment.Environment,
-	azCli azcli.AzCli,
+	azCli *azapi.AzureClient,
 	swaCli *swa.Cli,
 ) ServiceTarget {
 	return &staticWebAppTarget{

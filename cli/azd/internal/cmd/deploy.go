@@ -71,7 +71,7 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		&d.fromPackage,
 		"from-package",
 		"",
-		"Deploys the application from an existing package.",
+		"Deploys the app from an existing package at the provided path. Works for both generated zip file packages or local container builds created by `azd package` or other means.",
 	)
 }
 

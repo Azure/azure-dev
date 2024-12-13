@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,6 +217,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 				"my$special$db",
 				"n",
 				"postgres", // fill in db name
+				"Username and password",
 			},
 			want: project.ProjectConfig{
 				Services: map[string]*project.ServiceConfig{
@@ -236,18 +238,25 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 						Type: project.ResourceTypeDbRedis,
 						Name: "redis",
 					},
-					"mongodb": {
+					"mongo": {
 						Type: project.ResourceTypeDbMongo,
-						Name: "mongodb",
+						Name: "mongo",
+						Props: project.MongoDBProps{
+							DatabaseName: "mongodb",
+						},
 					},
-					"postgres": {
+					"postgresql": {
 						Type: project.ResourceTypeDbPostgres,
-						Name: "postgres",
+						Name: "postgresql",
+						Props: project.PostgresProps{
+							AuthType:     internal.AuthTypePassword,
+							DatabaseName: "postgres",
+						},
 					},
 					"py": {
 						Type: project.ResourceTypeHostContainerApp,
 						Name: "py",
-						Uses: []string{"postgres", "mongodb", "redis"},
+						Uses: []string{"postgresql", "mongo", "redis"},
 						Props: project.ContainerAppProps{
 							Port: 80,
 						},
@@ -307,7 +316,8 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			spec, err := i.prjConfigFromDetect(
 				context.Background(),
 				dir,
-				tt.detect,
+				&tt.detect,
+				&scaffold.InfraSpec{},
 				true)
 
 			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,

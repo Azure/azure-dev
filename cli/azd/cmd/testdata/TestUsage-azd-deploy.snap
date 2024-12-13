@@ -11,7 +11,7 @@ Usage
 Flags
         --all                 	: Deploys all services that are listed in azure.yaml
     -e, --environment string  	: The name of the environment to use.
-        --from-package string 	: Deploys a single service at a time from an existing package at the provided path. Works for both generated zip file packages or local container builds created by azd package or other means.
+        --from-package string 	: Deploys a single service at a time from an existing package at the provided path. Supports both generated zip file packages or local container builds created by azd package or other means.
     -h, --help                	: Gets help for deploy.
 
 Global Flags

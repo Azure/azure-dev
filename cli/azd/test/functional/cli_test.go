@@ -155,6 +155,8 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 		"\n",
 	)
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	// azd init
 	_, err := cli.RunCommandWithStdIn(ctx, initStdIn, "init")
 	require.NoError(t, err)
@@ -212,6 +214,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -299,6 +303,8 @@ func Test_CLI_ProvisionState(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
@@ -373,6 +379,8 @@ func Test_CLI_ProvisionStateWithDown(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
@@ -438,6 +446,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -631,6 +641,8 @@ func Test_CLI_InfraBicepParam(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	err := copySample(dir, "storage-bicepparam")
 	require.NoError(t, err, "failed expanding sample")
 
@@ -785,8 +797,6 @@ func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 }
 
 func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
-	t.Skip("azure/azure-dev#4341")
-
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -828,7 +838,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 }
 
 func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
-	t.Skip("azure/azure-dev#4341")
+	t.Skip("azure/azure-dev#4564")
 
 	ctx, cancel := newTestContext(t)
 	defer cancel()

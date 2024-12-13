@@ -54,7 +54,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -562,27 +561,27 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}, nil
 	})
 	container.MustRegisterScoped(auth.NewManager)
-	container.MustRegisterSingleton(azcli.NewUserProfileService)
+	container.MustRegisterSingleton(azapi.NewUserProfileService)
 	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)
 	container.MustRegisterSingleton(account.NewSubscriptionsManager)
 	container.MustRegisterSingleton(account.NewSubscriptionCredentialProvider)
-	container.MustRegisterSingleton(azcli.NewManagedClustersService)
+	container.MustRegisterSingleton(azapi.NewManagedClustersService)
 	container.MustRegisterSingleton(entraid.NewEntraIdService)
-	container.MustRegisterSingleton(azcli.NewContainerRegistryService)
+	container.MustRegisterSingleton(azapi.NewContainerRegistryService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
 	container.MustRegisterScoped(project.NewContainerHelper)
-	container.MustRegisterSingleton(azcli.NewSpringService)
+	container.MustRegisterSingleton(azapi.NewSpringService)
 
 	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
 	})
 
 	// Tools
-	container.MustRegisterSingleton(azcli.NewAzCli)
+	container.MustRegisterSingleton(azapi.NewAzureClient)
 
 	// Tools
 	container.MustRegisterSingleton(azapi.NewResourceService)

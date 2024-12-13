@@ -303,6 +303,42 @@ func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, property
 	return res.Stdout, nil
 }
 
+// IsAspireHostProject returns true if the project at the given path has an MS Build Property named "IsAspireHost" which is
+// set to true or has a ProjectCapability named "Aspire".
+func (cli *Cli) IsAspireHostProject(ctx context.Context, projectPath string) (bool, error) {
+	runArgs := newDotNetRunArgs("msbuild", projectPath, "--getProperty:IsAspireHost", "--getItem:ProjectCapability")
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return false, fmt.Errorf("running dotnet msbuild on project '%s': %w", projectPath, err)
+	}
+
+	var result struct {
+		Properties struct {
+			IsAspireHost string `json:"IsAspireHost"`
+		} `json:"Properties"`
+		Items struct {
+			ProjectCapability []struct {
+				Identity string `json:"Identity"`
+			} `json:"ProjectCapability"`
+		} `json:"Items"`
+	}
+
+	if err := json.Unmarshal([]byte(res.Stdout), &result); err != nil {
+		return false, fmt.Errorf("unmarshal dotnet msbuild output: %w", err)
+	}
+
+	hasAspireCapability := false
+
+	for _, capability := range result.Items.ProjectCapability {
+		if capability.Identity == "Aspire" {
+			hasAspireCapability = true
+			break
+		}
+	}
+
+	return result.Properties.IsAspireHost == "true" || hasAspireCapability, nil
+}
+
 func NewCli(commandRunner exec.CommandRunner) *Cli {
 	return &Cli{
 		commandRunner: commandRunner,
@@ -316,6 +352,7 @@ func newDotNetRunArgs(args ...string) exec.RunArgs {
 
 	runArgs = runArgs.WithEnv([]string{
 		"DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1",
+		"DOTNET_NOLOGO=1",
 	})
 
 	return runArgs

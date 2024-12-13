@@ -41,6 +41,8 @@ properties:
             value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
           - name: ASPNETCORE_FORWARDEDHEADERS_ENABLED
             value: "true"
+          - name: GOVERSION
+            value: '{{ parameterWithDefault "goversion" "1.22"}}'
           - name: HTTP_PORTS
             value: '{{ targetPortOrDefault 0 }}'
           - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES

@@ -1,6 +1,6 @@
 # Release History
 
-## 1.11.0-beta.1 (Unreleased)
+## 1.12.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,27 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.11.0 (2024-11-13)
+
+### Features Added
+
+- [[4527]](https://github.com/Azure/azure-dev/pull/4527) Add new `alpha` command `azd add`.
+
+### Bugs Fixed
+
+- [[4524]](https://github.com/Azure/azure-dev/pull/4524) Fix using parameters for .NET Aspire deployment.
+
+## 1.10.4 (2024-11-06)
+
+### Bugs Fixed
+
+- [[4039]](https://github.com/Azure/azure-dev/pull/4039) Use DOTNET_CONTAINER.
+- [[4426]](https://github.com/Azure/azure-dev/pull/4426) Show inner error description for stack deployments.
+- [[4472]](https://github.com/Azure/azure-dev/pull/4472) Fix projects with empty spaces.
+- [[4458]](https://github.com/Azure/azure-dev/pull/4458) Fix panic on empty hooks.
+- [[4484]](https://github.com/Azure/azure-dev/pull/4484) Fix missing quotes in Aspire projects.
+- [[4515]](https://github.com/Azure/azure-dev/pull/4515) Use DOTNET_NOLOGO for Aspire projects.
 
 ## 1.10.3 (2024-10-16)
 

@@ -10,7 +10,6 @@ Usage
 
 Flags
         --all                 	: Deploys all services that are listed in azure.yaml
-        --docs                	: Opens the documentation for azd deploy in your web browser.
     -e, --environment string  	: The name of the environment to use.
         --from-package string 	: Deploys a single service at a time from an existing package at the provided path. Works for both generated zip file packages or local container builds created by `azd package` or other means.
     -h, --help                	: Gets help for deploy.
@@ -18,6 +17,8 @@ Flags
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd deploy in your web browser.
+    -h, --help       	: Gets help for deploy.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples

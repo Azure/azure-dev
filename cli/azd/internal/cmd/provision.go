@@ -185,6 +185,10 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 
+	if err := p.projectManager.EnsureAllTools(ctx, p.projectConfig, nil); err != nil {
+		return nil, err
+	}
+
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
 	if err != nil {
 		return nil, err

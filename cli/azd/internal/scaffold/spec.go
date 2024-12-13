@@ -12,6 +12,10 @@ type InfraSpec struct {
 	// Databases to create
 	DbPostgres    *DatabasePostgres
 	DbCosmosMongo *DatabaseCosmosMongo
+	DbRedis       *DatabaseRedis
+
+	// ai models
+	AIModels []AIModel
 }
 
 type Parameter struct {
@@ -30,9 +34,28 @@ type DatabaseCosmosMongo struct {
 	DatabaseName string
 }
 
+type DatabaseRedis struct {
+}
+
+// AIModel represents a deployed, ready to use AI model.
+type AIModel struct {
+	Name  string
+	Model AIModelModel
+}
+
+// AIModelModel represents a model that backs the AIModel.
+type AIModelModel struct {
+	// The name of the underlying model.
+	Name string
+	// The version of the underlying model.
+	Version string
+}
+
 type ServiceSpec struct {
 	Name string
 	Port int
+
+	Env map[string]string
 
 	// Front-end properties.
 	Frontend *Frontend
@@ -44,6 +67,9 @@ type ServiceSpec struct {
 	DbPostgres    *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
+
+	// AI model connections
+	AIModels []AIModelReference
 }
 
 type Frontend struct {
@@ -60,6 +86,10 @@ type ServiceReference struct {
 
 type DatabaseReference struct {
 	DatabaseName string
+}
+
+type AIModelReference struct {
+	Name string
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

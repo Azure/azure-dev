@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/otiai10/copy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -77,6 +78,51 @@ func TestExecInfra(t *testing.T) {
 			},
 		},
 		{
+			"All",
+			InfraSpec{
+				DbPostgres: &DatabasePostgres{
+					DatabaseName: "appdb",
+				},
+				DbCosmosMongo: &DatabaseCosmosMongo{
+					DatabaseName: "appdb",
+				},
+				DbRedis: &DatabaseRedis{},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						Backend: &Backend{
+							Frontends: []ServiceReference{
+								{
+									Name: "web",
+								},
+							},
+						},
+						DbCosmosMongo: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+						DbRedis: &DatabaseReference{
+							DatabaseName: "redis",
+						},
+						DbPostgres: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+					},
+					{
+						Name: "web",
+						Port: 3101,
+						Frontend: &Frontend{
+							Backends: []ServiceReference{
+								{
+									Name: "api",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			"API with Postgres",
 			InfraSpec{
 				DbPostgres: &DatabasePostgres{
@@ -114,6 +160,7 @@ func TestExecInfra(t *testing.T) {
 		{
 			"API with Redis",
 			InfraSpec{
+				DbRedis: &DatabaseRedis{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
@@ -140,7 +187,7 @@ func TestExecInfra(t *testing.T) {
 				err := os.MkdirAll(dest, 0700)
 				require.NoError(t, err)
 
-				err = copyFS(os.DirFS(filepath.Dir(dir)), filepath.Base(dir), dest)
+				err = copy.Copy(dir, dest)
 				require.NoError(t, err)
 			}
 

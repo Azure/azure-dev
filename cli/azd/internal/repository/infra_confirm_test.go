@@ -35,7 +35,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				Services: []scaffold.ServiceSpec{
 					{
 						Name:    "dotnet",
-						Port:    80,
+						Port:    8080,
 						Backend: &scaffold.Backend{},
 					},
 				},
@@ -162,6 +162,10 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				},
 			},
 			interactions: []string{
+				"my app db",
+				"n",
+				"my$special$db",
+				"n",
 				"myappdb", // fill in db name
 			},
 			want: scaffold.InfraSpec{

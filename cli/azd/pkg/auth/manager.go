@@ -53,6 +53,16 @@ const useAzCliAuthKey = "auth.useAzCliAuth"
 // auth related configuration information (e.g. the home account id of the current user). This information is not secret.
 const authConfigFileName = "auth.json"
 
+// azurePipelinesSystemAccessTokenEnvVarName is the name of the environment variable that contains the system access token
+// used to auth against the ODIC endpoint for Azure Pipelines. It needs to be set by the task that runs the azd command by
+// adding `SYSTEM_ACCESSTOKEN: $(System.AccessToken)` to the `env` section of the task configuration.
+const azurePipelinesSystemAccessTokenEnvVarName = "SYSTEM_ACCESSTOKEN"
+
+// errNoSystemAccessTokenEnvVar is returned when the System.AccessToken environment variable is not set.
+var errNoSystemAccessTokenEnvVar = fmt.Errorf(
+	"system access token not found, ensure the System.AccessToken value is mapped to an environment variable named %s",
+	azurePipelinesSystemAccessTokenEnvVarName)
+
 // HttpClient interface as required by MSAL library.
 type HttpClient interface {
 	// Do sends an HTTP request and returns an HTTP response.
@@ -312,11 +322,6 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 		return m.newCredentialFromManagedIdentity(clientID)
 	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
-		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
-		if err != nil {
-			return nil, fmt.Errorf("loading secret: %w: %w", err, ErrNoCurrentUser)
-		}
-
 		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
 		// `azd auth login`), but we allow an override using the options bag, when
 		// TenantID is non-empty and PreferFallbackTenant is not true.
@@ -326,13 +331,18 @@ func (m *Manager) CredentialForCurrentUser(
 			tenantID = options.TenantID
 		}
 
+		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
+		if err != nil {
+			return nil, fmt.Errorf("loading secret: %w: %w", err, ErrNoCurrentUser)
+		}
+
 		if ps.ClientSecret != nil {
 			return m.newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
 		} else if ps.ClientCertificate != nil {
 			return m.newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
 		} else if ps.FederatedAuth != nil && ps.FederatedAuth.TokenProvider != nil {
 			return m.newCredentialFromFederatedTokenProvider(
-				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider)
+				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider, ps.FederatedAuth.ServiceConnectionID)
 		}
 	}
 
@@ -518,35 +528,62 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 	tenantID string,
 	clientID string,
 	provider federatedTokenProvider,
+	serviceConnectionID *string,
 ) (azcore.TokenCredential, error) {
-	if provider != gitHubFederatedAuth {
+	clientOptions := azcore.ClientOptions{
+		Transport: m.httpClient,
+		// TODO: Inject client options instead? this can be done if we're OK
+		// using the default user agent string.
+		Cloud: m.cloud.Configuration,
+	}
+
+	switch provider {
+	case gitHubFederatedTokenProvider:
+		cred, err := azidentity.NewClientAssertionCredential(
+			tenantID,
+			clientID,
+			func(ctx context.Context) (string, error) {
+				federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+				if err != nil {
+					return "", fmt.Errorf("fetching federated token: %w", err)
+				}
+
+				return federatedToken, nil
+			},
+			&azidentity.ClientAssertionCredentialOptions{
+				ClientOptions: clientOptions,
+			})
+		if err != nil {
+			return nil, fmt.Errorf("creating credential: %w", err)
+		}
+
+		return cred, nil
+
+	case azurePipelinesFederatedTokenProvider:
+		systemAccessToken := os.Getenv(azurePipelinesSystemAccessTokenEnvVarName)
+		if systemAccessToken == "" {
+			return nil, errNoSystemAccessTokenEnvVar
+		}
+
+		// Guard against the case where the service connection ID is not set because someone manually edited the json
+		// files managed by `azd auth login`.
+		if serviceConnectionID == nil {
+			return nil, errors.New("service connection ID not found, please run `azd auth login` to authenticate")
+		}
+
+		cred, err := azidentity.NewAzurePipelinesCredential(
+			tenantID, clientID, *serviceConnectionID, systemAccessToken, &azidentity.AzurePipelinesCredentialOptions{
+				ClientOptions: clientOptions,
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
+		}
+
+		return cred, nil
+	default:
 		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
 	}
-	options := &azidentity.ClientAssertionCredentialOptions{
-		ClientOptions: azcore.ClientOptions{
-			Transport: m.httpClient,
-			// TODO: Inject client options instead? this can be done if we're OK
-			// using the default user agent string.
-			Cloud: m.cloud.Configuration,
-		},
-	}
-	cred, err := azidentity.NewClientAssertionCredential(
-		tenantID,
-		clientID,
-		func(ctx context.Context) (string, error) {
-			federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
-			if err != nil {
-				return "", fmt.Errorf("fetching federated token: %w", err)
-			}
-
-			return federatedToken, nil
-		},
-		options)
-	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w", err)
-	}
-
-	return cred, nil
 }
 
 func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) {
@@ -755,10 +792,10 @@ func (m *Manager) LoginWithServicePrincipalCertificate(
 	return cred, nil
 }
 
-func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
-	ctx context.Context, tenantId, clientId, provider string,
+func (m *Manager) LoginWithGitHubFederatedTokenProvider(
+	ctx context.Context, tenantId, clientId string,
 ) (azcore.TokenCredential, error) {
-	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, federatedTokenProvider(provider))
+	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, gitHubFederatedTokenProvider, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -768,10 +805,45 @@ func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
 		clientId,
 		&persistedSecret{
 			FederatedAuth: &federatedAuth{
-				TokenProvider: &gitHubFederatedAuth,
+				TokenProvider: &gitHubFederatedTokenProvider,
 			},
 		},
 	); err != nil {
+		return nil, err
+	}
+
+	return cred, nil
+}
+
+func (m *Manager) LoginWithAzurePipelinesFederatedTokenProvider(
+	ctx context.Context, tenantID string, clientID string, serviceConnectionID string,
+) (azcore.TokenCredential, error) {
+	systemAccessToken := os.Getenv(azurePipelinesSystemAccessTokenEnvVarName)
+
+	if systemAccessToken == "" {
+		return nil, errNoSystemAccessTokenEnvVar
+	}
+
+	options := &azidentity.AzurePipelinesCredentialOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: m.httpClient,
+			// TODO: Inject client options instead? this can be done if we're OK
+			// using the default user agent string.
+			Cloud: m.cloud.Configuration,
+		},
+	}
+
+	cred, err := azidentity.NewAzurePipelinesCredential(tenantID, clientID, serviceConnectionID, systemAccessToken, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %w", err)
+	}
+
+	if err := m.saveLoginForServicePrincipal(tenantID, clientID, &persistedSecret{
+		FederatedAuth: &federatedAuth{
+			TokenProvider:       &azurePipelinesFederatedTokenProvider,
+			ServiceConnectionID: &serviceConnectionID,
+		},
+	}); err != nil {
 		return nil, err
 	}
 
@@ -1017,7 +1089,8 @@ type persistedSecret struct {
 
 // federated auth token providers
 var (
-	gitHubFederatedAuth federatedTokenProvider = "github"
+	gitHubFederatedTokenProvider         federatedTokenProvider = "github"
+	azurePipelinesFederatedTokenProvider federatedTokenProvider = "azure-pipelines"
 )
 
 // token provider for federated auth
@@ -1027,6 +1100,9 @@ type federatedTokenProvider string
 type federatedAuth struct {
 	// The auth token provider. Tokens are obtained by calling the provider as needed.
 	TokenProvider *federatedTokenProvider `json:"tokenProvider,omitempty"`
+	// The ID of the service connection to use for Azure Pipelines federated auth. This is only set when the TokenProvider
+	// is "azure-pipelines".
+	ServiceConnectionID *string `json:"serviceConnectionId,omitempty"`
 }
 
 // userProperties is the model type for the value we store in the user's config. It is logically a discriminated union of

@@ -72,7 +72,7 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		"from-package",
 		"",
 		//nolint:lll
-		"Deploys a single service at a time from an existing package at the provided path. Works for both generated zip file packages or local container builds created by `azd package` or other means.",
+		"Deploys a single service at a time from an existing package at the provided path. Works for both generated zip file packages or local container builds created by azd package or other means.",
 	)
 }
 

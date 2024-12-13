@@ -13,7 +13,7 @@ import (
 // messageWriter is an io.Writer that writes to an IObserver[ProgressMessage], emitting a message for each write.
 type messageWriter struct {
 	ctx             context.Context
-	observer        IObserver[ProgressMessage]
+	observer        *Observer[ProgressMessage]
 	messageTemplate ProgressMessage
 }
 

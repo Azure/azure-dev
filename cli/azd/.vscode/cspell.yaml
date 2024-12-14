@@ -1,6 +1,7 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
   - azcloud
+  - azurefd
   - backoff
   - Canonicalize
   - chinacloudapi

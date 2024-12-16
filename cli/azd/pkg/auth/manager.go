@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -705,7 +706,7 @@ func (m *Manager) LoginWithDeviceCode(
 		m.console.Message(ctx, fmt.Sprintf("Start by copying the next code: %s", output.WithBold("%s", code.UserCode())))
 
 		if err := withOpenUrl(url); err != nil {
-			log.Println("error launching browser: ", err.Error())
+			slog.InfoContext(ctx, "error launching browser", "err", err)
 			m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
 		}
 		m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")

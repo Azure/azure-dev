@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"runtime"
@@ -223,7 +224,7 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	} else if c.formatter != nil {
 		c.println(ctx, message)
 	} else {
-		log.Println(message)
+		slog.InfoContext(ctx, message)
 	}
 	// Adding "\n" b/c calling Fprintln is adding one new line at the end to the msg
 	c.updateLastBytes(message + "\n")

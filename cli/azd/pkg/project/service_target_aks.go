@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -876,7 +877,7 @@ func (t *aksTarget) resolveClusterName(
 	if clusterName == "" {
 		yamlClusterName, err := serviceConfig.ResourceName.Envsubst(t.env.Getenv)
 		if err != nil {
-			log.Println("failed resolving cluster name from `resourceName` in azure.yaml", err)
+			slog.InfoContext(context.TODO(), "failed resolving cluster name from `resourceName` in azure.yaml", "err", err)
 		}
 
 		clusterName = yamlClusterName

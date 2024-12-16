@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -49,13 +50,13 @@ func NewHooksMiddleware(
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	env, err := m.lazyEnv.GetValue()
 	if err != nil {
-		log.Println("azd environment is not available, skipping all hook registrations.")
+		slog.InfoContext(ctx, "azd environment is not available, skipping all hook registrations.")
 		return next(ctx)
 	}
 
 	projectConfig, err := m.lazyProjectConfig.GetValue()
 	if err != nil || projectConfig == nil {
-		log.Println("azd project is not available, skipping all hook registrations.")
+		slog.InfoContext(ctx, "azd project is not available, skipping all hook registrations.")
 		return next(ctx)
 	}
 
@@ -75,7 +76,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	next NextFn,
 ) (*actions.ActionResult, error) {
 	if len(projectConfig.Hooks) == 0 {
-		log.Println(
+		slog.InfoContext(ctx,
 			"azd project is not available or does not contain any command hooks, skipping command hook registrations.",
 		)
 		return next(ctx)

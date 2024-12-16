@@ -3,7 +3,7 @@ package account
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"sort"
@@ -330,7 +330,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 
 	// If at least one was successful, log errors and continue
 	for _, err := range errors {
-		log.Println(err.Error())
+		slog.InfoContext(ctx, "error fetching subscription info", "err", err)
 	}
 
 	return allSubscriptions, nil

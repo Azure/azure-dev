@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -570,7 +571,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 					err,
 				)
 			}
-			log.Println("Using swa-cli for build and deploy because swa-cli.config.json was found in the service path")
+			slog.InfoContext(ctx,
+				"Using swa-cli for build and deploy because swa-cli.config.json was found in the service path")
 		}
 	}
 	if compositeFramework != nil {

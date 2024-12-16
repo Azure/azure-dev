@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -829,10 +830,10 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 	if !hasPipelineFile(props.CiProvider, props.RepoRoot) {
 		log.Printf("%s YAML not found, prompting for creation", props.CiProvider)
 		if err := pm.promptForCiFiles(ctx, props); err != nil {
-			log.Println("Error prompting for CI files:", err)
+			slog.InfoContext(ctx, "Error prompting for CI files", "err", err)
 			return err
 		}
-		log.Println("Prompt for CI files completed successfully.")
+		slog.InfoContext(ctx, "Prompt for CI files completed successfully.")
 	}
 
 	var dirPaths []string
@@ -844,7 +845,7 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 		log.Printf("Checking if directory %s is empty", dirPath)
 		isEmpty, err := osutil.IsDirEmpty(dirPath, true)
 		if err != nil {
-			log.Println("Error checking if directory is empty:", err)
+			slog.InfoContext(ctx, "Error checking if directory is empty", "err", err)
 			return fmt.Errorf("error checking if directory is empty: %w", err)
 		}
 		if !isEmpty {
@@ -865,11 +866,11 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 				"Please add pipeline files and try again.",
 			pipelineProviderFiles[props.CiProvider].DisplayName,
 			strings.Join(pipelineProviderFiles[props.CiProvider].PipelineDirectories, "\n"))
-		log.Println("Error:", message)
+		slog.InfoContext(ctx, message)
 		return errors.New(message)
 	}
 
-	log.Println("Info:", message)
+	slog.InfoContext(ctx, message)
 	pm.console.Message(ctx, message)
 	pm.console.Message(ctx, "")
 

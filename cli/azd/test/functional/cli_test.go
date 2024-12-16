@@ -108,7 +108,7 @@ func TestMain(m *testing.M) {
 
 	shortFlag := flag.Lookup("test.short")
 	if shortFlag != nil && shortFlag.Value.String() == "true" {
-		log.Println("Skipping tests in short mode")
+		fmt.Println("Skipping tests in short mode")
 		os.Exit(0)
 	}
 

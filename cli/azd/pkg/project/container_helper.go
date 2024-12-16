@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,7 +92,7 @@ func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *Serv
 	if registryName == "" {
 		yamlRegistryName, err := serviceConfig.Docker.Registry.Envsubst(ch.env.Getenv)
 		if err != nil {
-			log.Println("Failed expanding 'docker.registry'")
+			slog.InfoContext(ctx, "Failed expanding 'docker.registry'", "err", err)
 		}
 
 		registryName = yamlRegistryName

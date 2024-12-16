@@ -1,8 +1,9 @@
 package apphost
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 )
@@ -30,7 +31,7 @@ func buildAcaIngress(
 		additionalPortsCount--
 	}
 	if additionalPortsCount > 5 {
-		log.Println("More than 5 additional ports are not supported. " +
+		slog.InfoContext(context.TODO(), "More than 5 additional ports are not supported. "+
 			"See https://learn.microsoft.com/azure/container-apps/ingress-overview#tcp for more details.")
 	}
 

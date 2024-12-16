@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -96,12 +97,12 @@ func GetTelemetrySystem() *TelemetrySystem {
 
 func initialize() (*TelemetrySystem, error) {
 	if !IsTelemetryEnabled() {
-		log.Println("telemetry is disabled by user and will not be initialized.")
+		slog.InfoContext(context.TODO(), "telemetry is disabled by user and will not be initialized.")
 		return nil, nil
 	}
 
 	appinsightsexporter.SetListener(func(msg string) {
-		log.Println(msg)
+		slog.InfoContext(context.TODO(), msg)
 	})
 
 	telemetryDir, err := getTelemetryDirectory()
@@ -263,7 +264,7 @@ func (ts *TelemetrySystem) RunBackgroundUpload(ctx context.Context, enableDebugL
 		return err
 	}
 
-	log.Println("Upload already in progress. Exiting.")
+	slog.InfoContext(ctx, "Upload already in progress. Exiting.")
 	return nil
 }
 

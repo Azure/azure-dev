@@ -4,7 +4,9 @@
 package resource
 
 import (
+	"context"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -30,7 +32,7 @@ func DevDeviceId() string {
 	deviceId, err := deviceid.Get()
 
 	if err != nil {
-		log.Println("could not get device id, returning empty: ", err)
+		slog.InfoContext(context.TODO(), "could not get device id, returning empty", "err", err)
 		return ""
 	}
 

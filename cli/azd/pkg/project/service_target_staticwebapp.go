@@ -6,7 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -131,7 +131,7 @@ func (at *staticWebAppTarget) Deploy(
 		*deploymentToken,
 		dOptions)
 
-	log.Println(res)
+	slog.InfoContext(ctx, res)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed deploying static web app: %w", err)

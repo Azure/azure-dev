@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"maps"
 	"math"
 	"os"
@@ -560,7 +561,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	go func() {
 		// Disable reporting progress if needed
 		if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
-			log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
+			slog.InfoContext(ctx, "Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
 			<-cancelProgress
 			return
 		}

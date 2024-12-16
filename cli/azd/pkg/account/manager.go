@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"slices"
 
@@ -82,7 +83,7 @@ func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	if err != nil {
 		// logging the error, but we don't want to fail, as this could only
 		// means an account change
-		log.Println(fmt.Errorf("failed retrieving default subscription: %w", err).Error())
+		slog.InfoContext(ctx, "failed retrieving default subscription", "err", err)
 	}
 
 	var location *Location

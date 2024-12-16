@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -177,7 +178,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 				ctx,
 				output.WithWarningFormat("Execution will continue since ContinueOnError has been set to true."),
 			)
-			log.Println(execErr.Error())
+			slog.InfoContext(ctx, "hook execution error, continuing due to ContinueOnError", "err", execErr)
 		} else {
 			return execErr
 		}

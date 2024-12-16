@@ -1,6 +1,8 @@
 package vsrpc
 
 import (
+	"context"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -8,6 +10,8 @@ import (
 )
 
 func TestUnmarshalIObserver(t *testing.T) {
+	fnType := reflect.TypeOf(func(ctx context.Context, o *IObserver[int]) error { return nil })
+
 	t.Parallel()
 	t.Run("Ok", func(t *testing.T) {
 		req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{
@@ -22,9 +26,11 @@ func TestUnmarshalIObserver(t *testing.T) {
 		// messages back later. Create a new dummy jsonrpc2.Conn so we can validate this.
 		con := jsonrpc2.NewConn(nil)
 
-		o, err := unmarshalArg[IObserver[int]](con, req, 0)
+		args, err := unmarshalArgs(con, req, fnType)
 		require.NoError(t, err)
-		require.Equal(t, con, o.c, "rpc connection was not attached during unmarshaling!")
+		require.Len(t, args, 1)
+		require.Equal(t, con, args[0].Interface().(*IObserver[int]).c,
+			"rpc connection was not attached during unmarshaling!")
 	})
 
 	t.Run("No Tag", func(t *testing.T) {
@@ -35,7 +41,7 @@ func TestUnmarshalIObserver(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = unmarshalArg[IObserver[int]](nil, req, 0)
+		_, err = unmarshalArgs(nil, req, fnType)
 		require.Error(t, err)
 	})
 
@@ -48,7 +54,7 @@ func TestUnmarshalIObserver(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = unmarshalArg[IObserver[int]](nil, req, 0)
+		_, err = unmarshalArgs(nil, req, fnType)
 		require.Error(t, err)
 	})
 
@@ -60,7 +66,7 @@ func TestUnmarshalIObserver(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = unmarshalArg[IObserver[int]](nil, req, 0)
+		_, err = unmarshalArgs(nil, req, fnType)
 		require.Error(t, err)
 	})
 
@@ -70,7 +76,7 @@ func TestUnmarshalIObserver(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = unmarshalArg[IObserver[int]](nil, req, 0)
+		_, err = unmarshalArgs(nil, req, fnType)
 		require.Error(t, err)
 	})
 }

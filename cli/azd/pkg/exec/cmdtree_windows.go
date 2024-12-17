@@ -7,8 +7,9 @@
 package exec
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os/exec"
 	"syscall"
 	"unsafe"
@@ -64,7 +65,7 @@ func (o *CmdTree) Start() error {
 	defer func() {
 		err := windows.CloseHandle(process)
 		if err != nil {
-			log.Printf("failed to close process handle: %s\n", err)
+			slog.InfoContext(context.TODO(), "failed to close process handle", "err", err)
 		}
 	}()
 
@@ -80,6 +81,6 @@ func (o *CmdTree) Start() error {
 func (o *CmdTree) Kill() {
 	err := windows.TerminateJobObject(o.jobObject, 0)
 	if err != nil {
-		log.Printf("failed to terminate job object %d: %s\n", o.jobObject, err)
+		slog.InfoContext(context.TODO(), "failed to terminate job object", "job", o.jobObject, "err", err)
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"slices"
 
@@ -145,7 +145,7 @@ func (cas *containerAppService) persistSettings(
 
 	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
 	if err != nil {
-		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
+		slog.InfoContext(ctx, "failed getting current aca settings. No settings will be persisted.", "err", err)
 		// if the container app doesn't exist, there's nothing for us to update in the desired state,
 		// so we can just return the existing state as is.
 		return obj, nil
@@ -570,7 +570,7 @@ type containerAppCustomApiVersionAndBodyPolicy struct {
 
 func (p *containerAppCustomApiVersionAndBodyPolicy) Do(req *policy.Request) (*http.Response, error) {
 	if p.apiVersion != "" {
-		log.Printf("setting api-version to %s", p.apiVersion)
+		slog.InfoContext(req.Raw().Context(), "setting api-version", "api-version", p.apiVersion)
 
 		reqQP := req.Raw().URL.Query()
 		reqQP.Set("api-version", p.apiVersion)
@@ -578,7 +578,7 @@ func (p *containerAppCustomApiVersionAndBodyPolicy) Do(req *policy.Request) (*ht
 	}
 
 	if p.body != nil {
-		log.Printf("setting body to %s", string(*p.body))
+		slog.InfoContext(req.Raw().Context(), "setting body", "body", string(*p.body))
 
 		if err := req.SetBody(streaming.NopCloser(bytes.NewReader(*p.body)), "application/json"); err != nil {
 			return nil, fmt.Errorf("updating request body: %w", err)

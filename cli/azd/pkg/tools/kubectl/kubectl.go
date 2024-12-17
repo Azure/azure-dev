@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,9 +74,10 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	// for diagnostics purposes, let's fetch and log the version of kubectl
 	// we're using.
 	if ver, err := cli.getClientVersion(ctx); err != nil {
-		log.Printf("error fetching kubectl version: %s", err)
+		slog.InfoContext(ctx, "error fetching kubectl version", "err", err)
 	} else {
-		log.Printf("kubectl version: %s", ver)
+		slog.InfoContext(ctx, "detected kubectl version",
+			"version", ver)
 	}
 
 	return nil

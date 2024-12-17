@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -21,7 +21,7 @@ func appHostForProject(
 		if service.Language == project.ServiceLanguageDotNet {
 			isAppHost, err := dotnetCli.IsAspireHostProject(ctx, service.Path())
 			if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", service.Path(), err)
+				slog.InfoContext(ctx, "error checking if project is an app host project", "path", service.Path(), "err", err)
 			}
 			if isAppHost {
 				return service, nil
@@ -77,7 +77,11 @@ func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 	for _, svc := range prjConfig.Services {
 		if svc.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget {
 			if svc.Path() != hostProjectPath {
-				log.Printf("ignoring %s due to mismatch, using app host directory", azdCtx.ProjectPath())
+				slog.InfoContext(context.TODO(),
+					"ignoring azd context project path due to mismatch, using ap host directory",
+					"contextProjectPath", azdCtx.ProjectPath(),
+					"appHostProjectPath", hostProjectDir,
+				)
 				return azdcontext.NewAzdContextWithDirectory(hostProjectDir), nil
 			}
 		}
@@ -86,6 +90,6 @@ func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 		break
 	}
 
-	log.Printf("use nearest directory: %s", azdCtx.ProjectDirectory())
+	slog.InfoContext(context.TODO(), "use nearest directory", "path", azdCtx.ProjectDirectory())
 	return azdCtx, nil
 }

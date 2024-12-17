@@ -5,7 +5,8 @@ package input
 
 import (
 	"bufio"
-	"log"
+	"context"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -145,7 +146,7 @@ func (p *progressLog) Stop(keepLogs bool) {
 	p.output = nil
 }
 
-// Write implements oi.Writer and updates the internal buffer before flushing it into the screen.
+// Write implements io.Writer and updates the internal buffer before flushing it into the screen.
 // Calling Write() before Start() or after Stop() is a no-op
 func (p *progressLog) Write(logBytes []byte) (int, error) {
 	if p.output == nil {
@@ -202,7 +203,7 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 	}
 
 	if err := logsScanner.Err(); err != nil {
-		log.Printf("error while reading logs for previewer: %v", err)
+		slog.InfoContext(context.TODO(), "error while reading logs for previewer", "err", err)
 	}
 
 	// .Scan() won't add a line break for a line which ends in `\n`

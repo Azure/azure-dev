@@ -1,8 +1,10 @@
 package alpha
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -97,7 +99,8 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 				foundEnvVar = true
 				break
 			} else {
-				log.Printf("could not parse %s as a bool when considering %s", value, envName)
+				slog.InfoContext(context.TODO(), "could not parse env var value as a bool",
+					"value", value, "envName", envName)
 			}
 		}
 	}

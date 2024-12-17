@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -210,7 +209,7 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if m.UseExternalAuth() {
-		log.Printf("delegating auth to external process")
+		slog.InfoContext(ctx, "delegating auth to external process")
 		return newRemoteCredential(
 			m.externalAuthCfg.Endpoint,
 			m.externalAuthCfg.Key,
@@ -224,7 +223,7 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if shouldUseLegacyAuth(userConfig) {
-		log.Printf("delegating auth to az since %s is set to true", useAzCliAuthKey)
+		slog.InfoContext(ctx, fmt.Sprintf("delegating auth to az since %s is set to true", useAzCliAuthKey))
 		cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
 			TenantID: options.TenantID,
 		})

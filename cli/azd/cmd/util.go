@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -125,9 +125,9 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		if err == nil {
 			return
 		}
-		log.Printf(
-			"warning: failed to open browser configured by $BROWSER: %s\nTrying with default browser.\n",
-			err.Error(),
+		slog.InfoContext(ctx,
+			"warning: failed to open browser configured by $BROWSER. Trying with default browser",
+			"err", err,
 		)
 	}
 
@@ -136,9 +136,7 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	log.Printf(
-		"warning: failed to open default browser: %s\nTrying manual launch.", err.Error(),
-	)
+	slog.InfoContext(ctx, "warning: failed to open default browser. Trying manual launch.", "err", err)
 
 	// wsl manual launch. Trying cmd first, and pwsh second
 	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
@@ -154,9 +152,7 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	if err == nil {
 		return
 	}
-	log.Printf(
-		"warning: failed to open browser with cmd: %s\nTrying powershell.", err.Error(),
-	)
+	slog.InfoContext(ctx, "warning: failed to open browser with cmd. Trying powershell.", "err", err)
 
 	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
 		Cmd: "powershell.exe",
@@ -168,7 +164,7 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	log.Printf("warning: failed to use manual launch: %s\n", err.Error())
+	slog.InfoContext(ctx, "warning: failed to use manual launch", "err", err)
 	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
 }
 

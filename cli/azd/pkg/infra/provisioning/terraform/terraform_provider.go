@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -485,7 +485,7 @@ func (t *TerraformProvider) createDeployment(ctx context.Context) (*provisioning
 	parametersFilePath := t.parametersFilePath()
 
 	// check if the file does not exist to create it --> for shared env scenario
-	log.Printf("Reading parameters template file from: %s", parametersFilePath)
+	slog.InfoContext(ctx, "Reading parameters template file", "path", parametersFilePath)
 	if err := t.ensureParametersFile(ctx); err != nil {
 		return nil, err
 	}
@@ -526,7 +526,7 @@ func (t *TerraformProvider) collectAzureResources(rootModule terraformRootModule
 	visitResource := func(r terraformResource) {
 		if r.Mode == terraformModeManaged && r.ProviderName == "registry.terraform.io/hashicorp/azurerm" {
 			if id, err := t.getIdForManagedResource(r); err != nil {
-				log.Printf("error determining id for resource: %v, ignoring...", err)
+				slog.InfoContext(context.TODO(), "error determining id for resource ignoring...", "err", err)
 			} else {
 				azureResources[id] = struct{}{}
 			}
@@ -681,7 +681,7 @@ func (t *TerraformProvider) createInputParametersFile(
 	}
 
 	// Copy the parameter template file to the environment working directory and do substitutions.
-	log.Printf("Reading parameters template file from: %s", templateFilePath)
+	slog.InfoContext(ctx, "Reading parameters template file", "path", templateFilePath)
 	parametersBytes, err := os.ReadFile(templateFilePath)
 	if err != nil {
 		return fmt.Errorf("reading parameter file template: %w", err)
@@ -703,7 +703,7 @@ func (t *TerraformProvider) createInputParametersFile(
 		return fmt.Errorf("creating directory structure: %w", err)
 	}
 
-	log.Printf("Writing parameters file to: %s", inputFilePath)
+	slog.InfoContext(ctx, "Writing parameters file", "path", inputFilePath)
 	err = os.WriteFile(inputFilePath, []byte(replaced), 0600)
 	if err != nil {
 		return fmt.Errorf("writing parameter file: %w", err)

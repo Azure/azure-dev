@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -211,7 +211,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
 		var locationDisplay string
 		if err != nil {
-			log.Printf("failed getting location: %v", err)
+			slog.InfoContext(ctx, "failed getting location", "err", err)
 		} else {
 			locationDisplay = location.DisplayName
 		}
@@ -229,7 +229,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		})
 
 	} else {
-		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
+		slog.InfoContext(ctx, "failed getting subscriptions. Skip displaying sub and location", "err", subErr)
 	}
 
 	var deployResult *provisioning.DeployResult

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -145,7 +145,7 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 // Load hydrates the azure.yaml configuring into an viewable structure
 // This does not evaluate any tooling
 func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
-	log.Printf("Reading project from file '%s'\n", projectFilePath)
+	slog.InfoContext(ctx, "Reading project from file", "path", projectFilePath)
 	bytes, err := os.ReadFile(projectFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading project file: %w", err)
@@ -220,7 +220,7 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 }
 
 func LoadConfig(ctx context.Context, projectFilePath string) (config.Config, error) {
-	log.Printf("Reading project from file '%s'\n", projectFilePath)
+	slog.InfoContext(ctx, "Reading project from file", "path", projectFilePath)
 	bytes, err := os.ReadFile(projectFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading project file: %w", err)

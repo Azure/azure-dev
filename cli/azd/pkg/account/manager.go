@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"slices"
@@ -60,7 +59,8 @@ func NewManager(
 	azdConfig, err := configManager.Load(filePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("configuration file '%s' does not exist. Creating new empty config.", filePath)
+			slog.InfoContext(context.TODO(), "configuration file does not exist. Creating new empty config.",
+				"path", filePath)
 			azdConfig = config.NewEmptyConfig()
 		} else {
 			return nil, err

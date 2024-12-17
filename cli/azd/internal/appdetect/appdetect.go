@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -254,7 +254,7 @@ func detectUnder(ctx context.Context, root string, config detectConfig) ([]Proje
 
 // Detects if a directory belongs to any projects.
 func detectAny(ctx context.Context, detectors []projectDetector, path string, entries []fs.DirEntry) (*Project, error) {
-	log.Printf("Detecting projects in directory: %s", path)
+	slog.InfoContext(ctx, "Detecting projects in directory", "path", path)
 	for _, detector := range detectors {
 		project, err := detector.DetectProject(ctx, path, entries)
 		if err != nil {
@@ -262,7 +262,7 @@ func detectAny(ctx context.Context, detectors []projectDetector, path string, en
 		}
 
 		if project != nil {
-			log.Printf("Found project %s at %s", project.Language, path)
+			slog.InfoContext(ctx, "Found project", "language", project.Language, "path", path)
 
 			// docker is an optional property of a project, and thus is different than other detectors
 			docker, err := detectDockerInDirectory(path, entries)

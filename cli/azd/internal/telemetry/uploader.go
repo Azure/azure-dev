@@ -3,7 +3,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
@@ -165,8 +165,7 @@ func (u *TelemetryUploader) enqueueRetry(
 	)
 
 	if err != nil {
-
-		log.Printf("unable to requeue item %v after %d attempts", itemName, attempts)
+		slog.InfoContext(ctx, "unable to requeue item after retries", "item", itemName, "attempts", attempts)
 	}
 }
 
@@ -186,15 +185,16 @@ func (u *TelemetryUploader) transmit(ctx context.Context, item *StoredItem) {
 
 	if err != nil || result == nil {
 		if attempts > maxRetryCount {
-			log.Printf("failed to send %v after %d attempts, err: %v\n", item.fileName, maxRetryCount, err)
+			slog.InfoContext(ctx, "failed to send item after retries",
+				"item", item.fileName, "attempts", maxRetryCount, "err", err)
 			return
 		}
 
 		u.enqueueRetry(ctx, item.fileName, payload, defaultTransmitRetryDelay, attempts)
 	} else if result.CanRetry() {
 		if attempts > maxRetryCount {
-			log.Printf(
-				"failed to send %v after %d attempts, statusCode: %d\n", item.fileName, maxRetryCount, result.StatusCode)
+			slog.InfoContext(ctx, "failed to send item after retries",
+				"item", item.fileName, "attempts", maxRetryCount, "statusCode", result.StatusCode)
 			return
 		}
 
@@ -206,7 +206,8 @@ func (u *TelemetryUploader) transmit(ctx context.Context, item *StoredItem) {
 				throttleDuration = defaultThrottleDuration
 			}
 
-			log.Printf("Upload is being throttled. Resuming upload in %v.", throttleDuration)
+			slog.InfoContext(ctx, "Upload is being throttled. Resuming upload after sleep.",
+				"sleepDuration", throttleDuration)
 			time.Sleep(throttleDuration)
 		}
 
@@ -221,7 +222,8 @@ func (u *TelemetryUploader) transmit(ctx context.Context, item *StoredItem) {
 			u.enqueueRetry(ctx, item.fileName, payload, retryDelay, attempts)
 		}
 	} else {
-		log.Printf("failed to transmit item %s with non-retriable status code %d\n", item.fileName, result.StatusCode)
+		slog.InfoContext(ctx, "failed to transmit item with non-retriable status code",
+			"item", item.fileName, "statusCode", result.StatusCode)
 	}
 }
 

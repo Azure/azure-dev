@@ -1,8 +1,9 @@
 package ext
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -83,7 +84,7 @@ func (h *HooksManager) filterConfigs(
 
 		for _, hook := range hooks {
 			if hook == nil {
-				log.Printf("hook configuration for '%s' is missing", scriptName)
+				slog.InfoContext(context.TODO(), "hook configuration for script is missing", "script", scriptName)
 				continue
 			}
 

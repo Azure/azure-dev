@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/url"
 	"os"
@@ -537,7 +536,7 @@ func (t *aksTarget) ensureClusterContext(
 		return "", err
 	}
 
-	log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
+	slog.InfoContext(ctx, "getting AKS credentials for cluster", "custer", clusterName)
 	clusterCreds, err := t.managedClustersService.GetUserCredentials(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -871,7 +870,8 @@ func (t *aksTarget) resolveClusterName(
 	// Resolve cluster name
 	clusterName, found := t.env.LookupEnv(environment.AksClusterEnvVarName)
 	if !found {
-		log.Printf("'%s' environment variable not found\n", environment.AksClusterEnvVarName)
+		slog.InfoContext(context.TODO(),
+			fmt.Sprintf("'%s' environment variable not found", environment.AksClusterEnvVarName))
 	}
 
 	if clusterName == "" {

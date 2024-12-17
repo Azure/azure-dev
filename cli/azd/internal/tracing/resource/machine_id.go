@@ -5,7 +5,6 @@ package resource
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -60,7 +59,7 @@ func calculateMachineId() string {
 func loadOrCalculate(calc func() string, cacheFileName string) string {
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
-		log.Printf("could not load machineId from cache. returning calculated value: %s", err)
+		slog.InfoContext(context.TODO(), "could not load machineId from cache. returning calculated value", "err", err)
 		return calc()
 	}
 
@@ -72,7 +71,7 @@ func loadOrCalculate(calc func() string, cacheFileName string) string {
 
 	err = os.WriteFile(cacheFile, []byte(calc()), osutil.PermissionFile)
 	if err != nil {
-		log.Printf("could not write machineId to cache. returning calculated value: %s", err)
+		slog.InfoContext(context.TODO(), "could not write machineId to cache. returning calculated value", "err", err)
 	}
 
 	return calc()

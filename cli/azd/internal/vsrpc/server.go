@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -71,7 +72,7 @@ func (s *Server) Serve(l net.Listener) error {
 		for {
 			err := ts.RunBackgroundUpload(ctx, false)
 			if err != nil {
-				log.Printf("telemetry upload failed: %v", err)
+				slog.InfoContext(ctx, "telemetry upload failed", "err", err)
 			}
 
 			select {
@@ -105,7 +106,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 	cancelersMu := sync.Mutex{}
 
 	rpcServer.Go(r.Context(), func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
-		log.Printf("handling rpc %s", req.Method())
+		slog.InfoContext(ctx, "handling rpc", "method", req.Method())
 
 		// Observe cancellation messages from the client to us. The protocol is a message sent to the `$/cancelRequest`
 		// method with an `id` parameter that is the ID of the request to cancel.  For each inflight RPC we track the
@@ -200,11 +201,12 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 			}
 
 			if respErr != nil {
-				log.Printf("handled rpc %s in %s with err: %v", req.Method(), time.Since(start), respErr)
+				slog.InfoContext(ctx, "handled rpc (returned error)",
+					"method", req.Method(), "duration", time.Since(start), "err", respErr)
 			} else if replyErr != nil {
-				log.Printf("failed to reply to rpc %s, err: %v", req.Method(), respErr)
+				slog.InfoContext(ctx, "failed to reply to rpc", "method", req.Method(), "err", replyErr)
 			} else {
-				log.Printf("handled rpc %s in %s", req.Method(), time.Since(start))
+				slog.InfoContext(ctx, "handled rpc", "method", req.Method(), "duration", time.Since(start))
 			}
 		}()
 

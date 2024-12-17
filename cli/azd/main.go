@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -47,13 +48,13 @@ func main() {
 
 	if isDebugEnabled() {
 		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
-			log.Printf("%s: %s\n", event, msg)
+			slog.InfoContext(context.TODO(), "azcore event", "event", event, "message", msg)
 		})
 	} else {
 		log.SetOutput(io.Discard)
 	}
 
-	log.Printf("azd version: %s", internal.Version)
+	slog.InfoContext(ctx, "azd version", "version", internal.Version)
 
 	ts := telemetry.GetTelemetrySystem()
 
@@ -85,7 +86,7 @@ func main() {
 		if internal.IsDevVersion() {
 			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this
 			// case
-			log.Printf("eliding update message for dev build")
+			slog.InfoContext(ctx, "eliding update message for dev build")
 		} else if latestVersion.GT(internal.VersionInfo().Version) {
 			var upgradeText string
 
@@ -146,13 +147,13 @@ func main() {
 	if ts != nil {
 		err := ts.Shutdown(ctx)
 		if err != nil {
-			log.Printf("non-graceful telemetry shutdown: %v\n", err)
+			slog.InfoContext(ctx, "non-graceful telemetry shutdown", "err", err)
 		}
 
 		if ts.EmittedAnyTelemetry() {
 			err := startBackgroundUploadProcess()
 			if err != nil {
-				log.Printf("failed to start background telemetry upload: %v\n", err)
+				slog.InfoContext(ctx, "failed to start background telemetry upload", "err", err)
 			}
 		}
 	}
@@ -176,11 +177,11 @@ func fetchLatestVersion(version chan<- semver.Version) {
 	// a truthy value.
 	if value, has := os.LookupEnv("AZD_SKIP_UPDATE_CHECK"); has {
 		if setting, err := strconv.ParseBool(value); err == nil && setting {
-			log.Print("skipping update check since AZD_SKIP_UPDATE_CHECK is true")
+			slog.InfoContext(context.TODO(), "skipping update check since AZD_SKIP_UPDATE_CHECK is true")
 			return
 		} else if err != nil {
-			log.Printf("could not parse value for AZD_SKIP_UPDATE_CHECK a boolean "+
-				"(it was: %s), proceeding with update check", value)
+			slog.InfoContext(context.TODO(),
+				"could not parse value for AZD_SKIP_UPDATE_CHECK a boolean, proceeding with update check", "value", value)
 		}
 	}
 
@@ -188,14 +189,14 @@ func fetchLatestVersion(version chan<- semver.Version) {
 	// of time, in the user's home directory.
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
-		log.Printf("could not determine config directory: %v, skipping update check", err)
+		slog.InfoContext(context.TODO(), "could not determine config directory, skipping update check", "err", err)
 		return
 	}
 
 	cacheFilePath := filepath.Join(configDir, updateCheckCacheFileName)
 	cacheFile, err := os.ReadFile(cacheFilePath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		log.Printf("error reading update cache file: %v, skipping update check", err)
+		slog.InfoContext(context.TODO(), "error reading update cache file, skipping update check", "err", err)
 		return
 	}
 
@@ -211,26 +212,26 @@ func fetchLatestVersion(version chan<- semver.Version) {
 
 			if parseVersionErr == nil && parseExpiresOnErr == nil {
 				if time.Now().UTC().Before(parsedExpiresOn) {
-					log.Printf("using cached latest version: %s (expires on: %s)", cache.Version, cache.ExpiresOn)
+					slog.InfoContext(context.TODO(),
+						"using cached latest version", "version", cache.Version, "expiresOn", cache.ExpiresOn)
 					cachedLatestVersion = &parsedVersion
 				} else {
-					log.Printf("ignoring cached latest version, it is out of date")
+					slog.InfoContext(context.TODO(), "ignoring cached latest version, it is out of date")
 				}
 			} else {
 				if parseVersionErr != nil {
-					log.Printf("failed to parse cached version '%s' as a semver: %v,"+
-						" ignoring cached value", cache.Version, parseVersionErr)
+					slog.InfoContext(context.TODO(), "failed to parse cached version as a semver, ignoring cached value",
+						"cachedVersion", cache.Version, "err", parseVersionErr)
 				}
 				if parseExpiresOnErr != nil {
-					log.Printf(
-						"failed to parse cached version expiration time '%s' as a RFC3339"+
-							" timestamp: %v, ignoring cached value",
-						cache.ExpiresOn,
-						parseExpiresOnErr)
+					slog.InfoContext(context.TODO(),
+						"failed to parse cached version expiration time as a RFC3339 timestamp, ignoring cached value",
+						"expiresOn", cache.ExpiresOn,
+						"err", parseExpiresOnErr)
 				}
 			}
 		} else {
-			log.Printf("could not unmarshal cache file: %v, ignoring cache", err)
+			slog.InfoContext(context.TODO(), "could not unmarshal cache file, ignoring cache", "err", err)
 		}
 	}
 
@@ -239,27 +240,27 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		log.Print("fetching latest version information for update check")
 		req, err := http.NewRequest(http.MethodGet, "https://aka.ms/azure-dev/versions/cli/latest", nil)
 		if err != nil {
-			log.Printf("failed to create request object: %v, skipping update check", err)
+			slog.InfoContext(context.TODO(), "failed to create request object, skipping update check", "err", err)
 		}
 
 		req.Header.Set("User-Agent", internal.UserAgent())
 
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
-			log.Printf("failed to fetch latest version: %v, skipping update check", err)
+			slog.InfoContext(context.TODO(), "failed to fetch latest version, skipping update check", "err", err)
 			return
 		}
 		body, err := readToEndAndClose(res.Body)
 		if err != nil {
-			log.Printf("failed to read response body: %v, skipping update check", err)
+			slog.InfoContext(context.TODO(), "failed to read response body, skipping update check", "err", err)
 			return
 		}
 
 		if res.StatusCode != http.StatusOK {
-			log.Printf(
-				"failed to refresh latest version, http status: %v, body: %v, skipping update check",
-				res.StatusCode,
-				body,
+			slog.InfoContext(context.TODO(),
+				"failed to refresh latest version due to HTTP error, skipping update check",
+				"statusCode", res.StatusCode,
+				"body", body,
 			)
 			return
 		}
@@ -268,7 +269,8 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		fetchedVersionText := strings.TrimSpace(body)
 		fetchedVersion, err := semver.Parse(fetchedVersionText)
 		if err != nil {
-			log.Printf("failed to parse latest version '%s' as a semver: %v, skipping update check", fetchedVersionText, err)
+			slog.InfoContext(context.TODO(), "failed to parse latest version as a semver, skipping update check",
+				"version", fetchedVersionText, "err", err)
 			return
 		}
 
@@ -280,7 +282,8 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		// value and finishes
 		// the up to date check, possibly while this go-routine is still running)
 		if err := os.MkdirAll(filepath.Dir(cacheFilePath), osutil.PermissionFile); err != nil {
-			log.Printf("failed to create cache folder '%s': %v", filepath.Dir(cacheFilePath), err)
+			slog.InfoContext(context.TODO(), "failed to create cache folder",
+				"path", filepath.Dir(cacheFilePath), "err", err)
 		} else {
 			cacheObject := updateCacheFile{
 				Version:   fetchedVersionText,
@@ -291,9 +294,10 @@ func fetchLatestVersion(version chan<- semver.Version) {
 			cacheContents, _ := json.Marshal(cacheObject)
 
 			if err := os.WriteFile(cacheFilePath, cacheContents, osutil.PermissionDirectory); err != nil {
-				log.Printf("failed to write update cache file: %v", err)
+				slog.InfoContext(context.TODO(), "failed to write update cache file", "err", err)
 			} else {
-				log.Printf("updated cache file to version %s (expires on: %s)", cacheObject.Version, cacheObject.ExpiresOn)
+				slog.InfoContext(context.TODO(), "updated cached version",
+					"version", cacheObject.Version, "expiresOn", cacheObject.ExpiresOn)
 			}
 		}
 	}

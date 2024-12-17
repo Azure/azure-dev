@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -660,27 +659,28 @@ func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepo
 // or determines it if not already set.
 func (pm *PipelineManager) resolveProviderAndDetermine(
 	ctx context.Context, projectPath, repoRoot string) (ciProviderType, error) {
-	log.Printf("Loading project configuration from: %s", projectPath)
+	slog.InfoContext(ctx, "Loading project configuration from file", "path", projectPath)
 	prjConfig, err := project.Load(ctx, projectPath)
 	if err != nil {
 		return "", fmt.Errorf("Loading project configuration: %w", err)
 	}
-	log.Printf("Loaded project configuration: %+v", prjConfig)
+	slog.InfoContext(ctx, "Loaded project configuration", "config", prjConfig)
 
 	// 1) Check if provider is set on azure.yaml, it should override the `lastUsedProvider`
 	if prjConfig.Pipeline.Provider != "" {
-		log.Printf("Provider set in project configuration: %s", prjConfig.Pipeline.Provider)
+		slog.InfoContext(ctx, "Provider set in project configuration", "provider", prjConfig.Pipeline.Provider)
 		return toCiProviderType(prjConfig.Pipeline.Provider)
 	}
 
 	// 2) Check if there is a persisted value from a previous run in the environment
 	if lastUsedProvider, configExists := pm.env.LookupEnv(envPersistedKey); configExists {
-		log.Printf("Using persisted provider from environment: %s", lastUsedProvider)
+		slog.InfoContext(ctx, "Using persisted provider from environment", "provider", lastUsedProvider)
 		return toCiProviderType(lastUsedProvider)
 	}
 
 	// 3) No config on azure.yaml or from previous run, so use the determineProvider logic
-	log.Printf("No provider set in project configuration or environment. Determining provider based on repository.")
+	slog.InfoContext(ctx,
+		"No provider set in project configuration or environment. Determining provider based on repository.")
 	return pm.determineProvider(ctx, repoRoot)
 }
 
@@ -703,7 +703,7 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
 	if err != nil {
 		repoRoot = projectDir
-		log.Printf("using project root as repo root, since git repo wasn't available: %s", err)
+		slog.InfoContext(ctx, "using project root as repo root, since git repo wasn't available", "err", err)
 	}
 
 	// Use the provided pipeline provider if specified, otherwise resolve or determine the provider
@@ -786,7 +786,7 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 		ciProviderName = scmProviderName
 		displayName = gitHubDisplayName
 	}
-	log.Printf("Using pipeline provider: %s", output.WithHighLightFormat(displayName))
+	slog.InfoContext(ctx, "Pipeline provider", "provider", displayName)
 
 	var scmProvider ScmProvider
 	if err := pm.serviceLocator.ResolveNamed(scmProviderName+"-scm", &scmProvider); err != nil {
@@ -825,10 +825,10 @@ func (pm *PipelineManager) savePipelineProviderToEnv(
 
 // checkAndPromptForProviderFiles checks if the provider files are present and prompts the user to create them if not.
 func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, props projectProperties) error {
-	log.Printf("Checking for provider files for: %s", props.CiProvider)
+	slog.InfoContext(ctx, "Checking for provider files", "provider", props.CiProvider)
 
 	if !hasPipelineFile(props.CiProvider, props.RepoRoot) {
-		log.Printf("%s YAML not found, prompting for creation", props.CiProvider)
+		slog.InfoContext(ctx, "YAML not found, prompting for creation", "provider", props.CiProvider)
 		if err := pm.promptForCiFiles(ctx, props); err != nil {
 			slog.InfoContext(ctx, "Error prompting for CI files", "err", err)
 			return err
@@ -842,14 +842,14 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 	}
 
 	for _, dirPath := range dirPaths {
-		log.Printf("Checking if directory %s is empty", dirPath)
+		slog.InfoContext(ctx, "Checking if directory is empty", "path", dirPath)
 		isEmpty, err := osutil.IsDirEmpty(dirPath, true)
 		if err != nil {
 			slog.InfoContext(ctx, "Error checking if directory is empty", "err", err)
 			return fmt.Errorf("error checking if directory is empty: %w", err)
 		}
 		if !isEmpty {
-			log.Printf("Provider files are present in directory: %s", dirPath)
+			slog.InfoContext(ctx, "Provider files are present in directory", "path", dirPath)
 			return nil
 		}
 	}
@@ -874,7 +874,7 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 	pm.console.Message(ctx, message)
 	pm.console.Message(ctx, "")
 
-	log.Printf("Provider files are not present for: %s", props.CiProvider)
+	slog.InfoContext(ctx, "Provider files are not present for", "provider", props.CiProvider)
 	return nil
 }
 
@@ -893,8 +893,8 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 		}
 	}
 
-	log.Printf("Directory paths: %v", dirPaths)
-	log.Printf("Default YAML path: %s", defaultFilePath)
+	slog.InfoContext(ctx, "Directory paths", "paths", dirPaths)
+	slog.InfoContext(ctx, "Default YAML path", "path", defaultFilePath)
 
 	// Confirm with the user before adding the default file
 	pm.console.Message(ctx, "")
@@ -918,12 +918,12 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 	pm.console.Message(ctx, "")
 
 	if confirm {
-		log.Printf("Confirmed creation of %s file at %s", filepath.Base(defaultFilePath), dirPaths)
+		slog.InfoContext(ctx, "Confirmed creation of file at %s", "name", filepath.Base(defaultFilePath), "paths", dirPaths)
 
 		created := false
 		for _, dirPath := range dirPaths {
 			if !osutil.DirExists(dirPath) {
-				log.Printf("Creating directory %s", dirPath)
+				slog.InfoContext(ctx, "Creating directory", "path", dirPath)
 				if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
 					return fmt.Errorf("creating directory %s: %w", dirPath, err)
 				}
@@ -952,13 +952,14 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 		}
 
 		if !created {
-			log.Printf("User declined creation of %s file at %s", filepath.Base(defaultFilePath), dirPaths)
+			slog.InfoContext(ctx, "User declined creation of file",
+				"name", filepath.Base(defaultFilePath), "paths", dirPaths)
 		}
 
 		return nil
 	}
 
-	log.Printf("User declined creation of %s file at %s", filepath.Base(defaultFilePath), dirPaths)
+	slog.InfoContext(ctx, "User declined creation of file", "name", filepath.Base(defaultFilePath), "paths", dirPaths)
 	return nil
 }
 
@@ -986,7 +987,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 	}
 
 	contents := []byte(builder.String())
-	log.Printf("Creating file %s", path)
+	slog.InfoContext(context.TODO(), "Creating file", "path", path)
 	if err := os.WriteFile(path, contents, osutil.PermissionFile); err != nil {
 		return fmt.Errorf("creating file %s: %w", path, err)
 	}
@@ -1005,41 +1006,42 @@ func hasPipelineFile(provider ciProviderType, repoRoot string) bool {
 }
 
 func (pm *PipelineManager) determineProvider(ctx context.Context, repoRoot string) (ciProviderType, error) {
-	log.Printf("Checking for CI/CD YAML files in the repository root: %s", repoRoot)
+	slog.InfoContext(ctx, "Checking for CI/CD YAML files in the repository root",
+		"path", repoRoot)
 
 	// Check for existence of official YAML files in the repo root
 	hasGitHubYml := hasPipelineFile(ciProviderGitHubActions, repoRoot)
 	hasAzDevOpsYml := hasPipelineFile(ciProviderAzureDevOps, repoRoot)
 
-	log.Printf("GitHub Actions YAML exists: %v", hasGitHubYml)
-	log.Printf("Azure DevOps YAML exists: %v", hasAzDevOpsYml)
+	slog.InfoContext(ctx, "Checked if GitHub Actions YAML exists", "exists", hasGitHubYml)
+	slog.InfoContext(ctx, "Checked if Azure DevOps YAML exists", "exists", hasAzDevOpsYml)
 
 	switch {
 	case (!hasGitHubYml && !hasAzDevOpsYml) || (hasGitHubYml && hasAzDevOpsYml):
 		// No official YAML files found for either provider or both are found
-		log.Printf("Neither or both YAML files found. Prompting user for provider selection.")
+		slog.InfoContext(ctx, "Neither or both YAML files found. Prompting user for provider selection.")
 		return pm.promptForProvider(ctx)
 
 	case hasGitHubYml && !hasAzDevOpsYml:
 		// GitHub Actions YAML found, Azure DevOps YAML not found
-		log.Printf("Only GitHub Actions YAML found. Selecting GitHub Actions as the provider.")
+		slog.InfoContext(ctx, "Only GitHub Actions YAML found. Selecting GitHub Actions as the provider.")
 		return ciProviderGitHubActions, nil
 
 	case hasAzDevOpsYml && !hasGitHubYml:
 		// Azure DevOps YAML found, GitHub Actions YAML not found
-		log.Printf("Only Azure DevOps YAML found. Selecting Azure DevOps as the provider.")
+		slog.InfoContext(ctx, "Only Azure DevOps YAML found. Selecting Azure DevOps as the provider.")
 		return ciProviderAzureDevOps, nil
 
 	default:
 		// Default to GitHub Actions if no provider is specified
-		log.Printf("Defaulting to GitHub Actions as the provider.")
+		slog.InfoContext(ctx, "Defaulting to GitHub Actions as the provider.")
 		return ciProviderGitHubActions, nil
 	}
 }
 
 // promptForProvider prompts the user to select a CI/CD provider.
 func (pm *PipelineManager) promptForProvider(ctx context.Context) (ciProviderType, error) {
-	log.Printf("Prompting user to select a CI/CD provider.")
+	slog.InfoContext(ctx, "Prompting user to select a CI/CD provider.")
 	pm.console.Message(ctx, "")
 	choice, err := pm.console.Select(ctx, input.ConsoleOptions{
 		Message: "Select a provider:",
@@ -1049,7 +1051,7 @@ func (pm *PipelineManager) promptForProvider(ctx context.Context) (ciProviderTyp
 		return "", fmt.Errorf("prompting for CI/CD provider: %w", err)
 	}
 
-	log.Printf("User selected choice: %d", choice)
+	slog.InfoContext(ctx, "User selected choice", "selected", choice)
 
 	if choice == 0 {
 		return ciProviderGitHubActions, nil

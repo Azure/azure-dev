@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -564,7 +564,7 @@ func (p *AzdoScmProvider) preventGitPush(
 func azdoPat(ctx context.Context, env *environment.Environment, console input.Console) string {
 	pat, _, err := azdo.EnsurePatExists(ctx, env, console)
 	if err != nil {
-		log.Printf("Error getting PAT when it should be found: %s", err.Error())
+		slog.InfoContext(ctx, "Error getting PAT when it should be found", "err", err)
 	}
 	return pat
 }
@@ -609,7 +609,7 @@ func (p *AzdoScmProvider) GitPush(
 	).WithInteractive(true)
 	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
 		// this error should not fail the operation
-		log.Printf("Error setting git config: insteadOf url: %s", err.Error())
+		slog.InfoContext(ctx, "Error setting git config: insteadOf url", "err", err.Error())
 	}
 
 	// *** Queue pipeline

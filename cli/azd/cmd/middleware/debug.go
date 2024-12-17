@@ -3,7 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -50,7 +50,7 @@ func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	debug, err := strconv.ParseBool(debugStr)
 	if err != nil {
-		log.Printf("failed converting AZD_DEBUG to boolean: %s", err.Error())
+		slog.InfoContext(ctx, "failed converting AZD_DEBUG to boolean", "err", err)
 	}
 
 	if !debug {

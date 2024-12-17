@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -58,13 +58,13 @@ func (j *Cli) CheckInstalled(ctx context.Context) error {
 		})
 
 		if err == nil {
-			log.Printf("javac version: %s", runResult.Stdout)
+			slog.InfoContext(ctx, "detected javac version from -version", "version", runResult.Stdout)
 			return &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
 		}
 
 		return fmt.Errorf("checking javac version: %w", err)
 	}
-	log.Printf("javac version: %s", runResult.Stdout)
+	slog.InfoContext(ctx, "detected javac version from --version", "version", runResult.Stdout)
 
 	jdkVer, err := tools.ExtractVersion(runResult.Stdout)
 	if err != nil {

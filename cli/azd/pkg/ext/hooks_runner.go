@@ -3,7 +3,6 @@ package ext
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"strings"
@@ -160,7 +159,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		defer h.console.StopPreviewer(ctx, false)
 	}
 
-	log.Printf("Executing script '%s'\n", hookConfig.path)
+	slog.InfoContext(ctx, "Executing script", "path", hookConfig.path)
 	res, err := script.Execute(ctx, hookConfig.path, *options)
 	if err != nil {
 		execErr := fmt.Errorf(

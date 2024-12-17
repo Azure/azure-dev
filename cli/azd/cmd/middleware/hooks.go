@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -141,7 +140,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 		serviceName := service.Name
 		// If the service hasn't configured any hooks we can continue on.
 		if len(service.Hooks) == 0 {
-			log.Printf("service '%s' does not require any command hooks.\n", serviceName)
+			slog.InfoContext(ctx, "service does not require any command hooks.", "service", serviceName)
 			continue
 		}
 

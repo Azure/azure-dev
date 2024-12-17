@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -28,7 +28,8 @@ func (m *ExperimentationMiddleware) Run(ctx context.Context, next NextFn) (*acti
 	// Allow overriding the assignment endpoint, either for local development (where you want to hit a private instance)
 	// or testing (we use this in our end to end tests to control assignment behavior for the CLI under test)/
 	if override := os.Getenv("AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT"); override != "" {
-		log.Printf("using override assignment endpoint: %s, from AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT", override)
+		slog.InfoContext(ctx, "using override assignment endpoint from AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT",
+			"override", override)
 		endpoint = override
 	}
 
@@ -37,9 +38,9 @@ func (m *ExperimentationMiddleware) Run(ctx context.Context, next NextFn) (*acti
 		http.DefaultClient,
 	); err == nil {
 		if assignment, err := assignmentManager.Assignment(ctx); err != nil {
-			log.Printf("failed to get variant assignments: %v", err)
+			slog.InfoContext(ctx, "failed to get variant assignments", "err", err)
 		} else {
-			log.Printf("assignment context: %v", assignment.AssignmentContext)
+			slog.InfoContext(ctx, "assignment context", "assignmentContext", assignment.AssignmentContext)
 			tracing.SetGlobalAttributes(fields.ExpAssignmentContextKey.String(assignment.AssignmentContext))
 
 			for _, feature := range assignment.Configs {
@@ -51,14 +52,15 @@ func (m *ExperimentationMiddleware) Run(ctx context.Context, next NextFn) (*acti
 							// set default enablement for the feature
 							alpha.SetDefaultEnablement(featureId, enablement)
 						} else {
-							log.Printf("could not parse value for alpha feature '%s' as a bool, ignoring", featureId)
+							slog.InfoContext(ctx, "could not parse value for alpha feature as a bool, ignoring",
+								"featureId", featureId)
 						}
 					}
 				}
 			}
 		}
 	} else {
-		log.Printf("failed to create assignment manager: %v", err)
+		slog.InfoContext(ctx, "failed to create assignment manager", "err", err)
 	}
 
 	return next(ctx)

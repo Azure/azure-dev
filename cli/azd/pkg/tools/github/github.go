@@ -12,7 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -50,7 +50,7 @@ func newGitHubCliImplementation(
 	extractImplementation extractGitHubCliFromFileImplementation,
 ) (*Cli, error) {
 	if override := os.Getenv("AZD_GH_TOOL_PATH"); override != "" {
-		log.Printf("using external github cli tool: %s", override)
+		slog.InfoContext(ctx, "using external github cli tool", "path", override)
 		cli := &Cli{
 			path:          override,
 			commandRunner: commandRunner,
@@ -135,16 +135,18 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRunner, binaryPath string) bool {
 	ghVersion, err := tools.ExecuteCommand(ctx, commandRunner, binaryPath, "--version")
 	if err != nil {
-		log.Printf("checking GitHub CLI version: %s", err.Error())
+		slog.InfoContext(ctx, "error checking GitHub CLI version", "err", err.Error())
 		return false
 	}
 	ghSemver, err := tools.ExtractVersion(ghVersion)
 	if err != nil {
-		log.Printf("converting to semver version fails: %s", err.Error())
+		slog.InfoContext(ctx, "converting to semver version fails", "err", err.Error())
 		return false
 	}
 	if ghSemver.LT(Version) {
-		log.Printf("Found gh cli version %s. Expected version: %s.", ghSemver.String(), Version.String())
+		slog.InfoContext(ctx, "installed gh cli is out of date.",
+			"currentVersion", ghSemver.String(),
+			"minimumVersion", Version.String())
 		return false
 	}
 	return true
@@ -296,9 +298,9 @@ var ghCliVersionRegexp = regexp.MustCompile(`gh version ([0-9]+\.[0-9]+\.[0-9]+)
 // it could not be determined
 func (cli *Cli) logVersion(ctx context.Context) {
 	if ver, err := cli.extractVersion(ctx); err == nil {
-		log.Printf("github cli version: %s", ver)
+		slog.InfoContext(ctx, "github cli version", "version", ver)
 	} else {
-		log.Printf("could not determine github cli version: %s", err)
+		slog.InfoContext(ctx, "could not determine github cli version", "err", err)
 	}
 }
 
@@ -451,14 +453,15 @@ func extractFromZip(src, dst string) (string, error) {
 		return "", err
 	}
 
-	log.Printf("extract from zip %s", src)
+	slog.InfoContext(context.TODO(), "extracting gh from zip", "path", src)
 	defer zipReader.Close()
 
 	var extractedAt string
 	for _, file := range zipReader.File {
 		fileName := file.FileInfo().Name()
 		if !file.FileInfo().IsDir() && fileName == ghCliName() {
-			log.Printf("found cli at: %s", file.Name)
+			slog.InfoContext(context.TODO(), "found cli in zip",
+				"name", file.Name)
 			fileReader, err := file.Open()
 			if err != nil {
 				return extractedAt, err
@@ -479,7 +482,8 @@ func extractFromZip(src, dst string) (string, error) {
 		}
 	}
 	if extractedAt != "" {
-		log.Printf("extracted to: %s", extractedAt)
+		slog.InfoContext(context.TODO(), "extracted gh binary",
+			"path", extractedAt)
 		return extractedAt, nil
 	}
 	return extractedAt, fmt.Errorf("github cli binary was not found within the zip file")
@@ -588,7 +592,7 @@ func downloadGh(
 	// example: https://github.com/cli/cli/releases/download/v2.55.0/gh_2.55.0_linux_arm64.rpm
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
-	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)
+	slog.InfoContext(ctx, "downloading github cli release", "source", ghReleaseUrl, "target", releaseName)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", ghReleaseUrl, nil)
 	if err != nil {
@@ -627,12 +631,12 @@ func downloadGh(
 		return err
 	}
 	defer func() {
-		log.Printf("delete %s", compressedFileName)
+		slog.InfoContext(ctx, "removing temporary download", "path", compressedFileName)
 		_ = os.Remove(compressedFileName)
 	}()
 
 	// unzip downloaded file
-	log.Printf("extracting file %s", compressedFileName)
+	slog.InfoContext(ctx, "extracting gh cli from download", "path", compressedFileName)
 	_, err = extractImplementation(compressedFileName, tmpPath)
 	if err != nil {
 		return err

@@ -1,8 +1,9 @@
 package templates
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -37,7 +38,7 @@ func Absolute(path string) (string, error) {
 func Hyperlink(path string) string {
 	url, err := Absolute(path)
 	if err != nil {
-		log.Printf("error: getting absolute url from template: %v", err)
+		slog.InfoContext(context.TODO(), "error: getting absolute url from template", "err", err)
 		return path
 	}
 	return output.WithHyperlink(url, path)

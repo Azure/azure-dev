@@ -7,7 +7,6 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/url"
 	"os"
@@ -86,7 +85,7 @@ func GetTelemetrySystem() *TelemetrySystem {
 	once.Do(func() {
 		telemetrySystem, err := initialize()
 		if err != nil {
-			log.Printf("failed to initialize telemetry: %v\n", err)
+			slog.InfoContext(context.TODO(), "failed to initialize telemetry", "err", err)
 		} else {
 			instance = telemetrySystem
 		}
@@ -259,7 +258,7 @@ func (ts *TelemetrySystem) RunBackgroundUpload(ctx context.Context, enableDebugL
 		cancelCleanup()
 
 		if err != nil {
-			log.Printf("failed to upload telemetry: %v", err)
+			slog.InfoContext(ctx, "failed to upload telemetry", "err", err)
 		}
 		return err
 	}
@@ -295,7 +294,7 @@ func getTraceFlags() (logFile string, logUrl string) {
 	flags.BoolVarP(&help, "help", "h", false, "")
 
 	if err := flags.Parse(os.Args[1:]); err != nil {
-		log.Printf("could not parse flags: %v", err)
+		slog.InfoContext(context.TODO(), "could not parse flags", "err", err)
 	}
 
 	return

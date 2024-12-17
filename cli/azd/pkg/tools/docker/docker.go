@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -186,7 +186,8 @@ var dockerVersionMasterBuildRegexp = regexp.MustCompile(`^master-dockerproject-(
 // isSupportedDockerVersion returns true if the version string appears to be for a docker version
 // of 17.09 or later and false if it does not.
 func isSupportedDockerVersion(cliOutput string) (bool, error) {
-	log.Printf("determining version from docker --version string: %s", cliOutput)
+	slog.InfoContext(context.TODO(), "determining version from docker --version string",
+		"versionString", cliOutput)
 
 	matches := dockerVersionStringRegexp.FindStringSubmatch(cliOutput)
 
@@ -198,7 +199,8 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	version := matches[1]
 	build := matches[2]
 
-	log.Printf("extracted docker version: %s, build: %s from version string", version, build)
+	slog.InfoContext(context.TODO(), "extracted docker version and build from version string",
+		"version", version, "build", build)
 
 	// For official release builds, the version number looks something like:
 	//
@@ -256,7 +258,7 @@ func (d *Cli) CheckInstalled(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("checking %s version: %w", toolName, err)
 	}
-	log.Printf("docker version: %s", dockerRes)
+	slog.InfoContext(ctx, "detected docker version", "version", dockerRes)
 	supported, err := isSupportedDockerVersion(dockerRes)
 	if err != nil {
 		return err

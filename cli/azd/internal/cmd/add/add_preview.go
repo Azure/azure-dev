@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"strings"
 	"text/tabwriter"
 
@@ -82,7 +82,7 @@ func (a *AddAction) previewProvision(
 
 	environmentDetails, err := getEnvDetails(ctx, a.env, a.subManager)
 	if err != nil {
-		log.Printf("failed getting environment details: %s", err)
+		slog.InfoContext(ctx, "failed getting environment details:", "err", err)
 	}
 
 	a.console.Message(ctx, fmt.Sprintf("\n%s\n", output.WithBold("Previewing Azure resource changes")))

@@ -6,7 +6,7 @@ package vsrpc
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -94,7 +94,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 
 	deployment, err := bicepProvider.LastDeployment(ctx)
 	if err != nil {
-		log.Printf("failed to get latest deployment result: %v", err)
+		slog.InfoContext(ctx, "failed to get latest deployment result", "err", err)
 	} else {
 		env.LastDeployment = &DeploymentResult{
 			DeploymentId: deployment.Id,
@@ -146,7 +146,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 					))
 				}
 			} else {
-				log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
+				slog.InfoContext(ctx, "ignoring error determining resource id for service", "service", svcName, "err", err)
 			}
 		}
 
@@ -160,13 +160,13 @@ func (s *environmentService) refreshEnvironmentAsync(
 				})
 			}
 		} else {
-			log.Printf("ignoring error loading resources for environment %s: %v", envName, err)
+			slog.InfoContext(ctx, "ignoring error loading resources for environment", "environment", envName, "err", err)
 		}
 	} else {
-		log.Printf(
-			"ignoring error determining resource group for environment %s, resources will not be available: %v",
-			env.Name,
-			err)
+		slog.InfoContext(ctx,
+			"ignoring error determining resource group for environment, resources will not be available",
+			"environment", env.Name,
+			"err", err)
 	}
 
 	return env, nil
@@ -181,19 +181,19 @@ func (s *environmentService) serviceEndpoint(
 ) string {
 	targetResource, err := resourceManager.GetTargetResource(ctx, subId, serviceConfig)
 	if err != nil {
-		log.Printf("error: getting target-resource. Endpoints will be empty: %v", err)
+		slog.InfoContext(ctx, "error: getting target-resource. Endpoints will be empty", "err", err)
 		return ""
 	}
 
 	st, err := serviceManager.GetServiceTarget(ctx, serviceConfig)
 	if err != nil {
-		log.Printf("error: getting service target. Endpoints will be empty: %v", err)
+		slog.InfoContext(ctx, "error: getting service target. Endpoints will be empty", "err", err)
 		return ""
 	}
 
 	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
-		log.Printf("error: getting service endpoints. Endpoints might be empty: %v", err)
+		slog.InfoContext(ctx, "error: getting service endpoints. Endpoints might be empty", "err", err)
 	}
 
 	if len(endpoints) == 0 {

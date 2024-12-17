@@ -3,7 +3,7 @@ package appdetect
 import (
 	"context"
 	"io/fs"
-	"log"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -26,7 +26,7 @@ func (ad *dotNetAppHostDetector) DetectProject(ctx context.Context, path string,
 		case ".csproj", ".fsproj", ".vbproj":
 			projectPath := filepath.Join(path, name)
 			if isAppHost, err := ad.dotnetCli.IsAspireHostProject(ctx, filepath.Join(projectPath)); err != nil {
-				log.Printf("error checking if %s is an app host project: %v", projectPath, err)
+				slog.InfoContext(ctx, "error checking if project is an app host project", "path", projectPath, "err", err)
 			} else if isAppHost {
 				return &Project{
 					Language:      DotNetAppHost,

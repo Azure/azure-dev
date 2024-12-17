@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -56,11 +56,12 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(
 	secret, err := e.keyvaultService.GetKeyVaultSecret(ctx, e.subscriptionId, keyVaultName, secretName)
 	if err != nil {
 		if errors.Is(err, keyvault.ErrAzCliSecretNotFound) {
-			log.Printf(
-				"%s: secret '%s' not found in vault '%s', using random password...",
-				SecretOrRandomPasswordCommandName,
-				secretName,
-				keyVaultName,
+			slog.InfoContext(ctx,
+				fmt.Sprintf(
+					"%s: secret not found in vault, using random password...",
+					SecretOrRandomPasswordCommandName),
+				"secret", secretName,
+				"vault", keyVaultName,
 			)
 			return generatePassword()
 		} else {
@@ -69,11 +70,11 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(
 	}
 
 	if len(strings.TrimSpace(secret.Value)) == 0 {
-		log.Printf(
-			"%s: secret '%s' in vault '%s' has empty value, using random password...",
-			SecretOrRandomPasswordCommandName,
-			secretName,
-			keyVaultName,
+		slog.InfoContext(ctx,
+			fmt.Sprintf("%s: secret in vault has empty value, using random password...",
+				SecretOrRandomPasswordCommandName),
+			"secret", secretName,
+			"vault", keyVaultName,
 		)
 		return generatePassword() // Do not use empty password secret even if the secret exists
 	}

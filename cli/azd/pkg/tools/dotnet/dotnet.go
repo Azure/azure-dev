@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -66,7 +66,7 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	log.Printf("dotnet version: %s", dotnetRes.Stdout)
+	slog.InfoContext(ctx, "detected dotnet version", "version", dotnetRes.Stdout)
 	dotnetSemver, err := tools.ExtractVersion(dotnetRes.Stdout)
 	if err != nil {
 		return fmt.Errorf("converting to semver version fails: %w", err)

@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	osexec "os/exec"
 )
 
@@ -44,7 +44,8 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 	for _, tool := range tools {
 		_, ok := confirmedTools[tool.Name()]
 		if ok {
-			log.Printf("Skipping install check for '%s'. It was previously confirmed.", tool.Name())
+			slog.InfoContext(ctx, "Skipping install check for tool. It was previously confirmed.",
+				"tool", tool.Name())
 			continue
 		}
 

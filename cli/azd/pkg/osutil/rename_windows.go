@@ -9,7 +9,7 @@ package osutil
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -25,11 +25,11 @@ func Rename(ctx context.Context, old, new string) error {
 		err := os.Rename(old, new)
 		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
 			// If some other process has a open handle to the source file, Rename can fail with ERROR_SHARING_VIOLATION.
-			log.Printf("rename of %s to %s failed due to ERROR_SHARING_VIOLATION, allowing retry", old, new)
+			slog.InfoContext(ctx, "rename failed due to ERROR_SHARING_VIOLATION, allowing retry", "old", old, "new", new)
 			return retry.RetryableError(err)
 		} else if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
 			// If the target file has already exists and is in use, Rename can fail with ERROR_ACCESS_DENIED.
-			log.Printf("rename of %s to %s failed due to ERROR_ACCESS_DENIED, allowing retry", old, new)
+			slog.InfoContext(ctx, "rename failed due to ERROR_ACCESS_DENIED, allowing retry", "old", old, "new", new)
 			return retry.RetryableError(err)
 		}
 		return err

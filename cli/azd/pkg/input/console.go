@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -870,7 +869,7 @@ func (c *AskerConsole) WaitForEnter() {
 	inputScanner := bufio.NewScanner(c.handles.Stdin)
 	if scan := inputScanner.Scan(); !scan {
 		if err := inputScanner.Err(); err != nil {
-			log.Printf("error while waiting for enter: %v", err)
+			slog.InfoContext(context.TODO(), "error while waiting for enter", "err", err)
 		}
 	}
 }

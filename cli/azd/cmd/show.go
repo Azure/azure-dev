@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,7 +170,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		var err error
 		environmentName, err = s.azdCtx.GetDefaultEnvironmentName()
 		if err != nil {
-			log.Printf("could not determine current environment: %s, resource ids will not be available", err)
+			slog.InfoContext(ctx, "could not determine current environment, resource ids will not be available", "err", err)
 		}
 
 	}
@@ -182,10 +182,10 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				`"environment '%s' does not exist. You can create it with "azd env new"`, environmentName,
 			)
 		}
-		log.Printf("could not load environment: %s, resource ids will not be available", err)
+		slog.InfoContext(ctx, "could not load environment, resource ids will not be available", "err", err)
 	} else {
 		if subId = env.GetSubscriptionId(); subId == "" {
-			log.Printf("provision has not been run, resource ids will not be available")
+			slog.InfoContext(ctx, "provision has not been run, resource ids will not be available")
 		} else {
 			resourceManager, err := s.lazyResourceManager.GetValue()
 			if err != nil {
@@ -222,14 +222,15 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 						resSvc.IngresUrl = s.serviceEndpoint(ctx, subId, serviceConfig, env)
 						res.Services[svcName] = resSvc
 					} else {
-						log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
+						slog.InfoContext(ctx, "ignoring error determining resource id for service",
+							"service", svcName, "err", err)
 					}
 				}
 			} else {
-				log.Printf(
-					"ignoring error determining resource group for environment %s, resource ids will not be available: %v",
-					env.Name(),
-					err)
+				slog.InfoContext(ctx,
+					"ignoring error determining resource group for environment, resource ids will not be available",
+					"environment", env.Name(),
+					"err", err)
 			}
 		}
 	}
@@ -434,28 +435,28 @@ func (s *showAction) serviceEndpoint(
 	ctx context.Context, subId string, serviceConfig *project.ServiceConfig, env *environment.Environment) string {
 	resourceManager, err := s.lazyResourceManager.GetValue()
 	if err != nil {
-		log.Printf("error: getting lazy target-resource. Endpoints will be empty: %v", err)
+		slog.InfoContext(ctx, "error: getting lazy target-resource. Endpoints will be empty", "err", err)
 		return ""
 	}
 	targetResource, err := resourceManager.GetTargetResource(ctx, subId, serviceConfig)
 	if err != nil {
-		log.Printf("error: getting target-resource. Endpoints will be empty: %v", err)
+		slog.InfoContext(ctx, "error: getting target-resource. Endpoints will be empty", "err", err)
 		return ""
 	}
 
 	serviceManager, err := s.lazyServiceManager.GetValue()
 	if err != nil {
-		log.Printf("error: getting lazy service manager. Endpoints will be empty: %v", err)
+		slog.InfoContext(ctx, "error: getting lazy service manager. Endpoints will be empty", "err", err)
 		return ""
 	}
 	st, err := serviceManager.GetServiceTarget(ctx, serviceConfig)
 	if err != nil {
-		log.Printf("error: getting service target. Endpoints will be empty: %v", err)
+		slog.InfoContext(ctx, "error: getting service target. Endpoints will be empty", "err", err)
 		return ""
 	}
 	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
-		log.Printf("error: getting service endpoints. Endpoints might be empty: %v", err)
+		slog.InfoContext(ctx, "error: getting service endpoints. Endpoints might be empty", "err", err)
 	}
 
 	overriddenEndpoints := project.OverriddenEndpoints(ctx, serviceConfig, env)

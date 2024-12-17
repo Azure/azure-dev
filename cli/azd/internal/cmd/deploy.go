@@ -71,7 +71,8 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		&d.fromPackage,
 		"from-package",
 		"",
-		"Deploys the application from an existing package.",
+		//nolint:lll
+		"Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).",
 	)
 }
 

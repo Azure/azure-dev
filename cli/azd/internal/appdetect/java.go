@@ -97,6 +97,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 	return nil, nil
 }
 
+// todo: rename to pom and move to pom.go.
 // mavenProject represents the top-level structure of a Maven POM file.
 type mavenProject struct {
 	XmlName              xml.Name             `xml:"project"`
@@ -203,9 +204,8 @@ func detectDependencies(currentRoot *mavenProject, mavenProject *mavenProject, p
 
 func detectMavenWrapper(path string, executable string) string {
 	wrapperPath := filepath.Join(path, executable)
-	if _, err := os.Stat(wrapperPath); err == nil {
+	if fileExists(wrapperPath) {
 		return wrapperPath
 	}
-
 	return ""
 }

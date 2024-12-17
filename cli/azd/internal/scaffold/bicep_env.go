@@ -55,7 +55,9 @@ func willBeAddedByServiceConnector(spec ServiceSpec, name string) bool {
 		(spec.DbMySql != nil && spec.DbMySql.AuthType == internal.AuthTypeUserAssignedManagedIdentity) {
 		return name == "spring.datasource.url" ||
 			name == "spring.datasource.username" ||
-			name == "spring.datasource.azure.passwordless-enabled"
+			name == "spring.datasource.azure.passwordless-enabled" ||
+			name == "spring.cloud.azure.credential.client-id" ||
+			name == "spring.cloud.azure.credential.managed-identity-enabled"
 	} else {
 		return false
 	}

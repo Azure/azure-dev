@@ -271,6 +271,14 @@ func GetServiceBindingEnvsForPostgres(postgres DatabasePostgres) ([]Env, error) 
 				Name:  "spring.datasource.azure.passwordless-enabled",
 				Value: "true",
 			},
+			{
+				Name:  "spring.cloud.azure.credential.client-id",
+				Value: PlaceHolderForServiceIdentityClientId(),
+			},
+			{
+				Name:  "spring.cloud.azure.credential.managed-identity-enabled",
+				Value: "true",
+			},
 		}, nil
 	default:
 		return []Env{}, unsupportedAuthTypeError(ServiceTypeDbPostgres, postgres.AuthType)
@@ -350,6 +358,14 @@ func GetServiceBindingEnvsForMysql(mysql DatabaseMySql) ([]Env, error) {
 			},
 			{
 				Name:  "spring.datasource.azure.passwordless-enabled",
+				Value: "true",
+			},
+			{
+				Name:  "spring.cloud.azure.credential.client-id",
+				Value: PlaceHolderForServiceIdentityClientId(),
+			},
+			{
+				Name:  "spring.cloud.azure.credential.managed-identity-enabled",
 				Value: "true",
 			},
 		}, nil

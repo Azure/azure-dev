@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -123,12 +122,12 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if _, exists := prjConfig.Resources[resourceToAdd.Name]; exists {
-		log.Panicf("unhandled validation: resource with name %s already exists", resourceToAdd.Name)
+		panic(fmt.Sprintf("unhandled validation: resource with name %s already exists", resourceToAdd.Name))
 	}
 
 	if serviceToAdd != nil {
 		if _, exists := prjConfig.Services[serviceToAdd.Name]; exists {
-			log.Panicf("unhandled validation: service with name %s already exists", serviceToAdd.Name)
+			panic(fmt.Sprintf("unhandled validation: service with name %s already exists", serviceToAdd.Name))
 		}
 	}
 

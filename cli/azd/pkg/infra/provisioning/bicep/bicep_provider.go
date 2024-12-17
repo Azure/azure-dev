@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"maps"
 	"math"
@@ -1061,7 +1060,7 @@ func (p *BicepProvider) destroyDeploymentWithConfirmation(
 func itemsCountAsText(items []itemToPurge) string {
 	count := len(items)
 	if count < 1 {
-		log.Panic("calling itemsCountAsText() with empty list.")
+		panic("calling itemsCountAsText() with empty list.")
 	}
 
 	var tokens []string
@@ -1968,17 +1967,17 @@ func mustSetParamAsConfig(key string, value any, config config.Config, isSecured
 
 	if !isSecured {
 		if err := config.Set(configKey, value); err != nil {
-			log.Panicf("failed setting config value: %v", err)
+			panic(fmt.Sprintf("failed setting config value: %v", err))
 		}
 		return
 	}
 
 	secretString, castOk := value.(string)
 	if !castOk {
-		log.Panic("tried to set a non-string as secret. This is not supported.")
+		panic("tried to set a non-string as secret. This is not supported.")
 	}
 	if err := config.SetSecret(configKey, secretString); err != nil {
-		log.Panicf("failed setting a secret in config: %v", err)
+		panic(fmt.Sprintf("failed setting a secret in config: %v", err))
 	}
 }
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"slices"
 	"strconv"
@@ -84,7 +84,7 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 
 	if !p.accountManager.HasDefaultSubscription() {
 		if _, err := p.accountManager.SetDefaultSubscription(ctx, subscriptionId); err != nil {
-			log.Printf("failed setting default subscription. %s\n", err.Error())
+			slog.InfoContext(ctx, "failed setting default subscription", "err", err)
 		}
 	}
 
@@ -104,7 +104,7 @@ func (p *DefaultPrompter) PromptLocation(
 
 	if !p.accountManager.HasDefaultLocation() {
 		if _, err := p.accountManager.SetDefaultLocation(ctx, subId, loc); err != nil {
-			log.Printf("failed setting default location. %s\n", err.Error())
+			slog.InfoContext(ctx, "failed setting default location", "err", err)
 		}
 	}
 

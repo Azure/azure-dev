@@ -1,9 +1,10 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -36,7 +37,8 @@ func (m *userConfigManager) Load() (Config, error) {
 		// Ignore missing file errors
 		// File will automatically be created on first `set` operation
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("creating empty config since '%s' did not exist.", configFilePath)
+			slog.InfoContext(context.TODO(), "creating empty config since it did not exist.",
+				"path", configFilePath)
 			return NewConfig(nil), nil
 		}
 

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -449,7 +449,8 @@ func evaluateSingleExpressionMatch(
 	}
 	fromEnvVar := strings.TrimSuffix(scaffold.EnvFormat(resourceName)[2:], "}")
 	if valueInEnv := os.Getenv(fromEnvVar); valueInEnv != "" {
-		log.Println("Using value from environment variable", fromEnvVar, "for parameter", resourceName)
+		slog.InfoContext(context.TODO(), "Using value from environment variable for parameter",
+			"envVar", fromEnvVar, "parameter", resourceName)
 		return valueInEnv, nil
 	}
 	// can't resolve the parameter here yet, best we can do is resolve the name of the parameter, removing the path

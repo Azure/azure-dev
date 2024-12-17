@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"regexp"
 	"runtime"
 	"strings"
@@ -52,7 +52,7 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	log.Printf("git version: %s", gitRes)
+	slog.InfoContext(ctx, "detected git version", "version", gitRes)
 	gitSemver, err := tools.ExtractVersion(gitRes)
 	if err != nil {
 		return fmt.Errorf("converting to semver version fails: %w", err)

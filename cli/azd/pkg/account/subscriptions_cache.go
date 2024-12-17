@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -92,7 +92,8 @@ func (s *subscriptionsCache) Save(ctx context.Context, key string, subscriptions
 	if cacheFile != nil {
 		err = json.Unmarshal(cacheFile, &cache)
 		if err != nil {
-			log.Printf("failed to unmarshal %s, ignoring: %v", subscriptionsCacheFile, err)
+			slog.InfoContext(ctx, "failed to unmarshal subscription cache, ignoring cached data",
+				"path", subscriptionsCacheFile, "err", err)
 		}
 	}
 

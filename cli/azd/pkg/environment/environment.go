@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -86,7 +86,7 @@ func getInitialConfig() config.Config {
 
 	var initConfig map[string]any
 	if err := json.Unmarshal([]byte(initialConfig), &initConfig); err != nil {
-		log.Println("Failed to unmarshal initial config", err, "Using empty config.")
+		slog.InfoContext(context.TODO(), "Failed to unmarshal initial config. Using empty config", "err", err)
 		return config.NewEmptyConfig()
 	}
 

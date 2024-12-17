@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"strings"
 	"unicode"
 
@@ -61,7 +61,7 @@ func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler,
 
 				err := json.Unmarshal(msg, &inner)
 				if err != nil {
-					log.Printf("msal-upgrade: failed to unmarshal inner: %v", err)
+					slog.InfoContext(ctx, "msal-upgrade: failed to unmarshal inner", "err", err)
 					continue
 				}
 
@@ -72,7 +72,7 @@ func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler,
 
 				newMsg, err := json.Marshal(inner)
 				if err != nil {
-					log.Printf("msal-upgrade: failed to remarshal inner: %v", err)
+					slog.InfoContext(ctx, "msal-upgrade: failed to remarshal inner", "err", err)
 					continue
 				}
 
@@ -83,10 +83,10 @@ func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler,
 		if newVal, err := json.Marshal(c); err == nil {
 			val = newVal
 		} else {
-			log.Printf("msal-upgrade: failed to remarshal msal cache: %v", err)
+			slog.InfoContext(ctx, "msal-upgrade: failed to remarshal msal cache", "err", err)
 		}
 	} else {
-		log.Printf("msal-upgrade: failed to unmarshal msal cache: %v", err)
+		slog.InfoContext(ctx, "msal-upgrade: failed to unmarshal msal cache", "err", err)
 	}
 
 	// Replace the msal cache contents with the new value retrieved.

@@ -6,7 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,7 +193,8 @@ func (dp *dotnetProject) setUserSecretsFromOutputs(
 ) error {
 	bicepOutputArgs := args.Args["bicepOutput"]
 	if bicepOutputArgs == nil {
-		log.Println("no bicep outputs set as secrets to dotnet project, map args.Args doesn't contain key \"bicepOutput\"")
+		slog.InfoContext(ctx,
+			"no bicep outputs set as secrets to dotnet project, map args.Args doesn't contain key \"bicepOutput\"")
 		return nil
 	}
 

@@ -3,7 +3,7 @@ package templates
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 )
 
@@ -73,7 +73,9 @@ func (ts *templateSource) GetTemplate(ctx context.Context, path string) (*Templa
 	matchingIndex := slices.IndexFunc(allTemplates, func(template *Template) bool {
 		absPath, err := Absolute(template.RepositoryPath)
 		if err != nil {
-			log.Printf("failed to get absolute path for template '%s': %s", template.RepositoryPath, err.Error())
+			slog.InfoContext(ctx, "failed to get absolute path for template",
+				"template", template.RepositoryPath,
+				"err", err.Error())
 			return false
 		}
 

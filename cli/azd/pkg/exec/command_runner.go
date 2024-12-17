@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -304,7 +304,7 @@ func (l *logBuilder) Write(debug bool, sensitiveArgsData []string) {
 		}
 	}
 
-	log.Print(msg.String())
+	slog.InfoContext(context.TODO(), msg.String())
 }
 
 // newCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows

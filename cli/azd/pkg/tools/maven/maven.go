@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -45,7 +45,7 @@ func (m *Cli) CheckInstalled(ctx context.Context) error {
 	}
 
 	if ver, err := m.extractVersion(ctx); err == nil {
-		log.Printf("maven version: %s", ver)
+		slog.InfoContext(ctx, "determined maven version", "version", ver)
 	}
 
 	return nil
@@ -110,18 +110,20 @@ func getMavenWrapperPath(projectPath string, rootProjectPath string) (string, er
 	}
 
 	root, err := filepath.Abs(rootProjectPath)
-	log.Printf("root: %s\n", root)
+	slog.InfoContext(context.TODO(), "searching for maven wrapper", "root", root)
 
 	if err != nil {
 		return "", err
 	}
 
 	for {
-		log.Printf("searchDir: %s\n", searchDir)
+		slog.InfoContext(context.TODO(), "checking directory for mvnw",
+			"path", searchDir)
 
 		mvnw, err := osexec.LookPath(filepath.Join(searchDir, "mvnw"))
 		if err == nil {
-			log.Printf("found mvnw as: %s\n", mvnw)
+			slog.InfoContext(context.TODO(), "found mvnw",
+				"path", mvnw)
 			return mvnw, nil
 		}
 

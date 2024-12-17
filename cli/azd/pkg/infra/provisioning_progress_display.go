@@ -6,7 +6,7 @@ package infra
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"sort"
 	"strconv"
@@ -53,7 +53,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		_, err := display.deployment.Get(ctx)
 		if err != nil {
 			// Return default progress
-			log.Printf("error while reporting progress: %s", err.Error())
+			slog.InfoContext(ctx, "error while reporting progress", "err", err)
 			return nil
 		}
 
@@ -165,12 +165,11 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			resourceTypeName = resourceTypeDisplayName
 		}
 
-		log.Printf(
-			"%s - %s %s: %s",
-			resource.Properties.Timestamp.Local().Format("2006-01-02 15:04:05"),
-			*resource.Properties.ProvisioningState,
-			resourceTypeName,
-			*resource.Properties.TargetResource.ResourceName)
+		slog.InfoContext(ctx, "resource created/updated",
+			"time", resource.Properties.Timestamp.Local().Format("2006-01-02 15:04:05"),
+			"provisioningState", *resource.Properties.ProvisioningState,
+			"resourceType", resourceTypeName,
+			"name", *resource.Properties.TargetResource.ResourceName)
 
 		display.displayedResources[*resource.Properties.TargetResource.ResourceName] = true
 	}

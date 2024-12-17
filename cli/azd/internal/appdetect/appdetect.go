@@ -173,6 +173,8 @@ func (a AzureDepStorageAccount) ResourceDisplay() string {
 type Metadata struct {
 	ApplicationName                                         string
 	DatabaseNameInPropertySpringDatasourceUrl               map[DatabaseDep]string
+	BindingDestinationInProperty                            map[string]string
+	EventhubsCheckpointStoreContainer                       map[string]string
 	ContainsDependencySpringCloudAzureStarter               bool
 	ContainsDependencySpringCloudAzureStarterJdbcPostgresql bool
 	ContainsDependencySpringCloudAzureStarterJdbcMysql      bool

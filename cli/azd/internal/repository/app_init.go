@@ -139,31 +139,31 @@ func (i *Initializer) InitFromApp(
 		if prj.Language == appdetect.Java {
 			var hasKafkaDep bool
 			for depIndex, dep := range prj.AzureDeps {
-				if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); ok && eventHubs.UseKafka {
-					hasKafkaDep = true
-					springBootVersion := eventHubs.SpringBootVersion
-
-					if springBootVersion == appdetect.UnknownSpringBootVersion {
-						var err error
-						springBootVersion, err = promptSpringBootVersion(i.console, ctx)
-						if err != nil {
-							return err
-						}
-						eventHubs.SpringBootVersion = springBootVersion
-						prj.AzureDeps[depIndex] = eventHubs
-					}
-				}
-				if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); ok && !eventHubs.UseKafka {
-					for key, destination := range prj.Metadata.BindingDestinationInProperty {
-						if destination == "" {
-							promptMissingPropertyAndExit(i.console, ctx, key)
+				if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); ok {
+					// prompt spring boot version if not detected for kafka
+					if eventHubs.UseKafka {
+						hasKafkaDep = true
+						springBootVersion := eventHubs.SpringBootVersion
+						if springBootVersion == appdetect.UnknownSpringBootVersion {
+							springBootVersionInput, err := promptSpringBootVersion(i.console, ctx)
+							if err != nil {
+								return err
+							}
+							eventHubs.SpringBootVersion = springBootVersionInput
+							prj.AzureDeps[depIndex] = eventHubs
 						}
 					}
+					// prompt event hubs name if not detected
+					for property, eventHubsName := range eventHubs.EventHubsNamePropertyMap {
+						if eventHubsName == "" {
+							promptMissingPropertyAndExit(i.console, ctx, property)
+						}
+					}
 				}
-				if _, ok := dep.(appdetect.AzureDepStorageAccount); ok {
-					for key, containerName := range prj.Metadata.EventhubsCheckpointStoreContainer {
+				if storageAccount, ok := dep.(appdetect.AzureDepStorageAccount); ok {
+					for property, containerName := range storageAccount.ContainerNamePropertyMap {
 						if containerName == "" {
-							promptMissingPropertyAndExit(i.console, ctx, key)
+							promptMissingPropertyAndExit(i.console, ctx, property)
 						}
 					}
 				}
@@ -703,7 +703,7 @@ func (i *Initializer) prjConfigFromDetect(
 					config.Resources["kafka"] = &project.ResourceConfig{
 						Type: project.ResourceTypeMessagingKafka,
 						Props: project.KafkaProps{
-							Topics:            azureDep.Names,
+							Topics:            appdetect.DistinctValues(azureDep.EventHubsNamePropertyMap),
 							AuthType:          authType,
 							SpringBootVersion: azureDep.SpringBootVersion,
 						},
@@ -712,7 +712,7 @@ func (i *Initializer) prjConfigFromDetect(
 					config.Resources["eventhubs"] = &project.ResourceConfig{
 						Type: project.ResourceTypeMessagingEventHubs,
 						Props: project.EventHubsProps{
-							EventHubNames: azureDep.Names,
+							EventHubNames: appdetect.DistinctValues(azureDep.EventHubsNamePropertyMap),
 							AuthType:      authType,
 						},
 					}
@@ -721,7 +721,7 @@ func (i *Initializer) prjConfigFromDetect(
 				config.Resources["storage"] = &project.ResourceConfig{
 					Type: project.ResourceTypeStorage,
 					Props: project.StorageProps{
-						Containers: azureDep.ContainerNames,
+						Containers: appdetect.DistinctValues(azureDep.ContainerNamePropertyMap),
 						AuthType:   authType,
 					},
 				}

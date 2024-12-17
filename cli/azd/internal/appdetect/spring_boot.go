@@ -165,7 +165,7 @@ func detectServiceBusAccordingToSpringCloudStreamBinderMavenDependency(
 	var targetArtifactId = "spring-cloud-azure-stream-binder-servicebus"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
 		bindingDestinations := getBindingDestinationMap(springBootProject.applicationProperties)
-		var destinations = distinctValues(bindingDestinations)
+		var destinations = DistinctValues(bindingDestinations)
 		newDep := AzureDepServiceBus{
 			Queues: destinations,
 			IsJms:  false,
@@ -182,6 +182,7 @@ func detectServiceBusAccordingToSpringCloudStreamBinderMavenDependency(
 func detectEventHubs(azdProject *Project, springBootProject *SpringBootProject) {
 	// we need to figure out multiple projects are using the same event hub
 	detectEventHubsAccordingToSpringCloudStreamBinderMavenDependency(azdProject, springBootProject)
+	detectEventHubsAccordingToSpringCloudEventhubsStarterDependency(azdProject, springBootProject)
 	detectEventHubsAccordingToSpringCloudStreamKafkaMavenDependency(azdProject, springBootProject)
 }
 
@@ -191,10 +192,9 @@ func detectEventHubsAccordingToSpringCloudStreamBinderMavenDependency(
 	var targetArtifactId = "spring-cloud-azure-stream-binder-eventhubs"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
 		bindingDestinations := getBindingDestinationMap(springBootProject.applicationProperties)
-		var destinations = distinctValues(bindingDestinations)
 		newDep := AzureDepEventHubs{
-			Names:    destinations,
-			UseKafka: false,
+			EventHubsNamePropertyMap: bindingDestinations,
+			UseKafka:                 false,
 		}
 		azdProject.AzureDeps = append(azdProject.AzureDeps, newDep)
 		logServiceAddedAccordingToMavenDependency(newDep.ResourceDisplay(), targetGroupId, targetArtifactId)
@@ -205,17 +205,37 @@ func detectEventHubsAccordingToSpringCloudStreamBinderMavenDependency(
 	}
 }
 
+func detectEventHubsAccordingToSpringCloudEventhubsStarterDependency(
+	azdProject *Project, springBootProject *SpringBootProject) {
+	var targetGroupId = "com.azure.spring"
+	var targetArtifactId = "spring-cloud-azure-starter-eventhubs"
+	var targetPropertyName = "spring.cloud.azure.eventhubs.event-hub-name"
+	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
+		eventHubsNamePropertyMap := map[string]string{
+			targetPropertyName: springBootProject.applicationProperties[targetPropertyName],
+		}
+		newDep := AzureDepEventHubs{
+			EventHubsNamePropertyMap: eventHubsNamePropertyMap,
+			UseKafka:                 false,
+		}
+		azdProject.AzureDeps = append(azdProject.AzureDeps, newDep)
+		logServiceAddedAccordingToMavenDependency(newDep.ResourceDisplay(), targetGroupId, targetArtifactId)
+		for property, name := range eventHubsNamePropertyMap {
+			log.Printf("  Detected Event Hub [%s] for [%s] by analyzing property file.", property, name)
+		}
+	}
+}
+
 func detectEventHubsAccordingToSpringCloudStreamKafkaMavenDependency(
 	azdProject *Project, springBootProject *SpringBootProject) {
 	var targetGroupId = "org.springframework.cloud"
 	var targetArtifactId = "spring-cloud-starter-stream-kafka"
 	if hasDependency(springBootProject, targetGroupId, targetArtifactId) {
 		bindingDestinations := getBindingDestinationMap(springBootProject.applicationProperties)
-		var destinations = distinctValues(bindingDestinations)
 		newDep := AzureDepEventHubs{
-			Names:             destinations,
-			UseKafka:          true,
-			SpringBootVersion: springBootProject.springBootVersion,
+			EventHubsNamePropertyMap: bindingDestinations,
+			UseKafka:                 true,
+			SpringBootVersion:        springBootProject.springBootVersion,
 		}
 		azdProject.AzureDeps = append(azdProject.AzureDeps, newDep)
 		logServiceAddedAccordingToMavenDependency(newDep.ResourceDisplay(), targetGroupId, targetArtifactId)
@@ -245,26 +265,21 @@ func detectStorageAccountAccordingToSpringCloudStreamBinderMavenDependencyAndPro
 			}
 		}
 		if containsInBindingName != "" {
-			// get distinct container names
-			var containerNames []string
-			seen := make(map[string]struct{})
+			containerNamePropertyMap := make(map[string]string)
 			for key, value := range springBootProject.applicationProperties {
 				if strings.HasSuffix(key, targetPropertyName) {
-					if _, exists := seen[key]; !exists {
-						seen[key] = struct{}{}
-						containerNames = append(containerNames, value)
-					}
+					containerNamePropertyMap[key] = value
 				}
 			}
 			newDep := AzureDepStorageAccount{
-				ContainerNames: containerNames,
+				ContainerNamePropertyMap: containerNamePropertyMap,
 			}
 			azdProject.AzureDeps = append(azdProject.AzureDeps, newDep)
 			logServiceAddedAccordingToMavenDependencyAndExtraCondition(newDep.ResourceDisplay(), targetGroupId,
 				targetArtifactId, "binding name ["+containsInBindingName+"] contains '-in-'")
-			for _, containerName := range containerNames {
-				log.Printf("  Detected Storage Account container name: [%s] by analyzing property file.",
-					containerName)
+			for property, containerName := range containerNamePropertyMap {
+				log.Printf("  Detected Storage container name: [%s] for [%s] by analyzing property file.",
+					containerName, property)
 			}
 		}
 	}
@@ -276,8 +291,6 @@ func detectMetadata(azdProject *Project, springBootProject *SpringBootProject) {
 	detectPropertySpringDataMongodbDatabase(azdProject, springBootProject)
 	detectPropertySpringDataMongodbUri(azdProject, springBootProject)
 	detectPropertySpringDatasourceUrl(azdProject, springBootProject)
-	detectPropertySpringCloudStreamBindingDestination(azdProject, springBootProject)
-	detectPropertyEventhubsCheckpointStoreContainer(azdProject, springBootProject)
 
 	detectDependencySpringCloudAzureStarter(azdProject, springBootProject)
 	detectDependencySpringCloudAzureStarterJdbcMysql(azdProject, springBootProject)
@@ -391,26 +404,6 @@ func IsValidDatabaseName(name string) bool {
 	}
 	re := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	return re.MatchString(name)
-}
-
-func detectPropertySpringCloudStreamBindingDestination(azdProject *Project, springBootProject *SpringBootProject) {
-	result := getBindingDestinationMap(springBootProject.applicationProperties)
-	for key, value := range result {
-		newKey := fmt.Sprintf("spring.cloud.stream.bindings.%s.destination", key)
-		azdProject.Metadata.BindingDestinationInProperty[newKey] = value
-	}
-}
-
-func detectPropertyEventhubsCheckpointStoreContainer(azdProject *Project, springBootProject *SpringBootProject) {
-	result := make(map[string]string)
-	for key, value := range springBootProject.applicationProperties {
-		if strings.HasSuffix(key, "spring.cloud.azure.eventhubs.processor.checkpoint-store.container-name") {
-			result[key] = value
-		}
-	}
-	if len(result) != 0 {
-		azdProject.Metadata.EventhubsCheckpointStoreContainer = result
-	}
 }
 
 func detectDependencySpringCloudAzureStarter(azdProject *Project, springBootProject *SpringBootProject) {
@@ -528,11 +521,19 @@ func detectSpringBootVersionFromProject(project *mavenProject) string {
 func isSpringBootApplication(mavenProject *mavenProject) bool {
 	// how can we tell it's a Spring Boot project?
 	// 1. It has a parent with a groupId of org.springframework.boot and an artifactId of spring-boot-starter-parent
-	// 2. It has a dependency with a groupId of org.springframework.boot and an artifactId that starts with
+	// 2. It has a dependency management with a groupId of org.springframework.boot and an artifactId of
+	// spring-boot-dependencies
+	// 3. It has a dependency with a groupId of org.springframework.boot and an artifactId that starts with
 	// spring-boot-starter
 	if mavenProject.Parent.GroupId == "org.springframework.boot" &&
 		mavenProject.Parent.ArtifactId == "spring-boot-starter-parent" {
 		return true
+	}
+	for _, dep := range mavenProject.DependencyManagement.Dependencies {
+		if dep.GroupId == "org.springframework.boot" &&
+			dep.ArtifactId == "spring-boot-dependencies" {
+			return true
+		}
 	}
 	for _, dep := range mavenProject.Dependencies {
 		if dep.GroupId == "org.springframework.boot" &&
@@ -543,7 +544,7 @@ func isSpringBootApplication(mavenProject *mavenProject) bool {
 	return false
 }
 
-func distinctValues(input map[string]string) []string {
+func DistinctValues(input map[string]string) []string {
 	valueSet := make(map[string]struct{})
 	for _, value := range input {
 		valueSet[value] = struct{}{}
@@ -565,10 +566,8 @@ func getBindingDestinationMap(properties map[string]string) map[string]string {
 	for key, value := range properties {
 		// Check if the key matches the pattern `spring.cloud.stream.bindings.<binding-name>.destination`
 		if strings.HasPrefix(key, "spring.cloud.stream.bindings.") && strings.HasSuffix(key, ".destination") {
-			// Extract the binding name
-			bindingName := key[len("spring.cloud.stream.bindings.") : len(key)-len(".destination")]
 			// Store the binding name and destination value
-			result[bindingName] = fmt.Sprintf("%v", value)
+			result[key] = fmt.Sprintf("%v", value)
 		}
 	}
 

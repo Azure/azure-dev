@@ -153,9 +153,9 @@ func (a AzureDepServiceBus) ResourceDisplay() string {
 }
 
 type AzureDepEventHubs struct {
-	Names             []string
-	UseKafka          bool
-	SpringBootVersion string
+	EventHubsNamePropertyMap map[string]string
+	UseKafka                 bool
+	SpringBootVersion        string
 }
 
 func (a AzureDepEventHubs) ResourceDisplay() string {
@@ -163,7 +163,7 @@ func (a AzureDepEventHubs) ResourceDisplay() string {
 }
 
 type AzureDepStorageAccount struct {
-	ContainerNames []string
+	ContainerNamePropertyMap map[string]string
 }
 
 func (a AzureDepStorageAccount) ResourceDisplay() string {
@@ -173,8 +173,6 @@ func (a AzureDepStorageAccount) ResourceDisplay() string {
 type Metadata struct {
 	ApplicationName                                         string
 	DatabaseNameInPropertySpringDatasourceUrl               map[DatabaseDep]string
-	BindingDestinationInProperty                            map[string]string
-	EventhubsCheckpointStoreContainer                       map[string]string
 	ContainsDependencySpringCloudAzureStarter               bool
 	ContainsDependencySpringCloudAzureStarterJdbcPostgresql bool
 	ContainsDependencySpringCloudAzureStarterJdbcMysql      bool

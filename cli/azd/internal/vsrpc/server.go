@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -96,7 +95,7 @@ func (s *Server) Serve(l net.Listener) error {
 func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handler) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Print("upgrade:", err)
+		slog.InfoContext(r.Context(), "error upgrading connect", "err", err)
 		return
 	}
 	defer c.Close()

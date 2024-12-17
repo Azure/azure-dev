@@ -237,7 +237,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 
 	// If we don't have a cached version we can use, fetch one (and cache it)
 	if cachedLatestVersion == nil {
-		log.Print("fetching latest version information for update check")
+		slog.InfoContext(context.TODO(), "fetching latest version information for update check")
 		req, err := http.NewRequest(http.MethodGet, "https://aka.ms/azure-dev/versions/cli/latest", nil)
 		if err != nil {
 			slog.InfoContext(context.TODO(), "failed to create request object, skipping update check", "err", err)

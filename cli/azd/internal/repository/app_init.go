@@ -812,11 +812,15 @@ func checkPasswordlessConfigurationAndContinueProvision(database appdetect.Datab
 	}
 	for i, prj := range detect.Services {
 		if lackedDep := lackedAzureStarterJdbcDependency(prj, database); lackedDep != "" {
-			message := fmt.Sprintf("You selected %s as auth type for %s. This dependency is required: '%s'. "+
-				"But this dependency is not found in your project: %s.",
+			message := fmt.Sprintf("\nError!\n"+
+				"You selected '%s' as auth type for '%s'.\n"+
+				"For this auth type, this dependency is required:\n"+
+				"%s\n"+
+				"But this dependency is not found in your project:\n"+
+				"%s",
 				internal.AuthTypeUserAssignedManagedIdentity, database, lackedDep, prj.Path)
 			continueOption, err := console.Select(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("%s Select an option:", message),
+				Message: fmt.Sprintf("%s\nSelect an option:", message),
 				Options: []string{
 					"Exit azd and fix problem manually",
 					fmt.Sprintf("Continue azd and use %s in this project: %s", database.Display(), prj.Path),
@@ -883,10 +887,18 @@ func lackedAzureStarterJdbcDependency(project appdetect.Project, database appdet
 		return ""
 	}
 	if database == appdetect.DbMySql && !project.Metadata.ContainsDependencySpringCloudAzureStarterJdbcMysql {
-		return "com.azure.spring:spring-cloud-azure-starter-jdbc-mysql"
+		return "<dependency>\n" +
+			"  <groupId>com.azure.spring</groupId>\n" +
+			"  <artifactId>spring-cloud-azure-starter-jdbc-mysql</artifactId>\n" +
+			"  <version>xxx</version>\n" +
+			"</dependency>"
 	}
 	if database == appdetect.DbPostgres && !project.Metadata.ContainsDependencySpringCloudAzureStarterJdbcPostgresql {
-		return "com.azure.spring:spring-cloud-azure-starter-jdbc-postgresql"
+		return "<dependency>\n" +
+			"  <groupId>com.azure.spring</groupId>\n" +
+			"  <artifactId>spring-cloud-azure-starter-jdbc-postgresql</artifactId>\n" +
+			"  <version>xxx</version>\n" +
+			"</dependency>"
 	}
 	return ""
 }

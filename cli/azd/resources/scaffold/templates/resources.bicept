@@ -274,6 +274,7 @@ module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assign
 {{- end}}
 {{- range .Services}}
 {{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity")) }}
+var {{bicepName .Name}}PostgresConnectionName = 'connection_${uniqueString(subscription().id, resourceGroup().id, location, '{{bicepName .Name}}', 'Postgres')}'
 module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
   name: '{{bicepName .Name}}CreateConnectionToPostgreSql'
   params: {
@@ -288,13 +289,14 @@ module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resour
     }
     runOnce: false
     retentionInterval: 'P1D'
-    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create postgres-flexible --connection {{bicepName .Name}}Postgres --source-id ${ {{bicepName .Name}}.outputs.resourceId} --target-id ${postgreServer.outputs.resourceId}/databases/${postgreSqlDatabaseName} --client-type springBoot --user-identity client-id=${ {{bicepName .Name}}Identity.outputs.clientId} subs-id=${subscription().subscriptionId} user-object-id=${connectionCreatorIdentity.outputs.principalId} -c main --yes;'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create postgres-flexible --connection ${ {{bicepName .Name}}PostgresConnectionName } --source-id ${ {{bicepName .Name}}.outputs.resourceId} --target-id ${postgreServer.outputs.resourceId}/databases/${postgreSqlDatabaseName} --client-type springBoot --user-identity client-id=${ {{bicepName .Name}}Identity.outputs.clientId} subs-id=${subscription().subscriptionId} user-object-id=${connectionCreatorIdentity.outputs.principalId} -c main --yes;'
   }
 }
 {{- end}}
 {{- end}}
 {{- range .Services}}
 {{- if (and .DbMySql (eq .DbMySql.AuthType "userAssignedManagedIdentity")) }}
+var {{bicepName .Name}}MysqlConnectionName = 'connection_${uniqueString(subscription().id, resourceGroup().id, location, '{{bicepName .Name}}', 'MySql')}'
 module {{bicepName .Name}}CreateConnectionToMysql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
   name: '{{bicepName .Name}}CreateConnectionToMysql'
   params: {
@@ -309,7 +311,7 @@ module {{bicepName .Name}}CreateConnectionToMysql 'br/public:avm/res/resources/d
     }
     runOnce: false
     retentionInterval: 'P1D'
-    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection {{bicepName .Name}}Mysql --source-id ${ {{bicepName .Name}}.outputs.resourceId} --target-id ${mysqlServer.outputs.resourceId}/databases/${mysqlDatabaseName} --client-type springBoot --user-identity client-id=${ {{bicepName .Name}}Identity.outputs.clientId} subs-id=${subscription().subscriptionId} user-object-id=${connectionCreatorIdentity.outputs.principalId} mysql-identity-id=${mysqlIdentity.outputs.resourceId} -c main --yes;'
+    scriptContent: 'apk update; apk add g++; apk add unixodbc-dev; az extension add --name containerapp; az extension add --name serviceconnector-passwordless --upgrade; az containerapp connection create mysql-flexible --connection ${ {{bicepName .Name}}MysqlConnectionName } --source-id ${ {{bicepName .Name}}.outputs.resourceId} --target-id ${mysqlServer.outputs.resourceId}/databases/${mysqlDatabaseName} --client-type springBoot --user-identity client-id=${ {{bicepName .Name}}Identity.outputs.clientId} subs-id=${subscription().subscriptionId} user-object-id=${connectionCreatorIdentity.outputs.principalId} mysql-identity-id=${mysqlIdentity.outputs.resourceId} -c main --yes;'
   }
 }
 {{- end}}

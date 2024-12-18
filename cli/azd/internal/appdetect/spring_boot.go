@@ -549,6 +549,12 @@ func isSpringBootApplication(pom *pom) bool {
 			return true
 		}
 	}
+	for _, dep := range pom.Build.Plugins {
+		if dep.GroupId == "org.springframework.boot" &&
+			dep.ArtifactId == "spring-boot-maven-plugin" {
+			return true
+		}
+	}
 	return false
 }
 

@@ -114,7 +114,7 @@ func toEffectivePom(pomPath string) (pom, error) {
 	if !commandExistsInPath("java") {
 		return pom{}, fmt.Errorf("can not get effective pom because java command not exist")
 	}
-	mvn, err := getMvnCommand(pomPath)
+	mvn, err := getMvnCommandFromPath(pomPath)
 	if err != nil {
 		return pom{}, err
 	}

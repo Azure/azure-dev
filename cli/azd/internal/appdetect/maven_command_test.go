@@ -48,7 +48,7 @@ func TestGetMvnwCommandInProject(t *testing.T) {
 				}
 			}
 
-			result, _ := getMvnwCommandInProject(pomPath)
+			result, _ := getMvnwCommand(pomPath)
 			expectedResult := ""
 			if c.expected != "" {
 				expectedResult = filepath.Join(tempDir, c.expected)
@@ -67,5 +67,15 @@ func TestGetDownloadedMvnCommand(t *testing.T) {
 	}
 	if maven == "" {
 		t.Errorf("getDownloadedMvnCommand failed")
+	}
+}
+
+func TestGetMvnCommand(t *testing.T) {
+	maven, err := getMvnCommand()
+	if err != nil {
+		t.Errorf("getMvnCommand failed, %v", err)
+	}
+	if maven == "" {
+		t.Errorf("getMvnCommand failed")
 	}
 }

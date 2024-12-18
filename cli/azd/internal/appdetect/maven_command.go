@@ -12,8 +12,16 @@ import (
 	"strings"
 )
 
-func getMvnCommand(pomPath string) (string, error) {
-	mvnwCommand, err := getMvnwCommandInProject(pomPath)
+func getMvnCommand() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("can not get working directory")
+	}
+	return getMvnCommandFromPath(cwd)
+}
+
+func getMvnCommandFromPath(path string) (string, error) {
+	mvnwCommand, err := getMvnwCommand(path)
 	if err == nil {
 		return mvnwCommand, nil
 	}
@@ -23,9 +31,16 @@ func getMvnCommand(pomPath string) (string, error) {
 	return getDownloadedMvnCommand()
 }
 
-func getMvnwCommandInProject(pomPath string) (string, error) {
+func getMvnwCommand(path string) (string, error) {
 	mvnwCommand := "mvnw"
-	dir := filepath.Dir(pomPath)
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(path)
+	if fileInfo.IsDir() {
+		dir = path
+	}
 	for {
 		commandPath := filepath.Join(dir, mvnwCommand)
 		if fileExists(commandPath) {
@@ -41,8 +56,9 @@ func getMvnwCommandInProject(pomPath string) (string, error) {
 }
 
 const mavenVersion = "3.9.9"
+const mavenZipFileName = "apache-maven-" + mavenVersion + "-bin.zip"
 const mavenURL = "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/" +
-	mavenVersion + "/apache-maven-" + mavenVersion + "-bin.zip"
+	mavenVersion + "/" + mavenZipFileName
 
 func getDownloadedMvnCommand() (string, error) {
 	mavenCommand, err := getAzdMvnCommand(mavenVersion)
@@ -59,19 +75,18 @@ func getDownloadedMvnCommand() (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(mavenDir); os.IsNotExist(err) {
-		err = os.Mkdir(mavenDir, os.ModePerm)
+		err = os.MkdirAll(mavenDir, os.ModePerm)
 		if err != nil {
 			return "", fmt.Errorf("unable to create directory: %w", err)
 		}
 	}
 
-	mavenFile := fmt.Sprintf("maven-wrapper-%s-bin.zip", mavenVersion)
-	wrapperPath := filepath.Join(mavenDir, mavenFile)
-	err = downloadMaven(wrapperPath)
+	mavenZipFilePath := filepath.Join(mavenDir, mavenZipFileName)
+	err = downloadMaven(mavenZipFilePath)
 	if err != nil {
 		return "", err
 	}
-	err = unzip(wrapperPath, mavenDir)
+	err = unzip(mavenZipFilePath, mavenDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to unzip maven bin.zip: %w", err)
 	}
@@ -79,12 +94,11 @@ func getDownloadedMvnCommand() (string, error) {
 }
 
 func getAzdMvnDir() (string, error) {
-	azdMvnFolderName := "azd-maven"
 	userHome, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("unable to get user home directory: %w", err)
 	}
-	return filepath.Join(userHome, azdMvnFolderName), nil
+	return filepath.Join(userHome, ".azd", "java", "maven"), nil
 }
 
 func getAzdMvnCommand(mavenVersion string) (string, error) {

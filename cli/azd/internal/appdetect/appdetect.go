@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/bmatcuk/doublestar/v4"
 )
@@ -167,8 +168,9 @@ type Port struct {
 }
 
 type Docker struct {
-	Path  string
-	Ports []Port
+	Path      string
+	Ports     []Port
+	BuildArgs []osutil.ExpandableString
 }
 
 type projectDetector interface {

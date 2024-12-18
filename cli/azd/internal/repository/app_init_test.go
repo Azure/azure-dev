@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
 )
@@ -93,7 +94,13 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 					{
 						Language: appdetect.DotNet,
 						Path:     "dotnet",
-						Docker:   &appdetect.Docker{Path: "Dockerfile"},
+						Docker: &appdetect.Docker{
+							Path: "Dockerfile",
+							BuildArgs: []osutil.ExpandableString{
+								osutil.NewExpandableString("ARG1"),
+								osutil.NewExpandableString("ARG2"),
+							},
+						},
 					},
 				},
 			},
@@ -112,6 +119,10 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 						RelativePath: "dotnet",
 						Docker: project.DockerProjectOptions{
 							Path: "Dockerfile",
+							BuildArgs: []osutil.ExpandableString{
+								osutil.NewExpandableString("ARG1"),
+								osutil.NewExpandableString("ARG2"),
+							},
 						},
 					},
 				},

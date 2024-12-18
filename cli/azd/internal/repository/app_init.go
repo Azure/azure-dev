@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"maps"
@@ -43,6 +44,34 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 }
 
 var featureCompose = alpha.MustFeatureKey("compose")
+
+// parseDockerfileForArgs parses a Dockerfile to extract ARG instructions and returns them as ExpandableString values.
+func parseDockerfileForArgs(dockerfilePath string) ([]osutil.ExpandableString, error) {
+	var buildArgs []osutil.ExpandableString
+
+	file, err := os.Open(dockerfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open Dockerfile: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "ARG ") {
+			argLine := strings.TrimPrefix(line, "ARG ")
+			if len(argLine) > 0 {
+				buildArgs = append(buildArgs, osutil.NewExpandableString(argLine))
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading Dockerfile: %w", err)
+	}
+
+	return buildArgs, nil
+}
 
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
@@ -261,6 +290,23 @@ func (i *Initializer) InitFromApp(
 		_, err = initializeEnv()
 		if err != nil {
 			return err
+		}
+	}
+
+	for idx := range detect.Services {
+		servicePath := detect.Services[idx].Path
+		dockerfilePath := filepath.Join(servicePath, "Dockerfile")
+
+		if _, err := os.Stat(dockerfilePath); err == nil {
+
+			buildArgs, err := parseDockerfileForArgs(dockerfilePath)
+			if err != nil {
+				return fmt.Errorf("failed to parse Dockerfile ARGs at %s: %w", dockerfilePath, err)
+			}
+
+			if len(buildArgs) > 0 {
+				detect.Services[idx].Docker.BuildArgs = buildArgs
+			}
 		}
 	}
 
@@ -544,7 +590,8 @@ func ServiceFromDetect(
 		}
 
 		svc.Docker = project.DockerProjectOptions{
-			Path: relDocker,
+			Path:      relDocker,
+			BuildArgs: prj.Docker.BuildArgs,
 		}
 	}
 

@@ -1,7 +1,6 @@
 package appdetect
 
 import (
-	"encoding/xml"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,8 +9,8 @@ import (
 func TestDetectSpringBootVersion(t *testing.T) {
 	tests := []struct {
 		name            string
-		currentRoot     *mavenProject
-		project         *mavenProject
+		parentPom       *pom
+		currentPom      *pom
 		expectedVersion string
 	}{
 		{
@@ -23,7 +22,7 @@ func TestDetectSpringBootVersion(t *testing.T) {
 		{
 			"project.parent",
 			nil,
-			&mavenProject{
+			&pom{
 				Parent: parent{
 					GroupId:    "org.springframework.boot",
 					ArtifactId: "spring-boot-starter-parent",
@@ -35,7 +34,7 @@ func TestDetectSpringBootVersion(t *testing.T) {
 		{
 			"project.dependencyManagement",
 			nil,
-			&mavenProject{
+			&pom{
 				DependencyManagement: dependencyManagement{
 					Dependencies: []dependency{
 						{
@@ -50,7 +49,7 @@ func TestDetectSpringBootVersion(t *testing.T) {
 		},
 		{
 			"root.parent",
-			&mavenProject{
+			&pom{
 				Parent: parent{
 					GroupId:    "org.springframework.boot",
 					ArtifactId: "spring-boot-starter-parent",
@@ -62,7 +61,7 @@ func TestDetectSpringBootVersion(t *testing.T) {
 		},
 		{
 			"root.dependencyManagement",
-			&mavenProject{
+			&pom{
 				DependencyManagement: dependencyManagement{
 					Dependencies: []dependency{
 						{
@@ -78,14 +77,14 @@ func TestDetectSpringBootVersion(t *testing.T) {
 		},
 		{
 			"both.root.and.project.parent",
-			&mavenProject{
+			&pom{
 				Parent: parent{
 					GroupId:    "org.springframework.boot",
 					ArtifactId: "spring-boot-starter-parent",
 					Version:    "2.x",
 				},
 			},
-			&mavenProject{
+			&pom{
 				Parent: parent{
 					GroupId:    "org.springframework.boot",
 					ArtifactId: "spring-boot-starter-parent",
@@ -96,7 +95,7 @@ func TestDetectSpringBootVersion(t *testing.T) {
 		},
 		{
 			"both.root.and.project.dependencyManagement",
-			&mavenProject{
+			&pom{
 				DependencyManagement: dependencyManagement{
 					Dependencies: []dependency{
 						{
@@ -107,7 +106,7 @@ func TestDetectSpringBootVersion(t *testing.T) {
 					},
 				},
 			},
-			&mavenProject{
+			&pom{
 				DependencyManagement: dependencyManagement{
 					Dependencies: []dependency{
 						{
@@ -122,14 +121,14 @@ func TestDetectSpringBootVersion(t *testing.T) {
 		},
 		{
 			"detect.root.parent.when.project.not.found",
-			&mavenProject{
+			&pom{
 				Parent: parent{
 					GroupId:    "org.springframework.boot",
 					ArtifactId: "spring-boot-starter-parent",
 					Version:    "2.x",
 				},
 			},
-			&mavenProject{
+			&pom{
 				Parent: parent{
 					GroupId:    "org.test",
 					ArtifactId: "test-parent",
@@ -140,7 +139,7 @@ func TestDetectSpringBootVersion(t *testing.T) {
 		},
 		{
 			"detect.root.dependencyManagement.when.project.not.found",
-			&mavenProject{
+			&pom{
 				DependencyManagement: dependencyManagement{
 					Dependencies: []dependency{
 						{
@@ -151,7 +150,7 @@ func TestDetectSpringBootVersion(t *testing.T) {
 					},
 				},
 			},
-			&mavenProject{
+			&pom{
 				DependencyManagement: dependencyManagement{
 					Dependencies: []dependency{
 						{
@@ -167,68 +166,8 @@ func TestDetectSpringBootVersion(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			version := detectSpringBootVersion(tt.currentRoot, tt.project)
+			version := detectSpringBootVersion(tt.parentPom, tt.currentPom)
 			assert.Equal(t, tt.expectedVersion, version)
-		})
-	}
-}
-
-func TestReplaceAllPlaceholders(t *testing.T) {
-	tests := []struct {
-		name    string
-		project mavenProject
-		input   string
-		output  string
-	}{
-		{
-			"empty.input",
-			mavenProject{
-				Properties: Properties{
-					Entries: []Property{
-						{
-							XMLName: xml.Name{
-								Local: "version.spring-boot_2.x",
-							},
-							Value: "2.x",
-						},
-					},
-				},
-			},
-			"",
-			"",
-		},
-		{
-			"empty.properties",
-			mavenProject{
-				Properties: Properties{
-					Entries: []Property{},
-				},
-			},
-			"org.springframework.boot:spring-boot-dependencies:${version.spring-boot_2.x}",
-			"org.springframework.boot:spring-boot-dependencies:${version.spring-boot_2.x}",
-		},
-		{
-			"dependency.version",
-			mavenProject{
-				Properties: Properties{
-					Entries: []Property{
-						{
-							XMLName: xml.Name{
-								Local: "version.spring-boot_2.x",
-							},
-							Value: "2.x",
-						},
-					},
-				},
-			},
-			"org.springframework.boot:spring-boot-dependencies:${version.spring-boot_2.x}",
-			"org.springframework.boot:spring-boot-dependencies:2.x",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			output := replaceAllPlaceholders(tt.project, tt.input)
-			assert.Equal(t, tt.output, output)
 		})
 	}
 }
@@ -241,12 +180,18 @@ func TestGetDatabaseName(t *testing.T) {
 		{"jdbc:postgresql://localhost:5432/your-database-name", "your-database-name"},
 		{"jdbc:postgresql://remote_host:5432/your-database-name", "your-database-name"},
 		{"jdbc:postgresql://your_postgresql_server:5432/your-database-name?sslmode=require", "your-database-name"},
-		{"jdbc:postgresql://your_postgresql_server.postgres.database.azure.com:5432/your-database-name?sslmode=require",
-			"your-database-name"},
-		{"jdbc:postgresql://your_postgresql_server:5432/your-database-name?user=your_username&password=your_password",
-			"your-database-name"},
-		{"jdbc:postgresql://your_postgresql_server.postgres.database.azure.com:5432/your-database-name" +
-			"?sslmode=require&spring.datasource.azure.passwordless-enabled=true", "your-database-name"},
+		{
+			"jdbc:postgresql://your_postgresql_server.postgres.database.azure.com:5432/your-database-name?sslmode=require",
+			"your-database-name",
+		},
+		{
+			"jdbc:postgresql://your_postgresql_server:5432/your-database-name?user=your_username&password=your_password",
+			"your-database-name",
+		},
+		{
+			"jdbc:postgresql://your_postgresql_server.postgres.database.azure.com:5432/your-database-name" +
+				"?sslmode=require&spring.datasource.azure.passwordless-enabled=true", "your-database-name",
+		},
 	}
 	for _, test := range tests {
 		result := getDatabaseName(test.input)
@@ -264,8 +209,10 @@ func TestIsValidDatabaseName(t *testing.T) {
 	}{
 		{"InvalidNameWithUnderscore", "invalid_name", false},
 		{"TooShortName", "sh", false},
-		{"TooLongName", "this-name-is-way-too-long-to-be-considered-valid-" +
-			"because-it-exceeds-sixty-three-characters", false},
+		{
+			"TooLongName", "this-name-is-way-too-long-to-be-considered-valid-" +
+				"because-it-exceeds-sixty-three-characters", false,
+		},
 		{"InvalidStartWithHyphen", "-invalid-start", false},
 		{"InvalidEndWithHyphen", "invalid-end-", false},
 		{"ValidName", "valid-name", true},

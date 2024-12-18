@@ -13,7 +13,7 @@ import (
 type SpringBootProject struct {
 	springBootVersion     string // todo: delete this, because it's only used once.
 	applicationProperties map[string]string
-	mavenProject          mavenProject
+	pom                   pom
 }
 
 type DatabaseDependencyRule struct {
@@ -90,21 +90,20 @@ var databaseDependencyRules = []DatabaseDependencyRule{
 	},
 }
 
-// todo: remove parentProject, when passed in the mavenProject is the effective pom.
-func detectAzureDependenciesByAnalyzingSpringBootProject(
-	parentProject *mavenProject, mavenProject *mavenProject, azdProject *Project) {
-	effectivePom, err := getMavenProjectOfEffectivePom(filepath.Join(mavenProject.path, "pom.xml"))
+// todo: remove parentPom, when passed in the pom is the effective pom.
+func detectAzureDependenciesByAnalyzingSpringBootProject(parentPom *pom, currentPom *pom, azdProject *Project) {
+	effectivePom, err := toEffectivePom(filepath.Join(currentPom.path, "pom.xml"))
 	if err == nil {
-		mavenProject = &effectivePom
+		currentPom = &effectivePom
 	}
-	if !isSpringBootApplication(mavenProject) {
-		log.Printf("Skip analyzing spring boot project. path = %s.", mavenProject.path)
+	if !isSpringBootApplication(currentPom) {
+		log.Printf("Skip analyzing spring boot project. path = %s.", currentPom.path)
 		return
 	}
 	var springBootProject = SpringBootProject{
-		springBootVersion:     detectSpringBootVersion(parentProject, mavenProject),
+		springBootVersion:     detectSpringBootVersion(parentPom, currentPom),
 		applicationProperties: readProperties(azdProject.Path),
-		mavenProject:          *mavenProject,
+		pom:                   *currentPom,
 	}
 	detectDatabases(azdProject, &springBootProject)
 	detectServiceBus(azdProject, &springBootProject)
@@ -115,7 +114,7 @@ func detectAzureDependenciesByAnalyzingSpringBootProject(
 }
 
 func detectSpringFrontend(azdProject *Project, springBootProject *SpringBootProject) {
-	for _, p := range springBootProject.mavenProject.Build.Plugins {
+	for _, p := range springBootProject.pom.Build.Plugins {
 		if p.GroupId == "com.github.eirslett" && p.ArtifactId == "frontend-maven-plugin" {
 			azdProject.Dependencies = append(azdProject.Dependencies, SpringFrontend)
 			break
@@ -495,30 +494,30 @@ func logMetadataUpdated(info string) {
 	log.Printf("Metadata updated. %s.", info)
 }
 
-func detectSpringBootVersion(currentRoot *mavenProject, mavenProject *mavenProject) string {
-	// mavenProject prioritize than rootProject
-	if mavenProject != nil {
-		if version := detectSpringBootVersionFromProject(mavenProject); version != UnknownSpringBootVersion {
+func detectSpringBootVersion(parentPom *pom, currentPom *pom) string {
+	// currentPom prioritize than parentPom
+	if currentPom != nil {
+		if version := detectSpringBootVersionFromPom(currentPom); version != UnknownSpringBootVersion {
 			return version
 		}
 	}
-	// fallback to detect root project
-	if currentRoot != nil {
-		return detectSpringBootVersionFromProject(currentRoot)
+	// fallback to detect parentPom
+	if parentPom != nil {
+		return detectSpringBootVersionFromPom(parentPom)
 	}
 	return UnknownSpringBootVersion
 }
 
-func detectSpringBootVersionFromProject(project *mavenProject) string {
-	if project.Parent.ArtifactId == "spring-boot-starter-parent" {
-		return project.Parent.Version
+func detectSpringBootVersionFromPom(pom *pom) string {
+	if pom.Parent.ArtifactId == "spring-boot-starter-parent" {
+		return pom.Parent.Version
 	} else {
-		for _, dep := range project.DependencyManagement.Dependencies {
+		for _, dep := range pom.DependencyManagement.Dependencies {
 			if dep.ArtifactId == "spring-boot-dependencies" {
 				return dep.Version
 			}
 		}
-		for _, dep := range project.Dependencies {
+		for _, dep := range pom.Dependencies {
 			if dep.GroupId == "org.springframework.boot" {
 				return dep.Version
 			}
@@ -527,24 +526,24 @@ func detectSpringBootVersionFromProject(project *mavenProject) string {
 	return UnknownSpringBootVersion
 }
 
-func isSpringBootApplication(mavenProject *mavenProject) bool {
+func isSpringBootApplication(pom *pom) bool {
 	// how can we tell it's a Spring Boot project?
 	// 1. It has a parent with a groupId of org.springframework.boot and an artifactId of spring-boot-starter-parent
 	// 2. It has a dependency management with a groupId of org.springframework.boot and an artifactId of
 	// spring-boot-dependencies
 	// 3. It has a dependency with a groupId of org.springframework.boot and an artifactId that starts with
 	// spring-boot-starter
-	if mavenProject.Parent.GroupId == "org.springframework.boot" &&
-		mavenProject.Parent.ArtifactId == "spring-boot-starter-parent" {
+	if pom.Parent.GroupId == "org.springframework.boot" &&
+		pom.Parent.ArtifactId == "spring-boot-starter-parent" {
 		return true
 	}
-	for _, dep := range mavenProject.DependencyManagement.Dependencies {
+	for _, dep := range pom.DependencyManagement.Dependencies {
 		if dep.GroupId == "org.springframework.boot" &&
 			dep.ArtifactId == "spring-boot-dependencies" {
 			return true
 		}
 	}
-	for _, dep := range mavenProject.Dependencies {
+	for _, dep := range pom.Dependencies {
 		if dep.GroupId == "org.springframework.boot" &&
 			strings.HasPrefix(dep.ArtifactId, "spring-boot-starter") { // maybe delete condition of this line
 			return true
@@ -584,7 +583,7 @@ func getBindingDestinationMap(properties map[string]string) map[string]string {
 }
 
 func hasDependency(project *SpringBootProject, groupId string, artifactId string) bool {
-	for _, projectDependency := range project.mavenProject.Dependencies {
+	for _, projectDependency := range project.pom.Dependencies {
 		if projectDependency.GroupId == groupId && projectDependency.ArtifactId == artifactId {
 			return true
 		}

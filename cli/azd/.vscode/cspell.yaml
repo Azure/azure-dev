@@ -22,6 +22,7 @@ words:
   - mysqladmin
   - sjad
   - configserver
+  - chardata
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -47,9 +48,6 @@ overrides:
   - filename: internal/tracing/fields/fields.go
     words:
       - azuredeps
-  - filename: internal/appdetect/java.go
-    words:
-      - chardata
   - filename: docs/docgen.go
     words:
       - alexwolf

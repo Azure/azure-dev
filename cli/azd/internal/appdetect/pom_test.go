@@ -1,12 +1,75 @@
 package appdetect
 
 import (
+	"encoding/xml"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func TestMavenProjectInEffectivePom(t *testing.T) {
+func TestReplaceAllPlaceholders(t *testing.T) {
+	tests := []struct {
+		name   string
+		pom    pom
+		input  string
+		output string
+	}{
+		{
+			"empty.input",
+			pom{
+				Properties: Properties{
+					Entries: []Property{
+						{
+							XMLName: xml.Name{
+								Local: "version.spring-boot_2.x",
+							},
+							Value: "2.x",
+						},
+					},
+				},
+			},
+			"",
+			"",
+		},
+		{
+			"empty.properties",
+			pom{
+				Properties: Properties{
+					Entries: []Property{},
+				},
+			},
+			"org.springframework.boot:spring-boot-dependencies:${version.spring-boot_2.x}",
+			"org.springframework.boot:spring-boot-dependencies:${version.spring-boot_2.x}",
+		},
+		{
+			"dependency.version",
+			pom{
+				Properties: Properties{
+					Entries: []Property{
+						{
+							XMLName: xml.Name{
+								Local: "version.spring-boot_2.x",
+							},
+							Value: "2.x",
+						},
+					},
+				},
+			},
+			"org.springframework.boot:spring-boot-dependencies:${version.spring-boot_2.x}",
+			"org.springframework.boot:spring-boot-dependencies:2.x",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := replaceAllPlaceholders(tt.pom, tt.input)
+			assert.Equal(t, tt.output, output)
+		})
+	}
+}
+
+func TestToEffectivePom(t *testing.T) {
 	tests := []struct {
 		name       string
 		pomContent string
@@ -153,16 +216,16 @@ func TestMavenProjectInEffectivePom(t *testing.T) {
 				t.Fatalf("Failed to write temp POM file: %v", err)
 			}
 
-			project, err := getMavenProjectOfEffectivePom(pomPath)
+			effectivePom, err := toEffectivePom(pomPath)
 			if err != nil {
-				t.Fatalf("getMavenProjectOfEffectivePom failed: %v", err)
+				t.Fatalf("toEffectivePom failed: %v", err)
 			}
 
-			if len(project.Dependencies) != len(tt.expected) {
-				t.Fatalf("Expected %d dependencies, got %d", len(tt.expected), len(project.Dependencies))
+			if len(effectivePom.Dependencies) != len(tt.expected) {
+				t.Fatalf("Expected %d dependencies, got %d", len(tt.expected), len(effectivePom.Dependencies))
 			}
 
-			for i, dep := range project.Dependencies {
+			for i, dep := range effectivePom.Dependencies {
 				if dep != tt.expected[i] {
 					t.Errorf("Expected dependency %v, got %v", tt.expected[i], dep)
 				}

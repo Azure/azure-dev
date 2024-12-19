@@ -240,14 +240,18 @@ const (
 const (
 	InitMethod = attribute.Key("init.method")
 
-	AppInitDetectedDatabase = attribute.Key("appinit.detected.databases")
-	AppInitDetectedServices = attribute.Key("appinit.detected.services")
+	AppInitDetectedDatabase  = attribute.Key("appinit.detected.databases")
+	AppInitDetectedServices  = attribute.Key("appinit.detected.services")
+	AppInitDetectedAzureDeps = attribute.Key("appinit.detected.azuredeps")
 
 	AppInitConfirmedDatabases = attribute.Key("appinit.confirmed.databases")
 	AppInitConfirmedServices  = attribute.Key("appinit.confirmed.services")
 
 	AppInitModifyAddCount    = attribute.Key("appinit.modify_add.count")
 	AppInitModifyRemoveCount = attribute.Key("appinit.modify_remove.count")
+
+	// AppInitJavaDetect indicates if java detector has started or finished
+	AppInitJavaDetect = attribute.Key("appinit.java.detect")
 
 	// The last step recorded during the app init process.
 	AppInitLastStep = attribute.Key("appinit.lastStep")

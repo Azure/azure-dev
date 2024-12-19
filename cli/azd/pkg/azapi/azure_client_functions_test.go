@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package azcli
+package azapi
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ func Test_GetFunctionAppProperties(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet &&
@@ -57,7 +57,7 @@ func Test_GetFunctionAppProperties(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet &&
@@ -85,7 +85,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerInfoMocks(mockContext, &ran)
 		registerDeployMocks(mockContext, &ran)
@@ -110,7 +110,7 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 
 		registerInfoMocks(mockContext, &ran)
 		registerConflictMocks(mockContext, &ran)

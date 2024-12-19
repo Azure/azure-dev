@@ -14,18 +14,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type appServiceTarget struct {
 	env *environment.Environment
-	cli azcli.AzCli
+	cli *azapi.AzureClient
 }
 
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
 	env *environment.Environment,
-	azCli azcli.AzCli,
+	azCli *azapi.AzureClient,
 ) ServiceTarget {
 	return &appServiceTarget{
 		env: env,

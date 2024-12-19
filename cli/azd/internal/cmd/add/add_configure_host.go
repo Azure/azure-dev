@@ -238,7 +238,7 @@ func addServiceAsResource(
 		if _, err := os.Stat(filepath.Join(svc.RelativePath, "Dockerfile")); errors.Is(err, os.ErrNotExist) {
 			// default builder always specifies port 80
 			props.Port = 80
-			if svc.Language == project.ServiceLanguageJava {
+			if svc.Language == project.ServiceLanguageJava || svc.Language.IsDotNet() {
 				props.Port = 8080
 			}
 		}

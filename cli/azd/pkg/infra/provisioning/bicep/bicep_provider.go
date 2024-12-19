@@ -41,7 +41,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
 )
@@ -66,7 +65,7 @@ type BicepProvider struct {
 	options               provisioning.Options
 	console               input.Console
 	bicepCli              *bicep.Cli
-	azCli                 azcli.AzCli
+	azapi                 *azapi.AzureClient
 	resourceService       *azapi.ResourceService
 	deploymentManager     *infra.DeploymentManager
 	prompters             prompt.Prompter
@@ -1168,13 +1167,13 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 func (p *BicepProvider) getManagedHSMs(
 	ctx context.Context,
 	groupedResources map[string][]*azapi.Resource,
-) ([]*azcli.AzCliManagedHSM, error) {
-	managedHSMs := []*azcli.AzCliManagedHSM{}
+) ([]*azapi.AzCliManagedHSM, error) {
+	managedHSMs := []*azapi.AzCliManagedHSM{}
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(azapi.AzureResourceTypeManagedHSM) {
-				managedHSM, err := p.azCli.GetManagedHSM(
+				managedHSM, err := p.azapi.GetManagedHSM(
 					ctx,
 					azure.SubscriptionFromRID(resource.Id),
 					resourceGroup,
@@ -1194,13 +1193,13 @@ func (p *BicepProvider) getManagedHSMs(
 func (p *BicepProvider) getManagedHSMsToPurge(
 	ctx context.Context,
 	groupedResources map[string][]*azapi.Resource,
-) ([]*azcli.AzCliManagedHSM, error) {
+) ([]*azapi.AzCliManagedHSM, error) {
 	managedHSMs, err := p.getManagedHSMs(ctx, groupedResources)
 	if err != nil {
 		return nil, err
 	}
 
-	managedHSMsToPurge := []*azcli.AzCliManagedHSM{}
+	managedHSMsToPurge := []*azapi.AzCliManagedHSM{}
 	for _, v := range managedHSMs {
 		if v.Properties.EnableSoftDelete && !v.Properties.EnablePurgeProtection {
 			managedHSMsToPurge = append(managedHSMsToPurge, v)
@@ -1220,7 +1219,7 @@ func (p *BicepProvider) getCognitiveAccountsToPurge(
 		cognitiveAccounts := []armcognitiveservices.Account{}
 		for _, resource := range groupResources {
 			if resource.Type == string(azapi.AzureResourceTypeCognitiveServiceAccount) {
-				account, err := p.azCli.GetCognitiveAccount(
+				account, err := p.azapi.GetCognitiveAccount(
 					ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("getting cognitive account %s: %w", resource.Name, err)
@@ -1270,12 +1269,12 @@ func (p *BicepProvider) purgeKeyVaults(
 
 func (p *BicepProvider) purgeManagedHSMs(
 	ctx context.Context,
-	managedHSMs []*azcli.AzCliManagedHSM,
+	managedHSMs []*azapi.AzCliManagedHSM,
 	skip bool,
 ) error {
 	for _, managedHSM := range managedHSMs {
 		err := p.runPurgeAsStep(ctx, "Managed HSM", managedHSM.Name, func() error {
-			return p.azCli.PurgeManagedHSM(
+			return p.azapi.PurgeManagedHSM(
 				ctx, azure.SubscriptionFromRID(managedHSM.Id), managedHSM.Name, managedHSM.Location)
 		}, skip)
 		if err != nil {
@@ -1305,7 +1304,7 @@ func (p *BicepProvider) purgeCognitiveAccounts(
 		}
 
 		err := p.runPurgeAsStep(ctx, "Cognitive Account", *accountName, func() error {
-			return p.azCli.PurgeCognitiveAccount(
+			return p.azapi.PurgeCognitiveAccount(
 				ctx, azure.SubscriptionFromRID(*accountId), *location, cogAccount.resourceGroup, *accountName)
 		}, skip)
 		if err != nil {
@@ -1334,13 +1333,13 @@ func (p *BicepProvider) runPurgeAsStep(
 func (p *BicepProvider) getAppConfigsToPurge(
 	ctx context.Context,
 	groupedResources map[string][]*azapi.Resource,
-) ([]*azcli.AzCliAppConfig, error) {
-	configs := []*azcli.AzCliAppConfig{}
+) ([]*azapi.AzCliAppConfig, error) {
+	configs := []*azapi.AzCliAppConfig{}
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(azapi.AzureResourceTypeAppConfig) {
-				config, err := p.azCli.GetAppConfig(
+				config, err := p.azapi.GetAppConfig(
 					ctx,
 					azure.SubscriptionFromRID(resource.Id),
 					resourceGroup,
@@ -1363,13 +1362,13 @@ func (p *BicepProvider) getAppConfigsToPurge(
 func (p *BicepProvider) getApiManagementsToPurge(
 	ctx context.Context,
 	groupedResources map[string][]*azapi.Resource,
-) ([]*azcli.AzCliApim, error) {
-	apims := []*azcli.AzCliApim{}
+) ([]*azapi.AzCliApim, error) {
+	apims := []*azapi.AzCliApim{}
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(azapi.AzureResourceTypeApim) {
-				apim, err := p.azCli.GetApim(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				apim, err := p.azapi.GetApim(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing api management service %s properties: %w", resource.Name, err)
 				}
@@ -1397,12 +1396,12 @@ func (p *BicepProvider) getApiManagementsToPurge(
 // on this feature.
 func (p *BicepProvider) purgeAppConfigs(
 	ctx context.Context,
-	appConfigs []*azcli.AzCliAppConfig,
+	appConfigs []*azapi.AzCliAppConfig,
 	skip bool,
 ) error {
 	for _, appConfig := range appConfigs {
 		err := p.runPurgeAsStep(ctx, "app config", appConfig.Name, func() error {
-			return p.azCli.PurgeAppConfig(
+			return p.azapi.PurgeAppConfig(
 				ctx, azure.SubscriptionFromRID(appConfig.Id), appConfig.Name, appConfig.Location)
 		}, skip)
 		if err != nil {
@@ -1415,12 +1414,12 @@ func (p *BicepProvider) purgeAppConfigs(
 
 func (p *BicepProvider) purgeAPIManagement(
 	ctx context.Context,
-	apims []*azcli.AzCliApim,
+	apims []*azapi.AzCliApim,
 	skip bool,
 ) error {
 	for _, apim := range apims {
 		err := p.runPurgeAsStep(ctx, "apim", apim.Name, func() error {
-			return p.azCli.PurgeApim(ctx, azure.SubscriptionFromRID(apim.Id), apim.Name, apim.Location)
+			return p.azapi.PurgeApim(ctx, azure.SubscriptionFromRID(apim.Id), apim.Name, apim.Location)
 		}, skip)
 		if err != nil {
 			return fmt.Errorf("purging api management service %s: %w", apim.Name, err)
@@ -2061,7 +2060,7 @@ func isValueAssignableToParameterType(paramType provisioning.ParameterType, valu
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
 func NewBicepProvider(
-	azCli azcli.AzCli,
+	azapi *azapi.AzureClient,
 	bicepCli *bicep.Cli,
 	resourceService *azapi.ResourceService,
 	deploymentManager *infra.DeploymentManager,
@@ -2077,7 +2076,7 @@ func NewBicepProvider(
 		envManager:        envManager,
 		env:               env,
 		console:           console,
-		azCli:             azCli,
+		azapi:             azapi,
 		bicepCli:          bicepCli,
 		resourceService:   resourceService,
 		deploymentManager: deploymentManager,

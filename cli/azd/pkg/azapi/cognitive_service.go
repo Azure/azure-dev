@@ -1,4 +1,4 @@
-package azcli
+package azapi
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 )
 
 // GetCognitiveAccount finds the cognitive account within a subscription
-func (cli *azCli) GetCognitiveAccount(
+func (cli *AzureClient) GetCognitiveAccount(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -27,7 +27,7 @@ func (cli *azCli) GetCognitiveAccount(
 }
 
 // PurgeCognitiveAccount starts purge operation and wait until it is completed.
-func (cli *azCli) PurgeCognitiveAccount(
+func (cli *AzureClient) PurgeCognitiveAccount(
 	ctx context.Context, subscriptionId, location, resourceGroup, accountName string) error {
 	client, err := cli.createDeletedCognitiveAccountClient(ctx, subscriptionId)
 	if err != nil {
@@ -47,7 +47,7 @@ func (cli *azCli) PurgeCognitiveAccount(
 	return nil
 }
 
-func (cli *azCli) createCognitiveAccountClient(
+func (cli *AzureClient) createCognitiveAccountClient(
 	ctx context.Context, subscriptionId string) (*armcognitiveservices.AccountsClient, error) {
 	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
@@ -62,7 +62,7 @@ func (cli *azCli) createCognitiveAccountClient(
 	return client, nil
 }
 
-func (cli *azCli) createDeletedCognitiveAccountClient(
+func (cli *AzureClient) createDeletedCognitiveAccountClient(
 	ctx context.Context, subscriptionId string) (*armcognitiveservices.DeletedAccountsClient, error) {
 	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {

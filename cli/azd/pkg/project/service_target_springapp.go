@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 const (
@@ -31,7 +30,7 @@ type SpringOptions struct {
 type springAppTarget struct {
 	env           *environment.Environment
 	envManager    environment.Manager
-	springService azcli.SpringService
+	springService azapi.SpringService
 }
 
 // NewSpringAppTarget creates the spring app service target.
@@ -41,7 +40,7 @@ type springAppTarget struct {
 func NewSpringAppTarget(
 	env *environment.Environment,
 	envManager environment.Manager,
-	springService azcli.SpringService,
+	springService azapi.SpringService,
 ) ServiceTarget {
 	return &springAppTarget{
 		env:           env,

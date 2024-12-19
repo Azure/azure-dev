@@ -15,13 +15,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
 )
@@ -30,8 +31,9 @@ type ContainerHelper struct {
 	env                      *environment.Environment
 	envManager               environment.Manager
 	remoteBuildManager       *containerregistry.RemoteBuildManager
-	containerRegistryService azcli.ContainerRegistryService
+	containerRegistryService azapi.ContainerRegistryService
 	docker                   *docker.Cli
+	dotNetCli                *dotnet.Cli
 	clock                    clock.Clock
 	console                  input.Console
 	cloud                    *cloud.Cloud
@@ -41,9 +43,10 @@ func NewContainerHelper(
 	env *environment.Environment,
 	envManager environment.Manager,
 	clock clock.Clock,
-	containerRegistryService azcli.ContainerRegistryService,
+	containerRegistryService azapi.ContainerRegistryService,
 	remoteBuildManager *containerregistry.RemoteBuildManager,
 	docker *docker.Cli,
+	dotNetCli *dotnet.Cli,
 	console input.Console,
 	cloud *cloud.Cloud,
 ) *ContainerHelper {
@@ -53,6 +56,7 @@ func NewContainerHelper(
 		remoteBuildManager:       remoteBuildManager,
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
+		dotNetCli:                dotNetCli,
 		clock:                    clock,
 		console:                  console,
 		cloud:                    cloud,
@@ -194,6 +198,10 @@ func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceCon
 		return []tools.ExternalTool{}
 	}
 
+	if useDotnetPublishForDockerBuild(serviceConfig) {
+		return []tools.ExternalTool{ch.dotNetCli}
+	}
+
 	return []tools.ExternalTool{ch.docker}
 }
 
@@ -224,13 +232,13 @@ func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-) (*azcli.DockerCredentials, error) {
+) (*azapi.DockerCredentials, error) {
 	loginServer, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	var credential *azcli.DockerCredentials
+	var credential *azapi.DockerCredentials
 	credentialsError := retry.Do(
 		ctx,
 		// will retry just once after 1 minute based on:
@@ -270,6 +278,8 @@ func (ch *ContainerHelper) Deploy(
 
 	if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress)
+	} else if useDotnetPublishForDockerBuild(serviceConfig) {
+		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress)
 	} else {
 		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress)
 	}
@@ -382,7 +392,8 @@ func (ch *ContainerHelper) runLocalBuild(
 	return remoteImage, nil
 }
 
-// runLocalBuild builds the image using a remote azure container registry and tags it. It returns the full remote image name.
+// runRemoteBuild builds the image using a remote azure container registry and tags it.
+// It returns the full remote image name.
 func (ch *ContainerHelper) runRemoteBuild(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -471,6 +482,41 @@ func (ch *ContainerHelper) runRemoteBuild(
 	}
 
 	return imageName, nil
+}
+
+// runDotnetPublish builds and publishes the container image using `dotnet publish`. It returns the full remote image name.
+func (ch *ContainerHelper) runDotnetPublish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	target *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (string, error) {
+	progress.SetProgress(NewServiceProgress("Logging into registry"))
+
+	dockerCreds, err := ch.Credentials(ctx, serviceConfig, target)
+	if err != nil {
+		return "", fmt.Errorf("logging in to registry: %w", err)
+	}
+
+	progress.SetProgress(NewServiceProgress("Publishing container image"))
+
+	imageName := fmt.Sprintf("%s:%s",
+		ch.DefaultImageName(serviceConfig),
+		ch.DefaultImageTag())
+
+	_, err = ch.dotNetCli.PublishContainer(
+		ctx,
+		serviceConfig.Path(),
+		"Release",
+		imageName,
+		dockerCreds.LoginServer,
+		dockerCreds.Username,
+		dockerCreds.Password)
+	if err != nil {
+		return "", fmt.Errorf("publishing container: %w", err)
+	}
+
+	return fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName), nil
 }
 
 type dockerDeployResult struct {

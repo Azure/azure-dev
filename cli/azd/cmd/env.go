@@ -451,6 +451,10 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
+	if err := ef.projectManager.EnsureAllTools(ctx, ef.projectConfig, nil); err != nil {
+		return nil, err
+	}
+
 	infra, err := ef.importManager.ProjectInfrastructure(ctx, ef.projectConfig)
 	if err != nil {
 		return nil, err

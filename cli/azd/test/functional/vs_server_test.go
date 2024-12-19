@@ -221,6 +221,10 @@ func Test_CLI_VsServer(t *testing.T) {
 				cmd.Env = append(cmd.Env, pathString)
 			}
 
+			if tt.IsLive {
+				defer cleanupDeployments(ctx, t, cli, session, envName)
+			}
+
 			var stdout bytes.Buffer
 			cmd.Stdout = io.MultiWriter(&stdout, &logWriter{initialTime: time.Now(), t: t, prefix: "[svr-out] "})
 			cmd.Stderr = &logWriter{initialTime: time.Now(), t: t, prefix: "[svr-err] "}

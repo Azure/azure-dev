@@ -306,6 +306,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 				strings.Contains(req.URL.Path, "/azure-dev")) ||
 			strings.Contains(req.URL.Host, "azure-dev.azureedge.net") ||
 			strings.Contains(req.URL.Host, "azdrelease.azureedge.net") ||
+			strings.Contains(req.URL.Host, "azd-release-gfgac2cmf7b8cuay.b02.azurefd.net") ||
 			strings.Contains(req.URL.Host, "default.exp-tas.com") ||
 			(strings.Contains(req.URL.Host, "dev.azure.com") &&
 				strings.Contains(req.URL.Path, "/oidctoken"))

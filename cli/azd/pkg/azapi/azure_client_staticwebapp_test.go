@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
-
-package azcli
+package azapi
 
 import (
 	"context"
@@ -18,7 +17,7 @@ import (
 func Test_GetStaticWebAppProperties(t *testing.T) {
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -45,7 +44,7 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -66,7 +65,7 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -101,7 +100,7 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -128,7 +127,7 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 func Test_GetStaticWebAppApiKey(t *testing.T) {
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -156,7 +155,7 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		azCli := newAzCliFromMockContext(mockContext)
+		azCli := newAzureClientFromMockContext(mockContext)
 		ran := false
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {

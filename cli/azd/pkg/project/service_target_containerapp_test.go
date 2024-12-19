@@ -19,11 +19,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -132,6 +132,7 @@ func createContainerAppServiceTarget(
 	env *environment.Environment,
 ) ServiceTarget {
 	dockerCli := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
@@ -146,7 +147,7 @@ func createContainerAppServiceTarget(
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
 	)
-	containerRegistryService := azcli.NewContainerRegistryService(
+	containerRegistryService := azapi.NewContainerRegistryService(
 		credentialProvider,
 		dockerCli,
 		mockContext.ArmClientOptions,
@@ -163,10 +164,11 @@ func createContainerAppServiceTarget(
 		containerRegistryService,
 		remoteBuildManager,
 		dockerCli,
+		dotnetCli,
 		mockContext.Console,
 		cloud.AzurePublic(),
 	)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	resourceService := azapi.NewResourceService(credentialProvider, mockContext.ArmClientOptions)
 	azureResourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
 	resourceManager := NewResourceManager(env, deploymentService, resourceService, azureResourceManager)

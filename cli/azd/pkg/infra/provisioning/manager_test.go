@@ -17,10 +17,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
@@ -262,8 +261,8 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	mockContext.Container.MustRegisterSingleton(func() *environment.Environment {
 		return env
 	})
-	mockContext.Container.MustRegisterSingleton(func() azcli.AzCli {
-		return mockazcli.NewAzCliFromMockContext(mockContext)
+	mockContext.Container.MustRegisterSingleton(func() *azapi.AzureClient {
+		return mockazapi.NewAzureClientFromMockContext(mockContext)
 	})
 
 	mockContext.Container.MustRegisterSingleton(func() clock.Clock {

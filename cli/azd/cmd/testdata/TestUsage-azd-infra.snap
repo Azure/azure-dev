@@ -1,0 +1,21 @@
+
+Manage your Azure infrastructure.
+
+Usage
+  azd infra [command]
+
+Available Commands
+  synth	: Write IaC for your project to disk, allowing you to manage it by hand. (Alpha)
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd infra in your web browser.
+    -h, --help       	: Gets help for infra.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Use azd infra [command] --help to view examples and more information about a specific command.
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
+

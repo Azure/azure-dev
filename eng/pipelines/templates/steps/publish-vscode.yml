@@ -3,6 +3,7 @@ parameters:
   VsixVersion: $(VSIX_VERSION)
   UpdateShield: false
   StorageContainerName: azd
+  PublishToMarketplace: false
 
 steps:
   - task: DownloadPipelineArtifact@2
@@ -26,8 +27,13 @@ steps:
   - pwsh: |
       New-Item -ItemType Directory -Path release -Force
       Copy-Item signed/vsix/*.vsix release/
+      Copy-Item signed/vsix/*.p7s release/
+      Copy-Item signed/vsix/*.manifest release/
       Write-Host "Signed:"
       Get-ChildItem signed/
+
+      Write-Host "Release:"
+      Get-ChildItem release/
     displayName: Copy signed vsix to release location
 
   - task: AzurePowerShell@5
@@ -76,3 +82,20 @@ steps:
       displayName: Create GitHub Release and upload artifacts
       env:
         GH_TOKEN: $(azuresdk-github-pat)
+
+  - ${{ if eq('true', parameters.PublishToMarketplace) }}:
+    - task: AzureCLI@2
+      displayName: Publish (using vsce)
+      inputs:
+        azureSubscription: azure-sdk-vsmarketplace
+        scriptType: pscore
+        scriptLocation: inlineScript
+        workingDirectory: release
+        inlineScript: |
+          npm install -g @vscode/vsce
+          $baseName = "azure-dev-${{ parameters.VsixVersion }}"
+          vsce publish `
+            --azure-credential `
+            --packagePath "$($baseName).vsix" `
+            --manifestPath "$($baseName).manifest" `
+            --signaturePath "$($baseName).p7s"

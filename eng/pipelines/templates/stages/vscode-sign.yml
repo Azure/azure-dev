@@ -22,10 +22,19 @@ stages:
               artifact: vsix
               path: vsix
 
+          - task: PowerShell@2
+            inputs:
+              targetType: filePath
+              filePath: eng/scripts/New-VsixSigningManifest.ps1
+              arguments: -Path $(Build.SourcesDirectory)\vsix
+              pwsh: true
+            displayName: Create signing manifest
+
           - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
             - template: pipelines/steps/azd-vscode-signing.yml@azure-sdk-build-tools
               parameters:
-                VsixPath: vsix
+                Path: $(Build.SourcesDirectory)\vsix
+                Pattern: '*.signature.p7s'
 
           - ${{ else }}:
             - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package azcli
+package azapi
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/stretchr/testify/require"
@@ -39,7 +38,7 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 	var rawResponse *http.Response
 	ctx := runtime.WithCaptureResponse(*mockContext.Context, &rawResponse)
 
-	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	resourceService := NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	// We don't care about the actual response or if an error occurred
 	// Any API call that leverages the Go SDK is fine
 	_, _ = resourceService.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID", "API_VERSION")
@@ -74,7 +73,7 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 	var rawResponse *http.Response
 	ctx := runtime.WithCaptureResponse(*mockContext.Context, &rawResponse)
 
-	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	resourceService := NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	// We don't care about the actual response or if an error occurred
 	// Any API call that leverages the Go SDK is fine
 	_, _ = resourceService.GetResource(ctx, "SUBSCRIPTION_ID", "RESOURCE_ID", "API_VERSION")
@@ -88,8 +87,8 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 	require.Contains(t, userAgent[0], "azdev")
 }
 
-func newAzCliFromMockContext(mockContext *mocks.MockContext) AzCli {
-	return NewAzCli(
+func newAzureClientFromMockContext(mockContext *mocks.MockContext) *AzureClient {
+	return NewAzureClient(
 		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
 		}),

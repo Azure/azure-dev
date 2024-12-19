@@ -47,7 +47,8 @@ func newInfraSynthCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "synth",
 		Short: fmt.Sprintf(
-			"Write IaC for your project to disk, allowing you to manage it by hand. %s", output.WithWarningFormat("(Beta)")),
+			"Write IaC for your project to disk, allowing you to manage it by hand. %s",
+			output.WithWarningFormat("(Alpha)")),
 	}
 }
 

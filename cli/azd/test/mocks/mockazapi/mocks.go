@@ -1,4 +1,4 @@
-package mockazcli
+package mockazapi
 
 import (
 	"context"
@@ -6,16 +6,15 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/benbjohnson/clock"
 )
 
-// NewAzCliFromMockContext creates a new instance of AzCli, configured to use the credential and pipeline from the
-// provided mock context.
-func NewAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
-	return azcli.NewAzCli(
+// NewAzureClientFromMockContext creates a new instance of AzureClient, configured to use the credential and pipeline from
+// the provided mock context.
+func NewAzureClientFromMockContext(mockContext *mocks.MockContext) *azapi.AzureClient {
+	return azapi.NewAzureClient(
 		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
 		}),

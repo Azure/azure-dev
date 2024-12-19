@@ -1,0 +1,20 @@
+version: "1.0"
+tool: dotnet
+interactions:
+    - id: 0
+      args:
+        - publish
+        - /private/var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/Test_CLI_Up_Down_ContainerAppDotNetPublish3940537069/001/src/dotnet
+        - -r
+        - linux-x64
+        - -c
+        - Release
+        - /t:PublishContainer
+        - -p:ContainerRepository=containerapp/web-azdtest-de207ca
+        - -p:ContainerImageTag=azd-deploy-1732146560
+        - -p:ContainerRegistry=crtf5bjllihraai.azurecr.io
+        - --getProperty:GeneratedContainerConfiguration
+      exitCode: 0
+      stdout: |
+        {"config":{"ExposedPorts":{"8080/tcp":{}},"Labels":{"org.opencontainers.image.created":"2024-11-20T23:52:02.8460760Z","org.opencontainers.artifact.created":"2024-11-20T23:52:02.8460760Z","org.opencontainers.image.authors":"webapp","org.opencontainers.image.version":"1.0.0","org.opencontainers.image.base.name":"mcr.microsoft.com/dotnet/aspnet:8.0","net.dot.runtime.majorminor":"8.0","net.dot.sdk.version":"9.0.100-rc.2.24474.11","org.opencontainers.image.base.digest":"sha256:3e2d76f7d3310b31e6400154e8f718600138db5d5ec9c37748bbda6922182ead"},"Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","APP_UID=1654","ASPNETCORE_HTTP_PORTS=8080","DOTNET_RUNNING_IN_CONTAINER=true","DOTNET_VERSION=8.0.11","ASPNET_VERSION=8.0.11"],"WorkingDir":"/app/","Entrypoint":["dotnet","/app/webapp.dll"],"User":"1654"},"created":"2024-11-20T23:52:04.0532130Z","rootfs":{"type":"layers","diff_ids":["sha256:c3548211b8264f8bfa47a6727043a64f1791b82ac965a284a7ea187e971a95e2","sha256:24716a9c28f5c0fcc7713347708e93e9531a58629fc22b47bd45f19b591c7453","sha256:2ffebcb9c50a8e37858d22d39df5e8a8004b2e12923ee60c6344162427424960","sha256:dec72eb2a8b47bbe9e0ffc56fb9c1a9e577e1b9febb385e836ee0977254b7c0d","sha256:20c9409270c12ce0c1bb3271d534508956fdc68f489365ffbb40a14532f86e88","sha256:9e43e3f4b30f02815d600b02af454c449b59d5c4dd5f3afa4e49c3ffd6ecd025","sha256:1f45fbd6c62e42e4da992eaf73808abd3b9fbf40cd08e7cebf3a33cf3eee0c10"]},"architecture":"amd64","os":"linux","history":[{"comment":"buildkit.dockerfile.v0","created":"2024-11-11T00:00:00.0000000Z","created_by":"ADD rootfs.tar.xz / # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-11-11T00:00:00.0000000Z","created_by":"CMD [\u0022bash\u0022]","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-11-12T18:41:09.3239341Z","created_by":"ENV APP_UID=1654 ASPNETCORE_HTTP_PORTS=8080 DOTNET_RUNNING_IN_CONTAINER=true","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-11-12T18:41:09.3239341Z","created_by":"RUN /bin/sh -c apt-get update     \u0026\u0026 apt-get install -y --no-install-recommends         ca-certificates                 libc6         libgcc-s1         libicu72         libssl3         libstdc\u002B\u002B6         tzdata         zlib1g     \u0026\u0026 rm -rf /var/lib/apt/lists/* # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-11-12T18:41:10.7740643Z","created_by":"RUN /bin/sh -c groupadd         --gid=$APP_UID         app     \u0026\u0026 useradd -l         --uid=$APP_UID         --gid=$APP_UID         --create-home         app # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-11-12T18:41:16.8668835Z","created_by":"ENV DOTNET_VERSION=8.0.11","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-11-12T18:41:16.8668835Z","created_by":"COPY /dotnet /usr/share/dotnet # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-11-12T18:41:17.7626695Z","created_by":"RUN /bin/sh -c ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2024-11-12T18:41:23.2518218Z","created_by":"ENV ASPNET_VERSION=8.0.11","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2024-11-12T18:41:23.2518218Z","created_by":"COPY /shared/Microsoft.AspNetCore.App /usr/share/dotnet/shared/Microsoft.AspNetCore.App # buildkit"},{"author":".NET SDK","created":"2024-11-20T23:52:04.0531950Z","created_by":".NET SDK Container Tooling, version 9.0.100-rc.2.24474.11\u002B315e1305dbe1a5ef5870faab5dc12d3a375f61eb"}]}
+      stderr: ""

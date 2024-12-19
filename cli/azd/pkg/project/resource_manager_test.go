@@ -14,7 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,7 +98,7 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 				mockContext.SubscriptionCredentialProvider,
 				mockContext.ArmClientOptions,
 			)
-			deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+			deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 
 			if tt.init != nil {
 				tt.init(mockContext)

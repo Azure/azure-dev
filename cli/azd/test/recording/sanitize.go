@@ -56,8 +56,8 @@ func sanitizeContainerAppListSecrets(i *cassette.Interaction) error {
 					// Redis requirepass. Sanitize the password, remove other config.
 					if strings.Contains(val, "requirepass ") {
 						body.Value[i].Value = to.Ptr("requirepass SANITIZED")
+						continue
 					}
-					continue
 				}
 
 				body.Value[i].Value = to.Ptr("SANITIZED")

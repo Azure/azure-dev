@@ -1,4 +1,4 @@
-package azcli
+package azapi
 
 import (
 	"context"
@@ -13,7 +13,7 @@ type AzCliApim struct {
 	Location string `json:"location"`
 }
 
-func (cli *azCli) GetApim(
+func (cli *AzureClient) GetApim(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -36,7 +36,7 @@ func (cli *azCli) GetApim(
 	}, nil
 }
 
-func (cli *azCli) PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error {
+func (cli *AzureClient) PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error {
 	apimClient, err := cli.createApimDeletedClient(ctx, subscriptionId)
 
 	if err != nil {
@@ -57,7 +57,7 @@ func (cli *azCli) PurgeApim(ctx context.Context, subscriptionId string, apimName
 }
 
 // Creates a APIM soft-deleted service client for ARM control plane operations
-func (cli *azCli) createApimDeletedClient(
+func (cli *AzureClient) createApimDeletedClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armapimanagement.DeletedServicesClient, error) {
@@ -75,7 +75,7 @@ func (cli *azCli) createApimDeletedClient(
 }
 
 // Creates a APIM service client for ARM control plane operations
-func (cli *azCli) createApimClient(
+func (cli *AzureClient) createApimClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armapimanagement.ServiceClient, error) {

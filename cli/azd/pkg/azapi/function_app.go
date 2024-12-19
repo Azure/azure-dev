@@ -1,4 +1,4 @@
-package azcli
+package azapi
 
 import (
 	"context"
@@ -16,7 +16,7 @@ type AzCliFunctionAppProperties struct {
 	HostNames []string
 }
 
-func (cli *azCli) GetFunctionAppProperties(
+func (cli *AzureClient) GetFunctionAppProperties(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -32,7 +32,7 @@ func (cli *azCli) GetFunctionAppProperties(
 	}, nil
 }
 
-func (cli *azCli) DeployFunctionAppUsingZipFile(
+func (cli *AzureClient) DeployFunctionAppUsingZipFile(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,

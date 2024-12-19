@@ -73,57 +73,6 @@ stages:
                       UploadMsi: true
                       PublishBrewFormula: true
 
-        - deployment: Publish_Container
-          dependsOn: Publish_Release
-          condition: >-
-            and(
-              succeeded(),
-              ne('true', variables['Skip.Publish'])
-            )
-          environment: azure-dev
-
-          pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            image: azsdk-pool-mms-ubuntu-2004-1espt
-            os: linux
-
-          templateContext:
-            inputs:
-              - input: checkout
-                repository: self
-
-
-          strategy:
-            runOnce:
-              deploy:
-                steps:
-                  - task: PowerShell@2
-                    inputs:
-                      pwsh: true
-                      targetType: filePath
-                      filePath: eng/scripts/Set-CliVersionVariable.ps1
-                    displayName: Set CLI_VERSION
-
-                  - pwsh: |
-                      # Initial tag
-                      $dockerTags = '$(CLI_VERSION)'
-
-                      $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-                        -CliVersion '$(CLI_VERSION)'
-
-                      if ($isPublishingGa) {
-                        $dockerTags += ";latest"
-                      }
-
-                      Write-Host "Setting DockerImageTags to $dockerTags"
-                      Write-Host "###vso[task.setvariable variable=DockerImageTags]$dockerTags"
-                    displayName: Set DockerImageTags
-
-                  - template: /eng/pipelines/templates/steps/publish-cli-container.yml
-                    parameters:
-                      DockerImageTags: $(DockerImageTags)
-                      ReleaseSyndicatedDockerContainer: true
-
         - deployment: Publish_Choco
           dependsOn: Publish_Release
           condition: >-
@@ -389,13 +338,6 @@ stages:
                 PublishShield: false
                 UploadMsi: true
 
-            - template: /eng/pipelines/templates/steps/publish-cli-container.yml
-              parameters:
-                DockerImageTags: daily;$(CLI_VERSION)
-                ReleaseSyndicatedDockerContainer: false
-                # Artifacts are already downloaded in publish-cli.yml
-                DownloadArtifacts: false
-
       - job: Publish_For_PR
         condition: >-
           and(
@@ -438,14 +380,6 @@ stages:
               PublishUploadLocations: pr/$(PRNumber)
               UploadInstaller: true
               UploadMsi: true
-
-          - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
-            - template: /eng/pipelines/templates/steps/publish-cli-container.yml
-              parameters:
-                DockerImageTags: pr-$(PRNumber)
-                ReleaseSyndicatedDockerContainer: false
-                # Artifacts are already downloaded in publish-cli.yml
-                DownloadArtifacts: false
 
           - pwsh: |
               $urlBase = "$(publish-storage-location)/azd/standalone/pr/$(PRNumber)"

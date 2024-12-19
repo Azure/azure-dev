@@ -14,20 +14,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
 	env *environment.Environment
-	cli azcli.AzCli
+	cli *azapi.AzureClient
 }
 
 // NewFunctionAppTarget creates a new instance of the Function App target
 func NewFunctionAppTarget(
 	env *environment.Environment,
-	azCli azcli.AzCli,
+	azCli *azapi.AzureClient,
 ) ServiceTarget {
 	return &functionAppTarget{
 		env: env,

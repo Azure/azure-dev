@@ -15,14 +15,6 @@ repo:
       branch: staging
 
   assets:
-    # AzDo workflows for bicep
-    - from: ../../common/.azdo/pipelines/terraform/azure-dev.yml
-      to: ./.azdo/pipelines/azure-dev.yml
-
-    # Github workflows for bicep
-    - from: ../../common/.github/workflows/terraform
-      to: ./.github/workflows
-
     # .gitignore
     - from: ../../common/.gitignore
       to: ./.gitignore

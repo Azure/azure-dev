@@ -22,6 +22,9 @@ Global Flags
 Use azd template source [command] --help to view examples and more information about a specific command.
 
 Examples
+  Add a new GitHub template source.
+    azd template source add <key> --type gh --location <GitHub URL>
+
   Add a new file template source.
     azd template source add <key> --type file --location <path>
 

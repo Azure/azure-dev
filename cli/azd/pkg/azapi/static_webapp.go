@@ -1,4 +1,4 @@
-package azcli
+package azapi
 
 import (
 	"context"
@@ -17,7 +17,7 @@ type AzCliStaticWebAppEnvironmentProperties struct {
 	Status   string
 }
 
-func (cli *azCli) GetStaticWebAppProperties(
+func (cli *AzureClient) GetStaticWebAppProperties(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -38,7 +38,7 @@ func (cli *azCli) GetStaticWebAppProperties(
 	}, nil
 }
 
-func (cli *azCli) GetStaticWebAppEnvironmentProperties(
+func (cli *AzureClient) GetStaticWebAppEnvironmentProperties(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -61,7 +61,7 @@ func (cli *azCli) GetStaticWebAppEnvironmentProperties(
 	}, nil
 }
 
-func (cli *azCli) GetStaticWebAppApiKey(
+func (cli *AzureClient) GetStaticWebAppApiKey(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -85,7 +85,7 @@ func (cli *azCli) GetStaticWebAppApiKey(
 	return apiKey, nil
 }
 
-func (cli *azCli) createStaticSitesClient(
+func (cli *AzureClient) createStaticSitesClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappservice.StaticSitesClient, error) {

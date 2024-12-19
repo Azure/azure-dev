@@ -59,13 +59,16 @@ const (
 	PyFlask   Dependency = "flask"
 	PyDjango  Dependency = "django"
 	PyFastApi Dependency = "fastapi"
+
+	SpringFrontend Dependency = "springFrontend"
 )
 
 var WebUIFrameworks = map[Dependency]struct{}{
-	JsReact:   {},
-	JsAngular: {},
-	JsJQuery:  {},
-	JsVite:    {},
+	JsReact:        {},
+	JsAngular:      {},
+	JsJQuery:       {},
+	JsVite:         {},
+	SpringFrontend: {},
 }
 
 func (f Dependency) Language() Language {
@@ -112,6 +115,7 @@ const (
 	DbMySql     DatabaseDep = "mysql"
 	DbSqlServer DatabaseDep = "sqlserver"
 	DbRedis     DatabaseDep = "redis"
+	DbCosmos    DatabaseDep = "cosmos"
 )
 
 func (db DatabaseDep) Display() string {
@@ -126,10 +130,59 @@ func (db DatabaseDep) Display() string {
 		return "SQL Server"
 	case DbRedis:
 		return "Redis"
+	case DbCosmos:
+		return "Cosmos DB"
 	}
 
 	return ""
 }
+
+//type AzureDep string
+
+type AzureDep interface {
+	ResourceDisplay() string
+}
+
+type AzureDepServiceBus struct {
+	Queues []string
+	IsJms  bool
+}
+
+func (a AzureDepServiceBus) ResourceDisplay() string {
+	return "Azure Service Bus"
+}
+
+type AzureDepEventHubs struct {
+	EventHubsNamePropertyMap map[string]string
+	UseKafka                 bool
+	SpringBootVersion        string
+}
+
+func (a AzureDepEventHubs) ResourceDisplay() string {
+	return "Azure Event Hubs"
+}
+
+type AzureDepStorageAccount struct {
+	ContainerNamePropertyMap map[string]string
+}
+
+func (a AzureDepStorageAccount) ResourceDisplay() string {
+	return "Azure Storage Account"
+}
+
+type Metadata struct {
+	ApplicationName                                         string
+	DatabaseNameInPropertySpringDatasourceUrl               map[DatabaseDep]string
+	ContainsDependencySpringCloudAzureStarter               bool
+	ContainsDependencySpringCloudAzureStarterJdbcPostgresql bool
+	ContainsDependencySpringCloudAzureStarterJdbcMysql      bool
+	ContainsDependencySpringCloudEurekaServer               bool
+	ContainsDependencySpringCloudEurekaClient               bool
+	ContainsDependencySpringCloudConfigServer               bool
+	ContainsDependencySpringCloudConfigClient               bool
+}
+
+const UnknownSpringBootVersion string = "unknownSpringBootVersion"
 
 type Project struct {
 	// The language associated with the project.
@@ -141,8 +194,17 @@ type Project struct {
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
 
+	// Experimental: Azure dependencies inferred through heuristics while scanning dependencies in the project.
+	AzureDeps []AzureDep
+
+	// Experimental: Metadata inferred through heuristics while scanning the project.
+	Metadata Metadata
+
 	// The path to the project directory.
 	Path string
+
+	// Options for the project.
+	Options map[string]interface{}
 
 	// A short description of the detection rule applied.
 	DetectionRule string

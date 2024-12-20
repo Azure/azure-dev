@@ -167,7 +167,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(featureCompose)
 	if composeEnabled && len(projectConfig.Resources) > 0 {
-		return tempInfra(ctx, projectConfig)
+		return tempInfra(ctx, projectConfig, im.dotNetImporter.console)
 	}
 
 	if !composeEnabled && len(projectConfig.Resources) > 0 {
@@ -209,7 +209,7 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 
 	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(featureCompose)
 	if composeEnabled && len(projectConfig.Resources) > 0 {
-		return infraFsForProject(ctx, projectConfig)
+		return infraFsForProject(ctx, projectConfig, im.dotNetImporter.console)
 	}
 
 	if !composeEnabled && len(projectConfig.Resources) > 0 {

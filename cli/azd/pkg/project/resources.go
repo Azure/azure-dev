@@ -5,6 +5,7 @@ package project
 
 import (
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 
 	"github.com/braydonk/yaml"
 )
@@ -22,11 +23,12 @@ func AllResourceTypes() []ResourceType {
 }
 
 const (
-	ResourceTypeDbRedis          ResourceType = "db.redis"
-	ResourceTypeDbPostgres       ResourceType = "db.postgres"
-	ResourceTypeDbMongo          ResourceType = "db.mongo"
-	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
-	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
+	ResourceTypeDbRedis             ResourceType = "db.redis"
+	ResourceTypeDbPostgres          ResourceType = "db.postgres"
+	ResourceTypeDbMongo             ResourceType = "db.mongo"
+	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
+	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
+	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
 )
 
 func (r ResourceType) String() string {
@@ -41,6 +43,8 @@ func (r ResourceType) String() string {
 		return "Container App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
+	case ResourceTypeMessagingServiceBus:
+		return "Service Bus"
 	}
 
 	return ""
@@ -89,6 +93,11 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeMessagingServiceBus:
+		err := marshalRawProps(raw.Props.(ServiceBusProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -128,6 +137,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeMessagingServiceBus:
+		sb := ServiceBusProps{}
+		if err := unmarshalProps(&sb); err != nil {
+			return err
+		}
+		raw.Props = sb
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +169,10 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type ServiceBusProps struct {
+	Queues   []string          `yaml:"queues,omitempty"`
+	IsJms    bool              `yaml:"isJms,omitempty"`
+	AuthType internal.AuthType `yaml:"authType,omitempty"`
 }

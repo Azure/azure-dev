@@ -44,6 +44,10 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 
 var featureCompose = alpha.MustFeatureKey("compose")
 
+var azureDepMap = map[string]struct{}{
+	appdetect.AzureDepServiceBus{}.ResourceDisplay(): {},
+}
+
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
 	ctx context.Context,
@@ -455,6 +459,29 @@ func (i *Initializer) prjConfigFromDetect(
 			dbNames[database] = db.Name
 		}
 
+		for _, azureDepPair := range detect.AzureDeps {
+			azureDep := azureDepPair.first
+			authType, err := chooseAuthTypeByPrompt(
+				azureDep.ResourceDisplay(),
+				[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString},
+				ctx,
+				i.console)
+			if err != nil {
+				return config, err
+			}
+			switch azureDep := azureDep.(type) {
+			case appdetect.AzureDepServiceBus:
+				config.Resources["servicebus"] = &project.ResourceConfig{
+					Type: project.ResourceTypeMessagingServiceBus,
+					Props: project.ServiceBusProps{
+						Queues:   azureDep.Queues,
+						IsJms:    azureDep.IsJms,
+						AuthType: authType,
+					},
+				}
+			}
+		}
+
 		backends := []*project.ResourceConfig{}
 		frontends := []*project.ResourceConfig{}
 
@@ -481,6 +508,13 @@ func (i *Initializer) prjConfigFromDetect(
 				}
 
 				resSpec.Uses = append(resSpec.Uses, dbNames[db])
+			}
+
+			for _, azureDep := range svc.AzureDeps {
+				switch azureDep.(type) {
+				case appdetect.AzureDepServiceBus:
+					resSpec.Uses = append(resSpec.Uses, "servicebus")
+				}
 			}
 
 			resSpec.Name = name
@@ -577,4 +611,43 @@ func ServiceFromDetect(
 	}
 
 	return svc, nil
+}
+
+func chooseAuthTypeByPrompt(
+	name string,
+	authOptions []internal.AuthType,
+	ctx context.Context,
+	console input.Console) (internal.AuthType, error) {
+	var options []string
+	for _, option := range authOptions {
+		options = append(options, internal.GetAuthTypeDescription(option))
+	}
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Choose auth type for " + name + ":",
+		Options: options,
+	})
+	if err != nil {
+		return internal.AuthTypeUnspecified, err
+	}
+	return authOptions[selection], nil
+}
+
+func promptMissingPropertyAndExit(console input.Console, ctx context.Context, key string) {
+	console.Message(ctx, fmt.Sprintf("No value was provided for %s. Please update the configuration file "+
+		"(like application.properties or application.yaml) with a valid value.", key))
+	os.Exit(0)
+}
+
+func distinctValues(input map[string]string) []string {
+	valueSet := make(map[string]struct{})
+	for _, value := range input {
+		valueSet[value] = struct{}{}
+	}
+
+	var result []string
+	for value := range valueSet {
+		result = append(result, value)
+	}
+
+	return result
 }

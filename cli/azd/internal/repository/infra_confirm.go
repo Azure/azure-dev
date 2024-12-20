@@ -85,18 +85,23 @@ func (i *Initializer) infraSpecFromDetect(
 
 			switch db {
 			case appdetect.DbMongo:
-				serviceSpec.DbCosmosMongo = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbCosmosMongo.DatabaseName,
-				}
+				err = scaffold.BindToMongoDb(&serviceSpec, spec.DbCosmosMongo)
 			case appdetect.DbPostgres:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
-				}
+				err = scaffold.BindToPostgres(&serviceSpec, spec.DbPostgres)
 			case appdetect.DbRedis:
-				serviceSpec.DbRedis = &scaffold.DatabaseReference{
-					DatabaseName: "redis",
-				}
+				err = scaffold.BindToRedis(&serviceSpec, spec.DbRedis)
 			}
+		}
+
+		for _, azureDep := range svc.AzureDeps {
+			switch azureDep.(type) {
+			case appdetect.AzureDepStorageAccount:
+				err = scaffold.BindToStorageAccount(&serviceSpec, spec.AzureStorageAccount)
+			}
+		}
+
+		if err != nil {
+			return scaffold.InfraSpec{}, err
 		}
 		spec.Services = append(spec.Services, serviceSpec)
 	}

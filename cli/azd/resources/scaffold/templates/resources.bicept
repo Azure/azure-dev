@@ -112,7 +112,7 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     tier: 'Burstable'
     // Non-required parameters
     administratorLogin: databaseUser
-    administratorLoginPassword: databasePassword
+    administratorLoginPassword: postgreSqlDatabasePassword
     geoRedundantBackup: 'Disabled'
     passwordAuth:'Enabled'
     firewallRules: [
@@ -172,7 +172,53 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 }
 {{- end}}
 
-{{- range .Services}}
+
+{{- if .AzureServiceBus }}
+
+module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.10.0' = {
+  name: 'serviceBusNamespace'
+  params: {
+    // Required parameters
+    name: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    // Non-required parameters
+    location: location
+    roleAssignments: [
+      {{- range .Services}}
+      {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "userAssignedManagedIdentity")) }}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
+      }
+      {{- end}}
+      {{- end}}
+    ]
+    {{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "connectionString")) }}
+    disableLocalAuth: false
+    {{- end}}
+    queues: [
+      {{- range $queue := .AzureServiceBus.Queues}}
+      {
+        name: '{{ $queue }}'
+      }
+      {{- end}}
+    ]
+  }
+}
+
+{{- if (and .AzureServiceBus (eq .AzureServiceBus.AuthType "connectionString")) }}
+module serviceBusConnectionString './modules/set-servicebus-namespace-connection-string.bicep' = {
+  name: 'serviceBusConnectionString'
+  params: {
+    serviceBusNamespaceName: serviceBusNamespace.outputs.name
+    connectionStringSecretName: 'SERVICEBUS-CONNECTION-STRING'
+    keyVaultName: keyVault.outputs.name
+  }
+}
+{{end}}
+{{end}}
+
+{{- range $service := .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
   name: '{{bicepName .Name}}identity'
@@ -234,41 +280,28 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     scaleMinReplicas: 1
     scaleMaxReplicas: 10
     secrets: {
-      secureList:  union([
-        {{- if .DbCosmosMongo}}
-        {
-          name: 'mongodb-url'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri
-        }
-        {{- end}}
-        {{- if .DbPostgres}}
-        {
-          name: 'db-pass'
-          value: databasePassword
-        }
-        {
-          name: 'db-url'
-          value: 'postgresql://${databaseUser}:${databasePassword}@${postgreServer.outputs.fqdn}:5432/${databaseName}'
-        }
-        {{- end}}
-        {{- if .DbRedis}}
-        {
-          name: 'redis-pass'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
-        }
-        {
-          name: 'redis-url'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
-        }
-        {{- end}}
-      ],
-      map({{bicepName .Name}}Secrets, secret => {
-        name: secret.secretRef
-        value: secret.value
-      }))
+        secureList:  union([
+          {{- range $env := .Envs}}
+          {{- if (eq (toBicepEnv $env).BicepEnvType "keyVaultSecret") }}
+          {
+            name: '{{ (toBicepEnv $env).SecretName }}'
+            identity:{{bicepName $service.Name}}Identity.outputs.resourceId
+            keyVaultUrl: {{ (toBicepEnv $env).SecretValue }}
+          }
+          {{- end}}
+          {{- if (eq (toBicepEnv $env).BicepEnvType "secret") }}
+          {
+            name: '{{ (toBicepEnv $env).SecretName }}'
+            value: {{ (toBicepEnv $env).SecretValue }}
+          }
+          {{- end}}
+          {{- end}}
+        ],
+        map({{bicepName .Name}}Secrets, secret => {
+          name: secret.secretRef
+          value: secret.value
+        })
+      )
     }
     containers: [
       {
@@ -438,7 +471,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
       {{- if .DbPostgres}}
       {
         name: 'db-pass'
-        value: databasePassword
+        value: postgreSqlDatabasePassword
       }
       {{- end}}
     ]

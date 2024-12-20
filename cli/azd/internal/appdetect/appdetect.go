@@ -141,6 +141,9 @@ type Project struct {
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
 
+	// Experimental: Azure dependencies inferred through heuristics while scanning dependencies in the project.
+	AzureDeps []AzureDep
+
 	// The path to the project directory.
 	Path string
 
@@ -149,6 +152,20 @@ type Project struct {
 
 	// If true, the project uses Docker for packaging. This is inferred through the presence of a Dockerfile.
 	Docker *Docker
+}
+
+//type AzureDep string
+
+type AzureDep interface {
+	ResourceDisplay() string
+}
+
+type AzureDepStorageAccount struct {
+	ContainerNamePropertyMap map[string]string
+}
+
+func (a AzureDepStorageAccount) ResourceDisplay() string {
+	return "Azure Storage Account"
 }
 
 func (p *Project) HasWebUIFramework() bool {

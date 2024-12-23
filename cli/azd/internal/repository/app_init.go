@@ -155,7 +155,6 @@ func (i *Initializer) InitFromApp(
 					}
 				}
 			}
-
 			if hasKafkaDep && !prj.Metadata.ContainsDependencySpringCloudAzureStarter {
 				err := processSpringCloudAzureDepByPrompt(i.console, ctx, &projects[index])
 				if err != nil {

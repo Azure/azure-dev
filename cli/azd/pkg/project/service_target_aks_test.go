@@ -26,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
@@ -833,8 +832,8 @@ func createAksServiceTarget(
 		On("GetTargetResource", *mockContext.Context, "SUBSCRIPTION_ID", serviceConfig).
 		Return(targetResource, nil)
 
-	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.ArmClientOptions)
-	containerRegistryService := azcli.NewContainerRegistryService(
+	managedClustersService := azapi.NewManagedClustersService(credentialProvider, mockContext.ArmClientOptions)
+	containerRegistryService := azapi.NewContainerRegistryService(
 		credentialProvider,
 		dockerCli,
 		mockContext.ArmClientOptions,

@@ -6,7 +6,6 @@ Latest builds:
 | ------- | ------- | -------- |
 | azd | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [Windows](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-windows-amd64.zip) &vert; [Linux](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-linux-amd64.tar.gz) &vert; [Mac](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-darwin-amd64.zip) |
 | vscode extension | ![vscode extension version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fvscode%2Flatest%2Fshield.json) | [VSIX](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) |
-| docker image | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [`mcr.microsoft.com/azure-dev-cli-apps:latest`](https://mcr.microsoft.com/en-us/product/azure-dev-cli-apps/about)
 
 The Azure Developer CLI (`azd`) is a developer-centric command-line interface (CLI) tool for creating Azure applications. The goals of the CLI are to:
 

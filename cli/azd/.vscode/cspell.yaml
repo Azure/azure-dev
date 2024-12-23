@@ -1,17 +1,19 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - azcloud
+  - azurefd
   - backoff
   - Canonicalize
+  - chinacloudapi
   - Codespace
   - Codespaces
   - devcontainers
+  # CDN host name
+  - gfgac2cmf7b8cuay
   - goversioninfo
   - nosec
   - Retryable
   - runcontext
-  - azcloud
-  - usgovcloudapi
-  - chinacloudapi
   - unmarshals
   - springframework
   - eventhubs
@@ -22,6 +24,7 @@ words:
   - mysqladmin
   - sjad
   - configserver
+  - usgovcloudapi
 languageSettings:
   - languageId: go
     ignoreRegExpList:

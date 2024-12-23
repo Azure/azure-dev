@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 )
 
 // GetCurrentPrincipalId returns the object id of the current
@@ -16,7 +16,7 @@ import (
 // (via ad sp signed-in-user), falling back to extracting the
 // `oid` claim from an access token a principal can not be
 // obtained in this way.
-func GetCurrentPrincipalId(ctx context.Context, userProfile *azcli.UserProfileService, tenantId string) (string, error) {
+func GetCurrentPrincipalId(ctx context.Context, userProfile *azapi.UserProfileService, tenantId string) (string, error) {
 	principalId, err := userProfile.GetSignedInUserId(ctx, tenantId)
 	if err == nil {
 		return principalId, nil

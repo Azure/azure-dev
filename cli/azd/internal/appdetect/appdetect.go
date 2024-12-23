@@ -141,6 +141,12 @@ type Project struct {
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
 
+	// Experimental: Azure dependencies inferred through heuristics while scanning dependencies in the project.
+	AzureDeps []AzureDep
+
+	// Experimental: Metadata inferred through heuristics while scanning the project.
+	Metadata Metadata
+
 	// The path to the project directory.
 	Path string
 
@@ -150,6 +156,28 @@ type Project struct {
 	// If true, the project uses Docker for packaging. This is inferred through the presence of a Dockerfile.
 	Docker *Docker
 }
+
+//type AzureDep string
+
+type AzureDep interface {
+	ResourceDisplay() string
+}
+
+type AzureDepEventHubs struct {
+	EventHubsNamePropertyMap map[string]string
+	UseKafka                 bool
+	SpringBootVersion        string
+}
+
+func (a AzureDepEventHubs) ResourceDisplay() string {
+	return "Azure Event Hubs"
+}
+
+type Metadata struct {
+	ContainsDependencySpringCloudAzureStarter bool
+}
+
+const UnknownSpringBootVersion string = "unknownSpringBootVersion"
 
 func (p *Project) HasWebUIFramework() bool {
 	for _, f := range p.Dependencies {

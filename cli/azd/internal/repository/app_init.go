@@ -44,6 +44,10 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 
 var featureCompose = alpha.MustFeatureKey("compose")
 
+var azureDepMap = map[string]struct{}{
+	appdetect.AzureDepEventHubs{}.ResourceDisplay(): {},
+}
+
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
 	ctx context.Context,
@@ -120,9 +124,43 @@ func (i *Initializer) InitFromApp(
 	i.console.StopSpinner(ctx, title, input.StepDone)
 
 	var prjAppHost []appdetect.Project
-	for _, prj := range projects {
+	for index, prj := range projects {
 		if prj.Language == appdetect.DotNetAppHost {
 			prjAppHost = append(prjAppHost, prj)
+		}
+
+		if prj.Language == appdetect.Java {
+			var hasKafkaDep bool
+			for depIndex, dep := range prj.AzureDeps {
+				if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); ok {
+					// prompt spring boot version if not detected for kafka
+					if eventHubs.UseKafka {
+						hasKafkaDep = true
+						springBootVersion := eventHubs.SpringBootVersion
+						if springBootVersion == appdetect.UnknownSpringBootVersion {
+							springBootVersionInput, err := promptSpringBootVersion(i.console, ctx)
+							if err != nil {
+								return err
+							}
+							eventHubs.SpringBootVersion = springBootVersionInput
+							prj.AzureDeps[depIndex] = eventHubs
+						}
+					}
+					// prompt event hubs name if not detected
+					for property, eventHubsName := range eventHubs.EventHubsNamePropertyMap {
+						if eventHubsName == "" {
+							promptMissingPropertyAndExit(i.console, ctx, property)
+						}
+					}
+				}
+			}
+
+			if hasKafkaDep && !prj.Metadata.ContainsDependencySpringCloudAzureStarter {
+				err := processSpringCloudAzureDepByPrompt(i.console, ctx, &projects[index])
+				if err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -455,6 +493,39 @@ func (i *Initializer) prjConfigFromDetect(
 			dbNames[database] = db.Name
 		}
 
+		for _, azureDepPair := range detect.AzureDeps {
+			azureDep := azureDepPair.first
+			authType, err := chooseAuthTypeByPrompt(
+				azureDep.ResourceDisplay(),
+				[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString},
+				ctx,
+				i.console)
+			if err != nil {
+				return config, err
+			}
+			switch azureDep := azureDep.(type) {
+			case appdetect.AzureDepEventHubs:
+				if azureDep.UseKafka {
+					config.Resources["kafka"] = &project.ResourceConfig{
+						Type: project.ResourceTypeMessagingKafka,
+						Props: project.KafkaProps{
+							Topics:            distinctValues(azureDep.EventHubsNamePropertyMap),
+							AuthType:          authType,
+							SpringBootVersion: azureDep.SpringBootVersion,
+						},
+					}
+				} else {
+					config.Resources["eventhubs"] = &project.ResourceConfig{
+						Type: project.ResourceTypeMessagingEventHubs,
+						Props: project.EventHubsProps{
+							EventHubNames: distinctValues(azureDep.EventHubsNamePropertyMap),
+							AuthType:      authType,
+						},
+					}
+				}
+			}
+		}
+
 		backends := []*project.ResourceConfig{}
 		frontends := []*project.ResourceConfig{}
 
@@ -481,6 +552,17 @@ func (i *Initializer) prjConfigFromDetect(
 				}
 
 				resSpec.Uses = append(resSpec.Uses, dbNames[db])
+			}
+
+			for _, azureDep := range svc.AzureDeps {
+				switch azureDep.(type) {
+				case appdetect.AzureDepEventHubs:
+					if azureDep.(appdetect.AzureDepEventHubs).UseKafka {
+						resSpec.Uses = append(resSpec.Uses, "kafka")
+					} else {
+						resSpec.Uses = append(resSpec.Uses, "eventhubs")
+					}
+				}
 			}
 
 			resSpec.Name = name
@@ -577,4 +659,100 @@ func ServiceFromDetect(
 	}
 
 	return svc, nil
+}
+
+func chooseAuthTypeByPrompt(
+	name string,
+	authOptions []internal.AuthType,
+	ctx context.Context,
+	console input.Console) (internal.AuthType, error) {
+	var options []string
+	for _, option := range authOptions {
+		options = append(options, internal.GetAuthTypeDescription(option))
+	}
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Choose auth type for " + name + ":",
+		Options: options,
+	})
+	if err != nil {
+		return internal.AuthTypeUnspecified, err
+	}
+	return authOptions[selection], nil
+}
+
+func promptMissingPropertyAndExit(console input.Console, ctx context.Context, key string) {
+	console.Message(ctx, fmt.Sprintf("No value was provided for %s. Please update the configuration file "+
+		"(like application.properties or application.yaml) with a valid value.", key))
+	os.Exit(0)
+}
+
+func distinctValues(input map[string]string) []string {
+	valueSet := make(map[string]struct{})
+	for _, value := range input {
+		valueSet[value] = struct{}{}
+	}
+
+	var result []string
+	for value := range valueSet {
+		result = append(result, value)
+	}
+
+	return result
+}
+
+func processSpringCloudAzureDepByPrompt(console input.Console, ctx context.Context, project *appdetect.Project) error {
+	continueOption, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Detected Kafka dependency but no spring-cloud-azure-starter found. Select an option",
+		Options: []string{
+			"Exit then I will manually add this dependency",
+			"Continue without this dependency, and provision Azure Event Hubs for Kafka",
+			"Continue without this dependency, and not provision Azure Event Hubs for Kafka",
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	switch continueOption {
+	case 0:
+		console.Message(ctx, "you have to manually add dependency com.azure.spring:spring-cloud-azure-starter. "+
+			"And use right version according to this page: "+
+			"https://github.com/Azure/azure-sdk-for-java/wiki/Spring-Versions-Mapping")
+		os.Exit(0)
+	case 1:
+		return nil
+	case 2:
+		// remove Kafka Azure Dep
+		var result []appdetect.AzureDep
+		for _, dep := range project.AzureDeps {
+			if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); !(ok && eventHubs.UseKafka) {
+				result = append(result, dep)
+			}
+		}
+		project.AzureDeps = result
+		return nil
+	}
+	return nil
+}
+
+func promptSpringBootVersion(console input.Console, ctx context.Context) (string, error) {
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "No spring boot version detected, what is your spring boot version?",
+		Options: []string{
+			"Spring Boot 2.x",
+			"Spring Boot 3.x",
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	switch selection {
+	case 0:
+		return "2.x", nil
+	case 1:
+		return "3.x", nil
+	default:
+		return appdetect.UnknownSpringBootVersion, nil
+	}
 }

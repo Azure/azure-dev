@@ -193,7 +193,7 @@ func BindToContainerApp(a *ServiceSpec, b *ServiceSpec) {
 	if b.Backend == nil {
 		b.Backend = &Backend{}
 	}
-	b.Backend.Frontends = append(b.Backend.Frontends, ServiceReference{Name: b.Name})
+	b.Backend.Frontends = append(b.Backend.Frontends, ServiceReference{Name: a.Name})
 }
 
 func GetServiceBindingEnvsForPostgres(postgres DatabasePostgres) ([]Env, error) {

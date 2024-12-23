@@ -747,10 +747,12 @@ func (i *Initializer) prjConfigFromDetect(
 			}
 			props.Port = port
 
-			if svc.Metadata.ContainsDependencySpringCloudEurekaClient {
+			if svc.Metadata.ContainsDependencySpringCloudEurekaClient &&
+				javaEurekaServerService.Name != "" {
 				resSpec.Uses = append(resSpec.Uses, javaEurekaServerService.Name)
 			}
-			if svc.Metadata.ContainsDependencySpringCloudConfigClient {
+			if svc.Metadata.ContainsDependencySpringCloudConfigClient &&
+				javaConfigServerService.Name != "" {
 				resSpec.Uses = append(resSpec.Uses, javaConfigServerService.Name)
 			}
 
@@ -1114,6 +1116,10 @@ func promptMissingPropertyAndExit(console input.Console, ctx context.Context, ke
 }
 
 func appendJavaEurekaServerEnv(svc *project.ServiceConfig, eurekaServerName string) error {
+	if eurekaServerName == "" {
+		// eureka server not found, maybe removed when detect confirm
+		return nil
+	}
 	if svc.Env == nil {
 		svc.Env = map[string]string{}
 	}
@@ -1125,6 +1131,10 @@ func appendJavaEurekaServerEnv(svc *project.ServiceConfig, eurekaServerName stri
 }
 
 func appendJavaConfigServerEnv(svc *project.ServiceConfig, configServerName string) error {
+	if configServerName == "" {
+		// config server not found, maybe removed when detect confirm
+		return nil
+	}
 	if svc.Env == nil {
 		svc.Env = map[string]string{}
 	}

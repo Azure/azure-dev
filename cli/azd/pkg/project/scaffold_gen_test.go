@@ -18,23 +18,23 @@ func Test_genBicepParamsFromEnvSubst(t *testing.T) {
 		want       string
 		wantParams []scaffold.Parameter
 	}{
-		{"foo", false, "'foo'", nil},
-		{"${MY_VAR}", false, "myVar", []scaffold.Parameter{{Name: "myVar", Value: "${MY_VAR}", Type: "string"}}},
+		{"foo", false, "foo", nil},
+		{"${MY_VAR}", false, "${myVar}", []scaffold.Parameter{{Name: "myVar", Value: "${MY_VAR}", Type: "string"}}},
 
-		{"${MY_SECRET}", true, "mySecret",
+		{"${MY_SECRET}", true, "${mySecret}",
 			[]scaffold.Parameter{
 				{Name: "mySecret", Value: "${MY_SECRET}", Type: "string", Secret: true}}},
 
-		{"Hello, ${world:=okay}!", false, "world",
+		{"Hello, ${world:=okay}!", false, "${world}",
 			[]scaffold.Parameter{
 				{Name: "world", Value: "${world:=okay}", Type: "string"}}},
 
-		{"${CAT} and ${DOG}", false, "'${cat} and ${dog}'",
+		{"${CAT} and ${DOG}", false, "${cat} and ${dog}",
 			[]scaffold.Parameter{
 				{Name: "cat", Value: "${CAT}", Type: "string"},
 				{Name: "dog", Value: "${DOG}", Type: "string"}}},
 
-		{"${DB_HOST:='local'}:${DB_USERNAME:='okay'}", true, "'${dbHost}:${dbUsername}'",
+		{"${DB_HOST:='local'}:${DB_USERNAME:='okay'}", true, "${dbHost}:${dbUsername}",
 			[]scaffold.Parameter{
 				{Name: "dbHost", Value: "${DB_HOST:='local'}", Type: "string", Secret: true},
 				{Name: "dbUsername", Value: "${DB_USERNAME:='okay'}", Type: "string", Secret: true}}},

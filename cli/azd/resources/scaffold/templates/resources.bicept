@@ -61,6 +61,15 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
     name: '${abbrs.appManagedEnvironments}${resourceToken}'
     location: location
     zoneRedundant: false
+    {{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity"))}}
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
   }
 }
 {{- end}}
@@ -101,8 +110,9 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
 {{- end}}
 
 {{- if .DbPostgres}}
-var databaseName = '{{ .DbPostgres.DatabaseName }}'
-var databaseUser = 'psqladmin'
+
+var postgreSqlDatabaseName = '{{ .DbPostgres.DatabaseName }}'
+var postgreSqlDatabaseUser = '{{ .DbPostgres.DatabaseUser }}'
 module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
   name: 'postgreServer'
   params: {
@@ -111,8 +121,8 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     skuName: 'Standard_B1ms'
     tier: 'Burstable'
     // Non-required parameters
-    administratorLogin: databaseUser
-    administratorLoginPassword: databasePassword
+    administratorLogin: postgreSqlDatabaseUser
+    administratorLoginPassword: postgreSqlDatabasePassword
     geoRedundantBackup: 'Disabled'
     passwordAuth:'Enabled'
     firewallRules: [
@@ -124,12 +134,45 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     ]
     databases: [
       {
-        name: databaseName
+        name: postgreSqlDatabaseName
       }
     ]
+  }
+}
+{{- end}}
+
+{{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity"))}}
+
+module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
+  name: 'connectionCreatorIdentity'
+  params: {
+    name: '${abbrs.managedIdentityUserAssignedIdentities}cci-${resourceToken}'
     location: location
   }
 }
+{{- end}}
+{{- range .Services}}
+{{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity")) }}
+var {{bicepName .Name}}PostgresConnectionName = 'connection_${uniqueString(subscription().id, resourceGroup().id, location, '{{bicepName .Name}}', 'Postgres')}'
+module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
+  name: '{{bicepName .Name}}CreateConnectionToPostgreSql'
+  params: {
+    kind: 'AzureCLI'
+    name: '${abbrs.deploymentScript}{{bicepName .Name}}-connection-to-pg-${resourceToken}'
+    azCliVersion: '2.63.0'
+    location: location
+    {{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity")) }}
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
+  }
+}
+{{- end}}
 {{- end}}
 
 {{- if .AIModels}}
@@ -172,13 +215,22 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 }
 {{- end}}
 
-{{- range .Services}}
+{{- range $service := .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
   name: '{{bicepName .Name}}identity'
   params: {
     name: '${abbrs.managedIdentityUserAssignedIdentities}{{bicepName .Name}}-${resourceToken}'
     location: location
+    {{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity"))}}
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
   }
 }
 
@@ -234,41 +286,28 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     scaleMinReplicas: 1
     scaleMaxReplicas: 10
     secrets: {
-      secureList:  union([
-        {{- if .DbCosmosMongo}}
-        {
-          name: 'mongodb-url'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri
-        }
-        {{- end}}
-        {{- if .DbPostgres}}
-        {
-          name: 'db-pass'
-          value: databasePassword
-        }
-        {
-          name: 'db-url'
-          value: 'postgresql://${databaseUser}:${databasePassword}@${postgreServer.outputs.fqdn}:5432/${databaseName}'
-        }
-        {{- end}}
-        {{- if .DbRedis}}
-        {
-          name: 'redis-pass'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
-        }
-        {
-          name: 'redis-url'
-          identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
-        }
-        {{- end}}
-      ],
-      map({{bicepName .Name}}Secrets, secret => {
-        name: secret.secretRef
-        value: secret.value
-      }))
+        secureList:  union([
+          {{- range $env := .Envs}}
+          {{- if (eq (toBicepEnv $env).BicepEnvType "keyVaultSecret") }}
+          {
+            name: '{{ (toBicepEnv $env).SecretName }}'
+            identity:{{bicepName $service.Name}}Identity.outputs.resourceId
+            keyVaultUrl: {{ (toBicepEnv $env).SecretValue }}
+          }
+          {{- end}}
+          {{- if (eq (toBicepEnv $env).BicepEnvType "secret") }}
+          {
+            name: '{{ (toBicepEnv $env).SecretName }}'
+            value: {{ (toBicepEnv $env).SecretValue }}
+          }
+          {{- end}}
+          {{- end}}
+        ],
+        map({{bicepName .Name}}Secrets, secret => {
+          name: secret.secretRef
+          value: secret.value
+        })
+      )
     }
     containers: [
       {
@@ -291,32 +330,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'MONGODB_URL'
             secretRef: 'mongodb-url'
-          }
-          {{- end}}
-          {{- if .DbPostgres}}
-          {
-            name: 'POSTGRES_HOST'
-            value: postgreServer.outputs.fqdn
-          }
-          {
-            name: 'POSTGRES_USERNAME'
-            value: databaseUser
-          }
-          {
-            name: 'POSTGRES_DATABASE'
-            value: databaseName
-          }
-          {
-            name: 'POSTGRES_PASSWORD'
-            secretRef: 'db-pass'
-          }
-          {
-            name: 'POSTGRES_URL'
-            secretRef: 'db-url'
-          }
-          {
-            name: 'POSTGRES_PORT'
-            value: '5432'
           }
           {{- end}}
           {{- if .DbRedis}}
@@ -382,6 +395,15 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     environmentResourceId: containerAppsEnvironment.outputs.resourceId
     location: location
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
+    {{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity"))}}
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
   }
 }
 {{- end}}
@@ -435,10 +457,10 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
       {{- end}}
     ]
     secrets: [
-      {{- if .DbPostgres}}
+      {{- if (and .DbPostgres (eq .DbPostgres.AuthType "password")) }}
       {
-        name: 'db-pass'
-        value: databasePassword
+        name: 'postgresql-password'
+        value: postgreSqlDatabasePassword
       }
       {{- end}}
     ]

@@ -14,6 +14,11 @@ import (
 )
 
 func TestInitializer_infraSpecFromDetect(t *testing.T) {
+	dbPostgres := &scaffold.DatabasePostgres{
+		DatabaseName: "myappdb",
+		AuthType:     "userAssignedManagedIdentity",
+	}
+	envs, _ := scaffold.GetServiceBindingEnvsForPostgres(*dbPostgres)
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -166,11 +171,13 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				"n",
 				"my$special$db",
 				"n",
-				"myappdb", // fill in db name
+				"myappdb",                        // fill in db name
+				"User assigned managed identity", // confirm db authentication
 			},
 			want: scaffold.InfraSpec{
 				DbPostgres: &scaffold.DatabasePostgres{
 					DatabaseName: "myappdb",
+					AuthType:     "userAssignedManagedIdentity",
 				},
 				Services: []scaffold.ServiceSpec{
 					{
@@ -183,9 +190,8 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
-						DbPostgres: &scaffold.DatabaseReference{
-							DatabaseName: "myappdb",
-						},
+						DbPostgres: dbPostgres,
+						Envs:       envs,
 					},
 					{
 						Name: "js",

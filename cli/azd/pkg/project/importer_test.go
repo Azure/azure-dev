@@ -405,11 +405,15 @@ func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			console:             mocks.NewMockContext(context.Background()).Console,
 		},
 	}
 
 	prjConfig := &ProjectConfig{}
 	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
+	for key, res := range prjConfig.Resources {
+		res.Name = key
+	}
 	require.NoError(t, err)
 
 	infra, err := im.ProjectInfrastructure(context.Background(), prjConfig)
@@ -436,11 +440,15 @@ func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			console:             mocks.NewMockContext(context.Background()).Console,
 		},
 	}
 
 	prjConfig := &ProjectConfig{}
 	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
+	for key, res := range prjConfig.Resources {
+		res.Name = key
+	}
 	require.NoError(t, err)
 
 	projectFs, err := im.SynthAllInfrastructure(context.Background(), prjConfig)

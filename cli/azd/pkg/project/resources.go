@@ -5,7 +5,6 @@ package project
 
 import (
 	"fmt"
-
 	"github.com/braydonk/yaml"
 )
 
@@ -27,6 +26,7 @@ const (
 	ResourceTypeDbMongo          ResourceType = "db.mongo"
 	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
 	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
+	ResourceTypeDbCosmos         ResourceType = "db.cosmos"
 )
 
 func (r ResourceType) String() string {
@@ -41,6 +41,8 @@ func (r ResourceType) String() string {
 		return "Container App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
+	case ResourceTypeDbCosmos:
+		return "CosmosDB"
 	}
 
 	return ""
@@ -89,6 +91,11 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeDbCosmos:
+		err := marshalRawProps(raw.Props.(CosmosDBProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -128,6 +135,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeDbCosmos:
+		cp := CosmosDBProps{}
+		if err := unmarshalProps(&cp); err != nil {
+			return err
+		}
+		raw.Props = cp
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +167,14 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type CosmosDBProps struct {
+	Containers   []CosmosDBContainerProps `yaml:"containers,omitempty"`
+	DatabaseName string                   `yaml:"databaseName,omitempty"`
+}
+
+type CosmosDBContainerProps struct {
+	ContainerName     string   `yaml:"containerName,omitempty"`
+	PartitionKeyPaths []string `yaml:"partitionKeyPaths,omitempty"`
 }

@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ var LanguageMap = map[appdetect.Language]project.ServiceLanguageKind{
 var dbMap = map[appdetect.DatabaseDep]struct{}{
 	appdetect.DbMongo:    {},
 	appdetect.DbPostgres: {},
+	appdetect.DbCosmos:   {},
 	appdetect.DbRedis:    {},
 }
 
@@ -424,6 +426,36 @@ func (i *Initializer) prjConfigFromDetect(
 				continue
 			}
 
+			var err error
+			databaseName, err := getDatabaseName(database, &detect, i.console, ctx)
+			if err != nil {
+				return config, err
+			}
+
+			if database == appdetect.DbCosmos {
+				cosmosDBProps := project.CosmosDBProps{
+					DatabaseName: databaseName,
+				}
+				containers, err := detectCosmosSqlDatabaseContainersInDirectory(detect.root)
+				if err != nil {
+					return config, err
+				}
+				for _, container := range containers {
+					cosmosDBProps.Containers = append(cosmosDBProps.Containers, project.CosmosDBContainerProps{
+						ContainerName:     container.ContainerName,
+						PartitionKeyPaths: container.PartitionKeyPaths,
+					})
+				}
+				cosmos := project.ResourceConfig{
+					Type:  project.ResourceTypeDbCosmos,
+					Name:  "cosmos",
+					Props: cosmosDBProps,
+				}
+				config.Resources[cosmos.Name] = &cosmos
+				dbNames[database] = cosmos.Name
+				continue
+			}
+
 			var dbType project.ResourceType
 			switch database {
 			case appdetect.DbMongo:
@@ -434,21 +466,7 @@ func (i *Initializer) prjConfigFromDetect(
 
 			db := project.ResourceConfig{
 				Type: dbType,
-			}
-
-			for {
-				dbName, err := promptDbName(i.console, ctx, database)
-				if err != nil {
-					return config, err
-				}
-
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-
-				db.Name = dbName
-				break
+				Name: databaseName,
 			}
 
 			config.Resources[db.Name] = &db
@@ -577,4 +595,102 @@ func ServiceFromDetect(
 	}
 
 	return svc, nil
+}
+
+func detectCosmosSqlDatabaseContainersInDirectory(root string) ([]scaffold.CosmosSqlDatabaseContainer, error) {
+	var result []scaffold.CosmosSqlDatabaseContainer
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".java" {
+			container, err := detectCosmosSqlDatabaseContainerInFile(path)
+			if err != nil {
+				return err
+			}
+			if len(container.ContainerName) != 0 {
+				result = append(result, container)
+			}
+		}
+		return nil
+	})
+	return result, err
+}
+
+func detectCosmosSqlDatabaseContainerInFile(filePath string) (scaffold.CosmosSqlDatabaseContainer, error) {
+	var result scaffold.CosmosSqlDatabaseContainer
+	result.PartitionKeyPaths = make([]string, 0)
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return result, err
+	}
+	// todo:
+	// 1. Maybe "@Container" is not "com.azure.spring.data.cosmos.core.mapping.Container"
+	// 2. Maybe "@Container" is imported by "com.azure.spring.data.cosmos.core.mapping.*"
+	containerRegex := regexp.MustCompile(`@Container\s*\(containerName\s*=\s*"([^"]+)"\)`)
+	partitionKeyRegex := regexp.MustCompile(`@PartitionKey\s*(?:\n\s*)?(?:private|public|protected)?\s*\w+\s+(\w+);`)
+
+	matches := containerRegex.FindAllStringSubmatch(string(content), -1)
+	if len(matches) != 1 {
+		return result, nil
+	}
+	result.ContainerName = matches[0][1]
+
+	matches = partitionKeyRegex.FindAllStringSubmatch(string(content), -1)
+	for _, match := range matches {
+		result.PartitionKeyPaths = append(result.PartitionKeyPaths, match[1])
+	}
+	return result, nil
+}
+
+func getDatabaseName(database appdetect.DatabaseDep, detect *detectConfirm,
+	console input.Console, ctx context.Context) (string, error) {
+	dbName := getDatabaseNameFromProjectMetadata(detect, database)
+	if dbName != "" {
+		return dbName, nil
+	}
+	for {
+		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the databaseName for %s "+
+				"(Not databaseServerName. This url can explain the difference: "+
+				"'jdbc:mysql://databaseServerName:3306/databaseName'):", database.Display()),
+			Help: "Hint: App database name\n\n" +
+				"Name of the database that the app connects to. " +
+				"This database will be created after running azd provision or azd up.\n" +
+				"You may be able to skip this step by hitting enter, in which case the database will not be created.",
+		})
+		if err != nil {
+			return "", err
+		}
+		if isValidDatabaseName(dbName) {
+			return dbName, nil
+		} else {
+			console.Message(ctx, "Invalid database name. Please choose another name.")
+		}
+	}
+}
+
+func getDatabaseNameFromProjectMetadata(detect *detectConfirm, database appdetect.DatabaseDep) string {
+	result := ""
+	for _, service := range detect.Services {
+		// todo this should not be here, it should be part of the app detect
+		name := service.Metadata.DatabaseNameInPropertySpringDatasourceUrl[database]
+		if name != "" {
+			if result == "" {
+				result = name
+			} else {
+				// different project configured different db name, not use any of them.
+				return ""
+			}
+		}
+	}
+	return result
+}
+
+func isValidDatabaseName(name string) bool {
+	if len(name) < 3 || len(name) > 63 {
+		return false
+	}
+	re := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	return re.MatchString(name)
 }

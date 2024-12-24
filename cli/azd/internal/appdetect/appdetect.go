@@ -110,6 +110,7 @@ const (
 	DbPostgres  DatabaseDep = "postgres"
 	DbMongo     DatabaseDep = "mongo"
 	DbMySql     DatabaseDep = "mysql"
+	DbCosmos    DatabaseDep = "cosmos"
 	DbSqlServer DatabaseDep = "sqlserver"
 	DbRedis     DatabaseDep = "redis"
 )
@@ -122,6 +123,8 @@ func (db DatabaseDep) Display() string {
 		return "MongoDB"
 	case DbMySql:
 		return "MySQL"
+	case DbCosmos:
+		return "Cosmos DB"
 	case DbSqlServer:
 		return "SQL Server"
 	case DbRedis:
@@ -129,6 +132,11 @@ func (db DatabaseDep) Display() string {
 	}
 
 	return ""
+}
+
+type Metadata struct {
+	ApplicationName                           string
+	DatabaseNameInPropertySpringDatasourceUrl map[DatabaseDep]string
 }
 
 type Project struct {
@@ -140,6 +148,9 @@ type Project struct {
 
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
+
+	// Experimental: Metadata inferred through heuristics while scanning the project.
+	Metadata Metadata
 
 	// The path to the project directory.
 	Path string

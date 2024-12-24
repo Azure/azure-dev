@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -424,31 +425,56 @@ func (i *Initializer) prjConfigFromDetect(
 				continue
 			}
 
+			var err error
+			databaseName, err := getDatabaseName(database, &detect, i.console, ctx)
+			if err != nil {
+				return config, err
+			}
+
+			var authType = internal.AuthTypeUnspecified
+			if database == appdetect.DbPostgres {
+				var err error
+				authType, err = chooseAuthTypeByPrompt(
+					database.Display(),
+					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
+					ctx,
+					i.console)
+				if err != nil {
+					return config, err
+				}
+				continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database, authType, &detect,
+					i.console, ctx)
+				if err != nil {
+					return config, err
+				}
+				if !continueProvision {
+					continue
+				}
+			}
+
+			if database == appdetect.DbPostgres {
+				postgres := project.ResourceConfig{
+					Type: project.ResourceTypeDbPostgres,
+					Name: "postgresql",
+					Props: project.PostgresProps{
+						DatabaseName: databaseName,
+						AuthType:     authType,
+					},
+				}
+				config.Resources[postgres.Name] = &postgres
+				dbNames[database] = postgres.Name
+				continue
+			}
+
 			var dbType project.ResourceType
 			switch database {
 			case appdetect.DbMongo:
 				dbType = project.ResourceTypeDbMongo
-			case appdetect.DbPostgres:
-				dbType = project.ResourceTypeDbPostgres
 			}
 
 			db := project.ResourceConfig{
 				Type: dbType,
-			}
-
-			for {
-				dbName, err := promptDbName(i.console, ctx, database)
-				if err != nil {
-					return config, err
-				}
-
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-
-				db.Name = dbName
-				break
+				Name: databaseName,
 			}
 
 			config.Resources[db.Name] = &db
@@ -577,4 +603,166 @@ func ServiceFromDetect(
 	}
 
 	return svc, nil
+}
+
+func chooseAuthTypeByPrompt(
+	name string,
+	authOptions []internal.AuthType,
+	ctx context.Context,
+	console input.Console) (internal.AuthType, error) {
+	var options []string
+	for _, option := range authOptions {
+		options = append(options, internal.GetAuthTypeDescription(option))
+	}
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Choose auth type for " + name + ":",
+		Options: options,
+	})
+	if err != nil {
+		return internal.AuthTypeUnspecified, err
+	}
+	return authOptions[selection], nil
+}
+
+func checkPasswordlessConfigurationAndContinueProvision(database appdetect.DatabaseDep, authType internal.AuthType,
+	detect *detectConfirm, console input.Console, ctx context.Context) (bool, error) {
+	if authType != internal.AuthTypeUserAssignedManagedIdentity {
+		return true, nil
+	}
+	for i, prj := range detect.Services {
+		if lackedDep := lackedAzureStarterJdbcDependency(prj, database); lackedDep != "" {
+			message := fmt.Sprintf("\nError!\n"+
+				"You selected '%s' as auth type for '%s'.\n"+
+				"For this auth type, this dependency is required:\n"+
+				"%s\n"+
+				"But this dependency is not found in your project:\n"+
+				"%s",
+				internal.AuthTypeUserAssignedManagedIdentity, database, lackedDep, prj.Path)
+			continueOption, err := console.Select(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("%s\nSelect an option:", message),
+				Options: []string{
+					"Exit azd and fix problem manually",
+					fmt.Sprintf("Continue azd and use %s in this project: %s", database.Display(), prj.Path),
+					fmt.Sprintf("Continue azd and not use %s in this project: %s", database.Display(), prj.Path),
+				},
+			})
+			if err != nil {
+				return false, err
+			}
+
+			switch continueOption {
+			case 0:
+				os.Exit(0)
+			case 1:
+				continue
+			case 2:
+				// remove related database usage
+				var result []appdetect.DatabaseDep
+				for _, db := range prj.DatabaseDeps {
+					if db != database {
+						result = append(result, db)
+					}
+				}
+				prj.DatabaseDeps = result
+				detect.Services[i] = prj
+				// delete database if no other service used
+				dbUsed := false
+				for _, svc := range detect.Services {
+					for _, db := range svc.DatabaseDeps {
+						if db == database {
+							dbUsed = true
+							break
+						}
+					}
+					if dbUsed {
+						break
+					}
+				}
+				if !dbUsed {
+					console.Message(ctx, fmt.Sprintf(
+						"Deleting database %s due to no service used", database.Display()))
+					delete(detect.Databases, database)
+					return false, nil
+				}
+			}
+		}
+	}
+	return true, nil
+}
+
+func lackedAzureStarterJdbcDependency(project appdetect.Project, database appdetect.DatabaseDep) string {
+	if project.Language != appdetect.Java {
+		return ""
+	}
+
+	useDatabase := false
+	for _, db := range project.DatabaseDeps {
+		if db == database {
+			useDatabase = true
+			break
+		}
+	}
+	if !useDatabase {
+		return ""
+	}
+	if database == appdetect.DbPostgres && !project.Metadata.ContainsDependencySpringCloudAzureStarterJdbcPostgresql {
+		return "<dependency>\n" +
+			"  <groupId>com.azure.spring</groupId>\n" +
+			"  <artifactId>spring-cloud-azure-starter-jdbc-postgresql</artifactId>\n" +
+			"  <version>xxx</version>\n" +
+			"</dependency>"
+	}
+	return ""
+}
+
+func getDatabaseName(database appdetect.DatabaseDep, detect *detectConfirm,
+	console input.Console, ctx context.Context) (string, error) {
+	dbName := getDatabaseNameFromProjectMetadata(detect, database)
+	if dbName != "" {
+		return dbName, nil
+	}
+	for {
+		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the databaseName for %s "+
+				"(Not databaseServerName. This url can explain the difference: "+
+				"'jdbc:mysql://databaseServerName:3306/databaseName'):", database.Display()),
+			Help: "Hint: App database name\n\n" +
+				"Name of the database that the app connects to. " +
+				"This database will be created after running azd provision or azd up.\n" +
+				"You may be able to skip this step by hitting enter, in which case the database will not be created.",
+		})
+		if err != nil {
+			return "", err
+		}
+		if isValidDatabaseName(dbName) {
+			return dbName, nil
+		} else {
+			console.Message(ctx, "Invalid database name. Please choose another name.")
+		}
+	}
+}
+
+func getDatabaseNameFromProjectMetadata(detect *detectConfirm, database appdetect.DatabaseDep) string {
+	result := ""
+	for _, service := range detect.Services {
+		// todo this should not be here, it should be part of the app detect
+		name := service.Metadata.DatabaseNameInPropertySpringDatasourceUrl[database]
+		if name != "" {
+			if result == "" {
+				result = name
+			} else {
+				// different project configured different db name, not use any of them.
+				return ""
+			}
+		}
+	}
+	return result
+}
+
+func isValidDatabaseName(name string) bool {
+	if len(name) < 3 || len(name) > 63 {
+		return false
+	}
+	re := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	return re.MatchString(name)
 }

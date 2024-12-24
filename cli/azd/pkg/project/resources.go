@@ -5,7 +5,7 @@ package project
 
 import (
 	"fmt"
-
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/braydonk/yaml"
 )
 
@@ -89,6 +89,11 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeDbPostgres:
+		err := marshalRawProps(raw.Props.(PostgresProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -128,6 +133,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeDbPostgres:
+		pp := PostgresProps{}
+		if err := unmarshalProps(&pp); err != nil {
+			return err
+		}
+		raw.Props = pp
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +165,9 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type PostgresProps struct {
+	DatabaseName string            `yaml:"databaseName,omitempty"`
+	AuthType     internal.AuthType `yaml:"authType,omitempty"`
 }

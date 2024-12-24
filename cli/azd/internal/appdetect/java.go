@@ -64,6 +64,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				if inRoot := strings.HasPrefix(pomFile, parentPomItem.path); inRoot {
 					parentPom = &parentPomItem
 					currentWrapper = jd.mavenWrapperPaths[i]
+					break
 				}
 			}
 

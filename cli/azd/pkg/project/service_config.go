@@ -20,6 +20,8 @@ type ServiceConfig struct {
 	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
 	// The ARM api version to use for the service. If not specified, the latest version is used.
 	ApiVersion string `yaml:"apiVersion,omitempty"`
+	// The path to the parent directory of the project
+	ParentPath string `yaml:"parentPath,omitempty"`
 	// The relative path to the project folder from the project root
 	RelativePath string `yaml:"project"`
 	// The azure hosting model to use, ex) appservice, function, containerapp

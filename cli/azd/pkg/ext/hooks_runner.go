@@ -166,7 +166,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		}
 	}
 	options.IsRunWithNoProfile = isRunWithNoProfile
-	
+
 	log.Printf("Executing script '%s'\n", hookConfig.path)
 	res, err := script.Execute(ctx, hookConfig.path, *options)
 	if err != nil {

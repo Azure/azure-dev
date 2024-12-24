@@ -9,8 +9,8 @@ import (
 
 // ExecOptions provide configuration for how scripts are executed
 type ExecOptions struct {
-	Interactive  *bool
-	StdOut       	io.Writer
+	Interactive        *bool
+	StdOut             io.Writer
 	IsRunWithNoProfile bool
 }
 

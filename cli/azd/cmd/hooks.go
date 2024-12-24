@@ -236,6 +236,7 @@ func (hra *hooksRunAction) execHook(
 	defer hra.console.StopPreviewer(ctx, false)
 
 	runOptions := &tools.ExecOptions{StdOut: previewer}
+
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)
 	if err != nil {
 		return err

@@ -10,8 +10,8 @@ import (
 // ExecOptions provide configuration for how scripts are executed
 type ExecOptions struct {
 	Interactive  *bool
-	StdOut       io.Writer
-	IsRunProfile bool
+	StdOut       	io.Writer
+	IsRunWithNoProfile bool
 }
 
 // Utility to easily execute a bash script across platforms

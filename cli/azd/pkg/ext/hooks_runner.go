@@ -159,6 +159,14 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		defer h.console.StopPreviewer(ctx, false)
 	}
 
+	isRunWithNoProfile := false
+	if hookConfig.Shell == "pwsh" {
+		if hookConfig.Run != "" {
+			isRunWithNoProfile = strings.Contains(strings.ToLower(hookConfig.Run), "-noprofile")
+		}
+	}
+	options.IsRunWithNoProfile = isRunWithNoProfile
+	
 	log.Printf("Executing script '%s'\n", hookConfig.path)
 	res, err := script.Execute(ctx, hookConfig.path, *options)
 	if err != nil {

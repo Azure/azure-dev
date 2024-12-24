@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -236,13 +235,7 @@ func (hra *hooksRunAction) execHook(
 	})
 	defer hra.console.StopPreviewer(ctx, false)
 
-	isRunProfile := true
-	if hook.Windows != nil {
-		if hook.Windows.Run != "" {
-			isRunProfile = !strings.Contains(strings.ToLower(hook.Windows.Run), "-noprofile")
-		}
-	}
-	runOptions := &tools.ExecOptions{StdOut: previewer, IsRunProfile: isRunProfile}
+	runOptions := &tools.ExecOptions{StdOut: previewer}
 
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)
 	if err != nil {

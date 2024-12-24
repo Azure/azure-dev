@@ -131,6 +131,12 @@ func (db DatabaseDep) Display() string {
 	return ""
 }
 
+type Metadata struct {
+	ApplicationName                                    string
+	DatabaseNameInPropertySpringDatasourceUrl          map[DatabaseDep]string
+	ContainsDependencySpringCloudAzureStarterJdbcMysql bool
+}
+
 type Project struct {
 	// The language associated with the project.
 	Language Language
@@ -140,6 +146,9 @@ type Project struct {
 
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
+
+	// Experimental: Metadata inferred through heuristics while scanning the project.
+	Metadata Metadata
 
 	// The path to the project directory.
 	Path string

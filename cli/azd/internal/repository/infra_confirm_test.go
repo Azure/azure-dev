@@ -14,6 +14,7 @@ import (
 )
 
 func TestInitializer_infraSpecFromDetect(t *testing.T) {
+	envs, _ := scaffold.GetServiceBindingEnvsForPostgres()
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -183,9 +184,10 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
-						DbPostgres: &scaffold.DatabaseReference{
+						DbPostgres: &scaffold.DatabasePostgres{
 							DatabaseName: "myappdb",
 						},
+						Envs: envs,
 					},
 					{
 						Name: "js",

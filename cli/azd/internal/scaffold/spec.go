@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"strings"
 )
 
@@ -13,6 +14,7 @@ type InfraSpec struct {
 	DbPostgres    *DatabasePostgres
 	DbCosmosMongo *DatabaseCosmosMongo
 	DbRedis       *DatabaseRedis
+	DbMySql       *DatabaseMySql
 
 	// ai models
 	AIModels []AIModel
@@ -28,6 +30,12 @@ type Parameter struct {
 type DatabasePostgres struct {
 	DatabaseUser string
 	DatabaseName string
+}
+
+type DatabaseMySql struct {
+	DatabaseUser string
+	DatabaseName string
+	AuthType     internal.AuthType
 }
 
 type DatabaseCosmosMongo struct {
@@ -55,7 +63,7 @@ type ServiceSpec struct {
 	Name string
 	Port int
 
-	Env map[string]string
+	Envs []Env
 
 	// Front-end properties.
 	Frontend *Frontend
@@ -64,12 +72,18 @@ type ServiceSpec struct {
 	Backend *Backend
 
 	// Connection to a database
-	DbPostgres    *DatabaseReference
-	DbCosmosMongo *DatabaseReference
-	DbRedis       *DatabaseReference
+	DbPostgres    *DatabasePostgres
+	DbCosmosMongo *DatabaseCosmosMongo
+	DbRedis       *DatabaseRedis
+	DbMySql       *DatabaseMySql
 
 	// AI model connections
 	AIModels []AIModelReference
+}
+
+type Env struct {
+	Name  string
+	Value string
 }
 
 type Frontend struct {
@@ -139,4 +153,20 @@ func serviceDefPlaceholder(serviceName string) Parameter {
 		Type:   "object",
 		Secret: true,
 	}
+}
+
+func AddNewEnvironmentVariable(serviceSpec *ServiceSpec, name string, value string) error {
+	merged, err := mergeEnvWithDuplicationCheck(serviceSpec.Envs,
+		[]Env{
+			{
+				Name:  name,
+				Value: value,
+			},
+		},
+	)
+	if err != nil {
+		return err
+	}
+	serviceSpec.Envs = merged
+	return nil
 }

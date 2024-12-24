@@ -5,7 +5,7 @@ package project
 
 import (
 	"fmt"
-
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/braydonk/yaml"
 )
 
@@ -27,6 +27,7 @@ const (
 	ResourceTypeDbMongo          ResourceType = "db.mongo"
 	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
 	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
+	ResourceTypeDbMySQL          ResourceType = "db.mysql"
 )
 
 func (r ResourceType) String() string {
@@ -41,6 +42,8 @@ func (r ResourceType) String() string {
 		return "Container App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
+	case ResourceTypeDbMySQL:
+		return "MySQL"
 	}
 
 	return ""
@@ -89,6 +92,11 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeDbMySQL:
+		err := marshalRawProps(raw.Props.(MySQLProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -128,6 +136,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeDbMySQL:
+		mp := MySQLProps{}
+		if err := unmarshalProps(&mp); err != nil {
+			return err
+		}
+		raw.Props = mp
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +168,9 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type MySQLProps struct {
+	DatabaseName string            `yaml:"databaseName,omitempty"`
+	AuthType     internal.AuthType `yaml:"authType,omitempty"`
 }

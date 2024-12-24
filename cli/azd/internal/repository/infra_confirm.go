@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -28,6 +29,37 @@ func (i *Initializer) infraSpecFromDetect(
 		if database == appdetect.DbRedis {
 			spec.DbRedis = &scaffold.DatabaseRedis{}
 			// no further configuration needed for redis
+			continue
+		}
+
+		if database == appdetect.DbMySql {
+			dbName, err := getDatabaseName(database, &detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			authType, err := chooseAuthTypeByPrompt(
+				database.Display(),
+				[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
+				ctx,
+				i.console)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database,
+				authType, &detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			if !continueProvision {
+				continue
+			}
+			spec.DbMySql = &scaffold.DatabaseMySql{
+				DatabaseName: dbName,
+				AuthType:     authType,
+			}
 			continue
 		}
 
@@ -85,18 +117,18 @@ func (i *Initializer) infraSpecFromDetect(
 
 			switch db {
 			case appdetect.DbMongo:
-				serviceSpec.DbCosmosMongo = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbCosmosMongo.DatabaseName,
-				}
+				err = scaffold.BindToMongoDb(&serviceSpec, spec.DbCosmosMongo)
 			case appdetect.DbPostgres:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
-				}
+				err = scaffold.BindToPostgres(&serviceSpec, spec.DbPostgres)
 			case appdetect.DbRedis:
-				serviceSpec.DbRedis = &scaffold.DatabaseReference{
-					DatabaseName: "redis",
-				}
+				err = scaffold.BindToRedis(&serviceSpec, spec.DbRedis)
+			case appdetect.DbMySql:
+				err = scaffold.BindToMySql(&serviceSpec, spec.DbMySql)
 			}
+		}
+
+		if err != nil {
+			return scaffold.InfraSpec{}, err
 		}
 		spec.Services = append(spec.Services, serviceSpec)
 	}

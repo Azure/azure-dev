@@ -159,7 +159,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		defer h.console.StopPreviewer(ctx, false)
 	}
 
-	isRunWithNoProfile := false
+	var isRunWithNoProfile bool
 	if hookConfig.Shell == "pwsh" {
 		if hookConfig.Run != "" {
 			isRunWithNoProfile = strings.Contains(strings.ToLower(hookConfig.Run), "-noprofile")

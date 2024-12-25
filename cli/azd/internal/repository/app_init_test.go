@@ -236,9 +236,12 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 						Type: project.ResourceTypeDbRedis,
 						Name: "redis",
 					},
-					"mongodb": {
+					"mongo": {
 						Type: project.ResourceTypeDbMongo,
-						Name: "mongodb",
+						Name: "mongo",
+						Props: project.MongoDBProps{
+							DatabaseName: "mongodb",
+						},
 					},
 					"postgres": {
 						Type: project.ResourceTypeDbPostgres,
@@ -247,7 +250,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 					"py": {
 						Type: project.ResourceTypeHostContainerApp,
 						Name: "py",
-						Uses: []string{"postgres", "mongodb", "redis"},
+						Uses: []string{"postgres", "mongo", "redis"},
 						Props: project.ContainerAppProps{
 							Port: 80,
 						},

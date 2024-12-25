@@ -5,7 +5,6 @@ package project
 
 import (
 	"fmt"
-
 	"github.com/braydonk/yaml"
 )
 
@@ -89,6 +88,11 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeDbMongo:
+		err := marshalRawProps(raw.Props.(MongoDBProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -128,6 +132,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeDbMongo:
+		mp := MongoDBProps{}
+		if err := unmarshalProps(&mp); err != nil {
+			return err
+		}
+		raw.Props = mp
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +164,8 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type MongoDBProps struct {
+	DatabaseName string `yaml:"databaseName,omitempty"`
 }

@@ -741,7 +741,7 @@ func (i *Initializer) prjConfigFromDetect(
 				Port: -1,
 			}
 
-			port, err := PromptPort(i.console, ctx, name, svc)
+			port, err := GetOrPromptPort(i.console, ctx, name, svc)
 			if err != nil {
 				return config, err
 			}

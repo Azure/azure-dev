@@ -290,6 +290,7 @@ func detectStorageAccountAccordingToSpringCloudStreamBinderMavenDependencyAndPro
 
 func detectMetadata(azdProject *Project, springBootProject *SpringBootProject) {
 	detectPropertySpringApplicationName(azdProject, springBootProject)
+	detectPropertyServerPort(azdProject, springBootProject)
 	detectPropertySpringCloudAzureCosmosDatabase(azdProject, springBootProject)
 	detectPropertySpringDataMongodbDatabase(azdProject, springBootProject)
 	detectPropertySpringDataMongodbUri(azdProject, springBootProject)
@@ -440,6 +441,13 @@ func detectPropertySpringApplicationName(azdProject *Project, springBootProject 
 	var targetPropertyName = "spring.application.name"
 	if appName, ok := springBootProject.applicationProperties[targetPropertyName]; ok {
 		azdProject.Metadata.ApplicationName = appName
+	}
+}
+
+func detectPropertyServerPort(azdProject *Project, springBootProject *SpringBootProject) {
+	var targetPropertyName = "server.port"
+	if serverPort, ok := springBootProject.applicationProperties[targetPropertyName]; ok {
+		azdProject.Metadata.ServerPort = serverPort
 	}
 }
 

@@ -245,7 +245,7 @@ func addServiceAsResource(
 	}
 
 	if props.Port == -1 {
-		port, err := repository.PromptPort(console, ctx, svc.Name, prj)
+		port, err := repository.GetOrPromptPort(console, ctx, svc.Name, prj)
 		if err != nil {
 			return nil, err
 		}

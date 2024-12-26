@@ -61,7 +61,7 @@ func TestGetMvnwCommandInProject(t *testing.T) {
 }
 
 func TestGetDownloadedMvnCommand(t *testing.T) {
-	maven, err := getDownloadedMvnCommand()
+	maven, err := getDownloadedMvnCommand("3.9.9")
 	if err != nil {
 		t.Errorf("getDownloadedMvnCommand failed, %v", err)
 	}

@@ -36,10 +36,10 @@ func (jd *javaDetector) Language() Language {
 
 func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
-		if strings.ToLower(entry.Name()) == "pom.xml" {
+		if strings.ToLower(entry.Name()) == "pom.xml" { // todo: support file names like backend-pom.xml
 			tracing.SetUsageAttributes(fields.AppInitJavaDetect.String("start"))
 			pomFile := filepath.Join(path, entry.Name())
-			mavenProject, err := toMavenProject(pomFile)
+			mavenProject, err := createMavenProject(pomFile)
 			if err != nil {
 				log.Printf("Please edit azure.yaml manually to satisfy your requirement. azd can not help you "+
 					"to that by detect your java project because error happened when reading pom.xml: %s. ", err)
@@ -61,7 +61,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			var currentWrapper mavenWrapper
 			for i, parentPomItem := range jd.parentPoms {
 				// we can say that the project is in the root project if the path is under the project
-				if inRoot := strings.HasPrefix(pomFile, parentPomItem.path); inRoot {
+				if inRoot := strings.HasPrefix(pomFile, filepath.Dir(parentPomItem.pomFilePath)); inRoot {
 					parentPom = &parentPomItem
 					currentWrapper = jd.mavenWrapperPaths[i]
 					break
@@ -73,10 +73,10 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				Path:          path,
 				DetectionRule: "Inferred by presence of: pom.xml",
 			}
-			detectAzureDependenciesByAnalyzingSpringBootProject(parentPom, &mavenProject.pom, &project)
+			detectAzureDependenciesByAnalyzingSpringBootProject(mavenProject, &project)
 			if parentPom != nil {
 				project.Options = map[string]interface{}{
-					JavaProjectOptionMavenParentPath:       parentPom.path,
+					JavaProjectOptionMavenParentPath:       filepath.Dir(parentPom.pomFilePath),
 					JavaProjectOptionPosixMavenWrapperPath: currentWrapper.posixPath,
 					JavaProjectOptionWinMavenWrapperPath:   currentWrapper.winPath,
 				}

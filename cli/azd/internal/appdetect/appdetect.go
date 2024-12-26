@@ -185,8 +185,6 @@ type Metadata struct {
 	ContainsDependencySpringCloudConfigClient               bool
 }
 
-const UnknownSpringBootVersion string = "unknownSpringBootVersion"
-
 type Project struct {
 	// The language associated with the project.
 	Language Language

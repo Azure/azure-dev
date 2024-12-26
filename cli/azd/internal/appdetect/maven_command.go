@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +27,7 @@ func getMvnCommandFromPath(path string) (string, error) {
 	if commandExistsInPath("mvn") {
 		return "mvn", nil
 	}
-	return getDownloadedMvnCommand()
+	return getDownloadedMvnCommand("3.9.9")
 }
 
 func getMvnwCommand(path string) (string, error) {
@@ -55,12 +54,16 @@ func getMvnwCommand(path string) (string, error) {
 	return "", fmt.Errorf("failed to find mvnw command in project")
 }
 
-const mavenVersion = "3.9.9"
-const mavenZipFileName = "apache-maven-" + mavenVersion + "-bin.zip"
-const mavenURL = "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/" +
-	mavenVersion + "/" + mavenZipFileName
+func mavenZipFileName(mavenVersion string) string {
+	return "apache-maven-" + mavenVersion + "-bin.zip"
+}
 
-func getDownloadedMvnCommand() (string, error) {
+func mavenUrl(mavenVersion string) string {
+	return "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/" +
+		mavenVersion + "/" + mavenZipFileName(mavenVersion)
+}
+
+func getDownloadedMvnCommand(mavenVersion string) (string, error) {
 	mavenCommand, err := getAzdMvnCommand(mavenVersion)
 	if err != nil {
 		return "", err
@@ -81,8 +84,8 @@ func getDownloadedMvnCommand() (string, error) {
 		}
 	}
 
-	mavenZipFilePath := filepath.Join(mavenDir, mavenZipFileName)
-	err = downloadMaven(mavenZipFilePath)
+	mavenZipFilePath := filepath.Join(mavenDir, mavenZipFileName(mavenVersion))
+	err = downloadMaven(mavenVersion, mavenZipFilePath)
 	if err != nil {
 		return "", err
 	}
@@ -110,31 +113,13 @@ func getAzdMvnCommand(mavenVersion string) (string, error) {
 	return azdMvnCommand, nil
 }
 
-func downloadMaven(filepath string) error {
-	out, err := os.Create(filepath)
+func downloadMaven(mavenVersion string, filePath string) error {
+	requestUrl := mavenUrl(mavenVersion)
+	data, err := download(requestUrl)
 	if err != nil {
 		return err
 	}
-	defer func(out *os.File) {
-		err := out.Close()
-		if err != nil {
-			log.Println("failed to close file. %w", err)
-		}
-	}(out)
-
-	resp, err := http.Get(mavenURL)
-	if err != nil {
-		return err
-	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			log.Println("failed to close ReadCloser. %w", err)
-		}
-	}(resp.Body)
-
-	_, err = io.Copy(out, resp.Body)
-	return err
+	return os.WriteFile(filePath, data, 0600)
 }
 
 func unzip(src string, destinationFolder string) error {

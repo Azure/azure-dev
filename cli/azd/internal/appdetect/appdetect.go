@@ -92,6 +92,8 @@ func (f Dependency) Display() string {
 		return "Vite"
 	case JsNext:
 		return "Next.js"
+	case SpringFrontend:
+		return "Spring Frontend"
 	}
 
 	return ""

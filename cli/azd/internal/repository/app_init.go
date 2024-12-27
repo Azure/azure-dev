@@ -981,7 +981,7 @@ func ServiceFromDetect(
 	svcName string,
 	prj appdetect.Project) (project.ServiceConfig, error) {
 	svc := project.ServiceConfig{
-		Name: svcName,
+		Name: names.LabelName(svcName),
 	}
 	rel, err := filepath.Rel(root, prj.Path)
 	if err != nil {

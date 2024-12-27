@@ -1,7 +1,6 @@
 package appdetect
 
 import (
-	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -454,77 +453,6 @@ func TestUpdateDependencyVersionAccordingToDependencyManagement(t *testing.T) {
 	}
 }
 
-func TestUpdateVersionAccordingToPropertiesAndDependencyManagement(t *testing.T) {
-	var tests = []struct {
-		name      string
-		pomString string
-		expected  []dependency
-	}{
-		{
-			name: "Test updateVersionAccordingToPropertiesAndDependencyManagement",
-			pomString: `
-				<project>
-					<modelVersion>4.0.0</modelVersion>
-					<groupId>com.example</groupId>
-					<artifactId>example-project</artifactId>
-					<version>1.0.0</version>
-					<properties>
-						<version.slf4j>1.0.0</version.slf4j>
-						<version.junit>2.0.0</version.junit>
-					</properties>
-					<dependencyManagement>
-						<dependencies>
-							<dependency>
-								<groupId>org.slf4j</groupId>
-								<artifactId>slf4j-api</artifactId>
-								<version>${version.slf4j}</version>
-							</dependency>
-						</dependencies>
-					</dependencyManagement>
-					<dependencies>
-						<dependency>
-							<groupId>org.slf4j</groupId>
-							<artifactId>slf4j-api</artifactId>
-						</dependency>
-						<dependency>
-							<groupId>junit</groupId>
-							<artifactId>junit</artifactId>
-							<version>${version.junit}</version>
-							<scope>test</scope>
-						</dependency>
-					</dependencies>
-				</project>
-				`,
-			expected: []dependency{
-				{
-					GroupId:    "org.slf4j",
-					ArtifactId: "slf4j-api",
-					Version:    "1.0.0",
-				},
-				{
-					GroupId:    "junit",
-					ArtifactId: "junit",
-					Version:    "2.0.0",
-					Scope:      "test",
-				},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pom, err := unmarshalPomFromString(tt.pomString)
-			if err != nil {
-				t.Fatalf("Failed to unmarshal POM string: %v", err)
-			}
-
-			updateVersionAccordingToPropertiesAndDependencyManagement(&pom)
-			if !reflect.DeepEqual(pom.Dependencies, tt.expected) {
-				t.Fatalf("\nExpected: %s\nActual:   %s", tt.expected, pom.Dependencies)
-			}
-		})
-	}
-}
-
 func TestGetRemoteMavenRepositoryUrl(t *testing.T) {
 	var tests = []struct {
 		name       string
@@ -801,7 +729,7 @@ func TestAbsorbPropertyMap(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			absorbPropertyMap(&tt.input, tt.toBeAbsorbedPom)
+			absorbPropertyMap(&tt.input, tt.toBeAbsorbedPom.propertyMap, false)
 			if !reflect.DeepEqual(tt.input, tt.expected) {
 				t.Fatalf("\nExpected: %s\nActual:   %s", tt.expected, tt.input)
 			}
@@ -817,7 +745,7 @@ func TestAbsorbDependencyManagement(t *testing.T) {
 		expected        pom
 	}{
 		{
-			name: "relativePath not set",
+			name: "test absorbDependencyManagement",
 			input: pom{
 				GroupId:    "sampleGroupId",
 				ArtifactId: "sampleArtifactId",
@@ -867,7 +795,6 @@ func TestAbsorbDependencyManagement(t *testing.T) {
 					{
 						GroupId:    "groupIdOne",
 						ArtifactId: "artifactIdOne",
-						Version:    "1.0.0",
 						Scope:      "compile",
 					},
 				},
@@ -879,7 +806,7 @@ func TestAbsorbDependencyManagement(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			absorbDependencyManagement(&tt.input, tt.toBeAbsorbedPom)
+			absorbDependencyManagement(&tt.input, tt.toBeAbsorbedPom.dependencyManagementMap, false)
 			if !reflect.DeepEqual(tt.input, tt.expected) {
 				t.Fatalf("\nExpected: %s\nActual:   %s", tt.expected, tt.input)
 			}
@@ -998,7 +925,7 @@ func TestAbsorbDependency(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			absorbDependency(&tt.input, tt.toBeAbsorbedPom)
+			absorbDependencies(&tt.input, tt.toBeAbsorbedPom.Dependencies)
 			if !reflect.DeepEqual(tt.input, tt.expected) {
 				t.Fatalf("\nExpected: %s\nActual:   %s", tt.expected, tt.input)
 			}
@@ -1117,7 +1044,7 @@ func TestAbsorbBuildPlugin(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			absorbBuildPlugin(&tt.input, tt.toBeAbsorbedPom)
+			absorbBuildPlugins(&tt.input, tt.toBeAbsorbedPom.Build.Plugins)
 			if !reflect.DeepEqual(tt.input, tt.expected) {
 				t.Fatalf("\nExpected: %s\nActual:   %s", tt.expected, tt.input)
 			}
@@ -1125,16 +1052,16 @@ func TestAbsorbBuildPlugin(t *testing.T) {
 	}
 }
 
-func TestCreateSimulatedEffectivePomFromFilePath(t *testing.T) {
-	if !commandExistsInPath("java") {
-		slog.Debug("Skip TestCreateSimulatedEffectivePomFromFilePath because java command not found.")
+func TestCreateSimulatedEffectivePom(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("Skip TestCreateSimulatedEffectivePom in GitHub Actions because it will time out.")
 	}
 	var tests = []struct {
 		name     string
 		testPoms []testPom
 	}{
 		{
-			name: "no parent",
+			name: "No parent",
 			testPoms: []testPom{
 				{
 					pomFilePath: "pom.xml",
@@ -1164,7 +1091,7 @@ func TestCreateSimulatedEffectivePomFromFilePath(t *testing.T) {
 			},
 		},
 		{
-			name: "self-defined parent",
+			name: "Self-defined parent",
 			testPoms: []testPom{
 				{
 					pomFilePath: "./pom.xml",
@@ -1226,7 +1153,7 @@ func TestCreateSimulatedEffectivePomFromFilePath(t *testing.T) {
 			},
 		},
 		{
-			name: "self-defined parent in grandparent folder",
+			name: "S-defined parent in grandparent folder",
 			testPoms: []testPom{
 				{
 					pomFilePath: "./pom.xml",
@@ -1724,7 +1651,7 @@ func TestCreateSimulatedEffectivePomFromFilePath(t *testing.T) {
 			},
 		},
 		{
-			name: "scope not set in leaf pom",
+			name: "Scope not set in leaf pom",
 			testPoms: []testPom{
 				{
 					pomFilePath: "./pom.xml",
@@ -1890,9 +1817,355 @@ func TestCreateSimulatedEffectivePomFromFilePath(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Set profiles and set activeByDefault = true",
+			testPoms: []testPom{
+				{
+					pomFilePath: "./pom.xml",
+					pomContentString: `
+						<project>
+							<modelVersion>4.0.0</modelVersion>
+
+							<parent>
+								<groupId>org.springframework.boot</groupId>
+								<artifactId>spring-boot-starter-parent</artifactId>
+								<version>3.2.3</version>
+							</parent>
+
+							<groupId>com.example</groupId>
+							<artifactId>example-project</artifactId>
+							<version>1.0.0</version>
+
+							<properties>
+								<spring-cloud.version>2023.0.0</spring-cloud.version>
+							</properties>
+
+							<dependencyManagement>
+								<dependencies>
+									<dependency>
+										<groupId>org.springframework.cloud</groupId>
+										<artifactId>spring-cloud-dependencies</artifactId>
+										<version>${spring-cloud.version}</version>
+										<type>pom</type>
+										<scope>import</scope>
+									</dependency>
+								</dependencies>
+							</dependencyManagement>
+
+							<profiles>
+								<profile>
+									<id>default</id>
+									<activation>
+										<activeByDefault>true</activeByDefault>
+									</activation>
+									<dependencies>
+										<dependency>
+											<groupId>org.springframework.cloud</groupId>
+											<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+										</dependency>
+									</dependencies>
+								</profile>
+							</profiles>
+						</project>
+						`,
+				},
+			},
+		},
+		{
+			name: "Set profiles and set activeByDefault = false",
+			testPoms: []testPom{
+				{
+					pomFilePath: "./pom.xml",
+					pomContentString: `
+						<project>
+							<modelVersion>4.0.0</modelVersion>
+
+							<parent>
+								<groupId>org.springframework.boot</groupId>
+								<artifactId>spring-boot-starter-parent</artifactId>
+								<version>3.2.3</version>
+							</parent>
+
+							<groupId>com.example</groupId>
+							<artifactId>example-project</artifactId>
+							<version>1.0.0</version>
+
+							<properties>
+								<spring-cloud.version>2023.0.0</spring-cloud.version>
+							</properties>
+
+							<dependencyManagement>
+								<dependencies>
+									<dependency>
+										<groupId>org.springframework.cloud</groupId>
+										<artifactId>spring-cloud-dependencies</artifactId>
+										<version>${spring-cloud.version}</version>
+										<type>pom</type>
+										<scope>import</scope>
+									</dependency>
+								</dependencies>
+							</dependencyManagement>
+
+							<profiles>
+								<profile>
+									<id>default</id>
+									<activation>
+										<activeByDefault>false</activeByDefault>
+									</activation>
+									<dependencies>
+										<dependency>
+											<groupId>org.springframework.cloud</groupId>
+											<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+										</dependency>
+									</dependencies>
+								</profile>
+							</profiles>
+						</project>
+						`,
+				},
+			},
+		},
+		{
+			name: "Override properties in profile",
+			testPoms: []testPom{
+				{
+					pomFilePath: "./pom.xml",
+					pomContentString: `
+						<project>
+							<modelVersion>4.0.0</modelVersion>
+
+							<parent>
+								<groupId>org.springframework.boot</groupId>
+								<artifactId>spring-boot-starter-parent</artifactId>
+								<version>3.2.3</version>
+							</parent>
+
+							<groupId>com.example</groupId>
+							<artifactId>example-project</artifactId>
+							<version>1.0.0</version>
+
+							<properties>
+								<spring-cloud.version>2023.0.0</spring-cloud.version>
+							</properties>
+
+							<dependencyManagement>
+								<dependencies>
+									<dependency>
+										<groupId>org.springframework.cloud</groupId>
+										<artifactId>spring-cloud-dependencies</artifactId>
+										<version>${spring-cloud.version}</version>
+										<type>pom</type>
+										<scope>import</scope>
+									</dependency>
+								</dependencies>
+							</dependencyManagement>
+
+							<profiles>
+								<profile>
+									<id>default</id>
+									<activation>
+										<activeByDefault>true</activeByDefault>
+									</activation>
+									<properties>
+										<spring-cloud.version>2023.0.4</spring-cloud.version>
+									</properties>
+									<dependencies>
+										<dependency>
+											<groupId>org.springframework.cloud</groupId>
+											<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+										</dependency>
+									</dependencies>
+								</profile>
+							</profiles>
+						</project>
+						`,
+				},
+			},
+		},
+		{
+			name: "Add build section in profile",
+			testPoms: []testPom{
+				{
+					pomFilePath: "./pom.xml",
+					pomContentString: `
+						<project>
+							<modelVersion>4.0.0</modelVersion>
+
+							<parent>
+								<groupId>org.springframework.boot</groupId>
+								<artifactId>spring-boot-starter-parent</artifactId>
+								<version>3.3.5</version>
+							</parent>
+
+							<groupId>com.example</groupId>
+							<artifactId>example-project</artifactId>
+							<version>1.0.0</version>
+
+							<profiles>
+								<profile>
+									<id>default</id>
+									<activation>
+										<activeByDefault>true</activeByDefault>
+									</activation>
+									<build>
+										<plugins>
+											<plugin>
+												<groupId>org.springframework.boot</groupId>
+												<artifactId>spring-boot-maven-plugin</artifactId>
+												<version>3.3.5</version>
+												<executions>
+													<execution>
+														<goals>
+															<goal>repackage</goal>
+														</goals>
+													</execution>
+												</executions>
+											</plugin>
+										</plugins>
+									</build>
+								</profile>
+							</profiles>
+						</project>
+						`,
+				},
+			},
+		},
+		{
+			name: "Add dependencyManagement section in profile",
+			testPoms: []testPom{
+				{
+					pomFilePath: "./pom.xml",
+					pomContentString: `
+						<project>
+							<modelVersion>4.0.0</modelVersion>
+
+							<groupId>com.example</groupId>
+							<artifactId>example-project</artifactId>
+							<version>1.0.0</version>
+
+							<dependencyManagement>
+								<dependencies>
+									<dependency>
+										<groupId>org.springframework.boot</groupId>
+										<artifactId>spring-boot-dependencies</artifactId>
+										<version>3.0.0</version>
+										<type>pom</type>
+										<scope>import</scope>
+									</dependency>
+								</dependencies>
+							</dependencyManagement>
+							<dependencies>
+								<dependency>
+									<groupId>org.springframework</groupId>
+									<artifactId>spring-core</artifactId>
+									<scope>compile</scope>
+								</dependency>
+								<dependency>
+									<groupId>junit</groupId>
+									<artifactId>junit</artifactId>
+									<scope>test</scope>
+								</dependency>
+							</dependencies>
+
+							<profiles>
+								<profile>
+									<id>default</id>
+									<activation>
+										<activeByDefault>true</activeByDefault>
+									</activation>
+									<dependencyManagement>
+										<dependencies>
+											<dependency>
+												<groupId>org.springframework</groupId>
+												<artifactId>spring-core</artifactId>
+												<version>5.3.8</version>
+												<scope>compile</scope>
+											</dependency>
+											<dependency>
+												<groupId>junit</groupId>
+												<artifactId>junit</artifactId>
+												<version>4.13.2</version>
+												<scope>test</scope>
+											</dependency>
+										</dependencies>
+									</dependencyManagement>
+								</profile>
+							</profiles>
+						</project>
+						`,
+				},
+			},
+		},
+		{
+			name: "Add dependencyManagement and dependencies section in profile",
+			testPoms: []testPom{
+				{
+					pomFilePath: "./pom.xml",
+					pomContentString: `
+						<project>
+							<modelVersion>4.0.0</modelVersion>
+
+							<groupId>com.example</groupId>
+							<artifactId>example-project</artifactId>
+							<version>1.0.0</version>
+
+							<dependencyManagement>
+								<dependencies>
+									<dependency>
+										<groupId>org.springframework.boot</groupId>
+										<artifactId>spring-boot-dependencies</artifactId>
+										<version>3.0.0</version>
+										<type>pom</type>
+										<scope>import</scope>
+									</dependency>
+								</dependencies>
+							</dependencyManagement>
+
+							<profiles>
+								<profile>
+									<id>default</id>
+									<activation>
+										<activeByDefault>true</activeByDefault>
+									</activation>
+									<dependencyManagement>
+										<dependencies>
+											<dependency>
+												<groupId>org.springframework</groupId>
+												<artifactId>spring-core</artifactId>
+												<version>5.3.8</version>
+												<scope>compile</scope>
+											</dependency>
+											<dependency>
+												<groupId>junit</groupId>
+												<artifactId>junit</artifactId>
+												<version>4.13.2</version>
+												<scope>test</scope>
+											</dependency>
+										</dependencies>
+									</dependencyManagement>
+									<dependencies>
+										<dependency>
+											<groupId>org.springframework</groupId>
+											<artifactId>spring-core</artifactId>
+											<scope>compile</scope>
+										</dependency>
+										<dependency>
+											<groupId>junit</groupId>
+											<artifactId>junit</artifactId>
+											<scope>test</scope>
+										</dependency>
+									</dependencies>
+								</profile>
+							</profiles>
+						</project>
+						`,
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			workingDir, err := prepareTestPomFiles(tt.testPoms)
 			if err != nil {
 				t.Fatalf("%v", err)

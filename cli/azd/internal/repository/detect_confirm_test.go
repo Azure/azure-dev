@@ -76,6 +76,36 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			},
 		},
 		{
+			name: "confirm single with resources service bus",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						},
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "add a language",
 			detection: []appdetect.Project{
 				{

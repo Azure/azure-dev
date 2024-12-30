@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"strings"
 	"testing"
@@ -14,7 +15,13 @@ import (
 )
 
 func TestInitializer_infraSpecFromDetect(t *testing.T) {
-	envs, _ := scaffold.GetServiceBindingEnvsForPostgres()
+	envsForPostgres, _ := scaffold.GetServiceBindingEnvsForPostgres()
+	scaffoldServiceBus := scaffold.AzureDepServiceBus{
+		Queues:   []string{"queue1"},
+		IsJms:    true,
+		AuthType: internal.AuthTypeConnectionString,
+	}
+	envsForServiceBus, _ := scaffold.GetServiceBindingEnvsForServiceBus(scaffoldServiceBus)
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -140,6 +147,47 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "api with service bus",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepServiceBus{
+								Queues: []string{"queue1"},
+								IsJms:  true,
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					"storage": {
+						first: appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						},
+						second: EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				"Connection string",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:            "java",
+						Port:            8080,
+						Backend:         &scaffold.Backend{},
+						AzureServiceBus: &scaffoldServiceBus,
+						Envs:            envsForServiceBus,
+					},
+				},
+				AzureServiceBus: &scaffoldServiceBus,
+			},
+		},
+		{
 			name: "api and web with db",
 			detect: detectConfirm{
 				Services: []appdetect.Project{
@@ -187,7 +235,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						DbPostgres: &scaffold.DatabasePostgres{
 							DatabaseName: "myappdb",
 						},
-						Envs: envs,
+						Envs: envsForPostgres,
 					},
 					{
 						Name: "js",

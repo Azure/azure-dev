@@ -631,23 +631,3 @@ func chooseAuthTypeByPrompt(
 	}
 	return authOptions[selection], nil
 }
-
-func promptMissingPropertyAndExit(console input.Console, ctx context.Context, key string) {
-	console.Message(ctx, fmt.Sprintf("No value was provided for %s. Please update the configuration file "+
-		"(like application.properties or application.yaml) with a valid value.", key))
-	os.Exit(0)
-}
-
-func distinctValues(input map[string]string) []string {
-	valueSet := make(map[string]struct{})
-	for _, value := range input {
-		valueSet[value] = struct{}{}
-	}
-
-	var result []string
-	for value := range valueSet {
-		result = append(result, value)
-	}
-
-	return result
-}

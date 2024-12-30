@@ -65,6 +65,7 @@ type detectConfirm struct {
 // Init initializes state from initial detection output
 func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 	d.Databases = make(map[appdetect.DatabaseDep]EntryKind)
+	d.AzureDeps = make(map[string]Pair)
 	d.Services = make([]appdetect.Project, 0, len(projects))
 	d.modified = false
 	d.root = root

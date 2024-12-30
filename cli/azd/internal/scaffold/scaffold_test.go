@@ -168,6 +168,21 @@ func TestExecInfra(t *testing.T) {
 				},
 			},
 		},
+		{
+			"API with Storage Account",
+			InfraSpec{
+				AzureStorageAccount: &AzureDepStorageAccount{
+					ContainerNames: []string{"container1"},
+				},
+				Services: []ServiceSpec{
+					{
+						Name:                "api",
+						Port:                3100,
+						AzureStorageAccount: &AzureDepStorageAccount{},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

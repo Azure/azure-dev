@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -55,6 +56,13 @@ func (i *Initializer) infraSpecFromDetect(
 				}
 			}
 			break dbPrompt
+		}
+	}
+
+	for _, azureDep := range detect.AzureDeps {
+		err := i.buildInfraSpecByAzureDep(ctx, azureDep.first, &spec)
+		if err != nil {
+			return scaffold.InfraSpec{}, err
 		}
 	}
 
@@ -262,4 +270,26 @@ func PromptPort(
 	}
 
 	return port, nil
+}
+
+func (i *Initializer) buildInfraSpecByAzureDep(
+	ctx context.Context,
+	azureDep appdetect.AzureDep,
+	spec *scaffold.InfraSpec) error {
+	authType, err := chooseAuthTypeByPrompt(
+		azureDep.ResourceDisplay(),
+		[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString},
+		ctx,
+		i.console)
+	if err != nil {
+		return err
+	}
+	switch dependency := azureDep.(type) {
+	case appdetect.AzureDepStorageAccount:
+		spec.AzureStorageAccount = &scaffold.AzureDepStorageAccount{
+			ContainerNames: DistinctValues(dependency.ContainerNamePropertyMap),
+			AuthType:       authType,
+		}
+	}
+	return nil
 }

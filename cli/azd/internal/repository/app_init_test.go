@@ -127,7 +127,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			},
 		},
 		{
-			name: "api with storage",
+			name: "api with storage umi",
 			detect: detectConfirm{
 				Services: []appdetect.Project{
 					{
@@ -178,6 +178,63 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 						Props: project.StorageProps{
 							Containers: []string{"container1"},
 							AuthType:   internal.AuthTypeUserAssignedManagedIdentity,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with storage connection string",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepStorageAccount{
+								ContainerNamePropertyMap: map[string]string{
+									"spring.cloud.azure.container": "container1",
+								},
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepStorageAccount{}.ResourceDisplay(): {
+						appdetect.AzureDepStorageAccount{
+							ContainerNamePropertyMap: map[string]string{
+								"spring.cloud.azure.container": "container1",
+							},
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"Connection string",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"storage"},
+					},
+					"storage": {
+						Type: project.ResourceTypeStorage,
+						Props: project.StorageProps{
+							Containers: []string{"container1"},
+							AuthType:   internal.AuthTypeConnectionString,
 						},
 					},
 				},

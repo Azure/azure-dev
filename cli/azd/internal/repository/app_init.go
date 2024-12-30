@@ -486,7 +486,7 @@ func (i *Initializer) prjConfigFromDetect(
 				config.Resources["storage"] = &project.ResourceConfig{
 					Type: project.ResourceTypeStorage,
 					Props: project.StorageProps{
-						Containers: distinctValues(azureDep.ContainerNamePropertyMap),
+						Containers: DistinctValues(azureDep.ContainerNamePropertyMap),
 						AuthType:   authType,
 					},
 				}
@@ -649,7 +649,7 @@ func promptMissingPropertyAndExit(console input.Console, ctx context.Context, ke
 	os.Exit(0)
 }
 
-func distinctValues(input map[string]string) []string {
+func DistinctValues(input map[string]string) []string {
 	valueSet := make(map[string]struct{})
 	for _, value := range input {
 		valueSet[value] = struct{}{}

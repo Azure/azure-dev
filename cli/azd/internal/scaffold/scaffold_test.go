@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,6 +127,7 @@ func TestExecInfra(t *testing.T) {
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
 					DatabaseUser: "appuser",
+					AuthType:     internal.AuthTypeUserAssignedManagedIdentity,
 				},
 				Services: []ServiceSpec{
 					{
@@ -133,6 +135,7 @@ func TestExecInfra(t *testing.T) {
 						Port: 3100,
 						DbPostgres: &DatabasePostgres{
 							DatabaseName: "appdb",
+							AuthType:     internal.AuthTypeUserAssignedManagedIdentity,
 						},
 					},
 				},

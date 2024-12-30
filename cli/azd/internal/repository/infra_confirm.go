@@ -60,21 +60,16 @@ func (i *Initializer) infraSpecFromDetect(
 			continue
 		}
 
-	dbPrompt:
-		for {
-			dbName, err := promptDbName(i.console, ctx, database)
-			if err != nil {
-				return scaffold.InfraSpec{}, err
-			}
+		dbName, err := promptDbName(i.console, ctx, database)
+		if err != nil {
+			return scaffold.InfraSpec{}, err
+		}
 
-			switch database {
-			case appdetect.DbMongo:
-				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
-					DatabaseName: dbName,
-				}
-				break dbPrompt
+		switch database {
+		case appdetect.DbMongo:
+			spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
+				DatabaseName: dbName,
 			}
-			break dbPrompt
 		}
 	}
 

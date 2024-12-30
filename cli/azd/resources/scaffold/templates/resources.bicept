@@ -110,7 +110,6 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
 {{- end}}
 
 {{- if .DbPostgres}}
-
 var postgreSqlDatabaseName = '{{ .DbPostgres.DatabaseName }}'
 var postgreSqlDatabaseUser = '{{ .DbPostgres.DatabaseUser }}'
 module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
@@ -137,12 +136,21 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
         name: postgreSqlDatabaseName
       }
     ]
+    location: location
+    {{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity")) }}
+    roleAssignments: [
+      {
+        principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+    ]
+    {{- end}}
   }
 }
 {{- end}}
 
 {{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity"))}}
-
 module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
   name: 'connectionCreatorIdentity'
   params: {
@@ -151,9 +159,9 @@ module connectionCreatorIdentity 'br/public:avm/res/managed-identity/user-assign
   }
 }
 {{- end}}
+
 {{- range .Services}}
 {{- if (and .DbPostgres (eq .DbPostgres.AuthType "userAssignedManagedIdentity")) }}
-var {{bicepName .Name}}PostgresConnectionName = 'connection_${uniqueString(subscription().id, resourceGroup().id, location, '{{bicepName .Name}}', 'Postgres')}'
 module {{bicepName .Name}}CreateConnectionToPostgreSql 'br/public:avm/res/resources/deployment-script:0.4.0' = {
   name: '{{bicepName .Name}}CreateConnectionToPostgreSql'
   params: {

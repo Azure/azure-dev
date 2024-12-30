@@ -509,7 +509,7 @@ func (i *Initializer) prjConfigFromDetect(
 					config.Resources["kafka"] = &project.ResourceConfig{
 						Type: project.ResourceTypeMessagingKafka,
 						Props: project.KafkaProps{
-							Topics:            distinctValues(azureDep.EventHubsNamePropertyMap),
+							Topics:            DistinctValues(azureDep.EventHubsNamePropertyMap),
 							AuthType:          authType,
 							SpringBootVersion: azureDep.SpringBootVersion,
 						},
@@ -518,7 +518,7 @@ func (i *Initializer) prjConfigFromDetect(
 					config.Resources["eventhubs"] = &project.ResourceConfig{
 						Type: project.ResourceTypeMessagingEventHubs,
 						Props: project.EventHubsProps{
-							EventHubNames: distinctValues(azureDep.EventHubsNamePropertyMap),
+							EventHubNames: DistinctValues(azureDep.EventHubsNamePropertyMap),
 							AuthType:      authType,
 						},
 					}
@@ -555,9 +555,9 @@ func (i *Initializer) prjConfigFromDetect(
 			}
 
 			for _, azureDep := range svc.AzureDeps {
-				switch azureDep.(type) {
+				switch azureDep := azureDep.(type) {
 				case appdetect.AzureDepEventHubs:
-					if azureDep.(appdetect.AzureDepEventHubs).UseKafka {
+					if azureDep.UseKafka {
 						resSpec.Uses = append(resSpec.Uses, "kafka")
 					} else {
 						resSpec.Uses = append(resSpec.Uses, "eventhubs")
@@ -686,20 +686,6 @@ func promptMissingPropertyAndExit(console input.Console, ctx context.Context, ke
 	os.Exit(0)
 }
 
-func distinctValues(input map[string]string) []string {
-	valueSet := make(map[string]struct{})
-	for _, value := range input {
-		valueSet[value] = struct{}{}
-	}
-
-	var result []string
-	for value := range valueSet {
-		result = append(result, value)
-	}
-
-	return result
-}
-
 func processSpringCloudAzureDepByPrompt(console input.Console, ctx context.Context, project *appdetect.Project) error {
 	continueOption, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Detected Kafka dependency but no spring-cloud-azure-starter found. Select an option",
@@ -755,4 +741,18 @@ func promptSpringBootVersion(console input.Console, ctx context.Context) (string
 	default:
 		return appdetect.UnknownSpringBootVersion, nil
 	}
+}
+
+func DistinctValues(input map[string]string) []string {
+	valueSet := make(map[string]struct{})
+	for _, value := range input {
+		valueSet[value] = struct{}{}
+	}
+
+	var result []string
+	for value := range valueSet {
+		result = append(result, value)
+	}
+
+	return result
 }

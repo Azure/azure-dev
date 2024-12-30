@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,6 +165,29 @@ func TestExecInfra(t *testing.T) {
 						Name:    "api",
 						Port:    3100,
 						DbRedis: &DatabaseRedis{},
+					},
+				},
+			},
+		},
+		{
+			"API with Event Hubs",
+			InfraSpec{
+				AzureEventHubs: &AzureDepEventHubs{
+					EventHubNames:     []string{"eventhub1"},
+					AuthType:          internal.AuthTypeUserAssignedManagedIdentity,
+					UseKafka:          true,
+					SpringBootVersion: "3.4.0",
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						AzureEventHubs: &AzureDepEventHubs{
+							EventHubNames:     []string{"eventhub1"},
+							AuthType:          internal.AuthTypeUserAssignedManagedIdentity,
+							UseKafka:          true,
+							SpringBootVersion: "3.4.0",
+						},
 					},
 				},
 			},

@@ -431,8 +431,7 @@ func (i *Initializer) prjConfigFromDetect(
 					return config, err
 				}
 
-				var authType = internal.AuthTypeUnspecified
-				authType, err = chooseAuthTypeByPrompt(
+				authType, err := chooseAuthTypeByPrompt(
 					database.Display(),
 					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
 					ctx,

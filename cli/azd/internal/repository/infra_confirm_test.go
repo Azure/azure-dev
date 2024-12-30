@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"strings"
 	"testing"
@@ -14,7 +15,12 @@ import (
 )
 
 func TestInitializer_infraSpecFromDetect(t *testing.T) {
-	envs, _ := scaffold.GetServiceBindingEnvsForPostgres()
+	envsForPostgres, _ := scaffold.GetServiceBindingEnvsForPostgres()
+	scaffoldMysql := scaffold.DatabaseMySql{
+		DatabaseName: "mysql-db",
+		AuthType:     internal.AuthTypePassword,
+	}
+	envsForMysql, _ := scaffold.GetServiceBindingEnvsForMysql(scaffoldMysql)
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -92,6 +98,40 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Backend: &scaffold.Backend{},
 					},
 				},
+			},
+		},
+		{
+			name: "api with mysql",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbMySql,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbMySql: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				// prompt for dbname
+				"mysql-db",
+				"Username and password",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:    "java",
+						Port:    8080,
+						Backend: &scaffold.Backend{},
+						DbMySql: &scaffoldMysql,
+						Envs:    envsForMysql,
+					},
+				},
+				DbMySql: &scaffoldMysql,
 			},
 		},
 		{
@@ -187,7 +227,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						DbPostgres: &scaffold.DatabasePostgres{
 							DatabaseName: "myappdb",
 						},
-						Envs: envs,
+						Envs: envsForPostgres,
 					},
 					{
 						Name: "js",

@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,6 +134,48 @@ func TestExecInfra(t *testing.T) {
 						Port: 3100,
 						DbPostgres: &DatabasePostgres{
 							DatabaseName: "appdb",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with MySQL password",
+			InfraSpec{
+				DbMySql: &DatabaseMySql{
+					DatabaseName: "appdb",
+					DatabaseUser: "appuser",
+					AuthType:     internal.AuthTypePassword,
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbMySql: &DatabaseMySql{
+							DatabaseName: "appdb",
+							DatabaseUser: "appuser",
+							AuthType:     internal.AuthTypePassword,
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with MySQL umi",
+			InfraSpec{
+				DbMySql: &DatabaseMySql{
+					DatabaseName: "appdb",
+					DatabaseUser: "appuser",
+					AuthType:     internal.AuthTypeUserAssignedManagedIdentity,
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbMySql: &DatabaseMySql{
+							DatabaseName: "appdb",
+							DatabaseUser: "appuser",
+							AuthType:     internal.AuthTypeUserAssignedManagedIdentity,
 						},
 					},
 				},

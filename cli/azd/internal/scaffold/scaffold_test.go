@@ -168,6 +168,35 @@ func TestExecInfra(t *testing.T) {
 				},
 			},
 		},
+		{
+			"API with Cosmos DB",
+			InfraSpec{
+				DbCosmos: &DatabaseCosmosAccount{
+					DatabaseName: "cosmos-db",
+					Containers: []CosmosSqlDatabaseContainer{
+						{
+							ContainerName:     "container1",
+							PartitionKeyPaths: []string{"/partitionKey"},
+						},
+					},
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbCosmos: &DatabaseCosmosAccount{
+							DatabaseName: "cosmos-db",
+							Containers: []CosmosSqlDatabaseContainer{
+								{
+									ContainerName:     "container1",
+									PartitionKeyPaths: []string{"/partitionKey"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -31,6 +31,26 @@ func (i *Initializer) infraSpecFromDetect(
 			continue
 		}
 
+		if database == appdetect.DbCosmos {
+			dbName, err := getDatabaseName(database, &detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			if dbName == "" {
+				i.console.Message(ctx, "Database name is required.")
+				continue
+			}
+			containers, err := detectCosmosSqlDatabaseContainersInDirectory(detect.root)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			spec.DbCosmos = &scaffold.DatabaseCosmosAccount{
+				DatabaseName: dbName,
+				Containers:   containers,
+			}
+			continue
+		}
+
 	dbPrompt:
 		for {
 			dbName, err := promptDbName(i.console, ctx, database)

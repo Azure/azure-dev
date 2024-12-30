@@ -174,7 +174,6 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 
 
 {{- if .DbCosmos }}
-var cosmosDatabaseName = '{{ .DbCosmos.DatabaseName }}'
 module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
   name: 'cosmos'
   params: {

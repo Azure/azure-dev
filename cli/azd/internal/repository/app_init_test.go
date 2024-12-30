@@ -127,6 +127,52 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "api with cosmos db",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbCosmos,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbCosmos: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"cosmosdbname",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"cosmos"},
+					},
+					"cosmos": {
+						Name: "cosmos",
+						Type: project.ResourceTypeDbCosmos,
+						Props: project.CosmosDBProps{
+							DatabaseName: "cosmosdbname",
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "api and web",
 			detect: detectConfirm{
 				Services: []appdetect.Project{
@@ -303,6 +349,8 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 					tt.detect.Services[idx].Docker.Path = filepath.Join(dir, svc.Path, svc.Docker.Path)
 				}
 			}
+
+			tt.detect.root = dir
 
 			spec, err := i.prjConfigFromDetect(
 				context.Background(),

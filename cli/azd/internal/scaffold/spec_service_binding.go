@@ -3,8 +3,6 @@ package scaffold
 import (
 	"fmt"
 	"strings"
-
-	"github.com/azure/azure-dev/cli/azd/internal"
 )
 
 // todo merge ServiceType and project.ResourceType
@@ -253,10 +251,6 @@ func GetServiceBindingEnvsForAIModel() []Env {
 			Value: ToServiceBindingEnvValue(ServiceTypeOpenAiModel, ServiceBindingInfoTypeEndpoint),
 		},
 	}
-}
-
-func unsupportedAuthTypeError(serviceType ServiceType, authType internal.AuthType) error {
-	return fmt.Errorf("unsupported auth type, serviceType = %s, authType = %s", serviceType, authType)
 }
 
 func mergeEnvWithDuplicationCheck(a []Env, b []Env) ([]Env, error) {

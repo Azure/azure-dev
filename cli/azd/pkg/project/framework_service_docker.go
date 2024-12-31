@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
@@ -31,7 +33,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type DockerProjectOptions struct {
@@ -198,6 +199,18 @@ func (p *dockerProject) Build(
 ) (*ServiceBuildResult, error) {
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServiceBuildResult{Restore: restoreOutput}, nil
+	}
+
+	// if it's a java project without Dockerfile, add a default one for Docker build
+	if serviceConfig.Language == ServiceLanguageJava && serviceConfig.Docker.Path == "" {
+		log.Printf("Dockerfile not found for java project %s, will provide a default one", serviceConfig.Name)
+		defaultDockerfilePath, err := addDefaultDockerfileForJavaProject(serviceConfig.Name)
+		if err != nil {
+			return nil, err
+		}
+		serviceConfig.Docker = DockerProjectOptions{
+			Path: defaultDockerfilePath,
+		}
 	}
 
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
@@ -618,4 +631,28 @@ func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOpt
 	}
 
 	return options
+}
+
+// todo: hardcode jdk-21 as base image here, may need more accurate java version detection.
+const DefaultDockerfileForJavaProject = `FROM openjdk:21-jdk-slim
+COPY ./target/*.jar /app.jar
+ENTRYPOINT ["sh", "-c", "java -jar /app.jar"]`
+
+func addDefaultDockerfileForJavaProject(svcName string) (string, error) {
+	dockerfileDir, err := os.MkdirTemp("", svcName)
+	if err != nil {
+		return "", fmt.Errorf("error creating temp Dockerfile directory: %w", err)
+	}
+
+	dockerfilePath := filepath.Join(dockerfileDir, "Dockerfile")
+	file, err := os.Create(dockerfilePath)
+	if err != nil {
+		return "", fmt.Errorf("error creating Dockerfile at %s: %w", dockerfilePath, err)
+	}
+	defer file.Close()
+
+	if _, err = file.WriteString(DefaultDockerfileForJavaProject); err != nil {
+		return "", fmt.Errorf("error writing Dockerfile at %s: %w", dockerfilePath, err)
+	}
+	return dockerfilePath, nil
 }

@@ -21,8 +21,11 @@ type mavenWrapper struct {
 	winPath   string
 }
 
-// JavaProjectOptionMavenParentPath The parent module path of the maven multi-module project
-const JavaProjectOptionMavenParentPath = "parentPath"
+// JavaProjectOptionCurrentPomDir The project path of the maven single-module project
+const JavaProjectOptionCurrentPomDir = "path"
+
+// JavaProjectOptionParentPomDir The parent module path of the maven multi-module project
+const JavaProjectOptionParentPomDir = "parentPath"
 
 // JavaProjectOptionPosixMavenWrapperPath The path to the maven wrapper script for POSIX systems
 const JavaProjectOptionPosixMavenWrapperPath = "posixMavenWrapperPath"
@@ -76,9 +79,15 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			detectAzureDependenciesByAnalyzingSpringBootProject(mavenProject, &project)
 			if parentPom != nil {
 				project.Options = map[string]interface{}{
-					JavaProjectOptionMavenParentPath:       filepath.Dir(parentPom.pomFilePath),
+					JavaProjectOptionParentPomDir:          filepath.Dir(parentPom.pomFilePath),
 					JavaProjectOptionPosixMavenWrapperPath: currentWrapper.posixPath,
 					JavaProjectOptionWinMavenWrapperPath:   currentWrapper.winPath,
+				}
+			} else {
+				project.Options = map[string]interface{}{
+					JavaProjectOptionCurrentPomDir:         path,
+					JavaProjectOptionPosixMavenWrapperPath: detectMavenWrapper(path, "mvnw"),
+					JavaProjectOptionWinMavenWrapperPath:   detectMavenWrapper(path, "mvnw.cmd"),
 				}
 			}
 

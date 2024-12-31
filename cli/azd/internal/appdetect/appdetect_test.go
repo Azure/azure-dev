@@ -40,6 +40,11 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionCurrentPomDir:         filepath.Join(dir, "java"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java", "mvnw.cmd"),
+					},
 				},
 				{
 					Language:      Java,
@@ -49,7 +54,7 @@ func TestDetect(t *testing.T) {
 						ApplicationName: "subsubmodule1",
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multi-levels"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multi-levels"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multi-levels", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multi-levels", "mvnw.cmd"),
 					},
@@ -62,7 +67,7 @@ func TestDetect(t *testing.T) {
 						ApplicationName: "subsubmodule2",
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multi-levels"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multi-levels"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multi-levels", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multi-levels", "mvnw.cmd"),
 					},
@@ -78,7 +83,7 @@ func TestDetect(t *testing.T) {
 						DbRedis,
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multimodules"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
@@ -88,7 +93,7 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multimodules"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
@@ -162,6 +167,11 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionCurrentPomDir:         filepath.Join(dir, "java"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java", "mvnw.cmd"),
+					},
 				},
 				{
 					Language:      Java,
@@ -171,7 +181,7 @@ func TestDetect(t *testing.T) {
 						ApplicationName: "subsubmodule1",
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multi-levels"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multi-levels"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multi-levels", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multi-levels", "mvnw.cmd"),
 					},
@@ -184,7 +194,7 @@ func TestDetect(t *testing.T) {
 						ApplicationName: "subsubmodule2",
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multi-levels"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multi-levels"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multi-levels", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multi-levels", "mvnw.cmd"),
 					},
@@ -200,7 +210,7 @@ func TestDetect(t *testing.T) {
 						DbRedis,
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multimodules"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
@@ -210,7 +220,7 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multimodules"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
@@ -233,6 +243,11 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionCurrentPomDir:         filepath.Join(dir, "java"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java", "mvnw.cmd"),
+					},
 				},
 				{
 					Language:      Java,
@@ -242,7 +257,7 @@ func TestDetect(t *testing.T) {
 						ApplicationName: "subsubmodule1",
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multi-levels"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multi-levels"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multi-levels", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multi-levels", "mvnw.cmd"),
 					},
@@ -255,7 +270,7 @@ func TestDetect(t *testing.T) {
 						ApplicationName: "subsubmodule2",
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multi-levels"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multi-levels"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multi-levels", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multi-levels", "mvnw.cmd"),
 					},
@@ -271,7 +286,7 @@ func TestDetect(t *testing.T) {
 						DbRedis,
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multimodules"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
@@ -281,7 +296,7 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multimodules"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
@@ -307,6 +322,11 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionCurrentPomDir:         filepath.Join(dir, "java"),
+						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java", "mvnw"),
+						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java", "mvnw.cmd"),
+					},
 				},
 				{
 					Language:      Java,
@@ -316,7 +336,7 @@ func TestDetect(t *testing.T) {
 						ApplicationName: "subsubmodule1",
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multi-levels"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multi-levels"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multi-levels", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multi-levels", "mvnw.cmd"),
 					},
@@ -329,7 +349,7 @@ func TestDetect(t *testing.T) {
 						ApplicationName: "subsubmodule2",
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multi-levels"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multi-levels"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multi-levels", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multi-levels", "mvnw.cmd"),
 					},
@@ -345,7 +365,7 @@ func TestDetect(t *testing.T) {
 						DbRedis,
 					},
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multimodules"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},
@@ -355,7 +375,7 @@ func TestDetect(t *testing.T) {
 					Path:          "java-multimodules/library",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					Options: map[string]interface{}{
-						JavaProjectOptionMavenParentPath:       filepath.Join(dir, "java-multimodules"),
+						JavaProjectOptionParentPomDir:          filepath.Join(dir, "java-multimodules"),
 						JavaProjectOptionPosixMavenWrapperPath: filepath.Join(dir, "java-multimodules", "mvnw"),
 						JavaProjectOptionWinMavenWrapperPath:   filepath.Join(dir, "java-multimodules", "mvnw.cmd"),
 					},

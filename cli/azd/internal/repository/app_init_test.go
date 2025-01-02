@@ -127,6 +127,118 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "api with service bus umi",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepServiceBus{
+								Queues: []string{"queue1"},
+								IsJms:  true,
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepServiceBus{}.ResourceDisplay(): {
+						appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"User assigned managed identity",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"servicebus"},
+					},
+					"servicebus": {
+						Type: project.ResourceTypeMessagingServiceBus,
+						Props: project.ServiceBusProps{
+							Queues:   []string{"queue1"},
+							IsJms:    true,
+							AuthType: internal.AuthTypeUserAssignedManagedIdentity,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with service bus connection string",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepServiceBus{
+								Queues: []string{"queue1"},
+								IsJms:  true,
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepServiceBus{}.ResourceDisplay(): {
+						appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"Connection string",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"servicebus"},
+					},
+					"servicebus": {
+						Type: project.ResourceTypeMessagingServiceBus,
+						Props: project.ServiceBusProps{
+							Queues:   []string{"queue1"},
+							IsJms:    true,
+							AuthType: internal.AuthTypeConnectionString,
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "api and web",
 			detect: detectConfirm{
 				Services: []appdetect.Project{

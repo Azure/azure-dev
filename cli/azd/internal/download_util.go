@@ -1,4 +1,4 @@
-package appdetect
+package internal
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func download(requestUrl string) ([]byte, error) {
+func Download(requestUrl string) ([]byte, error) {
 	parsedUrl, err := url.ParseRequestURI(requestUrl)
 	if err != nil {
 		return nil, err

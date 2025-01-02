@@ -27,7 +27,7 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: v1.60.1
-          args: -v --timeout 10m0s
+          args: --out-format=colored-line-number -v --timeout 10m0s
           working-directory: cli/azd
 
   cspell-lint:

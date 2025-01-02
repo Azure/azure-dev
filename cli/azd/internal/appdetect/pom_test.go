@@ -1,11 +1,15 @@
 package appdetect
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
 
 func TestCreateEffectivePom(t *testing.T) {
@@ -158,6 +162,7 @@ func TestCreateEffectivePom(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			workingDir, err := prepareTestPomFiles(tt.testPoms)
 			if err != nil {
 				t.Fatalf("%v", err)
@@ -165,7 +170,8 @@ func TestCreateEffectivePom(t *testing.T) {
 			for _, testPom := range tt.testPoms {
 				pomFilePath := filepath.Join(workingDir, testPom.pomFilePath)
 
-				effectivePom, err := createEffectivePom(pomFilePath)
+				effectivePom, err := createEffectivePom(context.TODO(), maven.NewCli(exec.NewCommandRunner(nil)),
+					pomFilePath)
 				if err != nil {
 					t.Fatalf("createEffectivePom failed: %v", err)
 				}
@@ -2172,7 +2178,8 @@ func TestCreateSimulatedEffectivePom(t *testing.T) {
 			}
 			for _, testPom := range tt.testPoms {
 				pomFilePath := filepath.Join(workingDir, testPom.pomFilePath)
-				effectivePom, err := createEffectivePom(pomFilePath)
+				effectivePom, err := createEffectivePom(context.TODO(), maven.NewCli(exec.NewCommandRunner(nil)),
+					pomFilePath)
 				if err != nil {
 					t.Fatalf("%v", err)
 				}

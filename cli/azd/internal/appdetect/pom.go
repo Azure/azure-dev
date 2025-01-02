@@ -1,16 +1,17 @@
 package appdetect
 
 import (
-	"bufio"
 	"context"
 	"encoding/xml"
 	"fmt"
 	"log"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
 
 // pom represents the top-level structure of a Maven POM file.
@@ -90,10 +91,11 @@ const (
 	DependencyScopeTest    string = "test"
 )
 
-func createEffectivePomOrSimulatedEffectivePom(pomPath string) (pom, error) {
-	pom, err := createEffectivePom(pomPath)
+func createEffectivePomOrSimulatedEffectivePom(ctx context.Context, mvnCli *maven.Cli, pomPath string) (pom, error) {
+	effectivePom, err := createEffectivePom(ctx, mvnCli, pomPath)
 	if err == nil {
-		return pom, nil
+		effectivePom.pomFilePath = pomPath
+		return effectivePom, nil
 	}
 	return createSimulatedEffectivePom(pomPath)
 }
@@ -294,7 +296,7 @@ func absorbDependencyManagement(pom *pom, dependencyManagementMap map[string]str
 
 func getSimulatedEffectivePomFromRemoteMavenRepository(groupId string, artifactId string, version string) (pom, error) {
 	requestUrl := getRemoteMavenRepositoryUrl(groupId, artifactId, version)
-	bytes, err := download(requestUrl)
+	bytes, err := internal.Download(requestUrl)
 	if err != nil {
 		return pom{}, err
 	}
@@ -560,54 +562,23 @@ func updateDependencyVersionAccordingToDependencyManagement(pom *pom) {
 	}
 }
 
-func createEffectivePom(pomPath string) (pom, error) {
-	if !commandExistsInPath("java") {
-		return pom{}, fmt.Errorf("can not get effective pom because java command not exist")
-	}
-	mvn, err := getMvnCommandFromPath(pomPath)
-	if err != nil {
-		return pom{}, err
-	}
-	cmd := exec.Command(mvn, "help:effective-pom", "-f", pomPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return pom{}, err
-	}
-	effectivePom, err := getEffectivePomFromConsoleOutput(string(output))
+func createEffectivePom(ctx context.Context, mvnCli *maven.Cli, pomPath string) (pom, error) {
+	effectivePom, err := mvnCli.EffectivePom(ctx, pomPath)
 	if err != nil {
 		return pom{}, err
 	}
 	var resultPom pom
-	if err := xml.Unmarshal([]byte(effectivePom), &resultPom); err != nil {
-		return pom{}, fmt.Errorf("parsing xml: %w", err)
-	}
-	resultPom.pomFilePath = pomPath
-	return resultPom, nil
+	err = xml.Unmarshal([]byte(effectivePom), &resultPom)
+	return resultPom, err
 }
 
-func commandExistsInPath(command string) bool {
-	_, err := exec.LookPath(command)
-	return err == nil
-}
-
-func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
-	var effectivePom strings.Builder
-	scanner := bufio.NewScanner(strings.NewReader(consoleOutput))
-	inProject := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(strings.TrimSpace(line), "<project") {
-			inProject = true
-		} else if strings.HasPrefix(strings.TrimSpace(line), "</project>") {
-			effectivePom.WriteString(line)
-			break
-		}
-		if inProject {
-			effectivePom.WriteString(line)
-		}
+func fileExists(path string) bool {
+	if path == "" {
+		return false
 	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to scan console output. %w", err)
+	if _, err := os.Stat(path); err == nil {
+		return true
+	} else {
+		return false
 	}
-	return effectivePom.String(), nil
 }

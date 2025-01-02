@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -182,6 +183,47 @@ func Test_SaveAndReload(t *testing.T) {
 func TestCleanName(t *testing.T) {
 	require.Equal(t, "already-clean-name", CleanName("already-clean-name"))
 	require.Equal(t, "was-CLEANED-with--bad--things-(123)", CleanName("was CLEANED with *bad* things (123)"))
+}
+
+func TestMarshal_NoEscapeForSpecialChars(t *testing.T) {
+	envMap := map[string]string{
+		"EXAMPLE1": "Hello!World",
+		"EXAMPLE2": "Price=100$",
+		"EXAMPLE3": "Text`WithBacktick",
+		"EXAMPLE4": "NormalText",
+	}
+
+	result, err := Marshal(envMap)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	tests := []struct {
+		key      string
+		expected string
+	}{
+		{"EXAMPLE1", `EXAMPLE1="Hello!World"`},
+		{"EXAMPLE2", `EXAMPLE2="Price=100$"`},
+		{"EXAMPLE3", `EXAMPLE3="Text` + "`" + `WithBacktick"`},
+		{"EXAMPLE4", `EXAMPLE4="NormalText"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			if !containsLine(result, tt.expected) {
+				t.Errorf("Expected line %q to be in result, but got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func containsLine(result, expected string) bool {
+	for _, line := range strings.Split(result, "\n") {
+		if line == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRoundTripNumberWithLeadingZeros(t *testing.T) {

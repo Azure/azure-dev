@@ -12,6 +12,7 @@ Usage
 Flags
     -e, --environment string 	: The name of the environment to use.
         --no-state           	: Do not use latest Deployment State (bicep only).
+    -o, --output string      	: The output format (the supported formats are json, none).
         --preview            	: Preview changes to Azure resources.
 
 Global Flags

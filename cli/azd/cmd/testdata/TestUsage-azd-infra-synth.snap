@@ -7,6 +7,7 @@ Usage
 Flags
     -e, --environment string 	: The name of the environment to use.
         --force              	: Overwrite any existing files without prompting
+    -o, --output string      	: The output format (the supported formats are none).
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

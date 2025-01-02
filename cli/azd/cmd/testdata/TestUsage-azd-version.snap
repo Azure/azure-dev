@@ -4,6 +4,9 @@ Print the version number of Azure Developer CLI.
 Usage
   azd version [flags]
 
+Flags
+    -o, --output string 	: The output format (the supported formats are json, none).
+
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.

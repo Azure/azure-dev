@@ -6,6 +6,7 @@ Usage
 
 Flags
     -f, --filter strings 	: The tag(s) used to filter template results. Supports comma-separated values.
+    -o, --output string  	: The output format (the supported formats are json, table).
     -s, --source string  	: Filters templates by source.
 
 Global Flags

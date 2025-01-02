@@ -11,6 +11,7 @@ Flags
         --client-secret string                 	: The client secret for the service principal to authenticate with. Set to the empty string to read the value from the console.
         --federated-credential-provider string 	: The provider to use to acquire a federated token to authenticate with.
         --managed-identity                     	: Use a managed identity to authenticate.
+    -o, --output string                        	: The output format (the supported formats are json, none).
         --redirect-port int                    	: Choose the port to be used as part of the redirect URI during interactive login.
         --tenant-id string                     	: The tenant id or domain name to authenticate with.
         --use-device-code                      	: When true, log in by using a device code instead of a browser.

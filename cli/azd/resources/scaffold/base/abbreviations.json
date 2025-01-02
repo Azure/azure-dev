@@ -33,6 +33,7 @@
     "dataMigrationServices": "dms-",
     "dBforMySQLServers": "mysql-",
     "dBforPostgreSQLServers": "psql-",
+    "deploymentScript": "dc-",
     "devicesIotHubs": "iot-",
     "devicesProvisioningServices": "provs-",
     "devicesProvisioningServicesCertificates": "pcert-",

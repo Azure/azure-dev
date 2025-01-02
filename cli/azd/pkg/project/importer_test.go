@@ -329,7 +329,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	require.NoError(t, err)
 	defer os.Remove(path)
 
-	// Use an a dotnet project and use the mock to simulate an Aspire project
+	// Use a dotnet project and use the mock to simulate an Aspire project
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
@@ -356,7 +356,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	// If we fetch the infrastructure again, we expect that the manifest is already cached and `dotnet run` on the apphost
 	// will not be invoked again.
 
-	// Use an a dotnet project and use the mock to simulate an Aspire project
+	// Use a dotnet project and use the mock to simulate an Aspire project
 	_, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
 		Services: map[string]*ServiceConfig{
 			"test": {
@@ -392,10 +392,13 @@ resources:
     - api
   postgresdb:
     type: db.postgres
+    authType: password
   mongodb:
     type: db.mongo
+    authType: userAssignedManagedIdentity
   redis:
     type: db.redis
+    authType: password
 `
 
 func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
@@ -405,11 +408,15 @@ func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			console:             mocks.NewMockContext(context.Background()).Console,
 		},
 	}
 
 	prjConfig := &ProjectConfig{}
 	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
+	for key, res := range prjConfig.Resources {
+		res.Name = key
+	}
 	require.NoError(t, err)
 
 	infra, err := im.ProjectInfrastructure(context.Background(), prjConfig)
@@ -436,12 +443,16 @@ func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			console:             mocks.NewMockContext(context.Background()).Console,
 		},
 	}
 
 	prjConfig := &ProjectConfig{}
 	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
 	require.NoError(t, err)
+	for key, res := range prjConfig.Resources {
+		res.Name = key
+	}
 
 	projectFs, err := im.SynthAllInfrastructure(context.Background(), prjConfig)
 	require.NoError(t, err)

@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb
+  jackson:
+    date-format: com.microsoft.azure.simpletodo.configuration.RFC3339DateFormat
+    serialization: 
+      write-dates-as-timestamps: false
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+

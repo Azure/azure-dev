@@ -76,6 +76,30 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			},
 		},
 		{
+			name: "confirm single with mysql resource",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbMySql,
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbMySql,
+					},
+				},
+			},
+		},
+		{
 			name: "add a language",
 			detection: []appdetect.Project{
 				{

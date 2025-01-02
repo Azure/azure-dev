@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,13 +20,13 @@ import (
 )
 
 // Generates the in-memory contents of an `infra` directory.
-func infraFs(_ context.Context, prjConfig *ProjectConfig) (fs.FS, error) {
+func infraFs(ctx context.Context, prjConfig *ProjectConfig, console input.Console) (fs.FS, error) {
 	t, err := scaffold.Load()
 	if err != nil {
 		return nil, fmt.Errorf("loading scaffold templates: %w", err)
 	}
 
-	infraSpec, err := infraSpec(prjConfig)
+	infraSpec, err := infraSpec(prjConfig, console, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("generating infrastructure spec: %w", err)
 	}
@@ -41,13 +42,13 @@ func infraFs(_ context.Context, prjConfig *ProjectConfig) (fs.FS, error) {
 // Returns the infrastructure configuration that points to a temporary, generated `infra` directory on the filesystem.
 func tempInfra(
 	ctx context.Context,
-	prjConfig *ProjectConfig) (*Infra, error) {
+	prjConfig *ProjectConfig, console input.Console) (*Infra, error) {
 	tmpDir, err := os.MkdirTemp("", "azd-infra")
 	if err != nil {
 		return nil, fmt.Errorf("creating temporary directory: %w", err)
 	}
 
-	files, err := infraFs(ctx, prjConfig)
+	files, err := infraFs(ctx, prjConfig, console)
 	if err != nil {
 		return nil, err
 	}
@@ -89,8 +90,8 @@ func tempInfra(
 
 // Generates the filesystem of all infrastructure files to be placed, rooted at the project directory.
 // The content only includes `./infra` currently.
-func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig) (fs.FS, error) {
-	infraFS, err := infraFs(ctx, prjConfig)
+func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig, console input.Console) (fs.FS, error) {
+	infraFS, err := infraFs(ctx, prjConfig, console)
 	if err != nil {
 		return nil, err
 	}
@@ -130,10 +131,8 @@ func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig) (fs.FS, er
 	return generatedFS, nil
 }
 
-func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
+func infraSpec(projectConfig *ProjectConfig, console input.Console, ctx context.Context) (*scaffold.InfraSpec, error) {
 	infraSpec := scaffold.InfraSpec{}
-	// backends -> frontends
-	backendMapping := map[string]string{}
 
 	for _, res := range projectConfig.Resources {
 		switch res.Type {
@@ -148,22 +147,22 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				DatabaseName: res.Name,
 				DatabaseUser: "pgadmin",
 			}
+		case ResourceTypeDbMySQL:
+			infraSpec.DbMySql = &scaffold.DatabaseMySql{
+				DatabaseName: res.Props.(MySQLProps).DatabaseName,
+				DatabaseUser: "mysqladmin",
+				AuthType:     res.Props.(MySQLProps).AuthType,
+			}
 		case ResourceTypeHostContainerApp:
 			svcSpec := scaffold.ServiceSpec{
 				Name: res.Name,
 				Port: -1,
 			}
-
 			err := mapContainerApp(res, &svcSpec, &infraSpec)
 			if err != nil {
 				return nil, err
 			}
-
-			err = mapHostUses(res, &svcSpec, backendMapping, projectConfig)
-			if err != nil {
-				return nil, err
-			}
-
+			svcSpec.Envs = append(svcSpec.Envs, serviceConfigEnv(projectConfig.Services[res.Name])...)
 			infraSpec.Services = append(infraSpec.Services, svcSpec)
 		case ResourceTypeOpenAiModel:
 			props := res.Props.(AIModelProps)
@@ -185,18 +184,15 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 		}
 	}
 
-	// create reverse frontends -> backends mapping
-	for i := range infraSpec.Services {
-		svc := &infraSpec.Services[i]
-		if front, ok := backendMapping[svc.Name]; ok {
-			if svc.Backend == nil {
-				svc.Backend = &scaffold.Backend{}
-			}
-
-			svc.Backend.Frontends = append(svc.Backend.Frontends, scaffold.ServiceReference{Name: front})
-		}
+	err := mapUses(&infraSpec, projectConfig)
+	if err != nil {
+		return nil, err
 	}
 
+	err = printEnvListAboutUses(&infraSpec, projectConfig, console, ctx)
+	if err != nil {
+		return nil, err
+	}
 	slices.SortFunc(infraSpec.Services, func(a, b scaffold.ServiceSpec) int {
 		return strings.Compare(a.Name, b.Name)
 	})
@@ -233,7 +229,10 @@ func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSp
 		// Here, DB_HOST is not a secret, but DB_SECRET is. And yet, DB_HOST will be marked as a secret.
 		// This is a limitation of the current implementation, but it's safer to mark both as secrets above.
 		evaluatedValue := genBicepParamsFromEnvSubst(value, isSecret, infraSpec)
-		svcSpec.Env[envVar.Name] = evaluatedValue
+		err := scaffold.AddNewEnvironmentVariable(svcSpec, envVar.Name, evaluatedValue)
+		if err != nil {
+			return err
+		}
 	}
 
 	port := props.Port
@@ -245,37 +244,101 @@ func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSp
 	return nil
 }
 
-func mapHostUses(
-	res *ResourceConfig,
-	svcSpec *scaffold.ServiceSpec,
-	backendMapping map[string]string,
-	prj *ProjectConfig) error {
-	for _, use := range res.Uses {
-		useRes, ok := prj.Resources[use]
+func mapUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig) error {
+	for i := range infraSpec.Services {
+		userSpec := &infraSpec.Services[i]
+		userResourceName := userSpec.Name
+		userResource, ok := projectConfig.Resources[userResourceName]
 		if !ok {
-			return fmt.Errorf("resource %s uses %s, which does not exist", res.Name, use)
+			return fmt.Errorf("service (%s) exist, but there isn't a resource with that name",
+				userResourceName)
 		}
-
-		switch useRes.Type {
-		case ResourceTypeDbMongo:
-			svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
-		case ResourceTypeDbPostgres:
-			svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
-		case ResourceTypeDbRedis:
-			svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
-		case ResourceTypeHostContainerApp:
-			if svcSpec.Frontend == nil {
-				svcSpec.Frontend = &scaffold.Frontend{}
+		for _, usedResourceName := range userResource.Uses {
+			usedResource, ok := projectConfig.Resources[usedResourceName]
+			if !ok {
+				return fmt.Errorf("in azure.yaml, (%s) uses (%s), but (%s) doesn't",
+					userResourceName, usedResourceName, usedResourceName)
 			}
-
-			svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
-				scaffold.ServiceReference{Name: use})
-			backendMapping[use] = res.Name // record the backend -> frontend mapping
-		case ResourceTypeOpenAiModel:
-			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
+			var err error
+			switch usedResource.Type {
+			case ResourceTypeDbPostgres:
+				err = scaffold.BindToPostgres(userSpec, infraSpec.DbPostgres)
+			case ResourceTypeDbMySQL:
+				err = scaffold.BindToMySql(userSpec, infraSpec.DbMySql)
+			case ResourceTypeDbMongo:
+				err = scaffold.BindToMongoDb(userSpec, infraSpec.DbCosmosMongo)
+			case ResourceTypeDbRedis:
+				err = scaffold.BindToRedis(userSpec, infraSpec.DbRedis)
+			case ResourceTypeOpenAiModel:
+				err = scaffold.BindToAIModels(userSpec, usedResource.Name)
+			case ResourceTypeHostContainerApp:
+				usedSpec := getServiceSpecByName(infraSpec, usedResource.Name)
+				if usedSpec == nil {
+					return fmt.Errorf("'%s' uses '%s', but %s doesn't exist", userSpec.Name, usedResource.Name,
+						usedResource.Name)
+				}
+				scaffold.BindToContainerApp(userSpec, usedSpec)
+			default:
+				return fmt.Errorf("resource (%s) uses (%s), but the type of (%s) is (%s), which is unsupported",
+					userResource.Name, usedResource.Name, usedResource.Name, usedResource.Type)
+			}
+			if err != nil {
+				return err
+			}
 		}
 	}
+	return nil
+}
 
+func printEnvListAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig,
+	console input.Console, ctx context.Context) error {
+	for i := range infraSpec.Services {
+		userSpec := &infraSpec.Services[i]
+		userResourceName := userSpec.Name
+		userResource, ok := projectConfig.Resources[userResourceName]
+		if !ok {
+			return fmt.Errorf("service (%s) exist, but there isn't a resource with that name",
+				userResourceName)
+		}
+		for _, usedResourceName := range userResource.Uses {
+			usedResource, ok := projectConfig.Resources[usedResourceName]
+			if !ok {
+				return fmt.Errorf("in azure.yaml, (%s) uses (%s), but (%s) doesn't",
+					userResourceName, usedResourceName, usedResourceName)
+			}
+			console.Message(ctx, fmt.Sprintf("\nInformation about environment variables:\n"+
+				"In azure.yaml, '%s' uses '%s'. \n"+
+				"The 'uses' relationship is implemented by environment variables. \n"+
+				"Please make sure your application used the right environment variable. \n"+
+				"Here is the list of environment variables: ",
+				userResourceName, usedResourceName))
+			var variables []scaffold.Env
+			var err error
+			switch usedResource.Type {
+			case ResourceTypeDbPostgres:
+				variables, err = scaffold.GetServiceBindingEnvsForPostgres()
+			case ResourceTypeDbMySQL:
+				variables, err = scaffold.GetServiceBindingEnvsForMysql(*infraSpec.DbMySql)
+			case ResourceTypeDbMongo:
+				variables = scaffold.GetServiceBindingEnvsForMongo()
+			case ResourceTypeDbRedis:
+				variables = scaffold.GetServiceBindingEnvsForRedis()
+			case ResourceTypeHostContainerApp:
+				printHintsAboutUseHostContainerApp(userResourceName, usedResourceName, console, ctx)
+			default:
+				return fmt.Errorf("resource (%s) uses (%s), but the type of (%s) is (%s), "+
+					"which is doesn't add necessary environment variable",
+					userResource.Name, usedResource.Name, usedResource.Name, usedResource.Type)
+			}
+			if err != nil {
+				return err
+			}
+			for _, variable := range variables {
+				console.Message(ctx, fmt.Sprintf("  %s=xxx", variable.Name))
+			}
+			console.Message(ctx, "\n")
+		}
+	}
 	return nil
 }
 
@@ -347,4 +410,38 @@ func genBicepParamsFromEnvSubst(
 	}
 
 	return result
+}
+
+func getServiceSpecByName(infraSpec *scaffold.InfraSpec, name string) *scaffold.ServiceSpec {
+	for i := range infraSpec.Services {
+		if infraSpec.Services[i].Name == name {
+			return &infraSpec.Services[i]
+		}
+	}
+	return nil
+}
+
+// todo: merge it into scaffold.BindToContainerApp
+func printHintsAboutUseHostContainerApp(userResourceName string, usedResourceName string,
+	console input.Console, ctx context.Context) {
+	if console == nil {
+		return
+	}
+	console.Message(ctx, fmt.Sprintf("Environment variables in %s:", userResourceName))
+	console.Message(ctx, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(usedResourceName)))
+	console.Message(ctx, fmt.Sprintf("Environment variables in %s:", usedResourceName))
+	console.Message(ctx, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(userResourceName)))
+}
+
+func serviceConfigEnv(svcConfig *ServiceConfig) []scaffold.Env {
+	var envs []scaffold.Env
+	if svcConfig != nil {
+		for key, val := range svcConfig.Env {
+			envs = append(envs, scaffold.Env{
+				Name:  key,
+				Value: val,
+			})
+		}
+	}
+	return envs
 }

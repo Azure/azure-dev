@@ -76,6 +76,38 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			},
 		},
 		{
+			name: "confirm single with event hubs resource",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.eventhubs": "eventhub1",
+							},
+						},
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.eventhubs": "eventhub1",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "add a language",
 			detection: []appdetect.Project{
 				{

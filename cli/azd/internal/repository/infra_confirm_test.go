@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"strings"
 	"testing"
@@ -14,6 +15,13 @@ import (
 )
 
 func TestInitializer_infraSpecFromDetect(t *testing.T) {
+	envsForPostgres, _ := scaffold.GetServiceBindingEnvsForPostgres()
+	scaffoldEventHubs := scaffold.AzureDepEventHubs{
+		EventHubNames: []string{"eventhub1"},
+		AuthType:      internal.AuthTypeConnectionString,
+		UseKafka:      true,
+	}
+	envsForEventHubs, _ := scaffold.GetServiceBindingEnvsForEventHubs(scaffoldEventHubs)
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -91,6 +99,51 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Backend: &scaffold.Backend{},
 					},
 				},
+			},
+		},
+		{
+			name: "api with event hubs",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.cloud.azure.kafka": "eventhub1",
+								},
+								UseKafka: true,
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					"eventhubs": {
+						first: appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.kafka": "eventhub1",
+							},
+							UseKafka: true,
+						},
+						second: EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				"Connection string",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:           "java",
+						Port:           8080,
+						Backend:        &scaffold.Backend{},
+						AzureEventHubs: &scaffoldEventHubs,
+						Envs:           envsForEventHubs,
+					},
+				},
+				AzureEventHubs: &scaffoldEventHubs,
 			},
 		},
 		{
@@ -183,9 +236,10 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
-						DbPostgres: &scaffold.DatabaseReference{
+						DbPostgres: &scaffold.DatabasePostgres{
 							DatabaseName: "myappdb",
 						},
+						Envs: envsForPostgres,
 					},
 					{
 						Name: "js",

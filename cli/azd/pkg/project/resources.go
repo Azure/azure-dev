@@ -5,6 +5,7 @@ package project
 
 import (
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 
 	"github.com/braydonk/yaml"
 )
@@ -22,11 +23,13 @@ func AllResourceTypes() []ResourceType {
 }
 
 const (
-	ResourceTypeDbRedis          ResourceType = "db.redis"
-	ResourceTypeDbPostgres       ResourceType = "db.postgres"
-	ResourceTypeDbMongo          ResourceType = "db.mongo"
-	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
-	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
+	ResourceTypeDbRedis            ResourceType = "db.redis"
+	ResourceTypeDbPostgres         ResourceType = "db.postgres"
+	ResourceTypeDbMongo            ResourceType = "db.mongo"
+	ResourceTypeHostContainerApp   ResourceType = "host.containerapp"
+	ResourceTypeOpenAiModel        ResourceType = "ai.openai.model"
+	ResourceTypeMessagingEventHubs ResourceType = "messaging.eventhubs"
+	ResourceTypeMessagingKafka     ResourceType = "messaging.kafka"
 )
 
 func (r ResourceType) String() string {
@@ -41,6 +44,10 @@ func (r ResourceType) String() string {
 		return "Container App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
+	case ResourceTypeMessagingEventHubs:
+		return "Event Hubs"
+	case ResourceTypeMessagingKafka:
+		return "Kafka"
 	}
 
 	return ""
@@ -89,6 +96,16 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeMessagingEventHubs:
+		err := marshalRawProps(raw.Props.(EventHubsProps))
+		if err != nil {
+			return nil, err
+		}
+	case ResourceTypeMessagingKafka:
+		err := marshalRawProps(raw.Props.(KafkaProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -128,6 +145,18 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeMessagingEventHubs:
+		eh := EventHubsProps{}
+		if err := unmarshalProps(&eh); err != nil {
+			return err
+		}
+		raw.Props = eh
+	case ResourceTypeMessagingKafka:
+		kp := KafkaProps{}
+		if err := unmarshalProps(&kp); err != nil {
+			return err
+		}
+		raw.Props = kp
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +183,15 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type EventHubsProps struct {
+	EventHubNames []string          `yaml:"eventHubNames,omitempty"`
+	AuthType      internal.AuthType `yaml:"authType,omitempty"`
+}
+
+type KafkaProps struct {
+	Topics            []string          `yaml:"topics,omitempty"`
+	AuthType          internal.AuthType `yaml:"authType,omitempty"`
+	SpringBootVersion string            `yaml:"springBootVersion,omitempty"`
 }

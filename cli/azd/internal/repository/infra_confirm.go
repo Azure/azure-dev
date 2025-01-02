@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -58,6 +59,13 @@ func (i *Initializer) infraSpecFromDetect(
 		}
 	}
 
+	for _, azureDep := range detect.AzureDeps {
+		err := i.buildInfraSpecByAzureDep(ctx, azureDep.first, &spec)
+		if err != nil {
+			return scaffold.InfraSpec{}, err
+		}
+	}
+
 	for _, svc := range detect.Services {
 		name := names.LabelName(filepath.Base(svc.Path))
 		serviceSpec := scaffold.ServiceSpec{
@@ -85,18 +93,23 @@ func (i *Initializer) infraSpecFromDetect(
 
 			switch db {
 			case appdetect.DbMongo:
-				serviceSpec.DbCosmosMongo = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbCosmosMongo.DatabaseName,
-				}
+				err = scaffold.BindToMongoDb(&serviceSpec, spec.DbCosmosMongo)
 			case appdetect.DbPostgres:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
-				}
+				err = scaffold.BindToPostgres(&serviceSpec, spec.DbPostgres)
 			case appdetect.DbRedis:
-				serviceSpec.DbRedis = &scaffold.DatabaseReference{
-					DatabaseName: "redis",
-				}
+				err = scaffold.BindToRedis(&serviceSpec, spec.DbRedis)
 			}
+		}
+
+		for _, azureDep := range svc.AzureDeps {
+			switch azureDep.(type) {
+			case appdetect.AzureDepEventHubs:
+				err = scaffold.BindToEventHubs(&serviceSpec, spec.AzureEventHubs)
+			}
+		}
+
+		if err != nil {
+			return scaffold.InfraSpec{}, err
 		}
 		spec.Services = append(spec.Services, serviceSpec)
 	}
@@ -257,4 +270,28 @@ func PromptPort(
 	}
 
 	return port, nil
+}
+
+func (i *Initializer) buildInfraSpecByAzureDep(
+	ctx context.Context,
+	azureDep appdetect.AzureDep,
+	spec *scaffold.InfraSpec) error {
+	authType, err := chooseAuthTypeByPrompt(
+		azureDep.ResourceDisplay(),
+		[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString},
+		ctx,
+		i.console)
+	if err != nil {
+		return err
+	}
+	switch dependency := azureDep.(type) {
+	case appdetect.AzureDepEventHubs:
+		spec.AzureEventHubs = &scaffold.AzureDepEventHubs{
+			EventHubNames:     DistinctValues(dependency.EventHubsNamePropertyMap),
+			AuthType:          authType,
+			UseKafka:          dependency.UseKafka,
+			SpringBootVersion: dependency.SpringBootVersion,
+		}
+	}
+	return nil
 }

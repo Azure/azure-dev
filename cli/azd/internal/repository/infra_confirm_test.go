@@ -14,7 +14,8 @@ import (
 )
 
 func TestInitializer_infraSpecFromDetect(t *testing.T) {
-	envs, _ := scaffold.GetServiceBindingEnvsForPostgres()
+	envsForPostgres, _ := scaffold.GetServiceBindingEnvsForPostgres()
+	envsForCosmosMongo := scaffold.GetServiceBindingEnvsForMongo()
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -91,6 +92,42 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Port:    1234,
 						Backend: &scaffold.Backend{},
 					},
+				},
+			},
+		},
+		{
+			name: "api with cosmos db",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbMongo,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbMongo: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"cosmos-db-mongo-name",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:    "java",
+						Port:    8080,
+						Backend: &scaffold.Backend{},
+						DbCosmosMongo: &scaffold.DatabaseCosmosMongo{
+							DatabaseName: "cosmos-db-mongo-name",
+						},
+						Envs: envsForCosmosMongo,
+					},
+				},
+				DbCosmosMongo: &scaffold.DatabaseCosmosMongo{
+					DatabaseName: "cosmos-db-mongo-name",
 				},
 			},
 		},
@@ -187,7 +224,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						DbPostgres: &scaffold.DatabasePostgres{
 							DatabaseName: "myappdb",
 						},
-						Envs: envs,
+						Envs: envsForPostgres,
 					},
 					{
 						Name: "js",

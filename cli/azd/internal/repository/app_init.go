@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -424,31 +425,34 @@ func (i *Initializer) prjConfigFromDetect(
 				continue
 			}
 
+			var err error
+			databaseName, err := getDatabaseName(database, &detect, i.console, ctx)
+			if err != nil {
+				return config, err
+			}
+
+			if database == appdetect.DbMongo {
+				mongo := project.ResourceConfig{
+					Type: project.ResourceTypeDbMongo,
+					Name: "mongo",
+					Props: project.MongoDBProps{
+						DatabaseName: databaseName,
+					},
+				}
+				config.Resources[mongo.Name] = &mongo
+				dbNames[database] = mongo.Name
+				continue
+			}
+
 			var dbType project.ResourceType
 			switch database {
-			case appdetect.DbMongo:
-				dbType = project.ResourceTypeDbMongo
 			case appdetect.DbPostgres:
 				dbType = project.ResourceTypeDbPostgres
 			}
 
 			db := project.ResourceConfig{
 				Type: dbType,
-			}
-
-			for {
-				dbName, err := promptDbName(i.console, ctx, database)
-				if err != nil {
-					return config, err
-				}
-
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-
-				db.Name = dbName
-				break
+				Name: databaseName,
 			}
 
 			config.Resources[db.Name] = &db
@@ -577,4 +581,56 @@ func ServiceFromDetect(
 	}
 
 	return svc, nil
+}
+
+func getDatabaseName(database appdetect.DatabaseDep, detect *detectConfirm,
+	console input.Console, ctx context.Context) (string, error) {
+	dbName := getDatabaseNameFromProjectMetadata(detect, database)
+	if dbName != "" {
+		return dbName, nil
+	}
+	for {
+		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the databaseName for %s "+
+				"(Not databaseServerName. This url can explain the difference: "+
+				"'jdbc:mysql://databaseServerName:3306/databaseName'):", database.Display()),
+			Help: "Hint: App database name\n\n" +
+				"Name of the database that the app connects to. " +
+				"This database will be created after running azd provision or azd up.\n" +
+				"You may be able to skip this step by hitting enter, in which case the database will not be created.",
+		})
+		if err != nil {
+			return "", err
+		}
+		if isValidDatabaseName(dbName) {
+			return dbName, nil
+		} else {
+			console.Message(ctx, "Invalid database name. Please choose another name.")
+		}
+	}
+}
+
+func getDatabaseNameFromProjectMetadata(detect *detectConfirm, database appdetect.DatabaseDep) string {
+	result := ""
+	for _, service := range detect.Services {
+		// todo this should not be here, it should be part of the app detect
+		name := service.Metadata.DatabaseNameInPropertySpringDatasourceUrl[database]
+		if name != "" {
+			if result == "" {
+				result = name
+			} else {
+				// different project configured different db name, not use any of them.
+				return ""
+			}
+		}
+	}
+	return result
+}
+
+func isValidDatabaseName(name string) bool {
+	if len(name) < 3 || len(name) > 63 {
+		return false
+	}
+	re := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	return re.MatchString(name)
 }

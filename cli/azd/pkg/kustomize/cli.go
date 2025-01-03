@@ -3,7 +3,7 @@ package kustomize
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -41,9 +41,9 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	// for diagnostics purposes, let's fetch and log the version of kustomize
 	// we're using.
 	if ver, err := cli.getClientVersion(ctx); err != nil {
-		log.Printf("error fetching kustomize version: %s", err)
+		slog.InfoContext(ctx, "error fetching kustomize version", "err", err)
 	} else {
-		log.Printf("kustomize version: %s", ver)
+		slog.InfoContext(ctx, "detected kustomize version", "version", ver)
 	}
 
 	return nil

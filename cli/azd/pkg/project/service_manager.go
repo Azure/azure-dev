@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -570,7 +570,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 					err,
 				)
 			}
-			log.Println("Using swa-cli for build and deploy because swa-cli.config.json was found in the service path")
+			slog.InfoContext(ctx,
+				"Using swa-cli for build and deploy because swa-cli.config.json was found in the service path")
 		}
 	}
 	if compositeFramework != nil {
@@ -589,10 +590,10 @@ func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env 
 		if err != nil {
 			// This can only happen if the environment output was not a valid JSON array, which would be due to an authoring
 			// error. For typical infra provider output passthrough, the infra provider would guarantee well-formed syntax
-			log.Printf(
-				"failed to unmarshal endpoints override for service '%s' as JSON array of strings: %v, skipping override",
-				serviceConfig.Name,
-				err)
+			slog.InfoContext(ctx,
+				"failed to unmarshal endpoints override for service as JSON array of strings, skipping override",
+				"service", serviceConfig.Name,
+				"err", err)
 		}
 
 		return endpoints

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -171,7 +171,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// semantics to follow.
 		envValue, err := cmd.Flags().GetString(internal.EnvironmentNameFlagName)
 		if err != nil {
-			log.Printf("'%s'command asked for envFlag, but envFlag was not included in cmd.Flags().", cmd.CommandPath())
+			slog.InfoContext(context.TODO(), "command asked for envFlag, but envFlag was not included in cmd.Flags().",
+				"cmd", cmd.CommandPath())
 			envValue = ""
 		}
 

@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"math"
 	"os"
@@ -511,7 +511,7 @@ func prevDeploymentEqualToCurrent(prev *azapi.ResourceDeployment, templateHash, 
 }
 
 func logDS(msg string, v ...any) {
-	log.Printf("%s : %s", "deployment-state: ", fmt.Sprintf(msg, v...))
+	slog.InfoContext(context.TODO(), fmt.Sprintf("%s : %s", "deployment-state: ", fmt.Sprintf(msg, v...)))
 }
 
 // Provisioning the infrastructure within the specified template
@@ -560,7 +560,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	go func() {
 		// Disable reporting progress if needed
 		if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
-			log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
+			slog.InfoContext(ctx, "Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
 			<-cancelProgress
 			return
 		}
@@ -581,7 +581,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 			case <-timer.C:
 				if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
 					// We don't want to fail the whole deployment if a progress reporting error occurs
-					log.Printf("error while reporting progress: %s", err.Error())
+					slog.InfoContext(ctx, "error while reporting progress", "err", err)
 				}
 
 				timer.Reset(regularDelay)
@@ -1060,7 +1060,7 @@ func (p *BicepProvider) destroyDeploymentWithConfirmation(
 func itemsCountAsText(items []itemToPurge) string {
 	count := len(items)
 	if count < 1 {
-		log.Panic("calling itemsCountAsText() with empty list.")
+		panic("calling itemsCountAsText() with empty list.")
 	}
 
 	var tokens []string
@@ -1572,13 +1572,13 @@ func (p *BicepProvider) compileBicep(
 
 		var bicepParamOutput compiledBicepParamResult
 		if err := json.Unmarshal([]byte(compiled), &bicepParamOutput); err != nil {
-			log.Printf("failed unmarshalling compiled bicepparam (err: %v), template contents:\n%s", err, compiled)
+			slog.InfoContext(ctx, "failed unmarshalling compiled bicepparam", "err", err, "template", compiled)
 			return nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
 		}
 		compiled = bicepParamOutput.TemplateJson
 		var params azure.ArmParameterFile
 		if err := json.Unmarshal([]byte(bicepParamOutput.ParametersJson), &params); err != nil {
-			log.Printf("failed unmarshalling compiled bicepparam parameters(err: %v), template contents:\n%s", err, compiled)
+			slog.InfoContext(ctx, "failed unmarshalling compiled bicepparam parameters", "err", err, "template", compiled)
 			return nil, fmt.Errorf("failed unmarshalling arm parameters template from json: %w", err)
 		}
 		parameters = params.Parameters
@@ -1594,7 +1594,7 @@ func (p *BicepProvider) compileBicep(
 
 	var template azure.ArmTemplate
 	if err := json.Unmarshal(rawTemplate, &template); err != nil {
-		log.Printf("failed unmarshalling compiled arm template to JSON (err: %v), template contents:\n%s", err, compiled)
+		slog.InfoContext(ctx, "failed unmarshalling compiled arm template to JSONs", "err", err, "template", compiled)
 		return nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
 	}
 
@@ -1967,17 +1967,17 @@ func mustSetParamAsConfig(key string, value any, config config.Config, isSecured
 
 	if !isSecured {
 		if err := config.Set(configKey, value); err != nil {
-			log.Panicf("failed setting config value: %v", err)
+			panic(fmt.Sprintf("failed setting config value: %v", err))
 		}
 		return
 	}
 
 	secretString, castOk := value.(string)
 	if !castOk {
-		log.Panic("tried to set a non-string as secret. This is not supported.")
+		panic("tried to set a non-string as secret. This is not supported.")
 	}
 	if err := config.SetSecret(configKey, secretString); err != nil {
-		log.Panicf("failed setting a secret in config: %v", err)
+		panic(fmt.Sprintf("failed setting a secret in config: %v", err))
 	}
 }
 

@@ -2,11 +2,12 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"slices"
 
@@ -154,14 +155,14 @@ func (e *AuthFailedError) parseResponse() {
 	body, err := io.ReadAll(e.RawResp.Body)
 	e.RawResp.Body.Close()
 	if err != nil {
-		log.Printf("error reading aad response body: %v", err)
+		slog.InfoContext(context.TODO(), "error reading aad response body", "err", err)
 		return
 	}
 	e.RawResp.Body = io.NopCloser(bytes.NewReader(body))
 
 	var er AadErrorResponse
 	if err := json.Unmarshal(body, &er); err != nil {
-		log.Printf("parsing aad response body: %v", err)
+		slog.InfoContext(context.TODO(), "parsing aad response body", "err", err)
 		return
 	}
 

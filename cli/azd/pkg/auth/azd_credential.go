@@ -6,7 +6,7 @@ package auth
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -34,7 +34,7 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 		var authFailed *AuthFailedError
 		if errors.As(err, &authFailed) {
 			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes, c.cloud); ok {
-				log.Println(authFailed.httpErrorDetails())
+				slog.InfoContext(ctx, authFailed.httpErrorDetails())
 				return azcore.AccessToken{}, loginErr
 			}
 

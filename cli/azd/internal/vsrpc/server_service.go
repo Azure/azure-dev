@@ -6,7 +6,7 @@ package vsrpc
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -98,7 +98,7 @@ func (s *serverService) StopAsync(ctx context.Context) error {
 	// Flush all in-memory telemetry data before stopping.
 	err := ts.Shutdown(ctx)
 	if err != nil {
-		log.Printf("error shutting down telemetry: %v", err)
+		slog.InfoContext(ctx, "error shutting down telemetry", "err", err)
 	}
 
 	// Graceful telemetry cancellation.
@@ -120,7 +120,7 @@ func (s *serverService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func newWriter(prefix string) *writerMultiplexer {
 	wm := &writerMultiplexer{}
 	wm.AddWriter(writerFunc(func(p []byte) (n int, err error) {
-		log.Printf("%s%s", prefix, string(p))
+		slog.InfoContext(context.TODO(), fmt.Sprintf("%s%s", prefix, string(p)))
 		return n, nil
 	}))
 

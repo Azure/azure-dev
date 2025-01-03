@@ -4,9 +4,10 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -236,7 +237,7 @@ func NewRootCmd(
 		}).
 		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
-				log.Println("Skipping provision hooks due to preview flag.")
+				slog.InfoContext(context.TODO(), "Skipping provision hooks due to preview flag.")
 				return false
 			}
 			return true

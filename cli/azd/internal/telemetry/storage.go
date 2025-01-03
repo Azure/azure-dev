@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -228,7 +228,7 @@ func (stg *StorageQueue) checkFileForCleanup(file fs.DirEntry) {
 func (stg *StorageQueue) checkTempFileForCleanup(file fs.DirEntry) {
 	info, err := file.Info()
 	if err != nil {
-		log.Printf("failed to retrieve old tmp file info for %s: %s", file.Name(), err)
+		slog.InfoContext(context.TODO(), "failed to retrieve old tmp file info", "name", file.Name(), "err", err)
 		return
 	}
 
@@ -254,7 +254,7 @@ func (stg *StorageQueue) cleanupItem(file fs.DirEntry, itemType string) {
 	err := removeIfExists(filepath.Join(stg.folder, file.Name()))
 
 	if err != nil {
-		log.Printf("failed to remove %s file: %s", itemType, err)
+		slog.InfoContext(context.TODO(), "failed to remove file", "type", itemType, "err", err)
 	}
 }
 

@@ -3,7 +3,7 @@ package middleware
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -40,7 +40,7 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	cmdPath := events.GetCommandEventName(m.options.CommandPath)
 	spanCtx, span := tracing.Start(ctx, cmdPath)
 
-	log.Printf("TraceID: %s", span.SpanContext().TraceID())
+	slog.InfoContext(spanCtx, "started tracing span", "traceId", span.SpanContext().TraceID())
 
 	if !m.options.IsChildAction(ctx) {
 		// Set the command name as a baggage item on the span context.

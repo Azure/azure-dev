@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -350,7 +350,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err := la.accountSubManager.RefreshSubscriptions(ctx); err != nil {
 			// If this fails, the subscriptions will still be loaded on-demand.
 			// erroring out when the user interacts with subscriptions is much more user-friendly.
-			log.Printf("failed retrieving subscriptions: %v", err)
+			slog.InfoContext(ctx, "failed retrieving subscriptions", "err", err)
 		}
 	}
 
@@ -405,7 +405,7 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 	if err != nil {
 		// An error here means VSCode is not installed or found, or something else.
 		// At any case, we know VSCode is not within a webBrowser
-		log.Printf("error running code --status: %s", err.Error())
+		slog.InfoContext(ctx, "error running code --status", "err", err)
 		return false
 	}
 
@@ -415,12 +415,14 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 func (la *loginAction) login(ctx context.Context) error {
 	if la.flags.federatedTokenProvider == azurePipelinesProvider {
 		if la.flags.clientID == "" {
-			log.Printf("setting client id from environment variable %s", azurePipelinesClientIDEnvVarName)
+			slog.InfoContext(ctx,
+				fmt.Sprintf("setting client id from environment variable %s", azurePipelinesClientIDEnvVarName))
 			la.flags.clientID = os.Getenv(azurePipelinesClientIDEnvVarName)
 		}
 
 		if la.flags.tenantID == "" {
-			log.Printf("setting tenant id from environment variable %s", azurePipelinesClientIDEnvVarName)
+			slog.InfoContext(ctx,
+				fmt.Sprintf("setting tenant id from environment variable %s", azurePipelinesClientIDEnvVarName))
 			la.flags.tenantID = os.Getenv(azurePipelinesTenantIDEnvVarName)
 		}
 	}

@@ -5,7 +5,6 @@ package ux
 
 import (
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -17,7 +16,7 @@ import (
 func ListAsText(items []string) string {
 	count := len(items)
 	if count < 1 {
-		log.Panic("calling ListAsText() with empty list.")
+		panic("calling ListAsText() with empty list.")
 	}
 
 	if count == 1 {

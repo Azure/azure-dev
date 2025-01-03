@@ -4,7 +4,8 @@
 package resource
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ func DevDeviceId() string {
 	deviceId, err := deviceid.Get()
 
 	if err != nil {
-		log.Println("could not get device id, returning empty: ", err)
+		slog.InfoContext(context.TODO(), "could not get device id, returning empty", "err", err)
 		return ""
 	}
 
@@ -58,7 +59,7 @@ func calculateMachineId() string {
 func loadOrCalculate(calc func() string, cacheFileName string) string {
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
-		log.Printf("could not load machineId from cache. returning calculated value: %s", err)
+		slog.InfoContext(context.TODO(), "could not load machineId from cache. returning calculated value", "err", err)
 		return calc()
 	}
 
@@ -70,7 +71,7 @@ func loadOrCalculate(calc func() string, cacheFileName string) string {
 
 	err = os.WriteFile(cacheFile, []byte(calc()), osutil.PermissionFile)
 	if err != nil {
-		log.Printf("could not write machineId to cache. returning calculated value: %s", err)
+		slog.InfoContext(context.TODO(), "could not write machineId to cache. returning calculated value", "err", err)
 	}
 
 	return calc()

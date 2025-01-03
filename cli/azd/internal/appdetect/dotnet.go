@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -48,7 +48,7 @@ func (dd *dotNetDetector) DetectProject(ctx context.Context, path string, entrie
 	if hasProjectFile && hasStartupFile {
 		projectPath := filepath.Join(path, projFileName)
 		if isWasm, err := dd.isWasmProject(ctx, projectPath); err != nil {
-			log.Printf("error checking if %s is a browser-wasm project: %v", projectPath, err)
+			slog.InfoContext(ctx, "error checking if project is a browser-wasm project", "path", projectPath, "err", err)
 		} else if isWasm { // Web assembly projects currently not supported as a hosted application project
 			return nil, filepath.SkipDir
 		}

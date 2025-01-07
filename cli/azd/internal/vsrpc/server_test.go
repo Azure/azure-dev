@@ -116,7 +116,7 @@ func TestObserverable(t *testing.T) {
 	wsConn, _, err := websocket.DefaultDialer.Dial(serverUrl.String(), nil)
 	require.NoError(t, err)
 
-	// The IObserver machinary ends up sending RPCs back to the client, capture them so we can validate they are
+	// The Observer machinary ends up sending RPCs back to the client, capture them so we can validate they are
 	// correct later.
 	var onNextParams []json.RawMessage
 	var onCompletedParams []json.RawMessage

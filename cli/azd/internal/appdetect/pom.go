@@ -214,8 +214,7 @@ func makePathFitCurrentOs(filePath string) string {
 
 func absorbInformationFromParentInRemoteMavenRepository(pom *pom) {
 	p := pom.Parent
-	parent, err := getSimulatedEffectivePomFromRemoteMavenRepository(
-		p.GroupId, p.ArtifactId, p.Version)
+	parent, err := getSimulatedEffectivePomFromMavenRepository(p.GroupId, p.ArtifactId, p.Version)
 	if err != nil {
 		slog.InfoContext(context.TODO(), "Skip absorb parent from remote maven repository.",
 			"ArtifactId", pom.ArtifactId, "err", err)
@@ -269,7 +268,7 @@ func absorbImportedBomInDependencyManagement(pom *pom) {
 		if dep.Scope != "import" {
 			continue
 		}
-		toBeAbsorbedPom, err := getSimulatedEffectivePomFromRemoteMavenRepository(
+		toBeAbsorbedPom, err := getSimulatedEffectivePomFromMavenRepository(
 			dep.GroupId, dep.ArtifactId, dep.Version)
 		if err != nil {
 			slog.InfoContext(context.TODO(), "Skip absorb imported bom from remote maven repository.",
@@ -294,12 +293,52 @@ func absorbDependencyManagement(pom *pom, dependencyManagementMap map[string]str
 	}
 }
 
+func getSimulatedEffectivePomFromMavenRepository(groupId string, artifactId string, version string) (pom, error) {
+	result, err := getSimulatedEffectivePomFromLocalMavenRepository(groupId, artifactId, version)
+	if err == nil {
+		return result, nil
+	}
+	return getSimulatedEffectivePomFromRemoteMavenRepository(groupId, artifactId, version)
+}
+
+func getSimulatedEffectivePomFromLocalMavenRepository(groupId string, artifactId string, version string) (pom, error) {
+	pomPath, err := getPathInLocalMavenRepository(groupId, artifactId, version)
+	if err != nil {
+		return pom{}, err
+	}
+	return createSimulatedEffectivePom(pomPath)
+}
+
 func getSimulatedEffectivePomFromRemoteMavenRepository(groupId string, artifactId string, version string) (pom, error) {
 	requestUrl := getRemoteMavenRepositoryUrl(groupId, artifactId, version)
 	bytes, err := internal.Download(requestUrl)
 	if err != nil {
 		return pom{}, err
 	}
+	savePomFileToLocalMavenRepository(groupId, artifactId, version, bytes)
+	return createSimulatedEffectivePomByPomFileBytes(bytes)
+}
+
+func savePomFileToLocalMavenRepository(groupId string, artifactId string, version string, bytes []byte) {
+	pomPath, err := getPathInLocalMavenRepository(groupId, artifactId, version)
+	if err != nil {
+		slog.DebugContext(context.TODO(), "Failed to get pomPath.",
+			"groupId", groupId, "artifactId", artifactId, "version", version, "err", err)
+		return
+	}
+	dir := filepath.Dir(pomPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		slog.DebugContext(context.TODO(), "Failed to create pomPath.",
+			"groupId", groupId, "artifactId", artifactId, "version", version, "err", err)
+		return
+	}
+	err = os.WriteFile(pomPath, bytes, 0600)
+	if err != nil {
+		slog.DebugContext(context.TODO(), "Failed to write file.", "pomPath", pomPath, "err", err)
+	}
+}
+
+func createSimulatedEffectivePomByPomFileBytes(bytes []byte) (pom, error) {
 	var result pom
 	if err := xml.Unmarshal(bytes, &result); err != nil {
 		return pom{}, fmt.Errorf("parsing xml: %w", err)
@@ -313,8 +352,22 @@ func getSimulatedEffectivePomFromRemoteMavenRepository(groupId string, artifactI
 	return result, nil
 }
 
+func getPathInLocalMavenRepository(groupId string, artifactId string, version string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	relativePath := makePathFitCurrentOs(relativePathInMavenRepository(groupId, artifactId, version))
+	return filepath.Join(homeDir, ".m2", "repository", relativePath), nil
+}
+
 func getRemoteMavenRepositoryUrl(groupId string, artifactId string, version string) string {
-	return fmt.Sprintf("https://repo.maven.apache.org/maven2/%s/%s/%s/%s-%s.pom",
+	return fmt.Sprintf("https://repo.maven.apache.org/maven2/%s",
+		relativePathInMavenRepository(groupId, artifactId, version))
+}
+
+func relativePathInMavenRepository(groupId string, artifactId string, version string) string {
+	return fmt.Sprintf("%s/%s/%s/%s-%s.pom",
 		strings.ReplaceAll(groupId, ".", "/"), artifactId, version, artifactId, version)
 }
 

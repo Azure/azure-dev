@@ -12,7 +12,7 @@ on:
   # entirely of github actions won't trigger this action.
   workflow_run:
     types: [completed]
-    workflows: ["cli-ci", "templates-ci", "vscode-ci"]
+    workflows: ["cli-ci"]
 
 permissions: {}
 

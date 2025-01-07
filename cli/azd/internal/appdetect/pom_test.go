@@ -2,7 +2,9 @@ package appdetect
 
 import (
 	"context"
+	"log/slog"
 	"os"
+	os_exec "os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -13,6 +15,12 @@ import (
 )
 
 func TestCreateEffectivePom(t *testing.T) {
+	path, err := os_exec.LookPath("java")
+	if err != nil {
+		t.Skip("Skip TestCreateEffectivePom because java command doesn't exist.")
+	} else {
+		slog.Info("Java command found.", "path", path)
+	}
 	tests := []struct {
 		name     string
 		testPoms []testPom

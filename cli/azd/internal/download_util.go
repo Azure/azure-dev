@@ -1,9 +1,10 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
@@ -23,6 +24,7 @@ func Download(requestUrl string) ([]byte, error) {
 			Proxy: http.ProxyFromEnvironment,
 		},
 	}
+	slog.DebugContext(context.TODO(), "Downloading file.", "requestUrl", requestUrl, "err", err)
 	resp, err := client.Get(requestUrl)
 	if err != nil {
 		return nil, err
@@ -30,7 +32,7 @@ func Download(requestUrl string) ([]byte, error) {
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			log.Println("failed to close http response body")
+			slog.DebugContext(context.TODO(), "Failed to close http body.", "requestUrl", requestUrl, "err", err)
 		}
 	}(resp.Body)
 	return io.ReadAll(resp.Body)

@@ -51,7 +51,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 }
 
 // The AKS cluster to host applications
-module aks 'br/public:avm/ptn/azd/aks:0.1.1' = {
+module aks 'br/public:avm/ptn/azd/aks:0.1.2' = {
   scope: rg
   name: 'aks'
   params: {
@@ -60,12 +60,12 @@ module aks 'br/public:avm/ptn/azd/aks:0.1.1' = {
     monitoringWorkspaceResourceId: monitoring.outputs.logAnalyticsWorkspaceResourceId
     keyVaultName: keyVault.outputs.name
     principalId: principalId
-    skuTier: 'Free'
     location: location
+    skuTier: 'Free'
     acrSku: 'Basic'
     systemPoolSize: systemPoolType
     disableLocalAccounts: false
-    nodeResourceGroupName: nodeResourceGroupName
+    aadProfile: null
   }
 }
 

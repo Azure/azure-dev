@@ -25,7 +25,6 @@ param cosmosAccountName string = ''
 param keyVaultName string = ''
 param logAnalyticsName string = ''
 param resourceGroupName string = ''
-param nodeResourceGroupName string = 'rg_aks_node'
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''

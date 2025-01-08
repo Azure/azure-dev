@@ -68,6 +68,15 @@ func AspireDashboardUrl(
 }
 
 func init() {
+
+	// get the current working directory
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	// create a new overlay filesystem that combines the local filesystem with the embedded resources
+	combinedTemplates := OverlayFS(os.DirFS(wd), resources.AppHostTemplates)
+
 	tmpl, err := template.New("templates").
 		Option("missingkey=error").
 		Funcs(
@@ -96,7 +105,7 @@ func init() {
 				},
 			},
 		).
-		ParseFS(resources.AppHostTemplates, "apphost/templates/*")
+		ParseFS(combinedTemplates, "apphost/templates/*")
 	if err != nil {
 		panic("failed to parse generator templates: " + err.Error())
 	}

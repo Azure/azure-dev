@@ -84,7 +84,7 @@ func TestHandler(t *testing.T) {
 }
 
 func newHandlerAction0(t *testing.T, tc handlerTestCase) Handler {
-	return HandlerAction0(func(ctx context.Context) error {
+	return NewHandler(func(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -95,7 +95,7 @@ func newHandlerAction0(t *testing.T, tc handlerTestCase) Handler {
 }
 
 func newHandlerAction1(t *testing.T, tc handlerTestCase) Handler {
-	return HandlerAction1(func(ctx context.Context, arg0 string) error {
+	return NewHandler(func(ctx context.Context, arg0 string) error {
 		validateParam(t, tc.params, 0, arg0)
 
 		select {
@@ -108,7 +108,7 @@ func newHandlerAction1(t *testing.T, tc handlerTestCase) Handler {
 }
 
 func newHandlerAction2(t *testing.T, tc handlerTestCase) Handler {
-	return HandlerAction2(func(ctx context.Context, arg0, arg1 string) error {
+	return NewHandler(func(ctx context.Context, arg0, arg1 string) error {
 		validateParam(t, tc.params, 0, arg0)
 		validateParam(t, tc.params, 1, arg1)
 
@@ -122,7 +122,7 @@ func newHandlerAction2(t *testing.T, tc handlerTestCase) Handler {
 }
 
 func newHandlerAction3(t *testing.T, tc handlerTestCase) Handler {
-	return HandlerAction3(func(ctx context.Context, arg0, arg1, arg2 string) error {
+	return NewHandler(func(ctx context.Context, arg0, arg1, arg2 string) error {
 		validateParam(t, tc.params, 0, arg0)
 		validateParam(t, tc.params, 1, arg1)
 		validateParam(t, tc.params, 2, arg2)
@@ -137,7 +137,7 @@ func newHandlerAction3(t *testing.T, tc handlerTestCase) Handler {
 }
 
 func newHandlerFunc0(t *testing.T, tc handlerTestCase) Handler {
-	return HandlerFunc0(func(ctx context.Context) (any, error) {
+	return NewHandler(func(ctx context.Context) (any, error) {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -148,7 +148,7 @@ func newHandlerFunc0(t *testing.T, tc handlerTestCase) Handler {
 }
 
 func newHandlerFunc1(t *testing.T, tc handlerTestCase) Handler {
-	return HandlerFunc1(func(ctx context.Context, arg0 string) (any, error) {
+	return NewHandler(func(ctx context.Context, arg0 string) (any, error) {
 		validateParam(t, tc.params, 0, arg0)
 
 		select {
@@ -161,7 +161,7 @@ func newHandlerFunc1(t *testing.T, tc handlerTestCase) Handler {
 }
 
 func newHandlerFunc2(t *testing.T, tc handlerTestCase) Handler {
-	return HandlerFunc2(func(ctx context.Context, arg0, arg1 string) (any, error) {
+	return NewHandler(func(ctx context.Context, arg0, arg1 string) (any, error) {
 		validateParam(t, tc.params, 0, arg0)
 		validateParam(t, tc.params, 1, arg1)
 
@@ -175,7 +175,7 @@ func newHandlerFunc2(t *testing.T, tc handlerTestCase) Handler {
 }
 
 func newHandlerFunc3(t *testing.T, tc handlerTestCase) Handler {
-	return HandlerFunc3(func(ctx context.Context, arg0, arg1, arg2 string) (any, error) {
+	return NewHandler(func(ctx context.Context, arg0, arg1, arg2 string) (any, error) {
 		validateParam(t, tc.params, 0, arg0)
 		validateParam(t, tc.params, 1, arg1)
 		validateParam(t, tc.params, 2, arg2)

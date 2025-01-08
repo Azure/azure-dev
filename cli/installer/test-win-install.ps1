@@ -1,5 +1,5 @@
 param(
-    [string] $BaseUrl = 'https://azdrelease.azureedge.net/azd/standalone/release',
+    [string] $BaseUrl = 'https://azd-release-gfgac2cmf7b8cuay.b02.azurefd.net/azd/standalone/release',
     [string] $Version = 'latest',
     [string] $InstallFolder = "$($env:USERPROFILE)\azd-install-test"
 )

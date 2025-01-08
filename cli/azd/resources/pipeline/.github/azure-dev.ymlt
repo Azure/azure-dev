@@ -29,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install azd
-        uses: Azure/setup-azd@v1.0.0
+        uses: Azure/setup-azd@v2
 {{- if .InstallDotNetAspire}}
       - name: Install .NET Aspire workload
         run: dotnet workload install aspire

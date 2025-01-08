@@ -19,7 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/assert"
@@ -53,7 +53,7 @@ services:
 			},
 		})
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -102,7 +102,7 @@ services:
 		},
 	)
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -159,7 +159,7 @@ services:
 			},
 		})
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -220,7 +220,7 @@ services:
 			},
 		})
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 
 	env := environment.NewWithValues("envA", map[string]string{
 		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,

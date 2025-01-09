@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -24,7 +25,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -191,7 +191,7 @@ type envSetSecretAction struct {
 	kvService          keyvault.KeyVaultService
 	entraIdService     entraid.EntraIdService
 	subResolver        account.SubscriptionTenantResolver
-	userProfileService *azcli.UserProfileService
+	userProfileService *azapi.UserProfileService
 }
 
 func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -405,7 +405,7 @@ func newEnvSetSecretAction(
 	kvService keyvault.KeyVaultService,
 	entraIdService entraid.EntraIdService,
 	subResolver account.SubscriptionTenantResolver,
-	userProfileService *azcli.UserProfileService,
+	userProfileService *azapi.UserProfileService,
 ) actions.Action {
 	return &envSetSecretAction{
 		console:            console,

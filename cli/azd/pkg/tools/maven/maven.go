@@ -246,6 +246,19 @@ func NewCli(commandRunner exec.CommandRunner) *Cli {
 	}
 }
 
+func (cli *Cli) CleanPackage(ctx context.Context, relativePath string, projectPath string) error {
+	mvnCmd, err := cli.mvnCmd()
+	if err != nil {
+		return err
+	}
+	runArgs := exec.NewRunArgs(mvnCmd, "clean", "package", "-DskipTests", "-am", "-pl", relativePath).WithCwd(projectPath)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("error running mvn clean package for module: %s. error = %w", relativePath, err)
+	}
+	return nil
+}
+
 func (cli *Cli) EffectivePom(ctx context.Context, pomPath string) (string, error) {
 	mvnCmd, err := cli.mvnCmd()
 	if err != nil {

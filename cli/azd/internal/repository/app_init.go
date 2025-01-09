@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/names"
@@ -803,11 +801,6 @@ func (i *Initializer) prjConfigFromDetect(
 				frontend.Uses = append(frontend.Uses, backend.Name)
 			}
 		}
-
-		err := i.addMavenBuildHook(*detect, &config)
-		if err != nil {
-			return config, err
-		}
 	}
 
 	return config, nil
@@ -909,64 +902,6 @@ func lackedAzureStarterJdbcDependency(project appdetect.Project, database appdet
 			"</dependency>"
 	}
 	return ""
-}
-
-func (i *Initializer) addMavenBuildHook(
-	detect detectConfirm,
-	config *project.ProjectConfig) error {
-	wrapperPathMap := map[string][]string{}
-
-	for _, prj := range detect.Services {
-		if prj.Language == appdetect.Java {
-			if prj.Options[appdetect.JavaProjectOptionParentPomDir] != nil {
-				parentPath := prj.Options[appdetect.JavaProjectOptionParentPomDir].(string)
-				posixMavenWrapperPath := prj.Options[appdetect.JavaProjectOptionPosixMavenWrapperPath].(string)
-				winMavenWrapperPath := prj.Options[appdetect.JavaProjectOptionWinMavenWrapperPath].(string)
-				wrapperPathMap[parentPath] = []string{posixMavenWrapperPath, winMavenWrapperPath}
-			} else {
-				prjPath := prj.Options[appdetect.JavaProjectOptionCurrentPomDir].(string)
-				posixMavenWrapperPath := prj.Options[appdetect.JavaProjectOptionPosixMavenWrapperPath].(string)
-				winMavenWrapperPath := prj.Options[appdetect.JavaProjectOptionWinMavenWrapperPath].(string)
-				wrapperPathMap[prjPath] = []string{posixMavenWrapperPath, winMavenWrapperPath}
-			}
-		}
-	}
-
-	for _, wrapperPaths := range wrapperPathMap {
-		// Add hooks to build the Java project
-		if config.Hooks == nil {
-			config.Hooks = project.HooksConfig{}
-		}
-
-		config.Hooks["prepackage"] = append(config.Hooks["prepackage"], &ext.HookConfig{
-			Posix: &ext.HookConfig{
-				Shell: ext.ShellTypeBash,
-				Run:   getMavenExecutable(detect.root, wrapperPaths[0], true) + " clean package -DskipTests",
-			},
-			Windows: &ext.HookConfig{
-				Shell: ext.ShellTypePowershell,
-				Run:   getMavenExecutable(detect.root, wrapperPaths[1], false) + " clean package -DskipTests",
-			},
-		})
-	}
-	return nil
-}
-
-func getMavenExecutable(projectPath string, wrapperPath string, isPosix bool) string {
-	if wrapperPath == "" {
-		return "mvn"
-	}
-
-	rel, err := filepath.Rel(projectPath, wrapperPath)
-	if err != nil {
-		return "mvn"
-	}
-
-	if isPosix {
-		return "./" + rel
-	} else {
-		return ".\\" + rel
-	}
 }
 
 func chooseAuthTypeByPrompt(

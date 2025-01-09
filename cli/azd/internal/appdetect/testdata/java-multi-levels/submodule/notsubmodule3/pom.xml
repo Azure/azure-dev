@@ -3,26 +3,22 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>com.example</groupId>
-        <artifactId>multi-levels</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
-        <relativePath>../pom.xml</relativePath>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.1</version>
+        <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
-    <artifactId>submodule000</artifactId>
+    <groupId>com.example</groupId>
+    <artifactId>notsubmodule003</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>submodule</name>
-    <description>submodule</description>
-    <packaging>pom</packaging>
-
-    <modules>
-        <module>subsubmodule1</module>
-        <module>subsubmodule2</module>
-    </modules>
+    <name>notsubmodule3</name>
+    <description>notsubmodule3</description>
 
     <properties>
         <java.version>17</java.version>
     </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>

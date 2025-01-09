@@ -263,7 +263,8 @@ var allDetectors = []projectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
 	&javaDetector{
-		mvnCli: maven.NewCli(exec.NewCommandRunner(nil)),
+		mvnCli:     maven.NewCli(exec.NewCommandRunner(nil)),
+		modulePoms: make(map[string]pom),
 	},
 	&dotNetAppHostDetector{
 		// TODO(ellismg): Remove ambient authority.

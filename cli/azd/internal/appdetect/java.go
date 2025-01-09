@@ -13,27 +13,13 @@ import (
 )
 
 type javaDetector struct {
-	mvnCli            *maven.Cli
-	parentPoms        []pom
-	mavenWrapperPaths []mavenWrapper
+	mvnCli     *maven.Cli
+	rootPoms   []pom
+	modulePoms map[string]pom
 }
-
-type mavenWrapper struct {
-	posixPath string
-	winPath   string
-}
-
-// JavaProjectOptionCurrentPomDir The project path of the maven single-module project
-const JavaProjectOptionCurrentPomDir = "path"
 
 // JavaProjectOptionParentPomDir The parent module path of the maven multi-module project
 const JavaProjectOptionParentPomDir = "parentPath"
-
-// JavaProjectOptionPosixMavenWrapperPath The path to the maven wrapper script for POSIX systems
-const JavaProjectOptionPosixMavenWrapperPath = "posixMavenWrapperPath"
-
-// JavaProjectOptionWinMavenWrapperPath The path to the maven wrapper script for Windows systems
-const JavaProjectOptionWinMavenWrapperPath = "winMavenWrapperPath"
 
 func (jd *javaDetector) Language() Language {
 	return Java
@@ -52,23 +38,25 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			}
 
 			if len(mavenProject.pom.Modules) > 0 {
-				// This is a multi-module project, we will capture the analysis, but return nil
-				// to continue recursing
-				jd.parentPoms = append(jd.parentPoms, mavenProject.pom)
-				jd.mavenWrapperPaths = append(jd.mavenWrapperPaths, mavenWrapper{
-					posixPath: detectMavenWrapper(path, "mvnw"),
-					winPath:   detectMavenWrapper(path, "mvnw.cmd"),
-				})
+				// This is a multi-module project, we will capture the analysis, but return nil to continue recursing
+				jd.captureRootAndModules(mavenProject, path)
+				return nil, nil
+			}
+
+			if !isSpringBootRunnableProject(mavenProject) {
 				return nil, nil
 			}
 
 			var parentPom *pom
-			var currentWrapper mavenWrapper
-			for i, parentPomItem := range jd.parentPoms {
-				// we can say that the project is in the root project if the path is under the project
-				if inRoot := strings.HasPrefix(pomPath, filepath.Dir(parentPomItem.pomFilePath)); inRoot {
+			for _, parentPomItem := range jd.rootPoms {
+				// we can say that the project is in the root project if
+				// 1) the project path is under the root project
+				// 2) the project is the module of root project
+				parentPomFilePath := parentPomItem.pomFilePath
+				underRootPath := strings.HasPrefix(pomPath, filepath.Dir(parentPomFilePath)+string(filepath.Separator))
+				rootPomItem, exist := jd.modulePoms[mavenProject.pom.pomFilePath]
+				if underRootPath && exist && rootPomItem.pomFilePath == parentPomFilePath {
 					parentPom = &parentPomItem
-					currentWrapper = jd.mavenWrapperPaths[i]
 					break
 				}
 			}
@@ -81,15 +69,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			detectAzureDependenciesByAnalyzingSpringBootProject(mavenProject, &project)
 			if parentPom != nil {
 				project.Options = map[string]interface{}{
-					JavaProjectOptionParentPomDir:          filepath.Dir(parentPom.pomFilePath),
-					JavaProjectOptionPosixMavenWrapperPath: currentWrapper.posixPath,
-					JavaProjectOptionWinMavenWrapperPath:   currentWrapper.winPath,
-				}
-			} else {
-				project.Options = map[string]interface{}{
-					JavaProjectOptionCurrentPomDir:         path,
-					JavaProjectOptionPosixMavenWrapperPath: detectMavenWrapper(path, "mvnw"),
-					JavaProjectOptionWinMavenWrapperPath:   detectMavenWrapper(path, "mvnw.cmd"),
+					JavaProjectOptionParentPomDir: filepath.Dir(parentPom.pomFilePath),
 				}
 			}
 
@@ -100,10 +80,29 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 	return nil, nil
 }
 
-func detectMavenWrapper(path string, executable string) string {
-	wrapperPath := filepath.Join(path, executable)
-	if fileExists(wrapperPath) {
-		return wrapperPath
+// captureRootAndModules records the root and modules information for parent detection later
+func (jd *javaDetector) captureRootAndModules(mavenProject mavenProject, path string) {
+	if _, ok := jd.modulePoms[mavenProject.pom.pomFilePath]; !ok {
+		// add into rootPoms if it's new root
+		jd.rootPoms = append(jd.rootPoms, mavenProject.pom)
 	}
-	return ""
+	for _, module := range mavenProject.pom.Modules {
+		// for module: submodule, module path is the ./submodule/pom.xml
+		// for module: backend-pom.xml, module path is the /backend-pom.xml
+		var modulePath string
+		if strings.HasSuffix(module, ".xml") {
+			modulePath = filepath.Join(path, module)
+		} else {
+			modulePath = filepath.Join(path, module, "pom.xml")
+		}
+		// modulePath points to the actual root pom, not current parent pom
+		jd.modulePoms[modulePath] = mavenProject.pom
+		for {
+			if result, ok := jd.modulePoms[jd.modulePoms[modulePath].pomFilePath]; ok {
+				jd.modulePoms[modulePath] = result
+			} else {
+				break
+			}
+		}
+	}
 }

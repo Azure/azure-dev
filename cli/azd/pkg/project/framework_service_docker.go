@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 )
 
@@ -201,9 +202,13 @@ func (p *dockerProject) Build(
 		return &ServiceBuildResult{Restore: restoreOutput}, nil
 	}
 
-	// if it's a java project without Dockerfile, add a default one for Docker build
+	// if it's a java project without Dockerfile, we help to package jar and add a default Dockerfile for Docker build
 	if serviceConfig.Language == ServiceLanguageJava && serviceConfig.Docker.Path == "" {
-		log.Printf("Dockerfile not found for java project %s, will provide a default one", serviceConfig.Name)
+		mvnCli := maven.NewCli(exec.NewCommandRunner(nil))
+		err := mvnCli.CleanPackage(ctx, serviceConfig.RelativePath, serviceConfig.Project.Path)
+		if err != nil {
+			return nil, err
+		}
 		defaultDockerfilePath, err := addDefaultDockerfileForJavaProject(serviceConfig.Name)
 		if err != nil {
 			return nil, err
@@ -639,6 +644,7 @@ COPY ./target/*.jar /app.jar
 ENTRYPOINT ["sh", "-c", "java -jar /app.jar"]`
 
 func addDefaultDockerfileForJavaProject(svcName string) (string, error) {
+	log.Printf("Dockerfile not found for java project %s, will provide a default one", svcName)
 	dockerfileDir, err := os.MkdirTemp("", svcName)
 	if err != nil {
 		return "", fmt.Errorf("error creating temp Dockerfile directory: %w", err)

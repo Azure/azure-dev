@@ -9,6 +9,13 @@
   <name>Basic POM</name>
   <properties></properties>
   <dependencies></dependencies>
-  <build></build>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
   <profiles></profiles>
 </project>

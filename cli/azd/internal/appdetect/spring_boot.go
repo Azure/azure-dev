@@ -642,6 +642,18 @@ func isSpringBootApplication(pom pom) bool {
 	return false
 }
 
+// isSpringBootRunnableProject checks if the pom indicates a runnable Spring Boot project
+func isSpringBootRunnableProject(project mavenProject) bool {
+	targetGroupId := "org.springframework.boot"
+	targetArtifactId := "spring-boot-maven-plugin"
+	for _, plugin := range project.pom.Build.Plugins {
+		if plugin.GroupId == targetGroupId && plugin.ArtifactId == targetArtifactId {
+			return true
+		}
+	}
+	return false
+}
+
 func DistinctValues(input map[string]string) []string {
 	valueSet := make(map[string]struct{})
 	for _, value := range input {

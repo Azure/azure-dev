@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -29,11 +30,13 @@ type TokenResponse struct {
 
 // tokenHandler handles token requests.
 func (serve *serveAction) tokenHandler(w http.ResponseWriter, r *http.Request) {
-	// Extract the IP address from the request's RemoteAddr field
-	clientIP := r.RemoteAddr
+	clientIP := r.Header.Get("X-Forwarded-For")
+	if clientIP == "" {
+		clientIP, _, _ = net.SplitHostPort(r.RemoteAddr)
+	}
 
 	// Only allow requests from 127.0.0.1 or host.docker.internal
-	allowedIPs := []string{"127.0.0.1", "host.docker.internal"}
+	allowedIPs := []string{"::1", "127.0.0.1", "host.docker.internal"}
 
 	// Check if the request comes from an allowed IP address
 	ipAllowed := false
@@ -50,6 +53,9 @@ func (serve *serveAction) tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resource := r.URL.Query().Get("resource")
+	if resource == "" {
+		resource = r.FormValue("resource")
+	}
 	if resource == "" {
 		resource = "https://management.azure.com/"
 	}

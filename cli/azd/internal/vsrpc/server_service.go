@@ -111,8 +111,8 @@ func (s *serverService) StopAsync(ctx context.Context) error {
 // ServeHTTP implements http.Handler.
 func (s *serverService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serveRpc(w, r, map[string]Handler{
-		"InitializeAsync": HandlerFunc2(s.InitializeAsync),
-		"StopAsync":       HandlerAction0(s.StopAsync),
+		"InitializeAsync": NewHandler(s.InitializeAsync),
+		"StopAsync":       NewHandler(s.StopAsync),
 	})
 }
 

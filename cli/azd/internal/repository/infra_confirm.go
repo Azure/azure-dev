@@ -65,7 +65,7 @@ func (i *Initializer) infraSpecFromDetect(
 			Port: -1,
 		}
 
-		port, err := promptPort(i.console, ctx, name, svc)
+		port, err := PromptPort(i.console, ctx, name, svc)
 		if err != nil {
 			return scaffold.InfraSpec{}, err
 		}
@@ -205,13 +205,14 @@ func promptDbName(console input.Console, ctx context.Context, database appdetect
 	}
 }
 
-func promptPort(
+// PromptPort prompts for port selection from an appdetect project.
+func PromptPort(
 	console input.Console,
 	ctx context.Context,
 	name string,
 	svc appdetect.Project) (int, error) {
 	if svc.Docker == nil || svc.Docker.Path == "" { // using default builder from azd
-		if svc.Language == appdetect.Java {
+		if svc.Language == appdetect.Java || svc.Language == appdetect.DotNet {
 			return 8080, nil
 		}
 		return 80, nil

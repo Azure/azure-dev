@@ -36,7 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -342,9 +342,9 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 
 	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
-	deploymentService := mockazcli.NewStandardDeploymentsFromMockContext(mockContext)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
 	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
 	deploymentManager := infra.NewDeploymentManager(deploymentService, resourceManager, mockContext.Console)
 	accountManager := &mockaccount.MockAccountManager{
@@ -935,7 +935,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		Stderr: "",
 	})
 
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
 	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	env := environment.NewWithValues("test-env", map[string]string{})

@@ -4,13 +4,11 @@ Display the list of available features in alpha stage.
 Usage
   azd config list-alpha [flags]
 
-Flags
-        --docs 	: Opens the documentation for azd config list-alpha in your web browser.
-    -h, --help 	: Gets help for list-alpha.
-
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd config list-alpha in your web browser.
+    -h, --help       	: Gets help for list-alpha.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples

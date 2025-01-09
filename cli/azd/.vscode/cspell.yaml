@@ -1,18 +1,21 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - azcloud
+  - azurefd
   - backoff
   - Canonicalize
+  - chinacloudapi
   - Codespace
   - Codespaces
   - devcontainers
+  # CDN host name
+  - gfgac2cmf7b8cuay
   - goversioninfo
   - nosec
   - Retryable
   - runcontext
-  - azcloud
-  - usgovcloudapi
-  - chinacloudapi
   - unmarshals
+  - usgovcloudapi
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -107,12 +110,24 @@ overrides:
   - filename: docs/proxy-configuration.md
     words:
       - Telerik
+  - filename: test/recording/recording.go
+    words:
+      - oidctoken
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
   - filename: internal/vsrpc/handler.go
     words:
       - arity
+  - filename: test/internal/tfoidc/main.go
+    words:
+      - tfoidc
+      - OIDCREQUESTURI
+      - oidctoken
+  - filename: CHANGELOG.md
+    words:
+      - GHSA
+      - gjrc
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

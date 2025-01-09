@@ -3,7 +3,38 @@
 
 package names
 
-import "strings"
+import (
+	"errors"
+	"regexp"
+	"strings"
+)
+
+var rfc1123LabelRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$`)
+
+// ValidateLabelName checks if the given name is a valid RFC 1123 Label name.
+func ValidateLabelName(name string) error {
+	if name == "" {
+		return errors.New("name cannot be empty")
+	}
+
+	if len(name) > 63 {
+		return errors.New("name must be 63 characters or less")
+	}
+
+	if !isLowerAsciiAlphaNumeric(rune(name[0])) {
+		return errors.New("name must start with a lower-cased alphanumeric character, i.e. a-z or 0-9")
+	}
+
+	if !isLowerAsciiAlphaNumeric(rune(name[len(name)-1])) {
+		return errors.New("name must end with a lower-cased alphanumeric character, i.e. a-z or 0-9")
+	}
+
+	if !rfc1123LabelRegex.MatchString(name) {
+		return errors.New("name must contain only lower-cased alphanumeric characters or '-', i.e. a-z, 0-9, or '-'")
+	}
+
+	return nil
+}
 
 //cspell:disable
 
@@ -46,6 +77,10 @@ func cleanAlphaNumeric(name string) (hasSeparator bool, cleaned string) {
 	}
 
 	return hasSeparator, sb.String()
+}
+
+func isLowerAsciiAlphaNumeric(r rune) bool {
+	return ('0' <= r && r <= '9') || ('a' <= r && r <= 'z')
 }
 
 func isAsciiAlphaNumeric(r rune) bool {

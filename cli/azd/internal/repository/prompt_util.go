@@ -35,8 +35,12 @@ func promptDir(
 	console input.Console,
 	message string) (string, error) {
 	for {
-		path, err := console.PromptDir(ctx, input.ConsoleOptions{
+		path, err := console.PromptFs(ctx, input.ConsoleOptions{
 			Message: message,
+		}, input.FsOptions{
+			SuggestOpts: input.FsSuggestOptions{
+				ExcludeFiles: true,
+			},
 		})
 		if err != nil {
 			return "", err

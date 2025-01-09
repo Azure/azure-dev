@@ -11,14 +11,17 @@ As of `1.9.3`, each Azure Developer CLI feature has been evaluated and assigned 
 | Command      | help                     | Stable    |
 | Command      | init                     | Stable    |
 | Command      | auth                     | Stable    |
-| Command      | monitor                  | Beta      |
-| Command      | pipeline                 | Beta      |
 | Command      | provision                | Stable    |
-| Command      | restore                  | Beta      |
-| Command      | template                 | Beta      |
 | Command      | up                       | Stable    |
 | Command      | version                  | Stable    |
+| Command      | show                     | Stable    |
+| Command      | monitor                  | Beta      |
+| Command      | pipeline                 | Beta      |
+| Command      | restore                  | Beta      |
+| Command      | template                 | Beta      |
 | Command      | package                  | Beta      |
+| Command      | add                      | Alpha     |
+| Command      | infra synth              | Alpha     |
 | Language     | Python                   | Stable    |
 | Language     | JavaScript/TypeScript    | Stable    |
 | Language     | Java                     | Stable    |

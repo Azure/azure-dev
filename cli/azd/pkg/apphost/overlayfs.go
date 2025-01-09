@@ -17,7 +17,8 @@ func OverlayFS(local, embedded fs.FS) fs.FS {
 }
 
 // overlayFS is a filesystem that combines a local filesystem with an embedded filesystem.
-// When opening a file, it first tries to open it from the local filesystem, and if that fails, it falls back to the embedded filesystem.
+// When opening a file, it first tries to open it from the local filesystem
+// if that fails, it falls back to the embedded filesystem.
 func (o overlayFS) Open(name string) (fs.File, error) {
 	// 1. Attempt to open from local
 	if f, err := o.local.Open(name); err == nil {

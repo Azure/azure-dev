@@ -5,16 +5,34 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io/fs"
-	"maps"
+	"log"
 	"os"
 	"path/filepath"
-	"slices"
+	"regexp"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
 type javaDetector struct {
-	rootProjects []mavenProject
+	rootProjects      []mavenProject
+	mavenWrapperPaths []mavenWrapper
 }
+
+type mavenWrapper struct {
+	posixPath string
+	winPath   string
+}
+
+// JavaProjectOptionMavenParentPath The parent module path of the maven multi-module project
+const JavaProjectOptionMavenParentPath = "parentPath"
+
+// JavaProjectOptionPosixMavenWrapperPath The path to the maven wrapper script for POSIX systems
+const JavaProjectOptionPosixMavenWrapperPath = "posixMavenWrapperPath"
+
+// JavaProjectOptionWinMavenWrapperPath The path to the maven wrapper script for Windows systems
+const JavaProjectOptionWinMavenWrapperPath = "winMavenWrapperPath"
 
 func (jd *javaDetector) Language() Language {
 	return Java
@@ -23,37 +41,55 @@ func (jd *javaDetector) Language() Language {
 func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "pom.xml" {
+			tracing.SetUsageAttributes(fields.AppInitJavaDetect.String("start"))
 			pomFile := filepath.Join(path, entry.Name())
 			project, err := readMavenProject(pomFile)
 			if err != nil {
-				return nil, fmt.Errorf("error reading pom.xml: %w", err)
+				log.Printf("Please edit azure.yaml manually to satisfy your requirement. azd can not help you "+
+					"to that by detect your java project because error happened when reading pom.xml: %s. ", err)
+				return nil, nil
 			}
 
 			if len(project.Modules) > 0 {
 				// This is a multi-module project, we will capture the analysis, but return nil
 				// to continue recursing
 				jd.rootProjects = append(jd.rootProjects, *project)
+				jd.mavenWrapperPaths = append(jd.mavenWrapperPaths, mavenWrapper{
+					posixPath: detectMavenWrapper(path, "mvnw"),
+					winPath:   detectMavenWrapper(path, "mvnw.cmd"),
+				})
 				return nil, nil
 			}
 
 			var currentRoot *mavenProject
-			for _, rootProject := range jd.rootProjects {
+			var currentWrapper mavenWrapper
+			for i, rootProject := range jd.rootProjects {
 				// we can say that the project is in the root project if the path is under the project
 				if inRoot := strings.HasPrefix(pomFile, rootProject.path); inRoot {
 					currentRoot = &rootProject
+					currentWrapper = jd.mavenWrapperPaths[i]
 				}
 			}
 
-			_ = currentRoot // use currentRoot here in the analysis
-			result, err := detectDependencies(project, &Project{
+			result, err := detectDependencies(currentRoot, project, &Project{
 				Language:      Java,
 				Path:          path,
 				DetectionRule: "Inferred by presence of: pom.xml",
 			})
+			if currentRoot != nil {
+				result.Options = map[string]interface{}{
+					JavaProjectOptionMavenParentPath:       currentRoot.path,
+					JavaProjectOptionPosixMavenWrapperPath: currentWrapper.posixPath,
+					JavaProjectOptionWinMavenWrapperPath:   currentWrapper.winPath,
+				}
+			}
 			if err != nil {
-				return nil, fmt.Errorf("detecting dependencies: %w", err)
+				log.Printf("Please edit azure.yaml manually to satisfy your requirement. azd can not help you "+
+					"to that by detect your java project because error happened when detecting dependencies: %s", err)
+				return nil, nil
 			}
 
+			tracing.SetUsageAttributes(fields.AppInitJavaDetect.String("finish"))
 			return result, nil
 		}
 	}
@@ -66,6 +102,7 @@ type mavenProject struct {
 	XmlName              xml.Name             `xml:"project"`
 	Parent               parent               `xml:"parent"`
 	Modules              []string             `xml:"modules>module"` // Capture the modules
+	Properties           Properties           `xml:"properties"`
 	Dependencies         []dependency         `xml:"dependencies>dependency"`
 	DependencyManagement dependencyManagement `xml:"dependencyManagement"`
 	Build                build                `xml:"build"`
@@ -77,6 +114,15 @@ type parent struct {
 	GroupId    string `xml:"groupId"`
 	ArtifactId string `xml:"artifactId"`
 	Version    string `xml:"version"`
+}
+
+type Properties struct {
+	Entries []Property `xml:",any"` // Capture all elements inside <properties>
+}
+
+type Property struct {
+	XMLName xml.Name
+	Value   string `xml:",chardata"`
 }
 
 // Dependency represents a single Maven dependency.
@@ -110,8 +156,16 @@ func readMavenProject(filePath string) (*mavenProject, error) {
 		return nil, err
 	}
 
+	var initialProject mavenProject
+	if err := xml.Unmarshal(bytes, &initialProject); err != nil {
+		return nil, fmt.Errorf("parsing xml: %w", err)
+	}
+
+	// replace all placeholders with properties
+	str := replaceAllPlaceholders(initialProject, string(bytes))
+
 	var project mavenProject
-	if err := xml.Unmarshal(bytes, &project); err != nil {
+	if err := xml.Unmarshal([]byte(str), &project); err != nil {
 		return nil, fmt.Errorf("parsing xml: %w", err)
 	}
 
@@ -120,24 +174,38 @@ func readMavenProject(filePath string) (*mavenProject, error) {
 	return &project, nil
 }
 
-func detectDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
-	databaseDepMap := map[DatabaseDep]struct{}{}
-	for _, dep := range mavenProject.Dependencies {
-		if dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j" {
-			databaseDepMap[DbMySql] = struct{}{}
+func replaceAllPlaceholders(project mavenProject, input string) string {
+	propsMap := parseProperties(project.Properties)
+
+	re := regexp.MustCompile(`\$\{([A-Za-z0-9-_.]+)}`)
+	return re.ReplaceAllStringFunc(input, func(match string) string {
+		// Extract the key inside ${}
+		key := re.FindStringSubmatch(match)[1]
+		if value, exists := propsMap[key]; exists {
+			return value
 		}
+		return match
+	})
+}
 
-		if dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql" {
-			databaseDepMap[DbPostgres] = struct{}{}
-		}
+func parseProperties(properties Properties) map[string]string {
+	result := make(map[string]string)
+	for _, entry := range properties.Entries {
+		result[entry.XMLName.Local] = entry.Value
 	}
+	return result
+}
 
-	if len(databaseDepMap) > 0 {
-		project.DatabaseDeps = slices.SortedFunc(maps.Keys(databaseDepMap),
-			func(a, b DatabaseDep) int {
-				return strings.Compare(string(a), string(b))
-			})
-	}
-
+func detectDependencies(currentRoot *mavenProject, mavenProject *mavenProject, project *Project) (*Project, error) {
+	detectAzureDependenciesByAnalyzingSpringBootProject(currentRoot, mavenProject, project)
 	return project, nil
+}
+
+func detectMavenWrapper(path string, executable string) string {
+	wrapperPath := filepath.Join(path, executable)
+	if _, err := os.Stat(wrapperPath); err == nil {
+		return wrapperPath
+	}
+
+	return ""
 }

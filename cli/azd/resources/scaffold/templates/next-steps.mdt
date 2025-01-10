@@ -21,7 +21,7 @@ To troubleshoot any issues, see [troubleshooting](#troubleshooting).
 Configure environment variables for running services by updating `settings` in [main.parameters.json](./infra/main.parameters.json).
 
 {{- range .Services}}
-{{- if or .DbPostgres .DbCosmosMongo .DbRedis }}
+{{- if or .DbPostgres .DbMySql .DbCosmosMongo .DbRedis }}
 
 #### Database connections for `{{.Name}}`
 
@@ -31,6 +31,9 @@ They allow connection to the database instances, and can be modified or adapted 
 {{- if .DbPostgres }}
 - `POSTGRES_URL` - The URL of the Azure Postgres Flexible Server database instance.
 Individual components are also available as: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`.
+{{- end}}
+{{- if .DbMySql }}
+- `MYSQL_*` environment variables are configured in [{{.Name}}.bicep](./infra/app/{{.Name}}.bicep) to connect to the Mysql database. Modify these variables to match your application's needs.
 {{- end}}
 {{- if .DbCosmosMongo }}
 - `MONGODB_URL` - The URL of the Azure Cosmos DB (MongoDB) instance.
@@ -70,6 +73,9 @@ This includes:
 {{- end}}
 {{- if .DbPostgres}}
 - Azure Postgres Flexible Server to host the '{{.DbPostgres.DatabaseName}}' database.
+{{- end}}
+{{- if .DbMySql}}
+- [app/db-mysql.bicep](./infra/app/db-mysql.bicep) - Azure MySQL Flexible Server to host the '{{.DbMySql.DatabaseName}}' database.
 {{- end}}
 {{- if .DbCosmosMongo}}
 - Azure Cosmos DB (MongoDB) to host the '{{.DbCosmosMongo.DatabaseName}}' database.

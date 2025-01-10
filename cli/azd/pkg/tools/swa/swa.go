@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,14 +69,12 @@ func (cli *Cli) Deploy(
 	deploymentToken string,
 	options DeployOptions,
 ) (string, error) {
-	log.Printf(
-		"SWA Deploy: TenantId: %s, SubscriptionId: %s, ResourceGroup: %s, ResourceName: %s, Environment: %s",
-		tenantId,
-		subscriptionId,
-		resourceGroup,
-		appName,
-		environment,
-	)
+	slog.InfoContext(ctx, "SWA Deploy",
+		"tenantId", tenantId,
+		"subscriptionId", subscriptionId,
+		"resourceGroup", resourceGroup,
+		"resourceName", appName,
+		"environment", environment)
 
 	args := []string{"deploy",
 		"--tenant-id", tenantId,

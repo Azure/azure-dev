@@ -3,7 +3,7 @@ package ext
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -159,7 +159,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		defer h.console.StopPreviewer(ctx, false)
 	}
 
-	log.Printf("Executing script '%s'\n", hookConfig.path)
+	slog.InfoContext(ctx, "Executing script", "path", hookConfig.path)
 	res, err := script.Execute(ctx, hookConfig.path, *options)
 	if err != nil {
 		execErr := fmt.Errorf(
@@ -177,7 +177,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 				ctx,
 				output.WithWarningFormat("Execution will continue since ContinueOnError has been set to true."),
 			)
-			log.Println(execErr.Error())
+			slog.InfoContext(ctx, "hook execution error, continuing due to ContinueOnError", "err", execErr)
 		} else {
 			return execErr
 		}

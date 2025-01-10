@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,16 +82,15 @@ func (ch *ContainerHelper) DefaultImageTag() string {
 func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
 	registryName, found := ch.env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
 	if !found {
-		log.Printf(
-			"Container registry not found in '%s' environment variable\n",
-			environment.ContainerRegistryEndpointEnvVarName,
-		)
+		slog.InfoContext(ctx,
+			fmt.Sprintf("Container registry not found in '%s' environment variable",
+				environment.ContainerRegistryEndpointEnvVarName))
 	}
 
 	if registryName == "" {
 		yamlRegistryName, err := serviceConfig.Docker.Registry.Envsubst(ch.env.Getenv)
 		if err != nil {
-			log.Println("Failed expanding 'docker.registry'")
+			slog.InfoContext(ctx, "Failed expanding 'docker.registry'", "err", err)
 		}
 
 		registryName = yamlRegistryName
@@ -289,7 +288,7 @@ func (ch *ContainerHelper) Deploy(
 
 	if writeImageToEnv {
 		// Save the name of the image we pushed into the environment with a well known key.
-		log.Printf("writing image name to environment")
+		slog.InfoContext(ctx, "writing image name to environment")
 		ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
 
 		if err := ch.envManager.Save(ctx, ch.env); err != nil {
@@ -366,7 +365,7 @@ func (ch *ContainerHelper) runLocalBuild(
 				return "", err
 			}
 
-			log.Printf("logging into container registry '%s'\n", registryName)
+			slog.InfoContext(ctx, "logging into container registry", "name", registryName)
 			progress.SetProgress(NewServiceProgress("Logging into container registry"))
 
 			_, err = ch.Login(ctx, serviceConfig)
@@ -375,7 +374,7 @@ func (ch *ContainerHelper) runLocalBuild(
 			}
 
 			// Push image.
-			log.Printf("pushing %s to registry", remoteImage)
+			slog.InfoContext(ctx, "pushing image to registry", "image", remoteImage)
 			progress.SetProgress(NewServiceProgress("Pushing container image"))
 			if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteImage); err != nil {
 				errSuggestion := &internal.ErrorWithSuggestion{

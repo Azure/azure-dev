@@ -6,7 +6,6 @@ package input
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -228,7 +227,7 @@ func offset(src, regex string) int {
 		var qty int
 		qty, err := strconv.Atoi(string(match[1]))
 		if err != nil {
-			log.Panic("converting string to int: %w", err)
+			panic(fmt.Sprintf("converting string to int: %v", err))
 		}
 		return qty
 	}

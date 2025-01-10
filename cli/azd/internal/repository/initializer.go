@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,11 +165,7 @@ func (i *Initializer) fetchCode(
 // The list of absolute source file paths to skip are returned.
 func (i *Initializer) promptForDuplicates(
 	ctx context.Context, staging string, target string) (skipSourceFiles map[string]struct{}, err error) {
-	log.Printf(
-		"template init, checking for duplicates. source: %s target: %s",
-		staging,
-		target,
-	)
+	slog.InfoContext(ctx, "template init, checking for duplicates.", "source", staging, "target", target)
 
 	duplicateFiles, err := determineDuplicates(staging, target)
 	if err != nil {

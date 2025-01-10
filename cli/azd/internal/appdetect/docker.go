@@ -2,9 +2,10 @@ package appdetect
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -37,7 +38,7 @@ func AnalyzeDocker(dockerFilePath string) (*Docker, error) {
 		if strings.HasPrefix(line, "EXPOSE") {
 			parsedPorts, err := parsePortsInLine(line[len("EXPOSE"):])
 			if err != nil {
-				log.Printf("parsing Dockerfile at %s: %v", dockerFilePath, err)
+				slog.InfoContext(context.TODO(), "error parsing expose line", "path", dockerFilePath, "err", err)
 			}
 			ports = append(ports, parsedPorts...)
 		}

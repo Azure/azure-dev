@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -401,7 +400,7 @@ func (d *detectConfirm) add(ctx context.Context) error {
 		d.modified = true
 		return nil
 	default:
-		log.Panic("unhandled entry type")
+		panic("unhandled entry type")
 	}
 
 	msg := fmt.Sprintf("Enter file path of the directory that uses '%s'", projectDisplayName(s))

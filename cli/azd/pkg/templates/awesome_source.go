@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -58,7 +58,7 @@ func newAwesomeAzdTemplateSource(
 	awesomeAzdTemplates := []*Template{}
 	for _, template := range rawAwesomeAzdTemplates {
 		if template.Title == "" || template.Source == "" {
-			log.Println("skipping template. missing required attributes")
+			slog.InfoContext(ctx, "skipping template. missing required attributes")
 			continue
 		}
 

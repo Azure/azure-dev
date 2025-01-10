@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -214,7 +214,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			appHostRoot, "infra", fmt.Sprintf("%s.tmpl.yaml", projectName))
 
 		if _, err := os.Stat(manifestPath); err == nil {
-			log.Printf("using container app manifest from %s", manifestPath)
+			slog.InfoContext(ctx, "using exiting container app manifest", "path", manifestPath)
 
 			contents, err := os.ReadFile(manifestPath)
 			if err != nil {
@@ -222,10 +222,9 @@ func (at *dotnetContainerAppTarget) Deploy(
 			}
 			manifestTemplate = string(contents)
 		} else {
-			log.Printf(
-				"generating container app manifest from %s for project %s",
-				serviceConfig.DotNetContainerApp.AppHostPath,
-				projectName)
+			slog.InfoContext(ctx, "generating container app manifest from for project",
+				"path", serviceConfig.DotNetContainerApp.AppHostPath,
+				"project", projectName)
 
 			generatedManifest, _, err := apphost.ContainerAppManifestTemplateForProject(
 				serviceConfig.DotNetContainerApp.Manifest,
@@ -239,7 +238,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		}
 	}
 
-	log.Printf("Resolve the manifest template for project %s", projectName)
+	slog.InfoContext(ctx, "Resolve the manifest template for project", "project", projectName)
 
 	fns := &containerAppTemplateManifestFuncs{
 		ctx:                 ctx,
@@ -362,16 +361,16 @@ func (at *dotnetContainerAppTarget) Deploy(
 			}
 			var bicepParamOutput compiledBicepParamResult
 			if err := json.Unmarshal([]byte(res.Compiled), &bicepParamOutput); err != nil {
-				log.Printf(
-					"failed unmarshalling compiled bicepparam (err: %v), template contents:\n%s", err, res.Compiled)
+				slog.InfoContext(ctx, "failed unmarshalling compiled bicepparam",
+					"err", err,
+					"template", res.Compiled)
 				return nil, nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
 			}
 			var params azure.ArmParameterFile
 			if err := json.Unmarshal([]byte(bicepParamOutput.ParametersJson), &params); err != nil {
-				log.Printf(
-					"failed unmarshalling compiled bicepparam parameters(err: %v), template contents:\n%s",
-					err,
-					res.Compiled)
+				slog.InfoContext(ctx, "failed unmarshalling compiled bicepparam parameters",
+					"err", err,
+					"template", res.Compiled)
 				return nil, nil, fmt.Errorf("failed unmarshalling arm parameters template from json: %w", err)
 			}
 			return azure.RawArmTemplate(bicepParamOutput.TemplateJson), params.Parameters, nil

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -413,10 +413,10 @@ func (ad *entraIdService) ensureFederatedCredential(
 	// If a federated credential already exists for the same subject then nothing to do.
 	for _, existing := range existingCredentials {
 		if existing.Subject == repoCredential.Subject {
-			log.Printf(
-				"federated credential with subject '%s' already exists on application '%s'",
-				repoCredential.Subject,
-				*application.Id,
+			slog.InfoContext(ctx,
+				"federated credential with subject already exists on application'",
+				"subject", repoCredential.Subject,
+				"app", *application.Id,
 			)
 			return nil, nil
 		}

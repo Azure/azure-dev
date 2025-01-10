@@ -1,10 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -70,7 +71,7 @@ func MapError(err error, span tracing.Span) {
 		collect([]*azapi.DeploymentErrorLine{armDeployErr.Details}, 0)
 		if len(codes) > 0 {
 			if codesJson, err := json.Marshal(codes); err != nil {
-				log.Println("telemetry: failed to marshal arm error codes", err)
+				slog.InfoContext(context.TODO(), "telemetry: failed to marshal arm error codes", "err", err)
 			} else {
 				errDetails = append(errDetails, fields.ServiceErrorCode.String(string(codesJson)))
 			}

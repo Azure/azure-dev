@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"net/url"
 	"os"
@@ -562,10 +562,11 @@ func parseDeploymentStackOptions(options map[string]any) (*deploymentStackOption
 	if hasBypassStackOutOfSyncError {
 		byPassOutOfSyncError, err := strconv.ParseBool(bypassStackOutOfSyncErrorVal)
 		if err != nil {
-			log.Printf(
-				"Failed to parse environment variable '%s' value '%s' as a boolean. Defaulting to false.",
-				bypassOutOfSyncErrorEnvVarName,
-				bypassStackOutOfSyncErrorVal,
+			slog.InfoContext(context.TODO(),
+				fmt.Sprintf(
+					"Failed to parse environment variable '%s' as a boolean. Defaulting to false.",
+					bypassOutOfSyncErrorEnvVarName),
+				"value", bypassStackOutOfSyncErrorVal,
 			)
 		} else {
 			deploymentStackOptions.BypassStackOutOfSyncError = &byPassOutOfSyncError

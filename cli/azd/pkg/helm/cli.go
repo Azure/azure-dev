@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -41,9 +41,9 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	// for diagnostics purposes, let's fetch and log the version of helm
 	// we're using.
 	if ver, err := cli.getClientVersion(ctx); err != nil {
-		log.Printf("error fetching helm version: %s", err)
+		slog.InfoContext(ctx, "error fetching helm version", "err", err)
 	} else {
-		log.Printf("helm version: %s", ver)
+		slog.InfoContext(ctx, "detected helm version", "version", ver)
 	}
 
 	return nil

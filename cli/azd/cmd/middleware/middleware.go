@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -95,7 +95,7 @@ func (r *MiddlewareRunner) RunAction(
 
 			var middleware Middleware
 			if err := actionContainer.ResolveNamed(middlewareName, &middleware); err != nil {
-				log.Printf("failed resolving middleware '%s' : %s\n", middlewareName, err.Error())
+				slog.InfoContext(ctx, "failed resolving middleware", "name", middlewareName, "err", err)
 			}
 
 			// It is an expected scenario that the middleware cannot be resolved
@@ -105,7 +105,7 @@ func (r *MiddlewareRunner) RunAction(
 				return nextFn(ctx)
 			}
 
-			log.Printf("running middleware '%s'\n", middlewareName)
+			slog.InfoContext(ctx, "running middleware", "name", middlewareName)
 			return middleware.Run(ctx, nextFn)
 		} else {
 			var action actions.Action

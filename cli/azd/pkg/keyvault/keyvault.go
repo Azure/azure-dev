@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -143,7 +143,7 @@ func (kvs *keyVaultService) PurgeKeyVault(
 		var httpErr *azcore.ResponseError
 		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
 			// no need to purge if the vault is already deleted (not found)
-			log.Printf("key vault '%s' was not found. No need to purge.", vaultName)
+			slog.InfoContext(ctx, "key vault was not found. No need to purge.", "name", vaultName)
 			return nil
 		}
 		return fmt.Errorf("starting purging key vault: %w", err)

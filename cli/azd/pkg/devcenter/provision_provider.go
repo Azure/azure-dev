@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"os"
 	"slices"
@@ -410,7 +410,7 @@ func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
 func (p *ProvisionProvider) pollForEnvironment(ctx context.Context, envName string) {
 	// Disable reporting progress if needed
 	if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
-		log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
+		slog.InfoContext(ctx, "Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
 		return
 	}
 
@@ -470,7 +470,7 @@ func (p *ProvisionProvider) pollForEnvironment(ctx context.Context, envName stri
 func (p *ProvisionProvider) pollForProgress(ctx context.Context, deployment infra.Deployment) {
 	// Disable reporting progress if needed
 	if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
-		log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
+		slog.InfoContext(ctx, "Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
 		return
 	}
 
@@ -490,7 +490,7 @@ func (p *ProvisionProvider) pollForProgress(ctx context.Context, deployment infr
 		case <-timer.C:
 			if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
 				// We don't want to fail the whole deployment if a progress reporting error occurs
-				log.Printf("error while reporting progress: %s", err.Error())
+				slog.InfoContext(ctx, "error while reporting progress", "err", err)
 			}
 
 			timer.Reset(regularDelay)

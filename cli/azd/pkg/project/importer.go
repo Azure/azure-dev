@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -80,7 +80,8 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 
 				continue
 			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
+				slog.InfoContext(ctx, "error checking if project is an app host project",
+					"path", svcConfig.Path(), "err", err)
 			}
 		}
 
@@ -107,7 +108,8 @@ func (im *ImportManager) HasAppHost(ctx context.Context, projectConfig *ProjectC
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
 				return true
 			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
+				slog.InfoContext(ctx, "error checking if project is an app host project",
+					"path", svcConfig.Path(), "err", err)
 			}
 		}
 	}
@@ -141,7 +143,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 	// Allow overriding the infrastructure only when path and module exists.
 	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
-		log.Printf("using infrastructure from %s directory", infraRoot)
+		slog.InfoContext(ctx, "using infrastructure from directory", "path", infraRoot)
 		return &Infra{
 			Options: projectConfig.Infra,
 		}, nil
@@ -160,7 +162,8 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 				return im.dotNetImporter.ProjectInfrastructure(ctx, svcConfig)
 			} else if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
+				slog.InfoContext(ctx, "error checking if project is an app host project",
+					"path", svcConfig.Path(), "err", err)
 			}
 		}
 	}

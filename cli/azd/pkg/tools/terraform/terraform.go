@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -56,7 +56,7 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 		return fmt.Errorf("checking %s version:  %w", cli.Name(), err)
 	}
 
-	log.Printf("terraform version: %s", tfVer)
+	slog.InfoContext(ctx, "detected terraform version", "version", tfVer)
 
 	tfSemver, err := semver.Parse(tfVer)
 	if err != nil {

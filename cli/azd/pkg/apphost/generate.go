@@ -69,13 +69,16 @@ func AspireDashboardUrl(
 
 func init() {
 
+	var combinedTemplates fs.FS
+
 	// get the current working directory
-	wd, err := os.Getwd()
-	if err != nil {
-		panic(err)
+	if wd, err := os.Getwd(); err == nil {
+		// create a new overlay filesystem that combines the local filesystem with the embedded resources
+		combinedTemplates = OverlayFS(os.DirFS(wd), resources.AppHostTemplates)
+	} else {
+		// default back to embedded resources
+		combinedTemplates = resources.AppHostTemplates
 	}
-	// create a new overlay filesystem that combines the local filesystem with the embedded resources
-	combinedTemplates := OverlayFS(os.DirFS(wd), resources.AppHostTemplates)
 
 	tmpl, err := template.New("templates").
 		Option("missingkey=error").

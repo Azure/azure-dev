@@ -972,13 +972,13 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 	}
 	builder := strings.Builder{}
 	err = tmpl.Execute(&builder, struct {
-		BranchName          string
-		FedCredLogIn        bool
-		InstallDotNetAspire bool
+		BranchName             string
+		FedCredLogIn           bool
+		InstallDotNetForAspire bool
 	}{
-		BranchName:          props.BranchName,
-		FedCredLogIn:        props.AuthType == AuthTypeFederated,
-		InstallDotNetAspire: props.HasAppHost,
+		BranchName:             props.BranchName,
+		FedCredLogIn:           props.AuthType == AuthTypeFederated,
+		InstallDotNetForAspire: props.HasAppHost,
 	})
 	if err != nil {
 		return fmt.Errorf("executing template: %w", err)

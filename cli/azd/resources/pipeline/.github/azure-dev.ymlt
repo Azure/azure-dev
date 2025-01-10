@@ -30,9 +30,13 @@ jobs:
         uses: actions/checkout@v4
       - name: Install azd
         uses: Azure/setup-azd@v2
-{{- if .InstallDotNetAspire}}
-      - name: Install .NET Aspire workload
-        run: dotnet workload install aspire
+{{- if .InstallDotNetForAspire}}
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: | 
+            8.x.x
+            9.x.x
 {{ end }}
 {{- if .FedCredLogIn }}
       - name: Log in with Azure (Federated Credentials)

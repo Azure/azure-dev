@@ -42,11 +42,17 @@ const (
 	EntryKindModified EntryKind = "modified"
 )
 
+type Pair struct {
+	first  appdetect.AzureDep
+	second EntryKind
+}
+
 // detectConfirm handles prompting for confirming the detected services and databases
 type detectConfirm struct {
 	// detected services and databases
 	Services  []appdetect.Project
 	Databases map[appdetect.DatabaseDep]EntryKind
+	AzureDeps map[string]Pair
 
 	// the root directory of the project
 	root string
@@ -59,6 +65,7 @@ type detectConfirm struct {
 // Init initializes state from initial detection output
 func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 	d.Databases = make(map[appdetect.DatabaseDep]EntryKind)
+	d.AzureDeps = make(map[string]Pair)
 	d.Services = make([]appdetect.Project, 0, len(projects))
 	d.modified = false
 	d.root = root
@@ -71,6 +78,12 @@ func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 		for _, dbType := range project.DatabaseDeps {
 			if _, supported := dbMap[dbType]; supported {
 				d.Databases[dbType] = EntryKindDetected
+			}
+		}
+
+		for _, azureDep := range project.AzureDeps {
+			if _, supported := azureDepMap[azureDep.ResourceDisplay()]; supported {
+				d.AzureDeps[azureDep.ResourceDisplay()] = Pair{azureDep, EntryKindDetected}
 			}
 		}
 	}

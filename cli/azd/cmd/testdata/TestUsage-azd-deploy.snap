@@ -12,6 +12,7 @@ Flags
         --all                 	: Deploys all services that are listed in azure.yaml
     -e, --environment string  	: The name of the environment to use.
         --from-package string 	: Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).
+    -o, --output string       	: The output format (the supported formats are json, none).
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

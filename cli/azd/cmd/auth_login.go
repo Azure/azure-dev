@@ -318,15 +318,38 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			var msg string
 			switch res.Status {
 			case contracts.LoginStatusSuccess:
-				msg = "Logged in to Azure."
+				msg = "Logged in to Azure"
 			case contracts.LoginStatusUnauthenticated:
-				msg = "Not logged in, run `azd auth login` to login to Azure."
+				msg = "Not logged in, run `azd auth login` to login to Azure"
 			default:
 				panic("Unhandled login status")
 			}
 
-			fmt.Fprintln(la.console.Handles().Stdout, msg)
-			return nil, nil
+			// get user account information - login --check-status
+			details, err := la.authManager.LogInDetails(ctx)
+
+			// error getting user account
+			if err != nil {
+				log.Printf("error: getting signed in account: %v", err)
+				fmt.Fprintln(la.console.Handles().Stdout, msg+".")
+				return nil, nil
+			}
+
+			switch details.LoginType {
+			case auth.EmailLoginType:
+				fmt.Fprintf(la.console.Handles().Stdout, "%s as %s.", msg, output.WithBold("%s", details.Account))
+				return nil, nil
+			case auth.ClientIdLoginType:
+				fmt.Fprintf(
+					la.console.Handles().Stdout,
+					"%s as (%s).",
+					msg,
+					output.WithGrayFormat("%s", details.Account))
+				return nil, nil
+			default:
+				fmt.Fprintln(la.console.Handles().Stdout, msg+".")
+				return nil, nil
+			}
 		}
 	}
 
@@ -354,8 +377,31 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	la.console.Message(ctx, "Logged in to Azure.")
-	return nil, nil
+	const cLoginSuccessMessage = "Logged in to Azure"
+	details, err := la.authManager.LogInDetails(ctx)
+
+	// error getting user account, successful log in
+	if err != nil {
+		log.Printf("error: getting signed in account: %v", err)
+		la.console.Message(ctx, cLoginSuccessMessage+".")
+		return nil, nil
+	}
+
+	switch details.LoginType {
+	case auth.EmailLoginType:
+		fmt.Fprintf(la.console.Handles().Stdout, "%s as %s.", cLoginSuccessMessage, output.WithBold("%s", details.Account))
+		return nil, nil
+	case auth.ClientIdLoginType:
+		fmt.Fprintf(
+			la.console.Handles().Stdout,
+			"%s as (%s).",
+			cLoginSuccessMessage,
+			output.WithGrayFormat("%s", details.Account))
+		return nil, nil
+	default:
+		la.console.Message(ctx, cLoginSuccessMessage+".")
+		return nil, nil
+	}
 }
 
 // Verifies that the user has credentials stored,

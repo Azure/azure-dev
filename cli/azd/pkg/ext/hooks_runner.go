@@ -158,6 +158,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		options.StdOut = previewer
 		defer h.console.StopPreviewer(ctx, false)
 	}
+	options.UserPwsh = hookConfig.UserPwsh
 
 	log.Printf("Executing script '%s'\n", hookConfig.path)
 	res, err := script.Execute(ctx, hookConfig.path, *options)

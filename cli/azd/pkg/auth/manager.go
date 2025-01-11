@@ -1134,3 +1134,50 @@ func readUserProperties(cfg config.Config) (*userProperties, error) {
 
 	return &user, nil
 }
+
+const (
+	EmailLoginType    LoginType = "email"
+	ClientIdLoginType LoginType = "clientId"
+)
+
+type LoginType string
+
+type LogInDetails struct {
+	LoginType LoginType
+	Account   string
+}
+
+// LogInDetails method for Manager to return login details
+func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
+	cfg, err := m.readAuthConfig()
+	if err != nil {
+		return nil, fmt.Errorf("fetching current user: %w", err)
+	}
+
+	currentUser, err := readUserProperties(cfg)
+	if err != nil {
+		return nil, ErrNoCurrentUser
+	}
+
+	if currentUser.HomeAccountID != nil {
+		accounts, err := m.publicClient.Accounts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range accounts {
+			if account.HomeAccountID == *currentUser.HomeAccountID {
+				return &LogInDetails{
+					LoginType: EmailLoginType,
+					Account:   account.PreferredUsername,
+				}, nil
+			}
+		}
+	} else if currentUser.ClientID != nil {
+		return &LogInDetails{
+			LoginType: ClientIdLoginType,
+			Account:   *currentUser.ClientID,
+		}, nil
+	}
+
+	return nil, ErrNoCurrentUser
+}

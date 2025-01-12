@@ -127,6 +127,56 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "api with mysql",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbMySql,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbMySql: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"mysql-db",
+				// prompt for auth type
+				// todo cannot use umi here for it will check the source code
+				"Username and password",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"mysql"},
+					},
+					"mysql": {
+						Type: project.ResourceTypeDbMySQL,
+						Name: "mysql",
+						Props: project.MySQLProps{
+							DatabaseName: "mysql-db",
+							AuthType:     internal.AuthTypePassword,
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "api and web",
 			detect: detectConfirm{
 				Services: []appdetect.Project{

@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,6 +166,29 @@ func TestExecInfra(t *testing.T) {
 						Port:    3100,
 						DbRedis: &DatabaseRedis{},
 					},
+				},
+			},
+		},
+		// with azd add, users could add only mongo resource
+		{
+			"Only Mongo",
+			InfraSpec{
+				DbCosmosMongo: &DatabaseCosmosMongo{},
+			},
+		},
+		// with azd add, users could add only redis resource
+		{
+			"Only Redis",
+			InfraSpec{
+				DbRedis: &DatabaseRedis{},
+			},
+		},
+		// with azd add, users could add only postgresql resource
+		{
+			"Only Postgres",
+			InfraSpec{
+				DbPostgres: &DatabasePostgres{
+					AuthType: internal.AuthTypeUserAssignedManagedIdentity,
 				},
 			},
 		},

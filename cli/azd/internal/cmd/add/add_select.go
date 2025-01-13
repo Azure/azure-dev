@@ -54,5 +54,11 @@ func selectDatabase(
 	}
 
 	r.Type = resourceTypesDisplayMap[resourceTypesDisplay[dbOption]]
+	switch r.Type {
+	case project.ResourceTypeDbPostgres:
+		r.Props = project.PostgresProps{}
+	case project.ResourceTypeDbMongo:
+		r.Props = project.MongoDBProps{}
+	}
 	return r, nil
 }

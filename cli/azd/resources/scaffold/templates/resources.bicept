@@ -171,6 +171,7 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     skuName: 'Standard_B1ms'
     tier: 'Burstable'
     // Non-required parameters
+    tags: tags
     administratorLogin: postgreSqlDatabaseUser
     administratorLoginPassword: postgreSqlDatabasePassword
     geoRedundantBackup: 'Disabled'
@@ -192,6 +193,11 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     roleAssignments: [
       {
         principalId: connectionCreatorIdentity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+      }
+      {
+        principalId: principalId
         principalType: 'ServicePrincipal'
         roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
       }
@@ -704,7 +710,7 @@ module redisConn './modules/set-redis-conn.bicep' = {
 }
 {{- end}}
 
-{{- if .Services}}
+{{- if (or .Services .DbCosmosMongo .DbRedis)}}
 // Create a keyvault to store secrets
 module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
   name: 'keyvault'

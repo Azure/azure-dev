@@ -3,6 +3,7 @@ package add
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"slices"
 	"strings"
 	"unicode"
@@ -32,7 +33,7 @@ func configure(
 		return fillAiModelName(ctx, r, console, p)
 	case project.ResourceTypeDbPostgres,
 		project.ResourceTypeDbMongo:
-		return fillDatabaseName(ctx, r, console, p)
+		return fillDatabaseNameAndAuthType(ctx, r, console, p)
 	case project.ResourceTypeDbRedis:
 		if _, exists := p.prj.Resources["redis"]; exists {
 			return nil, fmt.Errorf("only one Redis resource is allowed at this time")
@@ -45,7 +46,7 @@ func configure(
 	}
 }
 
-func fillDatabaseName(
+func fillDatabaseNameAndAuthType(
 	ctx context.Context,
 	r *project.ResourceConfig,
 	console input.Console,
@@ -56,9 +57,7 @@ func fillDatabaseName(
 
 	for {
 		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Input the databaseName for %s "+
-				"(Not databaseServerName. This url can explain the difference: "+
-				"'jdbc:mysql://databaseServerName:3306/databaseName'):", r.Type.String()),
+			Message: fmt.Sprintf("Input the name of the app database (%s)", r.Type.String()),
 			Help: "Hint: App database name\n\n" +
 				"Name of the database that the app connects to. " +
 				"This database will be created after running azd provision or azd up.",
@@ -76,7 +75,75 @@ func fillDatabaseName(
 		break
 	}
 
+	// prompt for the database name
+	for {
+		databaseName, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf("Input the databaseName for %s "+
+				"(Not databaseServerName. This url can explain the difference: "+
+				"'jdbc:mysql://databaseServerName:3306/databaseName'):", r.Type.String()),
+			Help: "Hint: App database name\n\n" +
+				"Name of the database that the app connects to. " +
+				"This database will be created after running azd provision or azd up.",
+		})
+		if err != nil {
+			return r, err
+		}
+
+		if err := validateResourceName(databaseName, p.prj); err != nil {
+			console.Message(ctx, err.Error())
+			continue
+		}
+
+		switch r.Type {
+		case project.ResourceTypeDbPostgres:
+			modelProps, ok := r.Props.(project.PostgresProps)
+			if ok {
+				modelProps.DatabaseName = databaseName
+				r.Props = modelProps
+			}
+		case project.ResourceTypeDbMongo:
+			modelProps, ok := r.Props.(project.MongoDBProps)
+			if ok {
+				modelProps.DatabaseName = databaseName
+				r.Props = modelProps
+			}
+		}
+		break
+	}
+
+	if r.Type == project.ResourceTypeDbPostgres {
+		modelProps, ok := r.Props.(project.PostgresProps)
+		if ok {
+			authType, err := chooseAuthTypeByPrompt(r.Name, []internal.AuthType{
+				internal.AuthTypePassword, internal.AuthTypeUserAssignedManagedIdentity}, ctx, console)
+			if err != nil {
+				return r, err
+			}
+			modelProps.AuthType = authType
+			r.Props = modelProps
+		}
+	}
+
 	return r, nil
+}
+
+func chooseAuthTypeByPrompt(
+	name string,
+	authOptions []internal.AuthType,
+	ctx context.Context,
+	console input.Console) (internal.AuthType, error) {
+	var options []string
+	for _, option := range authOptions {
+		options = append(options, internal.GetAuthTypeDescription(option))
+	}
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Choose auth type for " + name + ":",
+		Options: options,
+	})
+	if err != nil {
+		return internal.AuthTypeUnspecified, err
+	}
+	return authOptions[selection], nil
 }
 
 func fillAiModelName(

@@ -127,6 +127,244 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "api with event hubs umi",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.cloud.azure.eventhubs": "eventhub1",
+								},
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepEventHubs{}.ResourceDisplay(): {
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.eventhubs": "eventhub1",
+							},
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"User assigned managed identity",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"eventhubs"},
+					},
+					"eventhubs": {
+						Type: project.ResourceTypeMessagingEventHubs,
+						Props: project.EventHubsProps{
+							EventHubNames: []string{"eventhub1"},
+							AuthType:      internal.AuthTypeUserAssignedManagedIdentity,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with event hubs connection string",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.cloud.azure.eventhubs": "eventhub1",
+								},
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepEventHubs{}.ResourceDisplay(): {
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.eventhubs": "eventhub1",
+							},
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"Connection string",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"eventhubs"},
+					},
+					"eventhubs": {
+						Type: project.ResourceTypeMessagingEventHubs,
+						Props: project.EventHubsProps{
+							EventHubNames: []string{"eventhub1"},
+							AuthType:      internal.AuthTypeConnectionString,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with event hubs kafka umi",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.kafka.topic": "topic1",
+								},
+								UseKafka:          true,
+								SpringBootVersion: "3.4.0",
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepEventHubs{}.ResourceDisplay(): {
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.kafka.topic": "topic1",
+							},
+							UseKafka:          true,
+							SpringBootVersion: "3.4.0",
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"User assigned managed identity",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"kafka"},
+					},
+					"kafka": {
+						Type: project.ResourceTypeMessagingKafka,
+						Props: project.KafkaProps{
+							Topics:            []string{"topic1"},
+							AuthType:          internal.AuthTypeUserAssignedManagedIdentity,
+							SpringBootVersion: "3.4.0",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with event hubs kafka connection string",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.kafka.topic": "topic1",
+								},
+								UseKafka:          true,
+								SpringBootVersion: "3.4.0",
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepEventHubs{}.ResourceDisplay(): {
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.kafka.topic": "topic1",
+							},
+							UseKafka:          true,
+							SpringBootVersion: "3.4.0",
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"Connection string",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"kafka"},
+					},
+					"kafka": {
+						Type: project.ResourceTypeMessagingKafka,
+						Props: project.KafkaProps{
+							Topics:            []string{"topic1"},
+							AuthType:          internal.AuthTypeConnectionString,
+							SpringBootVersion: "3.4.0",
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "api and web",
 			detect: detectConfirm{
 				Services: []appdetect.Project{

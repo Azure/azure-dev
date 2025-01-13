@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
@@ -30,8 +32,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type DockerProjectOptions struct {
@@ -198,6 +200,22 @@ func (p *dockerProject) Build(
 ) (*ServiceBuildResult, error) {
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServiceBuildResult{Restore: restoreOutput}, nil
+	}
+
+	// if it's a java project without Dockerfile, we help to package jar and add a default Dockerfile for Docker build
+	if serviceConfig.Language == ServiceLanguageJava && serviceConfig.Docker.Path == "" {
+		mvnCli := maven.NewCli(exec.NewCommandRunner(nil))
+		err := mvnCli.CleanPackage(ctx, serviceConfig.RelativePath, serviceConfig.Project.Path)
+		if err != nil {
+			return nil, err
+		}
+		defaultDockerfilePath, err := addDefaultDockerfileForJavaProject(serviceConfig.Name)
+		if err != nil {
+			return nil, err
+		}
+		serviceConfig.Docker = DockerProjectOptions{
+			Path: defaultDockerfilePath,
+		}
 	}
 
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
@@ -447,6 +465,7 @@ func (p *dockerProject) packBuild(
 	}
 	builder := DefaultBuilderImage
 
+	buildContext := svc.Path()
 	environ := []string{}
 	userDefinedImage := false
 	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
@@ -457,6 +476,16 @@ func (p *dockerProject) packBuild(
 	if !userDefinedImage {
 		// Always default to port 80 for consistency across languages
 		environ = append(environ, "ORYX_RUNTIME_PORT=80")
+
+		// For multi-module project, specify parent directory and submodule for pack build
+		if svc.ParentPath != "" {
+			buildContext = svc.ParentPath
+			svcRelPath, err := filepath.Rel(buildContext, svc.Path())
+			if err != nil {
+				return nil, err
+			}
+			environ = append(environ, fmt.Sprintf("BP_MAVEN_BUILT_MODULE=%s", filepath.ToSlash(svcRelPath)))
+		}
 
 		if svc.Language == ServiceLanguageJava {
 			environ = append(environ, "ORYX_RUNTIME_PORT=8080")
@@ -518,7 +547,7 @@ func (p *dockerProject) packBuild(
 
 	err = packCli.Build(
 		ctx,
-		svc.Path(),
+		buildContext,
 		builder,
 		imageName,
 		environ,
@@ -607,4 +636,29 @@ func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOpt
 	}
 
 	return options
+}
+
+// todo: hardcode jdk-21 as base image here, may need more accurate java version detection.
+const DefaultDockerfileForJavaProject = `FROM openjdk:21-jdk-slim
+COPY ./target/*.jar /app.jar
+ENTRYPOINT ["sh", "-c", "java -jar /app.jar"]`
+
+func addDefaultDockerfileForJavaProject(svcName string) (string, error) {
+	log.Printf("Dockerfile not found for java project %s, will provide a default one", svcName)
+	dockerfileDir, err := os.MkdirTemp("", svcName)
+	if err != nil {
+		return "", fmt.Errorf("error creating temp Dockerfile directory: %w", err)
+	}
+
+	dockerfilePath := filepath.Join(dockerfileDir, "Dockerfile")
+	file, err := os.Create(dockerfilePath)
+	if err != nil {
+		return "", fmt.Errorf("error creating Dockerfile at %s: %w", dockerfilePath, err)
+	}
+	defer file.Close()
+
+	if _, err = file.WriteString(DefaultDockerfileForJavaProject); err != nil {
+		return "", fmt.Errorf("error writing Dockerfile at %s: %w", dockerfilePath, err)
+	}
+	return dockerfilePath, nil
 }

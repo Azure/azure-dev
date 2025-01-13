@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/bmatcuk/doublestar/v4"
 )
 
@@ -59,13 +60,16 @@ const (
 	PyFlask   Dependency = "flask"
 	PyDjango  Dependency = "django"
 	PyFastApi Dependency = "fastapi"
+
+	SpringFrontend Dependency = "springFrontend"
 )
 
 var WebUIFrameworks = map[Dependency]struct{}{
-	JsReact:   {},
-	JsAngular: {},
-	JsJQuery:  {},
-	JsVite:    {},
+	JsReact:        {},
+	JsAngular:      {},
+	JsJQuery:       {},
+	JsVite:         {},
+	SpringFrontend: {},
 }
 
 func (f Dependency) Language() Language {
@@ -89,6 +93,8 @@ func (f Dependency) Display() string {
 		return "Vite"
 	case JsNext:
 		return "Next.js"
+	case SpringFrontend:
+		return "Spring Frontend"
 	}
 
 	return ""
@@ -110,6 +116,7 @@ const (
 	DbPostgres  DatabaseDep = "postgres"
 	DbMongo     DatabaseDep = "mongo"
 	DbMySql     DatabaseDep = "mysql"
+	DbCosmos    DatabaseDep = "cosmos"
 	DbSqlServer DatabaseDep = "sqlserver"
 	DbRedis     DatabaseDep = "redis"
 )
@@ -122,6 +129,8 @@ func (db DatabaseDep) Display() string {
 		return "MongoDB"
 	case DbMySql:
 		return "MySQL"
+	case DbCosmos:
+		return "Cosmos DB"
 	case DbSqlServer:
 		return "SQL Server"
 	case DbRedis:
@@ -129,6 +138,72 @@ func (db DatabaseDep) Display() string {
 	}
 
 	return ""
+}
+
+//type AzureDep string
+
+type AzureDep interface {
+	ResourceDisplay() string
+}
+
+type AzureDepServiceBus struct {
+	Queues []string
+	IsJms  bool
+}
+
+func (a AzureDepServiceBus) ResourceDisplay() string {
+	return "Azure Service Bus"
+}
+
+type AzureDepEventHubs struct {
+	EventHubsNamePropertyMap map[string]string
+	DependencyTypes          []DependencyType
+	SpringBootVersion        string
+}
+
+type DependencyType string
+
+const (
+	SpringCloudStreamEventHubs  DependencyType = "spring-cloud-azure-stream-binder-eventhubs"
+	SpringCloudEventHubsStarter DependencyType = "spring-cloud-azure-starter-eventhubs"
+	SpringIntegrationEventHubs  DependencyType = "spring-cloud-azure-starter-integration-eventhubs"
+	SpringMessagingEventHubs    DependencyType = "spring-messaging-azure-eventhubs"
+	SpringCloudStreamKafka      DependencyType = "spring-cloud-starter-stream-kafka"
+	SpringKafka                 DependencyType = "spring-kafka"
+)
+
+func (a AzureDepEventHubs) UseKafka() bool {
+	for _, dependencyType := range a.DependencyTypes {
+		if dependencyType == SpringCloudStreamKafka || dependencyType == SpringKafka {
+			return true
+		}
+	}
+	return false
+}
+
+func (a AzureDepEventHubs) ResourceDisplay() string {
+	return "Azure Event Hubs"
+}
+
+type AzureDepStorageAccount struct {
+	ContainerNamePropertyMap map[string]string
+}
+
+func (a AzureDepStorageAccount) ResourceDisplay() string {
+	return "Azure Storage Account"
+}
+
+type Metadata struct {
+	ApplicationName                                         string
+	ServerPort                                              string
+	DatabaseNameInPropertySpringDatasourceUrl               map[DatabaseDep]string
+	ContainsDependencySpringCloudAzureStarter               bool
+	ContainsDependencySpringCloudAzureStarterJdbcPostgresql bool
+	ContainsDependencySpringCloudAzureStarterJdbcMysql      bool
+	ContainsDependencySpringCloudEurekaServer               bool
+	ContainsDependencySpringCloudEurekaClient               bool
+	ContainsDependencySpringCloudConfigServer               bool
+	ContainsDependencySpringCloudConfigClient               bool
 }
 
 type Project struct {
@@ -141,8 +216,16 @@ type Project struct {
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
 
+	// Experimental: Azure dependencies inferred through heuristics while scanning dependencies in the project.
+	AzureDeps []AzureDep
+
+	// Experimental: Metadata inferred through heuristics while scanning the project.
+	Metadata Metadata
+
 	// The path to the project directory.
 	Path string
+
+	Options map[string]interface{}
 
 	// A short description of the detection rule applied.
 	DetectionRule string
@@ -179,7 +262,10 @@ type projectDetector interface {
 var allDetectors = []projectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
-	&javaDetector{},
+	&javaDetector{
+		mvnCli:     maven.NewCli(exec.NewCommandRunner(nil)),
+		modulePoms: make(map[string]pom),
+	},
 	&dotNetAppHostDetector{
 		// TODO(ellismg): Remove ambient authority.
 		dotnetCli: dotnet.NewCli(exec.NewCommandRunner(nil)),
@@ -264,7 +350,7 @@ func detectAny(ctx context.Context, detectors []projectDetector, path string, en
 		if project != nil {
 			log.Printf("Found project %s at %s", project.Language, path)
 
-			// docker is an optional property of a project, and thus is different than other detectors
+			// docker is an optional property of a project, and thus is different from other detectors
 			docker, err := detectDockerInDirectory(path, entries)
 			if err != nil {
 				return nil, fmt.Errorf("detecting docker project: %w", err)

@@ -20,6 +20,7 @@ func Test_getMavenPath(t *testing.T) {
 	rootPath := os.TempDir()
 	sourcePath := filepath.Join(rootPath, "src")
 	projectPath := filepath.Join(sourcePath, "api")
+	azdMvn, _ := getAzdMvnCommand(downloadedMavenVersion)
 
 	pathDir := os.TempDir()
 
@@ -43,8 +44,10 @@ func Test_getMavenPath(t *testing.T) {
 		{name: "MvnwProjectPath", mvnwPath: []string{projectPath}, want: filepath.Join(projectPath, mvnwWithExt())},
 		{name: "MvnwSrcPath", mvnwPath: []string{sourcePath}, want: filepath.Join(sourcePath, mvnwWithExt())},
 		{name: "MvnwRootPath", mvnwPath: []string{rootPath}, want: filepath.Join(rootPath, mvnwWithExt())},
-		{name: "MvnwFirst", mvnwPath: []string{rootPath}, want: filepath.Join(rootPath, mvnwWithExt()),
-			mvnPath: []string{pathDir}, envVar: map[string]string{"PATH": pathDir}},
+		{
+			name: "MvnwFirst", mvnwPath: []string{rootPath}, want: filepath.Join(rootPath, mvnwWithExt()),
+			mvnPath: []string{pathDir}, envVar: map[string]string{"PATH": pathDir},
+		},
 		{
 			name:         "MvnwProjectPathRelative",
 			mvnwPath:     []string{projectPath},
@@ -69,7 +72,10 @@ func Test_getMavenPath(t *testing.T) {
 			envVar:  map[string]string{"PATH": pathDir},
 			want:    filepath.Join(pathDir, mvnWithExt()),
 		},
-		{name: "NotFound", want: "", wantErr: true},
+		{
+			name: "Use azd downloaded maven",
+			want: azdMvn,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,7 +100,8 @@ func Test_getMavenPath(t *testing.T) {
 
 			wd, err := os.Getwd()
 			require.NoError(t, err)
-			log.Printf("rootPath: %s, cwd: %s, getMavenPath(%s, %s)\n", rootPath, wd, args.projectPath, args.rootProjectPath)
+			log.Printf("rootPath: %s, cwd: %s, getMavenPath(%s, %s)\n", rootPath, wd, args.projectPath,
+				args.rootProjectPath)
 			actual, err := getMavenPath(args.projectPath, args.rootProjectPath)
 
 			if tt.wantErr {

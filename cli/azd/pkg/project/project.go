@@ -275,19 +275,25 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		copy.Services[name] = &svcCopy
 	}
 
+	for name, resource := range projectConfig.Resources {
+		resourceCopy := *resource
+		resourceCopy.Project = &copy
+
+		copy.Resources[name] = &resourceCopy
+	}
+
 	projectBytes, err := yaml.Marshal(copy)
 	if err != nil {
 		return fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
-	version := "v1.0"
+	version := "alpha"
 	if projectConfig.MetaSchemaVersion != "" {
 		version = projectConfig.MetaSchemaVersion
 	}
 
-	annotation := fmt.Sprintf(
-		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/%s/azure.yaml.json",
-		version)
+	annotation := fmt.Sprintf("# yaml-language-server: $schema=https://raw.githubusercontent.com/azure-javaee/"+
+		"azure-dev/feature/sjad/schemas/%s/azure.yaml.json", version)
 	projectFileContents := bytes.NewBufferString(annotation + "\n\n")
 	_, err = projectFileContents.Write(projectBytes)
 	if err != nil {

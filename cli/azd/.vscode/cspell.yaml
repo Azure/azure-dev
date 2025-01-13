@@ -16,6 +16,10 @@ words:
   - runcontext
   - unmarshals
   - usgovcloudapi
+  - datasource
+  - jdbc
+  - passwordless
+  - postgre
 languageSettings:
   - languageId: go
     ignoreRegExpList:

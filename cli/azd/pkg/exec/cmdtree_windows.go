@@ -57,6 +57,7 @@ func (o *CmdTree) Start() error {
 		return fmt.Errorf("failed to set job object info: %w", err)
 	}
 
+	// nolint:gosec
 	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(o.Process.Pid))
 	if err != nil {
 		return fmt.Errorf("failed to open process: %w", err)

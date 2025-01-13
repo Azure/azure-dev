@@ -241,6 +241,8 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	err := copySample(dir, "containerapp")
 	require.NoError(t, err, "failed expanding sample")
 
@@ -303,6 +305,8 @@ func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "containerapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -370,6 +374,8 @@ func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "containerremotebuildapp")
 	require.NoError(t, err, "failed expanding sample")

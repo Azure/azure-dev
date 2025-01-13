@@ -25,7 +25,7 @@ import (
 // to accept some loss of information in favor of a faster load time, use `LoadEnvironmentAsync` instead, which does not
 // contact azure to compute service endpoints or last deployment information.
 func (s *environmentService) RefreshEnvironmentAsync(
-	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer *Observer[ProgressMessage],
 ) (*Environment, error) {
 	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
@@ -41,7 +41,7 @@ func (s *environmentService) RefreshEnvironmentAsync(
 }
 
 func (s *environmentService) refreshEnvironmentAsync(
-	ctx context.Context, container *container, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, container *container, name string, observer *Observer[ProgressMessage],
 ) (*Environment, error) {
 	env, err := s.loadEnvironmentAsync(ctx, container, name, true)
 	if err != nil {
@@ -73,6 +73,10 @@ func (s *environmentService) refreshEnvironmentAsync(
 	bicepProvider := c.bicep.(*bicep.BicepProvider)
 
 	if err := c.projectManager.Initialize(ctx, c.projectConfig); err != nil {
+		return nil, err
+	}
+
+	if err := c.projectManager.EnsureAllTools(ctx, c.projectConfig, nil); err != nil {
 		return nil, err
 	}
 

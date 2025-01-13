@@ -10,6 +10,21 @@
 
 ### Other Changes
 
+## 1.11.1 (2025-01-07)
+
+### Features Added
+
+- [[4244]](https://github.com/Azure/azure-dev/pull/4244) Support azd hooks out of azure.yaml.
+- [[4573]](https://github.com/Azure/azure-dev/pull/4573) Support dotnet publish to produce container image.
+- [[4599]](https://github.com/Azure/azure-dev/pull/4599) Add documentation for azd infra synth.
+
+### Bugs Fixed
+
+- [[4556]](https://github.com/Azure/azure-dev/pull/4556) Fix error about passing by value in for range.
+- [[4585]](https://github.com/Azure/azure-dev/pull/4585) Show full Entra error description on auth failure.
+- [[4666]](https://github.com/Azure/azure-dev/pull/4666) Security fix (GHSA-w32m-9786-jp63). golang.org/x/net.
+- [[4625]](https://github.com/Azure/azure-dev/pull/4625) Security fix (GHSA-v778-237x-gjrc). golang.org/x/crypto.
+
 ## 1.11.0 (2024-11-13)
 
 ### Features Added

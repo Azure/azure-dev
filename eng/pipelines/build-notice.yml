@@ -115,32 +115,6 @@ jobs:
 
       - task: ComponentGovernanceComponentDetection@0
 
-  - job: BuildScanContainer
-    dependsOn: BuildCli
-    pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      OSVmImage: MMSUbuntu20.04
-
-    variables:
-      ContainerName: azure-dev:cg-scan
-
-    steps:
-      - checkout: self
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          artifact: azd-linux-amd64
-          path: cli/bin
-
-      - bash: |
-          docker build . -t $(ContainerName) -f cli/Dockerfile
-        displayName: Build container
-
-      - task: ComponentGovernanceComponentDetection@0
-        inputs:
-          dockerImagesToScan: $(ContainerName)
-
-      - task: ComponentGovernanceComponentDetection@0
-
   - job: GenerateNoticeTxt
     pool:
       name: azsdk-pool-mms-ubuntu-2004-general

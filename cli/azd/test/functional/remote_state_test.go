@@ -103,6 +103,7 @@ func runTestWithRemoteState(t *testing.T, testFunc remoteStateTestFunc) {
 	envName := randomOrStoredEnvName(session)
 
 	cli, env := provisionRemoteStateStorage(t, ctx, envName, session)
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 	defer destroyRemoteStateStorage(t, ctx, cli)
 
 	accountConfig := &storage.AccountConfig{

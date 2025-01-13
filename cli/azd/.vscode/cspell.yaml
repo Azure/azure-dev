@@ -1,18 +1,21 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - azcloud
+  - azurefd
   - backoff
   - Canonicalize
+  - chinacloudapi
   - Codespace
   - Codespaces
   - devcontainers
+  # CDN host name
+  - gfgac2cmf7b8cuay
   - goversioninfo
   - nosec
   - Retryable
   - runcontext
-  - azcloud
-  - usgovcloudapi
-  - chinacloudapi
   - unmarshals
+  - usgovcloudapi
   - springframework
   - eventhubs
   - jdbc
@@ -137,6 +140,10 @@ overrides:
       - tfoidc
       - OIDCREQUESTURI
       - oidctoken
+  - filename: CHANGELOG.md
+    words:
+      - GHSA
+      - gjrc
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

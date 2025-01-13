@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -22,6 +23,7 @@ type HooksMiddleware struct {
 	commandRunner     exec.CommandRunner
 	console           input.Console
 	options           *Options
+	serviceLocator    ioc.ServiceLocator
 }
 
 // Creates a new instance of the Hooks middleware
@@ -33,6 +35,7 @@ func NewHooksMiddleware(
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	options *Options,
+	serviceLocator ioc.ServiceLocator,
 ) Middleware {
 	return &HooksMiddleware{
 		lazyEnvManager:    lazyEnvManager,
@@ -42,6 +45,7 @@ func NewHooksMiddleware(
 		commandRunner:     commandRunner,
 		console:           console,
 		options:           options,
+		serviceLocator:    serviceLocator,
 	}
 }
 
@@ -95,6 +99,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 		projectConfig.Path,
 		projectConfig.Hooks,
 		env,
+		m.serviceLocator,
 	)
 
 	var actionResult *actions.ActionResult
@@ -153,6 +158,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 			service.Path(),
 			service.Hooks,
 			env,
+			m.serviceLocator,
 		)
 
 		for hookName := range service.Hooks {

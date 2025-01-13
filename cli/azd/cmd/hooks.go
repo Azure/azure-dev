@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -69,14 +70,15 @@ func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 }
 
 type hooksRunAction struct {
-	projectConfig *project.ProjectConfig
-	env           *environment.Environment
-	envManager    environment.Manager
-	importManager *project.ImportManager
-	commandRunner exec.CommandRunner
-	console       input.Console
-	flags         *hooksRunFlags
-	args          []string
+	projectConfig  *project.ProjectConfig
+	env            *environment.Environment
+	envManager     environment.Manager
+	importManager  *project.ImportManager
+	commandRunner  exec.CommandRunner
+	console        input.Console
+	flags          *hooksRunFlags
+	args           []string
+	serviceLocator ioc.ServiceLocator
 }
 
 func newHooksRunAction(
@@ -88,16 +90,18 @@ func newHooksRunAction(
 	console input.Console,
 	flags *hooksRunFlags,
 	args []string,
+	serviceLocator ioc.ServiceLocator,
 ) actions.Action {
 	return &hooksRunAction{
-		projectConfig: projectConfig,
-		env:           env,
-		envManager:    envManager,
-		commandRunner: commandRunner,
-		console:       console,
-		flags:         flags,
-		args:          args,
-		importManager: importManager,
+		projectConfig:  projectConfig,
+		env:            env,
+		envManager:     envManager,
+		commandRunner:  commandRunner,
+		console:        console,
+		flags:          flags,
+		args:           args,
+		importManager:  importManager,
+		serviceLocator: serviceLocator,
 	}
 }
 
@@ -226,7 +230,8 @@ func (hra *hooksRunAction) execHook(
 	}
 
 	hooksManager := ext.NewHooksManager(cwd)
-	hooksRunner := ext.NewHooksRunner(hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env)
+	hooksRunner := ext.NewHooksRunner(
+		hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env, hra.serviceLocator)
 
 	previewer := hra.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
 		Prefix:       "  ",

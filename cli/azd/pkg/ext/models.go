@@ -70,6 +70,9 @@ type HookConfig struct {
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
 	Posix *HookConfig `yaml:"posix,omitempty"`
+	// Environment variables in this list are added to the hook script and if the value is a akvs:// reference
+	// it will be resolved to the secret value
+	Secrets map[string]string `yaml:"secrets,omitempty"`
 }
 
 // Validates and normalizes the hook configuration

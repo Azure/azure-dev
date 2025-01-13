@@ -380,6 +380,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 				}),
 			mockContext.ArmClientOptions,
 			mockContext.CoreClientOptions,
+			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
 	)
@@ -964,6 +965,7 @@ func TestUserDefinedTypes(t *testing.T) {
 				}),
 			mockContext.ArmClientOptions,
 			mockContext.CoreClientOptions,
+			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
 	)

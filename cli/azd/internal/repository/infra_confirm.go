@@ -31,6 +31,26 @@ func (i *Initializer) infraSpecFromDetect(
 			continue
 		}
 
+		if database == appdetect.DbCosmos {
+			dbName, err := getDatabaseName(database, &detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			if dbName == "" {
+				i.console.Message(ctx, "Database name is required.")
+				continue
+			}
+			containers, err := detectCosmosSqlDatabaseContainersInDirectory(detect.root)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			spec.DbCosmos = &scaffold.DatabaseCosmosAccount{
+				DatabaseName: dbName,
+				Containers:   containers,
+			}
+			continue
+		}
+
 	dbPrompt:
 		for {
 			dbName, err := promptDbName(i.console, ctx, database)
@@ -85,18 +105,18 @@ func (i *Initializer) infraSpecFromDetect(
 
 			switch db {
 			case appdetect.DbMongo:
-				serviceSpec.DbCosmosMongo = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbCosmosMongo.DatabaseName,
-				}
+				err = scaffold.BindToMongoDb(&serviceSpec, spec.DbCosmosMongo)
 			case appdetect.DbPostgres:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
-				}
+				err = scaffold.BindToPostgres(&serviceSpec, spec.DbPostgres)
 			case appdetect.DbRedis:
-				serviceSpec.DbRedis = &scaffold.DatabaseReference{
-					DatabaseName: "redis",
-				}
+				err = scaffold.BindToRedis(&serviceSpec, spec.DbRedis)
+			case appdetect.DbCosmos:
+				err = scaffold.BindToCosmosDb(&serviceSpec, spec.DbCosmos)
 			}
+		}
+
+		if err != nil {
+			return scaffold.InfraSpec{}, err
 		}
 		spec.Services = append(spec.Services, serviceSpec)
 	}

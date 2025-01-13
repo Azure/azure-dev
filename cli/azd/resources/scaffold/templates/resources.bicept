@@ -91,10 +91,12 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
       }
     ]
     {{- end}}
+    {{- if .Services}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: 'MONGODB-URL'
     }
+    {{- end}}
     capabilitiesToAdd: [ 'EnableServerless' ]
   }
 }
@@ -398,6 +400,7 @@ module redis 'br/public:avm/res/cache/redis:0.3.2' = {
   }
 }
 
+{{- if .Services}}
 module redisConn './modules/set-redis-conn.bicep' = {
   name: 'redisConn'
   params: {
@@ -407,6 +410,7 @@ module redisConn './modules/set-redis-conn.bicep' = {
     keyVaultName: keyVault.outputs.name
   }
 }
+{{- end}}
 {{- end}}
 
 {{- if .Services}}

@@ -54,9 +54,9 @@ parameters:
           ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv" &&
           ./test-sh-install-errors.sh "bash" "$BASEURL" ""
 
-    Mac12Sh:
+    MacSh:
       Pool: Azure Pipelines
-      OSVmImage: $(MACVMIMAGE12)
+      OSVmImage: $(MACVMIMAGE)
       ImageKey: vmImage
       OS: macOS
       Variables:
@@ -66,9 +66,9 @@ parameters:
           ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv" &&
           ./test-sh-install-errors.sh "bash" "$BASEURL" ""
 
-    Mac12Pwsh:
+    MacPwsh:
       Pool: Azure Pipelines
-      OSVmImage: $(MACVMIMAGE12)
+      OSVmImage: $(MACVMIMAGE)
       ImageKey: vmImage
       OS: macOS
       Variables:
@@ -84,9 +84,10 @@ parameters:
           -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
           -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
 
-    Mac11Pwsh:
+    # This version should generally be the N-1 version for macos-latest
+    Mac13Pwsh:
       Pool: Azure Pipelines
-      OSVmImage: $(MACVMIMAGE)
+      OSVmImage: $(MACVMIMAGE13)
       ImageKey: vmImage
       OS: macOS
       Variables:
@@ -272,7 +273,7 @@ stages:
         dependsOn: Compress_For_Hosting
         pool:
           name: Azure Pipelines
-          vmImage: $(MACVMIMAGE12)
+          vmImage: $(MACVMIMAGE)
           os: macOS
 
         steps:

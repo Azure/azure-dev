@@ -1,0 +1,161 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/gen;azdext";
+
+import "models.proto";
+
+service PromptService {
+  rpc PromptSubscription (PromptSubscriptionRequest) returns (PromptSubscriptionResponse);
+  rpc PromptLocation (PromptLocationRequest) returns (PromptLocationResponse);
+  rpc PromptResourceGroup (PromptResourceGroupRequest) returns (PromptResourceGroupResponse);
+  rpc Confirm(ConfirmRequest) returns (ConfirmResponse);
+  rpc Prompt(PromptRequest) returns (PromptResponse);
+  rpc Select(SelectRequest) returns (SelectResponse);
+  rpc PromptSubscriptionResource(PromptSubscriptionResourceRequest) returns (PromptSubscriptionResourceResponse);
+  rpc PromptResourceGroupResource(PromptResourceGroupResourceRequest) returns (PromptResourceGroupResourceResponse);
+  rpc PromptStream(stream StreamWorkflowRequestMessage) returns (stream StreamWorkflowResponseMessage);
+}
+
+message StreamWorkflowRequestMessage{
+  oneof payload {
+    PromptOptions options = 1;
+    PromptValidation validation = 2;
+  }
+}
+
+message StreamWorkflowResponseMessage{
+  oneof payload {
+    PromptValue value = 1;
+    PromptFinalValue complete = 2;
+  }
+}
+
+message PromptValue {
+  string value = 1;
+}
+
+message PromptValidation {
+  bool valid = 1;
+  string message = 2;
+}
+
+message PromptFinalValue {
+  string value = 1;
+}
+
+message PromptSubscriptionRequest {}
+
+message PromptSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+message PromptLocationRequest {
+  AzureContext azure_context = 1;
+}
+
+message PromptLocationResponse {
+  Location location = 1;
+}
+
+message PromptResourceGroupRequest {
+  AzureContext azure_context = 1;
+}
+
+message PromptResourceGroupResponse {
+  ResourceGroup resource_group = 1;
+}
+
+message ConfirmRequest {
+  ConfirmOptions options = 1;
+}
+
+message ConfirmResponse {
+  optional bool value = 1;
+}
+
+message PromptRequest {
+  PromptOptions options = 1;
+}
+
+message PromptResponse {
+  string value = 1;
+}
+
+message SelectRequest {
+  SelectOptions options = 1;
+}
+
+message SelectResponse {
+  optional int32 value = 1;
+}
+
+message PromptSubscriptionResourceRequest {
+  AzureContext azure_context = 1;
+  PromptResourceOptions options = 2;
+}
+
+message PromptSubscriptionResourceResponse {
+  azdext.ResourceExtended resource = 1;
+}
+
+message PromptResourceGroupResourceRequest {
+  AzureContext azure_context = 1;
+  PromptResourceOptions options = 2;
+}
+
+message PromptResourceGroupResourceResponse {
+  azdext.ResourceExtended resource = 1;
+}
+
+message ConfirmOptions {
+  optional bool default_value = 1;
+  string message = 2;
+  string helpMessage = 3;
+  string hint = 4;
+  string placeholder = 5;
+}
+
+message PromptOptions {
+  string message = 1;
+  string help_message = 2;
+  string hint = 3;
+  string placeholder = 4;
+  string validation_message = 5;
+  string required_message = 6;
+  bool required = 7;
+  string defaultValue = 8;
+  bool clear_on_completion = 9;
+  bool ignore_hint_keys = 10;
+}
+
+message SelectOptions {
+  optional int32 SelectedIndex = 1;
+  string message = 2;
+  repeated string allowed = 3;
+  string help_message = 4;
+  string hint = 5;
+  int32 display_count = 6;
+  optional bool display_numbers = 7;
+  optional bool enable_filtering = 8;
+}
+
+message PromptResourceOptions {
+  string resource_type = 1;
+  repeated string kinds = 2;
+  string resource_type_display_name = 3;
+  PromptResourceSelectOptions select_options = 4;
+}
+
+message PromptResourceSelectOptions {
+  optional bool force_new_resource = 1;
+  optional bool allow_new_resource = 2;
+  string new_resource_message = 3;
+  string creating_message = 4;
+  string message = 5;
+  string help_message = 6;
+  string loading_message = 7;
+  optional bool display_numbers = 8;
+  int32 display_count = 9;
+}

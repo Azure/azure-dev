@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/gen;azdext";
+
+// import "google/protobuf/struct.proto"; (removed due to import error)
+
+service UserConfigService {
+  // RPC for getting a value by path
+  rpc Get (GetRequest) returns (GetResponse);
+
+  // RPC for getting a value as a string by path
+  rpc GetString (GetStringRequest) returns (GetStringResponse);
+
+  // RPC for getting a section by path
+  rpc GetSection (GetSectionRequest) returns (GetSectionResponse);
+
+  // RPC for setting a value at a given path
+  rpc Set (SetRequest) returns (SetResponse);
+
+  // RPC for unsetting a value at a given path
+  rpc Unset (UnsetRequest) returns (UnsetResponse);
+}
+
+// Request message for Get
+message GetRequest {
+  string path = 1;
+}
+
+// Response message for Get
+message GetResponse {
+  bytes value = 1;
+  bool found = 2;
+}
+
+// Request message for GetString
+message GetStringRequest {
+  string path = 1;
+}
+
+// Response message for GetString
+message GetStringResponse {
+  string value = 1;
+  bool found = 2;
+}
+
+// Request message for GetSection
+message GetSectionRequest {
+  string path = 1;
+}
+
+// Response message for GetSection
+message GetSectionResponse {
+  bytes section = 1;
+  bool found = 2;
+}
+
+// Request message for Set
+message SetRequest {
+  string path = 1;
+  bytes value = 2;
+}
+
+// Response message for Set
+message SetResponse {
+  string status = 1;
+}
+
+// Request message for Unset
+message UnsetRequest {
+  string path = 1;
+}
+
+// Response message for Unset
+message UnsetResponse {
+  string status = 1;
+}

@@ -1034,9 +1034,10 @@ func TestUserDefinedTypes(t *testing.T) {
 		},
 		objectParam.Properties)
 	require.NotNil(t, objectParam.AdditionalProperties)
+	require.True(t, objectParam.AdditionalProperties.HasAdditionalProperties())
 	require.Equal(
 		t,
-		azure.ArmTemplateParameterAdditionalProperties{
+		azure.ArmTemplateParameterAdditionalPropertiesProperties{
 			Type:      "string",
 			MinLength: to.Ptr(10),
 			Metadata: map[string]json.RawMessage{
@@ -1044,7 +1045,7 @@ func TestUserDefinedTypes(t *testing.T) {
 				"fromDefinitionBar": []byte(`"bar"`),
 			},
 		},
-		objectParam.AdditionalProperties)
+		objectParam.AdditionalProperties.Properties())
 	require.NotNil(t, objectParam.Metadata)
 	require.Equal(
 		t,
@@ -1057,6 +1058,21 @@ func TestUserDefinedTypes(t *testing.T) {
 			"fromParameter":     []byte(`"parameter"`),
 		},
 		objectParam.Metadata)
+
+	sealedObjectParam, exists := template.Parameters["sealedObjectParam"]
+	require.True(t, exists)
+	require.Equal(t, "object", sealedObjectParam.Type)
+	require.Nil(t, sealedObjectParam.AllowedValues)
+	require.NotNil(t, sealedObjectParam.Properties)
+	require.Equal(
+		t,
+		azure.ArmTemplateParameterDefinitions{
+			"name": {Type: "string"},
+			"sku":  {Type: "string"},
+		},
+		sealedObjectParam.Properties)
+	require.NotNil(t, sealedObjectParam.AdditionalProperties)
+	require.False(t, sealedObjectParam.AdditionalProperties.HasAdditionalProperties())
 
 	// output resolves just the type. Value and Metadata should persist
 	customOutput, exists := template.Outputs["customOutput"]
@@ -1213,6 +1229,18 @@ const userDefinedParamsSample = `{
 			"fromDefinitionFoo": "foo",
 			"fromDefinitionBar": "bar"
 		}
+	  },
+	  "sealedObjectType": {
+		"type": "object",
+		"properties": {
+		  "name": {
+			"type": "string"
+		  },
+		  "sku": {
+			"type": "string"
+		  }
+		},
+		"additionalProperties": false
 	  }
 	},
 	"parameters": {
@@ -1244,6 +1272,9 @@ const userDefinedParamsSample = `{
 			"fromDefinitionBar": "override",
 			"fromParameter": "parameter"
 		  }
+	  },
+	  "sealedObjectParam": {
+		"$ref": "#/definitions/sealedObjectType"
 	  }
 	},
 	"resources": {},

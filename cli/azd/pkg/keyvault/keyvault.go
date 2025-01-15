@@ -342,8 +342,8 @@ func IsAkvs(id string) bool {
 	return strings.HasPrefix(id, vaultSchemaAkvs)
 }
 
-func NewAkvs(vaultName, secretName string) string {
-	return vaultSchemaAkvs + vaultName + "/" + secretName
+func NewAkvs(vaultId, secretName string) string {
+	return vaultSchemaAkvs + vaultId + "/" + secretName
 }
 
 func (kvs *keyVaultService) SecretFromAkvs(ctx context.Context, subscriptionId, akvs string) (string, error) {

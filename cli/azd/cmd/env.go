@@ -51,8 +51,10 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 
 	group.Add("set-secret", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "set-secret <secret name>",
-			Short: "Set a Key Vault secret in the environment.",
+			Use:   "set-secret <name>",
+			Short: "Set a <name> as a reference to a Key Vault secret in the environment.",
+			Long: "You can either create a new Key Vault secret or select an existing one.\n" +
+				"The provided name is the key for the .env file which holds the secret reference to the Key Vault secret.",
 		},
 		FlagsResolver:  newEnvSetSecretFlags,
 		ActionResolver: newEnvSetSecretAction,
@@ -198,20 +200,21 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	if len(e.args) < 1 {
 		return nil, fmt.Errorf(
-			"no secret name provided. Please provide a secret name to set like 'azd env set <secret name>'")
+			"no <name> provided. Please provide a name as argument like: 'azd env set <name>'")
 	}
 	secretName := e.args[0]
-	e.console.Message(ctx, "Setting secret: "+secretName)
 
-	createNewStrategy := "Create a new Key Vault Secret"
-	selectExistingStrategy := "Select an existing Key Vault Secret"
+	createNewStrategy := "Create a new Key Vault secret"
+	selectExistingStrategy := "Select an existing Key Vault secret"
 	setSecretStrategies := []string{createNewStrategy, selectExistingStrategy}
 	selectedStrategyIndex, err := e.console.Select(
 		ctx,
 		input.ConsoleOptions{
-			Message:      "How do you want to set the secret",
+			Message:      "Select how you want to set " + secretName,
 			Options:      setSecretStrategies,
 			DefaultValue: createNewStrategy,
+			Help: "When creating a new Key Vault secret, you can either create a new Key Vault account or" +
+				" pick an existing one. A Key Vault secret belongs to a Key Vault account.",
 		})
 	if err != nil {
 		return nil, fmt.Errorf("selecting secret setting strategy: %w", err)
@@ -219,14 +222,17 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	willCreateNewSecret := setSecretStrategies[selectedStrategyIndex] == createNewStrategy
 
+	subscriptionNote := "\nYou can set the Key Vault secret from any Azure Subscription where you have access to."
+	e.console.Message(ctx, subscriptionNote)
+
 	// default messages based on willCreateNewSecret == true
-	pickSubscription := "Select a subscription to create the Key Vault Secret"
-	pickKvAccount := "Select the Key Vault to create the secret"
+	pickSubscription := "Select the subscription where you want to create the Key Vault secret"
+	pickKvAccount := "Select the Key Vault account where you want to create the Key Vault secret"
 
 	if !willCreateNewSecret {
 		// reassign messages for selecting existing secret
-		pickSubscription = "Select the subscription where the Key Vault Secret is"
-		pickKvAccount = "Select the Key Vault where the secret is (requires Key Vault access)"
+		pickSubscription = "Select the subscription where the Key Vault secret is"
+		pickKvAccount = "Select the Key Vault account where the Key Vault secret is"
 	}
 
 	subId, err := e.prompter.PromptSubscription(ctx, pickSubscription)

@@ -177,6 +177,17 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 		}
 	}
 
+	defaultEnvironmentName, err := m.azdContext.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, fmt.Errorf("getting default environment: %w", err)
+	}
+
+	if env.Name() != defaultEnvironmentName {
+		if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+			return nil, fmt.Errorf("saving default environment: %w", err)
+		}
+	}
+
 	return env, nil
 }
 

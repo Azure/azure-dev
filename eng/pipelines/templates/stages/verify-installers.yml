@@ -42,9 +42,10 @@ parameters:
           -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
           ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
 
-    Mac11Sh:
+    # This version should be the N-1 version for macos-latest
+    Mac13Sh:
       Pool: Azure Pipelines
-      OSVmImage: $(MACVMIMAGE)
+      OSVmImage: $(MACVMIMAGE13)
       ImageKey: vmImage
       OS: macOS
       Variables:
@@ -84,7 +85,7 @@ parameters:
           -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
           -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
 
-    # This version should generally be the N-1 version for macos-latest
+    # This version should be the N-1 version for macos-latest
     Mac13Pwsh:
       Pool: Azure Pipelines
       OSVmImage: $(MACVMIMAGE13)

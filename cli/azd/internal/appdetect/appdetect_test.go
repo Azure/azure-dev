@@ -43,17 +43,38 @@ func TestDetect(t *testing.T) {
 				},
 				{
 					Language:      Java,
-					Path:          "java-multimodules/application",
+					Path:          "java-multi-levels/submodule/notsubmodule3",
 					DetectionRule: "Inferred by presence of: pom.xml",
-					DatabaseDeps: []DatabaseDep{
-						DbMySql,
-						DbPostgres,
+				},
+				{
+					Language:      Java,
+					Path:          "java-multi-levels/submodule/subsubmodule1",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multi-levels"),
 					},
 				},
 				{
 					Language:      Java,
-					Path:          "java-multimodules/library",
+					Path:          "java-multi-levels/submodule/subsubmodule2",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multi-levels"),
+					},
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/application",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMongo,
+						DbMySql,
+						DbPostgres,
+						DbRedis,
+					},
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multimodules"),
+					},
 				},
 				{
 					Language:      JavaScript,
@@ -127,17 +148,38 @@ func TestDetect(t *testing.T) {
 				},
 				{
 					Language:      Java,
-					Path:          "java-multimodules/application",
+					Path:          "java-multi-levels/submodule/notsubmodule3",
 					DetectionRule: "Inferred by presence of: pom.xml",
-					DatabaseDeps: []DatabaseDep{
-						DbMySql,
-						DbPostgres,
+				},
+				{
+					Language:      Java,
+					Path:          "java-multi-levels/submodule/subsubmodule1",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multi-levels"),
 					},
 				},
 				{
 					Language:      Java,
-					Path:          "java-multimodules/library",
+					Path:          "java-multi-levels/submodule/subsubmodule2",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multi-levels"),
+					},
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/application",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMongo,
+						DbMySql,
+						DbPostgres,
+						DbRedis,
+					},
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multimodules"),
+					},
 				},
 			},
 		},
@@ -160,17 +202,38 @@ func TestDetect(t *testing.T) {
 				},
 				{
 					Language:      Java,
-					Path:          "java-multimodules/application",
+					Path:          "java-multi-levels/submodule/notsubmodule3",
 					DetectionRule: "Inferred by presence of: pom.xml",
-					DatabaseDeps: []DatabaseDep{
-						DbMySql,
-						DbPostgres,
+				},
+				{
+					Language:      Java,
+					Path:          "java-multi-levels/submodule/subsubmodule1",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multi-levels"),
 					},
 				},
 				{
 					Language:      Java,
-					Path:          "java-multimodules/library",
+					Path:          "java-multi-levels/submodule/subsubmodule2",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multi-levels"),
+					},
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/application",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMongo,
+						DbMySql,
+						DbPostgres,
+						DbRedis,
+					},
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multimodules"),
+					},
 				},
 			},
 		},
@@ -196,17 +259,38 @@ func TestDetect(t *testing.T) {
 				},
 				{
 					Language:      Java,
-					Path:          "java-multimodules/application",
+					Path:          "java-multi-levels/submodule/notsubmodule3",
 					DetectionRule: "Inferred by presence of: pom.xml",
-					DatabaseDeps: []DatabaseDep{
-						DbMySql,
-						DbPostgres,
+				},
+				{
+					Language:      Java,
+					Path:          "java-multi-levels/submodule/subsubmodule1",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multi-levels"),
 					},
 				},
 				{
 					Language:      Java,
-					Path:          "java-multimodules/library",
+					Path:          "java-multi-levels/submodule/subsubmodule2",
 					DetectionRule: "Inferred by presence of: pom.xml",
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multi-levels"),
+					},
+				},
+				{
+					Language:      Java,
+					Path:          "java-multimodules/application",
+					DetectionRule: "Inferred by presence of: pom.xml",
+					DatabaseDeps: []DatabaseDep{
+						DbMongo,
+						DbMySql,
+						DbPostgres,
+						DbRedis,
+					},
+					Options: map[string]interface{}{
+						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multimodules"),
+					},
 				},
 				{
 					Language:      Python,

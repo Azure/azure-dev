@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,13 +99,11 @@ func TestExecInfra(t *testing.T) {
 								},
 							},
 						},
-						DbCosmosMongo: &DatabaseReference{
+						DbCosmosMongo: &DatabaseCosmosMongo{
 							DatabaseName: "appdb",
 						},
-						DbRedis: &DatabaseReference{
-							DatabaseName: "redis",
-						},
-						DbPostgres: &DatabaseReference{
+						DbRedis: &DatabaseRedis{},
+						DbPostgres: &DatabasePostgres{
 							DatabaseName: "appdb",
 						},
 					},
@@ -133,7 +132,7 @@ func TestExecInfra(t *testing.T) {
 					{
 						Name: "api",
 						Port: 3100,
-						DbPostgres: &DatabaseReference{
+						DbPostgres: &DatabasePostgres{
 							DatabaseName: "appdb",
 						},
 					},
@@ -150,7 +149,7 @@ func TestExecInfra(t *testing.T) {
 					{
 						Name: "api",
 						Port: 3100,
-						DbCosmosMongo: &DatabaseReference{
+						DbCosmosMongo: &DatabaseCosmosMongo{
 							DatabaseName: "appdb",
 						},
 					},
@@ -163,12 +162,33 @@ func TestExecInfra(t *testing.T) {
 				DbRedis: &DatabaseRedis{},
 				Services: []ServiceSpec{
 					{
-						Name: "api",
-						Port: 3100,
-						DbRedis: &DatabaseReference{
-							DatabaseName: "redis",
-						},
+						Name:    "api",
+						Port:    3100,
+						DbRedis: &DatabaseRedis{},
 					},
+				},
+			},
+		},
+		// with azd add, users could add only mongo resource
+		{
+			"Only Mongo",
+			InfraSpec{
+				DbCosmosMongo: &DatabaseCosmosMongo{},
+			},
+		},
+		// with azd add, users could add only redis resource
+		{
+			"Only Redis",
+			InfraSpec{
+				DbRedis: &DatabaseRedis{},
+			},
+		},
+		// with azd add, users could add only postgresql resource
+		{
+			"Only Postgres",
+			InfraSpec{
+				DbPostgres: &DatabasePostgres{
+					AuthType: internal.AuthTypeUserAssignedManagedIdentity,
 				},
 			},
 		},

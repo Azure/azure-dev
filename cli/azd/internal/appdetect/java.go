@@ -2,19 +2,24 @@ package appdetect
 
 import (
 	"context"
-	"encoding/xml"
-	"fmt"
 	"io/fs"
-	"maps"
-	"os"
+	"log"
 	"path/filepath"
-	"slices"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
 
 type javaDetector struct {
-	rootProjects []mavenProject
+	mvnCli     *maven.Cli
+	rootPoms   []pom
+	modulePoms map[string]pom
 }
+
+// JavaProjectOptionParentPomDir The parent module path of the maven multi-module project
+const JavaProjectOptionParentPomDir = "parentPath"
 
 func (jd *javaDetector) Language() Language {
 	return Java
@@ -22,122 +27,82 @@ func (jd *javaDetector) Language() Language {
 
 func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
-		if strings.ToLower(entry.Name()) == "pom.xml" {
-			pomFile := filepath.Join(path, entry.Name())
-			project, err := readMavenProject(pomFile)
+		if strings.ToLower(entry.Name()) == "pom.xml" { // todo: support file names like backend-pom.xml
+			tracing.SetUsageAttributes(fields.AppInitJavaDetect.String("start"))
+			pomPath := filepath.Join(path, entry.Name())
+			mavenProject, err := createMavenProject(ctx, jd.mvnCli, pomPath)
 			if err != nil {
-				return nil, fmt.Errorf("error reading pom.xml: %w", err)
-			}
-
-			if len(project.Modules) > 0 {
-				// This is a multi-module project, we will capture the analysis, but return nil
-				// to continue recursing
-				jd.rootProjects = append(jd.rootProjects, *project)
+				log.Printf("Please edit azure.yaml manually to satisfy your requirement. azd can not help you "+
+					"to that by detect your java project because error happened when reading pom.xml: %s. ", err)
 				return nil, nil
 			}
 
-			var currentRoot *mavenProject
-			for _, rootProject := range jd.rootProjects {
-				// we can say that the project is in the root project if the path is under the project
-				if inRoot := strings.HasPrefix(pomFile, rootProject.path); inRoot {
-					currentRoot = &rootProject
+			if len(mavenProject.pom.Modules) > 0 {
+				// This is a multi-module project, we will capture the analysis, but return nil to continue recursing
+				jd.captureRootAndModules(mavenProject, path)
+				return nil, nil
+			}
+
+			if !isSpringBootRunnableProject(mavenProject) {
+				return nil, nil
+			}
+
+			var parentPom *pom
+			for _, parentPomItem := range jd.rootPoms {
+				// we can say that the project is in the root project if
+				// 1) the project path is under the root project
+				// 2) the project is the module of root project
+				parentPomFilePath := parentPomItem.pomFilePath
+				underRootPath := strings.HasPrefix(pomPath, filepath.Dir(parentPomFilePath)+string(filepath.Separator))
+				rootPomItem, exist := jd.modulePoms[mavenProject.pom.pomFilePath]
+				if underRootPath && exist && rootPomItem.pomFilePath == parentPomFilePath {
+					parentPom = &parentPomItem
+					break
 				}
 			}
 
-			_ = currentRoot // use currentRoot here in the analysis
-			result, err := detectDependencies(project, &Project{
+			project := Project{
 				Language:      Java,
 				Path:          path,
 				DetectionRule: "Inferred by presence of: pom.xml",
-			})
-			if err != nil {
-				return nil, fmt.Errorf("detecting dependencies: %w", err)
+			}
+			detectAzureDependenciesByAnalyzingSpringBootProject(mavenProject, &project)
+			if parentPom != nil {
+				project.Options = map[string]interface{}{
+					JavaProjectOptionParentPomDir: filepath.Dir(parentPom.pomFilePath),
+				}
 			}
 
-			return result, nil
+			tracing.SetUsageAttributes(fields.AppInitJavaDetect.String("finish"))
+			return &project, nil
 		}
 	}
-
 	return nil, nil
 }
 
-// mavenProject represents the top-level structure of a Maven POM file.
-type mavenProject struct {
-	XmlName              xml.Name             `xml:"project"`
-	Parent               parent               `xml:"parent"`
-	Modules              []string             `xml:"modules>module"` // Capture the modules
-	Dependencies         []dependency         `xml:"dependencies>dependency"`
-	DependencyManagement dependencyManagement `xml:"dependencyManagement"`
-	Build                build                `xml:"build"`
-	path                 string
-}
-
-// Parent represents the parent POM if this project is a module.
-type parent struct {
-	GroupId    string `xml:"groupId"`
-	ArtifactId string `xml:"artifactId"`
-	Version    string `xml:"version"`
-}
-
-// Dependency represents a single Maven dependency.
-type dependency struct {
-	GroupId    string `xml:"groupId"`
-	ArtifactId string `xml:"artifactId"`
-	Version    string `xml:"version"`
-	Scope      string `xml:"scope,omitempty"`
-}
-
-// DependencyManagement includes a list of dependencies that are managed.
-type dependencyManagement struct {
-	Dependencies []dependency `xml:"dependencies>dependency"`
-}
-
-// Build represents the build configuration which can contain plugins.
-type build struct {
-	Plugins []plugin `xml:"plugins>plugin"`
-}
-
-// Plugin represents a build plugin.
-type plugin struct {
-	GroupId    string `xml:"groupId"`
-	ArtifactId string `xml:"artifactId"`
-	Version    string `xml:"version"`
-}
-
-func readMavenProject(filePath string) (*mavenProject, error) {
-	bytes, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
+// captureRootAndModules records the root and modules information for parent detection later
+func (jd *javaDetector) captureRootAndModules(mavenProject mavenProject, path string) {
+	if _, ok := jd.modulePoms[mavenProject.pom.pomFilePath]; !ok {
+		// add into rootPoms if it's new root
+		jd.rootPoms = append(jd.rootPoms, mavenProject.pom)
 	}
-
-	var project mavenProject
-	if err := xml.Unmarshal(bytes, &project); err != nil {
-		return nil, fmt.Errorf("parsing xml: %w", err)
-	}
-
-	project.path = filepath.Dir(filePath)
-
-	return &project, nil
-}
-
-func detectDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
-	databaseDepMap := map[DatabaseDep]struct{}{}
-	for _, dep := range mavenProject.Dependencies {
-		if dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j" {
-			databaseDepMap[DbMySql] = struct{}{}
+	for _, module := range mavenProject.pom.Modules {
+		// for module: submodule, module path is the ./submodule/pom.xml
+		// for module: backend-pom.xml, module path is the /backend-pom.xml
+		var modulePath string
+		if strings.HasSuffix(module, ".xml") {
+			modulePath = filepath.Join(path, module)
+		} else {
+			modulePath = filepath.Join(path, module, "pom.xml")
 		}
-
-		if dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql" {
-			databaseDepMap[DbPostgres] = struct{}{}
+		// modulePath points to the actual root pom, not current parent pom
+		jd.modulePoms[modulePath] = mavenProject.pom
+		for {
+			if result, ok := jd.modulePoms[jd.modulePoms[modulePath].pomFilePath]; ok {
+				jd.modulePoms[modulePath] = result
+			} else {
+				break
+			}
 		}
 	}
-
-	if len(databaseDepMap) > 0 {
-		project.DatabaseDeps = slices.SortedFunc(maps.Keys(databaseDepMap),
-			func(a, b DatabaseDep) int {
-				return strings.Compare(string(a), string(b))
-			})
-	}
-
-	return project, nil
 }

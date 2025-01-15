@@ -6,7 +6,9 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,10 +41,18 @@ var LanguageMap = map[appdetect.Language]project.ServiceLanguageKind{
 var dbMap = map[appdetect.DatabaseDep]struct{}{
 	appdetect.DbMongo:    {},
 	appdetect.DbPostgres: {},
+	appdetect.DbMySql:    {},
+	appdetect.DbCosmos:   {},
 	appdetect.DbRedis:    {},
 }
 
 var featureCompose = alpha.MustFeatureKey("compose")
+
+var azureDepMap = map[string]struct{}{
+	appdetect.AzureDepServiceBus{}.ResourceDisplay():     {},
+	appdetect.AzureDepEventHubs{}.ResourceDisplay():      {},
+	appdetect.AzureDepStorageAccount{}.ResourceDisplay(): {},
+}
 
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
@@ -71,7 +81,8 @@ func (i *Initializer) InitFromApp(
 		prj, err := appdetect.Detect(ctx, wd, appdetect.WithExcludePatterns([]string{
 			"**/eng",
 			"**/tool",
-			"**/tools"},
+			"**/tools",
+		},
 			false))
 		if err != nil {
 			i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
@@ -120,9 +131,54 @@ func (i *Initializer) InitFromApp(
 	i.console.StopSpinner(ctx, title, input.StepDone)
 
 	var prjAppHost []appdetect.Project
-	for _, prj := range projects {
+	for index, prj := range projects {
 		if prj.Language == appdetect.DotNetAppHost {
 			prjAppHost = append(prjAppHost, prj)
+		}
+
+		if prj.Language == appdetect.Java {
+			var hasKafkaDep bool
+			for depIndex, dep := range prj.AzureDeps {
+				if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); ok {
+					// prompt spring boot version if not detected for kafka
+					if eventHubs.UseKafka() {
+						hasKafkaDep = true
+						springBootVersion := eventHubs.SpringBootVersion
+						if springBootVersion == appdetect.UnknownSpringBootVersion {
+							springBootVersionInput, err := promptSpringBootVersion(i.console, ctx)
+							if err != nil {
+								return err
+							}
+							eventHubs.SpringBootVersion = springBootVersionInput
+							prj.AzureDeps[depIndex] = eventHubs
+						}
+					}
+					// prompt event hubs name if not detected
+					if len(eventHubs.EventHubsNamePropertyMap) == 0 {
+						promptMissingEventHubsNameOrExit(i.console, ctx, &eventHubs)
+						prj.AzureDeps[depIndex] = eventHubs
+					}
+					for property, eventHubsName := range eventHubs.EventHubsNamePropertyMap {
+						if eventHubsName == "" {
+							promptMissingPropertyAndExit(i.console, ctx, property)
+						}
+					}
+				}
+				if storageAccount, ok := dep.(appdetect.AzureDepStorageAccount); ok {
+					for property, containerName := range storageAccount.ContainerNamePropertyMap {
+						if containerName == "" {
+							promptMissingPropertyAndExit(i.console, ctx, property)
+						}
+					}
+				}
+			}
+
+			if hasKafkaDep && !prj.Metadata.ContainsDependencySpringCloudAzureStarter {
+				err := processSpringCloudAzureDepByPrompt(i.console, ctx, &projects[index])
+				if err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -251,7 +307,7 @@ func (i *Initializer) InitFromApp(
 	var infraSpec *scaffold.InfraSpec
 	composeEnabled := i.features.IsEnabled(featureCompose)
 	if !composeEnabled { // backwards compatibility
-		spec, err := i.infraSpecFromDetect(ctx, detect)
+		spec, err := i.infraSpecFromDetect(ctx, &detect)
 		if err != nil {
 			return err
 		}
@@ -268,7 +324,7 @@ func (i *Initializer) InitFromApp(
 
 	title = "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
 	i.console.ShowSpinner(ctx, title, input.Step)
-	err = i.genProjectFile(ctx, azdCtx, detect, composeEnabled)
+	err = i.genProjectFile(ctx, azdCtx, &detect, infraSpec, composeEnabled)
 	if err != nil {
 		i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 		return err
@@ -361,9 +417,10 @@ func (i *Initializer) genFromInfra(
 func (i *Initializer) genProjectFile(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	detect detectConfirm,
+	detect *detectConfirm,
+	spec *scaffold.InfraSpec,
 	addResources bool) error {
-	config, err := i.prjConfigFromDetect(ctx, azdCtx.ProjectDirectory(), detect, addResources)
+	config, err := i.prjConfigFromDetect(ctx, azdCtx.ProjectDirectory(), detect, spec, addResources)
 	if err != nil {
 		return fmt.Errorf("converting config: %w", err)
 	}
@@ -383,23 +440,147 @@ const InitGenTemplateId = "azd-init"
 func (i *Initializer) prjConfigFromDetect(
 	ctx context.Context,
 	root string,
-	detect detectConfirm,
+	detect *detectConfirm,
+	spec *scaffold.InfraSpec,
 	addResources bool) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
 		Name: azdcontext.ProjectName(root),
 		Metadata: &project.ProjectMetadata{
 			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
 		},
-		Services: map[string]*project.ServiceConfig{},
+		Services:  map[string]*project.ServiceConfig{},
+		Resources: map[string]*project.ResourceConfig{},
+	}
+
+	var javaEurekaServerService project.ServiceConfig
+	var javaConfigServerService project.ServiceConfig
+	var err error
+	for _, svc := range detect.Services {
+		if svc.Metadata.ContainsDependencySpringCloudEurekaServer {
+			javaEurekaServerService, err = ServiceFromDetect(root, svc.Metadata.ApplicationName, svc)
+			if err != nil {
+				return config, err
+			}
+		}
+		if svc.Metadata.ContainsDependencySpringCloudConfigServer {
+			javaConfigServerService, err = ServiceFromDetect(root, svc.Metadata.ApplicationName, svc)
+			if err != nil {
+				return config, err
+			}
+		}
 	}
 
 	svcMapping := map[string]string{}
 	for _, prj := range detect.Services {
-		svc, err := ServiceFromDetect(root, "", prj)
+		svc, err := ServiceFromDetect(root, prj.Metadata.ApplicationName, prj)
 		if err != nil {
 			return config, err
 		}
 
+		if !addResources {
+			for _, db := range prj.DatabaseDeps {
+				switch db {
+				case appdetect.DbMongo:
+					config.Resources["mongo"] = &project.ResourceConfig{
+						Type: project.ResourceTypeDbMongo,
+						Name: spec.DbCosmosMongo.DatabaseName,
+						Props: project.MongoDBProps{
+							DatabaseName: spec.DbCosmosMongo.DatabaseName,
+						},
+					}
+				case appdetect.DbPostgres:
+					config.Resources["postgres"] = &project.ResourceConfig{
+						Type: project.ResourceTypeDbPostgres,
+						Name: spec.DbPostgres.DatabaseName,
+						Props: project.PostgresProps{
+							DatabaseName: spec.DbPostgres.DatabaseName,
+							AuthType:     spec.DbPostgres.AuthType,
+						},
+					}
+				case appdetect.DbMySql:
+					config.Resources["mysql"] = &project.ResourceConfig{
+						Type: project.ResourceTypeDbMySQL,
+						Props: project.MySQLProps{
+							DatabaseName: spec.DbMySql.DatabaseName,
+							AuthType:     spec.DbMySql.AuthType,
+						},
+					}
+				case appdetect.DbRedis:
+					config.Resources["redis"] = &project.ResourceConfig{
+						Type: project.ResourceTypeDbRedis,
+					}
+				case appdetect.DbCosmos:
+					cosmosDBProps := project.CosmosDBProps{
+						DatabaseName: spec.DbCosmos.DatabaseName,
+					}
+					for _, container := range spec.DbCosmos.Containers {
+						cosmosDBProps.Containers = append(cosmosDBProps.Containers, project.CosmosDBContainerProps{
+							ContainerName:     container.ContainerName,
+							PartitionKeyPaths: container.PartitionKeyPaths,
+						})
+					}
+					config.Resources["cosmos"] = &project.ResourceConfig{
+						Type:  project.ResourceTypeDbCosmos,
+						Props: cosmosDBProps,
+					}
+				}
+
+			}
+			for _, azureDep := range prj.AzureDeps {
+				switch azureDep.(type) {
+				case appdetect.AzureDepServiceBus:
+					config.Resources["servicebus"] = &project.ResourceConfig{
+						Type: project.ResourceTypeMessagingServiceBus,
+						Props: project.ServiceBusProps{
+							Queues:   spec.AzureServiceBus.Queues,
+							IsJms:    spec.AzureServiceBus.IsJms,
+							AuthType: spec.AzureServiceBus.AuthType,
+						},
+					}
+				case appdetect.AzureDepEventHubs:
+					if spec.AzureEventHubs.UseKafka {
+						config.Resources["kafka"] = &project.ResourceConfig{
+							Type: project.ResourceTypeMessagingKafka,
+							Props: project.KafkaProps{
+								Topics:            spec.AzureEventHubs.EventHubNames,
+								AuthType:          spec.AzureEventHubs.AuthType,
+								SpringBootVersion: spec.AzureEventHubs.SpringBootVersion,
+							},
+						}
+					} else {
+						config.Resources["eventhubs"] = &project.ResourceConfig{
+							Type: project.ResourceTypeMessagingEventHubs,
+							Props: project.EventHubsProps{
+								EventHubNames: spec.AzureEventHubs.EventHubNames,
+								AuthType:      spec.AzureEventHubs.AuthType,
+							},
+						}
+					}
+				case appdetect.AzureDepStorageAccount:
+					config.Resources["storage"] = &project.ResourceConfig{
+						Type: project.ResourceTypeStorage,
+						Props: project.StorageProps{
+							Containers: spec.AzureStorageAccount.ContainerNames,
+							AuthType:   spec.AzureStorageAccount.AuthType,
+						},
+					}
+
+				}
+			}
+		}
+
+		if prj.Metadata.ContainsDependencySpringCloudEurekaClient {
+			err := appendJavaEurekaServerEnv(&svc, javaEurekaServerService.Name)
+			if err != nil {
+				return config, err
+			}
+		}
+		if prj.Metadata.ContainsDependencySpringCloudConfigClient {
+			err := appendJavaConfigServerEnv(&svc, javaConfigServerService.Name)
+			if err != nil {
+				return config, err
+			}
+		}
 		config.Services[svc.Name] = &svc
 		svcMapping[prj.Path] = svc.Name
 	}
@@ -414,45 +595,141 @@ func (i *Initializer) prjConfigFromDetect(
 			})
 
 		for _, database := range databases {
+			var resourceConfig project.ResourceConfig
+			var databaseName string
 			if database == appdetect.DbRedis {
-				redis := project.ResourceConfig{
-					Type: project.ResourceTypeDbRedis,
-					Name: "redis",
-				}
-				config.Resources[redis.Name] = &redis
-				dbNames[database] = redis.Name
-				continue
-			}
-
-			var dbType project.ResourceType
-			switch database {
-			case appdetect.DbMongo:
-				dbType = project.ResourceTypeDbMongo
-			case appdetect.DbPostgres:
-				dbType = project.ResourceTypeDbPostgres
-			}
-
-			db := project.ResourceConfig{
-				Type: dbType,
-			}
-
-			for {
-				dbName, err := promptDbName(i.console, ctx, database)
+				databaseName = "redis"
+			} else {
+				var err error
+				databaseName, err = getDatabaseName(database, detect, i.console, ctx)
 				if err != nil {
 					return config, err
 				}
-
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
+			}
+			var authType = internal.AuthTypeUnspecified
+			if database == appdetect.DbPostgres || database == appdetect.DbMySql {
+				var err error
+				authType, err = chooseAuthTypeByPrompt(
+					database.Display(),
+					[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
+					ctx,
+					i.console)
+				if err != nil {
+					return config, err
+				}
+				continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database, authType, detect,
+					i.console, ctx)
+				if err != nil {
+					return config, err
+				}
+				if !continueProvision {
 					continue
 				}
-
-				db.Name = dbName
-				break
 			}
+			switch database {
+			case appdetect.DbRedis:
+				resourceConfig = project.ResourceConfig{
+					Type: project.ResourceTypeDbRedis,
+					Name: "redis",
+				}
+			case appdetect.DbMongo:
+				resourceConfig = project.ResourceConfig{
+					Type: project.ResourceTypeDbMongo,
+					Name: "mongo",
+					Props: project.MongoDBProps{
+						DatabaseName: databaseName,
+					},
+				}
+			case appdetect.DbCosmos:
+				cosmosDBProps := project.CosmosDBProps{
+					DatabaseName: databaseName,
+				}
+				containers, err := detectCosmosSqlDatabaseContainersInDirectory(detect.root)
+				if err != nil {
+					return config, err
+				}
+				for _, container := range containers {
+					cosmosDBProps.Containers = append(cosmosDBProps.Containers, project.CosmosDBContainerProps{
+						ContainerName:     container.ContainerName,
+						PartitionKeyPaths: container.PartitionKeyPaths,
+					})
+				}
+				resourceConfig = project.ResourceConfig{
+					Type:  project.ResourceTypeDbCosmos,
+					Name:  "cosmos",
+					Props: cosmosDBProps,
+				}
+			case appdetect.DbPostgres:
+				resourceConfig = project.ResourceConfig{
+					Type: project.ResourceTypeDbPostgres,
+					Name: "postgresql",
+					Props: project.PostgresProps{
+						DatabaseName: databaseName,
+						AuthType:     authType,
+					},
+				}
+			case appdetect.DbMySql:
+				resourceConfig = project.ResourceConfig{
+					Type: project.ResourceTypeDbMySQL,
+					Name: "mysql",
+					Props: project.MySQLProps{
+						DatabaseName: databaseName,
+						AuthType:     authType,
+					},
+				}
+			}
+			config.Resources[resourceConfig.Name] = &resourceConfig
+			dbNames[database] = resourceConfig.Name
+		}
 
-			config.Resources[db.Name] = &db
-			dbNames[database] = db.Name
+		for _, azureDepPair := range detect.AzureDeps {
+			azureDep := azureDepPair.first
+			authType, err := chooseAuthTypeByPrompt(
+				azureDep.ResourceDisplay(),
+				[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString},
+				ctx,
+				i.console)
+			if err != nil {
+				return config, err
+			}
+			switch azureDep := azureDep.(type) {
+			case appdetect.AzureDepServiceBus:
+				config.Resources["servicebus"] = &project.ResourceConfig{
+					Type: project.ResourceTypeMessagingServiceBus,
+					Props: project.ServiceBusProps{
+						Queues:   azureDep.Queues,
+						IsJms:    azureDep.IsJms,
+						AuthType: authType,
+					},
+				}
+			case appdetect.AzureDepEventHubs:
+				if azureDep.UseKafka() {
+					config.Resources["kafka"] = &project.ResourceConfig{
+						Type: project.ResourceTypeMessagingKafka,
+						Props: project.KafkaProps{
+							Topics:            appdetect.DistinctValues(azureDep.EventHubsNamePropertyMap),
+							AuthType:          authType,
+							SpringBootVersion: azureDep.SpringBootVersion,
+						},
+					}
+				} else {
+					config.Resources["eventhubs"] = &project.ResourceConfig{
+						Type: project.ResourceTypeMessagingEventHubs,
+						Props: project.EventHubsProps{
+							EventHubNames: appdetect.DistinctValues(azureDep.EventHubsNamePropertyMap),
+							AuthType:      authType,
+						},
+					}
+				}
+			case appdetect.AzureDepStorageAccount:
+				config.Resources["storage"] = &project.ResourceConfig{
+					Type: project.ResourceTypeStorage,
+					Props: project.StorageProps{
+						Containers: appdetect.DistinctValues(azureDep.ContainerNamePropertyMap),
+						AuthType:   authType,
+					},
+				}
+			}
 		}
 
 		backends := []*project.ResourceConfig{}
@@ -468,11 +745,20 @@ func (i *Initializer) prjConfigFromDetect(
 				Port: -1,
 			}
 
-			port, err := PromptPort(i.console, ctx, name, svc)
+			port, err := GetOrPromptPort(i.console, ctx, name, svc)
 			if err != nil {
 				return config, err
 			}
 			props.Port = port
+
+			if svc.Metadata.ContainsDependencySpringCloudEurekaClient &&
+				javaEurekaServerService.Name != "" {
+				resSpec.Uses = append(resSpec.Uses, javaEurekaServerService.Name)
+			}
+			if svc.Metadata.ContainsDependencySpringCloudConfigClient &&
+				javaConfigServerService.Name != "" {
+				resSpec.Uses = append(resSpec.Uses, javaConfigServerService.Name)
+			}
 
 			for _, db := range svc.DatabaseDeps {
 				// filter out databases that were removed
@@ -481,6 +767,21 @@ func (i *Initializer) prjConfigFromDetect(
 				}
 
 				resSpec.Uses = append(resSpec.Uses, dbNames[db])
+			}
+
+			for _, azureDep := range svc.AzureDeps {
+				switch azureDep := azureDep.(type) {
+				case appdetect.AzureDepServiceBus:
+					resSpec.Uses = append(resSpec.Uses, "servicebus")
+				case appdetect.AzureDepEventHubs:
+					if azureDep.UseKafka() {
+						resSpec.Uses = append(resSpec.Uses, "kafka")
+					} else {
+						resSpec.Uses = append(resSpec.Uses, "eventhubs")
+					}
+				case appdetect.AzureDepStorageAccount:
+					resSpec.Uses = append(resSpec.Uses, "storage")
+				}
 			}
 
 			resSpec.Name = name
@@ -505,13 +806,130 @@ func (i *Initializer) prjConfigFromDetect(
 	return config, nil
 }
 
+func checkPasswordlessConfigurationAndContinueProvision(database appdetect.DatabaseDep, authType internal.AuthType,
+	detect *detectConfirm, console input.Console, ctx context.Context) (bool, error) {
+	if authType != internal.AuthTypeUserAssignedManagedIdentity {
+		return true, nil
+	}
+	for i, prj := range detect.Services {
+		if lackedDep := lackedAzureStarterJdbcDependency(prj, database); lackedDep != "" {
+			message := fmt.Sprintf("\nError!\n"+
+				"You selected '%s' as auth type for '%s'.\n"+
+				"For this auth type, this dependency is required:\n"+
+				"%s\n"+
+				"But this dependency is not found in your project:\n"+
+				"%s",
+				internal.AuthTypeUserAssignedManagedIdentity, database, lackedDep, prj.Path)
+			continueOption, err := console.Select(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf("%s\nSelect an option:", message),
+				Options: []string{
+					"Exit azd and fix problem manually",
+					fmt.Sprintf("Continue azd and use %s in this project: %s", database.Display(), prj.Path),
+					fmt.Sprintf("Continue azd and not use %s in this project: %s", database.Display(), prj.Path),
+				},
+			})
+			if err != nil {
+				return false, err
+			}
+
+			switch continueOption {
+			case 0:
+				os.Exit(0)
+			case 1:
+				continue
+			case 2:
+				// remove related database usage
+				var result []appdetect.DatabaseDep
+				for _, db := range prj.DatabaseDeps {
+					if db != database {
+						result = append(result, db)
+					}
+				}
+				prj.DatabaseDeps = result
+				detect.Services[i] = prj
+				// delete database if no other service used
+				dbUsed := false
+				for _, svc := range detect.Services {
+					for _, db := range svc.DatabaseDeps {
+						if db == database {
+							dbUsed = true
+							break
+						}
+					}
+					if dbUsed {
+						break
+					}
+				}
+				if !dbUsed {
+					console.Message(ctx, fmt.Sprintf(
+						"Deleting database %s due to no service used", database.Display()))
+					delete(detect.Databases, database)
+					return false, nil
+				}
+			}
+		}
+	}
+	return true, nil
+}
+
+func lackedAzureStarterJdbcDependency(project appdetect.Project, database appdetect.DatabaseDep) string {
+	if project.Language != appdetect.Java {
+		return ""
+	}
+
+	useDatabase := false
+	for _, db := range project.DatabaseDeps {
+		if db == database {
+			useDatabase = true
+			break
+		}
+	}
+	if !useDatabase {
+		return ""
+	}
+	if database == appdetect.DbMySql && !project.Metadata.ContainsDependencySpringCloudAzureStarterJdbcMysql {
+		return "<dependency>\n" +
+			"  <groupId>com.azure.spring</groupId>\n" +
+			"  <artifactId>spring-cloud-azure-starter-jdbc-mysql</artifactId>\n" +
+			"  <version>xxx</version>\n" +
+			"</dependency>"
+	}
+	if database == appdetect.DbPostgres && !project.Metadata.ContainsDependencySpringCloudAzureStarterJdbcPostgresql {
+		return "<dependency>\n" +
+			"  <groupId>com.azure.spring</groupId>\n" +
+			"  <artifactId>spring-cloud-azure-starter-jdbc-postgresql</artifactId>\n" +
+			"  <version>xxx</version>\n" +
+			"</dependency>"
+	}
+	return ""
+}
+
+func chooseAuthTypeByPrompt(
+	name string,
+	authOptions []internal.AuthType,
+	ctx context.Context,
+	console input.Console) (internal.AuthType, error) {
+	var options []string
+	for _, option := range authOptions {
+		options = append(options, internal.GetAuthTypeDescription(option))
+	}
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Choose auth type for " + name + ":",
+		Options: options,
+	})
+	if err != nil {
+		return internal.AuthTypeUnspecified, err
+	}
+	return authOptions[selection], nil
+}
+
 // ServiceFromDetect creates a ServiceConfig from an appdetect project.
 func ServiceFromDetect(
 	root string,
 	svcName string,
 	prj appdetect.Project) (project.ServiceConfig, error) {
 	svc := project.ServiceConfig{
-		Name: svcName,
+		Name: names.LabelName(svcName),
 	}
 	rel, err := filepath.Rel(root, prj.Path)
 	if err != nil {
@@ -536,6 +954,10 @@ func ServiceFromDetect(
 	}
 
 	svc.Language = language
+
+	if parentPath, ok := prj.Options[appdetect.JavaProjectOptionParentPomDir].(string); ok && parentPath != "" {
+		svc.ParentPath = parentPath
+	}
 
 	if prj.Docker != nil {
 		relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
@@ -572,9 +994,169 @@ func ServiceFromDetect(
 				// angular uses dist/<project name>
 				svc.OutputPath = "dist/" + filepath.Base(rel)
 				break loop
+			case appdetect.SpringFrontend:
+				svc.OutputPath = ""
+				break loop
 			}
 		}
 	}
 
 	return svc, nil
+}
+
+func processSpringCloudAzureDepByPrompt(console input.Console, ctx context.Context, project *appdetect.Project) error {
+	continueOption, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Detected Kafka dependency but no spring-cloud-azure-starter found. Select an option",
+		Options: []string{
+			"Exit then I will manually add this dependency",
+			"Continue without this dependency, and provision Azure Event Hubs for Kafka",
+			"Continue without this dependency, and not provision Azure Event Hubs for Kafka",
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	switch continueOption {
+	case 0:
+		console.Message(ctx, "you have to manually add dependency com.azure.spring:spring-cloud-azure-starter. "+
+			"And use right version according to this page: "+
+			"https://github.com/Azure/azure-sdk-for-java/wiki/Spring-Versions-Mapping")
+		os.Exit(0)
+	case 1:
+		return nil
+	case 2:
+		// remove Kafka Azure Dep
+		var result []appdetect.AzureDep
+		for _, dep := range project.AzureDeps {
+			if eventHubs, ok := dep.(appdetect.AzureDepEventHubs); !(ok && eventHubs.UseKafka()) {
+				result = append(result, dep)
+			}
+		}
+		project.AzureDeps = result
+		return nil
+	}
+	return nil
+}
+
+func promptSpringBootVersion(console input.Console, ctx context.Context) (string, error) {
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "No spring boot version detected, what is your spring boot version?",
+		Options: []string{
+			"Spring Boot 2.x",
+			"Spring Boot 3.x",
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	switch selection {
+	case 0:
+		return "2.x", nil
+	case 1:
+		return "3.x", nil
+	default:
+		return appdetect.UnknownSpringBootVersion, nil
+	}
+}
+
+func promptMissingEventHubsNameOrExit(console input.Console, ctx context.Context, eventHubs *appdetect.AzureDepEventHubs) {
+	for _, dependencyType := range eventHubs.DependencyTypes {
+		switch dependencyType {
+		case appdetect.SpringIntegrationEventHubs, appdetect.SpringMessagingEventHubs, appdetect.SpringKafka:
+			eventHubsNames, err := promptEventHubsNames(console, ctx)
+			if err != nil {
+				console.Message(ctx, fmt.Sprintf("Error happened when prompt eventhubs name: %s.", err))
+				os.Exit(-1)
+			}
+			for i, eventHubsName := range eventHubsNames {
+				propertyName := string(dependencyType) + strconv.Itoa(i)
+				eventHubs.EventHubsNamePropertyMap[propertyName] = eventHubsName
+			}
+		case appdetect.SpringCloudStreamEventHubs, appdetect.SpringCloudStreamKafka:
+			promptMissingPropertyAndExit(console, ctx, "spring.cloud.stream.bindings.<binding name>.destination")
+			os.Exit(0)
+		case appdetect.SpringCloudEventHubsStarter:
+			promptMissingPropertyAndExit(console, ctx, "spring.cloud.azure.eventhubs.event-hub-name or "+
+				"spring.cloud.azure.eventhubs.[producer|consumer|processor].event-hub-name")
+			os.Exit(0)
+		}
+	}
+}
+
+func promptMissingPropertyAndExit(console input.Console, ctx context.Context, key string) {
+	console.Message(ctx, fmt.Sprintf("No value was provided for %s. Please update the configuration file "+
+		"(like application.properties or application.yaml) with a valid value.", key))
+	os.Exit(0)
+}
+
+// todo: delete this after we implement to detect eventhubs names from code
+func promptEventHubsNames(console input.Console, ctx context.Context) ([]string, error) {
+	for {
+		eventHubsNamesInput, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: "Input the names of Azure Event Hubs (not the namespace name), " +
+				"if you have multiple ones, separate with commas:",
+			Help: "Hint: Azure Event Hubs Name, not the namespace name",
+		})
+		if err != nil {
+			return []string{}, err
+		}
+		eventHubsNames := strings.Split(eventHubsNamesInput, ",")
+		allValidEventHubsNames := true
+		for i, eventHubsName := range eventHubsNames {
+			eventHubsNames[i] = strings.TrimSpace(eventHubsName)
+			if !isValidEventhubsName(eventHubsNames[i]) {
+				console.Message(ctx, "Invalid eventhubs name. it should contain letters, numbers, periods (.), "+
+					"hyphens (-), underscores (_), must begin and end with a letter or number. Please choose another name:")
+				allValidEventHubsNames = false
+				break
+			}
+		}
+		if allValidEventHubsNames {
+			return eventHubsNames, nil
+		}
+	}
+}
+
+// contain letters, numbers, periods (.), hyphens (-), and underscores (_)
+// must begin and end with a letter or number
+var eventHubsNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$`)
+
+func isValidEventhubsName(name string) bool {
+	// up to 256 characters
+	if len(name) == 0 || len(name) > 256 {
+		return false
+	}
+	return eventHubsNameRegex.MatchString(name)
+}
+
+func appendJavaEurekaServerEnv(svc *project.ServiceConfig, eurekaServerName string) error {
+	if eurekaServerName == "" {
+		// eureka server not found, maybe removed when detect confirm
+		return nil
+	}
+	if svc.Env == nil {
+		svc.Env = map[string]string{}
+	}
+	clientEnvs := scaffold.GetServiceBindingEnvsForEurekaServer(eurekaServerName)
+	for _, env := range clientEnvs {
+		svc.Env[env.Name] = env.Value
+	}
+	return nil
+}
+
+func appendJavaConfigServerEnv(svc *project.ServiceConfig, configServerName string) error {
+	if configServerName == "" {
+		// config server not found, maybe removed when detect confirm
+		return nil
+	}
+	if svc.Env == nil {
+		svc.Env = map[string]string{}
+	}
+	clientEnvs := scaffold.GetServiceBindingEnvsForConfigServer(configServerName)
+	for _, env := range clientEnvs {
+		svc.Env[env.Name] = env.Value
+	}
+	return nil
 }

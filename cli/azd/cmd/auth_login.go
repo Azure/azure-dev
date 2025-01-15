@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -335,21 +336,11 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				return nil, nil
 			}
 
-			switch details.LoginType {
-			case auth.EmailLoginType:
-				fmt.Fprintf(la.console.Handles().Stdout, "%s as %s.", msg, output.WithBold("%s", details.Account))
-				return nil, nil
-			case auth.ClientIdLoginType:
-				fmt.Fprintf(
-					la.console.Handles().Stdout,
-					"%s as (%s).",
-					msg,
-					output.WithGrayFormat("%s", details.Account))
-				return nil, nil
-			default:
-				fmt.Fprintln(la.console.Handles().Stdout, msg+".")
-				return nil, nil
-			}
+			la.console.MessageUxItem(ctx, &ux.LoggedIn{
+				LoggedInAs: details.Account,
+				LoginType:  ux.LoginType(details.LoginType),
+			})
+			return nil, nil
 		}
 	}
 
@@ -386,22 +377,11 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		la.console.Message(ctx, cLoginSuccessMessage+".")
 		return nil, nil
 	}
-
-	switch details.LoginType {
-	case auth.EmailLoginType:
-		fmt.Fprintf(la.console.Handles().Stdout, "%s as %s.", cLoginSuccessMessage, output.WithBold("%s", details.Account))
-		return nil, nil
-	case auth.ClientIdLoginType:
-		fmt.Fprintf(
-			la.console.Handles().Stdout,
-			"%s as (%s).",
-			cLoginSuccessMessage,
-			output.WithGrayFormat("%s", details.Account))
-		return nil, nil
-	default:
-		la.console.Message(ctx, cLoginSuccessMessage+".")
-		return nil, nil
-	}
+	la.console.MessageUxItem(ctx, &ux.LoggedIn{
+		LoggedInAs: details.Account,
+		LoginType:  ux.LoginType(details.LoginType),
+	})
+	return nil, nil
 }
 
 // Verifies that the user has credentials stored,

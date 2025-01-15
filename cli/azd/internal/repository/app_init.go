@@ -12,7 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/internal/names"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -27,20 +27,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/otiai10/copy"
 )
-
-var LanguageMap = map[appdetect.Language]project.ServiceLanguageKind{
-	appdetect.DotNet:     project.ServiceLanguageDotNet,
-	appdetect.Java:       project.ServiceLanguageJava,
-	appdetect.JavaScript: project.ServiceLanguageJavaScript,
-	appdetect.TypeScript: project.ServiceLanguageTypeScript,
-	appdetect.Python:     project.ServiceLanguagePython,
-}
-
-var dbMap = map[appdetect.DatabaseDep]struct{}{
-	appdetect.DbMongo:    {},
-	appdetect.DbPostgres: {},
-	appdetect.DbRedis:    {},
-}
 
 var featureCompose = alpha.MustFeatureKey("compose")
 
@@ -395,7 +381,7 @@ func (i *Initializer) prjConfigFromDetect(
 
 	svcMapping := map[string]string{}
 	for _, prj := range detect.Services {
-		svc, err := ServiceFromDetect(root, "", prj)
+		svc, err := add.ServiceFromDetect(root, "", prj)
 		if err != nil {
 			return config, err
 		}
@@ -413,46 +399,20 @@ func (i *Initializer) prjConfigFromDetect(
 				return strings.Compare(string(a), string(b))
 			})
 
+		promptOpts := add.PromptOptions{PrjConfig: &config}
+
 		for _, database := range databases {
-			if database == appdetect.DbRedis {
-				redis := project.ResourceConfig{
-					Type: project.ResourceTypeDbRedis,
-					Name: "redis",
-				}
-				config.Resources[redis.Name] = &redis
-				dbNames[database] = redis.Name
-				continue
-			}
-
-			var dbType project.ResourceType
-			switch database {
-			case appdetect.DbMongo:
-				dbType = project.ResourceTypeDbMongo
-			case appdetect.DbPostgres:
-				dbType = project.ResourceTypeDbPostgres
-			}
-
 			db := project.ResourceConfig{
-				Type: dbType,
+				Type: add.DbMap[database],
 			}
 
-			for {
-				dbName, err := promptDbName(i.console, ctx, database)
-				if err != nil {
-					return config, err
-				}
-
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-
-				db.Name = dbName
-				break
+			configured, err := add.Configure(ctx, &db, i.console, promptOpts)
+			if err != nil {
+				return config, err
 			}
 
-			config.Resources[db.Name] = &db
-			dbNames[database] = db.Name
+			config.Resources[configured.Name] = &db
+			dbNames[database] = configured.Name
 		}
 
 		backends := []*project.ResourceConfig{}
@@ -468,7 +428,7 @@ func (i *Initializer) prjConfigFromDetect(
 				Port: -1,
 			}
 
-			port, err := PromptPort(i.console, ctx, name, svc)
+			port, err := add.PromptPort(i.console, ctx, name, svc)
 			if err != nil {
 				return config, err
 			}
@@ -503,78 +463,4 @@ func (i *Initializer) prjConfigFromDetect(
 	}
 
 	return config, nil
-}
-
-// ServiceFromDetect creates a ServiceConfig from an appdetect project.
-func ServiceFromDetect(
-	root string,
-	svcName string,
-	prj appdetect.Project) (project.ServiceConfig, error) {
-	svc := project.ServiceConfig{
-		Name: svcName,
-	}
-	rel, err := filepath.Rel(root, prj.Path)
-	if err != nil {
-		return svc, err
-	}
-
-	if svc.Name == "" {
-		dirName := filepath.Base(rel)
-		if dirName == "." {
-			dirName = filepath.Base(root)
-		}
-
-		svc.Name = names.LabelName(dirName)
-	}
-
-	svc.Host = project.ContainerAppTarget
-	svc.RelativePath = rel
-
-	language, supported := LanguageMap[prj.Language]
-	if !supported {
-		return svc, fmt.Errorf("unsupported language: %s", prj.Language)
-	}
-
-	svc.Language = language
-
-	if prj.Docker != nil {
-		relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
-		if err != nil {
-			return svc, err
-		}
-
-		svc.Docker = project.DockerProjectOptions{
-			Path: relDocker,
-		}
-	}
-
-	if prj.HasWebUIFramework() {
-		// By default, use 'dist'. This is common for frameworks such as:
-		// - TypeScript
-		// - Vite
-		svc.OutputPath = "dist"
-
-	loop:
-		for _, dep := range prj.Dependencies {
-			switch dep {
-			case appdetect.JsNext:
-				// next.js works as SSR with default node configuration without static build output
-				svc.OutputPath = ""
-				break loop
-			case appdetect.JsVite:
-				svc.OutputPath = "dist"
-				break loop
-			case appdetect.JsReact:
-				// react from create-react-app uses 'build' when used, but this can be overridden
-				// by choice of build tool, such as when using Vite.
-				svc.OutputPath = "build"
-			case appdetect.JsAngular:
-				// angular uses dist/<project name>
-				svc.OutputPath = "dist/" + filepath.Base(rel)
-				break loop
-			}
-		}
-	}
-
-	return svc, nil
 }

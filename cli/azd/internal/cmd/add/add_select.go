@@ -11,7 +11,7 @@ import (
 )
 
 // resourceSelection prompts the user to select a given resource type, returning the resulting resource configuration.
-type resourceSelection func(console input.Console, ctx context.Context, p promptOptions) (*project.ResourceConfig, error)
+type resourceSelection func(console input.Console, ctx context.Context, p PromptOptions) (*project.ResourceConfig, error)
 
 // A menu to be displayed.
 type Menu struct {
@@ -35,7 +35,7 @@ func (a *AddAction) selectMenu() []Menu {
 func selectDatabase(
 	console input.Console,
 	ctx context.Context,
-	p promptOptions) (*project.ResourceConfig, error) {
+	p PromptOptions) (*project.ResourceConfig, error) {
 	resourceTypesDisplayMap := make(map[string]project.ResourceType)
 	for _, resourceType := range project.AllResourceTypes() {
 		if strings.HasPrefix(string(resourceType), "db.") {

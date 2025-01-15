@@ -14,6 +14,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -64,12 +65,12 @@ func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 	d.root = root
 
 	for _, project := range projects {
-		if _, supported := LanguageMap[project.Language]; supported {
+		if _, supported := add.LanguageMap[project.Language]; supported {
 			d.Services = append(d.Services, project)
 		}
 
 		for _, dbType := range project.DatabaseDeps {
-			if _, supported := dbMap[dbType]; supported {
+			if _, supported := add.DbMap[dbType]; supported {
 				d.Databases[dbType] = EntryKindDetected
 			}
 		}
@@ -310,7 +311,7 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 }
 
 func (d *detectConfirm) add(ctx context.Context) error {
-	languages := slices.SortedFunc(maps.Keys(LanguageMap),
+	languages := slices.SortedFunc(maps.Keys(add.LanguageMap),
 		func(a, b appdetect.Language) int {
 			return strings.Compare(a.Display(), b.Display())
 		})
@@ -321,7 +322,7 @@ func (d *detectConfirm) add(ctx context.Context) error {
 		})
 
 	// only include databases not already added
-	allDbs := slices.Collect(maps.Keys(dbMap))
+	allDbs := slices.Collect(maps.Keys(add.DbMap))
 	databases := make([]appdetect.DatabaseDep, 0, len(allDbs))
 	for _, db := range allDbs {
 		if _, ok := d.Databases[db]; !ok {

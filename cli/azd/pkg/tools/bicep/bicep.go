@@ -25,7 +25,7 @@ import (
 
 // Version is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
 // user).
-var Version semver.Version = semver.MustParse("0.29.47")
+var Version semver.Version = semver.MustParse("0.32.4")
 
 // NewCli creates a new Bicep CLI. Azd manages its own copy of the bicep CLI, stored in `$AZD_CONFIG_DIR/bin`. If
 // bicep is not present at this location, or if it is present but is older than the minimum supported version, it is

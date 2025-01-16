@@ -68,11 +68,10 @@ func Execute(
 func supportingFiles(spec InfraSpec) []string {
 	files := []string{"/abbreviations.json"}
 
-	if spec.DbRedis != nil {
-		files = append(files, "/modules/set-redis-conn.bicep")
-	}
-
 	if len(spec.Services) > 0 {
+		if spec.DbRedis != nil {
+			files = append(files, "/modules/set-redis-conn.bicep")
+		}
 		files = append(files, "/modules/fetch-container-image.bicep")
 	}
 

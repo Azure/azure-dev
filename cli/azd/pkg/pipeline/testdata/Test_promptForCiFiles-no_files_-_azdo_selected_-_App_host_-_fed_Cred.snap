@@ -24,12 +24,14 @@ steps:
   - pwsh: |
       azd config set auth.useAzCliAuth "true"
     displayName: Configure AZD to Use AZ CLI Authentication.
-  - task: Bash@3
-    displayName: Install .NET Aspire workload
+  - task: UseDotNet@2
     inputs:
-      targetType: 'inline'
-      script: |
-        dotnet workload install aspire
+      version: '8.x'
+    displayName: Set up .NET 8
+  - task: UseDotNet@2
+    inputs:
+      version: '9.x'
+    displayName: Set up .NET 9
 
   - task: AzureCLI@2
     displayName: Provision Infrastructure

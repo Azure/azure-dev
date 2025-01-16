@@ -124,6 +124,10 @@ overrides:
       - tfoidc
       - OIDCREQUESTURI
       - oidctoken
+  - filename: CHANGELOG.md
+    words:
+      - GHSA
+      - gjrc
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

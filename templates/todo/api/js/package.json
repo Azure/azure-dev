@@ -27,7 +27,7 @@
     "@azure/identity": "4.2.1",
     "@azure/keyvault-secrets": "^4.7.0",
     "applicationinsights": "^2.5.1",
-    "config": "^3.3.7",
+    "config": "^3.3.12",
     "cors": "^2.8.5",
     "dotenv": "^16.0.1",
     "express": "^4.21.2",

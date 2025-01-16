@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"context"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,13 +99,11 @@ func TestExecInfra(t *testing.T) {
 								},
 							},
 						},
-						DbCosmosMongo: &DatabaseReference{
+						DbCosmosMongo: &DatabaseCosmosMongo{
 							DatabaseName: "appdb",
 						},
-						DbRedis: &DatabaseReference{
-							DatabaseName: "redis",
-						},
-						DbPostgres: &DatabaseReference{
+						DbRedis: &DatabaseRedis{},
+						DbPostgres: &DatabasePostgres{
 							DatabaseName: "appdb",
 						},
 					},
@@ -128,13 +127,15 @@ func TestExecInfra(t *testing.T) {
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
 					DatabaseUser: "appuser",
+					AuthType:     internal.AuthTypeUserAssignedManagedIdentity,
 				},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
 						Port: 3100,
-						DbPostgres: &DatabaseReference{
+						DbPostgres: &DatabasePostgres{
 							DatabaseName: "appdb",
+							AuthType:     internal.AuthTypeUserAssignedManagedIdentity,
 						},
 					},
 				},
@@ -150,7 +151,7 @@ func TestExecInfra(t *testing.T) {
 					{
 						Name: "api",
 						Port: 3100,
-						DbCosmosMongo: &DatabaseReference{
+						DbCosmosMongo: &DatabaseCosmosMongo{
 							DatabaseName: "appdb",
 						},
 					},
@@ -163,11 +164,9 @@ func TestExecInfra(t *testing.T) {
 				DbRedis: &DatabaseRedis{},
 				Services: []ServiceSpec{
 					{
-						Name: "api",
-						Port: 3100,
-						DbRedis: &DatabaseReference{
-							DatabaseName: "redis",
-						},
+						Name:    "api",
+						Port:    3100,
+						DbRedis: &DatabaseRedis{},
 					},
 				},
 			},

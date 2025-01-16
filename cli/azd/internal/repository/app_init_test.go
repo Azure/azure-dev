@@ -127,6 +127,56 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "api with postgresql",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbPostgres,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbPostgres: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"postgresql-db",
+				// prompt for auth type
+				// todo cannot use umi here for it will check the source code
+				"Username and password",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"postgresql"},
+					},
+					"postgresql": {
+						Type: project.ResourceTypeDbPostgres,
+						Name: "postgresql",
+						Props: project.PostgresProps{
+							DatabaseName: "postgresql-db",
+							AuthType:     internal.AuthTypePassword,
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "api and web",
 			detect: detectConfirm{
 				Services: []appdetect.Project{
@@ -216,6 +266,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 				"my$special$db",
 				"n",
 				"postgres", // fill in db name
+				"Username and password",
 			},
 			want: project.ProjectConfig{
 				Services: map[string]*project.ServiceConfig{
@@ -240,14 +291,18 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 						Type: project.ResourceTypeDbMongo,
 						Name: "mongodb",
 					},
-					"postgres": {
+					"postgresql": {
 						Type: project.ResourceTypeDbPostgres,
-						Name: "postgres",
+						Name: "postgresql",
+						Props: project.PostgresProps{
+							AuthType:     internal.AuthTypePassword,
+							DatabaseName: "postgres",
+						},
 					},
 					"py": {
 						Type: project.ResourceTypeHostContainerApp,
 						Name: "py",
-						Uses: []string{"postgres", "mongodb", "redis"},
+						Uses: []string{"postgresql", "mongodb", "redis"},
 						Props: project.ContainerAppProps{
 							Port: 80,
 						},

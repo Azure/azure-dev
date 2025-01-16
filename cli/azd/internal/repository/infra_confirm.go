@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -31,30 +32,44 @@ func (i *Initializer) infraSpecFromDetect(
 			continue
 		}
 
-	dbPrompt:
-		for {
-			dbName, err := promptDbName(i.console, ctx, database)
+		if database == appdetect.DbPostgres {
+			dbName, err := getDatabaseName(database, &detect, i.console, ctx)
 			if err != nil {
 				return scaffold.InfraSpec{}, err
 			}
-
-			switch database {
-			case appdetect.DbMongo:
-				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
-					DatabaseName: dbName,
-				}
-				break dbPrompt
-			case appdetect.DbPostgres:
-				if dbName == "" {
-					i.console.Message(ctx, "Database name is required.")
-					continue
-				}
-
-				spec.DbPostgres = &scaffold.DatabasePostgres{
-					DatabaseName: dbName,
-				}
+			authType, err := chooseAuthTypeByPrompt(
+				database.Display(),
+				[]internal.AuthType{internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypePassword},
+				ctx,
+				i.console)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
 			}
-			break dbPrompt
+			continueProvision, err := checkPasswordlessConfigurationAndContinueProvision(database,
+				authType, &detect, i.console, ctx)
+			if err != nil {
+				return scaffold.InfraSpec{}, err
+			}
+			if !continueProvision {
+				continue
+			}
+			spec.DbPostgres = &scaffold.DatabasePostgres{
+				DatabaseName: dbName,
+				AuthType:     authType,
+			}
+			continue
+		}
+
+		dbName, err := promptDbName(i.console, ctx, database)
+		if err != nil {
+			return scaffold.InfraSpec{}, err
+		}
+
+		switch database {
+		case appdetect.DbMongo:
+			spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
+				DatabaseName: dbName,
+			}
 		}
 	}
 
@@ -85,18 +100,16 @@ func (i *Initializer) infraSpecFromDetect(
 
 			switch db {
 			case appdetect.DbMongo:
-				serviceSpec.DbCosmosMongo = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbCosmosMongo.DatabaseName,
-				}
+				err = scaffold.BindToMongoDb(&serviceSpec, spec.DbCosmosMongo)
 			case appdetect.DbPostgres:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
-				}
+				err = scaffold.BindToPostgres(&serviceSpec, spec.DbPostgres)
 			case appdetect.DbRedis:
-				serviceSpec.DbRedis = &scaffold.DatabaseReference{
-					DatabaseName: "redis",
-				}
+				err = scaffold.BindToRedis(&serviceSpec, spec.DbRedis)
 			}
+		}
+
+		if err != nil {
+			return scaffold.InfraSpec{}, err
 		}
 		spec.Services = append(spec.Services, serviceSpec)
 	}

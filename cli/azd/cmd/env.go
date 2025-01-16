@@ -244,10 +244,10 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 		return nil, fmt.Errorf("looking up tenant for subscription: %w", err)
 	}
 
-	e.console.ShowSpinner(ctx, "Getting the list of vaults from the selected subscription", input.Step)
+	e.console.ShowSpinner(ctx, "Finding Key Vault accounts from the selected subscription", input.Step)
 	vaultsList, err := e.kvService.ListSubscriptionVaults(ctx, subId)
 	if err != nil {
-		return nil, fmt.Errorf("getting the list of vaults: %w", err)
+		return nil, fmt.Errorf("getting the list of Key Vault accounts: %w", err)
 	}
 	// prompt for vault selection
 	e.console.StopSpinner(ctx, "", input.Step)
@@ -255,20 +255,18 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	atLeastOneKvAccountExists := len(vaultsList) > 0
 	if !atLeastOneKvAccountExists && !willCreateNewSecret {
 		e.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: "No Key Vaults found in the selected subscription",
+			Description: "No Key Vaults accounts were found in the selected subscription",
 		})
 		// update the flow to offer creating a new Key Vault
 		willCreateNewSecret = true
 	}
 
-	createNewKvAccountOption := " 1. Create a new Key Vault"
+	createNewKvAccountOption := "Create a new Key Vault account"
 	selectKvAccountOptions := []string{}
 	// indexOffset makes the ids to start from 1 instead of 0 when displaying the options
 	indexOffset := 1
 	if willCreateNewSecret {
 		selectKvAccountOptions = append(selectKvAccountOptions, createNewKvAccountOption)
-		// have to offset 2 since we have added the first option with 1 for createNewKvAccountOption
-		indexOffset = 2
 	}
 	for index, vault := range vaultsList {
 		selectKvAccountOptions = append(selectKvAccountOptions, fmt.Sprintf("%2d. %s", index+indexOffset, vault.Name))
@@ -280,7 +278,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 		DefaultValue: selectKvAccountOptions[0],
 	})
 	if err != nil {
-		return nil, fmt.Errorf("selecting Key Vault: %w", err)
+		return nil, fmt.Errorf("selecting Key Vault account: %w", err)
 	}
 
 	willCreateNewKvAccount := selectKvAccountOptions[kvAccountSelectionIndex] == createNewKvAccountOption
@@ -296,7 +294,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	if willCreateNewKvAccount {
-		location, err := e.prompter.PromptLocation(ctx, subId, "Select the location for the Key Vault", nil)
+		location, err := e.prompter.PromptLocation(ctx, subId, "Select the location to create the Key Vault account", nil)
 		if err != nil {
 			return nil, fmt.Errorf("prompting for Key Vault location: %w", err)
 		}
@@ -309,20 +307,21 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 		for {
 			kvAccountName, err := e.console.Prompt(ctx, input.ConsoleOptions{
-				Message: "Enter the name of the Key Vault",
+				Message: "Enter a name for the Key Vault account",
+				Help:    "The name must be unique within the subscription and must be between 3 and 24 characters long",
 			})
 			if err != nil {
-				return nil, fmt.Errorf("prompting for Key Vault name: %w", err)
+				return nil, fmt.Errorf("prompting for Key Vault account name: %w", err)
 			}
 			if kvAccountName == "" {
-				e.console.Message(ctx, "Key Vault name cannot be empty")
+				e.console.Message(ctx, "Key Vault account name cannot be empty")
 				continue
 			}
-			e.console.ShowSpinner(ctx, "Creating Key Vault Account", input.Step)
+			e.console.ShowSpinner(ctx, "Creating Key Vault account", input.Step)
 			vault, err := e.kvService.CreateVault(ctx, tenantId, subId, rg, location, kvAccountName)
 			e.console.StopSpinner(ctx, "", input.Step)
 			if err != nil {
-				e.console.Message(ctx, fmt.Sprintf("Error creating Key Vault: %v", err))
+				e.console.Message(ctx, fmt.Sprintf("Error creating Key Vault account: %v", err))
 				continue
 			}
 			kvAccount = vault
@@ -345,14 +344,14 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	var kvSecretName string
 	if willCreateNewSecret {
 		kvSecretName, err = e.console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter the name of the key vault secret",
-			DefaultValue: "my-kv-secret",
+			Message:      "Enter a name for the Key Vault secret",
+			DefaultValue: secretName + "-kv-secret",
 		})
 		if err != nil {
-			return nil, fmt.Errorf("prompting for secret name: %w", err)
+			return nil, fmt.Errorf("prompting for Key Vault secret name: %w", err)
 		}
 		kvSecretValue, err := e.console.Prompt(ctx, input.ConsoleOptions{
-			Message:    "Enter the value of the key vault secret",
+			Message:    "Enter the value for the Key Vault secret",
 			IsPassword: true,
 		})
 		if err != nil {
@@ -368,14 +367,14 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			return nil, fmt.Errorf("listing Key Vault secrets: %w", err)
 		}
 		if len(secretsInKv) == 0 {
-			return nil, fmt.Errorf("no secrets found in the selected Key Vault")
+			return nil, fmt.Errorf("no Key Vault secrets were found in the selected Key Vault account")
 		}
 		options := make([]string, len(secretsInKv))
 		for i, secret := range secretsInKv {
 			options[i] = fmt.Sprintf("%2d. %s", i+1, secret)
 		}
 		secretSelectionIndex, err := e.console.Select(ctx, input.ConsoleOptions{
-			Message:      "Select the Key Vault Secret",
+			Message:      "Select the Key Vault secret",
 			Options:      options,
 			DefaultValue: options[0],
 		})
@@ -394,8 +393,13 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "Selection: " + kvAccount.Name + " secret " + kvSecretName,
-			FollowUp: "Not implemented yet",
+			Header: fmt.Sprintf("The key %s was saved in the environment as a reference to the"+
+				" Key Vault secret %s from the Key Vault account %s",
+				output.WithBackticks(secretName),
+				output.WithBackticks(kvSecretName),
+				output.WithBackticks(kvAccount.Name)),
+			FollowUp: fmt.Sprintf("Learn how to use Key Vault secrets with azd and more: %s",
+				output.WithLinkFormat("https://aka.ms/azd-env-set-secret")),
 		},
 	}, nil
 }

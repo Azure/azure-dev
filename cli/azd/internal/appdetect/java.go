@@ -127,8 +127,14 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 			databaseDepMap[DbMySql] = struct{}{}
 		}
 
-		if dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql" {
+		if (dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql") ||
+			(dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-jdbc-postgresql") {
 			databaseDepMap[DbPostgres] = struct{}{}
+			// todo: Only call this func when it's a spring-boot project
+			err := addPostgresqlConnectionProperties(project.Path)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

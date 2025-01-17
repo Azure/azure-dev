@@ -104,13 +104,13 @@ func createFileIfNotExist(filePath string) error {
 	dir := filepath.Dir(filePath)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-			return fmt.Errorf("failed to create directory: %v", err)
+			return fmt.Errorf("failed to create directory: %w", err)
 		}
 	}
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		file, err := os.Create(filePath)
 		if err != nil {
-			return fmt.Errorf("failed to create file: %v", err)
+			return fmt.Errorf("failed to create file: %w", err)
 		}
 		defer file.Close()
 	}

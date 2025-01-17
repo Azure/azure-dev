@@ -2,15 +2,9 @@ package extensions
 
 import (
 	"context"
-	"crypto"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"hash"
@@ -18,17 +12,14 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/azure/azure-dev/cli/azd/pkg/cache"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
 const (
@@ -37,27 +28,43 @@ const (
 )
 
 var (
+	ErrExtensionNotFound          = errors.New("extension not found")
 	ErrInstalledExtensionNotFound = errors.New("extension not found")
 	ErrRegistryExtensionNotFound  = errors.New("extension not found in registry")
 	ErrExtensionInstalled         = errors.New("extension already installed")
-	registryCacheDuration         = 24 * time.Hour
+	//registryCacheDuration         = 24 * time.Hour
 )
 
+type ListOptions struct {
+	Source string
+	Tags   []string
+}
+
+type sourceFilterPredicate func(config *SourceConfig) bool
+type extensionFilterPredicate func(extension *ExtensionMetadata) bool
+
 type Manager struct {
+	sourceManager *SourceManager
+	sources       []Source
+
 	configManager config.UserConfigManager
 	userConfig    config.Config
 	pipeline      azruntime.Pipeline
-	registryCache *cache.FileCache[Registry]
 }
 
 // NewManager creates a new extension manager
-func NewManager(configManager config.UserConfigManager, transport policy.Transporter) *Manager {
+func NewManager(
+	configManager config.UserConfigManager,
+	sourceManager *SourceManager,
+	transport policy.Transporter,
+) *Manager {
 	pipeline := azruntime.NewPipeline("azd-extensions", "1.0.0", azruntime.PipelineOptions{}, &policy.ClientOptions{
 		Transport: transport,
 	})
 
 	return &Manager{
 		configManager: configManager,
+		sourceManager: sourceManager,
 		pipeline:      pipeline,
 	}
 }
@@ -69,13 +76,13 @@ func (m *Manager) Initialize() error {
 		return err
 	}
 
-	configDir, err := config.GetUserConfigDir()
-	if err != nil {
-		return fmt.Errorf("failed to get user config directory: %w", err)
-	}
+	// configDir, err := config.GetUserConfigDir()
+	// if err != nil {
+	// 	return fmt.Errorf("failed to get user config directory: %w", err)
+	// }
 
-	registryCachePath := filepath.Join(configDir, registryCacheFilePath)
-	m.registryCache = cache.NewFileCache(registryCachePath, registryCacheDuration, m.loadRegistry)
+	//registryCachePath := filepath.Join(configDir, registryCacheFilePath)
+	//m.registryCache = cache.NewFileCache(registryCachePath, registryCacheDuration, m.loadRegistry)
 	m.userConfig = userConfig
 
 	return nil
@@ -85,7 +92,8 @@ func (m *Manager) Initialize() error {
 func (m *Manager) ListInstalled() (map[string]*Extension, error) {
 	var extensions map[string]*Extension
 
-	ok, err := m.userConfig.GetSection("extensions", &extensions)
+	configKey := fmt.Sprintf(installedConfigKey)
+	ok, err := m.userConfig.GetSection(configKey, &extensions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extensions section: %w", err)
 	}
@@ -113,36 +121,99 @@ func (m *Manager) GetInstalled(name string) (*Extension, error) {
 
 // GetFromRegistry retrieves an extension from the registry by name
 func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*ExtensionMetadata, error) {
-	extensions, err := m.ListFromRegistry(ctx)
+	sources, err := m.getSources(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed getting extension sources: %w", err)
 	}
 
-	for _, extension := range extensions {
-		if strings.EqualFold(extension.Name, name) {
-			return extension, nil
+	var match *ExtensionMetadata
+	var sourceErr error
+
+	for _, source := range sources {
+		template, err := source.GetExtension(ctx, name)
+		if err != nil {
+			sourceErr = err
+		} else if template != nil {
+			match = template
+			break
 		}
+	}
+
+	if match != nil {
+		return match, nil
+	}
+
+	if sourceErr != nil {
+		return nil, fmt.Errorf("failed getting template: %w", sourceErr)
 	}
 
 	return nil, fmt.Errorf("%s %w", name, ErrRegistryExtensionNotFound)
 }
 
-func (m *Manager) ListFromRegistry(ctx context.Context) ([]*ExtensionMetadata, error) {
-	registry, err := m.registryCache.Resolve(ctx)
-	if err != nil {
-		return nil, err
+func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([]*ExtensionMetadata, error) {
+	allExtensions := []*ExtensionMetadata{}
+
+	if options == nil {
+		options = &ListOptions{}
 	}
 
-	if err := validateRegistry(*registry); err != nil {
-		allErrors := []error{err}
-		if err := m.registryCache.Remove(); err != nil {
-			allErrors = append(allErrors, err)
+	var sourceFilterPredicate sourceFilterPredicate
+	if options.Source != "" {
+		sourceFilterPredicate = func(config *SourceConfig) bool {
+			return strings.EqualFold(config.Name, options.Source)
+		}
+	}
+
+	var extensionFilterPredicate extensionFilterPredicate
+	if len(options.Tags) > 0 {
+		// Find templates that match all the incoming tags
+		extensionFilterPredicate = func(extension *ExtensionMetadata) bool {
+			match := false
+			for _, optionTag := range options.Tags {
+				match = slices.ContainsFunc(extension.Tags, func(extensionTag string) bool {
+					return strings.EqualFold(optionTag, extensionTag)
+				})
+
+				if !match {
+					break
+				}
+			}
+
+			return match
+		}
+	}
+
+	sources, err := m.getSources(ctx, sourceFilterPredicate)
+	if err != nil {
+		return nil, fmt.Errorf("failed listing extensions: %w", err)
+	}
+
+	for _, source := range sources {
+		filteredExtensions := []*ExtensionMetadata{}
+		sourceExtensions, err := source.ListExtensions(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to list templates: %w", err)
 		}
 
-		return nil, errors.Join(allErrors...)
+		for _, template := range sourceExtensions {
+			if extensionFilterPredicate == nil || extensionFilterPredicate(template) {
+				filteredExtensions = append(filteredExtensions, template)
+			}
+		}
+
+		// Sort by source, then repository path and finally name
+		slices.SortFunc(filteredExtensions, func(a *ExtensionMetadata, b *ExtensionMetadata) int {
+			if a.Source != b.Source {
+				return strings.Compare(a.Source, b.Source)
+			}
+
+			return strings.Compare(a.Name, b.Name)
+		})
+
+		allExtensions = append(allExtensions, filteredExtensions...)
 	}
 
-	return registry.Extensions, nil
+	return allExtensions, nil
 }
 
 // Install an extension by name and optional version
@@ -185,76 +256,98 @@ func (m *Manager) Install(ctx context.Context, name string, version string) (*Ex
 		}
 	}
 
-	// Step 3: Find the binary for the current OS
-	binary, err := findBinaryForCurrentOS(selectedVersion)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find binary for current OS: %w", err)
+	// Binaries are optional as long as dependencies are provided
+	// This allows for extensions that are just extension packs
+	if len(selectedVersion.Binaries) == 0 && len(selectedVersion.Dependencies) == 0 {
+		return nil, fmt.Errorf("no binaries or dependencies available for this version")
 	}
 
-	// Step 4: Download the binary to a temp location
-	tempFilePath, err := m.downloadBinary(ctx, binary.URL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download binary: %w", err)
+	// Install dependencies
+	if len(selectedVersion.Dependencies) > 0 {
+		for _, dependency := range selectedVersion.Dependencies {
+			if _, err := m.Install(ctx, dependency.Name, dependency.Version); err != nil {
+				if !errors.Is(err, ErrExtensionInstalled) {
+					return nil, fmt.Errorf("failed to install dependency: %w", err)
+				}
+			}
+		}
 	}
 
-	// Clean up the temp file after all scenarios
-	defer os.Remove(tempFilePath)
+	// Install the binary
+	if len(selectedVersion.Binaries) > 0 {
+		// Step 3: Find the binary for the current OS
+		binary, err := findBinaryForCurrentOS(selectedVersion)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find binary for current OS: %w", err)
+		}
 
-	// Step 5: Validate the checksum if provided
-	if err := validateChecksum(tempFilePath, binary.Checksum); err != nil {
-		return nil, fmt.Errorf("checksum validation failed: %w", err)
+		// Step 4: Download the binary to a temp location
+		tempFilePath, err := m.downloadBinary(ctx, binary.URL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download binary: %w", err)
+		}
+
+		// Clean up the temp file after all scenarios
+		defer os.Remove(tempFilePath)
+
+		// Step 5: Validate the checksum if provided
+		if err := validateChecksum(tempFilePath, binary.Checksum); err != nil {
+			return nil, fmt.Errorf("checksum validation failed: %w", err)
+		}
+
+		userHomeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get user's home directory: %w", err)
+		}
+
+		userConfigDir, err := config.GetUserConfigDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get user config directory: %w", err)
+		}
+
+		targetDir := filepath.Join(userConfigDir, "bin")
+		if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("failed to create target directory: %w", err)
+		}
+
+		// Step 6: Copy the binary to the target directory
+		targetPath := filepath.Join(targetDir, filepath.Base(tempFilePath))
+		if err := copyFile(tempFilePath, targetPath); err != nil {
+			return nil, fmt.Errorf("failed to copy binary to target location: %w", err)
+		}
+
+		relativeExtensionPath, err := filepath.Rel(userHomeDir, targetPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path: %w", err)
+		}
+
+		// Step 7: Update the user config with the installed extension
+		extensions, err := m.ListInstalled()
+		if err != nil {
+			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
+		}
+
+		extensions[name] = &Extension{
+			Name:        name,
+			DisplayName: extension.DisplayName,
+			Description: extension.Description,
+			Version:     selectedVersion.Version,
+			Usage:       selectedVersion.Usage,
+			Path:        relativeExtensionPath,
+			Source:      extension.Source,
+		}
+
+		if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
+			return nil, fmt.Errorf("failed to set extensions section: %w", err)
+		}
+
+		if err := m.configManager.Save(m.userConfig); err != nil {
+			return nil, fmt.Errorf("failed to save user config: %w", err)
+		}
+
+		log.Printf("Extension '%s' (version %s) installed successfully to %s\n", name, selectedVersion.Version, targetPath)
 	}
 
-	userHomeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user's home directory: %w", err)
-	}
-
-	userConfigDir, err := config.GetUserConfigDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user config directory: %w", err)
-	}
-
-	targetDir := filepath.Join(userConfigDir, "bin")
-	if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
-		return nil, fmt.Errorf("failed to create target directory: %w", err)
-	}
-
-	// Step 6: Copy the binary to the target directory
-	targetPath := filepath.Join(targetDir, filepath.Base(tempFilePath))
-	if err := copyFile(tempFilePath, targetPath); err != nil {
-		return nil, fmt.Errorf("failed to copy binary to target location: %w", err)
-	}
-
-	relativeExtensionPath, err := filepath.Rel(userHomeDir, targetPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get relative path: %w", err)
-	}
-
-	// Step 7: Update the user config with the installed extension
-	extensions, err := m.ListInstalled()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list installed extensions: %w", err)
-	}
-
-	extensions[name] = &Extension{
-		Name:        name,
-		DisplayName: extension.DisplayName,
-		Description: extension.Description,
-		Version:     selectedVersion.Version,
-		Usage:       selectedVersion.Usage,
-		Path:        relativeExtensionPath,
-	}
-
-	if err := m.userConfig.Set("extensions", extensions); err != nil {
-		return nil, fmt.Errorf("failed to set extensions section: %w", err)
-	}
-
-	if err := m.configManager.Save(m.userConfig); err != nil {
-		return nil, fmt.Errorf("failed to save user config: %w", err)
-	}
-
-	log.Printf("Extension '%s' (version %s) installed successfully to %s\n", name, selectedVersion.Version, targetPath)
 	return selectedVersion, nil
 }
 
@@ -288,7 +381,7 @@ func (m *Manager) Uninstall(name string) error {
 
 	delete(extensions, name)
 
-	if err := m.userConfig.Set("extensions", extensions); err != nil {
+	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
 		return fmt.Errorf("failed to set extensions section: %w", err)
 	}
 
@@ -314,74 +407,6 @@ func (m *Manager) Upgrade(ctx context.Context, name string, version string) (*Ex
 	}
 
 	return extensionVersion, nil
-}
-
-// loadRegistry retrieves a list of extensions from the registry
-func (m *Manager) loadRegistry(ctx context.Context) (*Registry, error) {
-	// Fetch the registry JSON
-	req, err := azruntime.NewRequest(ctx, http.MethodGet, extensionRegistryUrl)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := m.pipeline.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed for template source '%s', %w", extensionRegistryUrl, err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, azruntime.NewResponseError(resp)
-	}
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Unmarshal JSON into a map to extract the signature and registry content
-	var registry *Registry
-	if err := json.Unmarshal(body, &registry); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal raw registry JSON: %w", err)
-	}
-
-	return registry, nil
-}
-
-func validateRegistry(registry Registry) error {
-	// Extract the signature
-	signature := registry.Signature
-	registry.Signature = ""
-
-	// Marshal the remaining registry content back to JSON
-	rawRegistry, err := json.MarshalIndent(registry, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal registry content: %w", err)
-	}
-
-	publicKeys, err := loadPublicKeys()
-	if err != nil {
-		return fmt.Errorf("failed to load public keys: %w", err)
-	}
-
-	allErrors := []error{}
-
-	for keyName, publicKey := range publicKeys {
-		log.Printf("Verifying signature with public key: %s\n", keyName)
-
-		// Verify the signature with the public key
-		err = verifySignature(rawRegistry, signature, publicKey)
-		if err != nil {
-			allErrors = append(allErrors, fmt.Errorf("signature verification failed: %w", err))
-			continue
-		}
-
-		// Signature verified successfully
-		log.Printf("Signature verified successfully with public key: %s\n", keyName)
-		return nil
-	}
-
-	return fmt.Errorf("signature verification failed with all public keys: %w", errors.Join(allErrors...))
 }
 
 // Helper function to find the binary for the current OS
@@ -446,11 +471,56 @@ func (m *Manager) downloadBinary(ctx context.Context, binaryUrl string) (string,
 	return tempFilePath, nil
 }
 
+func (tm *Manager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
+	if tm.sources != nil {
+		return tm.sources, nil
+	}
+
+	configs, err := tm.sourceManager.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing template sources: %w", err)
+	}
+
+	sources, err := tm.createSourcesFromConfig(ctx, configs, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed initializing template sources: %w", err)
+	}
+
+	tm.sources = sources
+
+	return tm.sources, nil
+}
+
+func (tm *Manager) createSourcesFromConfig(
+	ctx context.Context,
+	configs []*SourceConfig,
+	filter sourceFilterPredicate,
+) ([]Source, error) {
+	sources := []Source{}
+
+	for _, config := range configs {
+		if filter != nil && !filter(config) {
+			continue
+		}
+
+		source, err := tm.sourceManager.CreateSource(ctx, config)
+		if err != nil {
+			log.Printf("failed to create source: %s", err.Error())
+			continue
+		}
+
+		sources = append(sources, source)
+	}
+
+	return sources, nil
+}
+
 // validateChecksum validates the file at the given path against the expected checksum using the specified algorithm.
 func validateChecksum(filePath string, checksum ExtensionChecksum) error {
 	// Check if checksum or required fields are nil
-	if checksum.Algorithm == "" || checksum.Value == "" {
-		return fmt.Errorf("invalid checksum data: algorithm and value must be specified")
+	if checksum.Algorithm == "" && checksum.Value == "" {
+		log.Println("Checksum algorithm and value is missing, skipping checksum validation")
+		return nil
 	}
 
 	var hashAlgo hash.Hash
@@ -508,96 +578,4 @@ func copyFile(src, dst string) error {
 	}
 
 	return nil
-}
-
-// Verify verifies the given data and its Base64-encoded signature
-func verifySignature(data []byte, signature string, publicKey *rsa.PublicKey) error {
-	// Compute the SHA256 hash of the data
-	hash := sha256.Sum256(data)
-
-	// Decode the Base64-encoded signature
-	sigBytes, err := base64.StdEncoding.DecodeString(signature)
-	if err != nil {
-		return fmt.Errorf("failed to decode signature: %w", err)
-	}
-
-	// Verify the signature with the public key
-	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hash[:], sigBytes)
-	if err != nil {
-		return fmt.Errorf("signature verification failed: %w", err)
-	}
-
-	return nil
-}
-
-func sign(data []byte, privateKey *rsa.PrivateKey) (string, error) {
-	// Check the key size
-	if privateKey.N.BitLen() < 2048 {
-		return "", fmt.Errorf("key size is too small, must be at least 2048 bits")
-	}
-
-	// Compute the SHA256 hash of the data
-	hash := sha256.Sum256(data)
-
-	// Sign the hash with the private key
-	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hash[:])
-	if err != nil {
-		return "", fmt.Errorf("failed to sign data: %w", err)
-	}
-
-	// Encode the signature to Base64
-	return base64.StdEncoding.EncodeToString(signature), nil
-}
-
-func loadPublicKeys() (map[string]*rsa.PublicKey, error) {
-	entries, err := resources.PublicKeys.ReadDir("keys")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read public keys directory: %w", err)
-	}
-
-	publicKeys := map[string]*rsa.PublicKey{}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		if !strings.HasSuffix(entry.Name(), ".pem") {
-			continue
-		}
-
-		publicKeyData, err := resources.PublicKeys.ReadFile(path.Join("keys", entry.Name()))
-		if err != nil {
-			return nil, fmt.Errorf("failed to read public key file: %w", err)
-		}
-
-		publicKey, err := parsePublicKey(publicKeyData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse public key: %w", err)
-		}
-
-		publicKeys[entry.Name()] = publicKey
-	}
-
-	return publicKeys, nil
-}
-
-// parsePublicKey loads an RSA public key from a PEM file
-func parsePublicKey(data []byte) (*rsa.PublicKey, error) {
-	block, _ := pem.Decode(data)
-	if block == nil || block.Type != "PUBLIC KEY" {
-		return nil, fmt.Errorf("invalid public key PEM format")
-	}
-
-	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
-	}
-
-	rsaPubKey, ok := publicKey.(*rsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("public key is not RSA")
-	}
-
-	return rsaPubKey, nil
 }

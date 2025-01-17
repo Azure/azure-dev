@@ -789,6 +789,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)
+	container.MustRegisterSingleton(extensions.NewSourceManager)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

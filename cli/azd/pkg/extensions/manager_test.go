@@ -222,16 +222,18 @@ func Test_ValidateChecksum_Failure_InvalidChecksumData(t *testing.T) {
 
 	// Validate the checksum
 	err = validateChecksum(tempFile.Name(), checksum)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid checksum data")
+
+	// Empty checksum skips verification
+	require.NoError(t, err)
 }
 
 func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, http.DefaultClient)
 
-	manager := NewManager(userConfigManager, http.DefaultClient)
+	manager := NewManager(userConfigManager, sourceManager, http.DefaultClient)
 	err := manager.Initialize()
 	require.NoError(t, err)
 
@@ -242,7 +244,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.Equal(t, 0, len(installed))
 
 	// List extensions from the registry (expect at least 1)
-	extensions, err := manager.ListFromRegistry(*mockContext.Context)
+	extensions, err := manager.ListFromRegistry(*mockContext.Context, nil)
 	require.NoError(t, err)
 	require.NotNil(t, extensions)
 	require.Greater(t, len(extensions), 0)

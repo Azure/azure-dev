@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -82,16 +83,58 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		FlagsResolver:  newExtensionUpgradeFlags,
 	})
 
+	sourceGroup := group.Add("source", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "source",
+			Short: "View and manage extension sources",
+		},
+	})
+
+	sourceGroup.Add("list", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "list",
+			Short: "List extension sources",
+		},
+		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
+		DefaultFormat:  output.TableFormat,
+		ActionResolver: newExtensionSourceListAction,
+	})
+
+	sourceGroup.Add("add", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "add",
+			Short: "Add an extension source with the specified name",
+		},
+		ActionResolver: newExtensionSourceAddAction,
+		FlagsResolver:  newExtensionSourceAddFlags,
+		OutputFormats:  []output.Format{output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
+	sourceGroup.Add("remove", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "remove <name>",
+			Short: "Remove an extension source with the specified name",
+		},
+		ActionResolver: newExtensionSourceRemoveAction,
+		OutputFormats:  []output.Format{output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
 	return group
 }
 
 type extensionListFlags struct {
 	installed bool
+	source    string
+	tags      []string
 }
 
 func newExtensionListFlags(cmd *cobra.Command) *extensionListFlags {
 	flags := &extensionListFlags{}
 	cmd.Flags().BoolVar(&flags.installed, "installed", false, "List installed extensions")
+	cmd.Flags().StringVar(&flags.source, "source", "", "Filter extensions by source")
+	cmd.Flags().StringSliceVar(&flags.tags, "tags", nil, "Filter extensions by tags")
 
 	return flags
 }
@@ -101,6 +144,7 @@ type extensionListAction struct {
 	flags            *extensionListFlags
 	formatter        output.Formatter
 	writer           io.Writer
+	sourceManager    *extensions.SourceManager
 	extensionManager *extensions.Manager
 }
 
@@ -108,12 +152,14 @@ func newExtensionListAction(
 	flags *extensionListFlags,
 	formatter output.Formatter,
 	writer io.Writer,
+	sourceManager *extensions.SourceManager,
 	extensionManager *extensions.Manager,
 ) actions.Action {
 	return &extensionListAction{
 		flags:            flags,
 		formatter:        formatter,
 		writer:           writer,
+		sourceManager:    sourceManager,
 		extensionManager: extensionManager,
 	}
 }
@@ -126,7 +172,18 @@ type extensionListItem struct {
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	registryExtensions, err := a.extensionManager.ListFromRegistry(ctx)
+	options := &extensions.ListOptions{
+		Source: a.flags.source,
+		Tags:   a.flags.tags,
+	}
+
+	if options.Source != "" {
+		if _, err := a.sourceManager.Get(ctx, options.Source); err != nil {
+			return nil, fmt.Errorf("extension source '%s' not found: %w", options.Source, err)
+		}
+	}
+
+	registryExtensions, err := a.extensionManager.ListFromRegistry(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed listing extensions from registry: %w", err)
 	}
@@ -583,6 +640,183 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: "Extensions upgraded successfully",
+		},
+	}, nil
+}
+
+type extensionSourceListAction struct {
+	formatter     output.Formatter
+	writer        io.Writer
+	sourceManager *extensions.SourceManager
+}
+
+func newExtensionSourceListAction(
+	formatter output.Formatter,
+	writer io.Writer,
+	sourceManager *extensions.SourceManager,
+) actions.Action {
+	return &extensionSourceListAction{
+		formatter:     formatter,
+		writer:        writer,
+		sourceManager: sourceManager,
+	}
+}
+
+func (a *extensionSourceListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	sourceConfigs, err := a.sourceManager.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list extension sources: %w", err)
+	}
+
+	if a.formatter.Kind() == output.TableFormat {
+		columns := []output.Column{
+			{
+				Heading:       "Name",
+				ValueTemplate: "{{.Name}}",
+			},
+			{
+				Heading:       "Type",
+				ValueTemplate: "{{.Type}}",
+			},
+			{
+				Heading:       "Location",
+				ValueTemplate: "{{.Location}}",
+			},
+		}
+
+		err = a.formatter.Format(sourceConfigs, a.writer, output.TableFormatterOptions{
+			Columns: columns,
+		})
+	} else {
+		err = a.formatter.Format(sourceConfigs, a.writer, nil)
+	}
+
+	return nil, err
+}
+
+type extensionSourceAddFlags struct {
+	name     string
+	location string
+	kind     string
+}
+
+func newExtensionSourceAddFlags(cmd *cobra.Command) *extensionSourceAddFlags {
+	flags := &extensionSourceAddFlags{}
+	cmd.Flags().StringVar(&flags.name, "name", "", "The name of the extension source")
+	cmd.Flags().StringVar(&flags.location, "location", "", "The location of the extension source")
+	cmd.Flags().StringVar(&flags.kind, "king", "", "The type of the extension source")
+
+	return flags
+}
+
+type extensionSourceAddAction struct {
+	flags         *extensionSourceAddFlags
+	console       input.Console
+	sourceManager *extensions.SourceManager
+	args          []string
+}
+
+func newExtensionSourceAddAction(
+	flags *extensionSourceAddFlags,
+	console input.Console,
+	sourceManager *extensions.SourceManager,
+	args []string,
+) actions.Action {
+	return &extensionSourceAddAction{
+		flags:         flags,
+		console:       console,
+		sourceManager: sourceManager,
+		args:          args,
+	}
+}
+
+func (a *extensionSourceAddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Add extension source (azd extension source add)",
+	})
+
+	var name = strings.ToLower(a.args[0])
+
+	spinnerMessage := "Validating extension source"
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+	sourceConfig := &extensions.SourceConfig{
+		Type:     extensions.SourceKind(a.flags.kind),
+		Location: a.flags.location,
+		Name:     a.flags.name,
+	}
+
+	// Validate the custom source config
+	_, err := a.sourceManager.CreateSource(ctx, sourceConfig)
+	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+	if err != nil {
+		if errors.Is(err, extensions.ErrSourceTypeInvalid) {
+			return nil, fmt.Errorf(
+				"extension source type '%s' is not supported. Supported types are %s",
+				a.flags.kind,
+				ux.ListAsText([]string{"'file'", "'url'"}),
+			)
+		}
+
+		return nil, fmt.Errorf("extension source validation failed: %w", err)
+	}
+
+	spinnerMessage = "Saving extension source"
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+	err = a.sourceManager.Add(ctx, name, sourceConfig)
+	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+	if err != nil {
+		return nil, fmt.Errorf("failed adding extension source: %w", err)
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   fmt.Sprintf("Added azd extension source %s", name),
+			FollowUp: "Run `azd extension list` to see the available set of azd extensions.",
+		},
+	}, nil
+}
+
+type extensionSourceRemoveAction struct {
+	sourceManager *extensions.SourceManager
+	console       input.Console
+	args          []string
+}
+
+func newExtensionSourceRemoveAction(
+	sourceManager *extensions.SourceManager,
+	console input.Console,
+	args []string,
+) actions.Action {
+	return &extensionSourceRemoveAction{
+		sourceManager: sourceManager,
+		console:       console,
+		args:          args,
+	}
+}
+
+func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Remove extension source (azd extension source remove)",
+	})
+
+	var key = strings.ToLower(a.args[0])
+	spinnerMessage := fmt.Sprintf("Removing extension source (%s)", key)
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	err := a.sourceManager.Remove(ctx, key)
+	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+	if err != nil {
+		return nil, fmt.Errorf("failed removing extension source: %w", err)
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("Removed azd extension source %s", key),
+			FollowUp: fmt.Sprintf(
+				"Add more extension sources by running %s",
+				output.WithHighLightFormat("azd extension source add <key>"),
+			),
 		},
 	}, nil
 }

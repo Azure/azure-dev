@@ -16,6 +16,8 @@ words:
   - runcontext
   - unmarshals
   - usgovcloudapi
+  - jdbc
+  - bicept
 languageSettings:
   - languageId: go
     ignoreRegExpList:

@@ -14,7 +14,7 @@ spring.datasource.username=admin
 spring.datasource.password=secret
 `
 
-const postgresPropertiesUpdatedContent = `spring.datasource.url=` + placeholderPostgresUrl + `
+const postgresPropertiesUpdatedContent = `spring.datasource.url=` + placeholderPostgresJdbcUrl + `
 spring.datasource.username=` + placeholderPostgresUsername + `
 spring.datasource.password=` + placeholderPostgresPassword + `
 `

@@ -16,12 +16,18 @@ type propertyMergeFunc func(string, string) string
 
 const azureProfileName = "azure"
 
-const placeholderPostgresUrl = "jdbc:${POSTGRES_URL}" // todo: manage placeholders here and in resources.bicept together.
+// todo: manage following placeholders and together with resources.bicept.
+
+const placeholderPostgresHost = "${POSTGRES_HOST}"
+const placeholderPostgresPort = "${POSTGRES_PORT}"
+const placeholderPostgresDatabase = "${POSTGRES_DATABASE}"
 const placeholderPostgresUsername = "${POSTGRES_USERNAME}"
 const placeholderPostgresPassword = "${POSTGRES_PASSWORD}"
+const placeholderPostgresJdbcUrl = "jdbc:postgresql://" + placeholderPostgresHost + ":" + placeholderPostgresPort +
+	"/" + placeholderPostgresDatabase
 
 var postgresqlProperties = []property{
-	{"spring.datasource.url", placeholderPostgresUrl},
+	{"spring.datasource.url", placeholderPostgresJdbcUrl},
 	{"spring.datasource.username", placeholderPostgresUsername},
 	{"spring.datasource.password", placeholderPostgresPassword},
 }

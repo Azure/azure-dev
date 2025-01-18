@@ -329,13 +329,14 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			// get user account information - login --check-status
 			details, err := la.authManager.LogInDetails(ctx)
 
-			// error getting user account
+			// error getting user account or not logged in
 			if err != nil {
 				log.Printf("error: getting signed in account: %v", err)
-				fmt.Fprintln(la.console.Handles().Stdout, msg+".")
+				fmt.Fprintln(la.console.Handles().Stdout, msg)
 				return nil, nil
 			}
 
+			// only print the message if the user is logged in
 			la.console.MessageUxItem(ctx, &ux.LoggedIn{
 				LoggedInAs: details.Account,
 				LoginType:  ux.LoginType(details.LoginType),
@@ -368,13 +369,12 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	const cLoginSuccessMessage = "Logged in to Azure"
 	details, err := la.authManager.LogInDetails(ctx)
 
 	// error getting user account, successful log in
 	if err != nil {
 		log.Printf("error: getting signed in account: %v", err)
-		la.console.Message(ctx, cLoginSuccessMessage+".")
+		la.console.Message(ctx, "Logged in to Azure")
 		return nil, nil
 	}
 	la.console.MessageUxItem(ctx, &ux.LoggedIn{

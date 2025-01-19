@@ -62,15 +62,15 @@ func activeAzureProfile(projectPath string) error {
 	var newProperties = []property{
 		{"spring.profiles.active", azureProfileName},
 	}
-	return updatePropertyFile(filePath, newProperties, appendToCommaSeperatedValues)
+	return updatePropertyFile(filePath, newProperties, appendToCommaSeparatedValues)
 }
 
-func appendToCommaSeperatedValues(commaSeperatedValues string, newValue string) string {
-	if commaSeperatedValues == "" {
+func appendToCommaSeparatedValues(commaSeparatedValues string, newValue string) string {
+	if commaSeparatedValues == "" {
 		return newValue
 	}
 	var values []string
-	for _, value := range strings.SplitN(commaSeperatedValues, ",", -1) {
+	for _, value := range strings.SplitN(commaSeparatedValues, ",", -1) {
 		value = strings.TrimSpace(value)
 		if value != "" {
 			values = append(values, value)

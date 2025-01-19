@@ -62,18 +62,24 @@ func activeAzureProfile(projectPath string) error {
 	var newProperties = []property{
 		{"spring.profiles.active", azureProfileName},
 	}
-	return updatePropertyFile(filePath, newProperties, appendIfExists)
+	return updatePropertyFile(filePath, newProperties, appendToCommaSeperatedValues)
 }
 
-func appendIfExists(originalValue string, newValue string) string {
-	if originalValue == "" {
+func appendToCommaSeperatedValues(commaSeperatedValues string, newValue string) string {
+	if commaSeperatedValues == "" {
 		return newValue
 	}
-	originalValues := strings.SplitN(originalValue, ",", -1)
-	if contains(originalValues, azureProfileName) {
-		return originalValue
+	var values []string
+	for _, value := range strings.SplitN(commaSeperatedValues, ",", -1) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			values = append(values, value)
+		}
 	}
-	return originalValue + "," + newValue
+	if !contains(values, azureProfileName) {
+		values = append(values, azureProfileName)
+	}
+	return strings.Join(values, ",")
 }
 
 func contains(a []string, x string) bool {

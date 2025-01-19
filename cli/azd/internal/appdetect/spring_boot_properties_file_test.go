@@ -48,10 +48,11 @@ func TestAddPostgresqlConnectionProperties(t *testing.T) {
 			outputApplicationAzurePropertiesContent: postgresPropertiesUpdatedContent,
 		},
 		{
-			name:                                    "append original content",
-			inputApplicationPropertiesContent:       "aaa=xxx",
-			inputApplicationAzurePropertiesContent:  "bbb=yyy\n" + postgresPropertiesOriginalContent,
-			outputApplicationPropertiesContent:      "aaa=xxx\n" + "spring.profiles.active=" + azureProfileName + "\n",
+			name:                                   "append original content",
+			inputApplicationPropertiesContent:      "aaa=xxx\n" + "spring.profiles.active=production , cloud,,",
+			inputApplicationAzurePropertiesContent: "bbb=yyy\n" + postgresPropertiesOriginalContent,
+			outputApplicationPropertiesContent: "aaa=xxx\n" + "spring.profiles.active=production,cloud," +
+				azureProfileName + "\n",
 			outputApplicationAzurePropertiesContent: "bbb=yyy\n" + postgresPropertiesUpdatedContent,
 		},
 	}

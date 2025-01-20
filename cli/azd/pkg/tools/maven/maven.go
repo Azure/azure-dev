@@ -31,47 +31,47 @@ type Cli struct {
 	mvnCmdErr  error
 }
 
-func (m *Cli) Name() string {
+func (cli *Cli) Name() string {
 	return "Maven"
 }
 
-func (m *Cli) InstallUrl() string {
+func (cli *Cli) InstallUrl() string {
 	return "https://maven.apache.org"
 }
 
-func (m *Cli) CheckInstalled(ctx context.Context) error {
-	_, err := m.mvnCmd()
+func (cli *Cli) CheckInstalled(ctx context.Context) error {
+	_, err := cli.mvnCmd()
 	if err != nil {
 		return err
 	}
 
-	if ver, err := m.extractVersion(ctx); err == nil {
+	if ver, err := cli.extractVersion(ctx); err == nil {
 		log.Printf("maven version: %s", ver)
 	}
 
 	return nil
 }
 
-func (m *Cli) SetPath(projectPath string, rootProjectPath string) {
-	m.projectPath = projectPath
-	m.rootProjectPath = rootProjectPath
+func (cli *Cli) SetPath(projectPath string, rootProjectPath string) {
+	cli.projectPath = projectPath
+	cli.rootProjectPath = rootProjectPath
 }
 
-func (m *Cli) mvnCmd() (string, error) {
-	m.mvnCmdOnce.Do(func() {
-		mvnCmd, err := getMavenPath(m.projectPath, m.rootProjectPath)
+func (cli *Cli) mvnCmd() (string, error) {
+	cli.mvnCmdOnce.Do(func() {
+		mvnCmd, err := getMavenPath(cli.projectPath, cli.rootProjectPath)
 		if err != nil {
-			m.mvnCmdErr = err
+			cli.mvnCmdErr = err
 		} else {
-			m.mvnCmdStr = mvnCmd
+			cli.mvnCmdStr = mvnCmd
 		}
 	})
 
-	if m.mvnCmdErr != nil {
-		return "", m.mvnCmdErr
+	if cli.mvnCmdErr != nil {
+		return "", cli.mvnCmdErr
 	}
 
-	return m.mvnCmdStr, nil
+	return cli.mvnCmdStr, nil
 }
 
 func getMavenPath(projectPath string, rootProjectPath string) (string, error) {

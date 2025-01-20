@@ -71,7 +71,7 @@ type KeyVaultService interface {
 		secretName string,
 		secretValue string,
 	) error
-	SecretFromAkvs(ctx context.Context, subscriptionId, akvs string) (string, error)
+	SecretFromAkvs(ctx context.Context, akvs string) (string, error)
 }
 
 type keyVaultService struct {
@@ -147,7 +147,7 @@ func (kvs *keyVaultService) GetKeyVaultSecret(
 ) (*Secret, error) {
 	client, err := kvs.createSecretsDataClient(ctx, subscriptionId, vaultName)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	response, err := client.GetSecret(ctx, secretName, "", nil)
@@ -342,25 +342,25 @@ func IsAkvs(id string) bool {
 	return strings.HasPrefix(id, vaultSchemaAkvs)
 }
 
-func NewAkvs(vaultId, secretName string) string {
-	return vaultSchemaAkvs + vaultId + "/" + secretName
+func NewAkvs(subId, vaultId, secretName string) string {
+	return vaultSchemaAkvs + subId + "/" + vaultId + "/" + secretName
 }
 
-func (kvs *keyVaultService) SecretFromAkvs(ctx context.Context, subscriptionId, akvs string) (string, error) {
+func (kvs *keyVaultService) SecretFromAkvs(ctx context.Context, akvs string) (string, error) {
 	if !IsAkvs(akvs) {
 		return "", fmt.Errorf("invalid Azure Key Vault Secret reference: %s", akvs)
 	}
 
 	noSchema := strings.TrimPrefix(akvs, vaultSchemaAkvs)
 	vaultParts := strings.Split(noSchema, "/")
-	if len(vaultParts) != 2 {
+	if len(vaultParts) != 3 {
 		return "", fmt.Errorf(
 			"invalid Azure Key Vault Secret reference: %s. Expected format: %s",
 			akvs,
-			vaultSchemaAkvs+"<vault-name>/<secret-name>",
+			vaultSchemaAkvs+"<subscription-id>/<vault-name>/<secret-name>",
 		)
 	}
-	vaultName, secretName := vaultParts[0], vaultParts[1]
+	subscriptionId, vaultName, secretName := vaultParts[0], vaultParts[1], vaultParts[2]
 	// subscriptionId is required by the Key Vault service to figure the TenantId for the
 	// tokenCredential. The assumption here is that the user has access to the Tenant
 	// used to deploy the app and to whatever Tenant the Key Vault is in. And the tokenCredential

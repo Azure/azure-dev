@@ -384,8 +384,8 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 		kvSecretName = secretsInKv[secretSelectionIndex]
 	}
 
-	// akvs -> Azure Key Vault Secret (akvs://<keyvault-name>/<secret-name>)
-	envValue := keyvault.NewAkvs(kvAccount.Name, kvSecretName)
+	// akvs -> Azure Key Vault Secret (akvs://<subId>/<keyvault-name>/<secret-name>)
+	envValue := keyvault.NewAkvs(subId, kvAccount.Name, kvSecretName)
 	e.env.DotenvSet(secretName, envValue)
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)

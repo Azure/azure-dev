@@ -146,7 +146,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 				setValue := value
 				if valueFromEnv, exists := h.env.LookupEnv(value); exists {
 					if keyvault.IsAkvs(valueFromEnv) {
-						secretValue, err := keyvaultService.SecretFromAkvs(ctx, h.env.GetSubscriptionId(), valueFromEnv)
+						secretValue, err := keyvaultService.SecretFromAkvs(ctx, valueFromEnv)
 						if err != nil {
 							return err
 						}

@@ -1838,7 +1838,7 @@ func (p *BicepProvider) ensureParameters(
 					// For secure parameters using a string value, azd checks if the string is an Azure Key Vault Secret
 					// and if yes, it fetches the secret value from the Key Vault.
 					if keyvault.IsAkvs(stringValue) {
-						paramValue, err = p.keyvaultService.SecretFromAkvs(ctx, p.env.GetSubscriptionId(), stringValue)
+						paramValue, err = p.keyvaultService.SecretFromAkvs(ctx, stringValue)
 						if err != nil {
 							return nil, err
 						}

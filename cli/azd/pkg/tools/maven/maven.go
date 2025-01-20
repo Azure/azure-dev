@@ -275,7 +275,7 @@ func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
 	}
 	result := builder.String()
 	if result == "" {
-		return "", fmt.Errorf("feiled to get effective pom from console: empty content")
+		return "", fmt.Errorf("failed to get effective pom from console: empty content")
 	}
 	return result, nil
 }

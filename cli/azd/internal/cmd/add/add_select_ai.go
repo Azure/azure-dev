@@ -22,7 +22,7 @@ import (
 func (a *AddAction) selectOpenAi(
 	console input.Console,
 	ctx context.Context,
-	p promptOptions) (r *project.ResourceConfig, err error) {
+	p PromptOptions) (r *project.ResourceConfig, err error) {
 	resourceToAdd := &project.ResourceConfig{}
 	aiOption, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Which type of Azure OpenAI service?",

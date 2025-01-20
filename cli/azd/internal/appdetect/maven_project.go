@@ -16,7 +16,7 @@ type mavenProject struct {
 func toMavenProject(ctx context.Context, mvnCli *maven.Cli, pomFilePath string) (mavenProject, error) {
 	pom, err := toPom(ctx, mvnCli, pomFilePath)
 	if err != nil {
-		return mavenProject{}, nil
+		return mavenProject{}, err
 	}
 	return mavenProject{pom: pom}, nil
 }

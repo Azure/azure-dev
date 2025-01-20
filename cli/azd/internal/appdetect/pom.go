@@ -7,24 +7,24 @@ import (
 	"path/filepath"
 )
 
-func readMavenProject(filePath string) (*mavenProject, error) {
+func toPom(filePath string) (pom, error) {
 	bytes, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, err
+		return pom{}, err
 	}
 
-	var project mavenProject
+	var project pom
 	if err := xml.Unmarshal(bytes, &project); err != nil {
-		return nil, fmt.Errorf("parsing xml: %w", err)
+		return pom{}, fmt.Errorf("parsing xml: %w", err)
 	}
 
 	project.path = filepath.Dir(filePath)
 
-	return &project, nil
+	return project, nil
 }
 
-// mavenProject represents the top-level structure of a Maven POM file.
-type mavenProject struct {
+// pom represents the top-level structure of a Maven POM file.
+type pom struct {
 	XmlName              xml.Name             `xml:"project"`
 	Parent               parent               `xml:"parent"`
 	Modules              []string             `xml:"modules>module"` // Capture the modules

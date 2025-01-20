@@ -1,17 +1,20 @@
 package appdetect
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
 
 type mavenProject struct {
 	pom pom
 }
 
-func toMavenProject(pomFilePath string) (mavenProject, error) {
-	pom, err := toPom(pomFilePath)
+func toMavenProject(ctx context.Context, mvnCli *maven.Cli, pomFilePath string) (mavenProject, error) {
+	pom, err := toPom(ctx, mvnCli, pomFilePath)
 	if err != nil {
 		return mavenProject{}, nil
 	}

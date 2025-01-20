@@ -6,9 +6,12 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
 
 type javaDetector struct {
+	mvnCli *maven.Cli
 }
 
 func (jd *javaDetector) Language() Language {
@@ -18,8 +21,8 @@ func (jd *javaDetector) Language() Language {
 func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "pom.xml" {
-			pomFile := filepath.Join(path, entry.Name())
-			project, err := toMavenProject(pomFile)
+			pomFilePath := filepath.Join(path, entry.Name())
+			project, err := toMavenProject(ctx, jd.mvnCli, pomFilePath)
 			if err != nil {
 				return nil, fmt.Errorf("error reading pom.xml: %w", err)
 			}

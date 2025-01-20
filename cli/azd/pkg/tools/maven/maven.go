@@ -1,6 +1,7 @@
 package maven
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -234,6 +235,48 @@ func (cli *Cli) GetProperty(ctx context.Context, propertyPath string, projectPat
 		return "", ErrPropertyNotFound
 	}
 
+	return result, nil
+}
+
+func (cli *Cli) EffectivePom(ctx context.Context, pomPath string) (string, error) {
+	mvnCmd, err := cli.mvnCmd()
+	if err != nil {
+		return "", err
+	}
+	pomDir := filepath.Dir(pomPath)
+	runArgs := exec.NewRunArgs(mvnCmd, "help:effective-pom", "-f", pomPath).WithCwd(pomDir)
+	result, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return "", fmt.Errorf("failed to run mvn help:effective-pom for pom file: %s. error = %w", pomPath, err)
+	}
+	return getEffectivePomFromConsoleOutput(result.Stdout)
+}
+
+func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
+	var builder strings.Builder
+	scanner := bufio.NewScanner(strings.NewReader(consoleOutput))
+	inProject := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(strings.TrimSpace(line), "<project") {
+			inProject = true
+		} else if strings.HasPrefix(strings.TrimSpace(line), "</project>") {
+			builder.WriteString(line)
+			break
+		}
+		if inProject {
+			if strings.TrimSpace(line) != "" {
+				builder.WriteString(line)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("failed to scan console output. %w", err)
+	}
+	result := builder.String()
+	if result == "" {
+		return "", fmt.Errorf("feiled to get effective pom from console: empty content")
+	}
 	return result, nil
 }
 

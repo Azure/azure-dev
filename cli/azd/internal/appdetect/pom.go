@@ -1,26 +1,53 @@
 package appdetect
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
 
-func toPom(filePath string) (pom, error) {
-	bytes, err := os.ReadFile(filePath)
+func toPom(ctx context.Context, mvnCli *maven.Cli, pomFilePath string) (pom, error) {
+	result, err := toEffectivePom(ctx, mvnCli, pomFilePath)
+	if err == nil {
+		result.path = filepath.Dir(pomFilePath)
+		return result, nil
+	}
+
+	result, err = unmarshalPomFile(pomFilePath)
+	if err == nil {
+		result.path = filepath.Dir(pomFilePath)
+		// todo: handle pom, for example: <version>${project.version}<version>
+		return result, nil
+	}
+	return pom{}, err
+}
+
+func toEffectivePom(ctx context.Context, mvnCli *maven.Cli, pomFilePath string) (pom, error) {
+	effectivePom, err := mvnCli.EffectivePom(ctx, pomFilePath)
+	if err != nil {
+		return pom{}, err
+	}
+	var resultPom pom
+	err = xml.Unmarshal([]byte(effectivePom), &resultPom)
+	return resultPom, err
+}
+
+func unmarshalPomFile(pomFilePath string) (pom, error) {
+	bytes, err := os.ReadFile(pomFilePath)
 	if err != nil {
 		return pom{}, err
 	}
 
-	var project pom
-	if err := xml.Unmarshal(bytes, &project); err != nil {
+	var result pom
+	if err := xml.Unmarshal(bytes, &result); err != nil {
 		return pom{}, fmt.Errorf("parsing xml: %w", err)
 	}
 
-	project.path = filepath.Dir(filePath)
-
-	return project, nil
+	return result, nil
 }
 
 // pom represents the top-level structure of a Maven POM file.

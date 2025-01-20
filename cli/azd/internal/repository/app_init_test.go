@@ -128,6 +128,616 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "api with storage umi",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepStorageAccount{
+								ContainerNamePropertyMap: map[string]string{
+									"spring.cloud.azure.container": "container1",
+								},
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepStorageAccount{}.ResourceDisplay(): {
+						appdetect.AzureDepStorageAccount{
+							ContainerNamePropertyMap: map[string]string{
+								"spring.cloud.azure.container": "container1",
+							},
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"User assigned managed identity",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"storage"},
+					},
+					"storage": {
+						Type: project.ResourceTypeStorage,
+						Props: project.StorageProps{
+							Containers: []string{"container1"},
+							AuthType:   internal.AuthTypeUserAssignedManagedIdentity,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with storage connection string",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepStorageAccount{
+								ContainerNamePropertyMap: map[string]string{
+									"spring.cloud.azure.container": "container1",
+								},
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepStorageAccount{}.ResourceDisplay(): {
+						appdetect.AzureDepStorageAccount{
+							ContainerNamePropertyMap: map[string]string{
+								"spring.cloud.azure.container": "container1",
+							},
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"Connection string",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"storage"},
+					},
+					"storage": {
+						Type: project.ResourceTypeStorage,
+						Props: project.StorageProps{
+							Containers: []string{"container1"},
+							AuthType:   internal.AuthTypeConnectionString,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with service bus umi",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepServiceBus{
+								Queues: []string{"queue1"},
+								IsJms:  true,
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepServiceBus{}.ResourceDisplay(): {
+						appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"User assigned managed identity",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"servicebus"},
+					},
+					"servicebus": {
+						Type: project.ResourceTypeMessagingServiceBus,
+						Props: project.ServiceBusProps{
+							Queues:   []string{"queue1"},
+							IsJms:    true,
+							AuthType: internal.AuthTypeUserAssignedManagedIdentity,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with service bus connection string",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepServiceBus{
+								Queues: []string{"queue1"},
+								IsJms:  true,
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepServiceBus{}.ResourceDisplay(): {
+						appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"Connection string",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"servicebus"},
+					},
+					"servicebus": {
+						Type: project.ResourceTypeMessagingServiceBus,
+						Props: project.ServiceBusProps{
+							Queues:   []string{"queue1"},
+							IsJms:    true,
+							AuthType: internal.AuthTypeConnectionString,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with event hubs umi",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.cloud.azure.eventhubs": "eventhub1",
+								},
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepEventHubs{}.ResourceDisplay(): {
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.eventhubs": "eventhub1",
+							},
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"User assigned managed identity",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"eventhubs"},
+					},
+					"eventhubs": {
+						Type: project.ResourceTypeMessagingEventHubs,
+						Props: project.EventHubsProps{
+							EventHubNames: []string{"eventhub1"},
+							AuthType:      internal.AuthTypeUserAssignedManagedIdentity,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with event hubs connection string",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.cloud.azure.eventhubs": "eventhub1",
+								},
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepEventHubs{}.ResourceDisplay(): {
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.eventhubs": "eventhub1",
+							},
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"Connection string",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"eventhubs"},
+					},
+					"eventhubs": {
+						Type: project.ResourceTypeMessagingEventHubs,
+						Props: project.EventHubsProps{
+							EventHubNames: []string{"eventhub1"},
+							AuthType:      internal.AuthTypeConnectionString,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with event hubs kafka umi",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.kafka.topic": "topic1",
+								},
+								DependencyTypes:   []appdetect.DependencyType{appdetect.SpringKafka},
+								SpringBootVersion: "3.4.0",
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepEventHubs{}.ResourceDisplay(): {
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.kafka.topic": "topic1",
+							},
+							DependencyTypes:   []appdetect.DependencyType{appdetect.SpringKafka},
+							SpringBootVersion: "3.4.0",
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"User assigned managed identity",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"kafka"},
+					},
+					"kafka": {
+						Type: project.ResourceTypeMessagingKafka,
+						Props: project.KafkaProps{
+							Topics:            []string{"topic1"},
+							AuthType:          internal.AuthTypeUserAssignedManagedIdentity,
+							SpringBootVersion: "3.4.0",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with event hubs kafka connection string",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.kafka.topic": "topic1",
+								},
+								DependencyTypes:   []appdetect.DependencyType{appdetect.SpringKafka},
+								SpringBootVersion: "3.4.0",
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					appdetect.AzureDepEventHubs{}.ResourceDisplay(): {
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.kafka.topic": "topic1",
+							},
+							DependencyTypes:   []appdetect.DependencyType{appdetect.SpringKafka},
+							SpringBootVersion: "3.4.0",
+						}, EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				// prompt for auth type
+				"Connection string",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"kafka"},
+					},
+					"kafka": {
+						Type: project.ResourceTypeMessagingKafka,
+						Props: project.KafkaProps{
+							Topics:            []string{"topic1"},
+							AuthType:          internal.AuthTypeConnectionString,
+							SpringBootVersion: "3.4.0",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with cosmos db",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbCosmos,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbCosmos: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"cosmosdbname",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"cosmos"},
+					},
+					"cosmos": {
+						Name: "cosmos",
+						Type: project.ResourceTypeDbCosmos,
+						Props: project.CosmosDBProps{
+							DatabaseName: "cosmosdbname",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with postgresql",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbPostgres,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbPostgres: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"postgresql-db",
+				// prompt for auth type
+				// todo cannot use umi here for it will check the source code
+				"Username and password",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"postgresql"},
+					},
+					"postgresql": {
+						Type: project.ResourceTypeDbPostgres,
+						Name: "postgresql",
+						Props: project.PostgresProps{
+							DatabaseName: "postgresql-db",
+							AuthType:     internal.AuthTypePassword,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "api with mysql",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbMySql,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbMySql: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"mysql-db",
+				// prompt for auth type
+				// todo cannot use umi here for it will check the source code
+				"Username and password",
+			},
+			want: project.ProjectConfig{
+				Services: map[string]*project.ServiceConfig{
+					"java": {
+						Language:     project.ServiceLanguageJava,
+						Host:         project.ContainerAppTarget,
+						RelativePath: "java",
+					},
+				},
+				Resources: map[string]*project.ResourceConfig{
+					"java": {
+						Type: project.ResourceTypeHostContainerApp,
+						Name: "java",
+						Props: project.ContainerAppProps{
+							Port: 8080,
+						},
+						Uses: []string{"mysql"},
+					},
+					"mysql": {
+						Type: project.ResourceTypeDbMySQL,
+						Name: "mysql",
+						Props: project.MySQLProps{
+							DatabaseName: "mysql-db",
+							AuthType:     internal.AuthTypePassword,
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "api and web",
 			detect: detectConfirm{
 				Services: []appdetect.Project{
@@ -312,6 +922,8 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 					tt.detect.Services[idx].Docker.Path = filepath.Join(dir, svc.Path, svc.Docker.Path)
 				}
 			}
+
+			tt.detect.root = dir
 
 			spec, err := i.prjConfigFromDetect(
 				context.Background(),

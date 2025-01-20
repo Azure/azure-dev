@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +23,32 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 		DatabaseName: "myappdb",
 		AuthType:     "userAssignedManagedIdentity",
 	}
-	envs, _ := scaffold.GetServiceBindingEnvsForPostgres(*dbPostgres)
+	envsForPostgres, _ := scaffold.GetServiceBindingEnvsForPostgres(*dbPostgres)
+	scaffoldStorageAccount := scaffold.AzureDepStorageAccount{
+		ContainerNames: []string{"container1"},
+		AuthType:       internal.AuthTypeConnectionString,
+	}
+	envsForStorage, _ := scaffold.GetServiceBindingEnvsForStorageAccount(scaffoldStorageAccount)
+	envsForMongo := scaffold.GetServiceBindingEnvsForMongo()
+	scaffoldServiceBus := scaffold.AzureDepServiceBus{
+		Queues:   []string{"queue1"},
+		IsJms:    true,
+		AuthType: internal.AuthTypeConnectionString,
+	}
+	envsForServiceBus, _ := scaffold.GetServiceBindingEnvsForServiceBus(scaffoldServiceBus)
+	scaffoldEventHubs := scaffold.AzureDepEventHubs{
+		EventHubNames: []string{"eventhub1"},
+		AuthType:      internal.AuthTypeConnectionString,
+		UseKafka:      true,
+	}
+	envsForEventHubs, _ := scaffold.GetServiceBindingEnvsForEventHubs(scaffoldEventHubs)
+	envsForCosmos := scaffold.GetServiceBindingEnvsForCosmos()
+	scaffoldMysql := scaffold.DatabaseMySql{
+		DatabaseName: "mysql-db",
+		AuthType:     internal.AuthTypePassword,
+	}
+	envsForMysql, _ := scaffold.GetServiceBindingEnvsForMysql(scaffoldMysql)
+	envsForCosmosMongo := scaffold.GetServiceBindingEnvsForMongo()
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -148,6 +174,277 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "api with storage",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepStorageAccount{
+								ContainerNamePropertyMap: map[string]string{
+									"spring.cloud.azure.container": "container1",
+								},
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					"storage": {
+						first: appdetect.AzureDepStorageAccount{
+							ContainerNamePropertyMap: map[string]string{
+								"spring.cloud.azure.container": "container1",
+							},
+						},
+						second: EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				"Connection string",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:                "java",
+						Port:                8080,
+						Backend:             &scaffold.Backend{},
+						AzureStorageAccount: &scaffoldStorageAccount,
+						Envs:                envsForStorage,
+					},
+				},
+				AzureStorageAccount: &scaffoldStorageAccount,
+			},
+		},
+		{
+			name: "api with mongo",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbMongo,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbMongo: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"mongodb-name",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:    "java",
+						Port:    8080,
+						Backend: &scaffold.Backend{},
+						DbCosmosMongo: &scaffold.DatabaseCosmosMongo{
+							DatabaseName: "mongodb-name",
+						},
+						Envs: envsForMongo,
+					},
+				},
+				DbCosmosMongo: &scaffold.DatabaseCosmosMongo{
+					DatabaseName: "mongodb-name",
+				},
+			},
+		},
+		{
+			name: "api with service bus",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepServiceBus{
+								Queues: []string{"queue1"},
+								IsJms:  true,
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					"storage": {
+						first: appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						},
+						second: EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				"Connection string",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:            "java",
+						Port:            8080,
+						Backend:         &scaffold.Backend{},
+						AzureServiceBus: &scaffoldServiceBus,
+						Envs:            envsForServiceBus,
+					},
+				},
+				AzureServiceBus: &scaffoldServiceBus,
+			},
+		},
+		{
+			name: "api with event hubs",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						AzureDeps: []appdetect.AzureDep{
+							appdetect.AzureDepEventHubs{
+								EventHubsNamePropertyMap: map[string]string{
+									"spring.cloud.azure.kafka": "eventhub1",
+								},
+								DependencyTypes: []appdetect.DependencyType{appdetect.SpringKafka},
+							},
+						},
+					},
+				},
+				AzureDeps: map[string]Pair{
+					"eventhubs": {
+						first: appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.kafka": "eventhub1",
+							},
+							DependencyTypes: []appdetect.DependencyType{appdetect.SpringKafka},
+						},
+						second: EntryKindDetected,
+					},
+				},
+			},
+			interactions: []string{
+				"Connection string",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:           "java",
+						Port:           8080,
+						Backend:        &scaffold.Backend{},
+						AzureEventHubs: &scaffoldEventHubs,
+						Envs:           envsForEventHubs,
+					},
+				},
+				AzureEventHubs: &scaffoldEventHubs,
+			},
+		},
+		{
+			name: "api with cosmos db",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbCosmos,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbCosmos: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"cosmos-db-name",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:    "java",
+						Port:    8080,
+						Backend: &scaffold.Backend{},
+						DbCosmos: &scaffold.DatabaseCosmosAccount{
+							DatabaseName: "cosmos-db-name",
+						},
+						Envs: envsForCosmos,
+					},
+				},
+				DbCosmos: &scaffold.DatabaseCosmosAccount{
+					DatabaseName: "cosmos-db-name",
+				},
+			},
+		},
+		{
+			name: "api with mysql",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbMySql,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbMySql: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				// prompt for dbname
+				"mysql-db",
+				"Username and password",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:    "java",
+						Port:    8080,
+						Backend: &scaffold.Backend{},
+						DbMySql: &scaffoldMysql,
+						Envs:    envsForMysql,
+					},
+				},
+				DbMySql: &scaffoldMysql,
+			},
+		},
+		{
+			name: "api with cosmos db mongo",
+			detect: detectConfirm{
+				Services: []appdetect.Project{
+					{
+						Language: appdetect.Java,
+						Path:     "java",
+						DatabaseDeps: []appdetect.DatabaseDep{
+							appdetect.DbMongo,
+						},
+					},
+				},
+				Databases: map[appdetect.DatabaseDep]EntryKind{
+					appdetect.DbMongo: EntryKindDetected,
+				},
+			},
+			interactions: []string{
+				"cosmos-db-mongo-name",
+			},
+			want: scaffold.InfraSpec{
+				Services: []scaffold.ServiceSpec{
+					{
+						Name:    "java",
+						Port:    8080,
+						Backend: &scaffold.Backend{},
+						DbCosmosMongo: &scaffold.DatabaseCosmosMongo{
+							DatabaseName: "cosmos-db-mongo-name",
+						},
+						Envs: envsForCosmosMongo,
+					},
+				},
+				DbCosmosMongo: &scaffold.DatabaseCosmosMongo{
+					DatabaseName: "cosmos-db-mongo-name",
+				},
+			},
+		},
+		{
 			name: "api and web with db",
 			detect: detectConfirm{
 				Services: []appdetect.Project{
@@ -195,7 +492,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 							},
 						},
 						DbPostgres: dbPostgres,
-						Envs:       envs,
+						Envs:       envsForPostgres,
 					},
 					{
 						Name: "js",
@@ -227,6 +524,9 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 					nil,
 					nil),
 			}
+
+			dir := t.TempDir()
+			tt.detect.root = dir
 
 			spec, err := i.infraSpecFromDetect(context.Background(), &tt.detect)
 

@@ -76,6 +76,196 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			},
 		},
 		{
+			name: "confirm single with storage resource",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepStorageAccount{
+							ContainerNamePropertyMap: map[string]string{
+								"spring.cloud.azure.container": "container1",
+							},
+						},
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepStorageAccount{
+							ContainerNamePropertyMap: map[string]string{
+								"spring.cloud.azure.container": "container1",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "confirm single with resources service bus",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						},
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepServiceBus{
+							Queues: []string{"queue1"},
+							IsJms:  true,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "confirm single with event hubs resource",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.eventhubs": "eventhub1",
+							},
+						},
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					AzureDeps: []appdetect.AzureDep{
+						appdetect.AzureDepEventHubs{
+							EventHubsNamePropertyMap: map[string]string{
+								"spring.cloud.azure.eventhubs": "eventhub1",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "confirm single with cosmos db resource",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbCosmos,
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbCosmos,
+					},
+				},
+			},
+		},
+		{
+			name: "confirm single with postgresql resource",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbPostgres,
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbPostgres,
+					},
+				},
+			},
+		},
+		{
+			name: "confirm single with mysql resource",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbMySql,
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbMySql,
+					},
+				},
+			},
+		},
+		{
+			name: "confirm single with cosmos db mongo resource",
+			detection: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbMongo,
+					},
+				},
+			},
+			interactions: []string{
+				"Confirm and continue initializing my app",
+			},
+			want: []appdetect.Project{
+				{
+					Language: appdetect.Java,
+					Path:     javaDir,
+					DatabaseDeps: []appdetect.DatabaseDep{
+						appdetect.DbMongo,
+					},
+				},
+			},
+		},
+		{
 			name: "add a language",
 			detection: []appdetect.Project{
 				{

@@ -550,7 +550,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     name: '{{containerAppName .Name}}'
     {{- if ne .Port 0}}
     ingressTargetPort: {{.Port}}
-    {{- end}}
     {{- if (and .Backend .Backend.Frontends)}}
     corsPolicy: {
       allowedOrigins: [
@@ -562,6 +561,9 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         '*'
       ]
     }
+    {{- end}}
+    {{- else}}
+    disableIngress: true
     {{- end}}
     scaleMinReplicas: 1
     scaleMaxReplicas: 10

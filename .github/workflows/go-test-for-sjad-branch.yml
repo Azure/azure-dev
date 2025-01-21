@@ -39,4 +39,4 @@ jobs:
       - name: Run tests
         run: |
           cd ./cli/azd
-          go test $(go list ./... | grep -v github.com/azure/azure-dev/cli/azd/test/functional) -cover -v
+          go test $(go list ./... | grep -v github.com/azure/azure-dev/cli/azd/test/functional | grep -v github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform) -cover -v

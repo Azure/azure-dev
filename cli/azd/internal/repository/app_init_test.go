@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
@@ -98,13 +98,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 					},
 				},
 			},
-			interactions: []string{
-				// prompt for port -- hit multiple validation cases
-				"notAnInteger",
-				"-2",
-				"65536",
-				"1234",
-			},
+			interactions: []string{},
 			want: project.ProjectConfig{
 				Services: map[string]*project.ServiceConfig{
 					"dotnet": {
@@ -118,11 +112,9 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 				},
 				Resources: map[string]*project.ResourceConfig{
 					"dotnet": {
-						Type: project.ResourceTypeHostContainerApp,
-						Name: "dotnet",
-						Props: project.ContainerAppProps{
-							Port: 1234,
-						},
+						Type:  project.ResourceTypeHostContainerApp,
+						Name:  "dotnet",
+						Props: project.ContainerAppProps{},
 					},
 				},
 			},

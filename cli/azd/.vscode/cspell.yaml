@@ -26,6 +26,7 @@ words:
   - sjad
   - configserver
   - chardata
+  - webflux
 languageSettings:
   - languageId: go
     ignoreRegExpList:

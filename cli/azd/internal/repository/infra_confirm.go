@@ -275,17 +275,10 @@ func GetOrPromptPort(
 	ctx context.Context,
 	name string,
 	svc appdetect.Project) (int, error) {
-	if svc.Metadata.ServerPort != "" {
-		return strconv.Atoi(svc.Metadata.ServerPort)
-	}
 	if svc.Docker == nil || svc.Docker.Path == "" { // using default builder from azd
-		if svc.Language == appdetect.Java || svc.Language == appdetect.DotNet {
-			if svc.Metadata.ContainsDependencySpringCloudEurekaServer {
-				return 8761, nil
-			}
-			if svc.Metadata.ContainsDependencySpringCloudConfigServer {
-				return 8888, nil
-			}
+		if svc.Language == appdetect.Java {
+			return getJavaApplicationPort(svc), nil
+		} else if svc.Language == appdetect.DotNet {
 			return 8080, nil
 		}
 		return 80, nil
@@ -296,12 +289,8 @@ func GetOrPromptPort(
 	switch len(ports) {
 	case 1: // only one port was exposed, that's the one
 		return ports[0].Number, nil
-	case 0: // no ports exposed, prompt for port
-		port, err := promptPortNumber(console, ctx, "What port does '"+name+"' listen on?")
-		if err != nil {
-			return -1, err
-		}
-		return port, nil
+	case 0: // no ports exposed, not expose port
+		return 0, nil
 	}
 
 	// multiple ports exposed, prompt for selection
@@ -330,6 +319,23 @@ func GetOrPromptPort(
 	}
 
 	return port, nil
+}
+
+func getJavaApplicationPort(svc appdetect.Project) int {
+	if !shouldExposePort(svc) {
+		return 0
+	}
+	if svc.Metadata.ServerPort != 0 {
+		return svc.Metadata.ServerPort
+	} else {
+		return 8080
+	}
+}
+
+func shouldExposePort(svc appdetect.Project) bool {
+	return svc.Metadata.ContainsDependencySpringCloudEurekaServer ||
+		svc.Metadata.ContainsDependencySpringCloudConfigServer ||
+		svc.Metadata.ContainsDependencyAboutEmbeddedWebServer
 }
 
 func (i *Initializer) buildInfraSpecByAzureDep(

@@ -75,6 +75,9 @@ func TestDetect(t *testing.T) {
 					Options: map[string]interface{}{
 						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multimodules"),
 					},
+					Metadata: Metadata{
+						ContainsDependencyAboutEmbeddedWebServer: true,
+					},
 				},
 				{
 					Language:      JavaScript,
@@ -180,6 +183,9 @@ func TestDetect(t *testing.T) {
 					Options: map[string]interface{}{
 						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multimodules"),
 					},
+					Metadata: Metadata{
+						ContainsDependencyAboutEmbeddedWebServer: true,
+					},
 				},
 			},
 		},
@@ -233,6 +239,9 @@ func TestDetect(t *testing.T) {
 					},
 					Options: map[string]interface{}{
 						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multimodules"),
+					},
+					Metadata: Metadata{
+						ContainsDependencyAboutEmbeddedWebServer: true,
 					},
 				},
 			},
@@ -290,6 +299,9 @@ func TestDetect(t *testing.T) {
 					},
 					Options: map[string]interface{}{
 						JavaProjectOptionParentPomDir: filepath.Join(dir, "java-multimodules"),
+					},
+					Metadata: Metadata{
+						ContainsDependencyAboutEmbeddedWebServer: true,
 					},
 				},
 				{

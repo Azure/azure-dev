@@ -1254,9 +1254,6 @@
             "type": "object",
             "description": "A Docker-based container app.",
             "additionalProperties": false,
-            "required": [
-                "port"
-            ],
             "properties": {
                 "type": true,
                 "uses": true,

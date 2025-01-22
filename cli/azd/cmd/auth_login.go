@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -318,14 +319,28 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			var msg string
 			switch res.Status {
 			case contracts.LoginStatusSuccess:
-				msg = "Logged in to Azure."
+				msg = "Logged in to Azure"
 			case contracts.LoginStatusUnauthenticated:
-				msg = "Not logged in, run `azd auth login` to login to Azure."
+				msg = "Not logged in, run `azd auth login` to login to Azure"
 			default:
 				panic("Unhandled login status")
 			}
 
-			fmt.Fprintln(la.console.Handles().Stdout, msg)
+			// get user account information - login --check-status
+			details, err := la.authManager.LogInDetails(ctx)
+
+			// error getting user account or not logged in
+			if err != nil {
+				log.Printf("error: getting signed in account: %v", err)
+				fmt.Fprintln(la.console.Handles().Stdout, msg)
+				return nil, nil
+			}
+
+			// only print the message if the user is logged in
+			la.console.MessageUxItem(ctx, &ux.LoggedIn{
+				LoggedInAs: details.Account,
+				LoginType:  ux.LoginType(details.LoginType),
+			})
 			return nil, nil
 		}
 	}
@@ -354,7 +369,18 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	la.console.Message(ctx, "Logged in to Azure.")
+	details, err := la.authManager.LogInDetails(ctx)
+
+	// error getting user account, successful log in
+	if err != nil {
+		log.Printf("error: getting signed in account: %v", err)
+		la.console.Message(ctx, "Logged in to Azure")
+		return nil, nil
+	}
+	la.console.MessageUxItem(ctx, &ux.LoggedIn{
+		LoggedInAs: details.Account,
+		LoginType:  ux.LoginType(details.LoginType),
+	})
 	return nil, nil
 }
 

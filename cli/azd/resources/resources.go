@@ -30,8 +30,3 @@ var AiPythonApp embed.FS
 
 //go:embed pipeline/*
 var PipelineFiles embed.FS
-
-// PublicKeys contains the public keys used to verify the integrity of azd registries and extensions.
-//
-//go:embed keys/*
-var PublicKeys embed.FS

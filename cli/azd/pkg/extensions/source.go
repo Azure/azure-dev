@@ -70,7 +70,7 @@ func (s *registrySource) GetExtension(ctx context.Context, id string) (*Extensio
 	})
 
 	if matchingIndex == -1 {
-		return nil, fmt.Errorf("extension with name '%s' was not found, %w", id, ErrExtensionNotFound)
+		return nil, fmt.Errorf("'%s' %w", id, ErrRegistryExtensionNotFound)
 	}
 
 	return allTemplates[matchingIndex], nil

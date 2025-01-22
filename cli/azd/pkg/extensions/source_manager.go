@@ -69,7 +69,6 @@ func (sm *SourceManager) Get(ctx context.Context, name string) (*SourceConfig, e
 	}
 
 	return nil, fmt.Errorf("%w, '%s'", ErrSourceNotFound, name)
-
 }
 
 // Add adds a new extension source.

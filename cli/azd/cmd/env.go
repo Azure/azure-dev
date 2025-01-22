@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -343,13 +344,21 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	var kvSecretName string
 	if willCreateNewSecret {
-		kvSecretName, err = e.console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Enter a name for the Key Vault secret",
-			DefaultValue: secretName + "-kv-secret",
-		})
-		if err != nil {
-			return nil, fmt.Errorf("prompting for Key Vault secret name: %w", err)
+		for {
+			kvSecretName, err = e.console.Prompt(ctx, input.ConsoleOptions{
+				Message:      "Enter a name for the Key Vault secret",
+				DefaultValue: strings.ReplaceAll(secretName, "_", "-") + "-kv-secret",
+			})
+			if err != nil {
+				return nil, fmt.Errorf("prompting for Key Vault secret name: %w", err)
+			}
+			if keyvault.IsValidSecretName(kvSecretName) {
+				break
+			}
+			e.console.Message(ctx, "Invalid Key Vault secret name. The name must be between 1 and 127 characters"+
+				" long and can contain only alphanumeric characters and dashes.")
 		}
+
 		kvSecretValue, err := e.console.Prompt(ctx, input.ConsoleOptions{
 			Message:    "Enter the value for the Key Vault secret",
 			IsPassword: true,

@@ -8,6 +8,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
+// newFileSource creates a new file base registry source.
 func newFileSource(name string, path string) (Source, error) {
 	absolutePath, err := getAbsolutePath(path)
 	if err != nil {
@@ -22,6 +23,7 @@ func newFileSource(name string, path string) (Source, error) {
 	return newJsonSource(name, string(registryBytes))
 }
 
+// getAbsolutePath converts a relative path to an absolute path.
 func getAbsolutePath(filePath string) (string, error) {
 	// Check if the path is absolute
 	if filepath.IsAbs(filePath) {

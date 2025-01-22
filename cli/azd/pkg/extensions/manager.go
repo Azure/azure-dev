@@ -77,13 +77,6 @@ func (m *Manager) Initialize() error {
 		return err
 	}
 
-	// configDir, err := config.GetUserConfigDir()
-	// if err != nil {
-	// 	return fmt.Errorf("failed to get user config directory: %w", err)
-	// }
-
-	//registryCachePath := filepath.Join(configDir, registryCacheFilePath)
-	//m.registryCache = cache.NewFileCache(registryCachePath, registryCacheDuration, m.loadRegistry)
 	m.userConfig = userConfig
 
 	return nil

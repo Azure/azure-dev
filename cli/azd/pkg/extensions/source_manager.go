@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
 
+// SourceKind represents the type of extension source.
 type SourceKind string
 
 const (
@@ -28,12 +29,14 @@ var (
 	ErrSourceTypeInvalid = errors.New("invalid extension source type")
 )
 
+// SourceConfig represents the configuration for an extension source.
 type SourceConfig struct {
 	Name     string     `json:"name,omitempty"`
 	Type     SourceKind `json:"type,omitempty"`
 	Location string     `json:"location,omitempty"`
 }
 
+// SourceManager manages extension sources.
 type SourceManager struct {
 	serviceLocator ioc.ServiceLocator
 	configManager  config.UserConfigManager
@@ -52,6 +55,7 @@ func NewSourceManager(
 	}
 }
 
+// Get returns an extension source by name.
 func (sm *SourceManager) Get(ctx context.Context, name string) (*SourceConfig, error) {
 	sources, err := sm.List(ctx)
 	if err != nil {
@@ -68,6 +72,7 @@ func (sm *SourceManager) Get(ctx context.Context, name string) (*SourceConfig, e
 
 }
 
+// Add adds a new extension source.
 func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceConfig) error {
 	newKey := normalizeKey(name)
 
@@ -85,6 +90,7 @@ func (sm *SourceManager) Add(ctx context.Context, name string, source *SourceCon
 	return sm.addInternal(source)
 }
 
+// Remove removes an extension source.
 func (sm *SourceManager) Remove(ctx context.Context, name string) error {
 	name = normalizeKey(name)
 
@@ -117,6 +123,7 @@ func (sm *SourceManager) Remove(ctx context.Context, name string) error {
 	return nil
 }
 
+// List returns a list of extension sources.
 func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 	config, err := sm.configManager.Load()
 	if err != nil {
@@ -184,6 +191,7 @@ func (sm *SourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	return source, nil
 }
 
+// addInternal adds a new extension source to the user configuration.
 func (sm *SourceManager) addInternal(source *SourceConfig) error {
 	config, err := sm.configManager.Load()
 	if err != nil {
@@ -204,6 +212,7 @@ func (sm *SourceManager) addInternal(source *SourceConfig) error {
 	return nil
 }
 
+// normalizeKey normalizes a key for use in the configuration.
 func normalizeKey(key string) string {
 	key = strings.ToLower(key)
 	key = strings.ReplaceAll(key, " ", "-")

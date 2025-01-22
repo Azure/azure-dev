@@ -33,7 +33,7 @@ type registrySource struct {
 	registry *Registry
 }
 
-// NewJsonTemplateSource creates a new template source from a JSON string.
+// newRegistrySource creates a new registry source.
 func newRegistrySource(name string, registry *Registry) (Source, error) {
 	if err := validateRegistry(*registry); err != nil {
 		return nil, fmt.Errorf("failed to validate registry: %w", err)
@@ -49,6 +49,7 @@ func (ts *registrySource) Name() string {
 	return ts.name
 }
 
+// ListTemplates returns a list of templates from the extension source.
 func (s *registrySource) ListExtensions(ctx context.Context) ([]*ExtensionMetadata, error) {
 	for _, extension := range s.registry.Extensions {
 		extension.Source = s.name
@@ -57,23 +58,25 @@ func (s *registrySource) ListExtensions(ctx context.Context) ([]*ExtensionMetada
 	return s.registry.Extensions, nil
 }
 
-func (s *registrySource) GetExtension(ctx context.Context, name string) (*ExtensionMetadata, error) {
+// GetExtension returns an extension by id.
+func (s *registrySource) GetExtension(ctx context.Context, id string) (*ExtensionMetadata, error) {
 	allTemplates, err := s.ListExtensions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed listing templates: %w", err)
 	}
 
 	matchingIndex := slices.IndexFunc(allTemplates, func(extension *ExtensionMetadata) bool {
-		return strings.EqualFold(extension.Id, name)
+		return strings.EqualFold(extension.Id, id)
 	})
 
 	if matchingIndex == -1 {
-		return nil, fmt.Errorf("extension with name '%s' was not found, %w", name, ErrExtensionNotFound)
+		return nil, fmt.Errorf("extension with name '%s' was not found, %w", id, ErrExtensionNotFound)
 	}
 
 	return allTemplates[matchingIndex], nil
 }
 
+// validateRegistry validates the registry content and its signature
 func validateRegistry(registry Registry) error {
 	if registry.Signature == "" {
 		log.Println("Registry signature is empty, skipping signature verification")

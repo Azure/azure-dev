@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// newJsonSource creates a new JSON base registry source.
 func newJsonSource(name string, jsonRegistry string) (Source, error) {
 	var registry *Registry
 	err := json.Unmarshal([]byte(jsonRegistry), &registry)

@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
+// newUrlSource creates a new URL extension source.
 func newUrlSource(ctx context.Context, name string, url string, transport policy.Transporter) (Source, error) {
 	pipeline := runtime.NewPipeline("azd-extensions", "1.0.0", runtime.PipelineOptions{}, &policy.ClientOptions{
 		Transport: transport,

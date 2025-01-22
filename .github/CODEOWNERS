@@ -1,21 +1,21 @@
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
 
-/**               @ellismg @wbreza
+/**               @wbreza
 
-/cli/             @ellismg @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA
-/cli/installer/   @ellismg @danieljurek
+/cli/             @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA
+/cli/installer/   @danieljurek
 
-/ext/             @karolz-ms @ellismg
+/ext/             @karolz-ms
 
-/generators/repo/ @wbreza @ellismg @danieljurek
+/generators/repo/ @wbreza @danieljurek
 
-/.github/         @danieljurek @ellismg
+/.github/         @danieljurek
 
 /.config/1espt/   @danieljurek @benbp @weshaggard
 
-/eng/             @danieljurek @ellismg
+/eng/             @danieljurek
 
-/schemas/         @karolz-ms @ellismg @wbreza
+/schemas/         @karolz-ms @wbreza
 
 /templates/       @jongio @wbreza
 

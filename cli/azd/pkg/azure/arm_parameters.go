@@ -17,4 +17,17 @@ type ArmParameterFile struct {
 // ArmParameterValue wraps the configured value for the parameter.
 type ArmParameterValue struct {
 	Value any `json:"value"`
+    KeyVaultReference *KeyVaultParameterReference `json:"reference"`
+}
+
+// KeyVaultParameterReference - Azure Key Vault parameter reference.
+type KeyVaultParameterReference struct {
+	KeyVault KeyVaultReference `json:"keyVault"`
+    SecretName string `json:"secretName"`
+	SecretVersion string `json:"secretVersion"`
+}
+
+// KeyVault represents the key vault id.
+type KeyVaultReference struct {
+	ID string `json:"id"`
 }

@@ -1852,6 +1852,11 @@ func (p *BicepProvider) ensureParameters(
 					configModified = true
 				}
 				continue
+			} else if v.KeyVaultReference != nil {
+				configuredParameters[key] = azure.ArmParameterValue{
+					KeyVaultReference: v.KeyVaultReference,
+				}
+				continue
 			}
 		}
 

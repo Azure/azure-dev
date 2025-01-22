@@ -64,7 +64,7 @@ func (s *registrySource) GetExtension(ctx context.Context, name string) (*Extens
 	}
 
 	matchingIndex := slices.IndexFunc(allTemplates, func(extension *ExtensionMetadata) bool {
-		return strings.EqualFold(extension.Name, name)
+		return strings.EqualFold(extension.Id, name)
 	})
 
 	if matchingIndex == -1 {

@@ -24,11 +24,7 @@ func bindExtensions(
 	root *actions.ActionDescriptor,
 	extensions map[string]*extensions.Extension,
 ) error {
-	for key, extension := range extensions {
-		if extension.Name == "" {
-			extension.Name = key
-		}
-
+	for _, extension := range extensions {
 		if err := bindExtension(serviceLocator, root, extension); err != nil {
 			return err
 		}
@@ -44,7 +40,7 @@ func bindExtension(
 	extension *extensions.Extension,
 ) error {
 	cmd := &cobra.Command{
-		Use:                extension.Name,
+		Use:                extension.Namespace,
 		Short:              extension.Description,
 		Long:               extension.Description,
 		DisableFlagParsing: true,
@@ -54,7 +50,7 @@ func bindExtension(
 		_ = serviceLocator.Invoke(invokeExtensionHelp)
 	})
 
-	root.Add(extension.Name, &actions.ActionDescriptorOptions{
+	root.Add(extension.Namespace, &actions.ActionDescriptorOptions{
 		Command:        cmd,
 		ActionResolver: newExtensionAction,
 		GroupingOptions: actions.CommandGroupOptions{
@@ -67,8 +63,10 @@ func bindExtension(
 
 // invokeExtensionHelp invokes the help for the extension
 func invokeExtensionHelp(console input.Console, commandRunner exec.CommandRunner, extensionManager *extensions.Manager) {
-	extensionName := os.Args[1]
-	extension, err := extensionManager.GetInstalled(extensionName)
+	extensionNamespace := os.Args[1]
+	extension, err := extensionManager.GetInstalled(extensions.GetInstalledOptions{
+		Namespace: extensionNamespace,
+	})
 	if err != nil {
 		fmt.Println("Failed running help")
 	}
@@ -120,11 +118,13 @@ func newExtensionAction(
 }
 
 func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	extensionName := a.cmd.Use
+	extensionNamespace := a.cmd.Use
 
-	extension, err := a.extensionManager.GetInstalled(extensionName)
+	extension, err := a.extensionManager.GetInstalled(extensions.GetInstalledOptions{
+		Namespace: extensionNamespace,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get extension %s: %w", extensionName, err)
+		return nil, fmt.Errorf("failed to get extension %s: %w", extensionNamespace, err)
 	}
 
 	allEnv := []string{}
@@ -167,7 +167,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	_, err = a.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		log.Printf("Failed to run extension %s: %v\n", extensionName, err)
+		log.Printf("Failed to run extension %s: %v\n", extensionNamespace, err)
 	}
 
 	return nil, nil

@@ -20,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
 
 const (
@@ -105,18 +106,36 @@ func (m *Manager) ListInstalled() (map[string]*Extension, error) {
 	return extensions, nil
 }
 
+type GetInstalledOptions struct {
+	Id        string
+	Namespace string
+}
+
 // GetInstalled retrieves an installed extension by name
-func (m *Manager) GetInstalled(name string) (*Extension, error) {
+func (m *Manager) GetInstalled(options GetInstalledOptions) (*Extension, error) {
 	extensions, err := m.ListInstalled()
 	if err != nil {
 		return nil, err
 	}
 
-	if extension, has := extensions[name]; has {
+	if options.Id != "" {
+		extension, has := extensions[options.Id]
+		if !has {
+			return nil, fmt.Errorf("%s %w", options.Id, ErrInstalledExtensionNotFound)
+		}
+
 		return extension, nil
 	}
 
-	return nil, fmt.Errorf("%s %w", name, ErrInstalledExtensionNotFound)
+	if options.Namespace != "" {
+		for _, extension := range extensions {
+			if strings.EqualFold(extension.Namespace, options.Namespace) {
+				return extension, nil
+			}
+		}
+	}
+
+	return nil, ErrInstalledExtensionNotFound
 }
 
 // GetFromRegistry retrieves an extension from the registry by name
@@ -207,7 +226,7 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 				return strings.Compare(a.Source, b.Source)
 			}
 
-			return strings.Compare(a.Name, b.Name)
+			return strings.Compare(a.Id, b.Id)
 		})
 
 		allExtensions = append(allExtensions, filteredExtensions...)
@@ -219,14 +238,14 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 // Install an extension by name and optional version
 // If no version is provided, the latest version is installed
 // Latest version is determined by the last element in the Versions slice
-func (m *Manager) Install(ctx context.Context, name string, version string) (*ExtensionVersion, error) {
-	installed, err := m.GetInstalled(name)
+func (m *Manager) Install(ctx context.Context, id string, version string) (*ExtensionVersion, error) {
+	installed, err := m.GetInstalled(GetInstalledOptions{Id: id})
 	if err == nil && installed != nil {
-		return nil, fmt.Errorf("%s %w", name, ErrExtensionInstalled)
+		return nil, fmt.Errorf("%s %w", id, ErrExtensionInstalled)
 	}
 
 	// Step 1: Find the extension by name
-	extension, err := m.GetFromRegistry(ctx, name)
+	extension, err := m.GetFromRegistry(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +257,7 @@ func (m *Manager) Install(ctx context.Context, name string, version string) (*Ex
 		// Default to the latest version (last in the slice)
 		versions := extension.Versions
 		if len(versions) == 0 {
-			return nil, fmt.Errorf("no versions available for extension: %s", name)
+			return nil, fmt.Errorf("no versions available for extension: %s", id)
 		}
 
 		selectedVersion = &versions[len(versions)-1]
@@ -252,20 +271,20 @@ func (m *Manager) Install(ctx context.Context, name string, version string) (*Ex
 		}
 
 		if selectedVersion == nil {
-			return nil, fmt.Errorf("version %s not found for extension: %s", version, name)
+			return nil, fmt.Errorf("version %s not found for extension: %s", version, id)
 		}
 	}
 
 	// Binaries are optional as long as dependencies are provided
 	// This allows for extensions that are just extension packs
-	if len(selectedVersion.Binaries) == 0 && len(selectedVersion.Dependencies) == 0 {
+	if len(selectedVersion.Artifacts) == 0 && len(selectedVersion.Dependencies) == 0 {
 		return nil, fmt.Errorf("no binaries or dependencies available for this version")
 	}
 
 	// Install dependencies
 	if len(selectedVersion.Dependencies) > 0 {
 		for _, dependency := range selectedVersion.Dependencies {
-			if _, err := m.Install(ctx, dependency.Name, dependency.Version); err != nil {
+			if _, err := m.Install(ctx, dependency.Id, dependency.Version); err != nil {
 				if !errors.Is(err, ErrExtensionInstalled) {
 					return nil, fmt.Errorf("failed to install dependency: %w", err)
 				}
@@ -273,25 +292,29 @@ func (m *Manager) Install(ctx context.Context, name string, version string) (*Ex
 		}
 	}
 
-	// Install the binary
-	if len(selectedVersion.Binaries) > 0 {
-		// Step 3: Find the binary for the current OS
-		binary, err := findBinaryForCurrentOS(selectedVersion)
+	hasArtifact := len(selectedVersion.Artifacts) > 0
+	var relativeExtensionPath string
+	var targetPath string
+
+	// Install the artifacts
+	if hasArtifact {
+		// Step 3: Find the artifact for the current OS
+		artifact, err := findArtifactForCurrentOS(selectedVersion)
 		if err != nil {
-			return nil, fmt.Errorf("failed to find binary for current OS: %w", err)
+			return nil, fmt.Errorf("failed to find artifact for current OS: %w", err)
 		}
 
-		// Step 4: Download the binary to a temp location
-		tempFilePath, err := m.downloadBinary(ctx, binary.URL)
+		// Step 4: Download the artifact to a temp location
+		tempFilePath, err := m.downloadArtifact(ctx, artifact.URL)
 		if err != nil {
-			return nil, fmt.Errorf("failed to download binary: %w", err)
+			return nil, fmt.Errorf("failed to download artifact: %w", err)
 		}
 
 		// Clean up the temp file after all scenarios
 		defer os.Remove(tempFilePath)
 
 		// Step 5: Validate the checksum if provided
-		if err := validateChecksum(tempFilePath, binary.Checksum); err != nil {
+		if err := validateChecksum(tempFilePath, artifact.Checksum); err != nil {
 			return nil, fmt.Errorf("checksum validation failed: %w", err)
 		}
 
@@ -305,70 +328,97 @@ func (m *Manager) Install(ctx context.Context, name string, version string) (*Ex
 			return nil, fmt.Errorf("failed to get user config directory: %w", err)
 		}
 
-		targetDir := filepath.Join(userConfigDir, "bin")
+		targetDir := filepath.Join(userConfigDir, "extensions", extension.Id)
 		if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
 			return nil, fmt.Errorf("failed to create target directory: %w", err)
 		}
 
-		// Step 6: Copy the binary to the target directory
-		targetPath := filepath.Join(targetDir, filepath.Base(tempFilePath))
-		if err := copyFile(tempFilePath, targetPath); err != nil {
-			return nil, fmt.Errorf("failed to copy binary to target location: %w", err)
+		// Step 6: Copy the artifact to the target directory
+		// Check if artifact is a zip file, if so extract it to the target directory
+		if strings.HasSuffix(tempFilePath, ".zip") {
+			if err := rzip.ExtractToDirectory(tempFilePath, targetDir); err != nil {
+				return nil, fmt.Errorf("failed to extract zip file: %w", err)
+			}
+		} else {
+			targetPath = filepath.Join(targetDir, filepath.Base(tempFilePath))
+			if err := copyFile(tempFilePath, targetPath); err != nil {
+				return nil, fmt.Errorf("failed to copy artifact to target location: %w", err)
+			}
 		}
 
-		relativeExtensionPath, err := filepath.Rel(userHomeDir, targetPath)
+		entryPoint := selectedVersion.EntryPoint
+		if platformEntryPoint, has := artifact.AdditionalMetadata["entryPoint"]; has {
+			entryPoint = fmt.Sprint(platformEntryPoint)
+		}
+		if entryPoint == "" {
+			switch runtime.GOOS {
+			case "windows":
+				entryPoint = fmt.Sprintf("%s.exe", extension.Id)
+			default:
+				entryPoint = extension.Id
+			}
+		}
+
+		targetPath := filepath.Join(targetDir, entryPoint)
+
+		relativeExtensionPath, err = filepath.Rel(userHomeDir, targetPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get relative path: %w", err)
 		}
-
-		// Step 7: Update the user config with the installed extension
-		extensions, err := m.ListInstalled()
-		if err != nil {
-			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
-		}
-
-		extensions[name] = &Extension{
-			Name:        name,
-			DisplayName: extension.DisplayName,
-			Description: extension.Description,
-			Version:     selectedVersion.Version,
-			Usage:       selectedVersion.Usage,
-			Path:        relativeExtensionPath,
-			Source:      extension.Source,
-		}
-
-		if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
-			return nil, fmt.Errorf("failed to set extensions section: %w", err)
-		}
-
-		if err := m.configManager.Save(m.userConfig); err != nil {
-			return nil, fmt.Errorf("failed to save user config: %w", err)
-		}
-
-		log.Printf("Extension '%s' (version %s) installed successfully to %s\n", name, selectedVersion.Version, targetPath)
 	}
+
+	// Step 7: Update the user config with the installed extension
+	extensions, err := m.ListInstalled()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list installed extensions: %w", err)
+	}
+
+	extensions[id] = &Extension{
+		Id:          id,
+		Namespace:   extension.Namespace,
+		DisplayName: extension.DisplayName,
+		Description: extension.Description,
+		Version:     selectedVersion.Version,
+		Usage:       selectedVersion.Usage,
+		Path:        relativeExtensionPath,
+		Source:      extension.Source,
+	}
+
+	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
+		return nil, fmt.Errorf("failed to set extensions section: %w", err)
+	}
+
+	if err := m.configManager.Save(m.userConfig); err != nil {
+		return nil, fmt.Errorf("failed to save user config: %w", err)
+	}
+
+	log.Printf("Extension '%s' (version %s) installed successfully to %s\n", id, selectedVersion.Version, targetPath)
 
 	return selectedVersion, nil
 }
 
 // Uninstall an extension by name
-func (m *Manager) Uninstall(name string) error {
+func (m *Manager) Uninstall(id string) error {
 	// Get the installed extension
-	extension, err := m.GetInstalled(name)
+	extension, err := m.GetInstalled(GetInstalledOptions{Id: id})
 	if err != nil {
 		return fmt.Errorf("failed to get installed extension: %w", err)
 	}
 
-	homeDir, err := os.UserHomeDir()
+	userConfigDir, err := config.GetUserConfigDir()
 	if err != nil {
-		return fmt.Errorf("failed to get user's home directory: %w", err)
+		return fmt.Errorf("failed to get user config directory: %w", err)
 	}
 
-	// Remove the extension binary when it exists
-	extensionPath := filepath.Join(homeDir, extension.Path)
-	_, err = os.Stat(extensionPath)
+	extensionDir := filepath.Join(userConfigDir, "extensions", extension.Id)
+	if err := os.MkdirAll(extensionDir, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create target directory: %w", err)
+	}
+
+	// Remove the extension artifacts when it exists
+	_, err = os.Stat(extensionDir)
 	if err == nil {
-		if err := os.Remove(extensionPath); err != nil {
+		if err := os.RemoveAll(extensionDir); err != nil {
 			return fmt.Errorf("failed to remove extension: %w", err)
 		}
 	}
@@ -379,7 +429,7 @@ func (m *Manager) Uninstall(name string) error {
 		return fmt.Errorf("failed to list installed extensions: %w", err)
 	}
 
-	delete(extensions, name)
+	delete(extensions, id)
 
 	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
 		return fmt.Errorf("failed to set extensions section: %w", err)
@@ -389,7 +439,7 @@ func (m *Manager) Uninstall(name string) error {
 		return fmt.Errorf("failed to save user config: %w", err)
 	}
 
-	log.Printf("Extension '%s' uninstalled successfully\n", name)
+	log.Printf("Extension '%s' uninstalled successfully\n", id)
 	return nil
 }
 
@@ -409,29 +459,29 @@ func (m *Manager) Upgrade(ctx context.Context, name string, version string) (*Ex
 	return extensionVersion, nil
 }
 
-// Helper function to find the binary for the current OS
-func findBinaryForCurrentOS(version *ExtensionVersion) (*ExtensionBinary, error) {
-	if version.Binaries == nil {
+// Helper function to find the artifact for the current OS
+func findArtifactForCurrentOS(version *ExtensionVersion) (*ExtensionArtifact, error) {
+	if version.Artifacts == nil {
 		return nil, fmt.Errorf("no binaries available for this version")
 	}
 
-	binaryVersion := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
-	binary, exists := version.Binaries[binaryVersion]
+	artifactVersion := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
+	artifact, exists := version.Artifacts[artifactVersion]
 
 	if !exists {
-		return nil, fmt.Errorf("no binary available for platform: %s", binaryVersion)
+		return nil, fmt.Errorf("no artifact available for platform: %s", artifactVersion)
 	}
 
-	if binary.URL == "" {
-		return nil, fmt.Errorf("binary URL is missing for platform: %s", binaryVersion)
+	if artifact.URL == "" {
+		return nil, fmt.Errorf("artifact URL is missing for platform: %s", artifactVersion)
 	}
 
-	return &binary, nil
+	return &artifact, nil
 }
 
 // downloadFile downloads a file from the given URL and saves it to a temporary directory using the filename from the URL.
-func (m *Manager) downloadBinary(ctx context.Context, binaryUrl string) (string, error) {
-	req, err := azruntime.NewRequest(ctx, http.MethodGet, binaryUrl)
+func (m *Manager) downloadArtifact(ctx context.Context, artifactUrl string) (string, error) {
+	req, err := azruntime.NewRequest(ctx, http.MethodGet, artifactUrl)
 	if err != nil {
 		return "", err
 	}
@@ -449,7 +499,7 @@ func (m *Manager) downloadBinary(ctx context.Context, binaryUrl string) (string,
 	}
 
 	// Extract the filename from the URL
-	filename := filepath.Base(binaryUrl)
+	filename := filepath.Base(artifactUrl)
 
 	// Create a temporary file in the system's temp directory with the same filename
 	tempDir := os.TempDir()

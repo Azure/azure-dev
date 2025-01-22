@@ -165,10 +165,11 @@ func newExtensionListAction(
 }
 
 type extensionListItem struct {
-	Name        string
-	Description string
-	Version     string
-	Installed   bool
+	Id        string
+	Name      string
+	Namespace string
+	Version   string
+	Installed bool
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -196,7 +197,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	extensionRows := []extensionListItem{}
 
 	for _, extension := range registryExtensions {
-		installedExtension, installed := installedExtensions[extension.Name]
+		installedExtension, installed := installedExtensions[extension.Id]
 		if a.flags.installed && !installed {
 			continue
 		}
@@ -209,10 +210,11 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 
 		extensionRows = append(extensionRows, extensionListItem{
-			Name:        extension.Name,
-			Version:     version,
-			Description: extension.DisplayName,
-			Installed:   installedExtensions[extension.Name] != nil,
+			Id:        extension.Id,
+			Name:      extension.DisplayName,
+			Namespace: extension.Namespace,
+			Version:   version,
+			Installed: installedExtensions[extension.Id] != nil,
 		})
 	}
 
@@ -221,12 +223,12 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	if a.formatter.Kind() == output.TableFormat {
 		columns := []output.Column{
 			{
-				Heading:       "Name",
-				ValueTemplate: `{{.Name}}`,
+				Heading:       "Id",
+				ValueTemplate: "{{.Id}}",
 			},
 			{
-				Heading:       "Description",
-				ValueTemplate: "{{.Description}}",
+				Heading:       "Name",
+				ValueTemplate: "{{.Name}}",
 			},
 			{
 				Heading:       "Version",
@@ -312,8 +314,8 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 }
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	extensionName := a.args[0]
-	registryExtension, err := a.extensionManager.GetFromRegistry(ctx, extensionName)
+	extensionId := a.args[0]
+	registryExtension, err := a.extensionManager.GetFromRegistry(ctx, extensionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension details: %w", err)
 	}
@@ -321,7 +323,7 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	latestVersion := registryExtension.Versions[len(registryExtension.Versions)-1]
 
 	extensionDetails := extensionShowItem{
-		Name:             registryExtension.Name,
+		Name:             registryExtension.Id,
 		Description:      registryExtension.DisplayName,
 		LatestVersion:    latestVersion.Version,
 		Usage:            latestVersion.Usage,
@@ -329,7 +331,9 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		InstalledVersion: "N/A",
 	}
 
-	installedExtension, err := a.extensionManager.GetInstalled(extensionName)
+	installedExtension, err := a.extensionManager.GetInstalled(
+		extensions.GetInstalledOptions{Id: extensionId},
+	)
 	if err == nil {
 		extensionDetails.InstalledVersion = installedExtension.Version
 	}
@@ -384,31 +388,33 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		TitleNote: "Installs the specified extension onto the local machine",
 	})
 
-	extensionNames := a.args
-	if len(extensionNames) == 0 {
+	extensionIds := a.args
+	if len(extensionIds) == 0 {
 		return nil, fmt.Errorf("must specify an extension name")
 	}
 
-	if len(extensionNames) > 1 && a.flags.version != "" {
+	if len(extensionIds) > 1 && a.flags.version != "" {
 		return nil, fmt.Errorf("cannot specify --version flag when using multiple extensions")
 	}
 
-	for index, extensionName := range extensionNames {
+	for index, extensionId := range extensionIds {
 		if index > 0 {
 			a.console.Message(ctx, "")
 		}
 
-		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionName))
+		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		installed, err := a.extensionManager.GetInstalled(extensionName)
+		installed, err := a.extensionManager.GetInstalled(extensions.GetInstalledOptions{
+			Id: extensionId,
+		})
 		if err == nil {
 			stepMessage += output.WithGrayFormat(" (version %s already installed)", installed.Version)
 			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}
 
-		extensionVersion, err := a.extensionManager.Install(ctx, extensionName, a.flags.version)
+		extensionVersion, err := a.extensionManager.Install(ctx, extensionId, a.flags.version)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to install extension: %w", err)
@@ -479,27 +485,29 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 		TitleNote: "Uninstalls the specified extension from the local machine",
 	})
 
-	extensionNames := a.args
+	extensionIds := a.args
 	if a.flags.all {
 		installed, err := a.extensionManager.ListInstalled()
 		if err != nil {
 			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
 		}
 
-		extensionNames = make([]string, 0, len(installed))
+		extensionIds = make([]string, 0, len(installed))
 		for name := range installed {
-			extensionNames = append(extensionNames, name)
+			extensionIds = append(extensionIds, name)
 		}
 	}
 
-	if len(extensionNames) == 0 {
+	if len(extensionIds) == 0 {
 		return nil, fmt.Errorf("no extensions to uninstall")
 	}
 
-	for _, extensionName := range extensionNames {
-		stepMessage := fmt.Sprintf("Uninstalling %s extension", output.WithHighLightFormat(extensionName))
+	for _, extensionId := range extensionIds {
+		stepMessage := fmt.Sprintf("Uninstalling %s extension", output.WithHighLightFormat(extensionId))
 
-		installed, err := a.extensionManager.GetInstalled(extensionName)
+		installed, err := a.extensionManager.GetInstalled(extensions.GetInstalledOptions{
+			Id: extensionId,
+		})
 		if err != nil {
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -510,7 +518,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 		stepMessage += fmt.Sprintf(" (%s)", installed.Version)
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		if err := a.extensionManager.Uninstall(extensionName); err != nil {
+		if err := a.extensionManager.Uninstall(extensionId); err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to uninstall extension: %w", err)
 		}
@@ -578,41 +586,43 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		TitleNote: "Upgrades the specified extensions on the local machine",
 	})
 
-	extensionNames := a.args
+	extensionIds := a.args
 	if a.flags.all {
 		installed, err := a.extensionManager.ListInstalled()
 		if err != nil {
 			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
 		}
 
-		extensionNames = make([]string, 0, len(installed))
+		extensionIds = make([]string, 0, len(installed))
 		for name := range installed {
-			extensionNames = append(extensionNames, name)
+			extensionIds = append(extensionIds, name)
 		}
 	}
 
-	if len(extensionNames) == 0 {
+	if len(extensionIds) == 0 {
 		return nil, fmt.Errorf("no extensions to upgrade")
 	}
 
-	for index, extensionName := range extensionNames {
+	for index, extensionId := range extensionIds {
 		if index > 0 {
 			a.console.Message(ctx, "")
 		}
 
-		stepMessage := fmt.Sprintf("Upgrading %s extension", output.WithHighLightFormat(extensionName))
+		stepMessage := fmt.Sprintf("Upgrading %s extension", output.WithHighLightFormat(extensionId))
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		installed, err := a.extensionManager.GetInstalled(extensionName)
+		installed, err := a.extensionManager.GetInstalled(extensions.GetInstalledOptions{
+			Id: extensionId,
+		})
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to get installed extension: %w", err)
 		}
 
-		extension, err := a.extensionManager.GetFromRegistry(ctx, extensionName)
+		extension, err := a.extensionManager.GetFromRegistry(ctx, extensionId)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("failed to get extension %s: %w", extensionName, err)
+			return nil, fmt.Errorf("failed to get extension %s: %w", extensionId, err)
 		}
 
 		latestVersion := extension.Versions[len(extension.Versions)-1]
@@ -620,7 +630,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			stepMessage += output.WithGrayFormat(" (No upgrade available)")
 			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 		} else {
-			extensionVersion, err := a.extensionManager.Upgrade(ctx, extensionName, a.flags.version)
+			extensionVersion, err := a.extensionManager.Upgrade(ctx, extensionId, a.flags.version)
 			if err != nil {
 				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
 			}

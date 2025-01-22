@@ -93,8 +93,7 @@ func (m *Manager) Initialize() error {
 func (m *Manager) ListInstalled() (map[string]*Extension, error) {
 	var extensions map[string]*Extension
 
-	configKey := fmt.Sprintf(installedConfigKey)
-	ok, err := m.userConfig.GetSection(configKey, &extensions)
+	ok, err := m.userConfig.GetSection(installedConfigKey, &extensions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extensions section: %w", err)
 	}

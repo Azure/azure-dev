@@ -73,7 +73,18 @@ func ExtractToDirectory(artifactPath string, targetDirectory string) error {
 
 	// Iterate through each file in the archive
 	for _, file := range zipReader.File {
+		// Handles file path cleaning directly below
+		// nolint:gosec // G305
 		filePath := filepath.Join(targetDirectory, file.Name)
+
+		// Prevent path traversal attacks by ensuring file paths remain within targetDirectory
+		if !strings.HasPrefix(filePath, filepath.Clean(targetDirectory)+string(os.PathSeparator)) {
+			return &os.PathError{
+				Op:   "extract",
+				Path: filePath,
+				Err:  os.ErrPermission,
+			}
+		}
 
 		if file.FileInfo().IsDir() {
 			// Create the directory
@@ -103,6 +114,7 @@ func ExtractToDirectory(artifactPath string, targetDirectory string) error {
 		}
 		defer rc.Close()
 
+		// nolint:gosec // G110
 		_, err = io.Copy(outFile, rc)
 		if err != nil {
 			return err

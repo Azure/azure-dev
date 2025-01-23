@@ -271,7 +271,7 @@ func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to scan console output. %w", err)
+		return "", fmt.Errorf("failed to scan console output: %w", err)
 	}
 	result := builder.String()
 	if result == "" {

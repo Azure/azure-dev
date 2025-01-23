@@ -636,6 +636,19 @@
                     "description": "When specified overrides the hook configuration when executed in POSIX environments",
                     "default": null,
                     "$ref": "#/definitions/hook"
+                },
+                "secrets": {
+                    "type": "array",
+                    "title": "Optional. List of azd environment variables to be used in the hook as secrets.",
+                    "description": "If variable was set as a secret in the environment, the secret value will be passed to the hook.",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "minProperties": 1,
+                        "maxProperties": 1
+                    }
                 }
             },
             "if": {

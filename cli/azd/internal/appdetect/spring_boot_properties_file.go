@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
 )
 
 type property struct {
@@ -16,22 +18,13 @@ type propertyMergeFunc func(string, string) string
 
 const azureProfileName = "azure"
 
-// todo: manage following placeholders and together with resources.bicept.
-
-const placeholderPostgresHost = "${POSTGRES_HOST}"
-const placeholderPostgresPort = "${POSTGRES_PORT}"
-const placeholderPostgresDatabase = "${POSTGRES_DATABASE}"
-const placeholderPostgresUsername = "${POSTGRES_USERNAME}"
-
-// Split to fix this problem: "G101: Potential hardcoded credentials (gosec)"
-const placeholderPostgresPassword = "${POSTGRES_PASS" + "WORD}"
-const placeholderPostgresJdbcUrl = "jdbc:postgresql://" + placeholderPostgresHost + ":" + placeholderPostgresPort +
-	"/" + placeholderPostgresDatabase
+var placeholderPostgresJdbcUrl = "jdbc:postgresql://" + internal.ToEnvPlaceHolder(internal.EnvNamePostgresHost) +
+	":" + internal.ToEnvPlaceHolder(internal.EnvNamePostgresPort) + "/" + internal.ToEnvPlaceHolder(internal.EnvNamePostgresDatabase)
 
 var postgresqlProperties = []property{
 	{"spring.datasource.url", placeholderPostgresJdbcUrl},
-	{"spring.datasource.username", placeholderPostgresUsername},
-	{"spring.datasource.password", placeholderPostgresPassword},
+	{"spring.datasource.username", internal.ToEnvPlaceHolder(internal.EnvNamePostgresUsername)},
+	{"spring.datasource.password", internal.ToEnvPlaceHolder(internal.EnvNamePostgresPassword)},
 }
 
 var applicationPropertiesRelativePath = filepath.Join("src", "main", "resources",

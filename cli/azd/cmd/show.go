@@ -418,11 +418,13 @@ func showModelDeployment(
 	if account.Properties.Endpoint != nil {
 		console.Message(ctx, color.HiMagentaString("%s (Azure AI Services Model Deployment)", id.Name))
 		console.Message(ctx, "  Endpoint:")
-		console.Message(ctx, color.HiBlueString(fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint)))
+		console.Message(ctx,
+			color.HiBlueString(fmt.Sprintf("    %s=%s", internal.EnvNameAzureOpenAiUrl, *account.Properties.Endpoint)))
 		console.Message(ctx, "  Access:")
 		console.Message(ctx, "    Keyless (Microsoft Entra ID)")
 		//nolint:lll
-		console.Message(ctx, output.WithGrayFormat("        Hint: To access locally, use DefaultAzureCredential. To learn more, visit https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages"))
+		console.Message(ctx,
+			output.WithGrayFormat("        Hint: To access locally, use DefaultAzureCredential. To learn more, visit https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages"))
 
 		console.Message(ctx, "")
 	}

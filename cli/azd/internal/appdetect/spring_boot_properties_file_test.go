@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -14,9 +15,9 @@ spring.datasource.username=admin
 spring.datasource.password=secret
 `
 
-const postgresPropertiesUpdatedContent = `spring.datasource.url=` + placeholderPostgresJdbcUrl + `
-spring.datasource.username=` + placeholderPostgresUsername + `
-spring.datasource.password=` + placeholderPostgresPassword + `
+var postgresPropertiesUpdatedContent = `spring.datasource.url=` + placeholderPostgresJdbcUrl + `
+spring.datasource.username=` + internal.ToEnvPlaceHolder(internal.EnvNamePostgresUsername) + `
+spring.datasource.password=` + internal.ToEnvPlaceHolder(internal.EnvNamePostgresPassword) + `
 `
 
 var postgresPropertiesOriginalMap = []property{

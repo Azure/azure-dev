@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -38,31 +39,31 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 	case project.ResourceTypeDbRedis:
 		res.AzureResourceType = "Microsoft.Cache/redis"
 		res.UseEnvVars = []string{
-			"REDIS_HOST",
-			"REDIS_PORT",
-			"REDIS_ENDPOINT",
-			"REDIS_PASSWORD",
-			"REDIS_URL",
+			internal.EnvNameRedisHost,
+			internal.EnvNameRedisPort,
+			internal.EnvNameRedisEndpoint,
+			internal.EnvNameRedisPassword,
+			internal.EnvNameRedisUrl,
 		}
 	case project.ResourceTypeDbPostgres:
 		res.AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers/databases"
 		res.UseEnvVars = []string{
-			"POSTGRES_HOST",
-			"POSTGRES_USERNAME",
-			"POSTGRES_DATABASE",
-			"POSTGRES_PASSWORD",
-			"POSTGRES_PORT",
-			"POSTGRES_URL",
+			internal.EnvNamePostgresHost,
+			internal.EnvNamePostgresUsername,
+			internal.EnvNamePostgresDatabase,
+			internal.EnvNamePostgresPassword,
+			internal.EnvNamePostgresPort,
+			internal.EnvNamePostgresUrl,
 		}
 	case project.ResourceTypeDbMongo:
 		res.AzureResourceType = "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases"
 		res.UseEnvVars = []string{
-			"MONGODB_URL",
+			internal.EnvNameMongoDbUrl,
 		}
 	case project.ResourceTypeOpenAiModel:
 		res.AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
 		res.UseEnvVars = []string{
-			"AZURE_OPENAI_ENDPOINT",
+			internal.EnvNameAzureOpenAiUrl,
 		}
 	}
 	return res

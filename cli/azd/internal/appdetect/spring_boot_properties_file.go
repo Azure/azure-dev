@@ -19,7 +19,8 @@ type propertyMergeFunc func(string, string) string
 const azureProfileName = "azure"
 
 var placeholderPostgresJdbcUrl = "jdbc:postgresql://" + internal.ToEnvPlaceHolder(internal.EnvNamePostgresHost) +
-	":" + internal.ToEnvPlaceHolder(internal.EnvNamePostgresPort) + "/" + internal.ToEnvPlaceHolder(internal.EnvNamePostgresDatabase)
+	":" + internal.ToEnvPlaceHolder(internal.EnvNamePostgresPort) +
+	"/" + internal.ToEnvPlaceHolder(internal.EnvNamePostgresDatabase)
 
 var postgresqlProperties = []property{
 	{"spring.datasource.url", placeholderPostgresJdbcUrl},

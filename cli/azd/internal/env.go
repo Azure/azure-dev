@@ -7,6 +7,8 @@ const EnvNamePostgresPort = "POSTGRES_PORT"
 const EnvNamePostgresUrl = "POSTGRES_URL"
 const EnvNamePostgresDatabase = "POSTGRES_DATABASE"
 const EnvNamePostgresUsername = "POSTGRES_USERNAME"
+
+// nolint:gosec
 const EnvNamePostgresPassword = "POSTGRES_PASSWORD"
 
 const EnvNameRedisHost = "REDIS_HOST"

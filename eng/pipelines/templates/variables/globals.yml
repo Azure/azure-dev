@@ -7,7 +7,7 @@ variables:
 
   ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
     publish-storage-location: 'https://azuresdkartifacts.blob.core.windows.net'
-    publish-storage-static-host: 'https://azuresdkartifacts.z5.web.core.windows.net/'
+    publish-storage-static-host: 'https://azuresdkartifacts.z5.web.core.windows.net'
 
     # TODO: Remove these before merge
     Skip.LiveTest: true

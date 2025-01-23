@@ -268,7 +268,7 @@ func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
 			break
 		}
 		if inProject {
-		  builder.WriteString(line)
+			builder.WriteString(line)
 		}
 	}
 	if err := scanner.Err(); err != nil {

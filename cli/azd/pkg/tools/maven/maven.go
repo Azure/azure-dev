@@ -252,12 +252,13 @@ func (cli *Cli) EffectivePom(ctx context.Context, pomPath string) (string, error
 	return getEffectivePomFromConsoleOutput(result.Stdout)
 }
 
+var projectStart = regexp.MustCompile(`^\s*<project`)
+var projectEnd = regexp.MustCompile(`^\s*</project>\s*$`)
+
 func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
 	var builder strings.Builder
 	scanner := bufio.NewScanner(strings.NewReader(consoleOutput))
 	inProject := false
-	projectStart := regexp.MustCompile(`\s+<project`)
-	projectEnd := regexp.MustCompile(`\s+</project>`)
 
 	for scanner.Scan() {
 		line := scanner.Text()

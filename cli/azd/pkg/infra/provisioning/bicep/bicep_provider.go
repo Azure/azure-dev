@@ -1860,6 +1860,11 @@ func (p *BicepProvider) ensureParameters(
 			continue
 		}
 
+		if param.Nullable != nil && *param.Nullable {
+			// If the parameter is nullable, we can skip prompting for it.
+			continue
+		}
+
 		// This required parameter was not in parameters file - see if we stored a value in config from an earlier
 		// prompt and if so use it.
 		configKey := fmt.Sprintf("infra.parameters.%s", key)

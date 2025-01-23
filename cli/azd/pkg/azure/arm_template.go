@@ -112,6 +112,7 @@ type ArmTemplateParameterDefinition struct {
 	Ref                  string                                         `json:"$ref"`
 	Properties           ArmTemplateParameterDefinitions                `json:"properties,omitempty"`
 	AdditionalProperties *ArmTemplateParameterAdditionalPropertiesValue `json:"additionalProperties,omitempty"`
+	Nullable             *bool                                          `json:"nullable,omitempty"`
 }
 
 func (d *ArmTemplateParameterDefinition) Secure() bool {

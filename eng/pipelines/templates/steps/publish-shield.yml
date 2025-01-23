@@ -18,6 +18,7 @@ steps:
       azurePowerShellVersion: LatestVersion
       pwsh: true
       ScriptType: InlineScript
+      # TODO: Ensure PublishDestination is set correctly
       Inline: |
         azcopy copy "${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/${{ parameters.PublishDestination }}/shield.json" --overwrite=true
     env:

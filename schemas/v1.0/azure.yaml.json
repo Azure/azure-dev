@@ -639,7 +639,7 @@
                 },
                 "secrets": {
                     "type": "array",
-                    "title": "Optional. List of azd environment variables to be used in the hook as secrets.",
+                    "title": "Optional. Map of azd environment variables to hook secrets.",
                     "description": "If variable was set as a secret in the environment, the secret value will be passed to the hook.",
                     "items": {
                         "type": "object",
@@ -647,7 +647,10 @@
                             "type": "string"
                         },
                         "minProperties": 1,
-                        "maxProperties": 1
+                        "maxProperties": 1,
+                        "example": {
+                            "WITH_SECRET_VALUE": "ENV_VAR_WITH_SECRET"
+                        }
                     }
                 }
             },

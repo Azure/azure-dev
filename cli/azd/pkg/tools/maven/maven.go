@@ -256,18 +256,19 @@ func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
 	var builder strings.Builder
 	scanner := bufio.NewScanner(strings.NewReader(consoleOutput))
 	inProject := false
+	projectStart := regexp.MustCompile(`\s+<project`)
+	projectEnd := regexp.MustCompile(`\s+</project>`)
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(strings.TrimSpace(line), "<project") {
+		if projectStart.MatchString(line) {
 			inProject = true
-		} else if strings.HasPrefix(strings.TrimSpace(line), "</project>") {
+		} else if projectEnd.MatchString(line) {
 			builder.WriteString(line)
 			break
 		}
 		if inProject {
-			if strings.TrimSpace(line) != "" {
-				builder.WriteString(line)
-			}
+		  builder.WriteString(line)
 		}
 	}
 	if err := scanner.Err(); err != nil {

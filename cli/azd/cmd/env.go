@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -142,9 +143,13 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	e.env.DotenvSet(e.args[0], e.args[1])
-	// Check for case-insensitive key conflicts
-	checkKeyCaseConflict(e.env, e.args[0])
+	key := e.args[0]
+	value := e.args[1]
+
+	dotEnv := e.env.Dotenv()
+	warnKeyCaseConflicts(ctx, e.console, dotEnv, key)
+
+	e.env.DotenvSet(key, value)
 
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
@@ -153,27 +158,29 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return nil, nil
 }
 
-// Check if there are any case-insensitive match conflicts in the environment name
-func checkKeyCaseConflict(env *environment.Environment, key string) {
-	lowerKey := strings.ToLower(key)
-	var conflictKeys []string
-
-	for existingKey := range env.Dotenv() {
-		if existingKey == key {
-			continue
-		}
-
-		if strings.ToLower(existingKey) == lowerKey {
-			conflictKeys = append(conflictKeys, fmt.Sprintf(`"%s"`, existingKey))
+// Prints a warning message if there are any case-insensitive conflicts with the provided key
+func warnKeyCaseConflicts(
+	ctx context.Context,
+	console input.Console,
+	dotEnv map[string]string,
+	key string) {
+	var conflicts []string
+	for k := range dotEnv {
+		if strings.EqualFold(k, key) && k != key {
+			conflicts = append(conflicts, "'"+k+"'")
 		}
 	}
+	slices.Sort(conflicts)
 
-	if len(conflictKeys) > 0 {
-		conflictKeysStr := strings.Join(conflictKeys, " and ")
-		fmt.Print(
-			output.WithWarningFormat(
-				"WARNING: The environment variable %s already exists in the .env file with a different case.\n",
-				conflictKeysStr))
+	if len(conflicts) > 0 {
+		console.MessageUxItem(ctx,
+			&ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"'%s' already exists as %s. Did you mean to set '%s' instead?",
+					key,
+					ux.ListAsText(conflicts),
+					key),
+			})
 	}
 }
 

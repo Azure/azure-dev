@@ -20,7 +20,6 @@ func toPom(ctx context.Context, mvnCli *maven.Cli, pomFilePath string) (pom, err
 	result, err = unmarshalPomFile(pomFilePath)
 	if err == nil {
 		result.path = filepath.Dir(pomFilePath)
-		// todo: handle pom, for example: <version>${project.version}<version>
 		return result, nil
 	}
 	return pom{}, err

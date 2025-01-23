@@ -1,0 +1,17 @@
+name: storage
+metadata: 
+  template: azd-test/env-secrets@v1
+hooks:
+  preprovision:
+    - windows:
+        run: 'Write-Host ".env value: $env:SEC_REF `nResolved secret: $env:SECRET_RESOLVE"'
+        shell: pwsh
+        interactive: true
+        secrets:
+          SECRET_RESOLVE: SEC_REF
+      posix:
+        run: 'echo ".env value: $SEC_REF \nResolved secret: $SECRET_RESOLVE"'
+        shell: sh
+        interactive: true
+        secrets:
+          SECRET_RESOLVE: SEC_REF

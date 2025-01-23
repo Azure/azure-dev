@@ -285,6 +285,31 @@ func cleanupDeployments(ctx context.Context, t *testing.T, azCLI *azdcli.CLI, se
 	}
 }
 
+func cleanupRg(ctx context.Context, t *testing.T, azCLI *azdcli.CLI, session *recording.Session, rg string) {
+	if session != nil && session.Playback {
+		return
+	}
+
+	client, err := armresources.NewResourceGroupsClient(cfg.SubscriptionID, azdcli.NewTestCredential(azCLI), nil)
+	if err != nil {
+		return
+	}
+
+	_, err = client.Get(ctx, rg, nil)
+	if err != nil {
+		t.Logf("cleanupRg: failed to get rg: %v", err)
+		return
+	}
+
+	// no need to wait for the delete operation to complete
+	_, err = client.BeginDelete(ctx, rg, nil)
+	if err != nil {
+		t.Logf("cleanupRg: failed to delete rg: %v", err)
+		return
+	}
+
+}
+
 // Snapshots a file located at targetPath. Saves the snapshot to snapshotRoot/rel, where rel is relative to targetRoot.
 func snapshotFile(
 	sn *cupaloy.Config,

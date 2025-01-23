@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -26,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/sethvargo/go-retry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -330,14 +332,15 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			// RBAC role assignment
 			e.console.ShowSpinner(ctx, "Adding Administrator Role", input.Step)
 			principalId, err := azureutil.GetCurrentPrincipalId(ctx, e.userProfileService, tenantId)
-			e.console.StopSpinner(ctx, "", input.Step)
 			if err != nil {
 				return nil, fmt.Errorf("getting current principal ID: %w", err)
 			}
-			err = e.entraIdService.CreateRbac(ctx, subId, kvAccount.Id, keyvault.RoleIdKeyVaultAdministrator, principalId)
+			err = e.entraIdService.CreateRbac(
+				ctx, subId, kvAccount.Id, keyvault.RoleIdKeyVaultAdministrator, principalId)
 			if err != nil {
-				return nil, fmt.Errorf("creating Key Vault RBAC: %w", err)
+				return nil, fmt.Errorf("adding Administrator Role: %w", err)
 			}
+			e.console.StopSpinner(ctx, "", input.Step)
 			break
 		}
 	}
@@ -366,7 +369,18 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 		if err != nil {
 			return nil, fmt.Errorf("prompting for secret value: %w", err)
 		}
-		err = e.kvService.CreateKeyVaultSecret(ctx, subId, kvAccount.Name, kvSecretName, kvSecretValue)
+		// Creating a secret in a new account too soon can fail due to rbac role assignment not being ready
+		err = retry.Do(
+			ctx,
+			retry.WithMaxRetries(3, retry.NewConstant(5*time.Second)),
+			func(ctx context.Context) error {
+				err = e.kvService.CreateKeyVaultSecret(ctx, subId, kvAccount.Name, kvSecretName, kvSecretValue)
+				if err != nil {
+					return retry.RetryableError(fmt.Errorf("creating Key Vault secret: %w", err))
+				}
+				return nil
+			},
+		)
 		if err != nil {
 			return nil, fmt.Errorf("setting Key Vault secret: %w", err)
 		}

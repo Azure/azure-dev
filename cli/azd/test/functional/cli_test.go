@@ -19,6 +19,7 @@ import (
 	osexec "os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -358,6 +359,122 @@ func Test_CLI_ProvisionState(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
+}
+
+func Test_CLI_EnvironmentSecrets(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "environment-secrets")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// create the first secret reference
+	rg := envName + "-rg"
+	kva := envName + "-kva"
+	kvs := envName + "-kvs"
+	kvsv := "THIS IS THE SECRET VALUE"
+
+	defer cleanupRg(ctx, t, cli, session, rg)               // deletes the rg with the Key Vault
+	defer cleanupDeployments(ctx, t, cli, session, envName) // deletes the deployment objects
+	defer cleanupRg(ctx, t, cli, session, "rg-"+envName)    // delete the rg created by the deployment
+
+	envSetSecretOut, err := cli.RunCommandWithStdIn(ctx, stdinForCreateKvAccount(
+		rg,
+		kva,
+		kvs,
+		kvsv,
+	), "env", "set-secret", "SEC_REF")
+	require.NoError(t, err)
+	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
+
+	// Test usage of secret by running provision
+	// The sample environment-secrets is designed to output the secret from bicep outputs
+	// and also from a hook simple script
+	provisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, provisionOutput.Stdout, kvsv)
+
+	// check output
+	envValue, err := cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
+	require.NoError(t, err)
+	require.Contains(t, envValue.Stdout, kvsv)
+
+	// Now test creating kv secret on existing kv account
+	kvs2 := envName + "-kvs2"
+	kvsv2 := "THIS IS THE NEW SECRET VALUE"
+	envSetSecretOut, err = cli.RunCommandWithStdIn(ctx, stdinForExistingKvAccount(
+		kva,
+		kvs2,
+		kvsv2,
+	), "env", "set-secret", "SEC_REF")
+	// This error is expected because we don't know the number that azd adds before the key vault account name
+	require.Error(t, err, "selecting Key Vault account")
+
+	// Extract the key vault account name from the error message
+	extractor := regexp.MustCompile(`(\s?\d+\. )` + kva + ",?").FindStringSubmatch(envSetSecretOut.Stdout)
+	if len(extractor) != 2 {
+		t.Fatalf("could not extract the key vault account name from the error message: %s", envSetSecretOut.Stdout)
+		return
+	}
+
+	kvaWithNumber := fmt.Sprintf("%s%s", extractor[1], kva)
+
+	// try again with the correct key vault account name
+	envSetSecretOut, err = cli.RunCommandWithStdIn(ctx, stdinForExistingKvAccount(
+		kvaWithNumber,
+		kvs2,
+		kvsv2,
+	), "env", "set-secret", "SEC_REF")
+	require.NoError(t, err)
+	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
+
+	// Test usage of secret by running provision
+	// Should not use provision cache because we are using a new secret name that updates the parameter and
+	// void the cache
+	provisionOutput, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, provisionOutput.Stdout, kvsv2)
+
+	// check output
+	envValue, err = cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
+	require.NoError(t, err)
+	require.Contains(t, envValue.Stdout, kvsv2)
+
+	// Finally, test selecting existing kv secret by setting the initial secret again
+	envSetSecretOut, err = cli.RunCommandWithStdIn(
+		ctx, stdinForExistingKvSecret(kvaWithNumber), "env", "set-secret", "SEC_REF")
+	require.NoError(t, err)
+	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
+
+	// Test usage of secret by running provision
+	// Should not use provision cache because we are using a new secret name that updates the parameter and
+	// void the cache
+	provisionOutput, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, provisionOutput.Stdout, kvsv)
+
+	// check output
+	envValue, err = cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
+	require.NoError(t, err)
+	require.Contains(t, envValue.Stdout, kvsv)
 }
 
 func Test_CLI_ProvisionStateWithDown(t *testing.T) {
@@ -777,6 +894,33 @@ func stdinForInit(envName string) string {
 func stdinForProvision() string {
 	return "\n" + // "choose subscription" (we're choosing the default)
 		"\n" // "choose location" (we're choosing the default)
+}
+
+func stdinForCreateKvAccount(rg, kva, kvs, kvsv string) string {
+	return "\n" + // "Create new Key Vault Secret
+		"\n" + // "choose subscription" (we're choosing the default)
+		"\n" + // "Create new Key Vault Account
+		"\n" + // "choose location" (we're choosing the default)
+		"Create a new resource group\n" + // "Create new resource group"
+		rg + "\n" + // "resource group name"
+		kva + "\n" + // "key vault account name"
+		kvs + "\n" + // "key vault secret name"
+		kvsv + "\n" // "key vault secret value"
+}
+
+func stdinForExistingKvAccount(kva, kvs, kvsv string) string {
+	return "\n" + // "Create new Key Vault Secret
+		"\n" + // "choose subscription" (we're choosing the default)
+		kva + "\n" + // "Use existing Key Vault Account
+		kvs + "\n" + // "key vault secret name"
+		kvsv + "\n" // "key vault secret value"
+}
+
+func stdinForExistingKvSecret(kva string) string {
+	return "Select an existing Key Vault secret\n" + // "Create new Key Vault Secret
+		"\n" + // "choose subscription" (we're choosing the default)
+		kva + "\n" + // "Use existing Key Vault Account
+		"\n" // "first key vault secret name in the list"
 }
 
 func getTestEnvPath(dir string, envName string) string {

@@ -389,7 +389,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
 {{- end}}
 
 {{- if .DbRedis}}
-module redis 'br/public:avm/res/cache/redis:0.3.2' = {
+module redis 'br/public:avm/res/cache/redis:0.9.0' = {
   name: 'redisDeployment'
   params: {
     // Required parameters
@@ -397,20 +397,15 @@ module redis 'br/public:avm/res/cache/redis:0.3.2' = {
     // Non-required parameters
     location: location
     skuName: 'Basic'
+    {{- if .Services}}
+    secretsExportConfiguration: {
+      keyVaultResourceId: keyVault.outputs.resourceId
+      primaryAccessKeyName: 'REDIS-PASSWORD'
+      primaryConnectionStringName: 'REDIS-URL'
+    }
+    {{- end}}
   }
 }
-
-{{- if .Services}}
-module redisConn './modules/set-redis-conn.bicep' = {
-  name: 'redisConn'
-  params: {
-    name: redis.outputs.name
-    passwordSecretName: 'REDIS-PASSWORD'
-    urlSecretName: 'REDIS-URL'
-    keyVaultName: keyVault.outputs.name
-  }
-}
-{{- end}}
 {{- end}}
 
 {{- if .Services}}

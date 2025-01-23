@@ -247,7 +247,7 @@ func (cli *Cli) EffectivePom(ctx context.Context, pomPath string) (string, error
 	runArgs := exec.NewRunArgs(mvnCmd, "help:effective-pom", "-f", pomPath).WithCwd(pomDir)
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return "", fmt.Errorf("failed to run mvn help:effective-pom for pom file: %s. error = %w", pomPath, err)
+		return "", fmt.Errorf("mvn help:effective-pom on project '%s' failed: %w", pomPath, err)
 	}
 	return getEffectivePomFromConsoleOutput(result.Stdout)
 }

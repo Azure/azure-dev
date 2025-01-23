@@ -3,8 +3,6 @@ package appdetect
 import (
 	"context"
 	"encoding/xml"
-	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
@@ -12,17 +10,11 @@ import (
 
 func toPom(ctx context.Context, mvnCli *maven.Cli, pomFilePath string) (pom, error) {
 	result, err := toEffectivePom(ctx, mvnCli, pomFilePath)
-	if err == nil {
-		result.path = filepath.Dir(pomFilePath)
-		return result, nil
+	if err != nil {
+		return pom{}, err
 	}
-
-	result, err = unmarshalPomFile(pomFilePath)
-	if err == nil {
-		result.path = filepath.Dir(pomFilePath)
-		return result, nil
-	}
-	return pom{}, err
+	result.path = filepath.Dir(pomFilePath)
+	return result, err
 }
 
 func toEffectivePom(ctx context.Context, mvnCli *maven.Cli, pomFilePath string) (pom, error) {
@@ -33,20 +25,6 @@ func toEffectivePom(ctx context.Context, mvnCli *maven.Cli, pomFilePath string) 
 	var resultPom pom
 	err = xml.Unmarshal([]byte(effectivePom), &resultPom)
 	return resultPom, err
-}
-
-func unmarshalPomFile(pomFilePath string) (pom, error) {
-	bytes, err := os.ReadFile(pomFilePath)
-	if err != nil {
-		return pom{}, err
-	}
-
-	var result pom
-	if err := xml.Unmarshal(bytes, &result); err != nil {
-		return pom{}, fmt.Errorf("parsing xml: %w", err)
-	}
-
-	return result, nil
 }
 
 // pom represents the top-level structure of a Maven POM file.

@@ -72,7 +72,7 @@ stages:
               PublishLocations: vscode/pr/$(PRNumber)
 
           - pwsh: |
-              $downloadUrl = "$(publish-storage-location)/`$web/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"
+              $downloadUrl = "$(publish-storage-static-host)/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"
 
               $content = @"
               <!-- #comment-vscode-pr -->

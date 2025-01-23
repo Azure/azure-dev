@@ -252,7 +252,7 @@ func (cli *Cli) EffectivePom(ctx context.Context, pomPath string) (string, error
 	return getEffectivePomFromConsoleOutput(result.Stdout)
 }
 
-var projectStart = regexp.MustCompile(`^\s*<project`)
+var projectStart = regexp.MustCompile(`^\s*<project `) // the space can not be deleted.
 var projectEnd = regexp.MustCompile(`^\s*</project>\s*$`)
 
 func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
@@ -264,9 +264,10 @@ func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
 		line := scanner.Text()
 		if projectStart.MatchString(line) {
 			inProject = true
+			builder.Reset() // for a pom which contains submodule, the effective pom for root pom appears at last.
 		} else if projectEnd.MatchString(line) {
 			builder.WriteString(line)
-			break
+			inProject = false
 		}
 		if inProject {
 			builder.WriteString(line)

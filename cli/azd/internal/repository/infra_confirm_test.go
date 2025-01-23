@@ -3,52 +3,51 @@ package repository
 import (
 	"context"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/stretchr/testify/assert"
-
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/binding"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestInitializer_infraSpecFromDetect(t *testing.T) {
 	dbPostgres := &scaffold.DatabasePostgres{
 		DatabaseName: "myappdb",
-		AuthType:     "userAssignedManagedIdentity",
+		AuthType:     "password",
 	}
-	envsForPostgres, _ := scaffold.GetServiceBindingEnvsForPostgres(*dbPostgres)
+	envsForPostgres, _ := binding.GetBindingEnvsForCommonSourceToPostgresql(internal.AuthTypePassword)
 	scaffoldStorageAccount := scaffold.AzureDepStorageAccount{
 		ContainerNames: []string{"container1"},
 		AuthType:       internal.AuthTypeConnectionString,
 	}
-	envsForStorage, _ := scaffold.GetServiceBindingEnvsForStorageAccount(scaffoldStorageAccount)
-	envsForMongo := scaffold.GetServiceBindingEnvsForMongo()
+	envsForStorage, _ := binding.GetServiceBindingEnvsForStorageAccount(internal.AuthTypeConnectionString)
+	envsForMongo, _ := binding.GetBindingEnvsForSpringBootToMongoDb(internal.AuthTypeConnectionString)
 	scaffoldServiceBus := scaffold.AzureDepServiceBus{
 		Queues:   []string{"queue1"},
 		IsJms:    true,
 		AuthType: internal.AuthTypeConnectionString,
 	}
-	envsForServiceBus, _ := scaffold.GetServiceBindingEnvsForServiceBus(scaffoldServiceBus)
+	envsForServiceBus, _ := binding.GetBindingEnvsForSpringBootToServiceBusJms(internal.AuthTypeConnectionString)
 	scaffoldEventHubs := scaffold.AzureDepEventHubs{
 		EventHubNames: []string{"eventhub1"},
 		AuthType:      internal.AuthTypeConnectionString,
 		UseKafka:      true,
 	}
-	envsForEventHubs, _ := scaffold.GetServiceBindingEnvsForEventHubs(scaffoldEventHubs)
-	envsForCosmos := scaffold.GetServiceBindingEnvsForCosmos()
+	envsForEventHubs, _ := binding.GetBindingEnvsForSpringBootToEventHubsKafka("3.x", internal.AuthTypeConnectionString)
+	envsForCosmos, _ := binding.GetBindingEnvsForSpringBootToCosmosNoSQL(internal.AuthTypeUserAssignedManagedIdentity)
 	scaffoldMysql := scaffold.DatabaseMySql{
 		DatabaseName: "mysql-db",
 		AuthType:     internal.AuthTypePassword,
 	}
-	envsForMysql, _ := scaffold.GetServiceBindingEnvsForMysql(scaffoldMysql)
-	envsForCosmosMongo := scaffold.GetServiceBindingEnvsForMongo()
+	envsForMysql, _ := binding.GetBindingEnvsForSpringBootToMysql(internal.AuthTypePassword)
 	tests := []struct {
 		name         string
 		detect       detectConfirm
@@ -428,7 +427,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						DbCosmosMongo: &scaffold.DatabaseCosmosMongo{
 							DatabaseName: "cosmos-db-mongo-name",
 						},
-						Envs: envsForCosmosMongo,
+						Envs: envsForMongo,
 					},
 				},
 				DbCosmosMongo: &scaffold.DatabaseCosmosMongo{
@@ -464,13 +463,13 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				"n",
 				"my$special$db",
 				"n",
-				"myappdb",                        // fill in db name
-				"User assigned managed identity", // confirm db authentication
+				"myappdb",               // fill in db name
+				"Username and password", // confirm db authentication
 			},
 			want: scaffold.InfraSpec{
 				DbPostgres: &scaffold.DatabasePostgres{
 					DatabaseName: "myappdb",
-					AuthType:     "userAssignedManagedIdentity",
+					AuthType:     "password",
 				},
 				Services: []scaffold.ServiceSpec{
 					{

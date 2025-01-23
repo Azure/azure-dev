@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/binding"
+
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/names"
@@ -1139,9 +1141,9 @@ func appendJavaEurekaServerEnv(svc *project.ServiceConfig, eurekaServerName stri
 	if svc.Env == nil {
 		svc.Env = map[string]string{}
 	}
-	clientEnvs := scaffold.GetServiceBindingEnvsForEurekaServer(eurekaServerName)
-	for _, env := range clientEnvs {
-		svc.Env[env.Name] = env.Value
+	clientEnvs := binding.GetServiceBindingEnvsForEurekaServer(eurekaServerName)
+	for key, value := range clientEnvs {
+		svc.Env[key] = value
 	}
 	return nil
 }
@@ -1154,9 +1156,9 @@ func appendJavaConfigServerEnv(svc *project.ServiceConfig, configServerName stri
 	if svc.Env == nil {
 		svc.Env = map[string]string{}
 	}
-	clientEnvs := scaffold.GetServiceBindingEnvsForConfigServer(configServerName)
-	for _, env := range clientEnvs {
-		svc.Env[env.Name] = env.Value
+	clientEnvs := binding.GetServiceBindingEnvsForConfigServer(configServerName)
+	for key, value := range clientEnvs {
+		svc.Env[key] = value
 	}
 	return nil
 }

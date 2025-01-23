@@ -5,45 +5,68 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/binding"
 )
 
-func ToBicepEnv(env Env) BicepEnv {
-	if isServiceBindingEnvValue(env.Value) {
-		serviceType, infoType := toServiceTypeAndServiceBindingInfoType(env.Value)
-		value, ok := bicepEnv[serviceType][infoType]
+const placeholderOfSourceClientId = "__PlaceHolder__SourceClientId"
+
+func ToBicepEnv(name string, value string) BicepEnv {
+	if binding.IsBindingEnv(value) {
+		if value == binding.SourceUserAssignedManagedIdentityClientId {
+			return BicepEnv{
+				BicepEnvType:   BicepEnvTypePlainText,
+				Name:           name,
+				PlainTextValue: placeholderOfSourceClientId,
+			}
+		}
+		target, infoType := binding.ToTargetAndInfoType(value)
+		bicepEnvValue, ok := bicepEnv[target.Type][infoType]
 		if !ok {
-			panic(unsupportedType(env))
+			panic(unsupportedType(target.Type, infoType))
+		}
+		if strings.HasPrefix(bicepEnvValue, "'") && strings.HasSuffix(bicepEnvValue, "'") {
+			bicepEnvValue = bicepEnvValue[1 : len(bicepEnvValue)-1]
+			bicepEnvValue = "'" + binding.ReplaceBindingEnv(value, bicepEnvValue) + "'"
+		} else {
+			bicepEnvValue = binding.ReplaceBindingEnv(value, bicepEnvValue)
 		}
 		if isSecret(infoType) {
-			if isKeyVaultSecret(value) {
+			if isKeyVaultSecret(bicepEnvValue) {
 				return BicepEnv{
 					BicepEnvType: BicepEnvTypeKeyVaultSecret,
-					Name:         env.Name,
-					SecretName:   secretName(env),
-					SecretValue:  unwrapKeyVaultSecretValue(value),
+					Name:         name,
+					SecretName:   secretName(value),
+					SecretValue:  unwrapKeyVaultSecretValue(bicepEnvValue),
 				}
 			} else {
 				return BicepEnv{
 					BicepEnvType: BicepEnvTypeSecret,
-					Name:         env.Name,
-					SecretName:   secretName(env),
-					SecretValue:  value,
+					Name:         name,
+					SecretName:   secretName(value),
+					SecretValue:  bicepEnvValue,
 				}
 			}
 		} else {
+			if target.Type == binding.AzureContainerApp && target.Name != "" {
+				bicepEnvValue = strings.ReplaceAll(bicepEnvValue, "{{BackendName}}", BicepName(target.Name))
+			}
 			return BicepEnv{
 				BicepEnvType:   BicepEnvTypePlainText,
-				Name:           env.Name,
-				PlainTextValue: value,
+				Name:           name,
+				PlainTextValue: bicepEnvValue,
 			}
 		}
 	} else {
 		return BicepEnv{
 			BicepEnvType:   BicepEnvTypePlainText,
-			Name:           env.Name,
-			PlainTextValue: toBicepEnvPlainTextValue(env.Value),
+			Name:           name,
+			PlainTextValue: toBicepEnvPlainTextValue(value),
 		}
 	}
+}
+
+func IsPlaceholderOfSourceClientId(value string) bool {
+	return value == placeholderOfSourceClientId
 }
 
 func ShouldAddToBicepFile(spec ServiceSpec, name string) bool {
@@ -124,98 +147,86 @@ const (
 
 // Note: The value is handled as variable.
 // If the value is string, it should contain quotation inside itself.
-var bicepEnv = map[ServiceType]map[ServiceBindingInfoType]string{
-	ServiceTypeDbPostgres: {
-		ServiceBindingInfoTypeHost:         "postgreServer.outputs.fqdn",
-		ServiceBindingInfoTypePort:         "'5432'",
-		ServiceBindingInfoTypeDatabaseName: "postgreSqlDatabaseName",
-		ServiceBindingInfoTypeUsername:     "postgreSqlDatabaseUser",
-		ServiceBindingInfoTypePassword:     "postgreSqlDatabasePassword",
-		ServiceBindingInfoTypeUrl: "'postgresql://${postgreSqlDatabaseUser}:${postgreSqlDatabasePassword}@" +
+var bicepEnv = map[binding.TargetType]map[binding.InfoType]string{
+	binding.AzureDatabaseForPostgresql: {
+		binding.InfoTypeHost:         "postgreServer.outputs.fqdn",
+		binding.InfoTypePort:         "'5432'",
+		binding.InfoTypeDatabaseName: "postgreSqlDatabaseName",
+		binding.InfoTypeUsername:     "postgreSqlDatabaseUser",
+		binding.InfoTypePassword:     "postgreSqlDatabasePassword",
+		binding.InfoTypeUrl: "'postgresql://${postgreSqlDatabaseUser}:${postgreSqlDatabasePassword}@" +
 			"${postgreServer.outputs.fqdn}:5432/${postgreSqlDatabaseName}'",
-		ServiceBindingInfoTypeJdbcUrl: "'jdbc:postgresql://${postgreServer.outputs.fqdn}:5432/" +
+		binding.InfoTypeJdbcUrl: "'jdbc:postgresql://${postgreServer.outputs.fqdn}:5432/" +
 			"${postgreSqlDatabaseName}'",
 	},
-	ServiceTypeDbMySQL: {
-		ServiceBindingInfoTypeHost:         "mysqlServer.outputs.fqdn",
-		ServiceBindingInfoTypePort:         "'3306'",
-		ServiceBindingInfoTypeDatabaseName: "mysqlDatabaseName",
-		ServiceBindingInfoTypeUsername:     "mysqlDatabaseUser",
-		ServiceBindingInfoTypePassword:     "mysqlDatabasePassword",
-		ServiceBindingInfoTypeUrl: "'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@" +
+	binding.AzureDatabaseForMysql: {
+		binding.InfoTypeHost:         "mysqlServer.outputs.fqdn",
+		binding.InfoTypePort:         "'3306'",
+		binding.InfoTypeDatabaseName: "mysqlDatabaseName",
+		binding.InfoTypeUsername:     "mysqlDatabaseUser",
+		binding.InfoTypePassword:     "mysqlDatabasePassword",
+		binding.InfoTypeUrl: "'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@" +
 			"${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'",
-		ServiceBindingInfoTypeJdbcUrl: "'jdbc:mysql://${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'",
+		binding.InfoTypeJdbcUrl: "'jdbc:mysql://${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'",
 	},
-	ServiceTypeDbRedis: {
-		ServiceBindingInfoTypeHost:     "redis.outputs.hostName",
-		ServiceBindingInfoTypePort:     "string(redis.outputs.sslPort)",
-		ServiceBindingInfoTypeEndpoint: "'${redis.outputs.hostName}:${redis.outputs.sslPort}'",
-		ServiceBindingInfoTypePassword: wrapToKeyVaultSecretValue("redisConn.outputs.keyVaultUrlForPass"),
-		ServiceBindingInfoTypeUrl:      wrapToKeyVaultSecretValue("redisConn.outputs.keyVaultUrlForUrl"),
+	binding.AzureCacheForRedis: {
+		binding.InfoTypeHost:     "redis.outputs.hostName",
+		binding.InfoTypePort:     "string(redis.outputs.sslPort)",
+		binding.InfoTypeEndpoint: "'${redis.outputs.hostName}:${redis.outputs.sslPort}'",
+		binding.InfoTypePassword: wrapToKeyVaultSecretValue("redisConn.outputs.keyVaultUrlForPass"),
+		binding.InfoTypeUrl:      wrapToKeyVaultSecretValue("redisConn.outputs.keyVaultUrlForUrl"),
 	},
-	ServiceTypeDbMongo: {
-		ServiceBindingInfoTypeDatabaseName: "mongoDatabaseName",
-		ServiceBindingInfoTypeUrl: wrapToKeyVaultSecretValue(
+	binding.AzureCosmosDBForMongoDB: {
+		binding.InfoTypeDatabaseName: "mongoDatabaseName",
+		binding.InfoTypeUrl: wrapToKeyVaultSecretValue(
 			"cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri",
 		),
 	},
-	ServiceTypeDbCosmos: {
-		ServiceBindingInfoTypeEndpoint:     "cosmos.outputs.endpoint",
-		ServiceBindingInfoTypeDatabaseName: "cosmosDatabaseName",
+	binding.AzureCosmosDBForNoSQL: {
+		binding.InfoTypeEndpoint:     "cosmos.outputs.endpoint",
+		binding.InfoTypeDatabaseName: "cosmosDatabaseName",
 	},
-	ServiceTypeMessagingServiceBus: {
-		ServiceBindingInfoTypeNamespace: "serviceBusNamespace.outputs.name",
-		ServiceBindingInfoTypeConnectionString: wrapToKeyVaultSecretValue(
+	binding.AzureServiceBus: {
+		binding.InfoTypeNamespace: "serviceBusNamespace.outputs.name",
+		binding.InfoTypeConnectionString: wrapToKeyVaultSecretValue(
 			"serviceBusConnectionString.outputs.keyVaultUrl",
 		),
 	},
-	ServiceTypeMessagingEventHubs: {
-		ServiceBindingInfoTypeNamespace: "eventHubNamespace.outputs.name",
-		ServiceBindingInfoTypeEndpoint:  "'${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'",
-		ServiceBindingInfoTypeConnectionString: wrapToKeyVaultSecretValue(
+	binding.AzureEventHubs: {
+		binding.InfoTypeNamespace: "eventHubNamespace.outputs.name",
+		binding.InfoTypeEndpoint:  "'${eventHubNamespace.outputs.name}.servicebus.windows.net:9093'",
+		binding.InfoTypeConnectionString: wrapToKeyVaultSecretValue(
 			"eventHubsConnectionString.outputs.keyVaultUrl",
 		),
 	},
-	ServiceTypeStorage: {
-		ServiceBindingInfoTypeAccountName: "storageAccountName",
-		ServiceBindingInfoTypeConnectionString: wrapToKeyVaultSecretValue(
+	binding.AzureStorageAccount: {
+		binding.InfoTypeAccountName: "storageAccountName",
+		binding.InfoTypeConnectionString: wrapToKeyVaultSecretValue(
 			"storageAccountConnectionString.outputs.keyVaultUrl",
 		),
 	},
-	ServiceTypeOpenAiModel: {
-		ServiceBindingInfoTypeEndpoint: "account.outputs.endpoint",
+	binding.AzureOpenAiModel: {
+		binding.InfoTypeEndpoint: "account.outputs.endpoint",
 	},
-	ServiceTypeHostContainerApp: {
-		ServiceBindingInfoTypeHost: "https://{{BackendName}}.${containerAppsEnvironment.outputs.defaultDomain}",
+	binding.AzureContainerApp: {
+		binding.InfoTypeHost: "'https://{{BackendName}}.${containerAppsEnvironment.outputs.defaultDomain}'",
 	},
 }
 
-func GetContainerAppHost(name string) string {
-	return strings.ReplaceAll(
-		bicepEnv[ServiceTypeHostContainerApp][ServiceBindingInfoTypeHost],
-		"{{BackendName}}",
-		name,
-	)
-}
-
-func unsupportedType(env Env) string {
+func unsupportedType(targetType binding.TargetType, infoType binding.InfoType) string {
 	return fmt.Sprintf(
-		"unsupported connection info type for resource type. value = %s", env.Value,
-	)
+		"unsupported connection info type for resource type. targetType = %s, targetType = %s",
+		targetType, infoType)
 }
 
-func PlaceHolderForServiceIdentityClientId() string {
-	return "__PlaceHolderForServiceIdentityClientId"
+func isSecret(info binding.InfoType) bool {
+	return info == binding.InfoTypePassword || info == binding.InfoTypeUrl ||
+		info == binding.InfoTypeConnectionString
 }
 
-func isSecret(info ServiceBindingInfoType) bool {
-	return info == ServiceBindingInfoTypePassword || info == ServiceBindingInfoTypeUrl ||
-		info == ServiceBindingInfoTypeConnectionString
-}
-
-func secretName(env Env) string {
-	resourceType, resourceInfoType := toServiceTypeAndServiceBindingInfoType(env.Value)
-	name := fmt.Sprintf("%s-%s", resourceType, resourceInfoType)
+func secretName(envValue string) string {
+	target, infoType := binding.ToTargetAndInfoType(envValue)
+	name := fmt.Sprintf("%s-%s", target.Type, infoType)
 	lowerCaseName := strings.ToLower(name)
 	noDotName := strings.Replace(lowerCaseName, ".", "-", -1)
 	noUnderscoreName := strings.Replace(noDotName, "_", "-", -1)

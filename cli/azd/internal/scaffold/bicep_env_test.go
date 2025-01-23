@@ -1,24 +1,25 @@
 package scaffold
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/binding"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestToBicepEnv(t *testing.T) {
 	tests := []struct {
-		name string
-		in   Env
-		want BicepEnv
+		name     string
+		envName  string
+		envValue string
+		want     BicepEnv
 	}{
 		{
-			name: "Plain text",
-			in: Env{
-				Name:  "enable-customer-related-feature",
-				Value: "true",
-			},
+			name:     "Plain text",
+			envName:  "enable-customer-related-feature",
+			envValue: "true",
 			want: BicepEnv{
 				BicepEnvType:   BicepEnvTypePlainText,
 				Name:           "enable-customer-related-feature",
@@ -26,11 +27,9 @@ func TestToBicepEnv(t *testing.T) {
 			},
 		},
 		{
-			name: "Plain text from EnvTypeResourceConnectionPlainText",
-			in: Env{
-				Name:  "spring.jms.servicebus.pricing-tier",
-				Value: "premium",
-			},
+			name:     "Plain text which is used for binding, but it's not a binding env",
+			envName:  "spring.jms.servicebus.pricing-tier",
+			envValue: "premium",
 			want: BicepEnv{
 				BicepEnvType:   BicepEnvTypePlainText,
 				Name:           "spring.jms.servicebus.pricing-tier",
@@ -38,11 +37,10 @@ func TestToBicepEnv(t *testing.T) {
 			},
 		},
 		{
-			name: "Plain text from EnvTypeResourceConnectionResourceInfo",
-			in: Env{
-				Name:  "POSTGRES_PORT",
-				Value: ToServiceBindingEnvValue(ServiceTypeDbPostgres, ServiceBindingInfoTypePort),
-			},
+			name:    "Plain text which is a binding env",
+			envName: "POSTGRES_PORT",
+			envValue: binding.ToBindingEnv(binding.Target{Type: binding.AzureDatabaseForPostgresql},
+				binding.InfoTypePort),
 			want: BicepEnv{
 				BicepEnvType:   BicepEnvTypePlainText,
 				Name:           "POSTGRES_PORT",
@@ -50,35 +48,70 @@ func TestToBicepEnv(t *testing.T) {
 			},
 		},
 		{
-			name: "Secret",
-			in: Env{
-				Name:  "POSTGRES_PASSWORD",
-				Value: ToServiceBindingEnvValue(ServiceTypeDbPostgres, ServiceBindingInfoTypePassword),
+			name:     "Plain text which is a binding env: SourceUserAssignedManagedIdentityClientId",
+			envName:  "spring.cloud.azure.credential.client-id",
+			envValue: binding.SourceUserAssignedManagedIdentityClientId,
+			want: BicepEnv{
+				BicepEnvType:   BicepEnvTypePlainText,
+				Name:           "spring.cloud.azure.credential.client-id",
+				PlainTextValue: placeholderOfSourceClientId,
 			},
+		},
+		{
+			name:    "Secret",
+			envName: "POSTGRES_PASSWORD",
+			envValue: binding.ToBindingEnv(binding.Target{Type: binding.AzureDatabaseForPostgresql},
+				binding.InfoTypePassword),
 			want: BicepEnv{
 				BicepEnvType: BicepEnvTypeSecret,
 				Name:         "POSTGRES_PASSWORD",
-				SecretName:   "db-postgres-password",
+				SecretName:   "azure-db-postgresql-password",
 				SecretValue:  "postgreSqlDatabasePassword",
 			},
 		},
 		{
-			name: "KeuVault Secret",
-			in: Env{
-				Name:  "REDIS_PASSWORD",
-				Value: ToServiceBindingEnvValue(ServiceTypeDbRedis, ServiceBindingInfoTypePassword),
-			},
+			name:    "KeuVault Secret",
+			envName: "REDIS_PASSWORD",
+			envValue: binding.ToBindingEnv(binding.Target{Type: binding.AzureCacheForRedis},
+				binding.InfoTypePassword),
 			want: BicepEnv{
 				BicepEnvType: BicepEnvTypeKeyVaultSecret,
 				Name:         "REDIS_PASSWORD",
-				SecretName:   "db-redis-password",
+				SecretName:   "azure-db-redis-password",
 				SecretValue:  "redisConn.outputs.keyVaultUrlForPass",
+			},
+		},
+		{
+			name:    "Eureka server",
+			envName: "eureka.client.serviceUrl.defaultZone",
+			envValue: fmt.Sprintf("%s/eureka", binding.ToBindingEnv(binding.Target{
+				Type: binding.AzureContainerApp,
+				Name: "eurekaServerName",
+			}, binding.InfoTypeHost)),
+			want: BicepEnv{
+				BicepEnvType:   BicepEnvTypePlainText,
+				Name:           "eureka.client.serviceUrl.defaultZone",
+				PlainTextValue: "'https://eurekaServerName.${containerAppsEnvironment.outputs.defaultDomain}/eureka'",
+			},
+		},
+		{
+			name:    "Config server",
+			envName: "spring.config.import",
+			envValue: fmt.Sprintf("optional:configserver:%s?fail-fast=true", binding.ToBindingEnv(binding.Target{
+				Type: binding.AzureContainerApp,
+				Name: "config-server-name",
+			}, binding.InfoTypeHost)),
+			want: BicepEnv{
+				BicepEnvType: BicepEnvTypePlainText,
+				Name:         "spring.config.import",
+				PlainTextValue: "'optional:configserver:" +
+					"https://configServerName.${containerAppsEnvironment.outputs.defaultDomain}?fail-fast=true'",
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := ToBicepEnv(tt.in)
+			actual := ToBicepEnv(tt.envName, tt.envValue)
 			assert.Equal(t, tt.want, actual)
 		})
 	}

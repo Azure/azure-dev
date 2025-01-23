@@ -3,7 +3,6 @@ package scaffold
 import (
 	"bytes"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"io/fs"
 	"os"
 	"path"
@@ -12,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
@@ -25,15 +25,16 @@ const templateRoot = "scaffold/templates"
 // To execute a named template, call Execute with the defined name.
 func Load() (*template.Template, error) {
 	funcMap := template.FuncMap{
-		"bicepName":            BicepName,
-		"containerAppName":     ContainerAppName,
-		"upper":                strings.ToUpper,
-		"lower":                strings.ToLower,
-		"alphaSnakeUpper":      AlphaSnakeUpper,
-		"formatParam":          FormatParameter,
-		"hasPrefix":            strings.HasPrefix,
-		"toBicepEnv":           ToBicepEnv,
-		"shouldAddToBicepFile": ShouldAddToBicepFile,
+		"bicepName":                     BicepName,
+		"containerAppName":              ContainerAppName,
+		"upper":                         strings.ToUpper,
+		"lower":                         strings.ToLower,
+		"alphaSnakeUpper":               AlphaSnakeUpper,
+		"formatParam":                   FormatParameter,
+		"hasPrefix":                     strings.HasPrefix,
+		"toBicepEnv":                    ToBicepEnv,
+		"isPlaceholderOfSourceClientId": IsPlaceholderOfSourceClientId,
+		"shouldAddToBicepFile":          ShouldAddToBicepFile,
 	}
 
 	t, err := template.New("templates").

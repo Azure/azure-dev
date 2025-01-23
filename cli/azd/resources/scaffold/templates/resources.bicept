@@ -198,7 +198,6 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
       }
       {
         principalId: principalId
-        principalType: 'ServicePrincipal'
         roleDefinitionIdOrName: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
       }
     ]
@@ -569,19 +568,19 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     scaleMaxReplicas: 10
     secrets: {
       secureList:  union([
-        {{- range $env := .Envs}}
-        {{- if (shouldAddToBicepFile $service $env.Name) }}
-        {{- if (eq (toBicepEnv $env).BicepEnvType "keyVaultSecret") }}
+        {{- range $name, $value := .Envs}}
+        {{- if (shouldAddToBicepFile $service $name) }}
+        {{- if (eq (toBicepEnv $name $value).BicepEnvType "keyVaultSecret") }}
         {
-          name: '{{ (toBicepEnv $env).SecretName }}'
+          name: '{{ (toBicepEnv $name $value).SecretName }}'
           identity:{{bicepName $service.Name}}Identity.outputs.resourceId
-          keyVaultUrl: {{ (toBicepEnv $env).SecretValue }}
+          keyVaultUrl: {{ (toBicepEnv $name $value).SecretValue }}
         }
         {{- end}}
-        {{- if (eq (toBicepEnv $env).BicepEnvType "secret") }}
+        {{- if (eq (toBicepEnv $name $value).BicepEnvType "secret") }}
         {
-          name: '{{ (toBicepEnv $env).SecretName }}'
-          value: {{ (toBicepEnv $env).SecretValue }}
+          name: '{{ (toBicepEnv $name $value).SecretName }}'
+          value: {{ (toBicepEnv $name $value).SecretValue }}
         }
         {{- end}}
         {{- end}}
@@ -601,21 +600,21 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           memory: '1.0Gi'
         }
         env: union([
-          {{- range $env := .Envs }}
-          {{- if (shouldAddToBicepFile $service $env.Name) }}
-          {{- if (or (eq (toBicepEnv $env).BicepEnvType "keyVaultSecret") (eq (toBicepEnv $env).BicepEnvType "secret")) }}
+          {{- range $name, $value := .Envs }}
+          {{- if (shouldAddToBicepFile $service $name) }}
+          {{- if (or (eq (toBicepEnv $name $value).BicepEnvType "keyVaultSecret") (eq (toBicepEnv $name $value).BicepEnvType "secret")) }}
           {
-            name: '{{ (toBicepEnv $env).Name }}'
-            secretRef: '{{ (toBicepEnv $env).SecretName }}'
+            name: '{{ (toBicepEnv $name $value).Name }}'
+            secretRef: '{{ (toBicepEnv $name $value).SecretName }}'
           }
           {{- end}}
-          {{- if (eq (toBicepEnv $env).BicepEnvType "plainText") }}
+          {{- if (eq (toBicepEnv $name $value).BicepEnvType "plainText") }}
           {
-            name: '{{ (toBicepEnv $env).Name }}'
-            {{- if (eq (toBicepEnv $env).PlainTextValue "'__PlaceHolderForServiceIdentityClientId'")}}
+            name: '{{ (toBicepEnv $name $value).Name }}'
+            {{- if (isPlaceholderOfSourceClientId (toBicepEnv $name $value).PlainTextValue)}}
             value: {{bicepName $service.Name}}Identity.outputs.clientId
             {{- else}}
-            value: {{ (toBicepEnv $env).PlainTextValue }}
+            value: {{ (toBicepEnv $name $value).PlainTextValue }}
             {{- end}}
           }
           {{- end}}

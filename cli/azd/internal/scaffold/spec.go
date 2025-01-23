@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/binding"
 )
 
 type InfraSpec struct {
@@ -99,7 +100,7 @@ type ServiceSpec struct {
 	Name string
 	Port int
 
-	Envs []Env
+	Envs map[string]string
 
 	// Front-end properties.
 	Frontend *Frontend
@@ -120,11 +121,6 @@ type ServiceSpec struct {
 	AzureServiceBus     *AzureDepServiceBus
 	AzureEventHubs      *AzureDepEventHubs
 	AzureStorageAccount *AzureDepStorageAccount
-}
-
-type Env struct {
-	Name  string
-	Value string
 }
 
 type Frontend struct {
@@ -193,12 +189,9 @@ func serviceDefPlaceholder(serviceName string) Parameter {
 }
 
 func AddNewEnvironmentVariable(serviceSpec *ServiceSpec, name string, value string) error {
-	merged, err := mergeEnvWithDuplicationCheck(serviceSpec.Envs,
-		[]Env{
-			{
-				Name:  name,
-				Value: value,
-			},
+	merged, err := binding.MergeMapWithDuplicationCheck(serviceSpec.Envs,
+		map[string]string{
+			name: value,
 		},
 	)
 	if err != nil {

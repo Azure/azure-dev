@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/binding"
 	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -132,6 +133,7 @@ func (i *Initializer) infraSpecFromDetect(
 			}
 		}
 
+		sourceType := toSourceType(svc.Language)
 		for _, db := range svc.DatabaseDeps {
 			// filter out databases that were removed
 			if _, ok := detect.Databases[db]; !ok {
@@ -139,15 +141,15 @@ func (i *Initializer) infraSpecFromDetect(
 			}
 			switch db {
 			case appdetect.DbPostgres:
-				err = scaffold.BindToPostgres(&serviceSpec, spec.DbPostgres)
+				err = scaffold.BindToPostgres(sourceType, &serviceSpec, spec.DbPostgres)
 			case appdetect.DbMySql:
-				err = scaffold.BindToMySql(&serviceSpec, spec.DbMySql)
+				err = scaffold.BindToMySql(sourceType, &serviceSpec, spec.DbMySql)
 			case appdetect.DbMongo:
-				err = scaffold.BindToMongoDb(&serviceSpec, spec.DbCosmosMongo)
+				err = scaffold.BindToMongoDb(sourceType, &serviceSpec, spec.DbCosmosMongo)
 			case appdetect.DbCosmos:
-				err = scaffold.BindToCosmosDb(&serviceSpec, spec.DbCosmos)
+				err = scaffold.BindToCosmosDb(sourceType, &serviceSpec, spec.DbCosmos)
 			case appdetect.DbRedis:
-				err = scaffold.BindToRedis(&serviceSpec, spec.DbRedis)
+				err = scaffold.BindToRedis(sourceType, &serviceSpec, spec.DbRedis)
 			}
 			if err != nil {
 				return scaffold.InfraSpec{}, err
@@ -157,11 +159,11 @@ func (i *Initializer) infraSpecFromDetect(
 		for _, azureDep := range svc.AzureDeps {
 			switch azureDep.(type) {
 			case appdetect.AzureDepServiceBus:
-				err = scaffold.BindToServiceBus(&serviceSpec, spec.AzureServiceBus)
+				err = scaffold.BindToServiceBus(sourceType, &serviceSpec, spec.AzureServiceBus)
 			case appdetect.AzureDepEventHubs:
-				err = scaffold.BindToEventHubs(&serviceSpec, spec.AzureEventHubs)
+				err = scaffold.BindToEventHubs(sourceType, &serviceSpec, spec.AzureEventHubs)
 			case appdetect.AzureDepStorageAccount:
-				err = scaffold.BindToStorageAccount(&serviceSpec, spec.AzureStorageAccount)
+				err = scaffold.BindToStorageAccount(sourceType, &serviceSpec, spec.AzureStorageAccount)
 			}
 		}
 		if err != nil {
@@ -170,8 +172,8 @@ func (i *Initializer) infraSpecFromDetect(
 		spec.Services = append(spec.Services, serviceSpec)
 	}
 
-	backends := []scaffold.ServiceReference{}
-	frontends := []scaffold.ServiceReference{}
+	var backends []scaffold.ServiceReference
+	var frontends []scaffold.ServiceReference
 	for idx := range spec.Services {
 		if spec.Services[idx].Frontend == nil && spec.Services[idx].Port != 0 {
 			backends = append(backends, scaffold.ServiceReference{
@@ -198,6 +200,15 @@ func (i *Initializer) infraSpecFromDetect(
 	}
 
 	return spec, nil
+}
+
+func toSourceType(language appdetect.Language) binding.SourceType {
+	switch language {
+	case appdetect.Java:
+		return binding.Java
+	default:
+		return binding.Unknown
+	}
 }
 
 func getDatabaseName(database appdetect.DatabaseDep, detect *detectConfirm,

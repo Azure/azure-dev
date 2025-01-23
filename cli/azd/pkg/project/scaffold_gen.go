@@ -10,8 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/binding"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
@@ -207,7 +210,13 @@ func infraSpec(projectConfig *ProjectConfig,
 			if err != nil {
 				return nil, err
 			}
-			serviceSpec.Envs = append(serviceSpec.Envs, serviceConfigEnv(projectConfig.Services[resource.Name])...)
+			if _, ok := projectConfig.Services[resource.Name]; ok {
+				serviceSpec.Envs, err = binding.MergeMapWithDuplicationCheck(serviceSpec.Envs,
+					projectConfig.Services[resource.Name].Env)
+				if err != nil {
+					return nil, err
+				}
+			}
 			infraSpec.Services = append(infraSpec.Services, serviceSpec)
 		case ResourceTypeOpenAiModel:
 			props := resource.Props.(AIModelProps)
@@ -255,6 +264,7 @@ func mapUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig) error 
 			return fmt.Errorf("service (%s) exist, but there isn't a resource with that name",
 				userResourceName)
 		}
+		sourceType := sourceType(projectConfig, userResourceName)
 		for _, usedResourceName := range userResource.Uses {
 			usedResource, ok := projectConfig.Resources[usedResourceName]
 			if !ok {
@@ -264,23 +274,23 @@ func mapUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig) error 
 			var err error
 			switch usedResource.Type {
 			case ResourceTypeDbPostgres:
-				err = scaffold.BindToPostgres(userSpec, infraSpec.DbPostgres)
+				err = scaffold.BindToPostgres(sourceType, userSpec, infraSpec.DbPostgres)
 			case ResourceTypeDbMySQL:
-				err = scaffold.BindToMySql(userSpec, infraSpec.DbMySql)
+				err = scaffold.BindToMySql(sourceType, userSpec, infraSpec.DbMySql)
 			case ResourceTypeDbMongo:
-				err = scaffold.BindToMongoDb(userSpec, infraSpec.DbCosmosMongo)
+				err = scaffold.BindToMongoDb(sourceType, userSpec, infraSpec.DbCosmosMongo)
 			case ResourceTypeDbCosmos:
-				err = scaffold.BindToCosmosDb(userSpec, infraSpec.DbCosmos)
+				err = scaffold.BindToCosmosDb(sourceType, userSpec, infraSpec.DbCosmos)
 			case ResourceTypeDbRedis:
-				err = scaffold.BindToRedis(userSpec, infraSpec.DbRedis)
+				err = scaffold.BindToRedis(sourceType, userSpec, infraSpec.DbRedis)
 			case ResourceTypeMessagingServiceBus:
-				err = scaffold.BindToServiceBus(userSpec, infraSpec.AzureServiceBus)
+				err = scaffold.BindToServiceBus(sourceType, userSpec, infraSpec.AzureServiceBus)
 			case ResourceTypeMessagingKafka, ResourceTypeMessagingEventHubs:
-				err = scaffold.BindToEventHubs(userSpec, infraSpec.AzureEventHubs)
+				err = scaffold.BindToEventHubs(sourceType, userSpec, infraSpec.AzureEventHubs)
 			case ResourceTypeStorage:
-				err = scaffold.BindToStorageAccount(userSpec, infraSpec.AzureStorageAccount)
+				err = scaffold.BindToStorageAccount(sourceType, userSpec, infraSpec.AzureStorageAccount)
 			case ResourceTypeOpenAiModel:
-				err = scaffold.BindToAIModels(userSpec, usedResource.Name)
+				err = scaffold.BindToAIModels(sourceType, userSpec, usedResource.Name)
 			case ResourceTypeHostContainerApp:
 				usedSpec := getServiceSpecByName(infraSpec, usedResource.Name)
 				if usedSpec == nil {
@@ -300,6 +310,19 @@ func mapUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig) error 
 	return nil
 }
 
+func sourceType(projectConfig *ProjectConfig, userResourceName string) binding.SourceType {
+	userService := projectConfig.Services[userResourceName]
+	if userService == nil {
+		return binding.Unknown
+	}
+	switch userService.Language {
+	case ServiceLanguageJava:
+		return binding.Java
+	default:
+		return binding.Unknown
+	}
+}
+
 func printEnvListAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *ProjectConfig,
 	console input.Console, ctx context.Context) error {
 	for i := range infraSpec.Services {
@@ -310,6 +333,7 @@ func printEnvListAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *Project
 			return fmt.Errorf("service (%s) exist, but there isn't a resource with that name",
 				userResourceName)
 		}
+		sourceType := sourceType(projectConfig, userResourceName)
 		for _, usedResourceName := range userResource.Uses {
 			usedResource, ok := projectConfig.Resources[usedResourceName]
 			if !ok {
@@ -322,25 +346,61 @@ func printEnvListAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *Project
 				"Please make sure your application used the right environment variable. \n"+
 				"Here is the list of environment variables: ",
 				userResourceName, usedResourceName))
-			var variables []scaffold.Env
+			var variables map[string]string
 			var err error
 			switch usedResource.Type {
 			case ResourceTypeDbPostgres:
-				variables, err = scaffold.GetServiceBindingEnvsForPostgres(*infraSpec.DbPostgres)
+				variables, err = binding.GetBindingEnvs(
+					binding.Source{Type: sourceType},
+					binding.Target{Type: binding.AzureDatabaseForPostgresql, AuthType: infraSpec.DbPostgres.AuthType})
 			case ResourceTypeDbMySQL:
-				variables, err = scaffold.GetServiceBindingEnvsForMysql(*infraSpec.DbMySql)
+				variables, err = binding.GetBindingEnvs(
+					binding.Source{Type: sourceType},
+					binding.Target{Type: binding.AzureDatabaseForMysql, AuthType: infraSpec.DbMySql.AuthType})
 			case ResourceTypeDbMongo:
-				variables = scaffold.GetServiceBindingEnvsForMongo()
+				variables, err = binding.GetBindingEnvs(
+					binding.Source{Type: sourceType},
+					binding.Target{
+						Type:     binding.AzureCosmosDBForMongoDB,
+						AuthType: internal.AuthTypeConnectionString,
+					})
 			case ResourceTypeDbCosmos:
-				variables = scaffold.GetServiceBindingEnvsForCosmos()
+				variables, err = binding.GetBindingEnvs(
+					binding.Source{Type: sourceType},
+					binding.Target{
+						Type:     binding.AzureCosmosDBForNoSQL,
+						AuthType: internal.AuthTypeUserAssignedManagedIdentity,
+					})
 			case ResourceTypeDbRedis:
-				variables = scaffold.GetServiceBindingEnvsForRedis()
+				variables, err = binding.GetBindingEnvs(
+					binding.Source{Type: sourceType},
+					binding.Target{Type: binding.AzureCacheForRedis, AuthType: internal.AuthTypePassword})
 			case ResourceTypeMessagingServiceBus:
-				variables, err = scaffold.GetServiceBindingEnvsForServiceBus(*infraSpec.AzureServiceBus)
-			case ResourceTypeMessagingKafka, ResourceTypeMessagingEventHubs:
-				variables, err = scaffold.GetServiceBindingEnvsForEventHubs(*infraSpec.AzureEventHubs)
+				variables, err = binding.GetBindingEnvs(
+					binding.Source{
+						Type: sourceType,
+						Metadata: map[binding.MetadataType]string{
+							binding.IsSpringBootJms: strconv.FormatBool(infraSpec.AzureServiceBus.IsJms)}},
+					binding.Target{Type: binding.AzureServiceBus, AuthType: infraSpec.AzureServiceBus.AuthType})
+			case ResourceTypeMessagingKafka:
+				variables, err = binding.GetBindingEnvs(
+					binding.Source{
+						Type: sourceType,
+						Metadata: map[binding.MetadataType]string{
+							binding.IsSpringBootKafka: strconv.FormatBool(true),
+							binding.SpringBootVersion: infraSpec.AzureEventHubs.SpringBootVersion}},
+					binding.Target{Type: binding.AzureEventHubs, AuthType: infraSpec.AzureEventHubs.AuthType})
+			case ResourceTypeMessagingEventHubs:
+				variables, err = binding.GetBindingEnvs(
+					binding.Source{
+						Type: sourceType,
+						Metadata: map[binding.MetadataType]string{
+							binding.IsSpringBootKafka: "false"}},
+					binding.Target{Type: binding.AzureEventHubs, AuthType: infraSpec.AzureEventHubs.AuthType})
 			case ResourceTypeStorage:
-				variables, err = scaffold.GetServiceBindingEnvsForStorageAccount(*infraSpec.AzureStorageAccount)
+				variables, err = binding.GetBindingEnvs(
+					binding.Source{Type: sourceType},
+					binding.Target{Type: binding.AzureStorageAccount, AuthType: infraSpec.AzureStorageAccount.AuthType})
 			case ResourceTypeHostContainerApp:
 				printHintsAboutUseHostContainerApp(userResourceName, usedResourceName, console, ctx)
 			default:
@@ -351,8 +411,8 @@ func printEnvListAboutUses(infraSpec *scaffold.InfraSpec, projectConfig *Project
 			if err != nil {
 				return err
 			}
-			for _, variable := range variables {
-				console.Message(ctx, fmt.Sprintf("  %s=xxx", variable.Name))
+			for key := range variables {
+				console.Message(ctx, fmt.Sprintf("  %s=xxx", key))
 			}
 			console.Message(ctx, "\n")
 		}
@@ -496,17 +556,4 @@ func printHintsAboutUseHostContainerApp(userResourceName string, usedResourceNam
 	console.Message(ctx, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(usedResourceName)))
 	console.Message(ctx, fmt.Sprintf("Environment variables in %s:", usedResourceName))
 	console.Message(ctx, fmt.Sprintf("%s_BASE_URL=xxx", strings.ToUpper(userResourceName)))
-}
-
-func serviceConfigEnv(svcConfig *ServiceConfig) []scaffold.Env {
-	var envs []scaffold.Env
-	if svcConfig != nil {
-		for key, val := range svcConfig.Env {
-			envs = append(envs, scaffold.Env{
-				Name:  key,
-				Value: val,
-			})
-		}
-	}
-	return envs
 }

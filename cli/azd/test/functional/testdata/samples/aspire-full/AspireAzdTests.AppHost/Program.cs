@@ -25,9 +25,6 @@ var messageQueue    = azureStorage.AddQueues("messages");
 // the back-end API the front end will call
 var apiservice = builder.AddProject<Projects.AspireAzdTests_ApiService>("apiservice");
 
-var cosmos = builder.AddAzureCosmosDB("cosmos");
-var cosmosDb = cosmos.AddDatabase("db3");
-
 // worker with no bindings
 var workerProj = builder.AddProject<Projects.AspireAzdTests_Worker>("worker");
 
@@ -40,7 +37,6 @@ _ = builder
                             .WithReference(markdownBlobs)
                             .WithReference(messageQueue)
                             .WithReference(apiservice)
-                            .WithReference(cosmosDb)
                             .WithReference(workerProj)
                             .WithEnvironment("GOVERSION", goVersion);
 

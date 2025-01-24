@@ -69,7 +69,7 @@ stages:
 
           - template: /eng/pipelines/templates/steps/publish-vscode.yml
             parameters:
-              PublishLocations: vscode/pr/$(PRNumber)
+              PublishLocations: azd/vscode/pr/$(PRNumber)
 
           - pwsh: |
               $downloadUrl = "$(publish-storage-static-host)/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"

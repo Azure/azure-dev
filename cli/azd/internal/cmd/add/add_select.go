@@ -27,6 +27,7 @@ type Menu struct {
 func (a *AddAction) selectMenu() []Menu {
 	return []Menu{
 		{Namespace: "db", Label: "Database", SelectResource: selectDatabase},
+		{Namespace: "storage", Label: "Storage account", SelectResource: selectStorage},
 		{Namespace: "host", Label: "Host service"},
 		{Namespace: "ai.openai", Label: "Azure OpenAI", SelectResource: a.selectOpenAi},
 	}
@@ -60,5 +61,15 @@ func selectDatabase(
 	case project.ResourceTypeDbMongo:
 		r.Props = project.MongoDBProps{}
 	}
+	return r, nil
+}
+
+func selectStorage(
+    console input.Console,
+    ctx context.Context,
+    p promptOptions) (*project.ResourceConfig, error) {
+    r := &project.ResourceConfig{}
+    r.Type = project.ResourceTypeStorage
+	r.Props = project.StorageProps{}
 	return r, nil
 }

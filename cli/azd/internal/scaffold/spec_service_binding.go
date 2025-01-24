@@ -65,9 +65,20 @@ func BindToEventHubs(sourceType binding.SourceType, serviceSpec *ServiceSpec, ev
 func BindToStorageAccount(sourceType binding.SourceType, serviceSpec *ServiceSpec,
 	account *AzureDepStorageAccount) error {
 	serviceSpec.AzureStorageAccount = account
-	return addBindingEnvs(serviceSpec,
+
+	err := addBindingEnvs(serviceSpec,
 		binding.Source{Type: sourceType},
 		binding.Target{Type: binding.AzureStorageAccount, AuthType: account.AuthType})
+
+	if err != nil {
+		return err
+	}
+
+	if len(account.ContainerNames) == 0 {
+		delete(serviceSpec.Envs, "AZURE_STORAGE_CONTAINER")
+	}
+
+	return nil
 }
 
 func BindToAIModels(sourceType binding.SourceType, serviceSpec *ServiceSpec, model string) error {

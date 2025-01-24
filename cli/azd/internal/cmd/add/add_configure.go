@@ -3,10 +3,11 @@ package add
 import (
 	"context"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -41,6 +42,8 @@ func configure(
 
 		r.Name = "redis"
 		return r, nil
+	case project.ResourceTypeStorage:
+		return fillStorageContainerNameAndAuthType(ctx, r, console, p)
 	default:
 		return r, nil
 	}
@@ -124,6 +127,46 @@ func fillDatabaseNameAndAuthType(
 		}
 	}
 
+	return r, nil
+}
+
+func fillStorageContainerNameAndAuthType(
+	ctx context.Context,
+	r *project.ResourceConfig,
+	console input.Console,
+	p promptOptions) (*project.ResourceConfig, error) {
+	if _, exists := p.prj.Resources["storage"]; exists {
+		return nil, fmt.Errorf("only one Storage resource is allowed at this time")
+	}
+	r.Name = "storage"
+	modelProps, ok := r.Props.(project.StorageProps)
+	if !ok {
+		return nil, fmt.Errorf("invalid resource properties")
+	}
+
+	for {
+		containerName, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: "Input the storage container name:",
+			Help:    "Storage container name\n\nName of the storage container that will be created.",
+		})
+		if err != nil {
+			return r, err
+		}
+
+		if err := validateContainerName(containerName); err != nil {
+			console.Message(ctx, err.Error())
+			continue
+		}
+		modelProps.Containers = []string{containerName}
+		break
+	}
+	authType, err := chooseAuthTypeByPrompt(r.Name, []internal.AuthType{
+		internal.AuthTypeConnectionString, internal.AuthTypeUserAssignedManagedIdentity}, ctx, console)
+	if err != nil {
+		return r, err
+	}
+	modelProps.AuthType = authType
+	r.Props = modelProps
 	return r, nil
 }
 

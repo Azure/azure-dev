@@ -38,7 +38,7 @@ func GetBindingEnvsForSpringBoot(source Source, target Target) (map[string]strin
 			return GetServiceBindingEnvsForEventHubs(target.AuthType)
 		}
 	case AzureStorageAccount:
-		return GetServiceBindingEnvsForStorageAccount(target.AuthType)
+		return GetSpringServiceBindingEnvsForStorageAccount(target.AuthType)
 	default:
 		return nil, fmt.Errorf("unsupported target type when binding for spring boot app, target.Type = %s",
 			target.Type)
@@ -241,7 +241,7 @@ func GetServiceBindingEnvsForEventHubs(authType internal.AuthType) (map[string]s
 	}
 }
 
-func GetServiceBindingEnvsForStorageAccount(authType internal.AuthType) (map[string]string, error) {
+func GetSpringServiceBindingEnvsForStorageAccount(authType internal.AuthType) (map[string]string, error) {
 	target := Target{Type: AzureStorageAccount}
 	switch authType {
 	case internal.AuthTypeUserAssignedManagedIdentity:

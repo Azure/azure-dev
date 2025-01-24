@@ -364,12 +364,16 @@ module eventHubsConnectionString './modules/set-event-hubs-namespace-connection-
 {{end}}
 {{- if .AzureStorageAccount }}
 var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
+{{- if .AzureStorageAccount.ContainerNames }}
+var storageContainerName = '{{ index .AzureStorageAccount.ContainerNames 0 }}'
+{{- end}}
 module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
   name: 'storageAccount'
   params: {
     name: storageAccountName
     publicNetworkAccess: 'Enabled'
     blobServices: {
+      {{- if .AzureStorageAccount.ContainerNames }}
       containers: [
         {{- range $index, $element := .AzureStorageAccount.ContainerNames}}
         {
@@ -377,6 +381,7 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
         }
         {{- end}}
       ]
+      {{- end }}
     }
     location: location
     roleAssignments: [
@@ -399,7 +404,7 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
       keyVaultResourceId: keyVault.outputs.resourceId
       accessKey1: 'STORAGE-ACCOUNT-KEY'
       connectionString1: 'STORAGE-ACCOUNT-CONNECTION-STRING'
-}
+    }
     {{- end}}
   }
 }

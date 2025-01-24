@@ -48,6 +48,25 @@ func validateResourceName(name string, prj *project.ProjectConfig) error {
 	return nil
 }
 
+// validateContainerName validates storage account container names.
+// Reference: https://learn.microsoft.com/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#container-names
+func validateContainerName(name string) error {
+	if len(name) < 3 {
+		return errors.New("name must be 3 characters or more")
+	}
+
+	if strings.Contains(name, "--") {
+		return errors.New("name cannot contain consecutive hyphens")
+	}
+
+	err := names.ValidateLabelName(name)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // promptDir prompts the user to input a valid directory.
 func promptDir(
 	ctx context.Context,

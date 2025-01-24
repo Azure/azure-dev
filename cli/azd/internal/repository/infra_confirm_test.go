@@ -28,7 +28,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 		ContainerNames: []string{"container1"},
 		AuthType:       internal.AuthTypeConnectionString,
 	}
-	envsForStorage, _ := binding.GetServiceBindingEnvsForStorageAccount(internal.AuthTypeConnectionString)
+	envsForStorage, _ := binding.GetSpringServiceBindingEnvsForStorageAccount(internal.AuthTypeConnectionString)
 	envsForMongo, _ := binding.GetBindingEnvsForSpringBootToMongoDb(internal.AuthTypeConnectionString)
 	scaffoldServiceBus := scaffold.AzureDepServiceBus{
 		Queues:   []string{"queue1"},

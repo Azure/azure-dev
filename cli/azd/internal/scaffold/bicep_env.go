@@ -205,6 +205,8 @@ var bicepEnv = map[binding.TargetType]map[binding.InfoType]string{
 			"storageAccount.outputs.exportedSecrets['STORAGE-ACCOUNT-CONNECTION-STRING'].secretUri",
 		),
 		binding.InfoTypePassword:      wrapToKeyVaultSecretValue("storageAccount.outputs.exportedSecrets['STORAGE-ACCOUNT-KEY'].secretUri"),
+		binding.InfoTypeBlobEndpoint:  "storageAccount.outputs.serviceEndpoints.blob",
+		binding.InfoTypeContainerName: "storageContainerName",
 	},
 	binding.AzureOpenAiModel: {
 		binding.InfoTypeEndpoint: "account.outputs.endpoint",

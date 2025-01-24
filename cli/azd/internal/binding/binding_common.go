@@ -18,8 +18,10 @@ func GetBindingEnvsForCommonSource(target Target) (map[string]string, error) {
 		return GetBindingEnvsForCommonSourceToRedis(target.AuthType)
 	case AzureOpenAiModel:
 		return GetServiceBindingEnvsForAIModel(target.AuthType)
+	case AzureStorageAccount:
+		return GetBindingEnvsForCommonSourceToStorage(target.AuthType)
 	default:
-		return nil, fmt.Errorf("unsupported target type when binding for spring boot app, target.Type = %s",
+		return nil, fmt.Errorf("unsupported target type when binding for app, target.Type = %s",
 			target.Type)
 	}
 }
@@ -90,6 +92,24 @@ func GetServiceBindingEnvsForAIModel(authType internal.AuthType) (map[string]str
 		}, nil
 	default:
 		return nil, unsupportedAuthTypeError(AzureOpenAiModel, authType)
+	}
+}
+
+func GetBindingEnvsForCommonSourceToStorage(authType internal.AuthType) (map[string]string, error) {
+	bindings := map[string]string{
+		"AZURE_STORAGE_ACCOUNT_NAME":  ToBindingEnv(Target{Type: AzureStorageAccount}, InfoTypeAccountName),
+		"AZURE_STORAGE_BLOB_ENDPOINT": ToBindingEnv(Target{Type: AzureStorageAccount}, InfoTypeBlobEndpoint),
+		"AZURE_STORAGE_CONTAINER":     ToBindingEnv(Target{Type: AzureStorageAccount}, InfoTypeContainerName),
+	}
+	switch authType {
+	case internal.AuthTypeConnectionString:
+		bindings["AZURE_STORAGE_ACCOUNT_KEY"] = ToBindingEnv(Target{Type: AzureStorageAccount}, InfoTypePassword)
+		bindings["AZURE_STORAGE_CONNECTION_STRING"] = ToBindingEnv(Target{Type: AzureStorageAccount}, InfoTypeConnectionString)
+		return bindings, nil
+	case internal.AuthTypeUserAssignedManagedIdentity:
+		return bindings, nil
+	default:
+		return nil, unsupportedAuthTypeError(AzureStorageAccount, authType)
 	}
 }
 

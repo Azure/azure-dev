@@ -55,6 +55,11 @@ const (
 type InfoType string
 
 const (
+	InfoTypeBlobEndpoint  InfoType = "blobEndpoint"
+	InfoTypeContainerName InfoType = "containerName"
+)
+
+const (
 	InfoTypeHost                                      InfoType = "host"
 	InfoTypePort                                      InfoType = "port"
 	InfoTypeEndpoint                                  InfoType = "endpoint"

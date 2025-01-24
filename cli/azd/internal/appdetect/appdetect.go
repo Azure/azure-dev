@@ -102,6 +102,20 @@ func (f Dependency) IsWebUIFramework() bool {
 	return false
 }
 
+type RawDependency struct {
+	Kind    RawDependencyKind
+	Name    string
+	Version string
+}
+
+type RawDependencyKind string
+
+const RawDependencyKindMaven RawDependencyKind = "maven"
+const MavenDependencyNameMySqlConnectorJ = "com.mysql:mysql-connector-j"
+const MavenDependencyNamePostgresql = "org.postgresql:postgresql"
+const MavenDependencyNameSpringCloudAzureStarterJdbcPostgresql = "com.azure.spring:spring-cloud-azure-starter-jdbc-postgresql"
+const MavenDependencyNameSpringBootMavenPlugin = "org.springframework.boot:spring-boot-maven-plugin"
+
 // A type of database that is inferred through heuristics while scanning project information.
 type DatabaseDep string
 
@@ -137,6 +151,9 @@ type Project struct {
 
 	// Dependencies scanned in the project.
 	Dependencies []Dependency
+
+	// RawDependencies scanned in the project.
+	RawDependencies []RawDependency
 
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep

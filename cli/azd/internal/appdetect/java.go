@@ -123,27 +123,35 @@ func readMavenProject(filePath string) (*mavenProject, error) {
 func detectDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
 	databaseDepMap := map[DatabaseDep]struct{}{}
 	for _, dep := range mavenProject.Dependencies {
-		if dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j" {
+		name := toDependencyName(dep.GroupId, dep.ArtifactId)
+		switch name {
+		case MavenDependencyNameMySqlConnectorJ:
 			databaseDepMap[DbMySql] = struct{}{}
-		}
-
-		if (dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql") ||
-			(dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-jdbc-postgresql") {
+			project.RawDependencies = append(project.RawDependencies,
+				RawDependency{RawDependencyKindMaven, name, dep.Version})
+		case MavenDependencyNamePostgresql, MavenDependencyNameSpringCloudAzureStarterJdbcPostgresql:
 			databaseDepMap[DbPostgres] = struct{}{}
-			// todo: Only call this func when it's a spring-boot project
-			err := addPostgresqlConnectionProperties(project.Path)
-			if err != nil {
-				return nil, err
-			}
+			project.RawDependencies = append(project.RawDependencies,
+				RawDependency{RawDependencyKindMaven, name, dep.Version})
 		}
 	}
-
 	if len(databaseDepMap) > 0 {
 		project.DatabaseDeps = slices.SortedFunc(maps.Keys(databaseDepMap),
 			func(a, b DatabaseDep) int {
 				return strings.Compare(string(a), string(b))
 			})
 	}
+	for _, dep := range mavenProject.Build.Plugins {
+		name := toDependencyName(dep.GroupId, dep.ArtifactId)
+		if name == MavenDependencyNameSpringBootMavenPlugin {
+			project.RawDependencies = append(project.RawDependencies,
+				RawDependency{RawDependencyKindMaven, name, dep.Version})
+		}
+	}
 
 	return project, nil
+}
+
+func toDependencyName(groupId string, artifactId string) string {
+	return groupId + ":" + artifactId
 }

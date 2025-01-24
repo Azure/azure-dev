@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
 
 type javaDetector struct {
+	mvnCli       *maven.Cli
 	rootProjects []mavenProject
 }
 
@@ -24,7 +26,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "pom.xml" {
 			pomFile := filepath.Join(path, entry.Name())
-			project, err := readMavenProject(pomFile)
+			project, err := readMavenProject(ctx, jd.mvnCli, pomFile)
 			if err != nil {
 				return nil, fmt.Errorf("error reading pom.xml: %w", err)
 			}
@@ -104,19 +106,16 @@ type plugin struct {
 	Version    string `xml:"version"`
 }
 
-func readMavenProject(filePath string) (*mavenProject, error) {
-	bytes, err := os.ReadFile(filePath)
+func readMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (*mavenProject, error) {
+	effectivePom, err := mvnCli.EffectivePom(ctx, filePath)
 	if err != nil {
 		return nil, err
 	}
-
 	var project mavenProject
-	if err := xml.Unmarshal(bytes, &project); err != nil {
+	if err := xml.Unmarshal([]byte(effectivePom), &project); err != nil {
 		return nil, fmt.Errorf("parsing xml: %w", err)
 	}
-
 	project.path = filepath.Dir(filePath)
-
 	return &project, nil
 }
 

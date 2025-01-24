@@ -23,10 +23,11 @@ func Test_Powershell_Execute(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
+		userPwsh := "pwsh -NoProfile"
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return true
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			require.Equal(t, "pwsh", args.Cmd)
+			require.Equal(t, userPwsh, args.Cmd)
 			require.Equal(t, workingDir, args.Cwd)
 			require.Equal(t, scriptPath, args.Args[0])
 			require.Equal(t, env, args.Env)
@@ -38,7 +39,7 @@ func Test_Powershell_Execute(t *testing.T) {
 		runResult, err := PowershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: to.Ptr(true)},
+			tools.ExecOptions{UserPwsh: userPwsh, Interactive: to.Ptr(true)},
 		)
 
 		require.NotNil(t, runResult)

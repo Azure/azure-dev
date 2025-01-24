@@ -70,8 +70,6 @@ type HookConfig struct {
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
 	Posix *HookConfig `yaml:"posix,omitempty"`
-	// In order to support pwsh parameter passing, this parameter is required to store the shell value passed in by the user
-	UserPwsh string
 }
 
 // Validates and normalizes the hook configuration
@@ -79,8 +77,7 @@ func (hc *HookConfig) validate() error {
 	if hc.validated {
 		return nil
 	}
-	hc.UserPwsh = string(hc.Shell)
-	hc.Shell = ShellType(strings.Split(string(hc.Shell), " ")[0])
+
 	if hc.Run == "" {
 		return ErrRunRequired
 	}
@@ -169,7 +166,7 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	scriptHeader := []string{}
 	scriptFooter := []string{}
 
-	switch hookConfig.Shell {
+	switch ShellType(strings.Split(string(hookConfig.Shell), " ")[0]) {
 	case ShellTypeBash:
 		ext = "sh"
 		scriptHeader = []string{

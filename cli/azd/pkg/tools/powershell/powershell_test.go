@@ -23,6 +23,7 @@ func Test_Powershell_Execute(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
+		// #nosec G101
 		userPwsh := "pwsh -NoProfile"
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return true

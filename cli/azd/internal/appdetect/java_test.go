@@ -15,13 +15,13 @@ import (
 func TestToMavenProject(t *testing.T) {
 	path, err := osexec.LookPath("java")
 	if err != nil {
-		t.Skip("Skip toMavenProject because java command doesn't exist.")
+		t.Skip("Skip readMavenProject because java command doesn't exist.")
 	} else {
 		slog.Info("Java command found.", "path", path)
 	}
 	path, err = osexec.LookPath("mvn")
 	if err != nil {
-		t.Skip("Skip toMavenProject because mvn command doesn't exist.")
+		t.Skip("Skip readMavenProject because mvn command doesn't exist.")
 	} else {
 		slog.Info("Java command found.", "path", path)
 	}
@@ -263,10 +263,10 @@ func TestToMavenProject(t *testing.T) {
 			testPom := tt.testPoms[0]
 			pomFilePath := filepath.Join(workingDir, testPom.pomFilePath)
 
-			mavenProject, err := toMavenProject(context.TODO(), maven.NewCli(exec.NewCommandRunner(nil)),
+			mavenProject, err := readMavenProject(context.TODO(), maven.NewCli(exec.NewCommandRunner(nil)),
 				pomFilePath)
 			if err != nil {
-				t.Fatalf("toMavenProject failed: %v", err)
+				t.Fatalf("readMavenProject failed: %v", err)
 			}
 
 			if len(mavenProject.Dependencies) != len(tt.expected) {

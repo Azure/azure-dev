@@ -26,7 +26,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "pom.xml" {
 			pomFile := filepath.Join(path, entry.Name())
-			project, err := toMavenProject(ctx, jd.mvnCli, pomFile)
+			project, err := readMavenProject(ctx, jd.mvnCli, pomFile)
 			if err != nil {
 				return nil, fmt.Errorf("error reading pom.xml: %w", err)
 			}
@@ -106,7 +106,7 @@ type plugin struct {
 	Version    string `xml:"version"`
 }
 
-func toMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (*mavenProject, error) {
+func readMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (*mavenProject, error) {
 	effectivePom, err := mvnCli.EffectivePom(ctx, filePath)
 	if err != nil {
 		return nil, err

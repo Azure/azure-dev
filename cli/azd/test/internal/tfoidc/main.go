@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 // Program tfoidc is a simple adapter that presents a GitHub Actions style OIDC token endpoint backed by an Azure
 // DevOps service connection. It can also be used to continuously refresh the Azure CLI federated token, as the
 // AzureCLI task would.

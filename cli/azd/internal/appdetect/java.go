@@ -109,12 +109,12 @@ type plugin struct {
 func toMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (*mavenProject, error) {
 	effectivePom, err := mvnCli.EffectivePom(ctx, filePath)
 	if err != nil {
-		return &mavenProject{}, err
+		return nil, err
 	}
 	var project mavenProject
 	err = xml.Unmarshal([]byte(effectivePom), &project)
 	if err != nil {
-		return &mavenProject{}, err
+		return nil, err
 	}
 	project.path = filepath.Dir(filePath)
 	return &project, nil

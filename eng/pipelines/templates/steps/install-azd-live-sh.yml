@@ -10,7 +10,7 @@ parameters:
 steps:
 - pwsh: |
     if ('${{ parameters.Version }}'.StartsWith('pr/')) {
-      $InstallArgs = "--base-url $(publish-storage-location)/`$web/azd/standalone/${{ parameters.Version }} --skip-verify --version ''"
+      $InstallArgs = "--base-url $(publish-storage-static-host)/`$web/azd/standalone/${{ parameters.Version }} --skip-verify --version ''"
       $ContainerImageTag = '${{ parameters.Version }}' -replace '/', '-'
     } else {
       $InstallArgs = "--version '${{ parameters.Version }}'"

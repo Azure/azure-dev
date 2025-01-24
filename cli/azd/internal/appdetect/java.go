@@ -112,9 +112,8 @@ func toMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (*m
 		return nil, err
 	}
 	var project mavenProject
-	err = xml.Unmarshal([]byte(effectivePom), &project)
-	if err != nil {
-		return nil, err
+	if err := xml.Unmarshal([]byte(effectivePom), &project); err != nil {
+		return nil, fmt.Errorf("parsing xml: %w", err)
 	}
 	project.path = filepath.Dir(filePath)
 	return &project, nil

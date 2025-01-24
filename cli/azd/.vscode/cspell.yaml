@@ -18,6 +18,7 @@ words:
   - usgovcloudapi
   - jdbc
   - bicept
+  - springframework
 languageSettings:
   - languageId: go
     ignoreRegExpList:

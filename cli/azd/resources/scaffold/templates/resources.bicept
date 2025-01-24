@@ -394,19 +394,15 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
       defaultAction: 'Allow'
     }
     tags: tags
+    {{- if (and .Services (eq .AzureStorageAccount.AuthType "connectionString")) }}
+    secretsExportConfiguration: {
+      keyVaultResourceId: keyVault.outputs.resourceId
+      accessKey1: 'STORAGE-ACCOUNT-KEY'
+      connectionString1: 'STORAGE-ACCOUNT-CONNECTION-STRING'
+}
+    {{- end}}
   }
 }
-
-{{- if (and .AzureStorageAccount (eq .AzureStorageAccount.AuthType "connectionString")) }}
-module storageAccountConnectionString './modules/set-storage-account-connection-string.bicep' = {
-  name: 'storageAccountConnectionString'
-  params: {
-    storageAccountName: storageAccountName
-    connectionStringSecretName: 'STORAGE-ACCOUNT-CONNECTION-STRING'
-    keyVaultName: keyVault.outputs.name
-  }
-}
-{{end}}
 {{end}}
 
 {{- if .AzureServiceBus }}

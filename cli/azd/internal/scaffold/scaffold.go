@@ -89,10 +89,6 @@ func supportingFiles(spec InfraSpec) []string {
 		files = append(files, "/modules/set-event-hubs-namespace-connection-string.bicep")
 	}
 
-	if spec.AzureStorageAccount != nil && spec.AzureStorageAccount.AuthType == internal.AuthTypeConnectionString {
-		files = append(files, "/modules/set-storage-account-connection-string.bicep")
-	}
-
 	return files
 }
 

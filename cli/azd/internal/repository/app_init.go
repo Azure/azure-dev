@@ -304,7 +304,8 @@ func (i *Initializer) InitFromApp(
 				continue
 			}
 			switch dep.Name {
-			case appdetect.MavenDependencyNamePostgresql, appdetect.MavenDependencyNameSpringCloudAzureStarterJdbcPostgresql:
+			case appdetect.MavenDependencyNamePostgresql,
+				appdetect.MavenDependencyNameSpringCloudAzureStarterJdbcPostgresql:
 				err := addPostgresqlConnectionProperties(proj.Path)
 				if err != nil {
 					return err

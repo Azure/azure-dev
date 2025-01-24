@@ -170,16 +170,25 @@ func warnKeyCaseConflicts(
 			conflicts = append(conflicts, "'"+k+"'")
 		}
 	}
-	slices.Sort(conflicts)
 
-	if len(conflicts) > 0 {
+	if len(conflicts) == 1 {
 		console.MessageUxItem(ctx,
 			&ux.WarningMessage{
 				Description: fmt.Sprintf(
-					"'%s' already exists as %s. Did you mean to set '%s' instead?",
+					"'%s' already exists as %s. Did you mean to set %s instead?",
 					key,
-					ux.ListAsText(conflicts),
-					key),
+					conflicts[0],
+					conflicts[0]),
+			})
+	} else if len(conflicts) > 1 {
+		slices.Sort(conflicts)
+
+		console.MessageUxItem(ctx,
+			&ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"'%s' already exists as %s",
+					key,
+					ux.ListAsText(conflicts)),
 			})
 	}
 }

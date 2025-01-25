@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package appinsightsexporter
 
 // Forked implementation from github.com/microsoft/ApplicationInsights-Go

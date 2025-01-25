@@ -19,7 +19,6 @@ import (
 	osexec "os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -379,6 +378,7 @@ func Test_CLI_EnvironmentSecrets(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, `AZD_ENV_SET_SECRET_LIST_WITHOUT_NUMBERS=""`)
 
 	err := copySample(dir, "environment-secrets")
 	require.NoError(t, err, "failed expanding sample")
@@ -425,24 +425,6 @@ func Test_CLI_EnvironmentSecrets(t *testing.T) {
 		kvs2,
 		kvsv2,
 	), "env", "set-secret", "SEC_REF")
-	// This error is expected because we don't know the number that azd adds before the key vault account name
-	require.Error(t, err, "selecting Key Vault account")
-
-	// Extract the key vault account name from the error message
-	extractor := regexp.MustCompile(`(\s?\d+\. )` + kva + ",?").FindStringSubmatch(envSetSecretOut.Stdout)
-	if len(extractor) != 2 {
-		t.Fatalf("could not extract the key vault account name from the error message: %s", envSetSecretOut.Stdout)
-		return
-	}
-
-	kvaWithNumber := fmt.Sprintf("%s%s", extractor[1], kva)
-
-	// try again with the correct key vault account name
-	envSetSecretOut, err = cli.RunCommandWithStdIn(ctx, stdinForExistingKvAccount(
-		kvaWithNumber,
-		kvs2,
-		kvsv2,
-	), "env", "set-secret", "SEC_REF")
 	require.NoError(t, err)
 	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
 
@@ -460,7 +442,7 @@ func Test_CLI_EnvironmentSecrets(t *testing.T) {
 
 	// Finally, test selecting existing kv secret by setting the initial secret again
 	envSetSecretOut, err = cli.RunCommandWithStdIn(
-		ctx, stdinForExistingKvSecret(kvaWithNumber), "env", "set-secret", "SEC_REF")
+		ctx, stdinForExistingKvSecret(kva), "env", "set-secret", "SEC_REF")
 	require.NoError(t, err)
 	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
 
@@ -899,11 +881,11 @@ func stdinForProvision() string {
 func stdinForCreateKvAccount(rg, kva, kvs, kvsv string) string {
 	return "\n" + // "Create new Key Vault Secret
 		"\n" + // "choose subscription" (we're choosing the default)
-		"\n" + // "Create new Key Vault Account
+		"\n" + // "Create new Key Vault
 		"\n" + // "choose location" (we're choosing the default)
 		"Create a new resource group\n" + // "Create new resource group"
 		rg + "\n" + // "resource group name"
-		kva + "\n" + // "key vault account name"
+		kva + "\n" + // "key vault name"
 		kvs + "\n" + // "key vault secret name"
 		kvsv + "\n" // "key vault secret value"
 }
@@ -911,7 +893,7 @@ func stdinForCreateKvAccount(rg, kva, kvs, kvsv string) string {
 func stdinForExistingKvAccount(kva, kvs, kvsv string) string {
 	return "\n" + // "Create new Key Vault Secret
 		"\n" + // "choose subscription" (we're choosing the default)
-		kva + "\n" + // "Use existing Key Vault Account
+		kva + "\n" + // "Use existing Key Vault
 		kvs + "\n" + // "key vault secret name"
 		kvsv + "\n" // "key vault secret value"
 }
@@ -919,7 +901,7 @@ func stdinForExistingKvAccount(kva, kvs, kvsv string) string {
 func stdinForExistingKvSecret(kva string) string {
 	return "Select an existing Key Vault secret\n" + // "Create new Key Vault Secret
 		"\n" + // "choose subscription" (we're choosing the default)
-		kva + "\n" + // "Use existing Key Vault Account
+		kva + "\n" + // "Use existing Key Vault
 		"\n" // "first key vault secret name in the list"
 }
 

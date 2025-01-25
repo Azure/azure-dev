@@ -2,7 +2,9 @@ name: storage
 metadata: 
   template: azd-test/env-secrets@v1
 hooks:
-  preprovision:
+  # using postprovision to give some time for rbac. When using preprovision, sometimes rbac role is still not ready 
+  # and trying to read he secret fails for test case b/c how fast it goes from setting the secret to reading it.
+  postprovision:
     - windows:
         run: 'Write-Host ".env value: $env:SEC_REF `nResolved secret: $env:SECRET_RESOLVE"'
         shell: pwsh

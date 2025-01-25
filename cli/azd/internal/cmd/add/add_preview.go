@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -63,6 +64,18 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 		res.AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
 		res.UseEnvVars = []string{
 			"AZURE_OPENAI_ENDPOINT",
+		}
+	case project.ResourceTypeStorage:
+		res.AzureResourceType = "Microsoft.Storage/storageAccounts"
+		res.UseEnvVars = []string{
+			"AZURE_STORAGE_ACCOUNT_NAME",
+			"AZURE_STORAGE_BLOB_ENDPOINT",
+			"AZURE_STORAGE_CONTAINER",
+		}
+
+		if modelProps, ok := r.Props.(project.StorageProps); ok && modelProps.AuthType == internal.AuthTypeConnectionString {
+			res.UseEnvVars = append(res.UseEnvVars, "AZURE_STORAGE_ACCOUNT_KEY")
+			res.UseEnvVars = append(res.UseEnvVars, "AZURE_STORAGE_CONNECTION_STRING")
 		}
 	}
 	return res

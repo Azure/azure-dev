@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package internal
 
 // ErrorWithSuggestion is a custom error type that includes a suggestion for the user

@@ -56,17 +56,17 @@ func TestDetect(t *testing.T) {
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "com.mysql:mysql-connector-j",
-							Version: "",
+							Version: "8.3.0",
 						},
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "org.postgresql:postgresql",
-							Version: "",
+							Version: "42.7.3",
 						},
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "org.springframework.boot:spring-boot-maven-plugin",
-							Version: "",
+							Version: "3.3.0",
 						},
 					},
 				},
@@ -157,17 +157,17 @@ func TestDetect(t *testing.T) {
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "com.mysql:mysql-connector-j",
-							Version: "",
+							Version: "8.3.0",
 						},
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "org.postgresql:postgresql",
-							Version: "",
+							Version: "42.7.3",
 						},
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "org.springframework.boot:spring-boot-maven-plugin",
-							Version: "",
+							Version: "3.3.0",
 						},
 					},
 				},
@@ -207,17 +207,17 @@ func TestDetect(t *testing.T) {
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "com.mysql:mysql-connector-j",
-							Version: "",
+							Version: "8.3.0",
 						},
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "org.postgresql:postgresql",
-							Version: "",
+							Version: "42.7.3",
 						},
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "org.springframework.boot:spring-boot-maven-plugin",
-							Version: "",
+							Version: "3.3.0",
 						},
 					},
 				},
@@ -260,17 +260,17 @@ func TestDetect(t *testing.T) {
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "com.mysql:mysql-connector-j",
-							Version: "",
+							Version: "8.3.0",
 						},
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "org.postgresql:postgresql",
-							Version: "",
+							Version: "42.7.3",
 						},
 						{
 							Kind:    RawDependencyKindMaven,
 							Name:    "org.springframework.boot:spring-boot-maven-plugin",
-							Version: "",
+							Version: "3.3.0",
 						},
 					},
 				},

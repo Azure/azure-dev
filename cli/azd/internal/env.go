@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package internal
 
 // todo: keep single source for env name in go lang code and resources.bicept

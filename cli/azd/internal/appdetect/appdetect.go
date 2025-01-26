@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/bmatcuk/doublestar/v4"
 )
 
@@ -197,7 +198,9 @@ type projectDetector interface {
 var allDetectors = []projectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
-	&javaDetector{},
+	&javaDetector{
+		mvnCli: maven.NewCli(exec.NewCommandRunner(nil)),
+	},
 	&dotNetAppHostDetector{
 		// TODO(ellismg): Remove ambient authority.
 		dotnetCli: dotnet.NewCli(exec.NewCommandRunner(nil)),

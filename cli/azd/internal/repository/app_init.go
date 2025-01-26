@@ -291,7 +291,8 @@ func (i *Initializer) InitFromApp(
 	for _, proj := range projects {
 		isSpringBootProject := false
 		for _, dep := range proj.RawDependencies {
-			if dep.Kind == appdetect.RawDependencyKindMaven && dep.Name == appdetect.MavenDependencyNameSpringBootMavenPlugin {
+			if dep.Kind == appdetect.RawDependencyKindMaven &&
+				dep.Name == appdetect.MavenDependencyNameSpringBootMavenPlugin {
 				isSpringBootProject = true
 				break
 			}

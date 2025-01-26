@@ -49,6 +49,23 @@ func TestDetect(t *testing.T) {
 						DbMySql,
 						DbPostgres,
 					},
+					RawDependencies: []RawDependency{
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "com.mysql:mysql-connector-j",
+							Version: "",
+						},
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "org.postgresql:postgresql",
+							Version: "",
+						},
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "org.springframework.boot:spring-boot-maven-plugin",
+							Version: "",
+						},
+					},
 				},
 				{
 					Language:      Java,
@@ -133,6 +150,23 @@ func TestDetect(t *testing.T) {
 						DbMySql,
 						DbPostgres,
 					},
+					RawDependencies: []RawDependency{
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "com.mysql:mysql-connector-j",
+							Version: "",
+						},
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "org.postgresql:postgresql",
+							Version: "",
+						},
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "org.springframework.boot:spring-boot-maven-plugin",
+							Version: "",
+						},
+					},
 				},
 				{
 					Language:      Java,
@@ -165,6 +199,23 @@ func TestDetect(t *testing.T) {
 					DatabaseDeps: []DatabaseDep{
 						DbMySql,
 						DbPostgres,
+					},
+					RawDependencies: []RawDependency{
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "com.mysql:mysql-connector-j",
+							Version: "",
+						},
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "org.postgresql:postgresql",
+							Version: "",
+						},
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "org.springframework.boot:spring-boot-maven-plugin",
+							Version: "",
+						},
 					},
 				},
 				{
@@ -201,6 +252,23 @@ func TestDetect(t *testing.T) {
 					DatabaseDeps: []DatabaseDep{
 						DbMySql,
 						DbPostgres,
+					},
+					RawDependencies: []RawDependency{
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "com.mysql:mysql-connector-j",
+							Version: "",
+						},
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "org.postgresql:postgresql",
+							Version: "",
+						},
+						{
+							Kind:    RawDependencyKindMaven,
+							Name:    "org.springframework.boot:spring-boot-maven-plugin",
+							Version: "",
+						},
 					},
 				},
 				{

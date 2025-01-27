@@ -14,7 +14,7 @@ To associate a Bicep parameter with the value of an Azure Key Vault secret, plea
 In scenarios where the key's value is a reference to an Azure Key Vault secret and the parameter is designated as secured, the Azure Developer CLI will attempt to retrieve the Key Vault secret value and apply it to the parameter.
 
 Please note:
-- The use of environment secrets is not currently supported when utilizing Bicep parameter files.
+- The use of environment secrets is not currently supported when utilizing Bicep parameter files (`.bicepparam`).
 
 ### Example
 

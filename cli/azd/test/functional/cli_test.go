@@ -457,6 +457,13 @@ func Test_CLI_EnvironmentSecrets(t *testing.T) {
 	envValue, err = cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
 	require.NoError(t, err)
 	require.Contains(t, envValue.Stdout, kvsv)
+
+	env, err := envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+	}
 }
 
 func Test_CLI_ProvisionStateWithDown(t *testing.T) {

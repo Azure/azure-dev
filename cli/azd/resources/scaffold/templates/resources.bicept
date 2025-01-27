@@ -784,6 +784,6 @@ output AZURE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceId
 output AZURE_SERVICE_BUS_ID string = serviceBusNamespace.outputs.resourceId
 {{- end}}
 {{- if .AzureStorageAccount }}
-output AZURE_STORAGE_ACCOUNT_ID string = storageAccount.outputs.resourceId
+output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId
 {{- end}}
 {{ end}}

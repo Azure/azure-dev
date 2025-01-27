@@ -59,6 +59,10 @@ func validateContainerName(name string) error {
 		return errors.New("name cannot contain consecutive hyphens")
 	}
 
+	if strings.ToLower(name) != name {
+		return errors.New("name must be all lower case")
+	}
+
 	err := names.ValidateLabelName(name)
 	if err != nil {
 		return err

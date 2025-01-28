@@ -5,8 +5,6 @@ package extensions
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
@@ -18,95 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
-
-func Test_SignAndVerifySignature_Success(t *testing.T) {
-	// Generate a new RSA key pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-
-	publicKey := &privateKey.PublicKey
-
-	// Data to be signed
-	data := []byte("test data")
-
-	// Sign the data
-	signature, err := sign(data, privateKey)
-	require.NoError(t, err)
-
-	// Verify the signature
-	err = verifySignature(data, signature, publicKey)
-	require.NoError(t, err)
-}
-
-func Test_VerifySignature_Failure(t *testing.T) {
-	// Generate a new RSA key pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-
-	publicKey := &privateKey.PublicKey
-
-	// Data to be signed
-	data := []byte("test data")
-
-	// Sign the data
-	signature, err := sign(data, privateKey)
-	require.NoError(t, err)
-
-	// Modify the data to make the signature invalid
-	modifiedData := []byte("modified data")
-
-	// Verify the signature with modified data
-	err = verifySignature(modifiedData, signature, publicKey)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "signature verification failed")
-}
-
-func Test_Sign_Failure(t *testing.T) {
-	// Generate a new RSA key pair with a small key size to force an error
-	// nolint:gosec
-	privateKey, err := rsa.GenerateKey(rand.Reader, 512)
-	require.NoError(t, err)
-
-	// Data to be signed
-	data := []byte("test data")
-
-	// Sign the data
-	_, err = sign(data, privateKey)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "key size is too small")
-}
-
-func Test_VerifySignature_InvalidSignature(t *testing.T) {
-	// Generate a new RSA key pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-
-	publicKey := &privateKey.PublicKey
-
-	// Data to be signed
-	data := []byte("test data")
-
-	// Invalid signature
-	invalidSignature := "invalid_signature"
-
-	// Verify the invalid signature
-	err = verifySignature(data, invalidSignature, publicKey)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to decode signature")
-}
-
-func Test_LoadPublicKeys(t *testing.T) {
-	// Load the public keys
-	keys, err := loadPublicKeys()
-	require.NoError(t, err)
-	require.NotEmpty(t, keys)
-	require.Greater(t, len(keys), 0)
-
-	// Validate that all public keys are at least 2048 bits in length
-	for keyID, publicKey := range keys {
-		require.GreaterOrEqual(t, publicKey.N.BitLen(), 2048, "public key %s is less than 2048 bits", keyID)
-	}
-}
 
 func Test_ValidateChecksum_Success_SHA256(t *testing.T) {
 	// Create a temporary file with known content

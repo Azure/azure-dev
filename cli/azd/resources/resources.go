@@ -33,6 +33,3 @@ var AiPythonApp embed.FS
 
 //go:embed pipeline/*
 var PipelineFiles embed.FS
-
-//go:embed keys/*
-var PublicKeys embed.FS

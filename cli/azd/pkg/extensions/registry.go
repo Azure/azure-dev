@@ -15,8 +15,6 @@ type ExtensionExample struct {
 type Registry struct {
 	// Extensions is a list of extensions in the registry
 	Extensions []*ExtensionMetadata `json:"extensions"`
-	// Signature is used to validate the integrity of a registry source
-	Signature string `json:"signature,omitempty"`
 }
 
 // Extension represents an extension in the registry

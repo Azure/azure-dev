@@ -22,7 +22,7 @@ func GetAuthTypeDescription(authType AuthType) string {
 	case AuthTypeConnectionString:
 		return "Connection string"
 	case AuthTypeUserAssignedManagedIdentity:
-		return "User assigned managed identity"
+		return "Passwordless (recommended)"
 	default:
 		return "Unspecified"
 	}

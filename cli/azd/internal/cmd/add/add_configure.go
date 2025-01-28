@@ -161,7 +161,7 @@ func fillStorageContainerNameAndAuthType(
 		break
 	}
 	authType, err := chooseAuthTypeByPrompt(r.Name, []internal.AuthType{
-		internal.AuthTypeConnectionString, internal.AuthTypeUserAssignedManagedIdentity}, ctx, console)
+		internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString}, ctx, console)
 	if err != nil {
 		return r, err
 	}

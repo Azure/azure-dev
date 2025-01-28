@@ -152,7 +152,7 @@ parameters:
     # host this can be used to validate the ARM64 Linux packages.
     # https://github.com/Azure/azure-dev/issues/2617
     # LinuxARM64:
-    #   Pool: $(LINUXARMPOOL)
+    #   Pool: $(ARMPOOL)
     #   OSVmImage: $(LINUXARMVMIMAGE)
     #   HostArchitecture: arm64
     #   OS: linux

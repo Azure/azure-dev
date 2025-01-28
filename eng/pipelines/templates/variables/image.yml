@@ -7,8 +7,6 @@ variables:
     value: azsdk-pool-mms-win-2022-general
   - name: MACPOOL
     value: Azure Pipelines
-  - name: LINUXARMPOOL
-    value: azsdk-pool-mms-ubuntu-2004-arm
   - name: ARMPOOL
     value: azsdk-pool-arm64
 

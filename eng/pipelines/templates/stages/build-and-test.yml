@@ -12,7 +12,7 @@ parameters:
         ImageKey: image
         ValidateCrossCompile: true
         ValidateVm:
-          PoolName: $(LINUXARMPOOL)
+          PoolName: $(ARMPOOL)
           ImageName: $(LINUXARMVMIMAGE)
           Os: linux
         ValidationTask: bash

@@ -12,7 +12,7 @@ describe('setup azd tests - fails', function () {
     });
 
     it('should fail with invalid version', function (done: Mocha.Done) {
-        setTimeout(() => { }, 10000);
+        setTimeout(() => { }, 20000);
         let tp = path.join(__dirname, 'invalidVersion.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
 

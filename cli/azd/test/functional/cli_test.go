@@ -371,6 +371,10 @@ func Test_CLI_EnvironmentSecrets(t *testing.T) {
 
 	session := recording.Start(t)
 
+	if session != nil && session.Playback {
+		t.Skip("Skipping test in playback mode. This test is live only.")
+	}
+
 	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
@@ -378,6 +382,7 @@ func Test_CLI_EnvironmentSecrets(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, "AZD_FORCE_TTY=false")
 
 	err := copySample(dir, "environment-secrets")
 	require.NoError(t, err, "failed expanding sample")

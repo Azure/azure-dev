@@ -210,7 +210,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	// When no interactive is supported in the terminal azd will not add numbers to the list when
 	// asking to select options. For example, instead of showing "1. Option 1", it will show "Option 1". This is useful
 	// when the user wants to prefill the selection in stdin before calling azd env set-secret (e.g. in a script).
-	listWithoutNumbers := e.console.IsSpinnerInteractive()
+	listWithoutNumbers := !e.console.IsSpinnerInteractive()
 
 	createNewStrategy := "Create a new Key Vault secret"
 	selectExistingStrategy := "Select an existing Key Vault secret"

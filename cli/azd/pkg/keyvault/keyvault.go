@@ -13,9 +13,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
@@ -51,12 +53,48 @@ type KeyVaultService interface {
 		secretName string,
 	) (*Secret, error)
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	ListSubscriptionVaults(ctx context.Context, subscriptionId string) ([]Vault, error)
+	CreateVault(
+		ctx context.Context,
+		tenantId string,
+		subscriptionId string,
+		resourceGroupName string,
+		location string,
+		vaultName string,
+	) (Vault, error)
+	ListKeyVaultSecrets(
+		ctx context.Context,
+		subscriptionId string,
+		vaultName string,
+	) ([]string, error)
+	CreateKeyVaultSecret(
+		ctx context.Context,
+		subscriptionId string,
+		vaultName string,
+		secretName string,
+		secretValue string,
+	) error
+	SecretFromAkvs(ctx context.Context, akvs string) (string, error)
 }
 
 type keyVaultService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
 	coreClientOptions  *azcore.ClientOptions
+	cloud              *cloud.Cloud
+}
+
+// CreateKeyVaultSecret implements KeyVaultService.
+func (kvs *keyVaultService) CreateKeyVaultSecret(
+	ctx context.Context, subscriptionId string, vaultName string, secretName string, secretValue string) error {
+	client, err := kvs.createSecretsDataClient(ctx, subscriptionId, vaultName)
+	if err != nil {
+		return err
+	}
+	_, err = client.SetSecret(ctx, secretName, azsecrets.SetSecretParameters{
+		Value: to.Ptr(secretValue),
+	}, nil)
+	return err
 }
 
 // NewKeyVaultService creates a new KeyVault service
@@ -64,11 +102,13 @@ func NewKeyVaultService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	armClientOptions *arm.ClientOptions,
 	coreClientOptions *azcore.ClientOptions,
+	cloud *cloud.Cloud,
 ) KeyVaultService {
 	return &keyVaultService{
 		credentialProvider: credentialProvider,
 		armClientOptions:   armClientOptions,
 		coreClientOptions:  coreClientOptions,
+		cloud:              cloud,
 	}
 }
 
@@ -108,14 +148,9 @@ func (kvs *keyVaultService) GetKeyVaultSecret(
 	vaultName string,
 	secretName string,
 ) (*Secret, error) {
-	vaultUrl := vaultName
-	if !strings.Contains(strings.ToLower(vaultName), "https://") {
-		vaultUrl = fmt.Sprintf("https://%s.vault.azure.net", vaultName)
-	}
-
-	client, err := kvs.createSecretsDataClient(ctx, subscriptionId, vaultUrl)
+	client, err := kvs.createSecretsDataClient(ctx, subscriptionId, vaultName)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	response, err := client.GetSecret(ctx, secretName, "", nil)
@@ -132,6 +167,31 @@ func (kvs *keyVaultService) GetKeyVaultSecret(
 		Name:  response.SecretBundle.ID.Name(),
 		Value: *response.SecretBundle.Value,
 	}, nil
+}
+
+func (kvs *keyVaultService) ListKeyVaultSecrets(
+	ctx context.Context,
+	subscriptionId string,
+	vaultName string,
+) ([]string, error) {
+	client, err := kvs.createSecretsDataClient(ctx, subscriptionId, vaultName)
+	if err != nil {
+		return nil, nil
+	}
+
+	secretsPager := client.NewListSecretsPager(nil)
+	result := []string{}
+	for secretsPager.More() {
+		secretsPage, err := secretsPager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing key vault secrets: %w", err)
+		}
+
+		for _, secret := range secretsPage.Value {
+			result = append(result, secret.ID.Name())
+		}
+	}
+	return result, nil
 }
 
 func (kvs *keyVaultService) PurgeKeyVault(
@@ -181,8 +241,12 @@ func (kvs *keyVaultService) createKeyVaultClient(
 func (kvs *keyVaultService) createSecretsDataClient(
 	ctx context.Context,
 	subscriptionId string,
-	vaultUrl string,
+	vaultName string,
 ) (*azsecrets.Client, error) {
+	vaultUrl := vaultName
+	if !strings.Contains(strings.ToLower(vaultName), "https://") {
+		vaultUrl = fmt.Sprintf("https://%s.%s", vaultName, kvs.cloud.KeyVaultEndpointSuffix)
+	}
 	credential, err := kvs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -194,4 +258,125 @@ func (kvs *keyVaultService) createSecretsDataClient(
 	}
 
 	return azsecrets.NewClient(vaultUrl, credential, options)
+}
+
+type Vault struct {
+	Id   string
+	Name string
+}
+
+func (kvs *keyVaultService) ListSubscriptionVaults(
+	ctx context.Context,
+	subscriptionId string,
+) ([]Vault, error) {
+	client, err := kvs.createKeyVaultClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating Resource client: %w", err)
+	}
+	result := []Vault{}
+	pager := client.NewListPager(nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing vaults: %w", err)
+		}
+		for _, vault := range page.Value {
+			result = append(result, Vault{
+				Id:   *vault.ID,
+				Name: *vault.Name,
+			})
+		}
+	}
+	return result, nil
+}
+
+func (kvs *keyVaultService) CreateVault(
+	ctx context.Context,
+	tenantId string,
+	subscriptionId string,
+	resourceGroupName string,
+	location string,
+	vaultName string,
+) (Vault, error) {
+	client, err := kvs.createKeyVaultClient(ctx, subscriptionId)
+	if err != nil {
+		return Vault{}, fmt.Errorf("creating Resource client: %w", err)
+	}
+	accountPoller, err := client.BeginCreateOrUpdate(
+		ctx,
+		resourceGroupName,
+		vaultName,
+		armkeyvault.VaultCreateOrUpdateParameters{
+			Location: to.Ptr(location),
+			Properties: &armkeyvault.VaultProperties{
+				SKU: &armkeyvault.SKU{
+					Family: to.Ptr(armkeyvault.SKUFamilyA),
+					Name:   to.Ptr(armkeyvault.SKUNameStandard),
+				},
+				TenantID:                to.Ptr(tenantId),
+				EnableRbacAuthorization: to.Ptr(true),
+			},
+		},
+		nil)
+	if err != nil {
+		return Vault{}, fmt.Errorf("creating Key Vault: %w", err)
+	}
+	response, err := accountPoller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return Vault{}, fmt.Errorf("creating Key Vault: %w", err)
+	}
+
+	return Vault{
+		Id:   *response.Vault.ID,
+		Name: *response.Vault.Name,
+	}, nil
+}
+
+// Built-in roles for Key Vault RBAC
+// https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
+const (
+	vaultSchemaAkvs             string = "akvs://"
+	resourceIdPathPrefix        string = "/providers/Microsoft.Authorization/roleDefinitions/"
+	RoleIdKeyVaultAdministrator string = resourceIdPathPrefix + "00482a5a-887f-4fb3-b363-3b7fe8e74483"
+	RoleIdKeyVaultSecretsUser   string = resourceIdPathPrefix + "4633458b-17de-408a-b874-0445c86b69e6"
+)
+
+func IsAkvs(id string) bool {
+	return strings.HasPrefix(id, vaultSchemaAkvs)
+}
+
+func IsValidSecretName(kvSecretName string) bool {
+	return len(kvSecretName) >= 1 && len(kvSecretName) <= 127 && strings.IndexFunc(kvSecretName, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-')
+	}) == -1
+}
+
+func NewAkvs(subId, vaultId, secretName string) string {
+	return vaultSchemaAkvs + subId + "/" + vaultId + "/" + secretName
+}
+
+func (kvs *keyVaultService) SecretFromAkvs(ctx context.Context, akvs string) (string, error) {
+	if !IsAkvs(akvs) {
+		return "", fmt.Errorf("invalid Azure Key Vault Secret reference: %s", akvs)
+	}
+
+	noSchema := strings.TrimPrefix(akvs, vaultSchemaAkvs)
+	vaultParts := strings.Split(noSchema, "/")
+	if len(vaultParts) != 3 {
+		return "", fmt.Errorf(
+			"invalid Azure Key Vault Secret reference: %s. Expected format: %s",
+			akvs,
+			vaultSchemaAkvs+"<subscription-id>/<vault-name>/<secret-name>",
+		)
+	}
+	subscriptionId, vaultName, secretName := vaultParts[0], vaultParts[1], vaultParts[2]
+	// subscriptionId is required by the Key Vault service to figure the TenantId for the
+	// tokenCredential. The assumption here is that the user has access to the Tenant
+	// used to deploy the app and to whatever Tenant the Key Vault is in. And the tokenCredential
+	// can use any of the Tenant ids.
+	secretValue, err := kvs.GetKeyVaultSecret(ctx, subscriptionId, vaultName, secretName)
+	if err != nil {
+		return "", fmt.Errorf("fetching secret value from key vault: %w", err)
+	}
+	return secretValue.Value, nil
 }

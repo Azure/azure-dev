@@ -14,7 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -60,6 +60,7 @@ type EntraIdService interface {
 		clientId string,
 		federatedCredentials []*graphsdk.FederatedIdentityCredential,
 	) ([]*graphsdk.FederatedIdentityCredential, error)
+	CreateRbac(ctx context.Context, subscriptionId string, scope, roleId, principalId string) error
 }
 
 type entraIdService struct {
@@ -478,6 +479,22 @@ func (ad *entraIdService) ensureRoleAssignment(
 	return nil
 }
 
+func (ad *entraIdService) CreateRbac(
+	ctx context.Context, subscriptionId string, scope, roleId, principalId string) error {
+	fullRoleId := fmt.Sprintf("/subscriptions/%s%s", subscriptionId, roleId)
+	return ad.applyRoleAssignmentWithRetryImpl(
+		ctx,
+		subscriptionId,
+		scope,
+		&armauthorization.RoleDefinition{
+			ID:   to.Ptr(fullRoleId),
+			Name: to.Ptr(roleId),
+		},
+		&graphsdk.ServicePrincipal{
+			Id: to.Ptr(principalId),
+		})
+}
+
 // Applies the role assignment to the specified service principal
 // This operation will retry up to 10 times to ensure the new service principal is available in Azure AD
 func (ad *entraIdService) applyRoleAssignmentWithRetry(
@@ -486,12 +503,21 @@ func (ad *entraIdService) applyRoleAssignmentWithRetry(
 	roleDefinition *armauthorization.RoleDefinition,
 	servicePrincipal *graphsdk.ServicePrincipal,
 ) error {
+	scope := azure.SubscriptionRID(subscriptionId)
+	return ad.applyRoleAssignmentWithRetryImpl(ctx, subscriptionId, scope, roleDefinition, servicePrincipal)
+}
+
+func (ad *entraIdService) applyRoleAssignmentWithRetryImpl(
+	ctx context.Context,
+	subscriptionId string,
+	scope string,
+	roleDefinition *armauthorization.RoleDefinition,
+	servicePrincipal *graphsdk.ServicePrincipal,
+) error {
 	roleAssignmentsClient, err := ad.createRoleAssignmentsClient(ctx, subscriptionId)
 	if err != nil {
 		return err
 	}
-
-	scope := azure.SubscriptionRID(subscriptionId)
 	roleAssignmentId := uuid.New().String()
 
 	// There is a lag in the application/service principal becoming available in Azure AD

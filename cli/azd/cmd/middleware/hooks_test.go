@@ -362,6 +362,7 @@ func runMiddleware(
 		mockContext.CommandRunner,
 		mockContext.Console,
 		runOptions,
+		mockContext.Container,
 	)
 
 	result, err := middleware.Run(*mockContext.Context, nextFn)

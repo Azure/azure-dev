@@ -90,6 +90,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			cwd,
 			hooksMap,
 			env,
+			mockContext.Container,
 		)
 		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "command")
 
@@ -124,6 +125,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			cwd,
 			hooksMap,
 			env,
+			mockContext.Container,
 		)
 		err := runner.RunHooks(*mockContext.Context, HookTypePost, nil, "command")
 
@@ -158,6 +160,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			cwd,
 			hooksMap,
 			env,
+			mockContext.Container,
 		)
 		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "interactive")
 
@@ -188,6 +191,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			cwd,
 			hooksMap,
 			env,
+			mockContext.Container,
 		)
 		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "inline")
 
@@ -233,6 +237,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			cwd,
 			hooksMap,
 			env,
+			mockContext.Container,
 		)
 		err := runner.Invoke(*mockContext.Context, []string{"command"}, func() error {
 			ranAction = true
@@ -308,9 +313,10 @@ func Test_Hooks_GetScript(t *testing.T) {
 			cwd,
 			hooksMap,
 			env,
+			mockContext.Container,
 		)
 
-		script, err := runner.GetScript(hookConfig)
+		script, err := runner.GetScript(hookConfig, runner.env.Environ())
 		require.NotNil(t, script)
 		require.Equal(t, "*bash.bashScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationPath, hookConfig.location)
@@ -330,9 +336,10 @@ func Test_Hooks_GetScript(t *testing.T) {
 			cwd,
 			hooksMap,
 			env,
+			mockContext.Container,
 		)
 
-		script, err := runner.GetScript(hookConfig)
+		script, err := runner.GetScript(hookConfig, runner.env.Environ())
 		require.NotNil(t, script)
 		require.Equal(t, "*powershell.powershellScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationPath, hookConfig.location)
@@ -355,9 +362,10 @@ func Test_Hooks_GetScript(t *testing.T) {
 			cwd,
 			hooksMap,
 			env,
+			mockContext.Container,
 		)
 
-		script, err := runner.GetScript(hookConfig)
+		script, err := runner.GetScript(hookConfig, runner.env.Environ())
 		require.NotNil(t, script)
 		require.Equal(t, "*bash.bashScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationInline, hookConfig.location)
@@ -386,9 +394,10 @@ func Test_Hooks_GetScript(t *testing.T) {
 			cwd,
 			hooksMap,
 			env,
+			mockContext.Container,
 		)
 
-		script, err := runner.GetScript(hookConfig)
+		script, err := runner.GetScript(hookConfig, runner.env.Environ())
 		require.NotNil(t, script)
 		require.Equal(t, "*powershell.powershellScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationInline, hookConfig.location)
@@ -436,6 +445,7 @@ func Test_GetScript_Validation(t *testing.T) {
 		tempDir,
 		map[string][]*HookConfig{},
 		env,
+		mockContext.Container,
 	)
 
 	scriptValidations := []scriptValidationTest{
@@ -493,7 +503,7 @@ func Test_GetScript_Validation(t *testing.T) {
 		}
 
 		t.Run(test.name, func(t *testing.T) {
-			res, err := runner.GetScript(test.config)
+			res, err := runner.GetScript(test.config, runner.env.Environ())
 			if test.expectedError != nil {
 				require.Nil(t, res)
 				require.ErrorIs(t, err, test.expectedError)

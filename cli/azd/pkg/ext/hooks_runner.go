@@ -13,6 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
@@ -22,13 +24,14 @@ import (
 // Hooks enable support to invoke integration scripts before & after commands
 // Scripts can be invoked at the project or service level or
 type HooksRunner struct {
-	hooksManager  *HooksManager
-	commandRunner exec.CommandRunner
-	console       input.Console
-	cwd           string
-	hooks         map[string][]*HookConfig
-	env           *environment.Environment
-	envManager    environment.Manager
+	hooksManager   *HooksManager
+	commandRunner  exec.CommandRunner
+	console        input.Console
+	cwd            string
+	hooks          map[string][]*HookConfig
+	env            *environment.Environment
+	envManager     environment.Manager
+	serviceLocator ioc.ServiceLocator
 }
 
 // NewHooks creates a new instance of CommandHooks
@@ -41,6 +44,7 @@ func NewHooksRunner(
 	cwd string,
 	hooks map[string][]*HookConfig,
 	env *environment.Environment,
+	serviceLocator ioc.ServiceLocator,
 ) *HooksRunner {
 	if cwd == "" {
 		osWd, err := os.Getwd()
@@ -52,13 +56,14 @@ func NewHooksRunner(
 	}
 
 	return &HooksRunner{
-		hooksManager:  hooksManager,
-		commandRunner: commandRunner,
-		envManager:    envManager,
-		console:       console,
-		cwd:           cwd,
-		hooks:         hooks,
-		env:           env,
+		hooksManager:   hooksManager,
+		commandRunner:  commandRunner,
+		envManager:     envManager,
+		console:        console,
+		cwd:            cwd,
+		hooks:          hooks,
+		env:            env,
+		serviceLocator: serviceLocator,
 	}
 }
 
@@ -114,16 +119,16 @@ func (h *HooksRunner) RunHooks(
 
 // Gets the script to execute based on the hook configuration values
 // For inline scripts this will also create a temporary script file to execute
-func (h *HooksRunner) GetScript(hookConfig *HookConfig) (tools.Script, error) {
+func (h *HooksRunner) GetScript(hookConfig *HookConfig, envVars []string) (tools.Script, error) {
 	if err := hookConfig.validate(); err != nil {
 		return nil, err
 	}
 
 	switch hookConfig.Shell {
 	case ShellTypeBash:
-		return bash.NewBashScript(h.commandRunner, h.cwd, h.env.Environ()), nil
+		return bash.NewBashScript(h.commandRunner, h.cwd, envVars), nil
 	case ShellTypePowershell:
-		return powershell.NewPowershellScript(h.commandRunner, h.cwd, h.env.Environ()), nil
+		return powershell.NewPowershellScript(h.commandRunner, h.cwd, envVars), nil
 	default:
 		return nil, fmt.Errorf(
 			"shell type '%s' is not a valid option. Only 'sh' and 'pwsh' are supported",
@@ -137,7 +142,31 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		options = &tools.ExecOptions{}
 	}
 
-	script, err := h.GetScript(hookConfig)
+	hookEnv := environment.NewWithValues("temp", h.env.Dotenv())
+	if len(hookConfig.Secrets) > 0 {
+		err := h.serviceLocator.Invoke(func(keyvaultService keyvault.KeyVaultService) error {
+			for key, value := range hookConfig.Secrets {
+				setValue := value
+				if valueFromEnv, exists := h.env.LookupEnv(value); exists {
+					if keyvault.IsAkvs(valueFromEnv) {
+						secretValue, err := keyvaultService.SecretFromAkvs(ctx, valueFromEnv)
+						if err != nil {
+							return err
+						}
+						valueFromEnv = secretValue
+					}
+					setValue = valueFromEnv
+				}
+				hookEnv.DotenvSet(key, setValue)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	script, err := h.GetScript(hookConfig, hookEnv.Environ())
 	if err != nil {
 		return err
 	}

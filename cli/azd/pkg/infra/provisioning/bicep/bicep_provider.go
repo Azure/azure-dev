@@ -1833,6 +1833,18 @@ func (p *BicepProvider) ensureParameters(
 			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
 
 			if paramValue != nil {
+
+				if stringValue, isString := paramValue.(string); isString && param.Secure() {
+					// For secure parameters using a string value, azd checks if the string is an Azure Key Vault Secret
+					// and if yes, it fetches the secret value from the Key Vault.
+					if keyvault.IsAkvs(stringValue) {
+						paramValue, err = p.keyvaultService.SecretFromAkvs(ctx, stringValue)
+						if err != nil {
+							return nil, err
+						}
+					}
+				}
+
 				needForDeployParameter := hasMetadata &&
 					azdMetadata.Type != nil &&
 					*azdMetadata.Type == azure.AzdMetadataTypeNeedForDeploy

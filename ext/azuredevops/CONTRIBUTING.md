@@ -31,6 +31,14 @@ behalf.
 
 From `setupAzd` folder, run `npm test`
 
+### Testing in Azure Devops using private extension
+
+- Update `publisher` to you test use case and change `galleryFlags` to `private` in `vss-extension.json`.
+- Use a new `id` in `setupAzd/task.json`.
+- Run the `build` steps to produce the `vsix` release artifact.
+- Publish it to the Marketplace in private mode and share it with your test organization. 
+- Go to you test organization and install the shared extension. Then, you could run the private extension for testing. 
+
 ## Release
 
 - Update `setupAzd/task.json` with the `version` number.

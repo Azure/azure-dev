@@ -181,7 +181,7 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 		tagsParam[k] = to.Ptr(v)
 	}
 
-	err = p.resourceService.CreateOrUpdateResourceGroup(ctx, subscriptionId, name, location, tagsParam)
+	_, err = p.resourceService.CreateOrUpdateResourceGroup(ctx, subscriptionId, name, location, tagsParam)
 	if err != nil {
 		return "", fmt.Errorf("creating resource group: %w", err)
 	}

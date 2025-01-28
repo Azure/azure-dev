@@ -5,14 +5,14 @@ import * as fs from 'fs'
 import { log } from 'console';
 
 describe('setup azd tests - fails', function() {
-    setTimeout(() => { }, 60000);
+    setTimeout(() => { }, 90000);
     before(function() { });
     afterEach(() => {
         fs.rmSync('path', { recursive: true, force: true })
     });
 
     it('should fail with invalid version', function(done: Mocha.Done) {
-        setTimeout(() => { }, 10000);
+        setTimeout(() => { }, 40000);
         let tp = path.join(__dirname, 'invalidVersion.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
 

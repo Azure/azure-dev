@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
@@ -65,11 +66,31 @@ func selectDatabase(
 }
 
 func selectStorage(
-    console input.Console,
-    ctx context.Context,
-    p promptOptions) (*project.ResourceConfig, error) {
-    r := &project.ResourceConfig{}
-    r.Type = project.ResourceTypeStorage
+	console input.Console,
+	ctx context.Context,
+	p promptOptions) (*project.ResourceConfig, error) {
+	r := &project.ResourceConfig{}
+	r.Type = project.ResourceTypeStorage
+
+	dataOptions := []string{"Blobs"}
+	var selectedDataOptions []string
+	for {
+		var err error
+		selectedDataOptions, err = console.MultiSelect(ctx, input.ConsoleOptions{
+			Message: "What type of data do you want to store?",
+			Options: dataOptions,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if len(selectedDataOptions) == 0 {
+			console.Message(ctx, output.WithErrorFormat("At least one data type must be selected"))
+			continue
+		}
+		break
+	}
+
 	r.Props = project.StorageProps{}
 	return r, nil
 }

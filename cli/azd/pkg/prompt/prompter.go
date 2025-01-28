@@ -130,8 +130,10 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 }
 
 type PromptResourceGroupFromOptions struct {
-	Tags        map[string]string
-	DefaultName string
+	Tags                  map[string]string
+	DefaultName           string
+	NewResourceGroupHelp  string
+	PickResourceGroupHelp string
 }
 
 func (p *DefaultPrompter) PromptResourceGroupFrom(
@@ -155,6 +157,7 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 	choice, err := p.console.Select(ctx, input.ConsoleOptions{
 		Message: "Pick a resource group to use:",
 		Options: choices,
+		Help:    options.PickResourceGroupHelp,
 	})
 	if err != nil {
 		return "", fmt.Errorf("selecting resource group: %w", err)
@@ -167,6 +170,7 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 	name, err := p.console.Prompt(ctx, input.ConsoleOptions{
 		Message:      "Enter a name for the new resource group:",
 		DefaultValue: options.DefaultName,
+		Help:         options.NewResourceGroupHelp,
 	})
 	if err != nil {
 		return "", fmt.Errorf("prompting for resource group name: %w", err)

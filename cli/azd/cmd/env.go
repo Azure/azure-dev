@@ -207,10 +207,10 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 	secretName := e.args[0]
 
-	// When AZD_ENV_SET_SECRET_LIST_WITHOUT_NUMBERS is defined in azd env, azd will not add numbers to the list when
+	// When no interactive is supported in the terminal azd will not add numbers to the list when
 	// asking to select options. For example, instead of showing "1. Option 1", it will show "Option 1". This is useful
 	// when the user wants to prefill the selection in stdin before calling azd env set-secret (e.g. in a script).
-	_, listWithoutNumbers := e.env.LookupEnv("AZD_ENV_SET_SECRET_LIST_WITHOUT_NUMBERS")
+	listWithoutNumbers := e.console.IsSpinnerInteractive()
 
 	createNewStrategy := "Create a new Key Vault secret"
 	selectExistingStrategy := "Select an existing Key Vault secret"
@@ -312,7 +312,8 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			return nil, fmt.Errorf("prompting for Key Vault location: %w", err)
 		}
 		rg, err := e.prompter.PromptResourceGroupFrom(ctx, subId, location, prompt.PromptResourceGroupFromOptions{
-			DefaultName: "rg-for-my-kv-account",
+			DefaultName:          "rg-for-my-key-vault",
+			NewResourceGroupHelp: "The name of the new resource group where the Key Vault will be created.",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("prompting for resource group: %w", err)

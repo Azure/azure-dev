@@ -378,7 +378,6 @@ func Test_CLI_EnvironmentSecrets(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
-	cli.Env = append(cli.Env, `AZD_ENV_SET_SECRET_LIST_WITHOUT_NUMBERS=""`)
 
 	err := copySample(dir, "environment-secrets")
 	require.NoError(t, err, "failed expanding sample")

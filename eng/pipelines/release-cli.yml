@@ -10,6 +10,7 @@ trigger:
       - eng/pipelines/release-cli.yml
       - /eng/pipelines/templates/jobs/build-cli.yml
       - /eng/pipelines/templates/jobs/cross-build-cli.yml
+      - /eng/pipelines/templates/variables/image.yml
 
 pr:
   paths:

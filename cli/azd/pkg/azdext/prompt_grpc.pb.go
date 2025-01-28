@@ -30,7 +30,6 @@ const (
 	PromptService_Select_FullMethodName                      = "/azdext.PromptService/Select"
 	PromptService_PromptSubscriptionResource_FullMethodName  = "/azdext.PromptService/PromptSubscriptionResource"
 	PromptService_PromptResourceGroupResource_FullMethodName = "/azdext.PromptService/PromptResourceGroupResource"
-	PromptService_PromptStream_FullMethodName                = "/azdext.PromptService/PromptStream"
 )
 
 // PromptServiceClient is the client API for PromptService service.
@@ -45,7 +44,6 @@ type PromptServiceClient interface {
 	Select(ctx context.Context, in *SelectRequest, opts ...grpc.CallOption) (*SelectResponse, error)
 	PromptSubscriptionResource(ctx context.Context, in *PromptSubscriptionResourceRequest, opts ...grpc.CallOption) (*PromptSubscriptionResourceResponse, error)
 	PromptResourceGroupResource(ctx context.Context, in *PromptResourceGroupResourceRequest, opts ...grpc.CallOption) (*PromptResourceGroupResourceResponse, error)
-	PromptStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[StreamWorkflowRequestMessage, StreamWorkflowResponseMessage], error)
 }
 
 type promptServiceClient struct {
@@ -136,19 +134,6 @@ func (c *promptServiceClient) PromptResourceGroupResource(ctx context.Context, i
 	return out, nil
 }
 
-func (c *promptServiceClient) PromptStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[StreamWorkflowRequestMessage, StreamWorkflowResponseMessage], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &PromptService_ServiceDesc.Streams[0], PromptService_PromptStream_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[StreamWorkflowRequestMessage, StreamWorkflowResponseMessage]{ClientStream: stream}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type PromptService_PromptStreamClient = grpc.BidiStreamingClient[StreamWorkflowRequestMessage, StreamWorkflowResponseMessage]
-
 // PromptServiceServer is the server API for PromptService service.
 // All implementations must embed UnimplementedPromptServiceServer
 // for forward compatibility.
@@ -161,7 +146,6 @@ type PromptServiceServer interface {
 	Select(context.Context, *SelectRequest) (*SelectResponse, error)
 	PromptSubscriptionResource(context.Context, *PromptSubscriptionResourceRequest) (*PromptSubscriptionResourceResponse, error)
 	PromptResourceGroupResource(context.Context, *PromptResourceGroupResourceRequest) (*PromptResourceGroupResourceResponse, error)
-	PromptStream(grpc.BidiStreamingServer[StreamWorkflowRequestMessage, StreamWorkflowResponseMessage]) error
 	mustEmbedUnimplementedPromptServiceServer()
 }
 
@@ -195,9 +179,6 @@ func (UnimplementedPromptServiceServer) PromptSubscriptionResource(context.Conte
 }
 func (UnimplementedPromptServiceServer) PromptResourceGroupResource(context.Context, *PromptResourceGroupResourceRequest) (*PromptResourceGroupResourceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PromptResourceGroupResource not implemented")
-}
-func (UnimplementedPromptServiceServer) PromptStream(grpc.BidiStreamingServer[StreamWorkflowRequestMessage, StreamWorkflowResponseMessage]) error {
-	return status.Errorf(codes.Unimplemented, "method PromptStream not implemented")
 }
 func (UnimplementedPromptServiceServer) mustEmbedUnimplementedPromptServiceServer() {}
 func (UnimplementedPromptServiceServer) testEmbeddedByValue()                       {}
@@ -364,13 +345,6 @@ func _PromptService_PromptResourceGroupResource_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
-func _PromptService_PromptStream_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(PromptServiceServer).PromptStream(&grpc.GenericServerStream[StreamWorkflowRequestMessage, StreamWorkflowResponseMessage]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type PromptService_PromptStreamServer = grpc.BidiStreamingServer[StreamWorkflowRequestMessage, StreamWorkflowResponseMessage]
-
 // PromptService_ServiceDesc is the grpc.ServiceDesc for PromptService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -411,13 +385,6 @@ var PromptService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _PromptService_PromptResourceGroupResource_Handler,
 		},
 	},
-	Streams: []grpc.StreamDesc{
-		{
-			StreamName:    "PromptStream",
-			Handler:       _PromptService_PromptStream_Handler,
-			ServerStreams: true,
-			ClientStreams: true,
-		},
-	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "prompt.proto",
 }

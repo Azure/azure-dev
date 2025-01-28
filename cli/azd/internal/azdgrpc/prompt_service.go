@@ -1,10 +1,10 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azdgrpc
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"google.golang.org/grpc"
 )
 
 type promptService struct {
@@ -26,78 +25,6 @@ func NewPromptService(prompter *prompt.PromptService, resourceService *azapi.Res
 		prompter:        prompter,
 		resourceService: resourceService,
 	}
-}
-
-func (s *promptService) PromptStream(stream grpc.BidiStreamingServer[azdext.StreamWorkflowRequestMessage, azdext.StreamWorkflowResponseMessage]) error {
-	req, err := stream.Recv()
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		return err
-	}
-
-	optionsMessage, ok := req.Payload.(*azdext.StreamWorkflowRequestMessage_Options)
-	if !ok {
-		return fmt.Errorf("expected options message, got %T", req.Payload)
-	}
-
-	options := &ux.PromptOptions{
-		DefaultValue:      optionsMessage.Options.DefaultValue,
-		Message:           optionsMessage.Options.Message,
-		HelpMessage:       optionsMessage.Options.HelpMessage,
-		Hint:              optionsMessage.Options.Hint,
-		PlaceHolder:       optionsMessage.Options.Placeholder,
-		ValidationMessage: optionsMessage.Options.ValidationMessage,
-		RequiredMessage:   optionsMessage.Options.RequiredMessage,
-		Required:          optionsMessage.Options.Required,
-		ClearOnCompletion: optionsMessage.Options.ClearOnCompletion,
-		IgnoreHintKeys:    optionsMessage.Options.IgnoreHintKeys,
-		ValidationFn: func(value string) (bool, string) {
-			err := stream.Send(&azdext.StreamWorkflowResponseMessage{
-				Payload: &azdext.StreamWorkflowResponseMessage_Value{
-					Value: &azdext.PromptValue{
-						Value: value,
-					},
-				},
-			})
-			if err != nil {
-				return false, err.Error()
-			}
-
-			req, err := stream.Recv()
-			if err != nil {
-				return false, err.Error()
-			}
-
-			validationMessage, ok := req.Payload.(*azdext.StreamWorkflowRequestMessage_Validation)
-			if !ok {
-				return false, fmt.Sprintf("expected validation message, got %T", req.Payload)
-			}
-
-			return validationMessage.Validation.Valid, validationMessage.Validation.Message
-		},
-	}
-
-	prompt := ux.NewPrompt(options)
-	value, err := prompt.Ask()
-	if err != nil {
-		return err
-	}
-
-	err = stream.Send(&azdext.StreamWorkflowResponseMessage{
-		Payload: &azdext.StreamWorkflowResponseMessage_Complete{
-			Complete: &azdext.PromptFinalValue{
-				Value: value,
-			},
-		},
-	})
-
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {

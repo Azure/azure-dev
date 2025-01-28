@@ -3,14 +3,14 @@ import * as assert from 'assert';
 import * as ttm from 'azure-pipelines-task-lib/mock-test';
 import * as fs from 'fs';
 
-describe('setup azd tests', function () {
+describe('setup azd tests', function() {
     setTimeout(() => { }, 10000);
-    before(function () { });
+    before(function() { });
     afterEach(() => {
         fs.rmSync('path', { recursive: true, force: true })
     });
 
-    it('should succeed with undefined version', function (done: Mocha.Done) {
+    it('should succeed with undefined version', function(done: Mocha.Done) {
         setTimeout(() => { }, 10000);
         let tp = path.join(__dirname, 'success.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
@@ -25,7 +25,7 @@ describe('setup azd tests', function () {
         });
     });
 
-    it('should succeed with version', function (done: Mocha.Done) {
+    it('should succeed with version', function(done: Mocha.Done) {
         setTimeout(() => { }, 10000);
         let tp = path.join(__dirname, 'successVersion.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);

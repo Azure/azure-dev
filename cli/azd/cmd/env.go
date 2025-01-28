@@ -230,7 +230,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	willCreateNewSecret := setSecretStrategies[selectedStrategyIndex] == createNewStrategy
 
-	subscriptionNote := "\nYou can set the Key Vault secret from any Azure Subscription where you have access to."
+	subscriptionNote := "\nYou can set the Key Vault secret from any Azure subscription where you have access to."
 	e.console.Message(ctx, subscriptionNote)
 
 	// default messages based on willCreateNewSecret == true
@@ -339,7 +339,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 		vault, err := e.kvService.CreateVault(ctx, tenantId, subId, rg, location, kvAccountName)
 		e.console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
-			return nil, fmt.Errorf("Error creating Key Vault: %w", err)
+			return nil, fmt.Errorf("error creating Key Vault: %w", err)
 		}
 		kvAccount = vault
 

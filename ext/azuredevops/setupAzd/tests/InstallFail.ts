@@ -20,7 +20,7 @@ describe('setup azd tests - fails', function () {
             assert.equal(tr.succeeded, false, 'should have failed');
             assert.equal(tr.warningIssues.length, 0, "should have no warnings");
             assert.equal(tr.errorIssues.length, 1, "should have error");
-            assert.equal(tr.stdout.indexOf('Response code 404 (The specified blob does not exist.)') >= 0, true, "should display error");
+            assert.equal(tr.stdout.indexOf('Could not download from') >= 0, true, "should display error");
             done();
         }).catch((reason) => {
             done(reason);

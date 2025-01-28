@@ -146,8 +146,8 @@ func fillStorageContainerNameAndAuthType(
 
 	for {
 		containerName, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: "Input the storage container name:",
-			Help:    "Storage container name\n\nName of the storage container that will be created.",
+			Message: "Input a blob container name to be created in the storage account:",
+			Help:    "Blob container name\n\nA blob container organizes a set of blobs, similar to a directory in a file system.",
 		})
 		if err != nil {
 			return r, err

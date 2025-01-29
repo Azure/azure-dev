@@ -11,7 +11,7 @@ parameters:
   CliVersion: $(CLI_VERSION)
 
 steps:
-  # - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
+  - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
     # This step must run first because a duplicated tag means we don't need to
     # continue with any of the subsequent steps.
     # - task: PowerShell@2
@@ -171,7 +171,7 @@ steps:
         StorageContainerName: ${{ parameters.StorageContainerName }}
         PublishDestination: azd/standalone/latest
 
-  # - ${{ if eq('true', parameters.PublishBrewFormula) }}:
+  - ${{ if eq('true', parameters.PublishBrewFormula) }}:
     # - pwsh: |
     #     $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
     #       -CliVersion '${{ parameters.CliVersion }}' `
@@ -208,7 +208,7 @@ steps:
     #     TargetRepoName: homebrew-azd
     #     WorkingDirectory: homebrew-azd
 
-  # - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
+  - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
     # - task: DownloadPipelineArtifact@2
     #   displayName: Download docs
     #   inputs:

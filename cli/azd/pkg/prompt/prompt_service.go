@@ -6,7 +6,7 @@ package prompt
 import (
 	"context"
 	"fmt"
-	"log"
+	"io"
 	"slices"
 	"strings"
 
@@ -14,6 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -85,209 +86,96 @@ type SelectOptions struct {
 	DisplayNumbers *bool
 	// DisplayCount is the number of choices to display at a time.
 	DisplayCount int
+	// Hint is the hint to display to the user.
+	Hint string
+	// EnableFiltering specifies whether to enable filtering of choices.
+	EnableFiltering *bool
+	// Writer is the writer to use for output.
+	Writer io.Writer
 }
 
-type AzureScope struct {
-	TenantId       string
-	SubscriptionId string
-	Location       string
-	ResourceGroup  string
+// ResourceService defines the methods that the ResourceService must implement.
+type ResourceService interface {
+	ListResourceGroup(
+		ctx context.Context,
+		subscriptionId string,
+		listOptions *azapi.ListResourceGroupOptions,
+	) ([]*azapi.Resource, error)
+	ListResourceGroupResources(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		listOptions *azapi.ListResourceGroupResourcesOptions,
+	) ([]*azapi.ResourceExtended, error)
+	ListSubscriptionResources(
+		ctx context.Context,
+		subscriptionId string,
+		listOptions *armresources.ClientListOptions,
+	) ([]*azapi.ResourceExtended, error)
+	CreateOrUpdateResourceGroup(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		location string,
+		tags map[string]*string,
+	) (*azapi.ResourceGroup, error)
+	GetResource(
+		ctx context.Context,
+		subscriptionId string,
+		resourceId string,
+		apiVersion string,
+	) (azapi.ResourceExtended, error)
 }
 
-type AzureResourceList struct {
-	resourceService *azapi.ResourceService
-	resources       []*arm.ResourceID
+// SubscriptionService defines the methods that the SubscriptionsService must implement.
+type SubscriptionService interface {
+	ListSubscriptions(ctx context.Context, tenantId string) ([]*armsubscriptions.Subscription, error)
+	GetSubscription(ctx context.Context, subscriptionId string, tenantId string) (*armsubscriptions.Subscription, error)
+	ListSubscriptionLocations(ctx context.Context, subscriptionId string, tenantId string) ([]account.Location, error)
+	ListTenants(ctx context.Context) ([]armsubscriptions.TenantIDDescription, error)
 }
 
-func NewAzureResourceList(resourceService *azapi.ResourceService, resources []*arm.ResourceID) *AzureResourceList {
-	if resources == nil {
-		resources = []*arm.ResourceID{}
-	}
-
-	return &AzureResourceList{
-		resourceService: resourceService,
-		resources:       resources,
-	}
+// PromptServiceInterface defines the methods that the PromptService must implement.
+type PromptService interface {
+	PromptSubscription(ctx context.Context, selectorOptions *SelectOptions) (*account.Subscription, error)
+	PromptLocation(
+		ctx context.Context,
+		azureContext *AzureContext,
+		selectorOptions *SelectOptions,
+	) (*account.Location, error)
+	PromptResourceGroup(
+		ctx context.Context,
+		azureContext *AzureContext,
+		options *ResourceGroupOptions,
+	) (*azapi.ResourceGroup, error)
+	PromptSubscriptionResource(
+		ctx context.Context,
+		azureContext *AzureContext,
+		options ResourceOptions,
+	) (*azapi.ResourceExtended, error)
+	PromptResourceGroupResource(
+		ctx context.Context,
+		azureContext *AzureContext,
+		options ResourceOptions,
+	) (*azapi.ResourceExtended, error)
 }
 
-func (arl *AzureResourceList) Add(resourceId string) error {
-	if _, has := arl.FindById(resourceId); has {
-		return nil
-	}
-
-	parsedResource, err := arm.ParseResourceID(resourceId)
-	if err != nil {
-		return err
-	}
-
-	arl.resources = append(arl.resources, parsedResource)
-	log.Printf("Added resource: %s", resourceId)
-
-	return nil
-}
-
-func (arl *AzureResourceList) Find(predicate func(resourceId *arm.ResourceID) bool) (*arm.ResourceID, bool) {
-	for _, resource := range arl.resources {
-		if predicate(resource) {
-			return resource, true
-		}
-	}
-
-	return nil, false
-}
-
-func (arl *AzureResourceList) FindAll(predicate func(resourceId *arm.ResourceID) bool) ([]*arm.ResourceID, bool) {
-	matches := []*arm.ResourceID{}
-
-	for _, resource := range arl.resources {
-		if predicate(resource) {
-			matches = append(matches, resource)
-		}
-	}
-
-	return matches, len(matches) > 0
-}
-
-func (arl *AzureResourceList) FindByType(resourceType azapi.AzureResourceType) (*arm.ResourceID, bool) {
-	return arl.Find(func(resourceId *arm.ResourceID) bool {
-		return strings.EqualFold(resourceId.ResourceType.String(), string(resourceType))
-	})
-}
-
-func (arl *AzureResourceList) FindAllByType(resourceType azapi.AzureResourceType) ([]*arm.ResourceID, bool) {
-	return arl.FindAll(func(resourceId *arm.ResourceID) bool {
-		return strings.EqualFold(resourceId.ResourceType.String(), string(resourceType))
-	})
-}
-
-func (arl *AzureResourceList) FindByTypeAndKind(
-	ctx context.Context,
-	resourceType azapi.AzureResourceType,
-	kinds []string,
-) (*arm.ResourceID, bool) {
-	typeMatches, has := arl.FindAllByType(resourceType)
-	if !has {
-		return nil, false
-	}
-
-	// When no kinds are specified, return the first resource found
-	if len(kinds) == 0 {
-		return typeMatches[0], true
-	}
-
-	// When kinds are specified, check if the resource kind matches
-	for _, typeMatch := range typeMatches {
-		resource, err := arl.resourceService.GetResource(ctx, typeMatch.SubscriptionID, typeMatch.String(), "")
-		if err != nil {
-			return nil, false
-		}
-
-		for _, kind := range kinds {
-			if strings.EqualFold(kind, resource.Kind) {
-				return typeMatch, true
-			}
-		}
-	}
-
-	return nil, false
-}
-
-func (arl *AzureResourceList) FindById(resourceId string) (*arm.ResourceID, bool) {
-	return arl.Find(func(resource *arm.ResourceID) bool {
-		return strings.EqualFold(resource.String(), resourceId)
-	})
-}
-
-func (arl *AzureResourceList) FindByTypeAndName(
-	resourceType azapi.AzureResourceType,
-	resourceName string,
-) (*arm.ResourceID, bool) {
-	return arl.Find(func(resource *arm.ResourceID) bool {
-		return strings.EqualFold(resource.ResourceType.String(), string(resourceType)) &&
-			strings.EqualFold(resource.Name, resourceName)
-	})
-}
-
-type AzureContext struct {
-	Scope         AzureScope
-	Resources     *AzureResourceList
-	promptService *PromptService
-}
-
-func NewEmptyAzureContext() *AzureContext {
-	return &AzureContext{
-		Scope:     AzureScope{},
-		Resources: &AzureResourceList{},
-	}
-}
-
-func NewAzureContext(promptService *PromptService, scope AzureScope, resourceList *AzureResourceList) *AzureContext {
-	return &AzureContext{
-		Scope:         scope,
-		Resources:     resourceList,
-		promptService: promptService,
-	}
-}
-
-func (pc *AzureContext) EnsureSubscription(ctx context.Context) error {
-	if pc.Scope.SubscriptionId == "" {
-		subscription, err := pc.promptService.PromptSubscription(context.Background(), nil)
-		if err != nil {
-			return err
-		}
-
-		pc.Scope.TenantId = subscription.TenantId
-		pc.Scope.SubscriptionId = subscription.Id
-	}
-
-	return nil
-}
-
-func (pc *AzureContext) EnsureResourceGroup(ctx context.Context) error {
-	if pc.Scope.ResourceGroup == "" {
-		resourceGroup, err := pc.promptService.PromptResourceGroup(ctx, pc, nil)
-		if err != nil {
-			return err
-		}
-
-		pc.Scope.ResourceGroup = resourceGroup.Name
-	}
-
-	return nil
-}
-
-func (pc *AzureContext) EnsureLocation(ctx context.Context) error {
-	if pc.Scope.Location == "" {
-		location, err := pc.promptService.PromptLocation(ctx, pc, nil)
-		if err != nil {
-			return err
-		}
-
-		pc.Scope.Location = location.Name
-	}
-
-	return nil
-}
-
-type ResourceSelection[T any] struct {
-	Resource *T
-	Exists   bool
-}
-
-type PromptService struct {
+// PromptService provides methods for prompting the user to select various Azure resources.
+type promptService struct {
 	authManager         *auth.Manager
 	userConfigManager   config.UserConfigManager
-	resourceService     *azapi.ResourceService
-	subscriptionService *account.SubscriptionsService
+	resourceService     ResourceService
+	subscriptionService SubscriptionService
 }
 
+// NewPromptService creates a new prompt service.
 func NewPromptService(
 	authManager *auth.Manager,
 	userConfigManager config.UserConfigManager,
-	subscriptionService *account.SubscriptionsService,
-	resourceService *azapi.ResourceService,
-) *PromptService {
-	return &PromptService{
+	subscriptionService SubscriptionService,
+	resourceService ResourceService,
+) PromptService {
+	return &promptService{
 		authManager:         authManager,
 		userConfigManager:   userConfigManager,
 		subscriptionService: subscriptionService,
@@ -295,7 +183,8 @@ func NewPromptService(
 	}
 }
 
-func (ps *PromptService) PromptSubscription(
+// PromptSubscription prompts the user to select an Azure subscription.
+func (ps *promptService) PromptSubscription(
 	ctx context.Context,
 	selectorOptions *SelectOptions,
 ) (*account.Subscription, error) {
@@ -364,7 +253,7 @@ func (ps *PromptService) PromptSubscription(
 }
 
 // PromptLocation prompts the user to select an Azure location.
-func (ps *PromptService) PromptLocation(
+func (ps *promptService) PromptLocation(
 	ctx context.Context,
 	azureContext *AzureContext,
 	selectorOptions *SelectOptions,
@@ -441,7 +330,7 @@ func (ps *PromptService) PromptLocation(
 }
 
 // PromptResourceGroup prompts the user to select an Azure resource group.
-func (ps *PromptService) PromptResourceGroup(
+func (ps *promptService) PromptResourceGroup(
 	ctx context.Context,
 	azureContext *AzureContext,
 	options *ResourceGroupOptions,
@@ -558,8 +447,8 @@ func (ps *PromptService) PromptResourceGroup(
 	})
 }
 
-// PromptSubscriptionResource prompts the user to select an Azure subscription resource.
-func (ps *PromptService) PromptSubscriptionResource(
+// PromptSubscriptionResource prompts the user to select an Azure resource from the subscription specified in the context.
+func (ps *promptService) PromptSubscriptionResource(
 	ctx context.Context,
 	azureContext *AzureContext,
 	options ResourceOptions,
@@ -692,8 +581,8 @@ func (ps *PromptService) PromptSubscriptionResource(
 	return resource, nil
 }
 
-// PromptResourceGroupResource prompts the user to select an Azure resource group resource.
-func (ps *PromptService) PromptResourceGroupResource(
+// PromptResourceGroupResource prompts the user to select an Azure resource from the resource group specified in the context.
+func (ps *promptService) PromptResourceGroupResource(
 	ctx context.Context,
 	azureContext *AzureContext,
 	options ResourceOptions,
@@ -815,6 +704,8 @@ func (ps *PromptService) PromptResourceGroupResource(
 }
 
 // PromptCustomResource prompts the user to select a custom resource from a list of resources.
+// This function is used internally to power selection of subscriptions, resource groups and other resources.
+// This can be used directly when the list of resources require integration with other Azure SDKs for resource selection.
 func PromptCustomResource[T any](ctx context.Context, options CustomResourceOptions[T]) (*T, error) {
 	mergedSelectorOptions := &SelectOptions{}
 
@@ -924,12 +815,15 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 		}
 
 		resourceSelector := ux.NewSelect(&ux.SelectOptions{
-			Message:        mergedSelectorOptions.Message,
-			HelpMessage:    mergedSelectorOptions.HelpMessage,
-			DisplayCount:   mergedSelectorOptions.DisplayCount,
-			DisplayNumbers: mergedSelectorOptions.DisplayNumbers,
-			Allowed:        choices,
-			SelectedIndex:  defaultIndex,
+			Message:         mergedSelectorOptions.Message,
+			HelpMessage:     mergedSelectorOptions.HelpMessage,
+			DisplayCount:    mergedSelectorOptions.DisplayCount,
+			DisplayNumbers:  mergedSelectorOptions.DisplayNumbers,
+			Hint:            mergedSelectorOptions.Hint,
+			EnableFiltering: mergedSelectorOptions.EnableFiltering,
+			Writer:          mergedSelectorOptions.Writer,
+			Allowed:         choices,
+			SelectedIndex:   defaultIndex,
 		})
 
 		userSelectedIndex, err := resourceSelector.Ask()
@@ -966,8 +860,6 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 
 		selectedResource = resources[*selectedIndex]
 	}
-
-	log.Printf("Selected resource: %v", *selectedResource)
 
 	return selectedResource, nil
 }

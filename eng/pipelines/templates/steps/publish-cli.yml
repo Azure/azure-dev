@@ -14,16 +14,16 @@ steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
     # This step must run first because a duplicated tag means we don't need to
     # continue with any of the subsequent steps.
-    # - task: PowerShell@2
-    #   inputs:
-    #     pwsh: true
-    #     targetType: filePath
-    #     filePath: ./eng/scripts/Set-GitHubReleaseTag.ps1
-    #     arguments: >-
-    #       -Tag "azure-dev-cli_$(CLI_VERSION)"
-    #       -OutputName "GH_RELEASE_TAG"
-    #       -DevOpsOutputFormat
-    #   displayName: Verify and set GitHub Release Tag
+    - task: PowerShell@2
+      inputs:
+        pwsh: true
+        targetType: filePath
+        filePath: ./eng/scripts/Set-GitHubReleaseTag.ps1
+        arguments: >-
+          -Tag "azure-dev-cli_$(CLI_VERSION)"
+          -OutputName "GH_RELEASE_TAG"
+          -DevOpsOutputFormat
+      displayName: Verify and set GitHub Release Tag
 
   # Download signed artifacts, prepare packaging
   - task: DownloadPipelineArtifact@2
@@ -113,27 +113,27 @@ steps:
       displayName: Copy install scripts to release (PR only)
 
   # Create release
-  # - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
-  #   - task: PowerShell@2
-  #     inputs:
-  #       targetType: filePath
-  #       filePath: eng/scripts/New-ReleaseNotesFile.ps1
-  #       arguments: >-
-  #         -ChangeLogPath cli/azd/CHANGELOG.md
-  #         -Version $(CLI_VERSION)
-  #         -DevOpsOutputFormat
-  #     displayName: Set release changelog content
+  - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
+    - task: PowerShell@2
+      inputs:
+        targetType: filePath
+        filePath: eng/scripts/New-ReleaseNotesFile.ps1
+        arguments: >-
+          -ChangeLogPath cli/azd/CHANGELOG.md
+          -Version $(CLI_VERSION)
+          -DevOpsOutputFormat
+      displayName: Set release changelog content
 
-  #   - pwsh: |
-  #       gh release create `
-  #         "$(GH_RELEASE_TAG)" `
-  #         --title "$(GH_RELEASE_TAG)" `
-  #         --notes-file $(ReleaseChangeLogPath)
+    - pwsh: |
+        gh release create `
+          "$(GH_RELEASE_TAG)" `
+          --title "$(GH_RELEASE_TAG)" `
+          --notes-file $(ReleaseChangeLogPath)
 
-  #       gh release upload $(GH_RELEASE_TAG) release/*
-  #     displayName: Create GitHub Release and upload artifacts
-  #     env:
-  #       GH_TOKEN: $(azuresdk-github-pat)
+        gh release upload $(GH_RELEASE_TAG) release/*
+      displayName: Create GitHub Release and upload artifacts
+      env:
+        GH_TOKEN: $(azuresdk-github-pat)
 
   - task: AzurePowerShell@5
     displayName: Upload release to storage account
@@ -172,64 +172,64 @@ steps:
         PublishDestination: azd/standalone/latest
 
   - ${{ if eq('true', parameters.PublishBrewFormula) }}:
-    # - pwsh: |
-    #     $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-    #       -CliVersion '${{ parameters.CliVersion }}' `
-    #       -AllowPrerelease:$${{ parameters.AllowPrerelease }}
+    - pwsh: |
+        $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+          -CliVersion '${{ parameters.CliVersion }}' `
+          -AllowPrerelease:$${{ parameters.AllowPrerelease }}
 
-    #     if ('$(Skip.ReleaseBrew)' -eq 'true') {
-    #       $submitPackage = 'false'
-    #     }
-    #     Write-Host "Setting SubmitBrewFormula to $submitPackage"
-    #     Write-Host "##vso[task.setvariable variable=SubmitBrewFormula]$submitPackage"
-    #   displayName: Set SubmitBrewFormula
+        if ('$(Skip.ReleaseBrew)' -eq 'true') {
+          $submitPackage = 'false'
+        }
+        Write-Host "Setting SubmitBrewFormula to $submitPackage"
+        Write-Host "##vso[task.setvariable variable=SubmitBrewFormula]$submitPackage"
+      displayName: Set SubmitBrewFormula
 
-    # - pwsh: git clone https://github.com/Azure/homebrew-azd
-    #   displayName: Clone Azure/homebrew-azd
+    - pwsh: git clone https://github.com/Azure/homebrew-azd
+      displayName: Clone Azure/homebrew-azd
 
-    # - task: PowerShell@2
-    #   condition: eq(variables['SubmitBrewFormula'], 'true')
-    #   displayName: Update brew formula
-    #   inputs:
-    #     targetType: filePath
-    #     filePath: eng/scripts/Update-HomebrewFormula.ps1
-    #     arguments: >-
-    #       -ZipFilePathAmd64 release/azd-darwin-amd64.zip
-    #       -ZipFilePathArm64 release/azd-darwin-arm64.zip
-    #       -Version $(CLI_VERSION)
-    #       -OutFile homebrew-azd/Formula/azd.rb
+    - task: PowerShell@2
+      condition: eq(variables['SubmitBrewFormula'], 'true')
+      displayName: Update brew formula
+      inputs:
+        targetType: filePath
+        filePath: eng/scripts/Update-HomebrewFormula.ps1
+        arguments: >-
+          -ZipFilePathAmd64 release/azd-darwin-amd64.zip
+          -ZipFilePathArm64 release/azd-darwin-arm64.zip
+          -Version $(CLI_VERSION)
+          -OutFile homebrew-azd/Formula/azd.rb
 
-    # - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
-    #   parameters:
-    #     # The azure-sdk user has permission to push directly to main
-    #     BaseRepoBranch: main
-    #     BaseRepoOwner: Azure
-    #     CommitMsg: Update formula for azd release $(CLI_VERSION)
-    #     TargetRepoName: homebrew-azd
-    #     WorkingDirectory: homebrew-azd
+    - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
+      parameters:
+        # The azure-sdk user has permission to push directly to main
+        BaseRepoBranch: main
+        BaseRepoOwner: Azure
+        CommitMsg: Update formula for azd release $(CLI_VERSION)
+        TargetRepoName: homebrew-azd
+        WorkingDirectory: homebrew-azd
 
   - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
-    # - task: DownloadPipelineArtifact@2
-    #   displayName: Download docs
-    #   inputs:
-    #     artifact: docs
-    #     path: docs
+    - task: DownloadPipelineArtifact@2
+      displayName: Download docs
+      inputs:
+        artifact: docs
+        path: docs
 
-    # - template: /eng/pipelines/templates/steps/set-git-credentials.yml
+    - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
-    # - pwsh: |
-    #     git clone https://github.com/azure-sdk/azure-dev-docs-pr/
-    #     Copy-Item docs/azd.md azure-dev-docs-pr/articles/azure-developer-cli/reference.md -Force
-    #   displayName: Clone azure-dev-docs-pr and update reference.md
+    - pwsh: |
+        git clone https://github.com/azure-sdk/azure-dev-docs-pr/
+        Copy-Item docs/azd.md azure-dev-docs-pr/articles/azure-developer-cli/reference.md -Force
+      displayName: Clone azure-dev-docs-pr and update reference.md
 
-    # - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-    #   parameters:
-    #     # Use a unique branch name per-build and per-attempt to prevent
-    #     # collisions
-    #     PRBranchName: azure-dev-cli/$(CLI_VERSION)-$(Build.BuildId).$(System.JobAttempt)
-    #     CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
-    #     PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
-    #     WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs-pr
-    #     RepoOwner: MicrosoftDocs
-    #     RepoName: azure-dev-docs-pr
-    #     BaseBranchName: main
+    - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+      parameters:
+        # Use a unique branch name per-build and per-attempt to prevent
+        # collisions
+        PRBranchName: azure-dev-cli/$(CLI_VERSION)-$(Build.BuildId).$(System.JobAttempt)
+        CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
+        PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
+        WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs-pr
+        RepoOwner: MicrosoftDocs
+        RepoName: azure-dev-docs-pr
+        BaseBranchName: main

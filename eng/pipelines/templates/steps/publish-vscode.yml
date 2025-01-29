@@ -61,41 +61,41 @@ steps:
         StorageContainerName: ${{ parameters.StorageContainerName }}
         PublishDestination: azd/vscode/latest
 
-  # - ${{ if eq('true', parameters.TagRepository) }}:
-  #   - task: PowerShell@2
-  #     inputs:
-  #       targetType: filePath
-  #       filePath: eng/scripts/New-ReleaseNotesFile.ps1
-  #       arguments: >-
-  #         -ChangeLogPath ext/vscode/CHANGELOG.md
-  #         -Version ${{ parameters.VsixVersion }}
-  #         -DevOpsOutputFormat
-  #     displayName: Set release changelog content
+  - ${{ if eq('true', parameters.TagRepository) }}:
+    - task: PowerShell@2
+      inputs:
+        targetType: filePath
+        filePath: eng/scripts/New-ReleaseNotesFile.ps1
+        arguments: >-
+          -ChangeLogPath ext/vscode/CHANGELOG.md
+          -Version ${{ parameters.VsixVersion }}
+          -DevOpsOutputFormat
+      displayName: Set release changelog content
 
-  #   - pwsh: |
-  #       gh release create `
-  #         "$(GH_RELEASE_TAG)" `
-  #         --title "$(GH_RELEASE_TAG)" `
-  #         --notes-file $(ReleaseChangeLogPath)
+    - pwsh: |
+        gh release create `
+          "$(GH_RELEASE_TAG)" `
+          --title "$(GH_RELEASE_TAG)" `
+          --notes-file $(ReleaseChangeLogPath)
 
-  #       gh release upload $(GH_RELEASE_TAG) release/*
-  #     displayName: Create GitHub Release and upload artifacts
-  #     env:
-  #       GH_TOKEN: $(azuresdk-github-pat)
+        gh release upload $(GH_RELEASE_TAG) release/*
+      displayName: Create GitHub Release and upload artifacts
+      env:
+        GH_TOKEN: $(azuresdk-github-pat)
 
-  # - ${{ if eq('true', parameters.PublishToMarketplace) }}:
-  #   - task: AzureCLI@2
-  #     displayName: Publish (using vsce)
-  #     inputs:
-  #       azureSubscription: azure-sdk-vsmarketplace
-  #       scriptType: pscore
-  #       scriptLocation: inlineScript
-  #       workingDirectory: release
-  #       inlineScript: |
-  #         npm install -g @vscode/vsce
-  #         $baseName = "azure-dev-${{ parameters.VsixVersion }}"
-  #         vsce publish `
-  #           --azure-credential `
-  #           --packagePath "$($baseName).vsix" `
-  #           --manifestPath "$($baseName).manifest" `
-  #           --signaturePath "$($baseName).p7s"
+  - ${{ if eq('true', parameters.PublishToMarketplace) }}:
+    - task: AzureCLI@2
+      displayName: Publish (using vsce)
+      inputs:
+        azureSubscription: azure-sdk-vsmarketplace
+        scriptType: pscore
+        scriptLocation: inlineScript
+        workingDirectory: release
+        inlineScript: |
+          npm install -g @vscode/vsce
+          $baseName = "azure-dev-${{ parameters.VsixVersion }}"
+          vsce publish `
+            --azure-credential `
+            --packagePath "$($baseName).vsix" `
+            --manifestPath "$($baseName).manifest" `
+            --signaturePath "$($baseName).p7s"

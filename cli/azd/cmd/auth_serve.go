@@ -38,6 +38,8 @@ func (serve *serveAction) tokenHandler(w http.ResponseWriter, r *http.Request) {
 		clientIP, _, _ = net.SplitHostPort(r.RemoteAddr)
 	}
 
+	fmt.Printf("Client IP: %s\n", clientIP)
+
 	// Only allow requests from 127.0.0.1 or host.docker.internal
 	allowedIPs := []string{"::1", "127.0.0.1", "host.docker.internal"}
 

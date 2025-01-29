@@ -9,9 +9,6 @@ variables:
     publish-storage-location: 'https://azuresdkartifacts.blob.core.windows.net'
     publish-storage-static-host: 'https://azuresdkartifacts.z5.web.core.windows.net'
 
-    # TODO: Remove these before merge
-    Skip.LiveTest: true
-    Skip.VerifyInstallers: true
-  # TODO: This has been eliminated
-  # ${{ else }}:
-  #   publish-storage-location: 'https://azdprivatebuilds7bc140ae.blob.core.windows.net'
+  ${{ else }}:
+    publish-storage-location: 'NOT-SUPPORTED'
+    publish-storage-static-host: 'NOT-SUPPORTED'

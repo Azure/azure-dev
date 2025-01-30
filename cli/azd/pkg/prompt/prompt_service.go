@@ -94,6 +94,10 @@ type SelectOptions struct {
 	Writer io.Writer
 }
 
+type AuthManager interface {
+	ClaimsForCurrentUser(ctx context.Context, options *auth.ClaimsForCurrentUserOptions) (auth.TokenClaims, error)
+}
+
 // ResourceService defines the methods that the ResourceService must implement.
 type ResourceService interface {
 	ListResourceGroup(
@@ -162,7 +166,7 @@ type PromptService interface {
 
 // PromptService provides methods for prompting the user to select various Azure resources.
 type promptService struct {
-	authManager         *auth.Manager
+	authManager         AuthManager
 	userConfigManager   config.UserConfigManager
 	resourceService     ResourceService
 	subscriptionService SubscriptionService
@@ -170,7 +174,7 @@ type promptService struct {
 
 // NewPromptService creates a new prompt service.
 func NewPromptService(
-	authManager *auth.Manager,
+	authManager AuthManager,
 	userConfigManager config.UserConfigManager,
 	subscriptionService SubscriptionService,
 	resourceService ResourceService,

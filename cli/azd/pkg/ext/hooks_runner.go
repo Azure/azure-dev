@@ -124,7 +124,7 @@ func (h *HooksRunner) GetScript(hookConfig *HookConfig, envVars []string) (tools
 		return nil, err
 	}
 
-	switch hookConfig.Shell {
+	switch ShellType(strings.Split(string(hookConfig.Shell), " ")[0]) {
 	case ShellTypeBash:
 		return bash.NewBashScript(h.commandRunner, h.cwd, envVars), nil
 	case ShellTypePowershell:
@@ -190,6 +190,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		options.StdOut = previewer
 		defer h.console.StopPreviewer(ctx, false)
 	}
+	options.UserPwsh = string(hookConfig.Shell)
 
 	log.Printf("Executing script '%s'\n", hookConfig.path)
 	res, err := script.Execute(ctx, hookConfig.path, *options)

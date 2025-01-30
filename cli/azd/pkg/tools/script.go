@@ -14,6 +14,7 @@ import (
 type ExecOptions struct {
 	Interactive *bool
 	StdOut      io.Writer
+	UserPwsh    string
 }
 
 // Utility to easily execute a bash script across platforms

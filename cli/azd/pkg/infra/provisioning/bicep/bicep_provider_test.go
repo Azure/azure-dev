@@ -63,6 +63,24 @@ func TestBicepPlan(t *testing.T) {
 	)
 }
 
+func TestBicepPlanKeyVaultRef(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+	infraProvider := createBicepProvider(t, mockContext)
+
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+
+	require.Nil(t, err)
+
+	require.IsType(t, &deploymentDetails{}, deploymentPlan)
+	configuredParameters := deploymentPlan.CompiledBicep.Parameters
+
+	require.NotEmpty(t, configuredParameters["kvSecret"])
+	require.NotNil(t, configuredParameters["kvSecret"].KeyVaultReference)
+	require.Nil(t, configuredParameters["kvSecret"].Value)
+	require.Equal(t, "secretName", configuredParameters["kvSecret"].KeyVaultReference.SecretName)
+}
+
 const paramsArmJson = `{
 	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 	"contentVersion": "1.0.0.0",
@@ -399,6 +417,7 @@ func prepareBicepMocks(
 		Parameters: azure.ArmTemplateParameterDefinitions{
 			"environmentName": {Type: "string"},
 			"location":        {Type: "string"},
+			"kvSecret":        {Type: "securestring"},
 		},
 		Outputs: azure.ArmTemplateOutputs{
 			"WEBSITE_URL": {Type: "string"},

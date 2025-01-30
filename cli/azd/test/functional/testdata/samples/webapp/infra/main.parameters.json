@@ -7,6 +7,14 @@
     },
     "location": {
       "value": "${AZURE_LOCATION}"
+    },
+    "kvSecret": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.KeyVault/vaults/VAULT"
+        },
+        "secretName": "secretName"
+      }
     }
   }
 }

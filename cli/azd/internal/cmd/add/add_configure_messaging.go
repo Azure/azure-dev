@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package add
 
 import (
@@ -23,7 +26,7 @@ func fillEventHubs(
 
 	topicName, err := console.Prompt(ctx, input.ConsoleOptions{
 		Message: "Input the event hub name",
-		Help: "Hint: Event hub name\n\n" +
+		Help: "Event hub name\n\n" +
 			"Name of the event hub that the app connects to. " +
 			"Also known as a Kafka topic.",
 	})
@@ -55,7 +58,7 @@ func fillServiceBus(
 
 	queueName, err := console.Prompt(ctx, input.ConsoleOptions{
 		Message: "Input the queue name",
-		Help: "Hint: Service Bus queue name\n\n" +
+		Help: "Service Bus queue name\n\n" +
 			"Name of the queue that the app connects to. ",
 	})
 	if err != nil {

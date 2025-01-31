@@ -198,6 +198,7 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			props := res.Props.(ServiceBusProps)
 			infraSpec.ServiceBus = &scaffold.ServiceBus{
 				Queues: props.Queues,
+				Topics: props.Topics,
 			}
 		}
 	}

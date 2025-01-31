@@ -181,6 +181,7 @@ type AIModelPropsModel struct {
 
 type ServiceBusProps struct {
 	Queues []string `yaml:"queues,omitempty"`
+	Topics []string `yaml:"topics,omitempty"`
 }
 
 type EventHubsProps struct {

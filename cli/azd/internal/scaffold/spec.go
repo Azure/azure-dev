@@ -57,6 +57,7 @@ type AIModelModel struct {
 
 type ServiceBus struct {
 	Queues []string
+	Topics []string
 }
 
 type EventHubs struct {

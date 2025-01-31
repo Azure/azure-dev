@@ -234,6 +234,13 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.11.2' = {
       }
       {{- end}}
     ]
+    topics: [
+      {{- range $topic := .ServiceBus.Topics}}
+      {
+        name: '{{ $topic }}'
+      }
+      {{- end}}
+    ]
   }
 }
 {{- end}}

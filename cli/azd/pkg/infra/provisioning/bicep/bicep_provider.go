@@ -1483,7 +1483,7 @@ func (p *BicepProvider) createOutputParameters(
 
 // loadParameters reads the parameters file template for environment/module specified by Options,
 // doing environment and command substitutions, and returns the values.
-func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.ArmParameterValue, error) {
+func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.ArmParameter, error) {
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
 	parametersRoot := p.options.Path
 
@@ -1761,7 +1761,7 @@ func (p *BicepProvider) modulePath() string {
 // whether new inputs were written, and an error if any occurred during the generation of input values.
 func inputsParameter(
 	existingInputs map[string]map[string]any, autoGenParameters map[string]map[string]azure.AutoGenInput) (
-	inputsParameter azure.ArmParameterValue, inputsUpdated bool, err error) {
+	inputsParameter azure.ArmParameter, inputsUpdated bool, err error) {
 	wroteNewInput := false
 
 	for inputResource, inputResourceInfo := range autoGenParameters {
@@ -1793,7 +1793,7 @@ func inputsParameter(
 		existingInputs[inputResource] = existingRecordsForResource
 	}
 
-	return azure.ArmParameterValue{
+	return azure.ArmParameter{
 		Value: existingInputs,
 	}, wroteNewInput, nil
 }
@@ -1844,7 +1844,7 @@ func (p *BicepProvider) ensureParameters(
 						paramValue = defValue
 					}
 				}
-				configuredParameters[key] = azure.ArmParameterValue{
+				configuredParameters[key] = azure.ArmParameter{
 					Value: paramValue,
 				}
 				if needForDeployParameter {
@@ -1853,7 +1853,7 @@ func (p *BicepProvider) ensureParameters(
 				}
 				continue
 			} else if v.KeyVaultReference != nil {
-				configuredParameters[key] = azure.ArmParameterValue{
+				configuredParameters[key] = azure.ArmParameter{
 					KeyVaultReference: v.KeyVaultReference,
 				}
 				continue
@@ -1876,7 +1876,7 @@ func (p *BicepProvider) ensureParameters(
 
 		if v, has := p.env.Config.Get(configKey); has {
 			if isValueAssignableToParameterType(parameterType, v) {
-				configuredParameters[key] = azure.ArmParameterValue{
+				configuredParameters[key] = azure.ArmParameter{
 					Value: v,
 				}
 				continue
@@ -1897,7 +1897,7 @@ func (p *BicepProvider) ensureParameters(
 			if err != nil {
 				return nil, err
 			}
-			configuredParameters[key] = azure.ArmParameterValue{
+			configuredParameters[key] = azure.ArmParameter{
 				Value: genValue,
 			}
 			mustSetParamAsConfig(key, genValue, p.env.Config, param.Secure())
@@ -1935,7 +1935,7 @@ func (p *BicepProvider) ensureParameters(
 				value := values[prompt.key]
 				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
 				configModified = true
-				configuredParameters[key] = azure.ArmParameterValue{
+				configuredParameters[key] = azure.ArmParameter{
 					Value: value,
 				}
 			}
@@ -1951,7 +1951,7 @@ func (p *BicepProvider) ensureParameters(
 
 				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
 				configModified = true
-				configuredParameters[key] = azure.ArmParameterValue{
+				configuredParameters[key] = azure.ArmParameter{
 					Value: value,
 				}
 			}

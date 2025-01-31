@@ -369,7 +369,9 @@
                             "db.redis",
                             "db.mongo",
                             "ai.openai.model",
-                            "host.containerapp"
+                            "host.containerapp",
+                            "messaging.eventhubs",
+                            "messaging.servicebus"
                         ]
                     },
                     "uses": {
@@ -386,7 +388,9 @@
                     { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
                     { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
-                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} }
+                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
+                    { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } }
                 ]
             }
         },
@@ -1296,6 +1300,51 @@
                             "description": "Required. The version of the AI model."
                         }
                     }
+                }
+            }
+        },
+        "eventHubsResource": {
+            "type": "object",
+            "description": "An Azure Event Hubs namespace.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "hubs": {
+                    "type": "array",
+                    "title": "Hubs to create in the Event Hubs namespace",
+                    "additionalProperties": false,
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "serviceBusResource": {
+            "type": "object",
+            "description": "An Azure Service Hub namespace.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "queues": {
+                    "type": "array",
+                    "title": "Queues to create in the Service Hub namespace",
+                    "additionalProperties": false,
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                },
+                "topics": {
+                    "type": "array",
+                    "title": "Topics to create in the Service Hub namespace",
+                    "additionalProperties": false,
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
                 }
             }
         }

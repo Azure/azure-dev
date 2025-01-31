@@ -1830,8 +1830,15 @@ func (p *BicepProvider) ensureParameters(
 		// If a value is explicitly configured via a parameters file, use it.
 		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
-			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
+			// Directly pass through Key Vault references without prompting.
+			if v.KeyVaultReference != nil {
+				configuredParameters[key] = azure.ArmParameter{
+					KeyVaultReference: v.KeyVaultReference,
+				}
+				continue
+			}
 
+			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
 			if paramValue != nil {
 				needForDeployParameter := hasMetadata &&
 					azdMetadata.Type != nil &&
@@ -1850,11 +1857,6 @@ func (p *BicepProvider) ensureParameters(
 				if needForDeployParameter {
 					mustSetParamAsConfig(key, paramValue, p.env.Config, param.Secure())
 					configModified = true
-				}
-				continue
-			} else if v.KeyVaultReference != nil {
-				configuredParameters[key] = azure.ArmParameter{
-					KeyVaultReference: v.KeyVaultReference,
 				}
 				continue
 			}

@@ -749,11 +749,7 @@ func convertFromStacksProvisioningState(
 func convertToStackParams(parameters azure.ArmParameters) map[string]*armdeploymentstacks.DeploymentParameter {
 	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
 	for k, v := range parameters {
-		if v.KeyVaultReference == nil {
-			stackParams[k] = &armdeploymentstacks.DeploymentParameter{
-				Value: v.Value,
-			}
-		} else {
+		if v.KeyVaultReference != nil {
 			stackParams[k] = &armdeploymentstacks.DeploymentParameter{
 				Reference: &armdeploymentstacks.KeyVaultParameterReference{
 					KeyVault: &armdeploymentstacks.KeyVaultReference{
@@ -762,6 +758,10 @@ func convertToStackParams(parameters azure.ArmParameters) map[string]*armdeploym
 					SecretName:    &v.KeyVaultReference.SecretName,
 					SecretVersion: &v.KeyVaultReference.SecretVersion,
 				},
+			}
+		} else {
+			stackParams[k] = &armdeploymentstacks.DeploymentParameter{
+				Value: v.Value,
 			}
 		}
 	}

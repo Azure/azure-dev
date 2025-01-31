@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package async
 
 // Progress is a wrapper around a channel which can be used to report progress of an operation. The zero value of Progress

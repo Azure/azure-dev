@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package middleware
 
 import (
@@ -359,6 +362,7 @@ func runMiddleware(
 		mockContext.CommandRunner,
 		mockContext.Console,
 		runOptions,
+		mockContext.Container,
 	)
 
 	result, err := middleware.Run(*mockContext.Context, nextFn)

@@ -282,7 +282,7 @@ stages:
 
                         foreach ($folder in $publishUploadLocations) {
                           Write-Host "Upload to azd/standalone/$folder"
-                          azcopy copy "release/*" "$(publish-storage-location)/azd/standalone/$folder" --overwrite=true
+                          azcopy copy "release/*" "$(publish-storage-location)/`$web/azd/standalone/$folder" --overwrite=true
                           if ($LASTEXITCODE) {
                             Write-Error "Upload failed"
                             exit 1
@@ -382,7 +382,7 @@ stages:
               UploadMsi: true
 
           - pwsh: |
-              $urlBase = "$(publish-storage-location)/azd/standalone/pr/$(PRNumber)"
+              $urlBase = "$(publish-storage-static-host)/azd/standalone/pr/$(PRNumber)"
               Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
             name: GenerateUrlBase
             displayName: Set UrlBase
@@ -541,7 +541,7 @@ stages:
                       pwsh: true
                       ScriptType: InlineScript
                       Inline: |
-                        azcopy copy "script-release/*" "$(publish-storage-location)/azd/standalone/installer" --overwrite=true
+                        azcopy copy "script-release/*" "$(publish-storage-location)/`$web/azd/standalone/installer" --overwrite=true
                         if ($LASTEXITCODE) {
                           Write-Error "Upload failed"
                           exit 1

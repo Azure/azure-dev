@@ -33,7 +33,7 @@ stages:
 
           - template: /eng/pipelines/templates/steps/publish-vscode.yml
             parameters:
-              PublishLocations: vscode/release/daily;vscode/daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
+              PublishLocations: azd/vscode/release/daily;azd/vscode/daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
 
       - job: Publish_For_PR
         condition: >-
@@ -69,10 +69,10 @@ stages:
 
           - template: /eng/pipelines/templates/steps/publish-vscode.yml
             parameters:
-              PublishLocations: vscode/pr/$(PRNumber)
+              PublishLocations: azd/vscode/pr/$(PRNumber)
 
           - pwsh: |
-              $downloadUrl = "$(publish-storage-location)/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"
+              $downloadUrl = "$(publish-storage-static-host)/azd/vscode/pr/$(PRNumber)/azure-dev-$(VSIX_VERSION).vsix"
 
               $content = @"
               <!-- #comment-vscode-pr -->

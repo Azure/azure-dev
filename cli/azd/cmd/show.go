@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -422,7 +425,12 @@ func showModelDeployment(
 		console.Message(ctx, "  Access:")
 		console.Message(ctx, "    Keyless (Microsoft Entra ID)")
 		//nolint:lll
-		console.Message(ctx, output.WithGrayFormat("        Hint: To access locally, use DefaultAzureCredential. To learn more, visit https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages"))
+		console.Message(
+			ctx,
+			output.WithGrayFormat(
+				"        Hint: To access locally, use DefaultAzureCredential. To learn more, visit https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages",
+			),
+		)
 
 		console.Message(ctx, "")
 	}

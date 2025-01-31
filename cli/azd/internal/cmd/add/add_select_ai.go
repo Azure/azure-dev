@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package add
 
 import (
@@ -63,7 +66,8 @@ func (a *AddAction) selectOpenAi(
 			//nolint:lll
 			"https://management.azure.com/subscriptions/%s/providers/Microsoft.CognitiveServices/locations/%s/models?api-version=2023-05-01",
 			a.env.GetSubscriptionId(),
-			a.env.GetLocation())
+			a.env.GetLocation(),
+		)
 		req, err := runtime.NewRequest(ctx, http.MethodGet, location)
 		if err != nil {
 			return nil, fmt.Errorf("creating request: %w", err)

@@ -14,6 +14,10 @@ type InfraSpec struct {
 	DbCosmosMongo *DatabaseCosmosMongo
 	DbRedis       *DatabaseRedis
 
+	// Messaging services
+	ServiceBus *ServiceBus
+	EventHubs  *EventHubs
+
 	// ai models
 	AIModels []AIModel
 }
@@ -51,6 +55,14 @@ type AIModelModel struct {
 	Version string
 }
 
+type ServiceBus struct {
+	Queues []string
+}
+
+type EventHubs struct {
+	Hubs []string
+}
+
 type ServiceSpec struct {
 	Name string
 	Port int
@@ -70,6 +82,10 @@ type ServiceSpec struct {
 
 	// AI model connections
 	AIModels []AIModelReference
+
+	// Messaging services
+	ServiceBus *ServiceBus
+	EventHubs  *EventHubs
 }
 
 type Frontend struct {

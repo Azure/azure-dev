@@ -86,7 +86,9 @@ func TestExecInfra(t *testing.T) {
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
-				DbRedis: &DatabaseRedis{},
+				DbRedis:    &DatabaseRedis{},
+				ServiceBus: &ServiceBus{},
+				EventHubs:  &EventHubs{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
@@ -107,6 +109,8 @@ func TestExecInfra(t *testing.T) {
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
+						ServiceBus: &ServiceBus{},
+						EventHubs:  &EventHubs{},
 					},
 					{
 						Name: "web",

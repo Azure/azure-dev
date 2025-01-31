@@ -18,15 +18,19 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeDbMongo,
 		ResourceTypeHostContainerApp,
 		ResourceTypeOpenAiModel,
+		ResourceTypeMessagingEventHubs,
+		ResourceTypeMessagingServiceBus,
 	}
 }
 
 const (
-	ResourceTypeDbRedis          ResourceType = "db.redis"
-	ResourceTypeDbPostgres       ResourceType = "db.postgres"
-	ResourceTypeDbMongo          ResourceType = "db.mongo"
-	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
-	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
+	ResourceTypeDbRedis             ResourceType = "db.redis"
+	ResourceTypeDbPostgres          ResourceType = "db.postgres"
+	ResourceTypeDbMongo             ResourceType = "db.mongo"
+	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
+	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
+	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
+	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
 )
 
 func (r ResourceType) String() string {
@@ -41,6 +45,10 @@ func (r ResourceType) String() string {
 		return "Container App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
+	case ResourceTypeMessagingEventHubs:
+		return "Event Hubs"
+	case ResourceTypeMessagingServiceBus:
+		return "Service Bus"
 	}
 
 	return ""
@@ -78,17 +86,20 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		return nil
 	}
 
+	var errMarshal error
 	switch raw.Type {
 	case ResourceTypeOpenAiModel:
-		err := marshalRawProps(raw.Props.(AIModelProps))
-		if err != nil {
-			return nil, err
-		}
+		errMarshal = marshalRawProps(raw.Props.(AIModelProps))
 	case ResourceTypeHostContainerApp:
-		err := marshalRawProps(raw.Props.(ContainerAppProps))
-		if err != nil {
-			return nil, err
-		}
+		errMarshal = marshalRawProps(raw.Props.(ContainerAppProps))
+	case ResourceTypeMessagingEventHubs:
+		errMarshal = marshalRawProps(raw.Props.(EventHubsProps))
+	case ResourceTypeMessagingServiceBus:
+		errMarshal = marshalRawProps(raw.Props.(ServiceBusProps))
+	}
+
+	if errMarshal != nil {
+		return nil, errMarshal
 	}
 
 	return raw, nil
@@ -128,6 +139,18 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeMessagingEventHubs:
+		ehp := EventHubsProps{}
+		if err := unmarshalProps(&ehp); err != nil {
+			return err
+		}
+		raw.Props = ehp
+	case ResourceTypeMessagingServiceBus:
+		sbp := ServiceBusProps{}
+		if err := unmarshalProps(&sbp); err != nil {
+			return err
+		}
+		raw.Props = sbp
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +177,12 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type ServiceBusProps struct {
+	Queues []string `yaml:"queues,omitempty"`
+}
+
+type EventHubsProps struct {
+	Hubs []string `yaml:"hubs,omitempty"`
 }

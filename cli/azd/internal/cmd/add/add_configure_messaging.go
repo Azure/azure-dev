@@ -1,0 +1,72 @@
+package add
+
+import (
+	"context"
+	"errors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+)
+
+func fillEventHubs(
+	ctx context.Context,
+	r *project.ResourceConfig,
+	console input.Console,
+	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Name == "" {
+		r.Name = "event-hubs"
+	}
+
+	if err := validateResourceName(r.Name, p.PrjConfig); err != nil {
+		return r, errors.New("only one event hubs resource is currently allowed")
+	}
+
+	topicName, err := console.Prompt(ctx, input.ConsoleOptions{
+		Message: "Input the event hub name",
+		Help: "Hint: Event hub name\n\n" +
+			"Name of the event hub that the app connects to. " +
+			"Also known as a Kafka topic.",
+	})
+	if err != nil {
+		return r, err
+	}
+
+	// TODO: validate queue name
+
+	r.Props = project.EventHubsProps{
+		Hubs: []string{topicName},
+	}
+
+	return r, nil
+}
+
+func fillServiceBus(
+	ctx context.Context,
+	r *project.ResourceConfig,
+	console input.Console,
+	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Name == "" {
+		r.Name = "service-bus"
+	}
+
+	if err := validateResourceName(r.Name, p.PrjConfig); err != nil {
+		return r, errors.New("only one service bus resource is currently allowed")
+	}
+
+	queueName, err := console.Prompt(ctx, input.ConsoleOptions{
+		Message: "Input the queue name",
+		Help: "Hint: Service Bus queue name\n\n" +
+			"Name of the queue that the app connects to. ",
+	})
+	if err != nil {
+		return r, err
+	}
+
+	//TODO: validate queue name
+
+	r.Props = project.ServiceBusProps{
+		Queues: []string{queueName},
+	}
+
+	return r, nil
+}

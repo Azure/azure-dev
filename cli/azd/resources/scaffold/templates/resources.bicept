@@ -174,6 +174,70 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 }
 {{- end}}
 
+{{- if .EventHubs }}
+module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.8.0' = {
+  name: 'eventHubNamespace'
+  params: {
+    name: '${abbrs.eventHubNamespaces}${resourceToken}'
+    location: location
+    roleAssignments: [
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f526a384-b230-433a-b45c-95f59c4a2dec')
+      }
+      {{- end}}
+      {
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f526a384-b230-433a-b45c-95f59c4a2dec')
+      }
+    ]
+    disableLocalAuth: true
+    eventhubs: [
+      {{- range $hub := .EventHubs.Hubs}}
+      {
+        name: '{{ $hub }}'
+      }
+      {{- end}}
+    ]
+  }
+}
+{{- end}}
+
+{{- if .ServiceBus }}
+module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.11.2' = {
+  name: 'serviceBusNamespace'
+  params: {
+    name: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    location: location
+    roleAssignments: [
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
+      }
+      {{- end}}
+      {
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
+      }
+    ]
+    disableLocalAuth: true
+    queues: [
+      {{- range $queue := .ServiceBus.Queues}}
+      {
+        name: '{{ $queue }}'
+      }
+      {{- end}}
+    ]
+  }
+}
+{{- end}}
+
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
@@ -341,6 +405,26 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'REDIS_PASSWORD'
             secretRef: 'redis-pass'
+          }
+          {{- end}}
+          {{- if .EventHubs}}
+          {
+            name: 'AZURE_EVENT_HUBS_NAME'
+            value: eventHubNamespace.outputs.name
+          }
+          {
+            name: 'AZURE_EVENT_HUBS_HOST'
+            value: '${eventHubNamespace.outputs.name}.servicebus.windows.net'
+          }
+          {{- end}}
+          {{- if .ServiceBus}}
+          {
+            name: 'AZURE_SERVICE_BUS_NAME'
+            value: serviceBusNamespace.outputs.name
+          }
+          {
+            name: 'AZURE_SERVICE_BUS_HOST'
+            value: '${serviceBusNamespace.outputs.name}.servicebus.windows.net'
           }
           {{- end}}
           {{- if .AIModels}}

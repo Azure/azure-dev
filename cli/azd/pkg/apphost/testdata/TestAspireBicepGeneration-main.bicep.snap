@@ -16,6 +16,7 @@ param administrator_login string
 @secure()
 param administratorLoginPassword string
 param parameter string
+param rg_scope string
 
 var tags = {
   'azd-env-name': environmentName
@@ -85,7 +86,7 @@ module sql 'sql/aspire.hosting.azure.bicep.sql.bicep' = {
 }
 module test 'test/test.bicep' = {
   name: 'test'
-  scope: rg
+  scope: resourceGroup(rg_scope)
   params: {
     host: 'frontend.internal.${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
     location: location

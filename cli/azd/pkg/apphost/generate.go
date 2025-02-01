@@ -827,7 +827,15 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 		stringParams["location"] = "location"
 	}
 
-	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams}
+	bicepScope := comp.Scope
+	if bicepScope != nil {
+		paramValue, _, err := injectValueForBicepParameter(name, "scope", *bicepScope)
+		if err != nil {
+			return err
+		}
+		bicepScope = &paramValue
+	}
+	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams, Scope: bicepScope}
 	return nil
 }
 
@@ -1284,38 +1292,22 @@ func (b *infraGenerator) Compile() error {
 
 	for moduleName, module := range b.bicepContext.BicepModules {
 		for paramName, paramValue := range module.Params {
-			// bicep uses ' instead of " for strings, so we need to replace all " with '
-			singleQuoted := strings.ReplaceAll(paramValue, "\"", "'")
-
-			var evaluationError error
-			evaluatedString := singleQuotedStringRegex.ReplaceAllStringFunc(singleQuoted, func(s string) string {
-				evaluatedString, err := EvalString(s, func(s string) (string, error) {
-					return b.evalBindingRef(s, inputEmitTypeBicep)
-				})
-				if err != nil {
-					evaluationError = fmt.Errorf("evaluating bicep module %s parameter %s: %w", moduleName, paramName, err)
-				}
-				return evaluatedString
-			})
-			if evaluationError != nil {
-				return evaluationError
+			value, err := b.resolveBicepReference(paramValue)
+			if err != nil {
+				return fmt.Errorf(
+					"resolving bicep module %s, param: %s, reference %s: %w", moduleName, paramName, paramValue, err)
 			}
-
-			// quick check to know if evaluatedString is only holding one only reference. If so, we don't need to use
-			// the form of '%{ref}' and we can directly use ref alone.
-			if isComplexExp, val := isComplexExpression(evaluatedString); !isComplexExp {
-				module.Params[paramName] = val
-				continue
-			}
-
-			// Property names that are valid identifiers should be declared without quotation marks and accessed
-			// using dot notation.
-			evaluatedString = propertyNameRegex.ReplaceAllString(evaluatedString, "${1}:")
-
-			// restore double {{ }} to single { } for bicep output
-			// we used double only during the evaluation to scape single brackets
-			module.Params[paramName] = strings.ReplaceAll(strings.ReplaceAll(evaluatedString, "'{{", "${"), "}}'", "}")
+			module.Params[paramName] = value
 		}
+		if module.Scope != nil {
+			scope, err := b.resolveBicepReference(*module.Scope)
+			if err != nil {
+				return fmt.Errorf("resolving bicep module %s scope %s: %w", moduleName, *module.Scope, err)
+			}
+			scope = fmt.Sprintf("resourceGroup(%s)", scope)
+			module.Scope = &scope
+		}
+		b.bicepContext.BicepModules[moduleName] = module
 	}
 
 	for _, kv := range b.bicepContext.KeyVaults {
@@ -1326,6 +1318,40 @@ func (b *infraGenerator) Compile() error {
 	}
 
 	return nil
+}
+
+// resolve a reference for bicep types. The reference can be from a parameter of for the scope
+func (b *infraGenerator) resolveBicepReference(ref string) (string, error) {
+	// bicep uses ' instead of " for strings, so we need to replace all " with '
+	singleQuoted := strings.ReplaceAll(ref, "\"", "'")
+
+	var evaluationError error
+	evaluatedString := singleQuotedStringRegex.ReplaceAllStringFunc(singleQuoted, func(s string) string {
+		evaluatedString, err := EvalString(s, func(s string) (string, error) {
+			return b.evalBindingRef(s, inputEmitTypeBicep)
+		})
+		if err != nil {
+			evaluationError = err
+		}
+		return evaluatedString
+	})
+	if evaluationError != nil {
+		return "", evaluationError
+	}
+
+	// quick check to know if evaluatedString is only holding one only reference. If so, we don't need to use
+	// the form of '%{ref}' and we can directly use ref alone.
+	if isComplexExp, val := isComplexExpression(evaluatedString); !isComplexExp {
+		return val, nil
+	}
+
+	// Property names that are valid identifiers should be declared without quotation marks and accessed
+	// using dot notation.
+	evaluatedString = propertyNameRegex.ReplaceAllString(evaluatedString, "${1}:")
+
+	// restore double {{ }} to single { } for bicep output
+	// we used double only during the evaluation to scape single brackets
+	return strings.ReplaceAll(strings.ReplaceAll(evaluatedString, "'{{", "${"), "}}'", "}"), nil
 }
 
 // isComplexExpression checks if the evaluatedString is in the form of '{{ expr }}' or if it is a complex expression like

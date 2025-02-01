@@ -100,6 +100,9 @@ type Resource struct {
 
 	// project.v1 and container.v1 uses deployment when the AppHost owns the ACA bicep definitions.
 	Deployment *DeploymentMetadata `json:"deployment,omitempty"`
+
+	// Reference is present on bicep modules to control the scope of the module.
+	Scope *string `json:"scope,omitempty"`
 }
 
 type DeploymentMetadata struct {

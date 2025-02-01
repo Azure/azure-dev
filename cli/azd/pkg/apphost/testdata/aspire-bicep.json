@@ -8,6 +8,14 @@
           }
         }
       },
+      "rg-scope": {
+        "type": "parameter.v0",
+        "value": "{rg-scope.inputs.value}",
+        "inputs": {
+          "value": {
+          }
+        }
+      },
       "test": {
         "type": "azure.bicep.v0",
         "path": "test.bicep",
@@ -19,7 +27,8 @@
             "one",
             "two"
           ]
-        }
+        },
+        "scope": "{rg-scope.value}"
       },
       "administrator-login": {
         "type": "parameter.v0",

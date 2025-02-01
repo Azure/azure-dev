@@ -120,7 +120,8 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
 	if isBicepParamFile(modulePath) {
-		if err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {
+		if err := provisioning.EnsureSubscriptionAndLocation(
+			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{}); err != nil {
 			return err
 		}
 	}
@@ -130,10 +131,12 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
 	}
 
-	// for .bicep, azd must load a parameters.json file and create the ArmParameters
+	// for .bicep, azd must load a parameters.json file and create the ArmParameters so we know if the are filters
+	// to apply for location (using the allowedValues or the location azd metadata)
 	if isBicepFile(modulePath) {
+		locationParam, locationParamDefined := compileResult.Template.Parameters["location"]
 		var filterLocation = func(loc account.Location) bool {
-			if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
+			if locationParamDefined {
 				if locationParam.AllowedValues != nil {
 					return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
 						allowedValueString, goodCast := allowedValue.(string)
@@ -143,8 +146,16 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			}
 			return true
 		}
+		var defaultLocationToSelect *string
+		if locationParamDefined {
+			defaultLocationToSelect = defaultLocationToSelectFn(locationParam)
+		}
 
-		err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation)
+		err := provisioning.EnsureSubscriptionAndLocation(
+			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{
+				LocationFiler:         filterLocation,
+				SelectDefaultLocation: defaultLocationToSelect,
+			})
 		if err != nil {
 			return err
 		}
@@ -173,6 +184,30 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+
+// defaultLocationToSelectFn resolves if there is an intention from a location parameter to use a default location.
+// If the parameter has the @allowedValues set, it will return the first value from the array as the default.
+// If the parameter has the location azd metadata, it will check if there is configuration to set a default location.
+// If both @allowedValues and azd location metadata config are set, the metadata config will take precedence.
+// If nothing is set, it will return nil.
+func defaultLocationToSelectFn(locationParam azure.ArmTemplateParameterDefinition) *string {
+	azdMetadata, has := locationParam.AzdMetadata()
+	if has &&
+		azdMetadata.Type != nil && *azdMetadata.Type == azure.AzdMetadataTypeLocation &&
+		azdMetadata.DefaultLocation != nil {
+		// Metadata using location type and a default location. This is the highest priority.
+		return azdMetadata.DefaultLocation
+	}
+
+	if locationParam.AllowedValues != nil {
+		firstOption, castOk := (*locationParam.AllowedValues)[0].(string)
+		// if cast doesn't work, we don't have a default location
+		if castOk {
+			return &firstOption
+		}
+	}
 	return nil
 }
 

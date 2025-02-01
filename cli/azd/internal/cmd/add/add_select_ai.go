@@ -41,7 +41,8 @@ func (a *AddAction) selectOpenAi(
 
 	var allModels []ModelList
 	for {
-		err = provisioning.EnsureSubscriptionAndLocation(ctx, a.envManager, a.env, a.prompter, nil)
+		err = provisioning.EnsureSubscriptionAndLocation(
+			ctx, a.envManager, a.env, a.prompter, provisioning.EnsureSubscriptionAndLocationOptions{})
 		if err != nil {
 			return nil, err
 		}

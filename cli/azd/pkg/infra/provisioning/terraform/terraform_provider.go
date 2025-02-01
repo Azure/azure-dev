@@ -130,7 +130,7 @@ func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
 		t.envManager,
 		t.env,
 		t.prompters,
-		nil,
+		provisioning.EnsureSubscriptionAndLocationOptions{},
 	)
 }
 

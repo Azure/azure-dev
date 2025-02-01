@@ -105,8 +105,7 @@ func (p *BicepProvider) promptForParameter(
 				s, ok := v.(string)
 				return ok && loc.Name == s
 			}) != -1
-		},
-		)
+		}, defaultLocationToSelectFn(param))
 		if err != nil {
 			return nil, err
 		}

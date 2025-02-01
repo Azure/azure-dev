@@ -136,15 +136,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	if isBicepFile(modulePath) {
 		locationParam, locationParamDefined := compileResult.Template.Parameters["location"]
 		var filterLocation = func(loc account.Location) bool {
-			if locationParamDefined {
-				if locationParam.AllowedValues != nil {
-					return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
-						allowedValueString, goodCast := allowedValue.(string)
-						return goodCast && loc.Name == allowedValueString
-					}) != -1
-				}
-			}
-			return true
+			return locationParameterFilterImpl(locationParam, loc)
 		}
 		var defaultLocationToSelect *string
 		if locationParamDefined {
@@ -185,6 +177,17 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func locationParameterFilterImpl(param azure.ArmTemplateParameterDefinition, location account.Location) bool {
+	if param.AllowedValues == nil {
+		return true
+	}
+
+	return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
+		s, ok := v.(string)
+		return ok && location.Name == s
+	}) != -1
 }
 
 // defaultLocationToSelectFn resolves if there is an intention from a location parameter to use a default location.

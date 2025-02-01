@@ -28,7 +28,9 @@
             "two"
           ]
         },
-        "scope": "{rg-scope.value}"
+        "scope": {
+          "resourceGroup": "{rg-scope.value}"
+        }
       },
       "administrator-login": {
         "type": "parameter.v0",

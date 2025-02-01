@@ -827,13 +827,16 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 		stringParams["location"] = "location"
 	}
 
-	bicepScope := comp.Scope
-	if bicepScope != nil {
-		paramValue, _, err := injectValueForBicepParameter(name, "scope", *bicepScope)
+	bicepScope := defaultBicepModuleScope
+	if comp.Scope != nil {
+		if comp.Scope.ResourceGroup == nil {
+			return fmt.Errorf("bicep resource %s has a scope without a resource group", name)
+		}
+		paramValue, _, err := injectValueForBicepParameter(name, "scope", *comp.Scope.ResourceGroup)
 		if err != nil {
 			return err
 		}
-		bicepScope = &paramValue
+		bicepScope = paramValue
 	}
 	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams, Scope: bicepScope}
 	return nil
@@ -854,6 +857,8 @@ const (
 	knownInjectedValueLogAnalytics     string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
 	knownInjectedValueContainerEnvName string = "resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME"
 	knownInjectedValueContainerEnvId   string = "resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID"
+
+	defaultBicepModuleScope string = "rg"
 )
 
 // injectValueForBicepParameter checks for aspire-manifest and azd conventions rules for auto injecting values for
@@ -1299,13 +1304,13 @@ func (b *infraGenerator) Compile() error {
 			}
 			module.Params[paramName] = value
 		}
-		if module.Scope != nil {
-			scope, err := b.resolveBicepReference(*module.Scope)
+		if module.Scope != defaultBicepModuleScope {
+			scope, err := b.resolveBicepReference(module.Scope)
 			if err != nil {
-				return fmt.Errorf("resolving bicep module %s scope %s: %w", moduleName, *module.Scope, err)
+				return fmt.Errorf("resolving bicep module %s scope %s: %w", moduleName, module.Scope, err)
 			}
 			scope = fmt.Sprintf("resourceGroup(%s)", scope)
-			module.Scope = &scope
+			module.Scope = scope
 		}
 		b.bicepContext.BicepModules[moduleName] = module
 	}

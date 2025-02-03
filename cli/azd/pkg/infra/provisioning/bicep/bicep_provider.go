@@ -199,9 +199,9 @@ func defaultLocationToSelectFn(locationParam azure.ArmTemplateParameterDefinitio
 	azdMetadata, has := locationParam.AzdMetadata()
 	if has &&
 		azdMetadata.Type != nil && *azdMetadata.Type == azure.AzdMetadataTypeLocation &&
-		azdMetadata.DefaultLocation != nil {
+		azdMetadata.Default != nil {
 		// Metadata using location type and a default location. This is the highest priority.
-		return azdMetadata.DefaultLocation
+		return azdMetadata.Default
 	}
 
 	if locationParam.AllowedValues != nil {

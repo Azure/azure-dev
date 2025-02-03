@@ -677,7 +677,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
 			}
-		case "azure.bicep.v0":
+		case "azure.bicep.v0", "azure.bicep.v1":
 			if err := b.addBicep(name, comp); err != nil {
 				return fmt.Errorf("adding bicep resource %s: %w", name, err)
 			}
@@ -1592,7 +1592,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				fmt.Errorf("malformed binding expression, expected "+
 					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
-	case targetType == "azure.bicep.v0":
+	case targetType == "azure.bicep.v0" || targetType == "azure.bicep.v1":
 		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}

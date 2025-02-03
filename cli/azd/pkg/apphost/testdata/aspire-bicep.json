@@ -17,7 +17,7 @@
         }
       },
       "test": {
-        "type": "azure.bicep.v0",
+        "type": "azure.bicep.v1",
         "path": "test.bicep",
         "params": {
           "test": "{parameter.value}",

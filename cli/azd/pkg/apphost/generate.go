@@ -346,6 +346,10 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 			// Note: azd is not checking or validating that Default.Generate and Default.Value are not both set.
 			// The AppHost prevents this from happening by not allowing both to be set at the same time.
 		}
+		if parameter.scope != nil {
+			metadataType = azure.AzdMetadataTypeResourceGroup
+			parameterMetadata = "{}"
+		}
 		input := genInput{Name: key, Secret: parameter.Secret, Type: parameter.Type, Value: parameterDefaultValue}
 		parameters = append(parameters, autoGenInput{
 			genInput:       input,
@@ -1151,6 +1155,7 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
 var jsonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
+var resourceValueOnlyRefRegex = regexp.MustCompile(`^"{([a-zA-Z0-9\-]+)\.[vV]alue}"$`)
 
 type ingressDetails struct {
 	// aca ingress definition
@@ -1305,11 +1310,21 @@ func (b *infraGenerator) Compile() error {
 			module.Params[paramName] = value
 		}
 		if module.Scope != defaultBicepModuleScope {
+			rgScope := "resourceGroup"
+			if matches := resourceValueOnlyRefRegex.FindStringSubmatch(module.Scope); len(matches) == 2 {
+				manifestResourceName := matches[1]
+				// Check if the scope is an input
+				input, hasInput := b.bicepContext.InputParameters[manifestResourceName]
+				if hasInput {
+					input.scope = &rgScope
+					b.bicepContext.InputParameters[manifestResourceName] = input
+				}
+			}
 			scope, err := b.resolveBicepReference(module.Scope)
 			if err != nil {
 				return fmt.Errorf("resolving bicep module %s scope %s: %w", moduleName, module.Scope, err)
 			}
-			scope = fmt.Sprintf("resourceGroup(%s)", scope)
+			scope = fmt.Sprintf("%s(%s)", rgScope, scope)
 			module.Scope = scope
 		}
 		b.bicepContext.BicepModules[moduleName] = module
@@ -1325,7 +1340,7 @@ func (b *infraGenerator) Compile() error {
 	return nil
 }
 
-// resolve a reference for bicep types. The reference can be from a parameter of for the scope
+// resolve a reference for bicep types. The reference can be from a parameter or from the scope
 func (b *infraGenerator) resolveBicepReference(ref string) (string, error) {
 	// bicep uses ' instead of " for strings, so we need to replace all " with '
 	singleQuoted := strings.ReplaceAll(ref, "\"", "'")

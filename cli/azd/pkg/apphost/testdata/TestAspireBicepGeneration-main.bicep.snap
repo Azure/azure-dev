@@ -16,6 +16,11 @@ param administrator_login string
 @secure()
 param administratorLoginPassword string
 param parameter string
+@metadata({azd: {
+  type: 'resourceGroup'
+  config: {}
+  }
+})
 param rg_scope string
 
 var tags = {

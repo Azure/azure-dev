@@ -190,6 +190,9 @@ type Input struct {
 	Type    string        `json:"type"`
 	Secret  bool          `json:"secret"`
 	Default *InputDefault `json:"default,omitempty"`
+	// When the input is used to set a bicep module scope, the scope is set here.
+	// This allows generation to add azdMetadata to the bicep parameter.
+	scope *string
 }
 
 type InputDefaultGenerate struct {

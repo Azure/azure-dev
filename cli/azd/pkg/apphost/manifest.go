@@ -250,7 +250,7 @@ func ManifestFromAppHost(
 
 	for resourceName, res := range manifest.Resources {
 		if res.Path != nil {
-			if res.Type == "azure.bicep.v0" {
+			if res.Type == "azure.bicep.v0" || res.Type == "azure.bicep.v1" {
 				e := manifest.BicepFiles.MkdirAll(resourceName, osutil.PermissionDirectory)
 				if e != nil {
 					return nil, e
@@ -279,9 +279,9 @@ func ManifestFromAppHost(
 		}
 
 		if res.Deployment != nil {
-			if res.Deployment.Type != "azure.bicep.v0" {
+			if res.Deployment.Type != "azure.bicep.v0" && res.Deployment.Type != "azure.bicep.v1" {
 				return nil, fmt.Errorf(
-					"unexpected deployment type %q. Supported types: [azure.bicep.v0]", res.Deployment.Type)
+					"unexpected deployment type %q. Supported types: [azure.bicep.v0, azure.bicep.v1]", res.Deployment.Type)
 			}
 			// use a folder with the name of the resource
 			e := manifest.BicepFiles.MkdirAll(resourceName, osutil.PermissionDirectory)

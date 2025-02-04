@@ -143,6 +143,12 @@ func fillStorageContainerNameAndAuthType(
 	if !ok {
 		return nil, fmt.Errorf("invalid resource properties")
 	}
+	authType, err := chooseAuthTypeByPrompt(r.Name, []internal.AuthType{
+		internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString}, ctx, console)
+	if err != nil {
+		return r, err
+	}
+	modelProps.AuthType = authType
 
 	for {
 		containerName, err := console.Prompt(ctx, input.ConsoleOptions{
@@ -160,12 +166,7 @@ func fillStorageContainerNameAndAuthType(
 		modelProps.Containers = []string{containerName}
 		break
 	}
-	authType, err := chooseAuthTypeByPrompt(r.Name, []internal.AuthType{
-		internal.AuthTypeUserAssignedManagedIdentity, internal.AuthTypeConnectionString}, ctx, console)
-	if err != nil {
-		return r, err
-	}
-	modelProps.AuthType = authType
+
 	r.Props = modelProps
 	return r, nil
 }

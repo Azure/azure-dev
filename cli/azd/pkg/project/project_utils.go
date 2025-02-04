@@ -56,6 +56,11 @@ func buildForZip(src, dst string, options buildForZipOptions) error {
 	// these exclude conditions applies to all projects
 	options.excludeConditions = append(options.excludeConditions, globalExcludeAzdFolder)
 
+	directory, _ := os.Getwd()
+	fmt.Println("Current working directory: ", directory)
+	fmt.Println("Source: ", src)
+	fmt.Println("Destination: ", dst)
+
 	return copy.Copy(src, dst, copy.Options{
 		Skip: func(srcInfo os.FileInfo, src, dest string) (bool, error) {
 			for _, checkExclude := range options.excludeConditions {
@@ -65,6 +70,7 @@ func buildForZip(src, dst string, options buildForZipOptions) error {
 			}
 			return false, nil
 		},
+		OnSymlink: func(string) copy.SymlinkAction { return copy.Deep },
 	})
 }
 

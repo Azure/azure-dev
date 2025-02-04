@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strconv"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -98,16 +97,8 @@ func (p *BicepProvider) promptForParameter(
 		*azdMetadata.Type == azure.AzdMetadataTypeLocation {
 
 		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
-			if param.AllowedValues == nil {
-				return true
-			}
-
-			return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
-				s, ok := v.(string)
-				return ok && loc.Name == s
-			}) != -1
-		},
-		)
+			return locationParameterFilterImpl(param, loc)
+		}, defaultPromptValue(param))
 		if err != nil {
 			return nil, err
 		}

@@ -116,7 +116,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
 	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
 		// If bicep is not available, we continue to prompt for subscription and location unfiltered
-		err = provisioning.EnsureSubscriptionAndLocation(ctx, u.envManager, u.env, u.prompters, nil)
+		err = provisioning.EnsureSubscriptionAndLocation(
+			ctx, u.envManager, u.env, u.prompters, provisioning.EnsureSubscriptionAndLocationOptions{})
 		if err != nil {
 			return nil, err
 		}

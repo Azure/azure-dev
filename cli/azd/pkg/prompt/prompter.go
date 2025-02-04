@@ -28,7 +28,12 @@ type LocationFilterPredicate func(loc account.Location) bool
 
 type Prompter interface {
 	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
-	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
+	PromptLocation(
+		ctx context.Context,
+		subId string,
+		msg string,
+		filter LocationFilterPredicate,
+		defaultLocation *string) (string, error)
 	PromptResourceGroup(ctx context.Context, options PromptResourceOptions) (string, error)
 	PromptResourceGroupFrom(
 		ctx context.Context, subscriptionId string, location string, options PromptResourceGroupFromOptions) (string, error)
@@ -101,8 +106,9 @@ func (p *DefaultPrompter) PromptLocation(
 	subId string,
 	msg string,
 	filter LocationFilterPredicate,
+	defaultLocation *string,
 ) (string, error) {
-	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", p.console, p.accountManager, filter)
+	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", p.console, p.accountManager, filter, defaultLocation)
 	if err != nil {
 		return "", err
 	}

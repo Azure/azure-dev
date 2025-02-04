@@ -120,7 +120,8 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
 	if isBicepParamFile(modulePath) {
-		if err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, nil); err != nil {
+		if err := provisioning.EnsureSubscriptionAndLocation(
+			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{}); err != nil {
 			return err
 		}
 	}
@@ -130,21 +131,23 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
 	}
 
-	// for .bicep, azd must load a parameters.json file and create the ArmParameters
+	// for .bicep, azd must load a parameters.json file and create the ArmParameters so we know if the are filters
+	// to apply for location (using the allowedValues or the location azd metadata)
 	if isBicepFile(modulePath) {
+		locationParam, locationParamDefined := compileResult.Template.Parameters["location"]
 		var filterLocation = func(loc account.Location) bool {
-			if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
-				if locationParam.AllowedValues != nil {
-					return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
-						allowedValueString, goodCast := allowedValue.(string)
-						return goodCast && loc.Name == allowedValueString
-					}) != -1
-				}
-			}
-			return true
+			return locationParameterFilterImpl(locationParam, loc)
+		}
+		var defaultLocationToSelect *string
+		if locationParamDefined {
+			defaultLocationToSelect = defaultPromptValue(locationParam)
 		}
 
-		err := provisioning.EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, filterLocation)
+		err := provisioning.EnsureSubscriptionAndLocation(
+			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{
+				LocationFiler:         filterLocation,
+				SelectDefaultLocation: defaultLocationToSelect,
+			})
 		if err != nil {
 			return err
 		}
@@ -173,6 +176,41 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+
+func locationParameterFilterImpl(param azure.ArmTemplateParameterDefinition, location account.Location) bool {
+	if param.AllowedValues == nil {
+		return true
+	}
+
+	return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
+		s, ok := v.(string)
+		return ok && location.Name == s
+	}) != -1
+}
+
+// defaultPromptValue resolves if there is an intention from a location parameter to use a default location.
+//
+// If the parameter has AzdMetadataTypeLocation, with a default location set, the default location is returned.
+// If the parameter has AllowedValues, the first option value is returned.
+// Otherwise, nil is returned to indicate no user-provided default value.
+func defaultPromptValue(locationParam azure.ArmTemplateParameterDefinition) *string {
+	azdMetadata, has := locationParam.AzdMetadata()
+	if has &&
+		azdMetadata.Type != nil && *azdMetadata.Type == azure.AzdMetadataTypeLocation &&
+		azdMetadata.Default != nil {
+		// Metadata using location type and a default location. This is the highest priority.
+		return azdMetadata.Default
+	}
+
+	if locationParam.AllowedValues != nil {
+		firstOption, castOk := (*locationParam.AllowedValues)[0].(string)
+		// if cast doesn't work, we don't have a default location
+		if castOk {
+			return &firstOption
+		}
+	}
 	return nil
 }
 
@@ -1483,7 +1521,7 @@ func (p *BicepProvider) createOutputParameters(
 
 // loadParameters reads the parameters file template for environment/module specified by Options,
 // doing environment and command substitutions, and returns the values.
-func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.ArmParameterValue, error) {
+func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.ArmParameter, error) {
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
 	parametersRoot := p.options.Path
 
@@ -1761,7 +1799,7 @@ func (p *BicepProvider) modulePath() string {
 // whether new inputs were written, and an error if any occurred during the generation of input values.
 func inputsParameter(
 	existingInputs map[string]map[string]any, autoGenParameters map[string]map[string]azure.AutoGenInput) (
-	inputsParameter azure.ArmParameterValue, inputsUpdated bool, err error) {
+	inputsParameter azure.ArmParameter, inputsUpdated bool, err error) {
 	wroteNewInput := false
 
 	for inputResource, inputResourceInfo := range autoGenParameters {
@@ -1793,7 +1831,7 @@ func inputsParameter(
 		existingInputs[inputResource] = existingRecordsForResource
 	}
 
-	return azure.ArmParameterValue{
+	return azure.ArmParameter{
 		Value: existingInputs,
 	}, wroteNewInput, nil
 }
@@ -1830,8 +1868,15 @@ func (p *BicepProvider) ensureParameters(
 		// If a value is explicitly configured via a parameters file, use it.
 		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
-			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
+			// Directly pass through Key Vault references without prompting.
+			if v.KeyVaultReference != nil {
+				configuredParameters[key] = azure.ArmParameter{
+					KeyVaultReference: v.KeyVaultReference,
+				}
+				continue
+			}
 
+			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
 			if paramValue != nil {
 
 				if stringValue, isString := paramValue.(string); isString && param.Secure() {
@@ -1856,7 +1901,7 @@ func (p *BicepProvider) ensureParameters(
 						paramValue = defValue
 					}
 				}
-				configuredParameters[key] = azure.ArmParameterValue{
+				configuredParameters[key] = azure.ArmParameter{
 					Value: paramValue,
 				}
 				if needForDeployParameter {
@@ -1883,7 +1928,7 @@ func (p *BicepProvider) ensureParameters(
 
 		if v, has := p.env.Config.Get(configKey); has {
 			if isValueAssignableToParameterType(parameterType, v) {
-				configuredParameters[key] = azure.ArmParameterValue{
+				configuredParameters[key] = azure.ArmParameter{
 					Value: v,
 				}
 				continue
@@ -1904,7 +1949,7 @@ func (p *BicepProvider) ensureParameters(
 			if err != nil {
 				return nil, err
 			}
-			configuredParameters[key] = azure.ArmParameterValue{
+			configuredParameters[key] = azure.ArmParameter{
 				Value: genValue,
 			}
 			mustSetParamAsConfig(key, genValue, p.env.Config, param.Secure())
@@ -1942,7 +1987,7 @@ func (p *BicepProvider) ensureParameters(
 				value := values[prompt.key]
 				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
 				configModified = true
-				configuredParameters[key] = azure.ArmParameterValue{
+				configuredParameters[key] = azure.ArmParameter{
 					Value: value,
 				}
 			}
@@ -1958,7 +2003,7 @@ func (p *BicepProvider) ensureParameters(
 
 				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
 				configModified = true
-				configuredParameters[key] = azure.ArmParameterValue{
+				configuredParameters[key] = azure.ArmParameter{
 					Value: value,
 				}
 			}

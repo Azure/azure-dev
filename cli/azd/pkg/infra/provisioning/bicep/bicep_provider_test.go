@@ -63,6 +63,24 @@ func TestBicepPlan(t *testing.T) {
 	)
 }
 
+func TestBicepPlanKeyVaultRef(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+	infraProvider := createBicepProvider(t, mockContext)
+
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+
+	require.Nil(t, err)
+
+	require.IsType(t, &deploymentDetails{}, deploymentPlan)
+	configuredParameters := deploymentPlan.CompiledBicep.Parameters
+
+	require.NotEmpty(t, configuredParameters["kvSecret"])
+	require.NotNil(t, configuredParameters["kvSecret"].KeyVaultReference)
+	require.Nil(t, configuredParameters["kvSecret"].Value)
+	require.Equal(t, "secretName", configuredParameters["kvSecret"].KeyVaultReference.SecretName)
+}
+
 const paramsArmJson = `{
 	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 	"contentVersion": "1.0.0.0",
@@ -400,6 +418,7 @@ func prepareBicepMocks(
 		Parameters: azure.ArmTemplateParameterDefinitions{
 			"environmentName": {Type: "string"},
 			"location":        {Type: "string"},
+			"kvSecret":        {Type: "securestring"},
 		},
 		Outputs: azure.ArmTemplateOutputs{
 			"WEBSITE_URL": {Type: "string"},
@@ -1354,4 +1373,55 @@ func TestInputsParameter(t *testing.T) {
 		t, autoGenParameters["resource3"]["input4"].Length, uint(len(result["resource3"]["input4"].(string))))
 
 	require.Equal(t, expectedInputsUpdated, inputsUpdated)
+}
+func TestDefaultLocationToSelectFn(t *testing.T) {
+	t.Run("NoAllowedValuesOrMetadata", func(t *testing.T) {
+		param := azure.ArmTemplateParameterDefinition{}
+		result := defaultPromptValue(param)
+		require.Nil(t, result)
+	})
+
+	t.Run("AllowedValuesOnly", func(t *testing.T) {
+		param := azure.ArmTemplateParameterDefinition{
+			AllowedValues: &[]any{"eastus", "westus"},
+		}
+		result := defaultPromptValue(param)
+		require.NotNil(t, result)
+		require.Equal(t, "eastus", *result)
+	})
+
+	t.Run("MetadataOnly", func(t *testing.T) {
+		defaultLocation := "centralus"
+		param := azure.ArmTemplateParameterDefinition{
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "default": "centralus"}`),
+			},
+		}
+		result := defaultPromptValue(param)
+		require.NotNil(t, result)
+		require.Equal(t, defaultLocation, *result)
+	})
+
+	t.Run("AllowedValuesAndMetadata", func(t *testing.T) {
+		defaultLocation := "centralus"
+		param := azure.ArmTemplateParameterDefinition{
+			AllowedValues: &[]any{"eastus", "westus"},
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "default": "centralus"}`),
+			},
+		}
+		result := defaultPromptValue(param)
+		require.NotNil(t, result)
+		require.Equal(t, defaultLocation, *result)
+	})
+
+	t.Run("InvalidMetadata", func(t *testing.T) {
+		param := azure.ArmTemplateParameterDefinition{
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location"}`),
+			},
+		}
+		result := defaultPromptValue(param)
+		require.Nil(t, result)
+	})
 }

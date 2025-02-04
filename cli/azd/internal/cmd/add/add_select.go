@@ -77,8 +77,9 @@ func selectStorage(
 	for {
 		var err error
 		selectedDataOptions, err = console.MultiSelect(ctx, input.ConsoleOptions{
-			Message: "What type of data do you want to store?",
-			Options: dataOptions,
+			Message:      "What type of data do you want to store?",
+			Options:      dataOptions,
+			DefaultValue: dataOptions,
 		})
 		if err != nil {
 			return nil, err

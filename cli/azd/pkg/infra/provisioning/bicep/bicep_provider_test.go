@@ -1374,3 +1374,54 @@ func TestInputsParameter(t *testing.T) {
 
 	require.Equal(t, expectedInputsUpdated, inputsUpdated)
 }
+func TestDefaultLocationToSelectFn(t *testing.T) {
+	t.Run("NoAllowedValuesOrMetadata", func(t *testing.T) {
+		param := azure.ArmTemplateParameterDefinition{}
+		result := defaultPromptValue(param)
+		require.Nil(t, result)
+	})
+
+	t.Run("AllowedValuesOnly", func(t *testing.T) {
+		param := azure.ArmTemplateParameterDefinition{
+			AllowedValues: &[]any{"eastus", "westus"},
+		}
+		result := defaultPromptValue(param)
+		require.NotNil(t, result)
+		require.Equal(t, "eastus", *result)
+	})
+
+	t.Run("MetadataOnly", func(t *testing.T) {
+		defaultLocation := "centralus"
+		param := azure.ArmTemplateParameterDefinition{
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "default": "centralus"}`),
+			},
+		}
+		result := defaultPromptValue(param)
+		require.NotNil(t, result)
+		require.Equal(t, defaultLocation, *result)
+	})
+
+	t.Run("AllowedValuesAndMetadata", func(t *testing.T) {
+		defaultLocation := "centralus"
+		param := azure.ArmTemplateParameterDefinition{
+			AllowedValues: &[]any{"eastus", "westus"},
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "default": "centralus"}`),
+			},
+		}
+		result := defaultPromptValue(param)
+		require.NotNil(t, result)
+		require.Equal(t, defaultLocation, *result)
+	})
+
+	t.Run("InvalidMetadata", func(t *testing.T) {
+		param := azure.ArmTemplateParameterDefinition{
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location"}`),
+			},
+		}
+		result := defaultPromptValue(param)
+		require.Nil(t, result)
+	})
+}

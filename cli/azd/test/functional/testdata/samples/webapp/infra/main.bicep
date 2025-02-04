@@ -11,6 +11,9 @@ param location string
 @description('A time to mark on created resource groups, so they can be cleaned up via an automated process.')
 param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
+@secure()
+param kvSecret string
+
 var tags = { 'azd-env-name': environmentName, DeleteAfter: deleteAfterTime }
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {

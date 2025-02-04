@@ -17,6 +17,10 @@ param intTagValue int
 @description('Test parameter for bool-typed values.')
 param boolTagValue bool
 
+@secure()
+@description('Test secure parameter.')
+param kvSecret string
+
 var tags = {
   'azd-env-name': environmentName
   DeleteAfter: deleteAfterTime

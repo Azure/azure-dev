@@ -140,7 +140,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		}
 		var defaultLocationToSelect *string
 		if locationParamDefined {
-			defaultLocationToSelect = defaultLocationToSelectFn(locationParam)
+			defaultLocationToSelect = defaultPromptValue(locationParam)
 		}
 
 		err := provisioning.EnsureSubscriptionAndLocation(
@@ -190,12 +190,12 @@ func locationParameterFilterImpl(param azure.ArmTemplateParameterDefinition, loc
 	}) != -1
 }
 
-// defaultLocationToSelectFn resolves if there is an intention from a location parameter to use a default location.
-// If the parameter has the @allowedValues set, it will return the first value from the array as the default.
-// If the parameter has the location azd metadata, it will check if there is configuration to set a default location.
-// If both @allowedValues and azd location metadata config are set, the metadata config will take precedence.
-// If nothing is set, it will return nil.
-func defaultLocationToSelectFn(locationParam azure.ArmTemplateParameterDefinition) *string {
+// defaultPromptValue resolves if there is an intention from a location parameter to use a default location.
+//
+// If the parameter has AzdMetadataTypeLocation, with a default location set, the default location is returned.
+// If the parameter has AllowedValues, the first option value is returned.
+// Otherwise, nil is returned to indicate no user-provided default value.
+func defaultPromptValue(locationParam azure.ArmTemplateParameterDefinition) *string {
 	azdMetadata, has := locationParam.AzdMetadata()
 	if has &&
 		azdMetadata.Type != nil && *azdMetadata.Type == azure.AzdMetadataTypeLocation &&

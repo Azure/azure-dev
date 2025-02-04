@@ -1358,7 +1358,7 @@ func TestInputsParameter(t *testing.T) {
 func TestDefaultLocationToSelectFn(t *testing.T) {
 	t.Run("NoAllowedValuesOrMetadata", func(t *testing.T) {
 		param := azure.ArmTemplateParameterDefinition{}
-		result := defaultLocationToSelectFn(param)
+		result := defaultPromptValue(param)
 		require.Nil(t, result)
 	})
 
@@ -1366,7 +1366,7 @@ func TestDefaultLocationToSelectFn(t *testing.T) {
 		param := azure.ArmTemplateParameterDefinition{
 			AllowedValues: &[]any{"eastus", "westus"},
 		}
-		result := defaultLocationToSelectFn(param)
+		result := defaultPromptValue(param)
 		require.NotNil(t, result)
 		require.Equal(t, "eastus", *result)
 	})
@@ -1378,7 +1378,7 @@ func TestDefaultLocationToSelectFn(t *testing.T) {
 				"azd": json.RawMessage(`{"type": "location", "default": "centralus"}`),
 			},
 		}
-		result := defaultLocationToSelectFn(param)
+		result := defaultPromptValue(param)
 		require.NotNil(t, result)
 		require.Equal(t, defaultLocation, *result)
 	})
@@ -1391,7 +1391,7 @@ func TestDefaultLocationToSelectFn(t *testing.T) {
 				"azd": json.RawMessage(`{"type": "location", "default": "centralus"}`),
 			},
 		}
-		result := defaultLocationToSelectFn(param)
+		result := defaultPromptValue(param)
 		require.NotNil(t, result)
 		require.Equal(t, defaultLocation, *result)
 	})
@@ -1402,7 +1402,7 @@ func TestDefaultLocationToSelectFn(t *testing.T) {
 				"azd": json.RawMessage(`{"type": "location"}`),
 			},
 		}
-		result := defaultLocationToSelectFn(param)
+		result := defaultPromptValue(param)
 		require.Nil(t, result)
 	})
 }

@@ -97,7 +97,7 @@ func (p *BicepProvider) promptForParameter(
 
 		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
 			return locationParameterFilterImpl(param, loc)
-		}, defaultLocationToSelectFn(param))
+		}, defaultPromptValue(param))
 		if err != nil {
 			return nil, err
 		}

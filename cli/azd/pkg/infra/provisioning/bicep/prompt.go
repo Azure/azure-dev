@@ -117,7 +117,7 @@ func (p *BicepProvider) promptForParameter(
 		*azdMetadata.Type == azure.AzdMetadataTypeResourceGroup {
 
 		p.console.Message(ctx, fmt.Sprintf(
-			"Parameter %s requires an %s resource group.", output.WithUnderline(key), output.WithBold("existing")))
+			"Parameter %s requires an %s resource group.", output.WithUnderline("%s", key), output.WithBold("existing")))
 		rgName, err := p.prompters.PromptResourceGroup(ctx, prompt.PromptResourceOptions{
 			DisableCreateNew: true,
 		})

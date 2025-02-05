@@ -1,14 +1,33 @@
 # Release History
 
-## 1.12.0-beta.1 (Unreleased)
+## 1.12.0 (2025-02-05)
 
 ### Features Added
 
-### Breaking Changes
+- [[4729]](https://github.com/Azure/azure-dev/pull/4729) Improve Maven project detection using effective POM. Thanks @rujche for the contribution!
+- [[4517]](https://github.com/Azure/azure-dev/pull/4517) New `azd env set-secret` command and hooks support for using Azure Key Vault secrets in an azd environment. [Learn more](docs/using-environment-secrets.md).
+- [[2856]](https://github.com/Azure/azure-dev/pull/2856) Show identity info after successful `azd auth login` and new `azd auth login --check-status` standalone command. Thanks @john0isaac for the contribution!
 
 ### Bugs Fixed
 
+- [[4595]](https://github.com/Azure/azure-dev/pull/4595) Execute `pwsh` hook scripts with `-NoProfile` switch and support additional `pwsh` args in hook definitions. Thanks @Yionse for the contribution!
+- [[4692]](https://github.com/Azure/azure-dev/pull/4692) Fix `azd add` database failing in projects without a host.
+- [[4684]](https://github.com/Azure/azure-dev/pull/4684) Support Bicep `@sealed()` decorator on user defined types.
+    - Fix `azd provision` failing to deploy Bicep containing `sealed()` decorators on user defined types.
+- [[4722]](https://github.com/Azure/azure-dev/pull/4722) Support nullable Bicep params.
+    - Fix `azd provision` prompting for nullable Bicep params.
+- [[4744]](https://github.com/Azure/azure-dev/pull/4744) Support Key Vault references in parameter files.
+    - Fix `azd provision` prompting for params with Key Vault references defined.
+- [[4752]](https://github.com/Azure/azure-dev/pull/4752) Support overriding default location in Bicep using `@allowed` and `@metadata` decorators.
+    - Fix location picker ignoring `@allowed` list if `@metadata` is also present.
+
 ### Other Changes
+
+- [[4741]](https://github.com/Azure/azure-dev/pull/4741) Update Bicep CLI to v0.33.93.
+- [[4719]](https://github.com/Azure/azure-dev/pull/4719) Update Redis AVM to use native secrets export.
+- [[4690]](https://github.com/Azure/azure-dev/pull/4690) Use .NET SDK without Aspire workload in auto-generated pipeline definitions.
+- [[4703]](https://github.com/Azure/azure-dev/pull/4703) Use install scripts in "Install azd" Azure DevOps extension.
+- [[4750]](https://github.com/Azure/azure-dev/pull/4750) Support bicep.v1 resource for .NET Aspire.
 
 ## 1.11.1 (2025-01-07)
 

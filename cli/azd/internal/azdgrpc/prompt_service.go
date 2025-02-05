@@ -16,11 +16,11 @@ import (
 
 type promptService struct {
 	azdext.UnimplementedPromptServiceServer
-	prompter        *prompt.PromptService
+	prompter        prompt.PromptService
 	resourceService *azapi.ResourceService
 }
 
-func NewPromptService(prompter *prompt.PromptService, resourceService *azapi.ResourceService) azdext.PromptServiceServer {
+func NewPromptService(prompter prompt.PromptService, resourceService *azapi.ResourceService) azdext.PromptServiceServer {
 	return &promptService{
 		prompter:        prompter,
 		resourceService: resourceService,

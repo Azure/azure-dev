@@ -18,7 +18,6 @@ import (
 )
 
 func Test_PromptService_PromptSubscription(t *testing.T) {
-	//mockContext := mocks.NewMockContext(context.Background())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	userConfigManager := config.NewUserConfigManager(fileConfigManager)
 
@@ -53,8 +52,4 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 
 	promptService := NewPromptService(authManager, userConfigManager, subscriptionService, resourceService)
 	require.NotNil(t, promptService)
-
-	// selected, err := promptService.PromptSubscription(*mockContext.Context, nil)
-	// require.NoError(t, err)
-	// require.NotNil(t, selected)
 }

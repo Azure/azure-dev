@@ -2,7 +2,6 @@ import: ../../../.vscode/cspell.global.yaml
 words:
   - azcloud
   - azdext
-  - azdgrpc
   - azurefd
   - backoff
   - Canonicalize

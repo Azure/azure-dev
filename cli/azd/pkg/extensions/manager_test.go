@@ -145,8 +145,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, http.DefaultClient)
 
-	manager := NewManager(userConfigManager, sourceManager, http.DefaultClient)
-	err := manager.Initialize()
+	manager, err := NewManager(userConfigManager, sourceManager, http.DefaultClient)
 	require.NoError(t, err)
 
 	// List installed extensions (expect 0)

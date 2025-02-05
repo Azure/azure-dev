@@ -352,20 +352,25 @@ func NewRootCmd(
 	registerCommonDependencies(rootContainer)
 
 	// Conditionally register the 'extension' commands if the feature is enabled
-	var alphaFeatureManager *alpha.FeatureManager
-	if err := rootContainer.Resolve(&alphaFeatureManager); err == nil {
+	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager, extensionManager *extensions.Manager) error {
 		if alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
 			extensionActions(root)
 
-			installedExtensions, err := extensions.Initialize(rootContainer)
+			installedExtensions, err := extensionManager.ListInstalled()
 			if err != nil {
-				log.Printf("Failed to initialize extensions: %v", err)
+				return fmt.Errorf("Failed to get installed extensions: %w", err)
 			}
 
 			if err := bindExtensions(rootContainer, root, installedExtensions); err != nil {
-				log.Printf("Failed to bind extensions: %v", err)
+				return fmt.Errorf("Failed to bind extensions: %w", err)
 			}
 		}
+
+		return nil
+	})
+
+	if err != nil {
+		panic(err)
 	}
 
 	// Initialize the platform specific components for the IoC container

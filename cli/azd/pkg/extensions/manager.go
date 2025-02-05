@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
@@ -36,7 +37,8 @@ var (
 	ErrInstalledExtensionNotFound = errors.New("extension not found")
 	ErrRegistryExtensionNotFound  = errors.New("extension not found in registry")
 	ErrExtensionInstalled         = errors.New("extension already installed")
-	//registryCacheDuration         = 24 * time.Hour
+
+	FeatureExtensions = alpha.MustFeatureKey("extensions")
 )
 
 type ListOptions struct {
@@ -61,28 +63,22 @@ func NewManager(
 	configManager config.UserConfigManager,
 	sourceManager *SourceManager,
 	transport policy.Transporter,
-) *Manager {
+) (*Manager, error) {
+	userConfig, err := configManager.Load()
+	if err != nil {
+		return nil, err
+	}
+
 	pipeline := azruntime.NewPipeline("azd-extensions", "1.0.0", azruntime.PipelineOptions{}, &policy.ClientOptions{
 		Transport: transport,
 	})
 
 	return &Manager{
+		userConfig:    userConfig,
 		configManager: configManager,
 		sourceManager: sourceManager,
 		pipeline:      pipeline,
-	}
-}
-
-// Initialize the extension manager
-func (m *Manager) Initialize() error {
-	userConfig, err := m.configManager.Load()
-	if err != nil {
-		return err
-	}
-
-	m.userConfig = userConfig
-
-	return nil
+	}, nil
 }
 
 // ListInstalled retrieves a list of installed extensions

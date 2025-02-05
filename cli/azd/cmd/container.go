@@ -1,6 +1,3 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-
 package cmd
 
 import (
@@ -22,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
@@ -40,6 +38,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -788,6 +787,20 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
+
+	container.MustRegisterSingleton(prompt.NewPromptService)
+
+	// Extensions
+	container.MustRegisterSingleton(extensions.NewManager)
+	container.MustRegisterSingleton(extensions.NewSourceManager)
+
+	// gRPC Server
+	container.MustRegisterScoped(grpcserver.NewServer)
+	container.MustRegisterScoped(grpcserver.NewProjectService)
+	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
+	container.MustRegisterScoped(grpcserver.NewPromptService)
+	container.MustRegisterScoped(grpcserver.NewDeploymentService)
+	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

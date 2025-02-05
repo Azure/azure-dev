@@ -15,7 +15,9 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
@@ -349,6 +351,23 @@ func NewRootCmd(
 	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 	registerCommonDependencies(rootContainer)
 
+	// Conditionally register the 'extension' commands if the feature is enabled
+	var alphaFeatureManager *alpha.FeatureManager
+	if err := rootContainer.Resolve(&alphaFeatureManager); err == nil {
+		if alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
+			extensionActions(root)
+
+			installedExtensions, err := extensions.Initialize(rootContainer)
+			if err != nil {
+				log.Printf("Failed to initialize extensions: %v", err)
+			}
+
+			if err := bindExtensions(rootContainer, root, installedExtensions); err != nil {
+				log.Printf("Failed to bind extensions: %v", err)
+			}
+		}
+	}
+
 	// Initialize the platform specific components for the IoC container
 	// Only container resolution errors will return an error
 	// Invalid configurations will fall back to default platform
@@ -429,6 +448,11 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 
 	var paragraph []string
 	for _, title := range groups {
+		groupCommands := commandGroups[string(title)]
+		if len(groupCommands) == 0 {
+			continue
+		}
+
 		paragraph = append(paragraph, fmt.Sprintf("  %s\n    %s\n",
 			output.WithBold("%s", string(title)),
 			strings.Join(commandGroups[string(title)], "\n    ")))

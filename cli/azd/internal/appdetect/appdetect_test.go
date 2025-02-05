@@ -52,23 +52,6 @@ func TestDetect(t *testing.T) {
 						DbMySql,
 						DbPostgres,
 					},
-					RawDependencies: []RawDependency{
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "com.mysql:mysql-connector-j",
-							Version: "8.3.0",
-						},
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "org.postgresql:postgresql",
-							Version: "42.7.3",
-						},
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "org.springframework.boot:spring-boot-maven-plugin",
-							Version: "3.3.0",
-						},
-					},
 				},
 				{
 					Language:      Java,
@@ -153,23 +136,6 @@ func TestDetect(t *testing.T) {
 						DbMySql,
 						DbPostgres,
 					},
-					RawDependencies: []RawDependency{
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "com.mysql:mysql-connector-j",
-							Version: "8.3.0",
-						},
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "org.postgresql:postgresql",
-							Version: "42.7.3",
-						},
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "org.springframework.boot:spring-boot-maven-plugin",
-							Version: "3.3.0",
-						},
-					},
 				},
 				{
 					Language:      Java,
@@ -202,23 +168,6 @@ func TestDetect(t *testing.T) {
 					DatabaseDeps: []DatabaseDep{
 						DbMySql,
 						DbPostgres,
-					},
-					RawDependencies: []RawDependency{
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "com.mysql:mysql-connector-j",
-							Version: "8.3.0",
-						},
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "org.postgresql:postgresql",
-							Version: "42.7.3",
-						},
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "org.springframework.boot:spring-boot-maven-plugin",
-							Version: "3.3.0",
-						},
 					},
 				},
 				{
@@ -256,23 +205,6 @@ func TestDetect(t *testing.T) {
 						DbMySql,
 						DbPostgres,
 					},
-					RawDependencies: []RawDependency{
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "com.mysql:mysql-connector-j",
-							Version: "8.3.0",
-						},
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "org.postgresql:postgresql",
-							Version: "42.7.3",
-						},
-						{
-							Kind:    RawDependencyKindMaven,
-							Name:    "org.springframework.boot:spring-boot-maven-plugin",
-							Version: "3.3.0",
-						},
-					},
 				},
 				{
 					Language:      Java,
@@ -297,7 +229,14 @@ func TestDetect(t *testing.T) {
 				tt.want[i].Path = filepath.Join(dir, tt.want[i].Path)
 			}
 
-			require.Equal(t, tt.want, projects)
+			require.Equal(t, len(tt.want), len(projects))
+			for i := range tt.want {
+				require.Equal(t, tt.want[i].Language, projects[i].Language)
+				require.Equal(t, tt.want[i].Path, projects[i].Path)
+				require.Equal(t, tt.want[i].DetectionRule, projects[i].DetectionRule)
+				require.Equal(t, tt.want[i].Dependencies, projects[i].Dependencies)
+				require.Equal(t, tt.want[i].DatabaseDeps, projects[i].DatabaseDeps)
+			}
 		})
 	}
 }

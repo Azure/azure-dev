@@ -293,9 +293,13 @@ func (i *Initializer) InitFromApp(
 
 	for _, proj := range projects {
 		isSpringBootProject := false
-		for _, dep := range proj.RawDependencies {
-			if dep.Kind == appdetect.RawDependencyKindMaven &&
-				dep.Name == appdetect.MavenDependencyNameSpringBootMavenPlugin {
+		mavenProject, ok := proj.RawProject.(appdetect.MavenProject)
+		if !ok {
+			continue
+		}
+		for _, dep := range mavenProject.Build.Plugins {
+			if dep.GroupId == "org.springframework.boot" &&
+				dep.ArtifactId == "spring-boot-maven-plugin" {
 				isSpringBootProject = true
 				break
 			}
@@ -303,13 +307,11 @@ func (i *Initializer) InitFromApp(
 		if !isSpringBootProject {
 			continue
 		}
-		for _, dep := range proj.RawDependencies {
-			if dep.Kind != appdetect.RawDependencyKindMaven {
-				continue
-			}
-			switch dep.Name {
-			case appdetect.MavenDependencyNamePostgresql,
-				appdetect.MavenDependencyNameSpringCloudAzureStarterJdbcPostgresql:
+		for _, dep := range mavenProject.Dependencies {
+			name := dep.GroupId + ":" + dep.ArtifactId
+			switch name {
+			case "org.postgresql:postgresql",
+				"com.azure.spring:spring-cloud-azure-starter-jdbc-postgresql":
 				err := addPostgresqlConnectionProperties(proj.Path)
 				if err != nil {
 					return err

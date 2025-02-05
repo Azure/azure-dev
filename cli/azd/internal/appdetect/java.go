@@ -18,7 +18,7 @@ import (
 
 type javaDetector struct {
 	mvnCli       *maven.Cli
-	rootProjects []mavenProject
+	rootProjects []MavenProject
 }
 
 func (jd *javaDetector) Language() Language {
@@ -41,7 +41,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				return nil, nil
 			}
 
-			var currentRoot *mavenProject
+			var currentRoot *MavenProject
 			for _, rootProject := range jd.rootProjects {
 				// we can say that the project is in the root project if the path is under the project
 				if inRoot := strings.HasPrefix(pomFile, rootProject.path); inRoot {
@@ -66,8 +66,8 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 	return nil, nil
 }
 
-// mavenProject represents the top-level structure of a Maven POM file.
-type mavenProject struct {
+// MavenProject represents the top-level structure of a Maven POM file.
+type MavenProject struct {
 	XmlName              xml.Name             `xml:"project"`
 	Parent               parent               `xml:"parent"`
 	Modules              []string             `xml:"modules>module"` // Capture the modules
@@ -109,12 +109,12 @@ type plugin struct {
 	Version    string `xml:"version"`
 }
 
-func readMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (*mavenProject, error) {
+func readMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (*MavenProject, error) {
 	effectivePom, err := mvnCli.EffectivePom(ctx, filePath)
 	if err != nil {
 		return nil, err
 	}
-	var project mavenProject
+	var project MavenProject
 	if err := xml.Unmarshal([]byte(effectivePom), &project); err != nil {
 		return nil, fmt.Errorf("parsing xml: %w", err)
 	}
@@ -122,19 +122,16 @@ func readMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (
 	return &project, nil
 }
 
-func detectDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
+func detectDependencies(mavenProject *MavenProject, project *Project) (*Project, error) {
 	databaseDepMap := map[DatabaseDep]struct{}{}
 	for _, dep := range mavenProject.Dependencies {
-		name := toDependencyName(dep.GroupId, dep.ArtifactId)
+		name := dep.GroupId + ":" + dep.ArtifactId
 		switch name {
-		case MavenDependencyNameMySqlConnectorJ:
+		case "com.mysql:mysql-connector-j":
 			databaseDepMap[DbMySql] = struct{}{}
-			project.RawDependencies = append(project.RawDependencies,
-				RawDependency{RawDependencyKindMaven, name, dep.Version})
-		case MavenDependencyNamePostgresql, MavenDependencyNameSpringCloudAzureStarterJdbcPostgresql:
+		case "org.postgresql:postgresql",
+			"com.azure.spring:spring-cloud-azure-starter-jdbc-postgresql":
 			databaseDepMap[DbPostgres] = struct{}{}
-			project.RawDependencies = append(project.RawDependencies,
-				RawDependency{RawDependencyKindMaven, name, dep.Version})
 		}
 	}
 	if len(databaseDepMap) > 0 {
@@ -143,17 +140,6 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 				return strings.Compare(string(a), string(b))
 			})
 	}
-	for _, dep := range mavenProject.Build.Plugins {
-		name := toDependencyName(dep.GroupId, dep.ArtifactId)
-		if name == MavenDependencyNameSpringBootMavenPlugin {
-			project.RawDependencies = append(project.RawDependencies,
-				RawDependency{RawDependencyKindMaven, name, dep.Version})
-		}
-	}
-
+	project.RawProject = *mavenProject
 	return project, nil
-}
-
-func toDependencyName(groupId string, artifactId string) string {
-	return groupId + ":" + artifactId
 }

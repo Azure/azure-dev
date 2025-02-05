@@ -343,7 +343,7 @@ func TestIsValueAssignableToParameterType(t *testing.T) {
 }
 
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
-	projectDir := "../../../../test/functional/testdata/samples/webapp"
+	projectDir := "../../../../test/functional/testdata/mock-samples/webapp"
 	options := provisioning.Options{
 		Path:   "infra",
 		Module: "main",

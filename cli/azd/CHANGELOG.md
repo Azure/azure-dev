@@ -13,7 +13,7 @@
 - [[4595]](https://github.com/Azure/azure-dev/pull/4595) Execute `pwsh` hook scripts with `-NoProfile` switch and support additional `pwsh` args in hook definitions. Thanks @Yionse for the contribution!
 - [[4692]](https://github.com/Azure/azure-dev/pull/4692) Fix `azd add` database failing in projects without a host.
 - [[4684]](https://github.com/Azure/azure-dev/pull/4684) Support Bicep `@sealed()` decorator on user defined types.
-    - Fix `azd provision` failing to deploy Bicep containing `sealed()` decorators on UDTs.
+    - Fix `azd provision` failing to deploy Bicep containing `sealed()` decorators on user defined types.
 - [[4722]](https://github.com/Azure/azure-dev/pull/4722) Support nullable Bicep params.
     - Fix `azd provision` prompting for nullable Bicep params.
 - [[4744]](https://github.com/Azure/azure-dev/pull/4744) Support Key Vault references in parameter files.

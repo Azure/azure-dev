@@ -6,7 +6,6 @@ package ux
 import (
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"os"
 	"regexp"
@@ -134,14 +133,10 @@ func (p *printer) Fprintf(format string, a ...any) {
 
 	fmt.Fprint(p.writer, content)
 
-	log.Printf("content: %s", p.currentLine)
-
 	visibleContent := specialTextRegex.ReplaceAllString(p.currentLine, "")
 
 	p.size.Cols = len(visibleContent)
 	p.size.Rows += lineCount
-
-	log.Printf("visibleContent: %s (%d, %d)", visibleContent, p.size.Rows, p.size.Cols)
 }
 
 // Fprintln writes text to the screen followed by a newline character.

@@ -788,7 +788,17 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
 
-	container.MustRegisterSingleton(prompt.NewPromptService)
+	container.MustRegisterScoped(func(authManager *auth.Manager) prompt.AuthManager {
+		return authManager
+	})
+	container.MustRegisterSingleton(func(subscriptionService *account.SubscriptionsService) prompt.SubscriptionService {
+		return subscriptionService
+	})
+	container.MustRegisterSingleton(func(resourceService *azapi.ResourceService) prompt.ResourceService {
+		return resourceService
+	})
+
+	container.MustRegisterScoped(prompt.NewPromptService)
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)

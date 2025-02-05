@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
@@ -102,6 +103,19 @@ func (p *BicepProvider) promptForParameter(
 			return nil, err
 		}
 		value = location
+	} else if paramType == provisioning.ParameterTypeString &&
+		azdMetadata.Type != nil &&
+		*azdMetadata.Type == azure.AzdMetadataTypeResourceGroup {
+
+		p.console.Message(ctx, fmt.Sprintf(
+			"Parameter %s requires an %s resource group.", output.WithUnderline("%s", key), output.WithBold("existing")))
+		rgName, err := p.prompters.PromptResourceGroup(ctx, prompt.PromptResourceOptions{
+			DisableCreateNew: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		value = rgName
 	} else if paramType == provisioning.ParameterTypeString &&
 		azdMetadata.Type != nil &&
 		*azdMetadata.Type == azure.AzdMetadataTypeGenerateOrManual {

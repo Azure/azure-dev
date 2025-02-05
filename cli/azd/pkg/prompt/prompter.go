@@ -34,7 +34,7 @@ type Prompter interface {
 		msg string,
 		filter LocationFilterPredicate,
 		defaultLocation *string) (string, error)
-	PromptResourceGroup(ctx context.Context) (string, error)
+	PromptResourceGroup(ctx context.Context, options PromptResourceOptions) (string, error)
 	PromptResourceGroupFrom(
 		ctx context.Context, subscriptionId string, location string, options PromptResourceGroupFromOptions) (string, error)
 }
@@ -122,7 +122,11 @@ func (p *DefaultPrompter) PromptLocation(
 	return loc, nil
 }
 
-func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, error) {
+type PromptResourceOptions struct {
+	DisableCreateNew bool
+}
+
+func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context, options PromptResourceOptions) (string, error) {
 	return p.PromptResourceGroupFrom(
 		ctx,
 		p.env.GetSubscriptionId(),
@@ -131,7 +135,8 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 			Tags: map[string]string{
 				azure.TagKeyAzdEnvName: p.env.Name(),
 			},
-			DefaultName: fmt.Sprintf("rg-%s", p.env.Name()),
+			DefaultName:      fmt.Sprintf("rg-%s", p.env.Name()),
+			DisableCreateNew: options.DisableCreateNew,
 		})
 }
 
@@ -140,6 +145,7 @@ type PromptResourceGroupFromOptions struct {
 	DefaultName           string
 	NewResourceGroupHelp  string
 	PickResourceGroupHelp string
+	DisableCreateNew      bool
 }
 
 func (p *DefaultPrompter) PromptResourceGroupFrom(
@@ -154,10 +160,17 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 		return strings.Compare(a.Name, b.Name)
 	})
 
-	choices := make([]string, len(groups)+1)
-	choices[0] = "Create a new resource group"
+	canCreateNeResourceGroup := !options.DisableCreateNew
+
+	choices := make([]string, len(groups))
+	canCreateOverride := 0
+	if canCreateNeResourceGroup {
+		choices = make([]string, len(groups)+1)
+		choices[0] = "Create a new resource group"
+		canCreateOverride = 1
+	}
 	for idx, group := range groups {
-		choices[idx+1] = fmt.Sprintf("%d. %s", idx+1, group.Name)
+		choices[idx+canCreateOverride] = fmt.Sprintf("%d. %s", idx+1, group.Name)
 	}
 
 	choice, err := p.console.Select(ctx, input.ConsoleOptions{
@@ -167,6 +180,10 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 	})
 	if err != nil {
 		return "", fmt.Errorf("selecting resource group: %w", err)
+	}
+
+	if !canCreateNeResourceGroup {
+		return groups[choice].Name, nil
 	}
 
 	if choice > 0 {

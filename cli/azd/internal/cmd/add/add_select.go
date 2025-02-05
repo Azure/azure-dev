@@ -32,6 +32,7 @@ func (a *AddAction) selectMenu() []Menu {
 		{Namespace: "db", Label: "Database", SelectResource: selectDatabase},
 		{Namespace: "host", Label: "Host service"},
 		{Namespace: "ai.openai", Label: "Azure OpenAI", SelectResource: a.selectOpenAi},
+		{Namespace: "storage", Label: "Storage account", SelectResource: selectStorage},
 	}
 }
 
@@ -57,5 +58,15 @@ func selectDatabase(
 	}
 
 	r.Type = resourceTypesDisplayMap[resourceTypesDisplay[dbOption]]
+	return r, nil
+}
+
+func selectStorage(
+	console input.Console,
+	ctx context.Context,
+	p PromptOptions) (*project.ResourceConfig, error) {
+	r := &project.ResourceConfig{}
+	r.Type = project.ResourceTypeStorage
+	r.Props = project.StorageProps{}
 	return r, nil
 }

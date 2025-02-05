@@ -134,6 +134,51 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
 }
 {{- end}}
 
+{{- if .StorageAccount }}
+var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
+module storageAccount 'br/public:avm/res/storage/storage-account:0.17.0' = {
+  name: 'storageAccount'
+  params: {
+    name: storageAccountName
+    publicNetworkAccess: 'Enabled'
+    blobServices: {
+      {{- if .StorageAccount.Containers }}
+      containers: [
+        {{- range $index, $element := .StorageAccount.Containers}}
+        {
+          name: '{{ $element }}'
+        }
+        {{- end}}
+      ]
+      {{- end }}
+    }
+    location: location
+    roleAssignments: [
+      {{- if .StorageAccount.KeylessAuth }}
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'Storage Blob Data Owner'
+      }
+      {{- end}}
+      {{- end}}
+    ]
+    networkAcls: {
+      defaultAction: 'Allow'
+    }
+    tags: tags
+    {{- if (and .Services (not .StorageAccount.KeylessAuth)) }}
+    secretsExportConfiguration: {
+      keyVaultResourceId: keyVault.outputs.resourceId
+      accessKey1Name: 'STORAGE-ACCOUNT-KEY'
+      connectionString1Name: 'STORAGE-ACCOUNT-CONNECTION-STRING'
+    }
+    {{- end}}
+  }
+}
+{{end}}
+
 {{- if .AIModels}}
 var accountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
 module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
@@ -266,6 +311,18 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
         }
         {{- end}}
+        {{- if (and .StorageAccount (not .StorageAccount.KeylessAuth)) }}
+        {
+          name: 'storage-key'
+          identity: {{bicepName .Name}}Identity.outputs.resourceId
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/STORAGE-ACCOUNT-KEY'
+        }
+        {
+          name: 'storage-connection-string'
+          identity: {{bicepName .Name}}Identity.outputs.resourceId
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/STORAGE-ACCOUNT-CONNECTION-STRING'
+        }
+        {{- end}}
       ],
       map({{bicepName .Name}}Secrets, secret => {
         name: secret.secretRef
@@ -342,6 +399,26 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'REDIS_PASSWORD'
             secretRef: 'redis-pass'
           }
+          {{- end}}
+          {{- if .StorageAccount}}
+          {
+            name: 'AZURE_STORAGE_ACCOUNT_NAME'
+            value: storageAccount.outputs.name
+          }
+          {
+            name: 'AZURE_STORAGE_BLOB_ENDPOINT'
+            value: storageAccount.outputs.serviceEndpoints.blob
+          }
+          {{- if not .StorageAccount.KeylessAuth}}
+          {
+            name: 'AZURE_STORAGE_KEY'
+            secretRef: 'storage-key'
+          }
+          {
+            name: 'AZURE_STORAGE_CONNECTION_STRING'
+            secretRef: 'storage-connection-string'
+          }
+          {{- end}}
           {{- end}}
           {{- if .AIModels}}
           {
@@ -463,5 +540,8 @@ output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgreServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
+{{- end}}
+{{- if .StorageAccount }}
+output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId
 {{- end}}
 {{ end}}

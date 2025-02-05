@@ -17,6 +17,8 @@ type InfraSpec struct {
 	DbCosmosMongo *DatabaseCosmosMongo
 	DbRedis       *DatabaseRedis
 
+	StorageAccount *StorageAccount
+
 	// ai models
 	AIModels []AIModel
 }
@@ -54,6 +56,11 @@ type AIModelModel struct {
 	Version string
 }
 
+type StorageAccount struct {
+	Containers  []string
+	KeylessAuth bool
+}
+
 type ServiceSpec struct {
 	Name string
 	Port int
@@ -70,6 +77,8 @@ type ServiceSpec struct {
 	DbPostgres    *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
+
+	StorageAccount *StorageReference
 
 	// AI model connections
 	AIModels []AIModelReference
@@ -93,6 +102,10 @@ type DatabaseReference struct {
 
 type AIModelReference struct {
 	Name string
+}
+
+type StorageReference struct {
+	KeylessAuth bool
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

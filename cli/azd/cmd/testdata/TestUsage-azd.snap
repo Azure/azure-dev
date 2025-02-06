@@ -8,7 +8,6 @@ Commands
   Configure and develop your app
     auth     	: Authenticate with Azure.
     config   	: Manage azd configurations (ex: default Azure subscription, location).
-    extension	: Manage azd extensions. (Alpha)
     hooks    	: Develop, test and run hooks for an application. (Beta)
     init     	: Initialize a new application.
     restore  	: Restores the application's dependencies. (Beta)

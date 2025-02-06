@@ -14,6 +14,9 @@
       "parameter": {
         "value": "${AZURE_PARAMETER}"
       },
+      "rg_scope": {
+        "value": "${AZURE_RG_SCOPE}"
+      },
       "environmentName": {
         "value": "${AZURE_ENV_NAME}"
       },

@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strconv"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -16,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
@@ -97,20 +97,25 @@ func (p *BicepProvider) promptForParameter(
 		*azdMetadata.Type == azure.AzdMetadataTypeLocation {
 
 		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
-			if param.AllowedValues == nil {
-				return true
-			}
-
-			return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
-				s, ok := v.(string)
-				return ok && loc.Name == s
-			}) != -1
-		},
-		)
+			return locationParameterFilterImpl(param, loc)
+		}, defaultPromptValue(param))
 		if err != nil {
 			return nil, err
 		}
 		value = location
+	} else if paramType == provisioning.ParameterTypeString &&
+		azdMetadata.Type != nil &&
+		*azdMetadata.Type == azure.AzdMetadataTypeResourceGroup {
+
+		p.console.Message(ctx, fmt.Sprintf(
+			"Parameter %s requires an %s resource group.", output.WithUnderline("%s", key), output.WithBold("existing")))
+		rgName, err := p.prompters.PromptResourceGroup(ctx, prompt.PromptResourceOptions{
+			DisableCreateNew: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		value = rgName
 	} else if paramType == provisioning.ParameterTypeString &&
 		azdMetadata.Type != nil &&
 		*azdMetadata.Type == azure.AzdMetadataTypeGenerateOrManual {

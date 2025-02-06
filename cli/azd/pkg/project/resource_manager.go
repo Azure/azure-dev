@@ -31,14 +31,14 @@ type ResourceManager interface {
 		subscriptionId string,
 		resourceGroupName string,
 		serviceConfig *ServiceConfig,
-	) ([]*azapi.Resource, error)
+	) ([]*azapi.ResourceExtended, error)
 	GetServiceResource(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		serviceConfig *ServiceConfig,
 		rerunCommand string,
-	) (*azapi.Resource, error)
+	) (*azapi.ResourceExtended, error)
 	GetTargetResource(
 		ctx context.Context,
 		subscriptionId string,
@@ -113,7 +113,7 @@ func (rm *resourceManager) GetServiceResources(
 	subscriptionId string,
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
-) ([]*azapi.Resource, error) {
+) ([]*azapi.ResourceExtended, error) {
 	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", azure.TagKeyAzdServiceName, serviceConfig.Name)
 
 	subst, err := serviceConfig.ResourceName.Envsubst(rm.env.Getenv)
@@ -145,7 +145,7 @@ func (rm *resourceManager) GetServiceResource(
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 	rerunCommand string,
-) (*azapi.Resource, error) {
+) (*azapi.ResourceExtended, error) {
 	expandedResourceName, err := serviceConfig.ResourceName.Envsubst(rm.env.Getenv)
 	if err != nil {
 		return nil, fmt.Errorf("expanding name: %w", err)
@@ -237,7 +237,7 @@ func (rm *resourceManager) resolveServiceResource(
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 	rerunCommand string,
-) (*azapi.Resource, error) {
+) (*azapi.ResourceExtended, error) {
 	azureResource, err := rm.GetServiceResource(ctx, subscriptionId, resourceGroupName, serviceConfig, rerunCommand)
 
 	// If the service target supports delayed provisioning, the resource isn't expected to be found yet.
@@ -246,7 +246,7 @@ func (rm *resourceManager) resolveServiceResource(
 	if err != nil &&
 		errors.As(err, &resourceNotFoundError) &&
 		ServiceTargetKind(serviceConfig.Host).SupportsDelayedProvisioning() {
-		return &azapi.Resource{}, nil
+		return &azapi.ResourceExtended{}, nil
 	}
 
 	if err != nil {

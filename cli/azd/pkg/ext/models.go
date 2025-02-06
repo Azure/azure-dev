@@ -172,7 +172,7 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	scriptHeader := []string{}
 	scriptFooter := []string{}
 
-	switch hookConfig.Shell {
+	switch ShellType(strings.Split(string(hookConfig.Shell), " ")[0]) {
 	case ShellTypeBash:
 		ext = "sh"
 		scriptHeader = []string{

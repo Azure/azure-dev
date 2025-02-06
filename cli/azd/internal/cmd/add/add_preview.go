@@ -78,7 +78,8 @@ func (a *AddAction) previewProvision(
 	usedBy []string,
 ) error {
 	a.console.ShowSpinner(ctx, "Previewing changes....", input.Step)
-	err := provisioning.EnsureSubscriptionAndLocation(ctx, a.envManager, a.env, a.prompter, nil)
+	err := provisioning.EnsureSubscriptionAndLocation(
+		ctx, a.envManager, a.env, a.prompter, provisioning.EnsureSubscriptionAndLocationOptions{})
 	if err != nil {
 		return err
 	}

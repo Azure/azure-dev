@@ -2,7 +2,7 @@ parameters:
   TagRepository: false
   VsixVersion: $(VSIX_VERSION)
   UpdateShield: false
-  StorageContainerName: azd
+  StorageContainerName: '`$web'
   PublishToMarketplace: false
 
 steps:
@@ -59,7 +59,7 @@ steps:
         ArtifactDownloadPath: shields/vscode
         ArtifactFilename: vscode.json
         StorageContainerName: ${{ parameters.StorageContainerName }}
-        PublishDestination: vscode/latest
+        PublishDestination: azd/vscode/latest
 
   - ${{ if eq('true', parameters.TagRepository) }}:
     - task: PowerShell@2

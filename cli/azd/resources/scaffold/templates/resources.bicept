@@ -154,14 +154,17 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.17.0' = {
     }
     location: location
     roleAssignments: [
-      {{- if .StorageAccount.KeylessAuth }}
+      {  
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'  
+      }
       {{- range .Services}}
       {
         principalId: {{bicepName .Name}}Identity.outputs.principalId
         principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: 'Storage Blob Data Owner'
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'
       }
-      {{- end}}
       {{- end}}
     ]
     networkAcls: {

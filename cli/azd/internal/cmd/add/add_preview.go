@@ -73,11 +73,6 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 			"AZURE_STORAGE_ACCOUNT_NAME",
 			"AZURE_STORAGE_BLOB_ENDPOINT",
 		}
-
-		if modelProps, ok := r.Props.(project.StorageProps); ok && !modelProps.KeylessAuth {
-			res.UseEnvVars = append(res.UseEnvVars, "AZURE_STORAGE_ACCOUNT_KEY")
-			res.UseEnvVars = append(res.UseEnvVars, "AZURE_STORAGE_CONNECTION_STRING")
-		}
 	}
 	return res
 }

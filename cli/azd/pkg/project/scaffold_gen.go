@@ -188,8 +188,7 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			}
 			props := res.Props.(StorageProps)
 			infraSpec.StorageAccount = &scaffold.StorageAccount{
-				Containers:  props.Containers,
-				KeylessAuth: props.KeylessAuth,
+				Containers: props.Containers,
 			}
 		}
 	}
@@ -283,7 +282,7 @@ func mapHostUses(
 		case ResourceTypeOpenAiModel:
 			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
 		case ResourceTypeStorage:
-			svcSpec.StorageAccount = &scaffold.StorageReference{KeylessAuth: useRes.Props.(StorageProps).KeylessAuth}
+			svcSpec.StorageAccount = &scaffold.StorageReference{}
 		}
 	}
 

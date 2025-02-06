@@ -168,13 +168,6 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.17.0' = {
       defaultAction: 'Allow'
     }
     tags: tags
-    {{- if (and .Services (not .StorageAccount.KeylessAuth)) }}
-    secretsExportConfiguration: {
-      keyVaultResourceId: keyVault.outputs.resourceId
-      accessKey1Name: 'STORAGE-ACCOUNT-KEY'
-      connectionString1Name: 'STORAGE-ACCOUNT-CONNECTION-STRING'
-    }
-    {{- end}}
   }
 }
 {{end}}
@@ -311,18 +304,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
         }
         {{- end}}
-        {{- if (and .StorageAccount (not .StorageAccount.KeylessAuth)) }}
-        {
-          name: 'storage-key'
-          identity: {{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/STORAGE-ACCOUNT-KEY'
-        }
-        {
-          name: 'storage-connection-string'
-          identity: {{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/STORAGE-ACCOUNT-CONNECTION-STRING'
-        }
-        {{- end}}
       ],
       map({{bicepName .Name}}Secrets, secret => {
         name: secret.secretRef
@@ -409,16 +390,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'AZURE_STORAGE_BLOB_ENDPOINT'
             value: storageAccount.outputs.serviceEndpoints.blob
           }
-          {{- if not .StorageAccount.KeylessAuth}}
-          {
-            name: 'AZURE_STORAGE_KEY'
-            secretRef: 'storage-key'
-          }
-          {
-            name: 'AZURE_STORAGE_CONNECTION_STRING'
-            secretRef: 'storage-connection-string'
-          }
-          {{- end}}
           {{- end}}
           {{- if .AIModels}}
           {

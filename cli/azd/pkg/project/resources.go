@@ -142,10 +142,6 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 		if err := unmarshalProps(&sp); err != nil {
 			return err
 		}
-		// Default KeylessAuth to true if omitted
-		if _, ok := raw.RawProps["keyless"]; !ok {
-			sp.KeylessAuth = true
-		}
 		raw.Props = sp
 	}
 
@@ -176,6 +172,5 @@ type AIModelPropsModel struct {
 }
 
 type StorageProps struct {
-	Containers  []string `yaml:"containers,omitempty"`
-	KeylessAuth bool     `yaml:"keyless,omitempty"`
+	Containers []string `yaml:"containers,omitempty"`
 }

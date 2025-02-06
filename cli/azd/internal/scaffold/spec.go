@@ -57,8 +57,7 @@ type AIModelModel struct {
 }
 
 type StorageAccount struct {
-	Containers  []string
-	KeylessAuth bool
+	Containers []string
 }
 
 type ServiceSpec struct {
@@ -105,7 +104,6 @@ type AIModelReference struct {
 }
 
 type StorageReference struct {
-	KeylessAuth bool
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

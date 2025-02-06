@@ -1324,12 +1324,6 @@
             "properties": {
                 "type": true,
                 "uses": true,
-                "keyless": {
-                    "type": "boolean",
-                    "title": "Keyless Authentication",
-                    "description": "Indicates whether keyless authentication is used for Azure Storage Account.",
-                    "default": true
-                },
                 "containers": {
                     "type": "array",
                     "title": "Azure Storage Account container names.",

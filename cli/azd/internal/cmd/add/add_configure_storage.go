@@ -46,19 +46,6 @@ func fillStorageDetails(
 		return nil, err
 	}
 
-	selection, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Use keyless authentication?",
-		Options: []string{
-			"Yes (recommended)",
-			"No",
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	modelProps.KeylessAuth = selection == 0
-
 	for _, option := range selectedDataTypes {
 		switch option {
 		case StorageDataTypeBlob:

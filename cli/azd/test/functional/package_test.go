@@ -69,6 +69,48 @@ func Test_CLI_Package_FromServiceDirectory(t *testing.T) {
 	require.Contains(t, result.Stdout, "Packaging service web")
 }
 
+func Test_CLI_Package_FromServiceDirectorySymlinked(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+	webappDir := filepath.Join(dir, "webapp-python")
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = webappDir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Set up the sample:
+	//       - copy the web app twice (as webapp-python and webapp-python2)
+	//       - delete webapp-python/src/util
+	//       - create a symlink from webapp-python/src/util to webapp-python2/src/util
+	// Note: we're using the webapp-python sample here so that the source
+	//       is the content that is zipped up (with the symlink)
+	err := copySample(webappDir, "webapp-python")
+	require.NoError(t, err, "failed expanding sample")
+
+	err = copySample(filepath.Join(dir, "webapp-python2"), "webapp-python")
+	require.NoError(t, err, "failed expanding sample")
+
+	err = os.RemoveAll(filepath.Join(webappDir, "src", "util"))
+	require.NoError(t, err, "failed removing util folder")
+
+	err = os.Symlink(filepath.Join(dir, "webapp-python2", "src", "util"), filepath.Join(webappDir, "src", "util"))
+	require.NoError(t, err, "failed creating symlink")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit("testenv"), "init")
+	require.NoError(t, err)
+
+	cli.WorkingDirectory = filepath.Join(webappDir, "src")
+
+	result, err := cli.RunCommand(ctx, "package")
+	require.NoError(t, err)
+	require.Contains(t, result.Stdout, "Packaging service web")
+}
+
 func Test_CLI_Package_WithOutputPath(t *testing.T) {
 	t.Run("AllServices", func(t *testing.T) {
 		ctx, cancel := newTestContext(t)

@@ -146,6 +146,7 @@ func newExtensionListFlags(cmd *cobra.Command) *extensionListFlags {
 type extensionListAction struct {
 	flags            *extensionListFlags
 	formatter        output.Formatter
+	console          input.Console
 	writer           io.Writer
 	sourceManager    *extensions.SourceManager
 	extensionManager *extensions.Manager
@@ -154,6 +155,7 @@ type extensionListAction struct {
 func newExtensionListAction(
 	flags *extensionListFlags,
 	formatter output.Formatter,
+	console input.Console,
 	writer io.Writer,
 	sourceManager *extensions.SourceManager,
 	extensionManager *extensions.Manager,
@@ -161,6 +163,7 @@ func newExtensionListAction(
 	return &extensionListAction{
 		flags:            flags,
 		formatter:        formatter,
+		console:          console,
 		writer:           writer,
 		sourceManager:    sourceManager,
 		extensionManager: extensionManager,
@@ -225,17 +228,17 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 	if len(extensionRows) == 0 {
 		if a.flags.installed {
-			fmt.Println(output.WithWarningFormat("WARNING: No extensions installed.\n"))
-			fmt.Printf(
-				"Run %s to install extensions.\n",
+			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions installed.\n"))
+			a.console.Message(ctx, fmt.Sprintf(
+				"Run %s to install extensions.",
 				output.WithHighLightFormat("azd extension install <extension-name>"),
-			)
+			))
 		} else {
-			fmt.Println(output.WithWarningFormat("WARNING: No extensions found in configured sources.\n"))
-			fmt.Printf(
-				"Run %s to add a new extension source.\n",
+			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions found in configured sources.\n"))
+			a.console.Message(ctx, fmt.Sprintf(
+				"Run %s to add a new extension source.",
 				output.WithHighLightFormat("azd extension source add [flags]"),
-			)
+			))
 		}
 
 		return nil, nil

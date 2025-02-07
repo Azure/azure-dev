@@ -356,20 +356,11 @@ func NewAkvs(subId, vaultId, secretName string) string {
 }
 
 func (kvs *keyVaultService) SecretFromAkvs(ctx context.Context, akvs string) (string, error) {
-	if !IsAkvs(akvs) {
-		return "", fmt.Errorf("invalid Azure Key Vault Secret reference: %s", akvs)
+	parseAkvs, err := ParseAkvs(akvs)
+	if err != nil {
+		return "", err
 	}
-
-	noSchema := strings.TrimPrefix(akvs, vaultSchemaAkvs)
-	vaultParts := strings.Split(noSchema, "/")
-	if len(vaultParts) != 3 {
-		return "", fmt.Errorf(
-			"invalid Azure Key Vault Secret reference: %s. Expected format: %s",
-			akvs,
-			vaultSchemaAkvs+"<subscription-id>/<vault-name>/<secret-name>",
-		)
-	}
-	subscriptionId, vaultName, secretName := vaultParts[0], vaultParts[1], vaultParts[2]
+	subscriptionId, vaultName, secretName := parseAkvs.SubscriptionId, parseAkvs.VaultName, parseAkvs.SecretName
 	// subscriptionId is required by the Key Vault service to figure the TenantId for the
 	// tokenCredential. The assumption here is that the user has access to the Tenant
 	// used to deploy the app and to whatever Tenant the Key Vault is in. And the tokenCredential
@@ -379,4 +370,31 @@ func (kvs *keyVaultService) SecretFromAkvs(ctx context.Context, akvs string) (st
 		return "", fmt.Errorf("fetching secret value from key vault: %w", err)
 	}
 	return secretValue.Value, nil
+}
+
+type Akvs struct {
+	SubscriptionId string
+	VaultName      string
+	SecretName     string
+}
+
+func ParseAkvs(akvs string) (Akvs, error) {
+	if !IsAkvs(akvs) {
+		return Akvs{}, fmt.Errorf("invalid Azure Key Vault Secret reference: %s", akvs)
+	}
+
+	noSchema := strings.TrimPrefix(akvs, vaultSchemaAkvs)
+	vaultParts := strings.Split(noSchema, "/")
+	if len(vaultParts) != 3 {
+		return Akvs{}, fmt.Errorf(
+			"invalid Azure Key Vault Secret reference: %s. Expected format: %s",
+			akvs,
+			vaultSchemaAkvs+"<subscription-id>/<vault-name>/<secret-name>",
+		)
+	}
+	return Akvs{
+		SubscriptionId: vaultParts[0],
+		VaultName:      vaultParts[1],
+		SecretName:     vaultParts[2],
+	}, nil
 }

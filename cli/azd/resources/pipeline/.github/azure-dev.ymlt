@@ -25,6 +25,9 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ "{{" }} vars.AZURE_SUBSCRIPTION_ID {{ "}}" }}
       AZURE_ENV_NAME: ${{ "{{" }} vars.AZURE_ENV_NAME {{ "}}" }}
       AZURE_LOCATION: ${{ "{{" }} vars.AZURE_LOCATION {{ "}}" }}
+{{- range $variable := .Variables }}
+      {{ $variable }}: ${{ "{{" }} vars.{{ $variable }} {{ "}}" }}
+{{- end}}      
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,6 +70,9 @@ jobs:
         run: azd provision --no-prompt
         env:
           AZD_INITIAL_ENVIRONMENT_CONFIG: ${{ "{{" }} secrets.AZD_INITIAL_ENVIRONMENT_CONFIG {{ "}}" }}
+{{- range $secret := .Secrets }}
+          {{ $secret }}: ${{ "{{" }} secrets.{{ $secret }} {{ "}}" }}
+{{- end}}
 
       - name: Deploy Application
         run: azd deploy --no-prompt

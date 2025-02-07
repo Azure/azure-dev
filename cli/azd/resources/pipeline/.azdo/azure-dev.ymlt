@@ -53,7 +53,7 @@ steps:
       {{ $variable }}: $({{ $variable }})
 {{- end}}
 {{- range $secret := .Secrets }}
-          {{ $secret }}: $({{ $secret }})
+      {{ $secret }}: $({{ $secret }})
 {{- end}}
 
   - task: AzureCLI@2
@@ -73,7 +73,7 @@ steps:
       {{ $variable }}: $({{ $variable }})
 {{- end}}
 {{- range $secret := .Secrets }}
-          {{ $secret }}: $({{ $secret }})
+      {{ $secret }}: $({{ $secret }})
 {{- end}}
 
 {{ end}}      

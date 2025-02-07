@@ -341,7 +341,7 @@ const (
 	RoleIdKeyVaultSecretsUser   string = resourceIdPathPrefix + "4633458b-17de-408a-b874-0445c86b69e6"
 )
 
-func IsAkvs(id string) bool {
+func IsAzureKeyVaultSecret(id string) bool {
 	return strings.HasPrefix(id, vaultSchemaAkvs)
 }
 
@@ -351,48 +351,68 @@ func IsValidSecretName(kvSecretName string) bool {
 	}) == -1
 }
 
-func NewAkvs(subId, vaultId, secretName string) string {
+func NewAzureKeyVaultSecret(subId, vaultId, secretName string) string {
 	return vaultSchemaAkvs + subId + "/" + vaultId + "/" + secretName
 }
 
 func (kvs *keyVaultService) SecretFromAkvs(ctx context.Context, akvs string) (string, error) {
-	parseAkvs, err := ParseAkvs(akvs)
+	parseAkvs, err := ParseAzureKeyVaultSecret(akvs)
 	if err != nil {
 		return "", err
 	}
-	subscriptionId, vaultName, secretName := parseAkvs.SubscriptionId, parseAkvs.VaultName, parseAkvs.SecretName
+
 	// subscriptionId is required by the Key Vault service to figure the TenantId for the
 	// tokenCredential. The assumption here is that the user has access to the Tenant
 	// used to deploy the app and to whatever Tenant the Key Vault is in. And the tokenCredential
 	// can use any of the Tenant ids.
-	secretValue, err := kvs.GetKeyVaultSecret(ctx, subscriptionId, vaultName, secretName)
+	secretValue, err := kvs.GetKeyVaultSecret(
+		ctx, parseAkvs.SubscriptionId, parseAkvs.VaultName, parseAkvs.SecretName)
 	if err != nil {
 		return "", fmt.Errorf("fetching secret value from key vault: %w", err)
 	}
 	return secretValue.Value, nil
 }
 
-type Akvs struct {
+// AzureKeyVaultSecret represents a secret stored in an Azure Key Vault.
+// It contains the necessary information to identify and access the secret.
+//
+// Fields:
+// - SubscriptionId: The ID of the Azure subscription that contains the Key Vault.
+// - VaultName: The name of the Key Vault where the secret is stored.
+// - SecretName: The name of the secret within the Key Vault.
+type AzureKeyVaultSecret struct {
 	SubscriptionId string
 	VaultName      string
 	SecretName     string
 }
 
-func ParseAkvs(akvs string) (Akvs, error) {
-	if !IsAkvs(akvs) {
-		return Akvs{}, fmt.Errorf("invalid Azure Key Vault Secret reference: %s", akvs)
+// ParseAzureKeyVaultSecret parses a string representing an Azure Key Vault Secret reference
+// and returns an AzureKeyVaultSecret struct if the reference is valid.
+//
+// The expected format for the Azure Key Vault Secret reference is:
+// "akvs://<subscription-id>/<vault-name>/<secret-name>"
+//
+// Parameters:
+//   - akvs: A string representing the Azure Key Vault Secret reference.
+//
+// Returns:
+//   - AzureKeyVaultSecret: A struct containing the subscription ID, vault name, and secret name.
+//   - error: An error if the Azure Key Vault Secret reference is invalid.
+func ParseAzureKeyVaultSecret(akvs string) (AzureKeyVaultSecret, error) {
+	if !IsAzureKeyVaultSecret(akvs) {
+		return AzureKeyVaultSecret{}, fmt.Errorf("invalid Azure Key Vault Secret reference: %s", akvs)
 	}
 
 	noSchema := strings.TrimPrefix(akvs, vaultSchemaAkvs)
 	vaultParts := strings.Split(noSchema, "/")
 	if len(vaultParts) != 3 {
-		return Akvs{}, fmt.Errorf(
+		return AzureKeyVaultSecret{}, fmt.Errorf(
 			"invalid Azure Key Vault Secret reference: %s. Expected format: %s",
 			akvs,
 			vaultSchemaAkvs+"<subscription-id>/<vault-name>/<secret-name>",
 		)
 	}
-	return Akvs{
+	return AzureKeyVaultSecret{
 		SubscriptionId: vaultParts[0],
 		VaultName:      vaultParts[1],
 		SecretName:     vaultParts[2],

@@ -435,7 +435,7 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 			continue
 		}
 
-		akvs, err := keyvault.ParseAkvs(value)
+		akvs, err := keyvault.ParseAzureKeyVaultSecret(value)
 		if err != nil {
 			return result, fmt.Errorf("failed to parse akvs '%s': %w", key, err)
 		}
@@ -465,6 +465,8 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 					"key vault '%s' not found in subscription '%s'", akvs.VaultName, akvs.SubscriptionId)
 		}
 
+		// CreateRbac uses the azure-sdk RoleAssignmentsClient.Create() which creates or updates the role assignment
+		// We don't need to check if the role assignment already exists, the method will handle it.
 		err = pm.entraIdService.CreateRbac(
 			ctx, akvs.SubscriptionId, vaultResourceId, keyvault.RoleIdKeyVaultSecretsUser, *servicePrincipal.Id)
 		if err != nil {

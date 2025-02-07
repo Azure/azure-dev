@@ -27,7 +27,7 @@ jobs:
       AZURE_LOCATION: ${{ "{{" }} vars.AZURE_LOCATION {{ "}}" }}
 {{- range $variable := .Variables }}
       {{ $variable }}: ${{ "{{" }} vars.{{ $variable }} {{ "}}" }}
-{{- end}}      
+{{- end}}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

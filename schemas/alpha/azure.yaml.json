@@ -508,11 +508,12 @@
                 },
                 "extensions": {
                     "type": "object",
-                    "title": "A range of supported versions of extensions for this project",
-                    "description": "A range of supported versions of extensions for this project. Supports semver constraints. Optional (allows all versions if absent).",
+                    "title": "A map of required extensions and version constraints for this project.",
+                    "description": "A map of required extensions and version constraints for this project. Supports semver constraints. If version is omitted the latest version will be installed.",
                     "additionalProperties": {
                         "type": "string",
                         "examples": [
+                            "latest",
                             ">=1.0.0",
                             "~2.0.0",
                             "=3.1.2",

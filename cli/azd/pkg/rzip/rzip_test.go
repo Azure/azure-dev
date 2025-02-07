@@ -45,7 +45,7 @@ func TestCreateFromDirectory(t *testing.T) {
 		fullPath := filepath.Join(tempDir, path)
 		err := os.MkdirAll(filepath.Dir(fullPath), 0755)
 		require.NoError(err)
-		err = os.WriteFile(fullPath, []byte(content), 0644)
+		err = os.WriteFile(fullPath, []byte(content), 0600)
 		require.NoError(err)
 	}
 
@@ -56,6 +56,7 @@ func TestCreateFromDirectory(t *testing.T) {
 	// Create symlinks -- both relative and absolute links
 	err = os.Symlink(filepath.Join(".", "file1.txt"), filepath.Join(tempDir, "symlink_to_file1.txt"))
 	require.NoError(err)
+	//nolint:lll
 	err = os.Symlink(filepath.Join(tempDir, "symlink_to_file1.txt"), filepath.Join(tempDir, "symlink_to_symlink_to_file1.txt"))
 	require.NoError(err)
 	err = os.Symlink(filepath.Join(".", "subdir"), filepath.Join(tempDir, "symlink_to_subdir"))

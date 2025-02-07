@@ -63,7 +63,7 @@ func addDir(
 			root := filepath.Join(destRoot, info.Name())
 			err = addDir(w, root, s, symlinkDepth)
 		default:
-			err = addFile(w, destRoot, s, info)
+			err = addFile(w, destRoot, s, info.Name(), info)
 		}
 
 		if err != nil {
@@ -77,8 +77,9 @@ func addFile(
 	w *zip.Writer,
 	destRoot string,
 	src string,
+	name string,
 	info os.FileInfo) error {
-	dest := filepath.Join(destRoot, info.Name())
+	dest := filepath.Join(destRoot, name)
 	header := &zip.FileHeader{
 		Name:     strings.ReplaceAll(dest, "\\", "/"),
 		Modified: info.ModTime(),
@@ -126,7 +127,7 @@ func onSymlink(
 		root := filepath.Join(destRoot, link.Name())
 		return addDir(w, root, target, symlinkDepth)
 	default:
-		return addFile(w, destRoot, target, link)
+		return addFile(w, destRoot, target, link.Name(), info)
 	}
 }
 

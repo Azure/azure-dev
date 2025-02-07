@@ -2,29 +2,29 @@ package rzip_test
 
 import (
 	"archive/zip"
+	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCreateFromDirectory(t *testing.T) {
-	dest, err := os.Readlink("/Users/weilim/ziptest/symsymdir")
-	require.NoError(t, err)
-	require.Empty(t, dest)
-
 	require := require.New(t)
-	assert := assert.New(t)
 	tempDir := t.TempDir()
 
 	// ASCII representation of the filesystem structure inside tempDir
 	/*
 		tempDir/
 		├── file1.txt
+		├── a/b/c/d/deep.txt
+		├── empty/
 		├── subdir/
 		│   ├── file2.txt
 		│   └── file3.txt
@@ -38,6 +38,7 @@ func TestCreateFromDirectory(t *testing.T) {
 		"file1.txt":        "Content of file1",
 		"subdir/file2.txt": "Content of file2",
 		"subdir/file3.txt": "Content of file3",
+		"a/b/c/d/deep.txt": "Content of deep",
 	}
 
 	for path, content := range files {
@@ -48,12 +49,16 @@ func TestCreateFromDirectory(t *testing.T) {
 		require.NoError(err)
 	}
 
-	// Create symlinks
-	err := os.Symlink(filepath.Join(tempDir, "file1.txt"), filepath.Join(tempDir, "symlink_to_file1.txt"))
+	// Create empty directory
+	err := os.Mkdir(filepath.Join(tempDir, "empty"), 0755)
+	require.NoError(err)
+
+	// Create symlinks -- both relative and absolute links
+	err = os.Symlink(filepath.Join(".", "file1.txt"), filepath.Join(tempDir, "symlink_to_file1.txt"))
 	require.NoError(err)
 	err = os.Symlink(filepath.Join(tempDir, "symlink_to_file1.txt"), filepath.Join(tempDir, "symlink_to_symlink_to_file1.txt"))
 	require.NoError(err)
-	err = os.Symlink(filepath.Join(tempDir, "subdir"), filepath.Join(tempDir, "symlink_to_subdir"))
+	err = os.Symlink(filepath.Join(".", "subdir"), filepath.Join(tempDir, "symlink_to_subdir"))
 	require.NoError(err)
 	err = os.Symlink(filepath.Join(tempDir, "symlink_to_subdir"), filepath.Join(tempDir, "symlink_to_symlink_to_subdir"))
 	require.NoError(err)
@@ -79,6 +84,7 @@ func TestCreateFromDirectory(t *testing.T) {
 	// Check zip contents
 	expectedFiles := map[string]string{
 		"file1.txt":                              "Content of file1",
+		"a/b/c/d/deep.txt":                       "Content of deep",
 		"subdir/file2.txt":                       "Content of file2",
 		"subdir/file3.txt":                       "Content of file3",
 		"symlink_to_file1.txt":                   "Content of file1",
@@ -91,18 +97,60 @@ func TestCreateFromDirectory(t *testing.T) {
 
 	for _, zipFile := range zipReader.File {
 		expectedContent, exists := expectedFiles[zipFile.Name]
-		assert.True(exists, "unexpected file in zip: %s", zipFile.Name)
+		if !exists {
+			t.Errorf("unexpected file in zip: %s", zipFile.Name)
+			continue
+		}
 
 		rc, err := zipFile.Open()
-		assert.NoError(err, "failed to open file in zip: %s", zipFile.Name)
+		if err != nil {
+			panic(err)
+		}
+
 		content, err := io.ReadAll(rc)
 		rc.Close()
-		assert.NoError(err, "failed to read file in zip: %s", zipFile.Name)
+		if err != nil {
+			panic(err)
+		}
 
-		assert.Equal(expectedContent, string(content), "incorrect content for %s", zipFile.Name)
+		if expectedContent != string(content) {
+			t.Errorf("incorrect content for %s", zipFile.Name)
+		}
 
 		delete(expectedFiles, zipFile.Name)
 	}
 
-	assert.Empty(expectedFiles, "expected files not found in zip: %v", expectedFiles)
+	if len(expectedFiles) > 0 {
+		t.Errorf("missing files:\n%v", formatFiles(expectedFiles))
+	}
+}
+
+func TestCreateFromDirectory_SymlinkRecursive(t *testing.T) {
+	tmp := t.TempDir()
+
+	err := os.Mkdir(filepath.Join(tmp, "dir"), 0755)
+	require.NoError(t, err)
+
+	err = os.Symlink("../", filepath.Join(tmp, "dir", "dir_symlink"))
+	require.NoError(t, err)
+
+	// Create zip file
+	zipFile, err := os.CreateTemp("", "test_archive_*.zip")
+	require.NoError(t, err, "failed to create temp zip file")
+	defer os.Remove(zipFile.Name())
+	defer zipFile.Close()
+
+	// zip the directory
+	err = rzip.CreateFromDirectory(tmp, zipFile)
+	require.NoError(t, err)
+}
+
+func formatFiles(files map[string]string) string {
+	var sb strings.Builder
+	keys := slices.Collect(maps.Keys(files))
+	slices.Sort(keys)
+	for _, path := range keys {
+		sb.WriteString(fmt.Sprintf("- %s\n", path))
+	}
+	return sb.String()
 }

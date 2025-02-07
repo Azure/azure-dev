@@ -6,80 +6,193 @@ package rzip
 import (
 	"archive/zip"
 	"io"
-	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
+// CreateFromDirectory creates a zip archive from the given directory recursively,
+// that is suitable for transporting across machines.
+//
+// It resolves any symlinks it encounters.
 func CreateFromDirectory(source string, buf *os.File) error {
 	w := zip.NewWriter(buf)
-	err := filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
 
-		if info.IsDir() {
-			return nil
-		}
-		fileInfo, err := info.Info()
-		if err != nil {
-			return err
-		}
-
-		// Skip symbolic links
-		if fileInfo.Mode()&os.ModeSymlink != 0 {
-			target, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return err
-			}
-
-			targetInfo, err := os.Stat(target)
-			if err != nil {
-				return err
-			}
-
-			if targetInfo.IsDir() {
-				// we need to copy the directory structure here
-				// for each file in the directory, the path should be:
-				// original_path/<path relative to the target>
-
-				// target is both:
-				// - If path is relative the result will be relative to the current directory
-				// - Unless one of the components is an absolute symbolic link.
-
-				// root on the name of the target
-				// expand
-			}
-		}
-
-		header := &zip.FileHeader{
-			Name: strings.Replace(
-				strings.TrimPrefix(
-					strings.TrimPrefix(path, source),
-					string(filepath.Separator)), "\\", "/", -1),
-			Modified: fileInfo.ModTime(),
-			Method:   zip.Deflate,
-		}
-
-		f, err := w.CreateHeader(header)
-		if err != nil {
-			return err
-		}
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(f, in)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
+	err := addDirRoot(w, source)
 	if err != nil {
 		return err
 	}
 
 	return w.Close()
+}
+
+func addDirRoot(
+	w *zip.Writer,
+	src string) error {
+	return addDir(w, "", src, 0)
+}
+
+func addDir(
+	w *zip.Writer,
+	destRoot,
+	src string,
+	symlinkDepth int) error {
+	if symlinkDepth > 40 {
+		// too deep, bail out similarly to the 'zip' tool
+		log.Println("skipping", src, "too many levels of symbolic links")
+		return nil
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		s := filepath.Join(src, entry.Name())
+		info, err := os.Lstat(s)
+		if err != nil {
+			return err
+		}
+
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			err = onSymlink(w, destRoot, s, info, symlinkDepth)
+		case info.IsDir():
+			root := filepath.Join(destRoot, info.Name())
+			err = addDir(w, root, s, symlinkDepth)
+		default:
+			err = addFile(w, destRoot, s, info)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+	return err
+}
+
+func addFile(
+	w *zip.Writer,
+	destRoot string,
+	src string,
+	info os.FileInfo) error {
+	dest := filepath.Join(destRoot, info.Name())
+	header := &zip.FileHeader{
+		Name:     strings.ReplaceAll(dest, "\\", "/"),
+		Modified: info.ModTime(),
+		Method:   zip.Deflate,
+	}
+
+	f, err := w.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	_, err = io.Copy(f, in)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func onSymlink(
+	w *zip.Writer,
+	destRoot,
+	src string,
+	link os.FileInfo,
+	symlinkDepth int) error {
+	target, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Lstat(target)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case info.IsDir():
+		symlinkDepth++
+		root := filepath.Join(destRoot, link.Name())
+		return addDir(w, root, target, symlinkDepth)
+	default:
+		return addFile(w, destRoot, target, link)
+	}
+}
+
+func ExtractToDirectory(artifactPath string, targetDirectory string) error {
+	// Open the ZIP file
+	zipReader, err := zip.OpenReader(artifactPath)
+	if err != nil {
+		return err
+	}
+	defer zipReader.Close()
+
+	// Ensure the target directory exists
+	err = os.MkdirAll(targetDirectory, os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	// Iterate through each file in the archive
+	for _, file := range zipReader.File {
+		// Handles file path cleaning directly below
+		// nolint:gosec // G305
+		filePath := filepath.Join(targetDirectory, file.Name)
+
+		// Prevent path traversal attacks by ensuring file paths remain within targetDirectory
+		if !strings.HasPrefix(filePath, filepath.Clean(targetDirectory)+string(os.PathSeparator)) {
+			return &os.PathError{
+				Op:   "extract",
+				Path: filePath,
+				Err:  os.ErrPermission,
+			}
+		}
+
+		if file.FileInfo().IsDir() {
+			// Create the directory
+			err = os.MkdirAll(filePath, file.Mode())
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Create the file
+		err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
+		if err != nil {
+			return err
+		}
+
+		outFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+		if err != nil {
+			return err
+		}
+		defer outFile.Close()
+
+		// Extract the file content
+		rc, err := file.Open()
+		if err != nil {
+			return err
+		}
+		defer rc.Close()
+
+		// nolint:gosec // G110
+		_, err = io.Copy(outFile, rc)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

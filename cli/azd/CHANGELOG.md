@@ -17,10 +17,10 @@
 - [[4729]](https://github.com/Azure/azure-dev/pull/4729) Improve Maven project detection using effective POM. Thanks @rujche for the contribution!
 - [[4517]](https://github.com/Azure/azure-dev/pull/4517) New `azd env set-secret` command and hooks support for using Azure Key Vault secrets in an azd environment. [Learn more](docs/using-environment-secrets.md).
 - [[2856]](https://github.com/Azure/azure-dev/pull/2856) Show identity info after successful `azd auth login` and new `azd auth login --check-status` standalone command. Thanks @john0isaac for the contribution!
+- [[4595]](https://github.com/Azure/azure-dev/pull/4595) Support custom `pwsh` arguments in hook definitions. Thanks @Yionse for the contribution!
 
 ### Bugs Fixed
 
-- [[4595]](https://github.com/Azure/azure-dev/pull/4595) Execute `pwsh` hook scripts with `-NoProfile` switch and support additional `pwsh` args in hook definitions. Thanks @Yionse for the contribution!
 - [[4692]](https://github.com/Azure/azure-dev/pull/4692) Fix `azd add` database failing in projects without a host.
 - [[4684]](https://github.com/Azure/azure-dev/pull/4684) Support Bicep `@sealed()` decorator on user defined types.
     - Fix `azd provision` failing to deploy Bicep containing `sealed()` decorators on user defined types.

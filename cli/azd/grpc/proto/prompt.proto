@@ -15,34 +15,6 @@ service PromptService {
   rpc Select(SelectRequest) returns (SelectResponse);
   rpc PromptSubscriptionResource(PromptSubscriptionResourceRequest) returns (PromptSubscriptionResourceResponse);
   rpc PromptResourceGroupResource(PromptResourceGroupResourceRequest) returns (PromptResourceGroupResourceResponse);
-  rpc PromptStream(stream StreamWorkflowRequestMessage) returns (stream StreamWorkflowResponseMessage);
-}
-
-message StreamWorkflowRequestMessage{
-  oneof payload {
-    PromptOptions options = 1;
-    PromptValidation validation = 2;
-  }
-}
-
-message StreamWorkflowResponseMessage{
-  oneof payload {
-    PromptValue value = 1;
-    PromptFinalValue complete = 2;
-  }
-}
-
-message PromptValue {
-  string value = 1;
-}
-
-message PromptValidation {
-  bool valid = 1;
-  string message = 2;
-}
-
-message PromptFinalValue {
-  string value = 1;
 }
 
 message PromptSubscriptionRequest {}

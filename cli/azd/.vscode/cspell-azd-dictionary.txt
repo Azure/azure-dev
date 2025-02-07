@@ -1,7 +1,9 @@
 AADSTS
 ABRT
+ACCESSTOKEN
 aiomysql
 aiopg
+akvs
 alphafeatures
 apimanagement
 apims
@@ -50,6 +52,7 @@ AZURECLI
 azureedge
 azureml
 azurestaticapps
+AZURESUBSCRIPTION
 azuretools
 azureutil
 azureyaml
@@ -57,6 +60,7 @@ Backticks
 bicepparam
 blockblob
 BOOLSLICE
+buildargs
 BUILDID
 BUILDNUMBER
 buildpacks
@@ -77,12 +81,13 @@ csharpapptest
 cupaloy
 custommaps
 deletedservices
-deviceid
 devcenter
 devcenters
 devcentersdk
 devdeviceid
 devel
+deviceid
+diffmatchpatch
 discarder
 docf
 dockerfiles
@@ -91,9 +96,11 @@ doublestar
 dskip
 eastus
 endregion
+entra
 entraid
 envlist
 envname
+envsubst
 errcheck
 errorinfo
 errorlint
@@ -142,6 +149,7 @@ mysqldb
 nobanner
 nodeapp
 nolint
+nologo
 notrail
 omitempty
 oneauth
@@ -160,6 +168,7 @@ overriden
 paketobuildpacks
 patternmatcher
 pflag
+pgadmin
 posix
 preinit
 proxying
@@ -186,6 +195,7 @@ semconv
 serverfarms
 servicebus
 setenvs
+skus
 snapshotter
 springapp
 sqlserver
@@ -198,6 +208,7 @@ stdouttrace
 STRINGSLICE
 struct
 structs
+subst
 substr
 swacli
 Syncer
@@ -226,5 +237,6 @@ webfrontend
 westus2
 wireinject
 yacspin
+yamlnode
 ymlt
 zerr

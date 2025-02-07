@@ -5,6 +5,7 @@ package ux
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -14,6 +15,38 @@ import (
 type ShowService struct {
 	Name      string
 	IngresUrl string
+	Env       map[string]string
+}
+
+func (s *ShowService) ToString(currentIndentation string) string {
+	return fmt.Sprintf(
+		"%s\n"+
+			"  Endpoint: %s\n"+
+			"  Environment variables:\n"+
+			color.HiBlueString(formatEnv("    ", s.Env)),
+		color.HiMagentaString("%s (Container App)", s.Name),
+		output.WithLinkFormat(s.IngresUrl))
+}
+
+func (s *ShowService) MarshalJSON() ([]byte, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func formatEnv(prefix string, values map[string]string) string {
+	environ := make([]string, 0, len(values))
+	for k, v := range values {
+		environ = append(environ, k+"="+v)
+	}
+	slices.Sort(environ)
+
+	var sb strings.Builder
+	for _, env := range environ {
+		sb.WriteString(prefix)
+		sb.WriteString(env)
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
 }
 
 type ShowEnvironment struct {

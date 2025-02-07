@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -100,6 +101,7 @@ services:
 
 	npmCli := npm.NewCli(mockContext.CommandRunner)
 	docker := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 
 	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
@@ -107,7 +109,8 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
+		NewContainerHelper(
+			env, envManager, clock.NewMock(), nil, nil, docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -194,6 +197,7 @@ services:
 
 	npmCli := npm.NewCli(mockContext.CommandRunner)
 	docker := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
@@ -211,7 +215,8 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, docker, mockContext.Console, cloud.AzurePublic()),
+		NewContainerHelper(
+			env, envManager, clock.NewMock(), nil, nil, docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -233,7 +238,12 @@ services:
 
 func Test_DockerProject_Build(t *testing.T) {
 	tests := []struct {
+		// Optional - use for custom initialization
+		init func(t *testing.T) error
+		// Optional - use for custom validation
+		validate                func(t *testing.T, result *ServiceBuildResult, dockerBuildArgs *exec.RunArgs) error
 		name                    string
+		env                     *environment.Environment
 		project                 string
 		language                ServiceLanguageKind
 		dockerOptions           DockerProjectOptions
@@ -342,6 +352,47 @@ func Test_DockerProject_Build(t *testing.T) {
 			},
 			expectedDockerBuildArgs: nil,
 		},
+		{
+			name:          "With custom environment variables",
+			project:       "./src/api",
+			language:      ServiceLanguageJavaScript,
+			hasDockerFile: true,
+			init: func(t *testing.T) error {
+				os.Setenv("AZD_CUSTOM_OS_VAR", "os-value")
+				return nil
+			},
+			env: environment.NewWithValues("test", map[string]string{
+				"AZD_CUSTOM_ENV_VAR": "env-value",
+			}),
+			dockerOptions: DockerProjectOptions{
+				BuildEnv: []string{
+					"AZD_CUSTOM_BUILD_VAR=build-value",
+				},
+				BuildArgs: []osutil.ExpandableString{
+					osutil.NewExpandableString("AZD_CUSTOM_OS_VAR"),
+					osutil.NewExpandableString("AZD_CUSTOM_ENV_VAR"),
+					osutil.NewExpandableString("AZD_CUSTOM_BUILD_VAR"),
+					osutil.NewExpandableString("AZD_CUSTOM_EXPANDED_VAR=${AZD_CUSTOM_ENV_VAR}"),
+				},
+			},
+			validate: func(t *testing.T, result *ServiceBuildResult, dockerBuildArgs *exec.RunArgs) error {
+				require.NotNil(t, result)
+				require.NotNil(t, dockerBuildArgs)
+
+				// Contains OS, azd env & docker env vars
+				require.Contains(t, dockerBuildArgs.Env, "AZD_CUSTOM_OS_VAR=os-value")
+				require.Contains(t, dockerBuildArgs.Env, "AZD_CUSTOM_ENV_VAR=env-value")
+				require.Contains(t, dockerBuildArgs.Env, "AZD_CUSTOM_BUILD_VAR=build-value")
+
+				// Contains docker build args
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_OS_VAR")
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_ENV_VAR")
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_BUILD_VAR")
+				require.Contains(t, dockerBuildArgs.Args, "AZD_CUSTOM_EXPANDED_VAR=env-value")
+
+				return nil
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -385,10 +436,20 @@ func Test_DockerProject_Build(t *testing.T) {
 				return exec.NewRunResult(0, "3.0.0", ""), nil
 			})
 
+			if tt.init != nil {
+				err := tt.init(t)
+				require.NoError(t, err)
+			}
+
 			temp := t.TempDir()
 
-			env := environment.New("test")
+			env := tt.env
+			if env == nil {
+				env = environment.New("test")
+			}
+
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
+			dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, tt.language)
 			serviceConfig.Project.Path = temp
 			serviceConfig.Docker = tt.dockerOptions
@@ -411,7 +472,8 @@ func Test_DockerProject_Build(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, dotnetCli, mockContext.Console,
+					cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
@@ -427,10 +489,15 @@ func Test_DockerProject_Build(t *testing.T) {
 				},
 			)
 
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			require.Equal(t, tt.expectedBuildResult, result)
-			require.Equal(t, tt.expectedDockerBuildArgs, dockerBuildArgs.Args)
+			if tt.validate != nil {
+				err := tt.validate(t, result, &dockerBuildArgs)
+				require.NoError(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				require.Equal(t, tt.expectedBuildResult, result)
+				require.Equal(t, tt.expectedDockerBuildArgs, dockerBuildArgs.Args)
+			}
 		})
 	}
 }
@@ -522,13 +589,15 @@ func Test_DockerProject_Package(t *testing.T) {
 
 			env := environment.NewWithValues("test", map[string]string{})
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
+			dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 			dockerProject := NewDockerProject(
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, dockerCli, mockContext.Console, cloud.AzurePublic()),
+					env, envManager, clock.NewMock(), nil, nil, dockerCli, dotnetCli, mockContext.Console,
+					cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)

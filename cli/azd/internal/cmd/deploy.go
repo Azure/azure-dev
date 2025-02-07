@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -24,7 +25,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -71,7 +71,8 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		&d.fromPackage,
 		"from-package",
 		"",
-		"Deploys the application from an existing package.",
+		//nolint:lll
+		"Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).",
 	)
 }
 
@@ -113,7 +114,7 @@ type DeployAction struct {
 	serviceManager      project.ServiceManager
 	resourceManager     project.ResourceManager
 	accountManager      account.Manager
-	azCli               azcli.AzCli
+	azCli               *azapi.AzureClient
 	portalUrlBase       string
 	formatter           output.Formatter
 	writer              io.Writer
@@ -134,7 +135,7 @@ func NewDeployAction(
 	environment *environment.Environment,
 	accountManager account.Manager,
 	cloud *cloud.Cloud,
-	azCli azcli.AzCli,
+	azCli *azapi.AzureClient,
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	formatter output.Formatter,

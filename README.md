@@ -4,9 +4,8 @@ Latest builds:
 
 | Artifact  | Version | Download |
 | ------- | ------- | -------- |
-| azd | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [Windows](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-windows-amd64.zip) &vert; [Linux](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-linux-amd64.tar.gz) &vert; [Mac](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-darwin-amd64.zip) |
-| vscode extension | ![vscode extension version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fvscode%2Flatest%2Fshield.json) | [VSIX](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) |
-| docker image | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [`mcr.microsoft.com/azure-dev-cli-apps:latest`](https://mcr.microsoft.com/en-us/product/azure-dev-cli-apps/about)
+| azd | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkartifacts.z5.web.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [Windows](https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/latest/azd-windows-amd64.zip) &vert; [Linux](https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/latest/azd-linux-amd64.tar.gz) &vert; [Mac](https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/latest/azd-darwin-amd64.zip) |
+| vscode extension | ![vscode extension version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkartifacts.z5.web.core.windows.net%2Fazd%2Fvscode%2Flatest%2Fshield.json) | [VSIX](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) |
 
 The Azure Developer CLI (`azd`) is a developer-centric command-line interface (CLI) tool for creating Azure applications. The goals of the CLI are to:
 
@@ -18,7 +17,7 @@ To take full advantage of the CLI, code repositories need to conform to a well d
 
 ## Install/Upgrade Azure Developer CLI
 
-Install and Upgrade using the following scripts. Re-running the script will install the latest available version.
+Install and upgrade using the following scripts. Re-running the script will install the latest available version.
 
 For advanced install scenarios see [Azure Developer CLI Installer Scripts](cli/installer/README.md).
 
@@ -120,7 +119,7 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 
 Microsoft employees and partners who want to contribute templates to our official collections, must follow the standardization guidelines for template scaffolding and validation published [here](https://github.com/Azure-Samples/azd-template-artifacts)
 
-*Important Disclaimer*: The standardization artifacts, definitions and recommendations, are frequently updated.Please make sure to visit the site often, to follow the latest best practices.
+*Important Disclaimer*: The standardization artifacts, definitions, and recommendations are frequently updated. Please make sure to visit the site often to follow the latest recommended practices.
 
 ## Trademark Notice
 

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -34,15 +35,15 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path        string                  `yaml:"path,omitempty"        json:"path,omitempty"`
-	Context     string                  `yaml:"context,omitempty"     json:"context,omitempty"`
-	Platform    string                  `yaml:"platform,omitempty"    json:"platform,omitempty"`
-	Target      string                  `yaml:"target,omitempty"      json:"target,omitempty"`
-	Registry    osutil.ExpandableString `yaml:"registry,omitempty"    json:"registry,omitempty"`
-	Image       osutil.ExpandableString `yaml:"image,omitempty"       json:"image,omitempty"`
-	Tag         osutil.ExpandableString `yaml:"tag,omitempty"         json:"tag,omitempty"`
-	RemoteBuild bool                    `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
-	BuildArgs   []string                `yaml:"buildArgs,omitempty"   json:"buildArgs,omitempty"`
+	Path        string                    `yaml:"path,omitempty"        json:"path,omitempty"`
+	Context     string                    `yaml:"context,omitempty"     json:"context,omitempty"`
+	Platform    string                    `yaml:"platform,omitempty"    json:"platform,omitempty"`
+	Target      string                    `yaml:"target,omitempty"      json:"target,omitempty"`
+	Registry    osutil.ExpandableString   `yaml:"registry,omitempty"    json:"registry,omitempty"`
+	Image       osutil.ExpandableString   `yaml:"image,omitempty"       json:"image,omitempty"`
+	Tag         osutil.ExpandableString   `yaml:"tag,omitempty"         json:"tag,omitempty"`
+	RemoteBuild bool                      `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
+	BuildArgs   []osutil.ExpandableString `yaml:"buildArgs,omitempty"   json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
 	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
 	BuildSecrets []string `yaml:"-"                     json:"-"`
@@ -163,12 +164,8 @@ func (p *dockerProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (p *dockerProject) RequiredExternalTools(_ context.Context, sc *ServiceConfig) []tools.ExternalTool {
-	if sc.Docker.RemoteBuild {
-		return []tools.ExternalTool{}
-	}
-
-	return []tools.ExternalTool{p.docker}
+func (p *dockerProject) RequiredExternalTools(ctx context.Context, sc *ServiceConfig) []tools.ExternalTool {
+	return p.containerHelper.RequiredExternalTools(ctx, sc)
 }
 
 // Initializes the docker project
@@ -199,7 +196,7 @@ func (p *dockerProject) Build(
 	restoreOutput *ServiceRestoreResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
-	if serviceConfig.Docker.RemoteBuild {
+	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServiceBuildResult{Restore: restoreOutput}, nil
 	}
 
@@ -223,13 +220,22 @@ func (p *dockerProject) Build(
 		}
 		return result, nil
 	}
+
+	dockerBuildArgs := []string{}
+	for _, arg := range dockerOptions.BuildArgs {
+		buildArgValue, err := arg.Envsubst(p.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("substituting environment variables in build args: %w", err)
+		}
+
+		dockerBuildArgs = append(dockerBuildArgs, buildArgValue)
+	}
+
 	// resolve parameters for build args and secrets
-	resolvedBuildArgs, err := resolveParameters(dockerOptions.BuildArgs)
+	resolvedBuildArgs, err := resolveParameters(dockerBuildArgs)
 	if err != nil {
 		return nil, err
 	}
-
-	dockerOptions.BuildArgs = resolvedBuildArgs
 
 	resolvedBuildEnv, err := resolveParameters(dockerOptions.BuildEnv)
 	if err != nil {
@@ -247,7 +253,7 @@ func (p *dockerProject) Build(
 	}
 
 	buildArgs := []string{}
-	for _, arg := range dockerOptions.BuildArgs {
+	for _, arg := range resolvedBuildArgs {
 		buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
 	}
 
@@ -266,12 +272,12 @@ func (p *dockerProject) Build(
 		strings.ToLower(serviceConfig.Name),
 	)
 
-	path := dockerOptions.Path
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(serviceConfig.Path(), path)
+	dockerfilePath := dockerOptions.Path
+	if !filepath.IsAbs(dockerfilePath) {
+		dockerfilePath = filepath.Join(serviceConfig.Path(), dockerfilePath)
 	}
 
-	_, err = os.Stat(path)
+	_, err = os.Stat(dockerfilePath)
 	if errors.Is(err, os.ErrNotExist) && serviceConfig.Docker.Path == "" {
 		// Build the container from source when:
 		// 1. No Dockerfile path is specified, and
@@ -285,6 +291,15 @@ func (p *dockerProject) Build(
 		res.Restore = restoreOutput
 		return res, nil
 	}
+
+	// Include full environment variables for the docker build including:
+	// 1. Environment variables from the host
+	// 2. Environment variables from the service configuration
+	// 3. Environment variables from the docker configuration
+	dockerEnv := []string{}
+	dockerEnv = append(dockerEnv, os.Environ()...)
+	dockerEnv = append(dockerEnv, p.env.Environ()...)
+	dockerEnv = append(dockerEnv, dockerOptions.BuildEnv...)
 
 	// Build the container
 	progress.SetProgress(NewServiceProgress("Building Docker image"))
@@ -302,9 +317,9 @@ func (p *dockerProject) Build(
 		dockerOptions.Target,
 		dockerOptions.Context,
 		imageName,
-		dockerOptions.BuildArgs,
+		resolvedBuildArgs,
 		dockerOptions.BuildSecrets,
-		dockerOptions.BuildEnv,
+		dockerEnv,
 		previewerWriter,
 	)
 	p.console.StopPreviewer(ctx, false)
@@ -323,13 +338,43 @@ func (p *dockerProject) Build(
 	}, nil
 }
 
+func useDotnetPublishForDockerBuild(serviceConfig *ServiceConfig) bool {
+	if serviceConfig.useDotNetPublishForDockerBuild != nil {
+		return *serviceConfig.useDotNetPublishForDockerBuild
+	}
+
+	serviceConfig.useDotNetPublishForDockerBuild = to.Ptr(false)
+
+	if serviceConfig.Language.IsDotNet() {
+		projectPath := serviceConfig.Path()
+
+		dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+
+		dockerfilePath := dockerOptions.Path
+		if !filepath.IsAbs(dockerfilePath) {
+			s, err := os.Stat(projectPath)
+			if err == nil && s.IsDir() {
+				dockerfilePath = filepath.Join(projectPath, dockerfilePath)
+			} else {
+				dockerfilePath = filepath.Join(filepath.Dir(projectPath), dockerfilePath)
+			}
+		}
+
+		if _, err := os.Stat(dockerfilePath); errors.Is(err, os.ErrNotExist) {
+			serviceConfig.useDotNetPublishForDockerBuild = to.Ptr(true)
+		}
+	}
+
+	return *serviceConfig.useDotNetPublishForDockerBuild
+}
+
 func (p *dockerProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	if serviceConfig.Docker.RemoteBuild {
+	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServicePackageResult{Build: buildOutput}, nil
 	}
 

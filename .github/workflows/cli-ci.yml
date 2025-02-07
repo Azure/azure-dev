@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "cli/**"
-      - '!cli/docs/**'
       - ".github/workflows/cli-ci.yml"
       - "go.mod"
     branches: [main]
@@ -39,8 +38,15 @@ jobs:
         with:
           node-version: "20"
       - run: npm install -g cspell@8.13.1
-      - name: Spell check for CLI source code
+      - name: Spell check for go and docs
         run: cspell lint '**/*.{go,md}' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
+
+  Copyright-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copyright check
+        run: ./eng/scripts/copyright-check.sh ./cli/azd
 
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml

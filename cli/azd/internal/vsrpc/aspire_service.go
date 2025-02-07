@@ -28,7 +28,7 @@ func newAspireService(server *Server) *aspireService {
 // GetAspireHostAsync is the server implementation of:
 // ValueTask<AspireHost> GetAspireHostAsync(Session session, string aspireEnv, CancellationToken cancellationToken).
 func (s *aspireService) GetAspireHostAsync(
-	ctx context.Context, rc RequestContext, aspireEnv string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, aspireEnv string, observer *Observer[ProgressMessage],
 ) (*AspireHost, error) {
 	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
@@ -65,7 +65,7 @@ func (s *aspireService) GetAspireHostAsync(
 // RenameAspireHostAsync is the server implementation of:
 // ValueTask RenameAspireHostAsync(Session session, string newPath, CancellationToken cancellationToken).
 func (s *aspireService) RenameAspireHostAsync(
-	ctx context.Context, rc RequestContext, newPath string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, newPath string, observer *Observer[ProgressMessage],
 ) error {
 	_, err := s.server.validateSession(rc.Session)
 	if err != nil {
@@ -79,7 +79,7 @@ func (s *aspireService) RenameAspireHostAsync(
 // ServeHTTP implements http.Handler.
 func (s *aspireService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serveRpc(w, r, map[string]Handler{
-		"GetAspireHostAsync":    HandlerFunc3(s.GetAspireHostAsync),
-		"RenameAspireHostAsync": HandlerAction3(s.RenameAspireHostAsync),
+		"GetAspireHostAsync":    NewHandler(s.GetAspireHostAsync),
+		"RenameAspireHostAsync": NewHandler(s.RenameAspireHostAsync),
 	})
 }

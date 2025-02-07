@@ -6,6 +6,7 @@ benbjohnson
 blang
 bmatcuk
 bradleyjkemp
+braydonk
 briandowns
 buger
 cobey
@@ -26,6 +27,7 @@ otiai10
 pamelafox
 pbnj
 sebastianmattar
+sergi
 sethvargo
 stretchr
 theckman

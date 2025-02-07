@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package tools
 
 import (
@@ -11,6 +14,7 @@ import (
 type ExecOptions struct {
 	Interactive *bool
 	StdOut      io.Writer
+	UserPwsh    string
 }
 
 // Utility to easily execute a bash script across platforms

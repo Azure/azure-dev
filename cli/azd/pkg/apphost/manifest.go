@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package apphost
 
 import (
@@ -94,6 +97,20 @@ type Resource struct {
 
 	// container.v0 uses bind mounts field to define the volumes with initial data of the container.
 	BindMounts []*BindMount `json:"bindMounts,omitempty"`
+
+	// project.v1 and container.v1 uses deployment when the AppHost owns the ACA bicep definitions.
+	Deployment *DeploymentMetadata `json:"deployment,omitempty"`
+}
+
+type DeploymentMetadata struct {
+	// Type is the type of deployment. For now, only bicep.v0 is supported.
+	Type string `json:"type"`
+
+	// Path is present for a bicep.v0 deployment type, and the path to the bicep file.
+	Path *string `json:"path,omitempty"`
+
+	// For a bicep.v0 deployment type, defines the input parameters for the bicep file.
+	Params map[string]any `json:"params,omitempty"`
 }
 
 type ContainerV1Build struct {
@@ -181,6 +198,7 @@ type InputDefaultGenerate struct {
 
 type InputDefault struct {
 	Generate *InputDefaultGenerate `json:"generate,omitempty"`
+	Value    *string               `json:"value,omitempty"`
 }
 
 // ManifestFromAppHost returns the Manifest from the given app host.
@@ -249,6 +267,27 @@ func ManifestFromAppHost(
 
 			if !filepath.IsAbs(*res.Path) {
 				*res.Path = filepath.Join(manifestDir, *res.Path)
+			}
+		}
+
+		if res.Deployment != nil {
+			if res.Deployment.Type != "azure.bicep.v0" {
+				return nil, fmt.Errorf(
+					"unexpected deployment type %q. Supported types: [azure.bicep.v0]", res.Deployment.Type)
+			}
+			// use a folder with the name of the resource
+			e := manifest.BicepFiles.MkdirAll(resourceName, osutil.PermissionDirectory)
+			if e != nil {
+				return nil, e
+			}
+			content, e := os.ReadFile(filepath.Join(manifestDir, *res.Deployment.Path))
+			if e != nil {
+				return nil, fmt.Errorf("reading bicep file from deployment property: %w", e)
+			}
+			*res.Deployment.Path = filepath.Join(resourceName, filepath.Base(*res.Deployment.Path))
+			e = manifest.BicepFiles.WriteFile(*res.Deployment.Path, content, osutil.PermissionFile)
+			if e != nil {
+				return nil, e
 			}
 		}
 

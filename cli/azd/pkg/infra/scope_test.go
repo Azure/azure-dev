@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package infra
 
 import (
@@ -16,7 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +66,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
 		deploymentName := "DEPLOYMENT_NAME"
@@ -100,7 +103,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
 		deploymentName := "DEPLOYMENT_NAME"
@@ -153,7 +156,7 @@ var deploymentExtended = armresources.DeploymentExtended{
 func TestScopeDeploy(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodPut && strings.Contains(
@@ -177,13 +180,13 @@ func TestScopeDeploy(t *testing.T) {
 		)
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
-		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
+		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil, nil)
 		require.NoError(t, err)
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodPut && strings.Contains(
@@ -208,7 +211,7 @@ func TestScopeDeploy(t *testing.T) {
 		)
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
-		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
+		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil, nil)
 		require.NoError(t, err)
 	})
 }
@@ -235,7 +238,7 @@ var deploymentOperationsListResult = armresources.DeploymentOperationsListResult
 func TestScopeGetResourceOperations(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet && strings.Contains(
@@ -265,7 +268,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+		deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet && strings.Contains(

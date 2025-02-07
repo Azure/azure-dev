@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 // This package wraps the golobby/container package to provide support for the following:
 // 1. Easier usage of lazy type resolvers and ability to register specific type instances
 // 2. Support for hierarchical/nested containers to resolve types from parent containers
@@ -9,7 +12,6 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-	"unsafe"
 
 	"github.com/golobby/container/v3"
 )
@@ -90,11 +92,11 @@ func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
 }
 
 func getUnexportedField(field reflect.Value) interface{} {
-	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
+	return reflect.NewAt(field.Type(), field.Addr().UnsafePointer()).Elem().Interface()
 }
 
 func setUnexportedField(field reflect.Value, value interface{}) {
-	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).
+	reflect.NewAt(field.Type(), field.Addr().UnsafePointer()).
 		Elem().
 		Set(reflect.ValueOf(value))
 }

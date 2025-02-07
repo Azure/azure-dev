@@ -1,9 +1,14 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -194,6 +199,11 @@ func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscription
 	}
 
 	poller, err := client.BeginDelete(ctx, resourceGroupName, nil)
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) && respErr.StatusCode == 404 { // Resource group is already deleted
+		return nil
+	}
+
 	if err != nil {
 		return fmt.Errorf("beginning resource group deletion: %w", err)
 	}

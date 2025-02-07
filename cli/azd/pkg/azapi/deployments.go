@@ -144,6 +144,7 @@ type DeploymentService interface {
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
+		options map[string]any,
 	) (*ResourceDeployment, error)
 	DeployToResourceGroup(
 		ctx context.Context,
@@ -153,6 +154,7 @@ type DeploymentService interface {
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
+		options map[string]any,
 	) (*ResourceDeployment, error)
 	ListSubscriptionDeploymentOperations(
 		ctx context.Context,
@@ -185,6 +187,7 @@ type DeploymentService interface {
 		ctx context.Context,
 		subscriptionId string,
 		deploymentName string,
+		options map[string]any,
 		progress *async.Progress[DeleteDeploymentProgress],
 	) error
 	DeleteResourceGroupDeployment(
@@ -192,6 +195,7 @@ type DeploymentService interface {
 		subscriptionId,
 		resourceGroupName string,
 		deploymentName string,
+		options map[string]any,
 		progress *async.Progress[DeleteDeploymentProgress],
 	) error
 }

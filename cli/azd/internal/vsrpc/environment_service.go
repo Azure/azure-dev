@@ -32,7 +32,7 @@ func newEnvironmentService(server *Server) *environmentService {
 // ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(
 // RequestContext, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) GetEnvironmentsAsync(
-	ctx context.Context, rc RequestContext, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, observer *Observer[ProgressMessage],
 ) ([]*EnvironmentInfo, error) {
 	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
@@ -71,7 +71,7 @@ func (s *environmentService) GetEnvironmentsAsync(
 // SetCurrentEnvironmentAsync is the server implementation of:
 // ValueTask<bool> SetCurrentEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) SetCurrentEnvironmentAsync(
-	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer *Observer[ProgressMessage],
 ) (bool, error) {
 	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
@@ -107,7 +107,7 @@ const (
 // DeleteEnvironmentAsync is the server implementation of:
 // ValueTask<bool> DeleteEnvironmentAsync(RequestContext, string, IObserver<ProgressMessage>, int, CancellationToken);
 func (s *environmentService) DeleteEnvironmentAsync(
-	ctx context.Context, rc RequestContext, name string, mode int, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, mode int, observer *Observer[ProgressMessage],
 ) (bool, error) {
 	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
@@ -196,13 +196,13 @@ func (s *environmentService) DeleteEnvironmentAsync(
 // ServeHTTP implements http.Handler.
 func (s *environmentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serveRpc(w, r, map[string]Handler{
-		"CreateEnvironmentAsync":     HandlerFunc3(s.CreateEnvironmentAsync),
-		"GetEnvironmentsAsync":       HandlerFunc2(s.GetEnvironmentsAsync),
-		"LoadEnvironmentAsync":       HandlerFunc3(s.LoadEnvironmentAsync),
-		"OpenEnvironmentAsync":       HandlerFunc3(s.OpenEnvironmentAsync),
-		"SetCurrentEnvironmentAsync": HandlerFunc3(s.SetCurrentEnvironmentAsync),
-		"DeleteEnvironmentAsync":     HandlerFunc4(s.DeleteEnvironmentAsync),
-		"RefreshEnvironmentAsync":    HandlerFunc3(s.RefreshEnvironmentAsync),
-		"DeployAsync":                HandlerFunc3(s.DeployAsync),
+		"CreateEnvironmentAsync":     NewHandler(s.CreateEnvironmentAsync),
+		"GetEnvironmentsAsync":       NewHandler(s.GetEnvironmentsAsync),
+		"LoadEnvironmentAsync":       NewHandler(s.LoadEnvironmentAsync),
+		"OpenEnvironmentAsync":       NewHandler(s.OpenEnvironmentAsync),
+		"SetCurrentEnvironmentAsync": NewHandler(s.SetCurrentEnvironmentAsync),
+		"DeleteEnvironmentAsync":     NewHandler(s.DeleteEnvironmentAsync),
+		"RefreshEnvironmentAsync":    NewHandler(s.RefreshEnvironmentAsync),
+		"DeployAsync":                NewHandler(s.DeployAsync),
 	})
 }

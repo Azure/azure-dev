@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package pack
 
 import (
@@ -322,7 +325,7 @@ func extractFromTar(
 		// cspell: disable-next-line `Typeflag` is comming fron *tar.Header
 		if fileHeader.Typeflag == tar.TypeReg && fileName == "pack" {
 			filePath := filepath.Join(out, fileName)
-			packCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(fileHeader.Mode))
+			packCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fileHeader.FileInfo().Mode())
 			if err != nil {
 				return extractedAt, err
 			}

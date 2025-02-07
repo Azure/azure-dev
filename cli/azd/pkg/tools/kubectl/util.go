@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package kubectl
 
 import (
@@ -7,8 +10,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/braydonk/yaml"
 	"github.com/sethvargo/go-retry"
-	"gopkg.in/yaml.v3"
 )
 
 var (

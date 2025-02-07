@@ -5,15 +5,15 @@ Usage
   azd hooks run <name> [flags]
 
 Flags
-        --docs               	: Opens the documentation for azd hooks run in your web browser.
     -e, --environment string 	: The name of the environment to use.
-    -h, --help               	: Gets help for run.
         --platform string    	: Forces hooks to run for the specified platform.
         --service string     	: Only runs hooks for the specified service.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd hooks run in your web browser.
+    -h, --help       	: Gets help for run.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.

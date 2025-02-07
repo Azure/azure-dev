@@ -9,13 +9,13 @@ Usage
 
 Flags
         --all                	: Restores all services that are listed in azure.yaml
-        --docs               	: Opens the documentation for azd restore in your web browser.
     -e, --environment string 	: The name of the environment to use.
-    -h, --help               	: Gets help for restore.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd restore in your web browser.
+    -h, --help       	: Gets help for restore.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples

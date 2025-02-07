@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -101,15 +102,16 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
-	lazyAzdCtx      *lazy.Lazy[*azdcontext.AzdContext]
-	lazyEnvManager  *lazy.Lazy[environment.Manager]
-	console         input.Console
-	cmdRun          exec.CommandRunner
-	gitCli          *git.Cli
-	flags           *initFlags
-	repoInitializer *repository.Initializer
-	templateManager *templates.TemplateManager
-	featuresManager *alpha.FeatureManager
+	lazyAzdCtx        *lazy.Lazy[*azdcontext.AzdContext]
+	lazyEnvManager    *lazy.Lazy[environment.Manager]
+	console           input.Console
+	cmdRun            exec.CommandRunner
+	gitCli            *git.Cli
+	flags             *initFlags
+	repoInitializer   *repository.Initializer
+	templateManager   *templates.TemplateManager
+	featuresManager   *alpha.FeatureManager
+	extensionsManager *extensions.Manager
 }
 
 func newInitAction(
@@ -121,17 +123,20 @@ func newInitAction(
 	flags *initFlags,
 	repoInitializer *repository.Initializer,
 	templateManager *templates.TemplateManager,
-	featuresManager *alpha.FeatureManager) actions.Action {
+	featuresManager *alpha.FeatureManager,
+	extensionsManager *extensions.Manager,
+) actions.Action {
 	return &initAction{
-		lazyAzdCtx:      lazyAzdCtx,
-		lazyEnvManager:  lazyEnvManager,
-		console:         console,
-		cmdRun:          cmdRun,
-		gitCli:          gitCli,
-		flags:           flags,
-		repoInitializer: repoInitializer,
-		templateManager: templateManager,
-		featuresManager: featuresManager,
+		lazyAzdCtx:        lazyAzdCtx,
+		lazyEnvManager:    lazyEnvManager,
+		console:           console,
+		cmdRun:            cmdRun,
+		gitCli:            gitCli,
+		flags:             flags,
+		repoInitializer:   repoInitializer,
+		templateManager:   templateManager,
+		featuresManager:   featuresManager,
+		extensionsManager: extensionsManager,
 	}
 }
 
@@ -303,6 +308,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		panic("unhandled init type")
 	}
 
+	if err := i.initializeExtensions(ctx, azdCtx); err != nil {
+		return nil, fmt.Errorf("initializing project extensions: %w", err)
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   header,
@@ -451,6 +460,55 @@ func (i *initAction) initializeEnv(
 	}
 
 	return env, nil
+}
+
+// initializeExtensions installs extensions specified in the project config
+func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	if !i.featuresManager.IsEnabled(extensions.FeatureExtensions) {
+		return nil
+	}
+
+	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+	if err != nil {
+		return fmt.Errorf("loading project config: %w", err)
+	}
+
+	installedExtensions, err := i.extensionsManager.ListInstalled()
+	if err != nil {
+		return fmt.Errorf("listing installed extensions: %w", err)
+	}
+
+	if projectConfig.RequiredVersions != nil && len(projectConfig.RequiredVersions.Extensions) > 0 {
+		i.console.Message(ctx, "\nInstalling required extensions...")
+	}
+
+	for extensionId, versionConstraint := range projectConfig.RequiredVersions.Extensions {
+		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
+		i.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		installed, isInstalled := installedExtensions[extensionId]
+		if isInstalled {
+			stepMessage += output.WithGrayFormat(" (version %s already installed)", installed.Version)
+			i.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			continue
+		} else {
+			installConstraint := "latest"
+			if versionConstraint != nil {
+				installConstraint = *versionConstraint
+			}
+
+			extensionVersion, err := i.extensionsManager.Install(ctx, extensionId, installConstraint)
+			if err != nil {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("installing extension %s: %w", extensionId, err)
+			}
+
+			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
+			i.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		}
+	}
+
+	return nil
 }
 
 func getCmdInitHelpDescription(*cobra.Command) string {

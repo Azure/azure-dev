@@ -174,8 +174,7 @@
                 },
                 "version": {
                     "type": "string",
-                    "description": "Required version of the dependency. Must follow semantic versioning.",
-                    "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                    "description": "Required version of the dependency. Supports semantic versioning constraints."
                 }
             },
             "required": [

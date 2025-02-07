@@ -146,6 +146,7 @@ func newExtensionListFlags(cmd *cobra.Command) *extensionListFlags {
 type extensionListAction struct {
 	flags            *extensionListFlags
 	formatter        output.Formatter
+	console          input.Console
 	writer           io.Writer
 	sourceManager    *extensions.SourceManager
 	extensionManager *extensions.Manager
@@ -154,6 +155,7 @@ type extensionListAction struct {
 func newExtensionListAction(
 	flags *extensionListFlags,
 	formatter output.Formatter,
+	console input.Console,
 	writer io.Writer,
 	sourceManager *extensions.SourceManager,
 	extensionManager *extensions.Manager,
@@ -161,6 +163,7 @@ func newExtensionListAction(
 	return &extensionListAction{
 		flags:            flags,
 		formatter:        formatter,
+		console:          console,
 		writer:           writer,
 		sourceManager:    sourceManager,
 		extensionManager: extensionManager,
@@ -168,11 +171,12 @@ func newExtensionListAction(
 }
 
 type extensionListItem struct {
-	Id        string
-	Name      string
-	Namespace string
-	Version   string
-	Installed bool
+	Id        string `json:"id"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Version   string `json:"version"`
+	Installed bool   `json:"installed"`
+	Source    string `json:"source"`
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -217,8 +221,27 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			Name:      extension.DisplayName,
 			Namespace: extension.Namespace,
 			Version:   version,
+			Source:    extension.Source,
 			Installed: installedExtensions[extension.Id] != nil,
 		})
+	}
+
+	if len(extensionRows) == 0 {
+		if a.flags.installed {
+			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions installed.\n"))
+			a.console.Message(ctx, fmt.Sprintf(
+				"Run %s to install extensions.",
+				output.WithHighLightFormat("azd extension install <extension-name>"),
+			))
+		} else {
+			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions found in configured sources.\n"))
+			a.console.Message(ctx, fmt.Sprintf(
+				"Run %s to add a new extension source.",
+				output.WithHighLightFormat("azd extension source add [flags]"),
+			))
+		}
+
+		return nil, nil
 	}
 
 	var formatErr error
@@ -236,6 +259,10 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			{
 				Heading:       "Version",
 				ValueTemplate: `{{.Version}}`,
+			},
+			{
+				Heading:       "Source",
+				ValueTemplate: `{{.Source}}`,
 			},
 			{
 				Heading:       "Installed",
@@ -276,8 +303,10 @@ func newExtensionShowAction(
 }
 
 type extensionShowItem struct {
-	Name             string
+	Id               string
+	Namespace        string
 	Description      string
+	Tags             []string
 	LatestVersion    string
 	InstalledVersion string
 	Usage            string
@@ -293,10 +322,12 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 		output.TablePadCharacter,
 		output.TableFlags)
 	text := [][]string{
-		{"Name", ":", t.Name},
+		{"Id", ":", t.Id},
+		{"Namespace", ":", t.Namespace},
 		{"Description", ":", t.Description},
 		{"Latest Version", ":", t.LatestVersion},
 		{"Installed Version", ":", t.InstalledVersion},
+		{"Tags", ":", strings.Join(t.Tags, ", ")},
 		{"", "", ""},
 		{"Usage", ":", t.Usage},
 		{"Examples", ":", ""},
@@ -326,8 +357,10 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	latestVersion := registryExtension.Versions[len(registryExtension.Versions)-1]
 
 	extensionDetails := extensionShowItem{
-		Name:             registryExtension.Id,
+		Id:               registryExtension.Id,
+		Namespace:        registryExtension.Namespace,
 		Description:      registryExtension.DisplayName,
+		Tags:             registryExtension.Tags,
 		LatestVersion:    latestVersion.Version,
 		Usage:            latestVersion.Usage,
 		Examples:         latestVersion.Examples,
@@ -715,9 +748,10 @@ type extensionSourceAddFlags struct {
 
 func newExtensionSourceAddFlags(cmd *cobra.Command) *extensionSourceAddFlags {
 	flags := &extensionSourceAddFlags{}
-	cmd.Flags().StringVar(&flags.name, "name", "", "The name of the extension source")
-	cmd.Flags().StringVar(&flags.location, "location", "", "The location of the extension source")
-	cmd.Flags().StringVar(&flags.kind, "king", "", "The type of the extension source")
+	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "The name of the extension source")
+	cmd.Flags().StringVarP(&flags.location, "location", "l", "", "The location of the extension source")
+	cmd.Flags().StringVarP(&flags.kind,
+		"type", "t", "", "The type of the extension source. Supported types are 'file' and 'url'")
 
 	return flags
 }
@@ -726,7 +760,6 @@ type extensionSourceAddAction struct {
 	flags         *extensionSourceAddFlags
 	console       input.Console
 	sourceManager *extensions.SourceManager
-	args          []string
 }
 
 func newExtensionSourceAddAction(
@@ -739,7 +772,6 @@ func newExtensionSourceAddAction(
 		flags:         flags,
 		console:       console,
 		sourceManager: sourceManager,
-		args:          args,
 	}
 }
 
@@ -747,8 +779,6 @@ func (a *extensionSourceAddAction) Run(ctx context.Context) (*actions.ActionResu
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Add extension source (azd extension source add)",
 	})
-
-	var name = strings.ToLower(a.args[0])
 
 	spinnerMessage := "Validating extension source"
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
@@ -777,7 +807,7 @@ func (a *extensionSourceAddAction) Run(ctx context.Context) (*actions.ActionResu
 	spinnerMessage = "Saving extension source"
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-	err = a.sourceManager.Add(ctx, name, sourceConfig)
+	err = a.sourceManager.Add(ctx, a.flags.name, sourceConfig)
 	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 	if err != nil {
 		return nil, fmt.Errorf("failed adding extension source: %w", err)
@@ -785,7 +815,7 @@ func (a *extensionSourceAddAction) Run(ctx context.Context) (*actions.ActionResu
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   fmt.Sprintf("Added azd extension source %s", name),
+			Header:   fmt.Sprintf("Added azd extension source %s", a.flags.name),
 			FollowUp: "Run `azd extension list` to see the available set of azd extensions.",
 		},
 	}, nil

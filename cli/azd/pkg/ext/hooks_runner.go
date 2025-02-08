@@ -148,7 +148,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 			for key, value := range hookConfig.Secrets {
 				setValue := value
 				if valueFromEnv, exists := h.env.LookupEnv(value); exists {
-					if keyvault.IsAkvs(valueFromEnv) {
+					if keyvault.IsAzureKeyVaultSecret(valueFromEnv) {
 						secretValue, err := keyvaultService.SecretFromAkvs(ctx, valueFromEnv)
 						if err != nil {
 							return err

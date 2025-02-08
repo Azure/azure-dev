@@ -6,8 +6,7 @@ package prompt
 import (
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -22,7 +21,7 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 	userConfigManager := config.NewUserConfigManager(fileConfigManager)
 
 	authManager := &mockauth.MockAuthManager{}
-	subscriptionService := &mockaccount.MockSubscriptionService{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
 	resourceService := &mockazapi.MockResourceService{}
 
 	tokenClaims := auth.TokenClaims{
@@ -33,23 +32,21 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 		On("ClaimsForCurrentUser", mock.Anything, mock.Anything).
 		Return(tokenClaims, nil)
 
-	subscriptionService.
-		On("ListSubscriptions", mock.Anything, tokenClaims.TenantId).
-		Return([]*armsubscriptions.Subscription{
+	subscriptionManager.
+		On("GetSubscriptions", mock.Anything, tokenClaims.TenantId).
+		Return([]account.Subscription{
 			{
-				ID:             to.Ptr("/subscriptions/subscription-1"),
-				SubscriptionID: to.Ptr("subscription-1"),
-				TenantID:       to.Ptr("tenant-1"),
-				DisplayName:    to.Ptr("Subscription 1"),
+				Id:       "/subscriptions/subscription-1",
+				TenantId: "tenant-1",
+				Name:     "Subscription 1",
 			},
 			{
-				ID:             to.Ptr("/subscriptions/subscription-2"),
-				SubscriptionID: to.Ptr("subscription-2"),
-				TenantID:       to.Ptr("tenant-1"),
-				DisplayName:    to.Ptr("Subscription 2"),
+				Id:       "/subscriptions/subscription-2",
+				TenantId: "tenant-2",
+				Name:     "Subscription 2",
 			},
 		}, nil)
 
-	promptService := NewPromptService(authManager, userConfigManager, subscriptionService, resourceService)
+	promptService := NewPromptService(authManager, userConfigManager, subscriptionManager, resourceService)
 	require.NotNil(t, promptService)
 }

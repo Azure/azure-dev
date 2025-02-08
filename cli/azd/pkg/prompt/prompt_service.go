@@ -14,7 +14,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -131,12 +130,10 @@ type ResourceService interface {
 	) (azapi.ResourceExtended, error)
 }
 
-// SubscriptionService defines the methods that the SubscriptionsService must implement.
-type SubscriptionService interface {
-	ListSubscriptions(ctx context.Context, tenantId string) ([]*armsubscriptions.Subscription, error)
-	GetSubscription(ctx context.Context, subscriptionId string, tenantId string) (*armsubscriptions.Subscription, error)
-	ListSubscriptionLocations(ctx context.Context, subscriptionId string, tenantId string) ([]account.Location, error)
-	ListTenants(ctx context.Context) ([]armsubscriptions.TenantIDDescription, error)
+// SubscriptionManager defines the methods that the SubscriptionManager must implement.
+type SubscriptionManager interface {
+	GetSubscriptions(ctx context.Context) ([]account.Subscription, error)
+	ListLocations(ctx context.Context, subscriptionId string) ([]account.Location, error)
 }
 
 // PromptServiceInterface defines the methods that the PromptService must implement.
@@ -169,14 +166,14 @@ type promptService struct {
 	authManager         AuthManager
 	userConfigManager   config.UserConfigManager
 	resourceService     ResourceService
-	subscriptionService SubscriptionService
+	subscriptionService SubscriptionManager
 }
 
 // NewPromptService creates a new prompt service.
 func NewPromptService(
 	authManager AuthManager,
 	userConfigManager config.UserConfigManager,
-	subscriptionService SubscriptionService,
+	subscriptionService SubscriptionManager,
 	resourceService ResourceService,
 ) PromptService {
 	return &promptService{
@@ -225,24 +222,14 @@ func (ps *promptService) PromptSubscription(
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
 		SelectorOptions: mergedOptions,
 		LoadData: func(ctx context.Context) ([]*account.Subscription, error) {
-			userClaims, err := ps.authManager.ClaimsForCurrentUser(ctx, nil)
-			if err != nil {
-				return nil, err
-			}
-
-			subscriptionList, err := ps.subscriptionService.ListSubscriptions(ctx, userClaims.TenantId)
+			subscriptionList, err := ps.subscriptionService.GetSubscriptions(ctx)
 			if err != nil {
 				return nil, err
 			}
 
 			subscriptions := make([]*account.Subscription, len(subscriptionList))
 			for i, subscription := range subscriptionList {
-				subscriptions[i] = &account.Subscription{
-					Id:                 *subscription.SubscriptionID,
-					Name:               *subscription.DisplayName,
-					TenantId:           *subscription.TenantID,
-					UserAccessTenantId: userClaims.TenantId,
-				}
+				subscriptions[i] = &subscription
 			}
 
 			return subscriptions, nil
@@ -304,10 +291,9 @@ func (ps *promptService) PromptLocation(
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Location]{
 		SelectorOptions: mergedOptions,
 		LoadData: func(ctx context.Context) ([]*account.Location, error) {
-			locationList, err := ps.subscriptionService.ListSubscriptionLocations(
+			locationList, err := ps.subscriptionService.ListLocations(
 				ctx,
 				azureContext.Scope.SubscriptionId,
-				azureContext.Scope.TenantId,
 			)
 			if err != nil {
 				return nil, err

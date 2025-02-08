@@ -4,10 +4,13 @@
 package azdext
 
 import (
+	"context"
 	"os"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 type AzdClientOption func(*AzdClient) error
@@ -31,6 +34,16 @@ func WithAddress(address string) AzdClientOption {
 		c.connection = connection
 		return nil
 	}
+}
+
+func WithAccessToken(ctx context.Context, params ...string) context.Context {
+	tokenValue := strings.Join(params, "")
+	if tokenValue == "" {
+		tokenValue = os.Getenv("AZD_ACCESS_TOKEN")
+	}
+
+	md := metadata.Pairs("authorization", tokenValue)
+	return metadata.NewOutgoingContext(ctx, md)
 }
 
 func NewAzdClient(opts ...AzdClientOption) (*AzdClient, error) {

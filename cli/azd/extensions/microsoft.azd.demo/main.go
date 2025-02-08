@@ -1,0 +1,27 @@
+package main
+
+import (
+	"context"
+	"os"
+
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.demo/internal/cmd"
+	"github.com/fatih/color"
+)
+
+func init() {
+	forceColorVal, has := os.LookupEnv("FORCE_COLOR")
+	if has && forceColorVal == "1" {
+		color.NoColor = false
+	}
+}
+
+func main() {
+	// Execute the root command
+	ctx := context.Background()
+	rootCmd := cmd.NewRootCommand()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		color.Red("Error: %v", err)
+		os.Exit(1)
+	}
+}

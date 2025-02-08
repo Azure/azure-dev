@@ -166,20 +166,20 @@ type promptService struct {
 	authManager         AuthManager
 	userConfigManager   config.UserConfigManager
 	resourceService     ResourceService
-	subscriptionService SubscriptionManager
+	subscriptionManager SubscriptionManager
 }
 
 // NewPromptService creates a new prompt service.
 func NewPromptService(
 	authManager AuthManager,
 	userConfigManager config.UserConfigManager,
-	subscriptionService SubscriptionManager,
+	subscriptionManager SubscriptionManager,
 	resourceService ResourceService,
 ) PromptService {
 	return &promptService{
 		authManager:         authManager,
 		userConfigManager:   userConfigManager,
-		subscriptionService: subscriptionService,
+		subscriptionManager: subscriptionManager,
 		resourceService:     resourceService,
 	}
 }
@@ -222,7 +222,7 @@ func (ps *promptService) PromptSubscription(
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
 		SelectorOptions: mergedOptions,
 		LoadData: func(ctx context.Context) ([]*account.Subscription, error) {
-			subscriptionList, err := ps.subscriptionService.GetSubscriptions(ctx)
+			subscriptionList, err := ps.subscriptionManager.GetSubscriptions(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -291,7 +291,7 @@ func (ps *promptService) PromptLocation(
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Location]{
 		SelectorOptions: mergedOptions,
 		LoadData: func(ctx context.Context) ([]*account.Location, error) {
-			locationList, err := ps.subscriptionService.ListLocations(
+			locationList, err := ps.subscriptionManager.ListLocations(
 				ctx,
 				azureContext.Scope.SubscriptionId,
 			)

@@ -4,9 +4,9 @@ displayName: Demo Extension
 description: This extension provides examples of the AZD extension framework.
 usage: azd demo <command> [options]
 examples:
-  - name: Status
+  - name: context
     description: Displays the current `azd` project & environment context.
-    usage: azd demo status
-  - name: Prompt
+    usage: azd demo context
+  - name: prompt
     description: Display prompt capabilities.
     usage: azd demo prompt

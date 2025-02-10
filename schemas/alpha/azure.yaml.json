@@ -1323,14 +1323,14 @@
         },
         "serviceBusResource": {
             "type": "object",
-            "description": "An Azure Service Hub namespace.",
+            "description": "An Azure Service Bus namespace.",
             "additionalProperties": false,
             "properties": {
                 "type": true,
                 "uses": true,
                 "queues": {
                     "type": "array",
-                    "title": "Queues to create in the Service Hub namespace",
+                    "title": "Queues to create in the Service Bus namespace",
                     "additionalProperties": false,
                     "items": {
                         "type": "string"
@@ -1339,7 +1339,7 @@
                 },
                 "topics": {
                     "type": "array",
-                    "title": "Topics to create in the Service Hub namespace",
+                    "title": "Topics to create in the Service Bus namespace",
                     "additionalProperties": false,
                     "items": {
                         "type": "string"

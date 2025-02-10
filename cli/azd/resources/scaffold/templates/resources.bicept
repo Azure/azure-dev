@@ -38,7 +38,6 @@ module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' =
   params: {
     name: '${abbrs.containerRegistryRegistries}${resourceToken}'
     location: location
-    acrAdminUserEnabled: true
     tags: tags
     publicNetworkAccess: 'Enabled'
     roleAssignments:[

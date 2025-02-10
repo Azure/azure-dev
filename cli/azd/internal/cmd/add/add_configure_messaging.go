@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -17,7 +18,7 @@ func fillEventHubs(
 	console input.Console,
 	p PromptOptions) (*project.ResourceConfig, error) {
 	if r.Name == "" {
-		r.Name = "event-hubs"
+		r.Name = "eventhubs"
 	}
 
 	if err := validateResourceName(r.Name, p.PrjConfig); err != nil {
@@ -25,7 +26,7 @@ func fillEventHubs(
 	}
 
 	topicName, err := console.Prompt(ctx, input.ConsoleOptions{
-		Message: "Input the event hub name",
+		Message: "Input the event hub name:",
 		Help: "Event hub name\n\n" +
 			"Name of the event hub that the app connects to. " +
 			"Also known as a Kafka topic.",
@@ -34,7 +35,9 @@ func fillEventHubs(
 		return r, err
 	}
 
-	// TODO: validate queue name
+	if err := names.ValidateLabelName(topicName); err != nil {
+		return r, err
+	}
 
 	r.Props = project.EventHubsProps{
 		Hubs: []string{topicName},
@@ -49,7 +52,7 @@ func fillServiceBus(
 	console input.Console,
 	p PromptOptions) (*project.ResourceConfig, error) {
 	if r.Name == "" {
-		r.Name = "service-bus"
+		r.Name = "servicebus"
 	}
 
 	if err := validateResourceName(r.Name, p.PrjConfig); err != nil {
@@ -57,7 +60,7 @@ func fillServiceBus(
 	}
 
 	queueName, err := console.Prompt(ctx, input.ConsoleOptions{
-		Message: "Input the queue name",
+		Message: "Input the queue name:",
 		Help: "Service Bus queue name\n\n" +
 			"Name of the queue that the app connects to. ",
 	})
@@ -65,7 +68,9 @@ func fillServiceBus(
 		return r, err
 	}
 
-	//TODO: validate queue name
+	if err := names.ValidateLabelName(queueName); err != nil {
+		return r, err
+	}
 
 	r.Props = project.ServiceBusProps{
 		Queues: []string{queueName},

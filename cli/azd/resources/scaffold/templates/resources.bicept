@@ -136,10 +136,11 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
 
 {{- if .StorageAccount }}
 var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
-module storageAccount 'br/public:avm/res/storage/storage-account:0.17.0' = {
+module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
   name: 'storageAccount'
   params: {
     name: storageAccountName
+    allowSharedKeyAccess: false
     publicNetworkAccess: 'Enabled'
     blobServices: {
       {{- if .StorageAccount.Containers }}

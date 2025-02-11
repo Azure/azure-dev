@@ -6,6 +6,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Change to the script directory
 cd "$SCRIPT_DIR" || exit
 
+# Check for input parameter VERSION
+if [ -z "$1" ]; then
+    echo "Usage: $0 <VERSION>"
+    exit 1
+fi
+
+# Define version from input parameter
+VERSION="$1"
+
 # Define application name
 APP_NAME="azd-ext-demo"
 
@@ -19,19 +28,6 @@ TARGET_DIR="$HOME/.azd/extensions/microsoft.azd.demo"
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$TARGET_DIR"
 
-# Check if version.txt exists
-if [ ! -f "$SCRIPT_DIR/version.txt" ]; then
-    echo "Error: version.txt file not found!"
-    exit 1
-fi
-
-# Read version from version.txt
-VERSION=$(cat "$SCRIPT_DIR/version.txt")
-if [ -z "$VERSION" ]; then
-    echo "Error: version.txt is empty"
-    exit 1
-fi
-
 # Get Git commit hash and build date
 COMMIT=$(git rev-parse HEAD)
 BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -39,11 +35,11 @@ BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # List of OS and architecture combinations
 PLATFORMS=(
     "windows/amd64"
-    # "windows/arm64"
-    # "darwin/amd64"
-    # "darwin/arm64"
-    # "linux/amd64"
-    # "linux/arm64"
+    "windows/arm64"
+    "darwin/amd64"
+    "darwin/arm64"
+    "linux/amd64"
+    "linux/arm64"
 )
 
 APP_PATH="github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.demo/internal/cmd"

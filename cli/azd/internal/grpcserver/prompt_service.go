@@ -196,7 +196,7 @@ func (s *promptService) PromptResourceGroupResource(
 
 	options := createResourceOptions(req.Options)
 
-	resource, err := s.prompter.PromptSubscriptionResource(ctx, azureContext, options)
+	resource, err := s.prompter.PromptResourceGroupResource(ctx, azureContext, options)
 	if err != nil {
 		return nil, err
 	}

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package kubectl
 
 import (
@@ -6,8 +9,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func Test_Port_TargetPort_Unmarshalling(t *testing.T) {

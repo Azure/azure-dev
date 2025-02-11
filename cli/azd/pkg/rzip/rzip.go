@@ -56,3 +56,70 @@ func CreateFromDirectory(source string, buf *os.File) error {
 
 	return w.Close()
 }
+
+func ExtractToDirectory(artifactPath string, targetDirectory string) error {
+	// Open the ZIP file
+	zipReader, err := zip.OpenReader(artifactPath)
+	if err != nil {
+		return err
+	}
+	defer zipReader.Close()
+
+	// Ensure the target directory exists
+	err = os.MkdirAll(targetDirectory, os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	// Iterate through each file in the archive
+	for _, file := range zipReader.File {
+		// Handles file path cleaning directly below
+		// nolint:gosec // G305
+		filePath := filepath.Join(targetDirectory, file.Name)
+
+		// Prevent path traversal attacks by ensuring file paths remain within targetDirectory
+		if !strings.HasPrefix(filePath, filepath.Clean(targetDirectory)+string(os.PathSeparator)) {
+			return &os.PathError{
+				Op:   "extract",
+				Path: filePath,
+				Err:  os.ErrPermission,
+			}
+		}
+
+		if file.FileInfo().IsDir() {
+			// Create the directory
+			err = os.MkdirAll(filePath, file.Mode())
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Create the file
+		err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
+		if err != nil {
+			return err
+		}
+
+		outFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+		if err != nil {
+			return err
+		}
+		defer outFile.Close()
+
+		// Extract the file content
+		rc, err := file.Open()
+		if err != nil {
+			return err
+		}
+		defer rc.Close()
+
+		// nolint:gosec // G110
+		_, err = io.Copy(outFile, rc)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

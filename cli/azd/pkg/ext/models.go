@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package ext
 
 import (
@@ -70,6 +73,9 @@ type HookConfig struct {
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
 	Posix *HookConfig `yaml:"posix,omitempty"`
+	// Environment variables in this list are added to the hook script and if the value is a akvs:// reference
+	// it will be resolved to the secret value
+	Secrets map[string]string `yaml:"secrets,omitempty"`
 }
 
 // Validates and normalizes the hook configuration
@@ -166,7 +172,7 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	scriptHeader := []string{}
 	scriptFooter := []string{}
 
-	switch hookConfig.Shell {
+	switch ShellType(strings.Split(string(hookConfig.Shell), " ")[0]) {
 	case ShellTypeBash:
 		ext = "sh"
 		scriptHeader = []string{

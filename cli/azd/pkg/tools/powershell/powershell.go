@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package powershell
 
 import (
@@ -25,7 +28,7 @@ type powershellScript struct {
 // Executes the specified powershell script
 // When interactive is true will attach to stdin, stdout & stderr
 func (bs *powershellScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
-	runArgs := exec.NewRunArgs("pwsh", path).
+	runArgs := exec.NewRunArgs(options.UserPwsh, path).
 		WithCwd(bs.cwd).
 		WithEnv(bs.envVars).
 		WithShell(true)

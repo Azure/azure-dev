@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package vsrpc
 
 import (
@@ -18,7 +21,7 @@ import (
 // CreateEnvironmentAsync is the server implementation of:
 // ValueTask<bool> CreateEnvironmentAsync(RequestContext, Environment, IObserver<ProgressMessage>, CancellationToken);
 func (s *environmentService) CreateEnvironmentAsync(
-	ctx context.Context, rc RequestContext, newEnv Environment, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, newEnv Environment, observer *Observer[ProgressMessage],
 ) (bool, error) {
 	session, err := s.server.validateSession(rc.Session)
 	if err != nil {
@@ -67,7 +70,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}
 
-		projectName := strings.TrimSuffix(filepath.Base(c.azdContext.ProjectDirectory()), ".AppHost")
+		projectName := azdcontext.ProjectName(strings.TrimSuffix(c.azdContext.ProjectDirectory(), ".AppHost"))
 
 		// Write an azure.yaml file to the project.
 		files, err := apphost.GenerateProjectArtifacts(

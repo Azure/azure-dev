@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package kubectl
 
 import (
@@ -8,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"gopkg.in/yaml.v3"
+	"github.com/braydonk/yaml"
 )
 
 // Manages k8s configurations available to the k8s CLI

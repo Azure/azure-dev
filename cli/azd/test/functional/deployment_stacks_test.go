@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cli_test
 
 import (
@@ -18,8 +21,6 @@ import (
 )
 
 func Test_DeploymentStacks(t *testing.T) {
-	t.Skip("azure/azure-dev#4341")
-
 	t.Run("Subscription_Scope_Up_Down", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := newTestContext(t)
@@ -41,6 +42,8 @@ func Test_DeploymentStacks(t *testing.T) {
 			"AZD_ALPHA_ENABLE_DEPLOYMENT_STACKS=true",
 			"AZURE_LOCATION=eastus2",
 		)
+
+		defer cleanupDeployments(ctx, t, cli, session, envName)
 
 		err := copySample(dir, "storage")
 		require.NoError(t, err, "failed expanding sample")

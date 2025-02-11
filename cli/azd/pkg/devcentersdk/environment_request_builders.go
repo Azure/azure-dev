@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package devcentersdk
 
 import (
@@ -191,4 +194,8 @@ func (c *EnvironmentItemRequestBuilder) Delete(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *EnvironmentItemRequestBuilder) Outputs() *OutputsRequestBuilder {
+	return NewOutputsRequestBuilder(c.client, c.devCenter, c.projectName, c.userId, c.id)
 }

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package vsrpc
 
 import (
@@ -6,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -20,11 +22,11 @@ func appHostForProject(
 ) (*project.ServiceConfig, error) {
 	for _, service := range pc.Services {
 		if service.Language == project.ServiceLanguageDotNet {
-			isAppHost, err := dotnetCli.GetMsBuildProperty(ctx, service.Path(), "IsAspireHost")
+			isAppHost, err := dotnetCli.IsAspireHostProject(ctx, service.Path())
 			if err != nil {
 				log.Printf("error checking if %s is an app host project: %v", service.Path(), err)
 			}
-			if strings.TrimSpace(isAppHost) == "true" {
+			if isAppHost {
 				return service, nil
 			}
 		}

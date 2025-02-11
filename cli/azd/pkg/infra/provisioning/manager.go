@@ -22,7 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
-	"gopkg.in/yaml.v3"
+	"github.com/braydonk/yaml"
 )
 
 type DefaultProviderResolver func() (ProviderKind, error)
@@ -332,6 +332,13 @@ func (m *Manager) UpdateEnvironment(
 	return nil
 }
 
+type EnsureSubscriptionAndLocationOptions struct {
+	// LocationFilterPredicate is a function to filter the locations being displayed if prompting the user for the location.
+	LocationFiler prompt.LocationFilterPredicate
+	// SelectDefaultLocation is the default location that azd mark as selected when prompting the user for the location.
+	SelectDefaultLocation *string
+}
+
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
 // variables are set in the environment, prompting the user for the values if they do not exist.
 // locationFilter, when non-nil, filters the locations being displayed.
@@ -340,7 +347,7 @@ func EnsureSubscriptionAndLocation(
 	envManager environment.Manager,
 	env *environment.Environment,
 	prompter prompt.Prompter,
-	locationFiler prompt.LocationFilterPredicate,
+	options EnsureSubscriptionAndLocationOptions,
 ) error {
 	subId := env.GetSubscriptionId()
 	if subId == "" {
@@ -366,7 +373,8 @@ func EnsureSubscriptionAndLocation(
 			ctx,
 			env.GetSubscriptionId(),
 			"Select an Azure location to use:",
-			locationFiler,
+			options.LocationFiler,
+			options.SelectDefaultLocation,
 		)
 		if err != nil {
 			return err

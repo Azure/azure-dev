@@ -2,7 +2,7 @@ parameters:
   TerraformVersion: latest
 
 steps:
-  - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0
+  - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
     displayName: "Install Terraform - ${{ parameters.TerraformVersion }}"
     inputs:
       terraformVersion: "${{ parameters.TerraformVersion }}"

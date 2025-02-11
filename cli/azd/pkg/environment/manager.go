@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package environment
 
 import (
@@ -50,6 +53,9 @@ var (
 
 	// Error returned when an environment name is not specified
 	ErrNameNotSpecified = errors.New("environment not specified")
+
+	// Error returned when the default environment cannot be found
+	ErrDefaultEnvironmentNotFound = errors.New("default environment not found")
 )
 
 // Manager is the interface used for managing instances of environments

@@ -2,6 +2,9 @@ using Aspire.Hosting.Azure;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
+// test param with default value
+var goVersion = builder.AddParameter("goversion", "1.22", publishValueAsDefault: true);
+
 // redis instance the app will use for simple messages
 var redisPubSub = builder.AddRedis("pubsub");
 
@@ -22,9 +25,6 @@ var messageQueue    = azureStorage.AddQueues("messages");
 // the back-end API the front end will call
 var apiservice = builder.AddProject<Projects.AspireAzdTests_ApiService>("apiservice");
 
-var cosmos = builder.AddAzureCosmosDB("cosmos");
-var cosmosDb = cosmos.AddDatabase("db3");
-
 // worker with no bindings
 var workerProj = builder.AddProject<Projects.AspireAzdTests_Worker>("worker");
 
@@ -37,7 +37,7 @@ _ = builder
                             .WithReference(markdownBlobs)
                             .WithReference(messageQueue)
                             .WithReference(apiservice)
-                            .WithReference(cosmosDb)
-                            .WithReference(workerProj);
+                            .WithReference(workerProj)
+                            .WithEnvironment("GOVERSION", goVersion);
 
 builder.Build().Run();

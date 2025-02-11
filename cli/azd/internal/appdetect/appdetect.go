@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/bmatcuk/doublestar/v4"
 )
 
@@ -161,8 +162,14 @@ func (p *Project) HasWebUIFramework() bool {
 	return false
 }
 
+type Port struct {
+	Number   int
+	Protocol string
+}
+
 type Docker struct {
-	Path string
+	Path  string
+	Ports []Port
 }
 
 type projectDetector interface {
@@ -173,7 +180,9 @@ type projectDetector interface {
 var allDetectors = []projectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
-	&javaDetector{},
+	&javaDetector{
+		mvnCli: maven.NewCli(exec.NewCommandRunner(nil)),
+	},
 	&dotNetAppHostDetector{
 		// TODO(ellismg): Remove ambient authority.
 		dotnetCli: dotnet.NewCli(exec.NewCommandRunner(nil)),
@@ -259,7 +268,7 @@ func detectAny(ctx context.Context, detectors []projectDetector, path string, en
 			log.Printf("Found project %s at %s", project.Language, path)
 
 			// docker is an optional property of a project, and thus is different than other detectors
-			docker, err := detectDocker(path, entries)
+			docker, err := detectDockerInDirectory(path, entries)
 			if err != nil {
 				return nil, fmt.Errorf("detecting docker project: %w", err)
 			}

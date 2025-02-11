@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cli_test
 
 import (
@@ -103,6 +106,7 @@ func runTestWithRemoteState(t *testing.T, testFunc remoteStateTestFunc) {
 	envName := randomOrStoredEnvName(session)
 
 	cli, env := provisionRemoteStateStorage(t, ctx, envName, session)
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 	defer destroyRemoteStateStorage(t, ctx, cli)
 
 	accountConfig := &storage.AccountConfig{

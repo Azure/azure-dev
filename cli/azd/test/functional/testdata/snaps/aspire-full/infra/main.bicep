@@ -12,6 +12,12 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
+@metadata({azd: {
+  type: 'needForDeploy'
+  config: {}
+  }
+})
+param goversion string = '1.22'
 
 var tags = {
   'azd-env-name': environmentName
@@ -33,14 +39,6 @@ module resources 'resources.bicep' = {
   }
 }
 
-module cosmos 'cosmos/cosmos.module.bicep' = {
-  name: 'cosmos'
-  scope: rg
-  params: {
-    keyVaultName: resources.outputs.SERVICE_BINDING_KVF2EDECB5_NAME
-    location: location
-  }
-}
 module storage 'storage/storage.module.bicep' = {
   name: 'storage'
   scope: rg
@@ -55,11 +53,10 @@ output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
+output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.AZURE_CONTAINER_REGISTRY_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
-output SERVICE_BINDING_KVF2EDECB5_ENDPOINT string = resources.outputs.SERVICE_BINDING_KVF2EDECB5_ENDPOINT
-output SERVICE_BINDING_KVF2EDECB5_NAME string = resources.outputs.SERVICE_BINDING_KVF2EDECB5_NAME
 output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
 output STORAGE_QUEUEENDPOINT string = storage.outputs.queueEndpoint
 output STORAGE_TABLEENDPOINT string = storage.outputs.tableEndpoint

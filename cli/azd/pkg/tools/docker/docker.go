@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package docker
 
 import (
@@ -247,13 +250,14 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	return false, fmt.Errorf("could not determine version from docker version string: %s", version)
 }
 func (d *Cli) CheckInstalled(ctx context.Context) error {
+	toolName := d.Name()
 	err := tools.ToolInPath("docker")
 	if err != nil {
 		return err
 	}
 	dockerRes, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "--version")
 	if err != nil {
-		return fmt.Errorf("checking %s version: %w", d.Name(), err)
+		return fmt.Errorf("checking %s version: %w", toolName, err)
 	}
 	log.Printf("docker version: %s", dockerRes)
 	supported, err := isSupportedDockerVersion(dockerRes)
@@ -261,7 +265,11 @@ func (d *Cli) CheckInstalled(ctx context.Context) error {
 		return err
 	}
 	if !supported {
-		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
+		return &tools.ErrSemver{ToolName: toolName, VersionInfo: d.versionInfo()}
+	}
+	// Check if docker daemon is running
+	if _, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "ps"); err != nil {
+		return fmt.Errorf("the %s daemon is not running, please start the %s service: %w", toolName, toolName, err)
 	}
 	return nil
 }

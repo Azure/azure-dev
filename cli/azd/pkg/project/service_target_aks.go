@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -14,6 +17,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -25,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/sethvargo/go-retry"
 )
@@ -81,7 +84,7 @@ type aksTarget struct {
 	env                    *environment.Environment
 	envManager             environment.Manager
 	console                input.Console
-	managedClustersService azcli.ManagedClustersService
+	managedClustersService azapi.ManagedClustersService
 	resourceManager        ResourceManager
 	kubectl                *kubectl.Cli
 	kubeLoginCli           *kubelogin.Cli
@@ -96,7 +99,7 @@ func NewAksTarget(
 	env *environment.Environment,
 	envManager environment.Manager,
 	console input.Console,
-	managedClustersService azcli.ManagedClustersService,
+	managedClustersService azapi.ManagedClustersService,
 	resourceManager ResourceManager,
 	kubectlCli *kubectl.Cli,
 	kubeLoginCli *kubelogin.Cli,

@@ -10,6 +10,7 @@ service DeploymentService {
   // Gets the current environment.
   rpc GetDeployment(EmptyRequest) returns (GetDeploymentResponse);
 
+  // GetDeploymentContext retrieves the current deployment context.
   rpc GetDeploymentContext(EmptyRequest) returns (GetDeploymentContextResponse);
 }
 

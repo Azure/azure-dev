@@ -44,6 +44,15 @@ func Configure(
 	case project.ResourceTypeDbPostgres,
 		project.ResourceTypeDbMongo:
 		return fillDatabaseName(ctx, r, console, p)
+	case project.ResourceTypeDbCosmos:
+		_, err := fillDatabaseName(ctx, r, console, p)
+		if err != nil {
+			return nil, err
+		}
+		r.Props = project.CosmosDBProps{
+			DatabaseName: r.Name,
+		}
+		return r, nil
 	case project.ResourceTypeDbRedis:
 		if _, exists := p.PrjConfig.Resources["redis"]; exists {
 			return nil, fmt.Errorf("only one Redis resource is allowed at this time")

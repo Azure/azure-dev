@@ -368,6 +368,7 @@
                             "db.postgres",
                             "db.redis",
                             "db.mongo",
+                            "db.cosmos",
                             "ai.openai.model",
                             "host.containerapp"
                         ]
@@ -386,7 +387,8 @@
                     { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
                     { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
-                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} }
+                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "db.cosmos" }}}, "then": { "$ref": "#/definitions/cosmosDbResource"} }
                 ]
             }
         },
@@ -1310,6 +1312,44 @@
                             "type": "string",
                             "title": "The version of the AI model.",
                             "description": "Required. The version of the AI model."
+                        }
+                    }
+                }
+            }
+        },
+        "cosmosDbResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Cosmos DB for NoSQL.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "databaseName": {
+                    "type": "string",
+                    "title": "The Azure Cosmos DB Name",
+                    "description": "The name of Azure Cosmos DB."
+                },
+                "containers": {
+                    "type": "array",
+                    "title": "Azure Cosmos DB Containers",
+                    "description": "A list of containers in the Azure CosmosDB.",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "containerName": {
+                                "type": "string",
+                                "title": "Container Name",
+                                "description": "The name of the container."
+                            },
+                            "partitionKeyPaths": {
+                                "type": "array",
+                                "title": "Partition Key Paths",
+                                "description": "A list of partition key paths for the container.",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     }
                 }

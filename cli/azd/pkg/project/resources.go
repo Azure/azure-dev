@@ -16,6 +16,7 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeDbRedis,
 		ResourceTypeDbPostgres,
 		ResourceTypeDbMongo,
+		ResourceTypeDbCosmos,
 		ResourceTypeHostContainerApp,
 		ResourceTypeOpenAiModel,
 	}
@@ -25,6 +26,7 @@ const (
 	ResourceTypeDbRedis          ResourceType = "db.redis"
 	ResourceTypeDbPostgres       ResourceType = "db.postgres"
 	ResourceTypeDbMongo          ResourceType = "db.mongo"
+	ResourceTypeDbCosmos         ResourceType = "db.cosmos"
 	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
 	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
 )
@@ -37,6 +39,8 @@ func (r ResourceType) String() string {
 		return "PostgreSQL"
 	case ResourceTypeDbMongo:
 		return "MongoDB"
+	case ResourceTypeDbCosmos:
+		return "CosmosDB"
 	case ResourceTypeHostContainerApp:
 		return "Container App"
 	case ResourceTypeOpenAiModel:
@@ -78,17 +82,18 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		return nil
 	}
 
+	var errMarshal error
 	switch raw.Type {
 	case ResourceTypeOpenAiModel:
-		err := marshalRawProps(raw.Props.(AIModelProps))
-		if err != nil {
-			return nil, err
-		}
+		errMarshal = marshalRawProps(raw.Props.(AIModelProps))
 	case ResourceTypeHostContainerApp:
-		err := marshalRawProps(raw.Props.(ContainerAppProps))
-		if err != nil {
-			return nil, err
-		}
+		errMarshal = marshalRawProps(raw.Props.(ContainerAppProps))
+	case ResourceTypeDbCosmos:
+		errMarshal = marshalRawProps(raw.Props.(CosmosDBProps))
+	}
+
+	if errMarshal != nil {
+		return nil, errMarshal
 	}
 
 	return raw, nil
@@ -128,6 +133,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeDbCosmos:
+		cdp := CosmosDBProps{}
+		if err := unmarshalProps(&cdp); err != nil {
+			return err
+		}
+		raw.Props = cdp
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +165,14 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type CosmosDBProps struct {
+	Containers   []CosmosDBContainerProps `yaml:"containers,omitempty"`
+	DatabaseName string                   `yaml:"databaseName,omitempty"`
+}
+
+type CosmosDBContainerProps struct {
+	ContainerName     string   `yaml:"containerName,omitempty"`
+	PartitionKeyPaths []string `yaml:"partitionKeyPaths,omitempty"`
 }

@@ -15,6 +15,7 @@ type InfraSpec struct {
 	// Databases to create
 	DbPostgres    *DatabasePostgres
 	DbCosmosMongo *DatabaseCosmosMongo
+	DbCosmos      *DatabaseCosmos
 	DbRedis       *DatabaseRedis
 
 	// ai models
@@ -35,6 +36,16 @@ type DatabasePostgres struct {
 
 type DatabaseCosmosMongo struct {
 	DatabaseName string
+}
+
+type DatabaseCosmos struct {
+	DatabaseName string
+	Containers   []CosmosSqlDatabaseContainer
+}
+
+type CosmosSqlDatabaseContainer struct {
+	ContainerName     string
+	PartitionKeyPaths []string
 }
 
 type DatabaseRedis struct {
@@ -69,6 +80,7 @@ type ServiceSpec struct {
 	// Connection to a database
 	DbPostgres    *DatabaseReference
 	DbCosmosMongo *DatabaseReference
+	DbCosmos      *DatabaseReference
 	DbRedis       *DatabaseReference
 
 	// AI model connections

@@ -67,6 +67,12 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 		res.UseEnvVars = []string{
 			"AZURE_OPENAI_ENDPOINT",
 		}
+	case project.ResourceTypeStorage:
+		res.AzureResourceType = "Microsoft.Storage/storageAccounts"
+		res.UseEnvVars = []string{
+			"AZURE_STORAGE_ACCOUNT_NAME",
+			"AZURE_STORAGE_BLOB_ENDPOINT",
+		}
 	}
 	return res
 }

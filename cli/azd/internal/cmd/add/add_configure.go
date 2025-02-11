@@ -51,6 +51,8 @@ func Configure(
 
 		r.Name = "redis"
 		return r, nil
+	case project.ResourceTypeStorage:
+		return fillStorageDetails(ctx, r, console, p)
 	default:
 		return r, nil
 	}

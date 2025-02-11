@@ -182,6 +182,14 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 					Version: props.Model.Version,
 				},
 			})
+		case ResourceTypeStorage:
+			if infraSpec.StorageAccount != nil {
+				return nil, fmt.Errorf("only one storage account resource is currently allowed")
+			}
+			props := res.Props.(StorageProps)
+			infraSpec.StorageAccount = &scaffold.StorageAccount{
+				Containers: props.Containers,
+			}
 		}
 	}
 
@@ -273,6 +281,8 @@ func mapHostUses(
 			backendMapping[use] = res.Name // record the backend -> frontend mapping
 		case ResourceTypeOpenAiModel:
 			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
+		case ResourceTypeStorage:
+			svcSpec.StorageAccount = &scaffold.StorageReference{}
 		}
 	}
 

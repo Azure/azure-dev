@@ -18,6 +18,7 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeDbMongo,
 		ResourceTypeHostContainerApp,
 		ResourceTypeOpenAiModel,
+		ResourceTypeStorage,
 	}
 }
 
@@ -27,6 +28,7 @@ const (
 	ResourceTypeDbMongo          ResourceType = "db.mongo"
 	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
 	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
+	ResourceTypeStorage          ResourceType = "storage"
 )
 
 func (r ResourceType) String() string {
@@ -41,6 +43,8 @@ func (r ResourceType) String() string {
 		return "Container App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
+	case ResourceTypeStorage:
+		return "Storage Account"
 	}
 
 	return ""
@@ -89,6 +93,11 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+	case ResourceTypeStorage:
+		err := marshalRawProps(raw.Props.(StorageProps))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return raw, nil
@@ -128,6 +137,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
+	case ResourceTypeStorage:
+		sp := StorageProps{}
+		if err := unmarshalProps(&sp); err != nil {
+			return err
+		}
+		raw.Props = sp
 	}
 
 	*r = ResourceConfig(raw)
@@ -154,4 +169,8 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type StorageProps struct {
+	Containers []string `yaml:"containers,omitempty"`
 }

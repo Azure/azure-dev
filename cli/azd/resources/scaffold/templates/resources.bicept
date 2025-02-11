@@ -134,6 +134,48 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
 }
 {{- end}}
 
+{{- if .StorageAccount }}
+var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
+module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
+  name: 'storageAccount'
+  params: {
+    name: storageAccountName
+    allowSharedKeyAccess: false
+    publicNetworkAccess: 'Enabled'
+    blobServices: {
+      {{- if .StorageAccount.Containers }}
+      containers: [
+        {{- range $index, $element := .StorageAccount.Containers}}
+        {
+          name: '{{ $element }}'
+        }
+        {{- end}}
+      ]
+      {{- end }}
+    }
+    location: location
+    roleAssignments: [
+      {  
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'  
+      }
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'
+      }
+      {{- end}}
+    ]
+    networkAcls: {
+      defaultAction: 'Allow'
+    }
+    tags: tags
+  }
+}
+{{end}}
+
 {{- if .AIModels}}
 var accountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
 module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
@@ -343,6 +385,16 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             secretRef: 'redis-pass'
           }
           {{- end}}
+          {{- if .StorageAccount}}
+          {
+            name: 'AZURE_STORAGE_ACCOUNT_NAME'
+            value: storageAccount.outputs.name
+          }
+          {
+            name: 'AZURE_STORAGE_BLOB_ENDPOINT'
+            value: storageAccount.outputs.serviceEndpoints.blob
+          }
+          {{- end}}
           {{- if .AIModels}}
           {
             name: 'AZURE_OPENAI_ENDPOINT'
@@ -463,5 +515,8 @@ output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgreServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
+{{- end}}
+{{- if .StorageAccount }}
+output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId
 {{- end}}
 {{ end}}

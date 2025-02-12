@@ -134,6 +134,38 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
 }
 {{- end}}
 
+{{- if .DbMySql}}
+var mysqlDatabaseName = '{{ .DbMySql.DatabaseName }}'
+var mysqlDatabaseUser = '{{ .DbMySql.DatabaseUser }}'
+module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.4.1' = {
+  name: 'mysqlServer'
+  params: {
+    // Required parameters
+    name: '${abbrs.dBforMySQLServers}${resourceToken}'
+    skuName: 'Standard_B1ms'
+    tier: 'Burstable'
+    // Non-required parameters
+    administratorLogin: mysqlDatabaseUser
+    administratorLoginPassword: mysqlDatabasePassword
+    geoRedundantBackup: 'Disabled'
+    firewallRules: [
+      {
+        name: 'AllowAllIps'
+        startIpAddress: '0.0.0.0'
+        endIpAddress: '255.255.255.255'
+      }
+    ]
+    databases: [
+      {
+        name: mysqlDatabaseName
+      }
+    ]
+    location: location
+    highAvailability: 'Disabled'
+  }
+}
+{{- end}}
+
 {{- if .StorageAccount }}
 var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
 module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
@@ -296,6 +328,16 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           value: 'postgresql://${databaseUser}:${databasePassword}@${postgreServer.outputs.fqdn}:5432/${databaseName}'
         }
         {{- end}}
+        {{- if .DbMySql}}
+        {
+          name: 'mysql-password'
+          value: mysqlDatabasePassword
+        }
+        {
+          name: 'mysql-db-url'
+          value: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
+        }
+        {{- end}}
         {{- if .DbRedis}}
         {
           name: 'redis-pass'
@@ -361,6 +403,32 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'POSTGRES_PORT'
             value: '5432'
+          }
+          {{- end}}
+          {{- if .DbMySql}}
+          {
+            name: 'MYSQL_HOST'
+            value: mysqlServer.outputs.fqdn
+          }
+          {
+            name: 'MYSQL_USERNAME'
+            value: mysqlDatabaseUser
+          }
+          {
+            name: 'MYSQL_DATABASE'
+            value: mysqlDatabaseName
+          }
+          {
+            name: 'MYSQL_PASSWORD'
+            secretRef: 'mysql-password'
+          }
+          {
+            name: 'MYSQL_URL'
+            secretRef: 'mysql-db-url'
+          }
+          {
+            name: 'MYSQL_PORT'
+            value: '3306'
           }
           {{- end}}
           {{- if .DbRedis}}
@@ -515,6 +583,9 @@ output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgreServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
+{{- end}}
+{{- if .DbMySql}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = '${mysqlServer.outputs.resourceId}/databases/{{.DbMySql.DatabaseName}}'
 {{- end}}
 {{- if .StorageAccount }}
 output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId

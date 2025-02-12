@@ -146,6 +146,24 @@ func TestExecInfra(t *testing.T) {
 			},
 		},
 		{
+			"API with MySQL",
+			InfraSpec{
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "appdb",
+					DatabaseUser: "appuser",
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbMySql: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+					},
+				},
+			},
+		},
+		{
 			"API with MongoDB",
 			InfraSpec{
 				DbCosmosMongo: &DatabaseCosmosMongo{

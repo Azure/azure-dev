@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/extensions/generator/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/extensions/azd.internal.registry/internal/cmd"
 )
 
 func main() {

@@ -14,14 +14,14 @@ import (
 	"strings"
 
 	"dario.cat/mergo"
-	"github.com/azure/azure-dev/cli/azd/extensions/generator/internal"
+	"github.com/azure/azure-dev/cli/azd/extensions/azd.internal.registry/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
-func NewRootCommand() *cobra.Command {
+func newPackageCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "package",
 		Short: "Build, package and update the extension registry",

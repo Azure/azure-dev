@@ -28,12 +28,10 @@ func fillStorageDetails(
 	r *project.ResourceConfig,
 	console input.Console,
 	p PromptOptions) (*project.ResourceConfig, error) {
+	r.Name = "storage"
+
 	if _, exists := p.PrjConfig.Resources["storage"]; exists {
 		return nil, fmt.Errorf("only one Storage resource is allowed at this time")
-	}
-
-	if r.Name == "" {
-		r.Name = "storage"
 	}
 
 	modelProps, ok := r.Props.(project.StorageProps)

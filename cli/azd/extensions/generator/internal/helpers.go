@@ -16,13 +16,13 @@ import (
 func ComputeChecksum(filePath string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file: %v", err)
+		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, file); err != nil {
-		return "", fmt.Errorf("failed to compute checksum: %v", err)
+		return "", fmt.Errorf("failed to compute checksum: %w", err)
 	}
 
 	return hex.EncodeToString(hasher.Sum(nil)), nil
@@ -32,19 +32,19 @@ func ComputeChecksum(filePath string) (string, error) {
 func CopyFile(source, target string) error {
 	srcFile, err := os.Open(source)
 	if err != nil {
-		return fmt.Errorf("failed to open source file: %v", err)
+		return fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer srcFile.Close()
 
 	targetFile, err := os.Create(target)
 	if err != nil {
-		return fmt.Errorf("failed to create target file: %v", err)
+		return fmt.Errorf("failed to create target file: %w", err)
 	}
 	defer targetFile.Close()
 
 	_, err = io.Copy(targetFile, srcFile)
 	if err != nil {
-		return fmt.Errorf("failed to copy file content: %v", err)
+		return fmt.Errorf("failed to copy file content: %w", err)
 	}
 
 	return nil

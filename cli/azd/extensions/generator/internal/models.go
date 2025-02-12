@@ -9,15 +9,15 @@ import (
 
 // ExtensionMetadata represents the structure of extension.yaml
 type ExtensionSchema struct {
-	Id           string                           `yaml:"id" json:"id"`
-	Namespace    string                           `yaml:"namespace" json:"namespace,omitempty"`
-	EntryPoint   string                           `yaml:"entryPoint" json:"entryPoint,omitempty"`
-	Version      string                           `yaml:"version" json:"version"`
-	DisplayName  string                           `yaml:"displayName" json:"displayName"`
-	Description  string                           `yaml:"description" json:"description"`
-	Usage        string                           `yaml:"usage" json:"usage"`
-	Examples     []extensions.ExtensionExample    `yaml:"examples" json:"examples"`
-	Tags         []string                         `yaml:"tags" json:"tags,omitempty"`
+	Id           string                           `yaml:"id"           json:"id"`
+	Namespace    string                           `yaml:"namespace"    json:"namespace,omitempty"`
+	EntryPoint   string                           `yaml:"entryPoint"   json:"entryPoint,omitempty"`
+	Version      string                           `yaml:"version"      json:"version"`
+	DisplayName  string                           `yaml:"displayName"  json:"displayName"`
+	Description  string                           `yaml:"description"  json:"description"`
+	Usage        string                           `yaml:"usage"        json:"usage"`
+	Examples     []extensions.ExtensionExample    `yaml:"examples"     json:"examples"`
+	Tags         []string                         `yaml:"tags"         json:"tags,omitempty"`
 	Dependencies []extensions.ExtensionDependency `yaml:"dependencies" json:"dependencies,omitempty"`
-	Platforms    map[string]map[string]any        `yaml:"platforms" json:"platforms,omitempty"`
+	Platforms    map[string]map[string]any        `yaml:"platforms"    json:"platforms,omitempty"`
 }

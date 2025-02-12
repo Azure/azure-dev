@@ -80,7 +80,9 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get absolute path for output directory: %w", err)
 	}
 
-	processExtension(absExtensionPath, absArtifactsOutputPath, baseURL, &registry)
+	if err := processExtension(absExtensionPath, absArtifactsOutputPath, baseURL, &registry); err != nil {
+		return fmt.Errorf("failed to process extension: %w", err)
+	}
 
 	// Save the updated registry without a signature
 	if err := saveRegistry(registryPath, &registry); err != nil {
@@ -115,6 +117,7 @@ func processExtension(extensionPath string, outputPath string, baseURL string, r
 	// Build the artifacts
 	buildScript := filepath.Join(extensionPath, "build.sh")
 	if _, err := os.Stat(buildScript); err == nil {
+		// nolint:gosec // G204
 		cmd := exec.Command("bash", "build.sh", schema.Version)
 		cmd.Dir = extensionPath
 		if output, err := cmd.CombinedOutput(); err != nil {

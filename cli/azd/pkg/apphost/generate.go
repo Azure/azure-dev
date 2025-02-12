@@ -1235,6 +1235,7 @@ func (b *infraGenerator) Compile() error {
 			Volumes:         bc.Volumes,
 			DeploySource:    bc.DeploymentSource,
 			BindMounts:      bMounts,
+			Entrypoint:      bc.Entrypoint,
 		}
 
 		if err := b.buildEnvBlock(bc.Env, &projectTemplateCtx); err != nil {

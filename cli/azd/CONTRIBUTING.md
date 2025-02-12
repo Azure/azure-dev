@@ -4,7 +4,7 @@ Hi there 👋! Thank you for showing interest in contributing to `azd`.
 
 In general, to make contributions a smooth and easy experience, we encourage the following:
 
-- Check existing issues for [bugs](https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Abug) or [enhancements](https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement).
+- Check existing issues for [bugs][bug issues] or [enhancements][enhancement issues].
 - Open an issue if things aren't working as expected, or if an enhancement is being proposed.
 - Start a conversation on the issue if you are thinking of submitting a pull request.
 - Submit a pull request. The `azd` team will work with you to review the changes and provide feedback. Once the pull request is accepted, a member will merge the changes. Thank you for taking time out of your day to help improve our community!
@@ -102,7 +102,7 @@ To fix:
 1. Scroll down in the window to the `Exclusions` heading and click the `Add or remove exclusions link`
 1. Select `Add an exclusion` and add the path to the exe from step 1
 
-[bug issues]: https://github.com/cli/cli/issues?q=is%3Aopen+is%3Aissue+label%3Abug
-[enhancement issues]: https://github.com/cli/cli/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement
+[bug issues]: https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Abug
+[enhancement issues]: https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement
 [functional tests]: https://github.com/Azure/azure-dev/tree/main/cli/azd/test/functional
 [gh cli]: https://github.com/cli/cli?tab=readme-ov-file#installation

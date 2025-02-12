@@ -141,6 +141,9 @@ overrides:
     words:
       - GHSA
       - gjrc
+  - filename: pkg/apphost/generate.go
+    words:
+      - alue
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

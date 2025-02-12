@@ -120,6 +120,7 @@ gosec
 goterm
 gotest
 gotestsum
+grpcserver
 hotspot
 ignorefile
 iidfile

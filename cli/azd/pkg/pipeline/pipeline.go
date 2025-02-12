@@ -251,4 +251,6 @@ type projectProperties struct {
 	HasAppHost    bool
 	BranchName    string
 	AuthType      PipelineAuthType
+	Variables     []string
+	Secrets       []string
 }

@@ -25,6 +25,7 @@ func PromptLocationWithFilter(
 	console input.Console,
 	accountManager account.Manager,
 	shouldDisplay func(account.Location) bool,
+	defaultSelectedLocation *string,
 ) (string, error) {
 	allLocations, err := accountManager.GetLocations(ctx, subscriptionId)
 	if err != nil {
@@ -47,9 +48,19 @@ func PromptLocationWithFilter(
 			strings.ToLower(a.RegionalDisplayName), strings.ToLower(b.RegionalDisplayName))
 	})
 
+	// Default location selection.
+	// The order of precedence for selecting the default location is as follows:
+	// 1. The location set in the system environment. (AZURE_LOCATION) -> CI/CD strategy
+	// 2. Parameter passed to the function. (defaultSelectedLocation != nil)
+	// 3. The location set in the azd config. -> CI/CD strategy
+
 	// Allow the environment variable `AZURE_LOCATION` to control the default value for the location
 	// selection.
 	defaultLocation := os.Getenv(environment.LocationEnvVarName)
+
+	if defaultLocation == "" && defaultSelectedLocation != nil {
+		defaultLocation = *defaultSelectedLocation
+	}
 
 	// If no location is set in the process environment, see what the azd config default is.
 	if defaultLocation == "" {

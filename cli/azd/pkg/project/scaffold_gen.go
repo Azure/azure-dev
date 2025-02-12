@@ -200,6 +200,14 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				Queues: props.Queues,
 				Topics: props.Topics,
 			}
+		case ResourceTypeStorage:
+			if infraSpec.StorageAccount != nil {
+				return nil, fmt.Errorf("only one storage account resource is currently allowed")
+			}
+			props := res.Props.(StorageProps)
+			infraSpec.StorageAccount = &scaffold.StorageAccount{
+				Containers: props.Containers,
+			}
 		}
 	}
 
@@ -295,6 +303,8 @@ func mapHostUses(
 			svcSpec.EventHubs = &scaffold.EventHubs{}
 		case ResourceTypeMessagingServiceBus:
 			svcSpec.ServiceBus = &scaffold.ServiceBus{}
+		case ResourceTypeStorage:
+			svcSpec.StorageAccount = &scaffold.StorageReference{}
 		}
 	}
 

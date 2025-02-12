@@ -307,7 +307,8 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	if willCreateNewKvAccount {
-		location, err := e.prompter.PromptLocation(ctx, subId, "Select the location to create the Key Vault", nil)
+		location, err := e.prompter.PromptLocation(
+			ctx, subId, "Select the location to create the Key Vault", nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("prompting for Key Vault location: %w", err)
 		}
@@ -425,7 +426,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	// akvs -> Azure Key Vault Secret (akvs://<subId>/<keyvault-name>/<secret-name>)
-	envValue := keyvault.NewAkvs(subId, kvAccount.Name, kvSecretName)
+	envValue := keyvault.NewAzureKeyVaultSecret(subId, kvAccount.Name, kvSecretName)
 	e.env.DotenvSet(secretName, envValue)
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
@@ -788,7 +789,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
 		// If bicep is not available, we continue to prompt for subscription and location unfiltered
 		err = provisioning.EnsureSubscriptionAndLocation(ctx, ef.envManager, ef.env, ef.prompters,
-			func(_ account.Location) bool { return true })
+			provisioning.EnsureSubscriptionAndLocationOptions{})
 		if err != nil {
 			return nil, err
 		}

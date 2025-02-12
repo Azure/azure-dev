@@ -18,10 +18,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Masterminds/semver/v3"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
@@ -36,7 +39,8 @@ var (
 	ErrInstalledExtensionNotFound = errors.New("extension not found")
 	ErrRegistryExtensionNotFound  = errors.New("extension not found in registry")
 	ErrExtensionInstalled         = errors.New("extension already installed")
-	//registryCacheDuration         = 24 * time.Hour
+
+	FeatureExtensions = alpha.MustFeatureKey("extensions")
 )
 
 type ListOptions struct {
@@ -61,28 +65,22 @@ func NewManager(
 	configManager config.UserConfigManager,
 	sourceManager *SourceManager,
 	transport policy.Transporter,
-) *Manager {
+) (*Manager, error) {
+	userConfig, err := configManager.Load()
+	if err != nil {
+		return nil, err
+	}
+
 	pipeline := azruntime.NewPipeline("azd-extensions", "1.0.0", azruntime.PipelineOptions{}, &policy.ClientOptions{
 		Transport: transport,
 	})
 
 	return &Manager{
+		userConfig:    userConfig,
 		configManager: configManager,
 		sourceManager: sourceManager,
 		pipeline:      pipeline,
-	}
-}
-
-// Initialize the extension manager
-func (m *Manager) Initialize() error {
-	userConfig, err := m.configManager.Load()
-	if err != nil {
-		return err
-	}
-
-	m.userConfig = userConfig
-
-	return nil
+	}, nil
 }
 
 // ListInstalled retrieves a list of installed extensions
@@ -233,7 +231,7 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 // Install an extension by name and optional version
 // If no version is provided, the latest version is installed
 // Latest version is determined by the last element in the Versions slice
-func (m *Manager) Install(ctx context.Context, id string, version string) (*ExtensionVersion, error) {
+func (m *Manager) Install(ctx context.Context, id string, versionConstraint string) (*ExtensionVersion, error) {
 	installed, err := m.GetInstalled(GetInstalledOptions{Id: id})
 	if err == nil && installed != nil {
 		return nil, fmt.Errorf("%s %w", id, ErrExtensionInstalled)
@@ -248,26 +246,50 @@ func (m *Manager) Install(ctx context.Context, id string, version string) (*Exte
 	// Step 2: Determine the version to install
 	var selectedVersion *ExtensionVersion
 
-	if version == "" {
-		// Default to the latest version (last in the slice)
-		versions := extension.Versions
-		if len(versions) == 0 {
-			return nil, fmt.Errorf("no versions available for extension: %s", id)
+	availableVersions := []*semver.Version{}
+	availableVersionMap := map[*semver.Version]*ExtensionVersion{}
+
+	// Create a map of available versions and sort them
+	// This sorts the version from lowest to highest
+	for _, extensionVersion := range extension.Versions {
+		version, err := semver.NewVersion(extensionVersion.Version)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse version: %w", err)
 		}
 
-		selectedVersion = &versions[len(versions)-1]
+		availableVersionMap[version] = &extensionVersion
+		availableVersions = append(availableVersions, version)
+	}
+
+	sort.Sort(semver.Collection(availableVersions))
+
+	if versionConstraint == "" || versionConstraint == "latest" {
+		latestVersion := availableVersions[len(availableVersions)-1]
+		selectedVersion = availableVersionMap[latestVersion]
 	} else {
-		// Find the specific version
-		for _, v := range extension.Versions {
-			if v.Version == version {
-				selectedVersion = &v
-				break
+		// Find the best match for the version constraint
+		constraint, err := semver.NewConstraint(versionConstraint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
+		}
+
+		var bestMatch *semver.Version
+		for _, v := range availableVersions {
+			// Find the highest version that satisfies the constraint
+			if constraint.Check(v) {
+				bestMatch = v
 			}
 		}
 
-		if selectedVersion == nil {
-			return nil, fmt.Errorf("version %s not found for extension: %s", version, id)
+		if bestMatch == nil {
+			return nil, fmt.Errorf("no matching version found for extension: %s and constraint: %s", id, versionConstraint)
 		}
+
+		selectedVersion = availableVersionMap[bestMatch]
+	}
+
+	if selectedVersion == nil {
+		return nil, fmt.Errorf("no compatible version found for extension: %s", id)
 	}
 
 	// Binaries are optional as long as dependencies are provided
@@ -460,18 +482,23 @@ func findArtifactForCurrentOS(version *ExtensionVersion) (*ExtensionArtifact, er
 		return nil, fmt.Errorf("no binaries available for this version")
 	}
 
-	artifactVersion := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
-	artifact, exists := version.Artifacts[artifactVersion]
-
-	if !exists {
-		return nil, fmt.Errorf("no artifact available for platform: %s", artifactVersion)
+	artifactVersions := []string{
+		fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
+		runtime.GOOS,
 	}
 
-	if artifact.URL == "" {
-		return nil, fmt.Errorf("artifact URL is missing for platform: %s", artifactVersion)
+	for _, artifactVersion := range artifactVersions {
+		artifact, exists := version.Artifacts[artifactVersion]
+		if exists {
+			if artifact.URL == "" {
+				return nil, fmt.Errorf("artifact URL is missing for platform: %s", artifactVersion)
+			}
+
+			return &artifact, nil
+		}
 	}
 
-	return &artifact, nil
+	return nil, fmt.Errorf("no artifact available for platform: %s", artifactVersions)
 }
 
 // downloadFile downloads a file from the given URL and saves it to a temporary directory using the filename from the URL.

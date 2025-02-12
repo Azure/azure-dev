@@ -211,13 +211,13 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			interactions: []string{
 				// prompt for db -- hit multiple validation cases
 				"my app db",
-				"n",
+				"N",
 				"my$special$db",
-				"n",
+				"N",
 				"mongodb", // fill in db name
 				// prompt for db -- hit multiple validation cases
 				"my$special$db",
-				"n",
+				"N",
 				"postgres", // fill in db name
 			},
 			want: project.ProjectConfig{

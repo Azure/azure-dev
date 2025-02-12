@@ -21,6 +21,9 @@ type InfraSpec struct {
 	ServiceBus *ServiceBus
 	EventHubs  *EventHubs
 
+	// Storage account
+	StorageAccount *StorageAccount
+
 	// ai models
 	AIModels []AIModel
 }
@@ -67,6 +70,10 @@ type EventHubs struct {
 	Hubs []string
 }
 
+type StorageAccount struct {
+	Containers []string
+}
+
 type ServiceSpec struct {
 	Name string
 	Port int
@@ -83,6 +90,8 @@ type ServiceSpec struct {
 	DbPostgres    *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
+
+	StorageAccount *StorageReference
 
 	// AI model connections
 	AIModels []AIModelReference
@@ -110,6 +119,9 @@ type DatabaseReference struct {
 
 type AIModelReference struct {
 	Name string
+}
+
+type StorageReference struct {
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

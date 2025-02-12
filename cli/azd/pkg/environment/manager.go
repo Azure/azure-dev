@@ -53,6 +53,9 @@ var (
 
 	// Error returned when an environment name is not specified
 	ErrNameNotSpecified = errors.New("environment not specified")
+
+	// Error returned when the default environment cannot be found
+	ErrDefaultEnvironmentNotFound = errors.New("default environment not found")
 )
 
 // Manager is the interface used for managing instances of environments

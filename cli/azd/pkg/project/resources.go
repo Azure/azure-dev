@@ -20,6 +20,7 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeOpenAiModel,
 		ResourceTypeMessagingEventHubs,
 		ResourceTypeMessagingServiceBus,
+		ResourceTypeStorage,
 	}
 }
 
@@ -31,6 +32,7 @@ const (
 	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
 	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
 	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
+	ResourceTypeStorage             ResourceType = "storage"
 )
 
 func (r ResourceType) String() string {
@@ -49,6 +51,8 @@ func (r ResourceType) String() string {
 		return "Event Hubs"
 	case ResourceTypeMessagingServiceBus:
 		return "Service Bus"
+	case ResourceTypeStorage:
+		return "Storage Account"
 	}
 
 	return ""
@@ -96,6 +100,8 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		errMarshal = marshalRawProps(raw.Props.(EventHubsProps))
 	case ResourceTypeMessagingServiceBus:
 		errMarshal = marshalRawProps(raw.Props.(ServiceBusProps))
+	case ResourceTypeStorage:
+		errMarshal = marshalRawProps(raw.Props.(StorageProps))
 	}
 
 	if errMarshal != nil {
@@ -151,6 +157,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = sbp
+	case ResourceTypeStorage:
+		sp := StorageProps{}
+		if err := unmarshalProps(&sp); err != nil {
+			return err
+		}
+		raw.Props = sp
 	}
 
 	*r = ResourceConfig(raw)
@@ -186,4 +198,8 @@ type ServiceBusProps struct {
 
 type EventHubsProps struct {
 	Hubs []string `yaml:"hubs,omitempty"`
+}
+
+type StorageProps struct {
+	Containers []string `yaml:"containers,omitempty"`
 }

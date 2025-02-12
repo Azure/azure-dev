@@ -147,6 +147,7 @@ mongojs
 mvnw
 mysqlclient
 mysqldb
+mysqladmin
 nobanner
 nodeapp
 nolint

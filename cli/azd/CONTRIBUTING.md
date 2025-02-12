@@ -105,3 +105,4 @@ To fix:
 [bug issues]: https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Abug
 [enhancement issues]: https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement
 [functional tests]: https://github.com/Azure/azure-dev/tree/main/cli/azd/test/functional
+[gh cli]: https://github.com/cli/cli?tab=readme-ov-file#installation

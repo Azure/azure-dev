@@ -29,14 +29,9 @@ func newPackageCommand() *cobra.Command {
 	}
 
 	rootCmd.Flags().StringP("path", "p", ".", "Paths to the extension directory.")
-	rootCmd.Flags().StringP("registry", "r", "../registry/registry.json", "Path to the registry.json file.")
-	rootCmd.Flags().StringP("output", "o", "artifacts", "Path to the output directory.")
-	rootCmd.Flags().StringP(
-		"base-url",
-		"b",
-		"https://github.com/wbreza/azd-extensions/raw/main/registry/extensions",
-		"Base URL for artifact paths (e.g., https://github.com/user/repo/raw/main/registry/extensions)",
-	)
+	rootCmd.Flags().StringP("registry", "r", "registry.json", "Path to the registry.json file.")
+	rootCmd.Flags().StringP("output", "o", "artifacts", "Path to the artifacts output directory.")
+	rootCmd.Flags().StringP("base-url", "b", "", "Base URL for artifact paths")
 
 	return rootCmd
 }
@@ -44,8 +39,8 @@ func newPackageCommand() *cobra.Command {
 func buildRegistry(cmd *cobra.Command, args []string) error {
 	extensionPath, _ := cmd.Flags().GetString("path")
 	registryPath, _ := cmd.Flags().GetString("registry")
-	baseURL, _ := cmd.Flags().GetString("base-url")
 	outputPath, _ := cmd.Flags().GetString("output")
+	baseURL, _ := cmd.Flags().GetString("base-url")
 
 	if baseURL == "" {
 		return fmt.Errorf("base URL is required")

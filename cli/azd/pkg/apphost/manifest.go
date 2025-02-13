@@ -309,7 +309,9 @@ func ManifestFromAppHost(
 		}
 		if res.BindMounts != nil {
 			for _, bindMount := range res.BindMounts {
-				bindMount.Source = filepath.Join(manifestDir, bindMount.Source)
+				if !filepath.IsAbs(bindMount.Source) {
+					bindMount.Source = filepath.Join(manifestDir, bindMount.Source)
+				}
 			}
 		}
 		if res.Type == "container.v1" {

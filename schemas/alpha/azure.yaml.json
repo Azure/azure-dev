@@ -371,6 +371,8 @@
                             "db.mongo",
                             "ai.openai.model",
                             "host.containerapp",
+                            "messaging.eventhubs",
+                            "messaging.servicebus",
                             "storage"
                         ]
                     },
@@ -390,6 +392,8 @@
                     { "if": { "properties": { "type": { "const": "db.mysql"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
+                    { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } },
                     { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} }
                 ]
             }
@@ -1316,6 +1320,51 @@
                             "description": "Required. The version of the AI model."
                         }
                     }
+                }
+            }
+        },
+        "eventHubsResource": {
+            "type": "object",
+            "description": "An Azure Event Hubs namespace.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "hubs": {
+                    "type": "array",
+                    "title": "Hubs to create in the Event Hubs namespace",
+                    "additionalProperties": false,
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "serviceBusResource": {
+            "type": "object",
+            "description": "An Azure Service Bus namespace.",
+            "additionalProperties": false,
+            "properties": {
+                "type": true,
+                "uses": true,
+                "queues": {
+                    "type": "array",
+                    "title": "Queues to create in the Service Bus namespace",
+                    "additionalProperties": false,
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                },
+                "topics": {
+                    "type": "array",
+                    "title": "Topics to create in the Service Bus namespace",
+                    "additionalProperties": false,
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
                 }
             }
         },

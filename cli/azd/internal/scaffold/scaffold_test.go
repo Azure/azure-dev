@@ -90,6 +90,8 @@ func TestExecInfra(t *testing.T) {
 					DatabaseName: "appdb",
 				},
 				DbRedis:        &DatabaseRedis{},
+				ServiceBus:     &ServiceBus{},
+				EventHubs:      &EventHubs{},
 				StorageAccount: &StorageAccount{},
 				Services: []ServiceSpec{
 					{
@@ -111,6 +113,8 @@ func TestExecInfra(t *testing.T) {
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
+						ServiceBus:     &ServiceBus{},
+						EventHubs:      &EventHubs{},
 						StorageAccount: &StorageReference{},
 					},
 					{

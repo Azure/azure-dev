@@ -148,8 +148,8 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			containers := make([]scaffold.CosmosSqlDatabaseContainer, 0)
 			for _, c := range props.Containers {
 				containers = append(containers, scaffold.CosmosSqlDatabaseContainer{
-					ContainerName:     c.ContainerName,
-					PartitionKeyPaths: c.PartitionKeyPaths,
+					ContainerName:     c.Name,
+					PartitionKeyPaths: c.PartitionKeys,
 				})
 			}
 			infraSpec.DbCosmos = &scaffold.DatabaseCosmos{

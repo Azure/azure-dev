@@ -70,7 +70,7 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 	case project.ResourceTypeDbCosmos:
 		res.AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 		res.UseEnvVars = []string{
-			"AZURE_COSMOSDB_ENDPOINT",
+			"AZURE_COSMOS_ENDPOINT",
 		}
 	case project.ResourceTypeMessagingEventHubs:
 		res.AzureResourceType = "Microsoft.EventHub/namespaces"

@@ -141,12 +141,14 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
       {{- range .Services}}
       {{bicepName .Name}}Identity.outputs.principalId
       {{- end}}
+      principalId
     ]
     sqlRoleDefinitions: [
       {
         name: 'service-access-cosmos-sql-role'
       }
     ]
+    capabilitiesToAdd: [ 'EnableServerless' ]
   }
 }
 {{- end}}
@@ -459,7 +461,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- end}}
           {{- if .DbCosmos}}
           {
-            name: 'AZURE_COSMOSDB_ENDPOINT'
+            name: 'AZURE_COSMOS_ENDPOINT'
             value: cosmos.outputs.endpoint
           }
           {{- end}}

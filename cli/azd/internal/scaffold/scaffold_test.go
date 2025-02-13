@@ -89,6 +89,9 @@ func TestExecInfra(t *testing.T) {
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
+				DbCosmos: &DatabaseCosmos{
+					DatabaseName: "cosmos",
+				},
 				DbRedis:        &DatabaseRedis{},
 				ServiceBus:     &ServiceBus{},
 				EventHubs:      &EventHubs{},

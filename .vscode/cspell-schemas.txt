@@ -1,3 +1,4 @@
+eventhubs
 postdeploy
 postdown
 postinfracreate
@@ -12,3 +13,4 @@ preinfradelete
 preprovision
 prerestore
 preup
+servicebus

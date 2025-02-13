@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-var rfc1123LabelRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$`)
+var rfc1123LabelRegex = regexp.MustCompile(`^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]{0,61}[A-Za-z0-9])$`)
 
 // ValidateLabelName checks if the given name is a valid RFC 1123 Label name.
 func ValidateLabelName(name string) error {

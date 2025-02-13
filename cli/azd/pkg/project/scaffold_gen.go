@@ -196,6 +196,31 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 					Version: props.Model.Version,
 				},
 			})
+		case ResourceTypeMessagingEventHubs:
+			if infraSpec.EventHubs != nil {
+				return nil, fmt.Errorf("only one event hubs resource is currently allowed")
+			}
+			props := res.Props.(EventHubsProps)
+			infraSpec.EventHubs = &scaffold.EventHubs{
+				Hubs: props.Hubs,
+			}
+		case ResourceTypeMessagingServiceBus:
+			if infraSpec.ServiceBus != nil {
+				return nil, fmt.Errorf("only one service bus resource is currently allowed")
+			}
+			props := res.Props.(ServiceBusProps)
+			infraSpec.ServiceBus = &scaffold.ServiceBus{
+				Queues: props.Queues,
+				Topics: props.Topics,
+			}
+		case ResourceTypeStorage:
+			if infraSpec.StorageAccount != nil {
+				return nil, fmt.Errorf("only one storage account resource is currently allowed")
+			}
+			props := res.Props.(StorageProps)
+			infraSpec.StorageAccount = &scaffold.StorageAccount{
+				Containers: props.Containers,
+			}
 		}
 	}
 
@@ -289,6 +314,12 @@ func mapHostUses(
 			backendMapping[use] = res.Name // record the backend -> frontend mapping
 		case ResourceTypeOpenAiModel:
 			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
+		case ResourceTypeMessagingEventHubs:
+			svcSpec.EventHubs = &scaffold.EventHubs{}
+		case ResourceTypeMessagingServiceBus:
+			svcSpec.ServiceBus = &scaffold.ServiceBus{}
+		case ResourceTypeStorage:
+			svcSpec.StorageAccount = &scaffold.StorageReference{}
 		}
 	}
 

@@ -72,6 +72,24 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 		res.UseEnvVars = []string{
 			"AZURE_COSMOSDB_ENDPOINT",
 		}
+	case project.ResourceTypeMessagingEventHubs:
+		res.AzureResourceType = "Microsoft.EventHub/namespaces"
+		res.UseEnvVars = []string{
+			"AZURE_EVENT_HUBS_HOST",
+			"AZURE_EVENT_HUBS_NAME",
+		}
+	case project.ResourceTypeMessagingServiceBus:
+		res.AzureResourceType = "Microsoft.ServiceBus/namespaces"
+		res.UseEnvVars = []string{
+			"AZURE_SERVICE_BUS_HOST",
+			"AZURE_SERVICE_BUS_NAME",
+		}
+	case project.ResourceTypeStorage:
+		res.AzureResourceType = "Microsoft.Storage/storageAccounts"
+		res.UseEnvVars = []string{
+			"AZURE_STORAGE_ACCOUNT_NAME",
+			"AZURE_STORAGE_BLOB_ENDPOINT",
+		}
 	}
 	return res
 }

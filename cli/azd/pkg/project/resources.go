@@ -19,16 +19,22 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeDbCosmos,
 		ResourceTypeHostContainerApp,
 		ResourceTypeOpenAiModel,
+		ResourceTypeMessagingEventHubs,
+		ResourceTypeMessagingServiceBus,
+		ResourceTypeStorage,
 	}
 }
 
 const (
-	ResourceTypeDbRedis          ResourceType = "db.redis"
-	ResourceTypeDbPostgres       ResourceType = "db.postgres"
-	ResourceTypeDbMongo          ResourceType = "db.mongo"
-	ResourceTypeDbCosmos         ResourceType = "db.cosmos"
-	ResourceTypeHostContainerApp ResourceType = "host.containerapp"
-	ResourceTypeOpenAiModel      ResourceType = "ai.openai.model"
+	ResourceTypeDbRedis             ResourceType = "db.redis"
+	ResourceTypeDbPostgres          ResourceType = "db.postgres"
+	ResourceTypeDbMongo             ResourceType = "db.mongo"
+	ResourceTypeDbCosmos            ResourceType = "db.cosmos"
+	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
+	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
+	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
+	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
+	ResourceTypeStorage             ResourceType = "storage"
 )
 
 func (r ResourceType) String() string {
@@ -45,6 +51,12 @@ func (r ResourceType) String() string {
 		return "Container App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
+	case ResourceTypeMessagingEventHubs:
+		return "Event Hubs"
+	case ResourceTypeMessagingServiceBus:
+		return "Service Bus"
+	case ResourceTypeStorage:
+		return "Storage Account"
 	}
 
 	return ""
@@ -90,6 +102,12 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		errMarshal = marshalRawProps(raw.Props.(ContainerAppProps))
 	case ResourceTypeDbCosmos:
 		errMarshal = marshalRawProps(raw.Props.(CosmosDBProps))
+	case ResourceTypeMessagingEventHubs:
+		errMarshal = marshalRawProps(raw.Props.(EventHubsProps))
+	case ResourceTypeMessagingServiceBus:
+		errMarshal = marshalRawProps(raw.Props.(ServiceBusProps))
+	case ResourceTypeStorage:
+		errMarshal = marshalRawProps(raw.Props.(StorageProps))
 	}
 
 	if errMarshal != nil {
@@ -139,6 +157,24 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cdp
+	case ResourceTypeMessagingEventHubs:
+		ehp := EventHubsProps{}
+		if err := unmarshalProps(&ehp); err != nil {
+			return err
+		}
+		raw.Props = ehp
+	case ResourceTypeMessagingServiceBus:
+		sbp := ServiceBusProps{}
+		if err := unmarshalProps(&sbp); err != nil {
+			return err
+		}
+		raw.Props = sbp
+	case ResourceTypeStorage:
+		sp := StorageProps{}
+		if err := unmarshalProps(&sp); err != nil {
+			return err
+		}
+		raw.Props = sp
 	}
 
 	*r = ResourceConfig(raw)
@@ -175,4 +211,17 @@ type CosmosDBProps struct {
 type CosmosDBContainerProps struct {
 	ContainerName     string   `yaml:"containerName,omitempty"`
 	PartitionKeyPaths []string `yaml:"partitionKeyPaths,omitempty"`
+}
+
+type ServiceBusProps struct {
+	Queues []string `yaml:"queues,omitempty"`
+	Topics []string `yaml:"topics,omitempty"`
+}
+
+type EventHubsProps struct {
+	Hubs []string `yaml:"hubs,omitempty"`
+}
+
+type StorageProps struct {
+	Containers []string `yaml:"containers,omitempty"`
 }

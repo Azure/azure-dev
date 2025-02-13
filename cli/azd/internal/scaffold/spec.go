@@ -18,6 +18,13 @@ type InfraSpec struct {
 	DbCosmos      *DatabaseCosmos
 	DbRedis       *DatabaseRedis
 
+	// Messaging services
+	ServiceBus *ServiceBus
+	EventHubs  *EventHubs
+
+	// Storage account
+	StorageAccount *StorageAccount
+
 	// ai models
 	AIModels []AIModel
 }
@@ -65,6 +72,19 @@ type AIModelModel struct {
 	Version string
 }
 
+type ServiceBus struct {
+	Queues []string
+	Topics []string
+}
+
+type EventHubs struct {
+	Hubs []string
+}
+
+type StorageAccount struct {
+	Containers []string
+}
+
 type ServiceSpec struct {
 	Name string
 	Port int
@@ -83,8 +103,14 @@ type ServiceSpec struct {
 	DbCosmos      *DatabaseReference
 	DbRedis       *DatabaseReference
 
+	StorageAccount *StorageReference
+
 	// AI model connections
 	AIModels []AIModelReference
+
+	// Messaging services
+	ServiceBus *ServiceBus
+	EventHubs  *EventHubs
 }
 
 type Frontend struct {
@@ -105,6 +131,9 @@ type DatabaseReference struct {
 
 type AIModelReference struct {
 	Name string
+}
+
+type StorageReference struct {
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

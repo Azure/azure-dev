@@ -104,6 +104,7 @@ envsubst
 errcheck
 errorinfo
 errorlint
+eventhubs
 executil
 flexconsumption
 Frontends

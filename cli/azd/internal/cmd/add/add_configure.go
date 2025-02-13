@@ -53,6 +53,10 @@ func Configure(
 			DatabaseName: r.Name,
 		}
 		return r, nil
+	case project.ResourceTypeMessagingEventHubs:
+		return fillEventHubs(ctx, r, console, p)
+	case project.ResourceTypeMessagingServiceBus:
+		return fillServiceBus(ctx, r, console, p)
 	case project.ResourceTypeDbRedis:
 		if _, exists := p.PrjConfig.Resources["redis"]; exists {
 			return nil, fmt.Errorf("only one Redis resource is allowed at this time")
@@ -60,6 +64,8 @@ func Configure(
 
 		r.Name = "redis"
 		return r, nil
+	case project.ResourceTypeStorage:
+		return fillStorageDetails(ctx, r, console, p)
 	default:
 		return r, nil
 	}

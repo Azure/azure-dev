@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/show"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -152,9 +153,9 @@ func NewRootCmd(
 	})
 
 	root.Add("show", &actions.ActionDescriptorOptions{
-		Command:        newShowCmd(),
-		FlagsResolver:  newShowFlags,
-		ActionResolver: newShowAction,
+		Command:        show.NewShowCmd(),
+		FlagsResolver:  show.NewShowFlags,
+		ActionResolver: show.NewShowAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 		GroupingOptions: actions.CommandGroupOptions{

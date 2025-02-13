@@ -42,10 +42,6 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 	outputPath, _ := cmd.Flags().GetString("output")
 	baseURL, _ := cmd.Flags().GetString("base-url")
 
-	if baseURL == "" {
-		return fmt.Errorf("base URL is required")
-	}
-
 	extensionYamlPath := filepath.Join(extensionPath, "extension.yaml")
 	if _, err := os.Stat(extensionYamlPath); err != nil {
 		return fmt.Errorf("extension.yaml file not found in the specified path: %w", err)
@@ -113,7 +109,10 @@ func processExtension(extensionPath string, outputPath string, baseURL string, r
 	buildScript := filepath.Join(extensionPath, "build.sh")
 	if _, err := os.Stat(buildScript); err == nil {
 		// nolint:gosec // G204
-		cmd := exec.Command("bash", "build.sh", schema.Version)
+		cmd := exec.Command("bash", "build.sh",
+			"--app-name", schema.Id,
+			"--version", schema.Version,
+		)
 		cmd.Dir = extensionPath
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed to build artifacts: %s", string(output))

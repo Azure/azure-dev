@@ -86,6 +86,9 @@ func TestExecInfra(t *testing.T) {
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
 				},
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "mysqldb",
+				},
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
@@ -112,6 +115,9 @@ func TestExecInfra(t *testing.T) {
 						},
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
+						},
+						DbMySql: &DatabaseReference{
+							DatabaseName: "mysqldb",
 						},
 						ServiceBus:     &ServiceBus{},
 						EventHubs:      &EventHubs{},

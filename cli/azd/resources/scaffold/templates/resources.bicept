@@ -136,7 +136,7 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
 {{- if .DbMySql}}
 var mysqlDatabaseName = '{{ .DbMySql.DatabaseName }}'
 var mysqlDatabaseUser = '{{ .DbMySql.DatabaseUser }}'
-module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.4.1' = {
+module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.6.1' = {
   name: 'mysqlServer'
   params: {
     // Required parameters
@@ -648,6 +648,12 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
       {
         name: 'db-pass'
         value: databasePassword
+      }
+      {{- end}}
+      {{- if .DbMySql}}
+      {
+        name: 'mysql-password'
+        value: mysqlDatabasePassword
       }
       {{- end}}
     ]

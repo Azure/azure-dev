@@ -22,7 +22,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armsubscriptions/v1.0.0 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armsubscriptions/v1.0.0 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0bed4dbea7570dcff1f6d7f3b7e56bda
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations?api-version=2021-01-01
@@ -91,7 +91,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0bed4dbea7570dcff1f6d7f3b7e56bda
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
@@ -164,7 +164,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0bed4dbea7570dcff1f6d7f3b7e56bda
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223?api-version=2021-04-01
@@ -235,7 +235,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0bed4dbea7570dcff1f6d7f3b7e56bda
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223/operationStatuses/08584628816496976955?api-version=2021-04-01
@@ -302,7 +302,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0bed4dbea7570dcff1f6d7f3b7e56bda
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223?api-version=2021-04-01
@@ -371,7 +371,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0bed4dbea7570dcff1f6d7f3b7e56bda
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
@@ -440,7 +440,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0bed4dbea7570dcff1f6d7f3b7e56bda
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223?api-version=2021-04-01
@@ -509,7 +509,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
@@ -578,7 +578,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223?api-version=2021-04-01
@@ -647,7 +647,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-lb582c8%27&api-version=2021-04-01
@@ -716,7 +716,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-lb582c8/resources?api-version=2021-04-01
@@ -785,7 +785,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223?api-version=2021-04-01
@@ -854,7 +854,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-lb582c8%27&api-version=2021-04-01
@@ -923,7 +923,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-lb582c8/resources?api-version=2021-04-01
@@ -992,7 +992,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups/rg-azdtest-lb582c8?api-version=2021-04-01
@@ -1061,7 +1061,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/operationresults/eyJqb2JJZCI6IlJFU09VUkNFR1JPVVBERUxFVElPTkpPQi1SRzoyREFaRFRFU1Q6MkRMQjU4MkM4LUVBU1RVUzIiLCJqb2JMb2NhdGlvbiI6ImVhc3R1czIifQ?api-version=2021-04-01&t=638743221770234683&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=nkn6GB2IbtTIC-ikPr6gakMywbwRf9ledmMiUl52gnZdEh8jZfUfYe59l3ADMg40eMNC6Yztmv9HLtW_Ui8O5GDmjjsYCGPFAehb-as0l7wejyF92nZp9U4l3qCEIkuc2c9OJLJ4EnFzyegEvQzKAeRuZUFQS1-UgsNBSx1Hkjvjqo18c3DfDynEhltGAKld0kkVEuSGigUEIAZq9U0PqVzy-Qids5DIR3tTCr0LW_vXwZhoWFfkBCWs2PnFcpd43B1oWNXE6YKMPg3TbFtnggd89HtQf8YtbbG9uXKNFon5B50Hm5iaoAfE0hpa1vwugKdBxRxItjpb976HL3XfNw&h=T1jB6YjKP_DfdCXE2Cx_5YgtFNHES3OSMH7iiHzYdk4
@@ -1128,7 +1128,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223?api-version=2021-04-01
@@ -1201,7 +1201,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223?api-version=2021-04-01
@@ -1272,7 +1272,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223/operationStatuses/08584628814926674765?api-version=2021-04-01
@@ -1339,7 +1339,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.0; linux),azdev/0.0.0-dev.0 (Go go1.24.0; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - fcd6554f72b4dafd2391a05c8c59f9cf
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-lb582c8-1738725223?api-version=2021-04-01

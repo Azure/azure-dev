@@ -204,8 +204,7 @@ type AIModelPropsModel struct {
 }
 
 type CosmosDBProps struct {
-	Containers   []CosmosDBContainerProps `yaml:"containers,omitempty"`
-	DatabaseName string                   `yaml:"databaseName,omitempty"`
+	Containers []CosmosDBContainerProps `yaml:"containers,omitempty"`
 }
 
 type CosmosDBContainerProps struct {

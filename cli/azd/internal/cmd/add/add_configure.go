@@ -45,13 +45,11 @@ func Configure(
 		project.ResourceTypeDbMongo:
 		return fillDatabaseName(ctx, r, console, p)
 	case project.ResourceTypeDbCosmos:
-		_, err := fillDatabaseName(ctx, r, console, p)
+		r, err := fillDatabaseName(ctx, r, console, p)
 		if err != nil {
 			return nil, err
 		}
-		r.Props = project.CosmosDBProps{
-			DatabaseName: r.Name,
-		}
+		r.Props = project.CosmosDBProps{}
 		return r, nil
 	case project.ResourceTypeMessagingEventHubs:
 		return fillEventHubs(ctx, r, console, p)

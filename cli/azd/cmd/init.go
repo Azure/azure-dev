@@ -473,14 +473,17 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 		return fmt.Errorf("loading project config: %w", err)
 	}
 
+	// No extensions required
+	if projectConfig.RequiredVersions == nil || len(projectConfig.RequiredVersions.Extensions) == 0 {
+		return nil
+	}
+
 	installedExtensions, err := i.extensionsManager.ListInstalled()
 	if err != nil {
 		return fmt.Errorf("listing installed extensions: %w", err)
 	}
 
-	if projectConfig.RequiredVersions != nil && len(projectConfig.RequiredVersions.Extensions) > 0 {
-		i.console.Message(ctx, "\nInstalling required extensions...")
-	}
+	i.console.Message(ctx, "\nInstalling required extensions...")
 
 	for extensionId, versionConstraint := range projectConfig.RequiredVersions.Extensions {
 		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))

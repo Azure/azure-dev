@@ -11,6 +11,7 @@ service EnvironmentService {
   // Gets the current environment.
   rpc GetCurrent(EmptyRequest) returns (EnvironmentResponse);
 
+  // List retrieves all azd environments.
   rpc List(EmptyRequest) returns (EnvironmentListResponse);
 
   // Get retrieves an environment by its name.
@@ -28,19 +29,19 @@ service EnvironmentService {
   // SetValue sets the value of a key in the specified environment.
   rpc SetValue (SetEnvRequest) returns (EmptyResponse);
 
-  // RPC for getting a config value by path
+  // GetConfig retrieves a config value by path
   rpc GetConfig (GetConfigRequest) returns (GetConfigResponse);
 
-  // RPC for getting a config value as a string by path
+  // GetConfigString retrieves a config value by path and returns it as a string
   rpc GetConfigString (GetConfigStringRequest) returns (GetConfigStringResponse);
 
-  // RPC for getting a config section by path
+  // GetConfigSection retrieves a config section by path
   rpc GetConfigSection (GetConfigSectionRequest) returns (GetConfigSectionResponse);
 
-  // RPC for setting a config value at a given path
+  // SetConfig sets a config value at a given path
   rpc SetConfig (SetConfigRequest) returns (EmptyResponse);
 
-  // RPC for unsetting a config value at a given path
+  // UnsetConfig removes a config value at a given path
   rpc UnsetConfig (UnsetConfigRequest) returns (EmptyResponse);
 }
 

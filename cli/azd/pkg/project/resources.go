@@ -208,8 +208,8 @@ type CosmosDBProps struct {
 }
 
 type CosmosDBContainerProps struct {
-	Name          string   `yaml:"containerName,omitempty"`
-	PartitionKeys []string `yaml:"partitionKeyPaths,omitempty"`
+	Name          string   `yaml:"name,omitempty"`
+	PartitionKeys []string `yaml:"partitionKeys,omitempty"`
 }
 
 type ServiceBusProps struct {

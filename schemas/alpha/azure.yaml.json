@@ -1338,14 +1338,14 @@
                         "type": "object",
                         "additionalProperties": false,
                         "properties": {
-                            "containerName": {
+                            "name": {
                                 "type": "string",
-                                "title": "Container Name",
+                                "title": "Container to create in the Azure Cosmos DB",
                                 "description": "The name of the container."
                             },
-                            "partitionKeyPaths": {
+                            "partitionKeys": {
                                 "type": "array",
-                                "title": "Partition Key Paths",
+                                "title": "Partition key paths of the container",
                                 "description": "A list of partition key paths for the container.",
                                 "items": {
                                     "type": "string"

@@ -77,7 +77,9 @@ func newPromptCommand() *cobra.Command {
 			filterByResourceType := *filterByResourceTypeResponse.Value
 
 			if filterByResourceType {
-				credential, err := azidentity.NewAzureDeveloperCLICredential(nil)
+				credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+					TenantID: azureContext.Scope.TenantId,
+				})
 				if err != nil {
 					return err
 				}

@@ -68,7 +68,7 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
 module cosmosMongo 'br/public:avm/res/document-db/database-account:0.8.1' = {
   name: 'cosmosMongo'
   params: {
-    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    name: '${abbrs.documentDBMongoDatabaseAccounts}${resourceToken}'
     location: location
     tags: tags
     locations: [
@@ -665,7 +665,7 @@ output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgreServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
 {{- end}}
 {{- if .DbCosmos }}
-output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID string = cosmos.outputs.resourceId
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID string = '${cosmos.outputs.resourceId}/sqlDatabases/{{.DbCosmos.DatabaseName}}'
 {{- end}}
 {{- if .StorageAccount }}
 output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId

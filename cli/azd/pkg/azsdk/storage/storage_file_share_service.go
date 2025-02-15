@@ -63,8 +63,12 @@ func (f *fileShareClient) UploadPath(ctx context.Context, subId, shareUrl, sourc
 			return err
 		}
 		if !info.IsDir() {
-			destination := strings.TrimPrefix(path, source+string(filepath.Separator))
-			if err := f.uploadFile(ctx, shareUrl, path, destination, credential); err != nil {
+			// since we are iterating source, path is always relative to source and this would be unlikely to fail
+			relativePath, err := filepath.Rel(source, path)
+			if err != nil {
+				return err
+			}
+			if err := f.uploadFile(ctx, shareUrl, path, relativePath, credential); err != nil {
 				return fmt.Errorf("uploading folder to file share: %w", err)
 			}
 		}

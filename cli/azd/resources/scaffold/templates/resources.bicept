@@ -147,6 +147,7 @@ module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.6.1' = {
     administratorLogin: mysqlDatabaseUser
     administratorLoginPassword: mysqlDatabasePassword
     geoRedundantBackup: 'Disabled'
+    publicNetworkAccess: 'Enabled'
     firewallRules: [
       {
         name: 'AllowAllIps'

@@ -205,7 +205,7 @@ func preExecExpand(spec *InfraSpec) {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
 				Name:   "databasePassword",
-				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} databasePassword)",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} db-pass)",
 				Type:   "string",
 				Secret: true,
 			})
@@ -214,7 +214,7 @@ func preExecExpand(spec *InfraSpec) {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
 				Name:   "mysqlDatabasePassword",
-				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} mysqlDatabasePassword)",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} mysql-password)",
 				Type:   "string",
 				Secret: true,
 			})

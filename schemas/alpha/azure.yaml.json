@@ -391,7 +391,7 @@
                     { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} },
-                    { "if": { "properties": { "type": { "const": "db.cosmos" }}}, "then": { "$ref": "#/definitions/cosmosDbResource"} },
+                    { "if": { "properties": { "type": { "const": "db.cosmos" }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
                     { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } },
                     { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} }
@@ -1318,39 +1318,6 @@
                             "type": "string",
                             "title": "The version of the AI model.",
                             "description": "Required. The version of the AI model."
-                        }
-                    }
-                }
-            }
-        },
-        "cosmosDbResource": {
-            "type": "object",
-            "description": "A deployed, ready-to-use Azure Cosmos DB for NoSQL.",
-            "additionalProperties": false,
-            "properties": {
-                "type": true,
-                "uses": true,
-                "containers": {
-                    "type": "array",
-                    "title": "Azure Cosmos DB Containers",
-                    "description": "A list of containers in the Azure CosmosDB.",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "title": "Container to create in the Azure Cosmos DB",
-                                "description": "The name of the container."
-                            },
-                            "partitionKeys": {
-                                "type": "array",
-                                "title": "Partition key paths of the container",
-                                "description": "A list of partition key paths for the container.",
-                                "items": {
-                                    "type": "string"
-                                }
-                            }
                         }
                     }
                 }

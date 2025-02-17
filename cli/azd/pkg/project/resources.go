@@ -100,8 +100,6 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		errMarshal = marshalRawProps(raw.Props.(AIModelProps))
 	case ResourceTypeHostContainerApp:
 		errMarshal = marshalRawProps(raw.Props.(ContainerAppProps))
-	case ResourceTypeDbCosmos:
-		errMarshal = marshalRawProps(raw.Props.(CosmosDBProps))
 	case ResourceTypeMessagingEventHubs:
 		errMarshal = marshalRawProps(raw.Props.(EventHubsProps))
 	case ResourceTypeMessagingServiceBus:
@@ -151,12 +149,6 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = cap
-	case ResourceTypeDbCosmos:
-		cdp := CosmosDBProps{}
-		if err := unmarshalProps(&cdp); err != nil {
-			return err
-		}
-		raw.Props = cdp
 	case ResourceTypeMessagingEventHubs:
 		ehp := EventHubsProps{}
 		if err := unmarshalProps(&ehp); err != nil {
@@ -201,10 +193,6 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
-}
-
-type CosmosDBProps struct {
-	Containers []CosmosDBContainerProps `yaml:"containers,omitempty"`
 }
 
 type CosmosDBContainerProps struct {

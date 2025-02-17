@@ -144,17 +144,8 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				DatabaseName: res.Name,
 			}
 		case ResourceTypeDbCosmos:
-			props := res.Props.(CosmosDBProps)
-			containers := make([]scaffold.CosmosSqlDatabaseContainer, 0)
-			for _, c := range props.Containers {
-				containers = append(containers, scaffold.CosmosSqlDatabaseContainer{
-					ContainerName:     c.Name,
-					PartitionKeyPaths: c.PartitionKeys,
-				})
-			}
 			infraSpec.DbCosmos = &scaffold.DatabaseCosmos{
 				DatabaseName: res.Name,
-				Containers:   containers,
 			}
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{

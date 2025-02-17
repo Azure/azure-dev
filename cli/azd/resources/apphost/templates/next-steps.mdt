@@ -18,7 +18,7 @@ To troubleshoot any issues, see [troubleshooting](#troubleshooting).
 
 ### Configure CI/CD pipeline
 
-Run `azd pipeline config` to configure the deployment pipeline to connect securely to Azure. 
+Run `azd pipeline config -e <environment name>` to configure the deployment pipeline to connect securely to Azure. An environment name is specified here to configure the pipeline with a different environment for isolation purposes. Run `azd env list` and `azd env set` to reselect the default environment after this step.
 
 - Deploying with `GitHub Actions`: Select `GitHub` when prompted for a provider. If your project lacks the `azure-dev.yml` file, accept the prompt to add it and proceed with pipeline configuration.
 

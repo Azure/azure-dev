@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package repository
 
 import (
@@ -5,10 +8,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
 	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -65,7 +68,7 @@ func (i *Initializer) infraSpecFromDetect(
 			Port: -1,
 		}
 
-		port, err := PromptPort(i.console, ctx, name, svc)
+		port, err := add.PromptPort(i.console, ctx, name, svc)
 		if err != nil {
 			return scaffold.InfraSpec{}, err
 		}
@@ -131,32 +134,6 @@ func (i *Initializer) infraSpecFromDetect(
 	return spec, nil
 }
 
-func promptPortNumber(console input.Console, ctx context.Context, promptMessage string) (int, error) {
-	var port int
-	for {
-		val, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: promptMessage,
-		})
-		if err != nil {
-			return -1, err
-		}
-
-		port, err = strconv.Atoi(val)
-		if err != nil {
-			console.Message(ctx, "Port must be an integer.")
-			continue
-		}
-
-		if port < 1 || port > 65535 {
-			console.Message(ctx, "Port must be a value between 1 and 65535.")
-			continue
-		}
-
-		break
-	}
-	return port, nil
-}
-
 func promptDbName(console input.Console, ctx context.Context, database appdetect.DatabaseDep) (string, error) {
 	for {
 		dbName, err := console.Prompt(ctx, input.ConsoleOptions{
@@ -203,58 +180,4 @@ func promptDbName(console input.Console, ctx context.Context, database appdetect
 
 		return dbName, nil
 	}
-}
-
-// PromptPort prompts for port selection from an appdetect project.
-func PromptPort(
-	console input.Console,
-	ctx context.Context,
-	name string,
-	svc appdetect.Project) (int, error) {
-	if svc.Docker == nil || svc.Docker.Path == "" { // using default builder from azd
-		if svc.Language == appdetect.Java {
-			return 8080, nil
-		}
-		return 80, nil
-	}
-
-	// a custom Dockerfile is provided
-	ports := svc.Docker.Ports
-	switch len(ports) {
-	case 1: // only one port was exposed, that's the one
-		return ports[0].Number, nil
-	case 0: // no ports exposed, prompt for port
-		port, err := promptPortNumber(console, ctx, "What port does '"+name+"' listen on?")
-		if err != nil {
-			return -1, err
-		}
-		return port, nil
-	}
-
-	// multiple ports exposed, prompt for selection
-	var portOptions []string
-	for _, port := range ports {
-		portOptions = append(portOptions, strconv.Itoa(port.Number))
-	}
-	portOptions = append(portOptions, "Other")
-
-	selection, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "What port does '" + name + "' listen on?",
-		Options: portOptions,
-	})
-	if err != nil {
-		return -1, err
-	}
-
-	if selection < len(ports) { // user selected a port
-		return ports[selection].Number, nil
-	}
-
-	// user selected 'Other', prompt for port
-	port, err := promptPortNumber(console, ctx, "Provide the port number for '"+name+"':")
-	if err != nil {
-		return -1, err
-	}
-
-	return port, nil
 }

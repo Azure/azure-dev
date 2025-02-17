@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package scaffold
 
 import (
@@ -86,7 +89,10 @@ func TestExecInfra(t *testing.T) {
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
-				DbRedis: &DatabaseRedis{},
+				DbRedis:        &DatabaseRedis{},
+				ServiceBus:     &ServiceBus{},
+				EventHubs:      &EventHubs{},
+				StorageAccount: &StorageAccount{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
@@ -107,6 +113,9 @@ func TestExecInfra(t *testing.T) {
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
+						ServiceBus:     &ServiceBus{},
+						EventHubs:      &EventHubs{},
+						StorageAccount: &StorageReference{},
 					},
 					{
 						Name: "web",

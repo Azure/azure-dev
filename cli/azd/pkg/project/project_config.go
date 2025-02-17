@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -45,7 +48,8 @@ type ProjectConfig struct {
 // If a value is nil, it is treated as if there is no constraint.
 type RequiredVersions struct {
 	// When non nil, a semver range (in the format expected by semver.ParseRange).
-	Azd *string `yaml:"azd,omitempty"`
+	Azd        *string            `yaml:"azd,omitempty"`
+	Extensions map[string]*string `yaml:"extensions,omitempty"`
 }
 
 // options supported in azure.yaml

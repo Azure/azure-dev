@@ -1,0 +1,78 @@
+{
+  "extensions": [
+    {
+      "id": "microsoft.azd.demo",
+      "namespace": "demo",
+      "displayName": "Demo Extension",
+      "description": "This extension provides examples of the AZD extension framework.",
+      "versions": [
+        {
+          "version": "0.0.2",
+          "usage": "azd demo \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "context",
+              "description": "Displays the current `azd` project \u0026 environment context.",
+              "usage": "azd demo context"
+            },
+            {
+              "name": "prompt",
+              "description": "Display prompt capabilities.",
+              "usage": "azd demo prompt"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3a6e2e9a7ca8ca491b179907157cedd0f4d857083288d7c2a8f0492f3fab5f00"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-amd64",
+              "url": "/microsoft.azd.demo/0.0.2/microsoft-azd-demo-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2aa77b1f254e777ed1f0a859c307950433093dd65d8d34f69d8b4c0b8c7fe9ff"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-arm64",
+              "url": "/microsoft.azd.demo/0.0.2/microsoft-azd-demo-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f4c9da75c13ef15bd518fad573175b33345769df617a2eed1f5bc4b9141975fd"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-amd64",
+              "url": "/microsoft.azd.demo/0.0.2/microsoft-azd-demo-linux-amd64.zip"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "cafc113ad6c986215bbd8464c8cd850313024f0447e7533bd295093ae6908c82"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-arm64",
+              "url": "/microsoft.azd.demo/0.0.2/microsoft-azd-demo-linux-arm64.zip"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "01f76ce98a29df72761f51d15cee07e0233004354d11e4a5c69bab0e5c188f64"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-amd64.exe",
+              "url": "/microsoft.azd.demo/0.0.2/microsoft-azd-demo-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5e45c817aacb9e66269f1a3e580ed8fd0057cd00225752cba656fb302fcc0fba"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-arm64.exe",
+              "url": "/microsoft.azd.demo/0.0.2/microsoft-azd-demo-windows-arm64.zip"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

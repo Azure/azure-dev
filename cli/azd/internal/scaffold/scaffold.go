@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package scaffold
 
 import (
@@ -67,10 +70,6 @@ func Execute(
 
 func supportingFiles(spec InfraSpec) []string {
 	files := []string{"/abbreviations.json"}
-
-	if spec.DbRedis != nil {
-		files = append(files, "/modules/set-redis-conn.bicep")
-	}
 
 	if len(spec.Services) > 0 {
 		files = append(files, "/modules/fetch-container-image.bicep")

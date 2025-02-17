@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package apphost
 
 import "github.com/azure/azure-dev/cli/azd/pkg/custommaps"
@@ -125,6 +128,7 @@ type genOutputParameter struct {
 type genBicepModules struct {
 	Path   string
 	Params map[string]string
+	Scope  string
 }
 
 type genBicepTemplateContext struct {
@@ -149,6 +153,7 @@ type genBicepTemplateContext struct {
 
 type genContainerAppManifestTemplateContext struct {
 	Name            string
+	Entrypoint      string
 	Ingress         *genContainerAppIngress
 	Env             map[string]string
 	Secrets         map[string]string

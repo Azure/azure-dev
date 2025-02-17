@@ -3,6 +3,7 @@ ABRT
 ACCESSTOKEN
 aiomysql
 aiopg
+akvs
 alphafeatures
 apimanagement
 apims
@@ -59,9 +60,9 @@ Backticks
 bicepparam
 blockblob
 BOOLSLICE
+buildargs
 BUILDID
 BUILDNUMBER
-buildargs
 buildpacks
 byoi
 cflags
@@ -80,12 +81,12 @@ csharpapptest
 cupaloy
 custommaps
 deletedservices
-deviceid
 devcenter
 devcenters
 devcentersdk
 devdeviceid
 devel
+deviceid
 diffmatchpatch
 discarder
 docf
@@ -103,6 +104,7 @@ envsubst
 errcheck
 errorinfo
 errorlint
+eventhubs
 executil
 flexconsumption
 Frontends
@@ -118,6 +120,7 @@ gosec
 goterm
 gotest
 gotestsum
+grpcserver
 hotspot
 ignorefile
 iidfile

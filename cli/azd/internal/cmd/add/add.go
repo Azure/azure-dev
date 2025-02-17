@@ -15,7 +15,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -50,7 +49,6 @@ type AddAction struct {
 	alphaManager     *alpha.FeatureManager
 	creds            account.SubscriptionCredentialProvider
 	rm               infra.ResourceManager
-	appInit          *repository.Initializer
 	armClientOptions *arm.ClientOptions
 	prompter         prompt.Prompter
 	console          input.Console
@@ -93,7 +91,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	resourceToAdd := &project.ResourceConfig{}
 	var serviceToAdd *project.ServiceConfig
 
-	promptOpts := promptOptions{prj: prjConfig}
+	promptOpts := PromptOptions{PrjConfig: prjConfig}
 	if strings.EqualFold(selected.Namespace, "host") {
 		svc, r, err := a.configureHost(a.console, ctx, promptOpts)
 		if err != nil {
@@ -111,7 +109,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		resourceToAdd = r
 	}
 
-	resourceToAdd, err = configure(ctx, resourceToAdd, a.console, promptOpts)
+	resourceToAdd, err = Configure(ctx, resourceToAdd, a.console, promptOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +366,6 @@ func NewAddAction(
 	prompter prompt.Prompter,
 	rm infra.ResourceManager,
 	armClientOptions *arm.ClientOptions,
-	appInit *repository.Initializer,
 	azd workflow.AzdCommandRunner,
 	console input.Console) actions.Action {
 	return &AddAction{
@@ -381,7 +378,6 @@ func NewAddAction(
 		prompter:         prompter,
 		rm:               rm,
 		armClientOptions: armClientOptions,
-		appInit:          appInit,
 		creds:            creds,
 		azd:              azd,
 	}

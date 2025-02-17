@@ -57,7 +57,7 @@ type ArmTemplateParameterDefinitions map[string]ArmTemplateParameterDefinition
 
 type ArmTemplateOutputs map[string]ArmTemplateOutput
 
-type ArmTemplateParameterAdditionalProperties struct {
+type ArmTemplateParameterAdditionalPropertiesProperties struct {
 	Type      string                     `json:"type"`
 	MinValue  *int                       `json:"minValue,omitempty"`
 	MaxValue  *int                       `json:"maxValue,omitempty"`
@@ -66,18 +66,53 @@ type ArmTemplateParameterAdditionalProperties struct {
 	Metadata  map[string]json.RawMessage `json:"metadata"`
 }
 
+type ArmTemplateParameterAdditionalPropertiesValue struct {
+	props *ArmTemplateParameterAdditionalPropertiesProperties
+}
+
+func (v ArmTemplateParameterAdditionalPropertiesValue) HasAdditionalProperties() bool {
+	return v.props != nil
+}
+
+func (v ArmTemplateParameterAdditionalPropertiesValue) Properties() ArmTemplateParameterAdditionalPropertiesProperties {
+	return *v.props
+}
+
+func (v *ArmTemplateParameterAdditionalPropertiesValue) UnmarshalJSON(data []byte) error {
+	if string(data) == "false" {
+		return nil
+	}
+
+	var props ArmTemplateParameterAdditionalPropertiesProperties
+	if err := json.Unmarshal(data, &props); err != nil {
+		return err
+	}
+
+	v.props = &props
+	return nil
+}
+
+func (v *ArmTemplateParameterAdditionalPropertiesValue) MarshalJSON() ([]byte, error) {
+	if v.props == nil {
+		return []byte("false"), nil
+	}
+
+	return json.Marshal(v.props)
+}
+
 type ArmTemplateParameterDefinition struct {
-	Type                 string                                   `json:"type"`
-	DefaultValue         any                                      `json:"defaultValue"`
-	AllowedValues        *[]any                                   `json:"allowedValues,omitempty"`
-	MinValue             *int                                     `json:"minValue,omitempty"`
-	MaxValue             *int                                     `json:"maxValue,omitempty"`
-	MinLength            *int                                     `json:"minLength,omitempty"`
-	MaxLength            *int                                     `json:"maxLength,omitempty"`
-	Metadata             map[string]json.RawMessage               `json:"metadata"`
-	Ref                  string                                   `json:"$ref"`
-	Properties           ArmTemplateParameterDefinitions          `json:"properties,omitempty"`
-	AdditionalProperties ArmTemplateParameterAdditionalProperties `json:"additionalProperties,omitempty"`
+	Type                 string                                         `json:"type"`
+	DefaultValue         any                                            `json:"defaultValue"`
+	AllowedValues        *[]any                                         `json:"allowedValues,omitempty"`
+	MinValue             *int                                           `json:"minValue,omitempty"`
+	MaxValue             *int                                           `json:"maxValue,omitempty"`
+	MinLength            *int                                           `json:"minLength,omitempty"`
+	MaxLength            *int                                           `json:"maxLength,omitempty"`
+	Metadata             map[string]json.RawMessage                     `json:"metadata"`
+	Ref                  string                                         `json:"$ref"`
+	Properties           ArmTemplateParameterDefinitions                `json:"properties,omitempty"`
+	AdditionalProperties *ArmTemplateParameterAdditionalPropertiesValue `json:"additionalProperties,omitempty"`
+	Nullable             *bool                                          `json:"nullable,omitempty"`
 }
 
 func (d *ArmTemplateParameterDefinition) Secure() bool {
@@ -103,11 +138,13 @@ const AzdMetadataTypeLocation AzdMetadataType = "location"
 const AzdMetadataTypeGenerate AzdMetadataType = "generate"
 const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
 const AzdMetadataTypeNeedForDeploy AzdMetadataType = "needForDeploy"
+const AzdMetadataTypeResourceGroup AzdMetadataType = "resourceGroup"
 
 type AzdMetadata struct {
 	Type               *AzdMetadataType `json:"type,omitempty"`
 	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
 	DefaultValueExpr   *string          `json:"defaultValueExpr,omitempty"`
+	Default            *string          `json:"default,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package add
 
 import (
@@ -22,7 +25,7 @@ import (
 func (a *AddAction) selectOpenAi(
 	console input.Console,
 	ctx context.Context,
-	p promptOptions) (r *project.ResourceConfig, err error) {
+	p PromptOptions) (r *project.ResourceConfig, err error) {
 	resourceToAdd := &project.ResourceConfig{}
 	aiOption, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Which type of Azure OpenAI service?",
@@ -38,7 +41,8 @@ func (a *AddAction) selectOpenAi(
 
 	var allModels []ModelList
 	for {
-		err = provisioning.EnsureSubscriptionAndLocation(ctx, a.envManager, a.env, a.prompter, nil)
+		err = provisioning.EnsureSubscriptionAndLocation(
+			ctx, a.envManager, a.env, a.prompter, provisioning.EnsureSubscriptionAndLocationOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +67,8 @@ func (a *AddAction) selectOpenAi(
 			//nolint:lll
 			"https://management.azure.com/subscriptions/%s/providers/Microsoft.CognitiveServices/locations/%s/models?api-version=2023-05-01",
 			a.env.GetSubscriptionId(),
-			a.env.GetLocation())
+			a.env.GetLocation(),
+		)
 		req, err := runtime.NewRequest(ctx, http.MethodGet, location)
 		if err != nil {
 			return nil, fmt.Errorf("creating request: %w", err)

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package provisioning
 
 import (
@@ -5,9 +8,9 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type CurrentPrincipalIdProvider interface {
@@ -18,7 +21,7 @@ type CurrentPrincipalIdProvider interface {
 
 func NewPrincipalIdProvider(
 	env *environment.Environment,
-	userProfileService *azcli.UserProfileService,
+	userProfileService *azapi.UserProfileService,
 	subResolver account.SubscriptionTenantResolver,
 ) CurrentPrincipalIdProvider {
 	return &principalIDProvider{
@@ -30,7 +33,7 @@ func NewPrincipalIdProvider(
 
 type principalIDProvider struct {
 	env                *environment.Environment
-	userProfileService *azcli.UserProfileService
+	userProfileService *azapi.UserProfileService
 	subResolver        account.SubscriptionTenantResolver
 }
 

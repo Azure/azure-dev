@@ -25,13 +25,15 @@ steps:
   - pwsh: |
       azd config set auth.useAzCliAuth "true"
     displayName: Configure AZD to Use AZ CLI Authentication.  
-{{- if .InstallDotNetAspire}}
-  - task: Bash@3
-    displayName: Install .NET Aspire workload
+{{- if .InstallDotNetForAspire}}
+  - task: UseDotNet@2
     inputs:
-      targetType: 'inline'
-      script: |
-        dotnet workload install aspire
+      version: '8.x'
+    displayName: Set up .NET 8
+  - task: UseDotNet@2
+    inputs:
+      version: '9.x'
+    displayName: Set up .NET 9
 {{ end }}
   - task: AzureCLI@2
     displayName: Provision Infrastructure
@@ -47,6 +49,12 @@ steps:
       AZURE_ENV_NAME: $(AZURE_ENV_NAME)
       AZURE_LOCATION: $(AZURE_LOCATION)
       AZD_INITIAL_ENVIRONMENT_CONFIG: $(AZD_INITIAL_ENVIRONMENT_CONFIG)
+{{- range $variable := .Variables }}
+      {{ $variable }}: $({{ $variable }})
+{{- end}}
+{{- range $secret := .Secrets }}
+      {{ $secret }}: $({{ $secret }})
+{{- end}}
 
   - task: AzureCLI@2
     displayName: Deploy Application
@@ -61,5 +69,11 @@ steps:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
       AZURE_ENV_NAME: $(AZURE_ENV_NAME)
       AZURE_LOCATION: $(AZURE_LOCATION)
+{{- range $variable := .Variables }}
+      {{ $variable }}: $({{ $variable }})
+{{- end}}
+{{- range $secret := .Secrets }}
+      {{ $secret }}: $({{ $secret }})
+{{- end}}
 
 {{ end}}      

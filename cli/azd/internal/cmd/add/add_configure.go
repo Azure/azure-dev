@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package add
 
 import (
@@ -7,24 +10,32 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/fatih/color"
 )
 
-// promptOptions contains common options for prompting.
-type promptOptions struct {
-	// prj is the current project configuration.
-	prj *project.ProjectConfig
+// DbMap is a map of supported database dependencies.
+var DbMap = map[appdetect.DatabaseDep]project.ResourceType{
+	appdetect.DbMongo:    project.ResourceTypeDbMongo,
+	appdetect.DbPostgres: project.ResourceTypeDbPostgres,
+	appdetect.DbRedis:    project.ResourceTypeDbRedis,
 }
 
-// configure fills in the fields for a resource.
-func configure(
+// PromptOptions contains common options for prompting.
+type PromptOptions struct {
+	// PrjConfig is the current project configuration.
+	PrjConfig *project.ProjectConfig
+}
+
+// Configure fills in the fields for a resource.
+func Configure(
 	ctx context.Context,
 	r *project.ResourceConfig,
 	console input.Console,
-	p promptOptions) (*project.ResourceConfig, error) {
+	p PromptOptions) (*project.ResourceConfig, error) {
 	switch r.Type {
 	case project.ResourceTypeHostContainerApp:
 		return fillUses(ctx, r, console, p)
@@ -33,13 +44,19 @@ func configure(
 	case project.ResourceTypeDbPostgres,
 		project.ResourceTypeDbMongo:
 		return fillDatabaseName(ctx, r, console, p)
+	case project.ResourceTypeMessagingEventHubs:
+		return fillEventHubs(ctx, r, console, p)
+	case project.ResourceTypeMessagingServiceBus:
+		return fillServiceBus(ctx, r, console, p)
 	case project.ResourceTypeDbRedis:
-		if _, exists := p.prj.Resources["redis"]; exists {
+		if _, exists := p.PrjConfig.Resources["redis"]; exists {
 			return nil, fmt.Errorf("only one Redis resource is allowed at this time")
 		}
 
 		r.Name = "redis"
 		return r, nil
+	case project.ResourceTypeStorage:
+		return fillStorageDetails(ctx, r, console, p)
 	default:
 		return r, nil
 	}
@@ -49,7 +66,7 @@ func fillDatabaseName(
 	ctx context.Context,
 	r *project.ResourceConfig,
 	console input.Console,
-	p promptOptions) (*project.ResourceConfig, error) {
+	p PromptOptions) (*project.ResourceConfig, error) {
 	if r.Name != "" {
 		return r, nil
 	}
@@ -65,7 +82,7 @@ func fillDatabaseName(
 			return r, err
 		}
 
-		if err := validateResourceName(dbName, p.prj); err != nil {
+		if err := validateResourceName(dbName, p.PrjConfig); err != nil {
 			console.Message(ctx, err.Error())
 			continue
 		}
@@ -81,7 +98,7 @@ func fillAiModelName(
 	ctx context.Context,
 	r *project.ResourceConfig,
 	console input.Console,
-	p promptOptions) (*project.ResourceConfig, error) {
+	p PromptOptions) (*project.ResourceConfig, error) {
 	if r.Name != "" {
 		return r, nil
 	}
@@ -94,7 +111,7 @@ func fillAiModelName(
 		defaultName = modelProps.Model.Name
 		i := 1
 		for {
-			if _, exists := p.prj.Resources[defaultName]; exists {
+			if _, exists := p.PrjConfig.Resources[defaultName]; exists {
 				i++
 				defaultName = fmt.Sprintf("%s-%d", defaultName, i)
 			} else {
@@ -112,7 +129,7 @@ func fillAiModelName(
 			return nil, err
 		}
 
-		if err := validateResourceName(modelName, p.prj); err != nil {
+		if err := validateResourceName(modelName, p.PrjConfig); err != nil {
 			console.Message(ctx, err.Error())
 			continue
 		}
@@ -128,13 +145,13 @@ func fillUses(
 	ctx context.Context,
 	r *project.ResourceConfig,
 	console input.Console,
-	p promptOptions) (*project.ResourceConfig, error) {
+	p PromptOptions) (*project.ResourceConfig, error) {
 	type resourceDisplay struct {
 		Resource *project.ResourceConfig
 		Display  string
 	}
-	res := make([]resourceDisplay, 0, len(p.prj.Resources))
-	for _, r := range p.prj.Resources {
+	res := make([]resourceDisplay, 0, len(p.PrjConfig.Resources))
+	for _, r := range p.PrjConfig.Resources {
 		res = append(res, resourceDisplay{
 			Resource: r,
 			Display: fmt.Sprintf(
@@ -190,9 +207,9 @@ func promptUsedBy(
 	ctx context.Context,
 	r *project.ResourceConfig,
 	console input.Console,
-	p promptOptions) ([]string, error) {
+	p PromptOptions) ([]string, error) {
 	svc := []string{}
-	for _, other := range p.prj.Resources {
+	for _, other := range p.PrjConfig.Resources {
 		if strings.HasPrefix(string(other.Type), "host.") && !slices.Contains(r.Uses, other.Name) {
 			svc = append(svc, other.Name)
 		}

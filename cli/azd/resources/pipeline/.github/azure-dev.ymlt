@@ -25,14 +25,21 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ "{{" }} vars.AZURE_SUBSCRIPTION_ID {{ "}}" }}
       AZURE_ENV_NAME: ${{ "{{" }} vars.AZURE_ENV_NAME {{ "}}" }}
       AZURE_LOCATION: ${{ "{{" }} vars.AZURE_LOCATION {{ "}}" }}
+{{- range $variable := .Variables }}
+      {{ $variable }}: ${{ "{{" }} vars.{{ $variable }} {{ "}}" }}
+{{- end}}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install azd
-        uses: Azure/setup-azd@v1.0.0
-{{- if .InstallDotNetAspire}}
-      - name: Install .NET Aspire workload
-        run: dotnet workload install aspire
+        uses: Azure/setup-azd@v2
+{{- if .InstallDotNetForAspire}}
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: | 
+            8.x.x
+            9.x.x
 {{ end }}
 {{- if .FedCredLogIn }}
       - name: Log in with Azure (Federated Credentials)
@@ -63,6 +70,9 @@ jobs:
         run: azd provision --no-prompt
         env:
           AZD_INITIAL_ENVIRONMENT_CONFIG: ${{ "{{" }} secrets.AZD_INITIAL_ENVIRONMENT_CONFIG {{ "}}" }}
+{{- range $secret := .Secrets }}
+          {{ $secret }}: ${{ "{{" }} secrets.{{ $secret }} {{ "}}" }}
+{{- end}}
 
       - name: Deploy Application
         run: azd deploy --no-prompt

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package storage
 
 import (
@@ -42,6 +45,19 @@ func (f *fileShareClient) UploadPath(ctx context.Context, subId, shareUrl, sourc
 		return err
 	}
 
+	info, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+
+	if !info.IsDir() {
+		// If the source is a file, upload it directly to the root of the file share
+		if err := f.uploadFile(ctx, shareUrl, source, filepath.Base(source), credential); err != nil {
+			return fmt.Errorf("uploading single file to file share: %w", err)
+		}
+		return nil
+	}
+
 	return filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -49,7 +65,7 @@ func (f *fileShareClient) UploadPath(ctx context.Context, subId, shareUrl, sourc
 		if !info.IsDir() {
 			destination := strings.TrimPrefix(path, source+string(filepath.Separator))
 			if err := f.uploadFile(ctx, shareUrl, path, destination, credential); err != nil {
-				return fmt.Errorf("error uploading file to file share: %w", err)
+				return fmt.Errorf("uploading folder to file share: %w", err)
 			}
 		}
 		return nil

@@ -1,18 +1,30 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 type Resource struct {
 	Id       string `json:"id"`
 	Name     string `json:"name"`
 	Type     string `json:"type"`
+	Location string `json:"location"`
+}
+
+type ResourceGroup struct {
+	Id       string `json:"id"`
+	Name     string `json:"name"`
 	Location string `json:"location"`
 }
 
@@ -85,7 +97,7 @@ func (rs *ResourceService) ListResourceGroupResources(
 	subscriptionId string,
 	resourceGroupName string,
 	listOptions *ListResourceGroupResourcesOptions,
-) ([]*Resource, error) {
+) ([]*ResourceExtended, error) {
 	client, err := rs.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -98,7 +110,7 @@ func (rs *ResourceService) ListResourceGroupResources(
 		options.Filter = listOptions.Filter
 	}
 
-	resources := []*Resource{}
+	resources := []*ResourceExtended{}
 	pager := client.NewListByResourceGroupPager(resourceGroupName, &options)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -107,11 +119,14 @@ func (rs *ResourceService) ListResourceGroupResources(
 		}
 
 		for _, resource := range page.ResourceListResult.Value {
-			resources = append(resources, &Resource{
-				Id:       *resource.ID,
-				Name:     *resource.Name,
-				Type:     *resource.Type,
-				Location: *resource.Location,
+			resources = append(resources, &ResourceExtended{
+				Resource: Resource{
+					Id:       *resource.ID,
+					Name:     *resource.Name,
+					Type:     *resource.Type,
+					Location: *resource.Location,
+				},
+				Kind: convert.ToValueWithDefault(resource.Kind, ""),
 			})
 		}
 	}
@@ -167,24 +182,73 @@ func (rs *ResourceService) ListResourceGroup(
 	return groups, nil
 }
 
+func (rs *ResourceService) ListSubscriptionResources(
+	ctx context.Context,
+	subscriptionId string,
+	listOptions *armresources.ClientListOptions,
+) ([]*ResourceExtended, error) {
+	client, err := rs.createResourcesClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter expression on the underlying REST API are different from --query param in az cli.
+	// https://learn.microsoft.com/en-us/rest/api/resources/resources/list-by-resource-group#uri-parameters
+	options := armresources.ClientListOptions{}
+	if listOptions != nil && *listOptions.Filter != "" {
+		options.Filter = listOptions.Filter
+	}
+
+	resources := []*ResourceExtended{}
+	pager := client.NewListPager(&options)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, resource := range page.ResourceListResult.Value {
+			resources = append(resources, &ResourceExtended{
+				Resource: Resource{
+					Id:       *resource.ID,
+					Name:     *resource.Name,
+					Type:     *resource.Type,
+					Location: *resource.Location,
+				},
+				Kind: convert.ToValueWithDefault(resource.Kind, ""),
+			})
+		}
+	}
+
+	return resources, nil
+}
+
 func (rs *ResourceService) CreateOrUpdateResourceGroup(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	location string,
 	tags map[string]*string,
-) error {
+) (*ResourceGroup, error) {
 	client, err := rs.createResourceGroupClient(ctx, subscriptionId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err = client.CreateOrUpdate(ctx, resourceGroupName, armresources.ResourceGroup{
+	response, err := client.CreateOrUpdate(ctx, resourceGroupName, armresources.ResourceGroup{
 		Location: &location,
 		Tags:     tags,
 	}, nil)
 
-	return err
+	if err != nil {
+		return nil, fmt.Errorf("creating or updating resource group: %w", err)
+	}
+
+	return &ResourceGroup{
+		Id:       *response.ID,
+		Name:     *response.Name,
+		Location: *response.Location,
+	}, nil
 }
 
 func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error {
@@ -194,6 +258,11 @@ func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscription
 	}
 
 	poller, err := client.BeginDelete(ctx, resourceGroupName, nil)
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) && respErr.StatusCode == 404 { // Resource group is already deleted
+		return nil
+	}
+
 	if err != nil {
 		return fmt.Errorf("beginning resource group deletion: %w", err)
 	}

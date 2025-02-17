@@ -12,7 +12,7 @@ parameters:
         ImageKey: image
         ValidateCrossCompile: true
         ValidateVm:
-          PoolName: $(LINUXARMPOOL)
+          PoolName: $(ARMPOOL)
           ImageName: $(LINUXARMVMIMAGE)
           Os: linux
         ValidationTask: bash
@@ -128,7 +128,7 @@ stages:
               name: ${{ validationBuild.value.ValidateVm.PoolName }}
               image: ${{ validationBuild.value.ValidateVm.ImageName }}
               os: ${{ validationBuild.value.ValidateVm.Os }}
-            timeoutInMinutes: 5
+            timeoutInMinutes: 10
             steps:
               - checkout: none
 

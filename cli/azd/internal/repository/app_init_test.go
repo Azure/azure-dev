@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package repository
 
 import (
@@ -46,7 +49,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 						Type: project.ResourceTypeHostContainerApp,
 						Name: "dotnet",
 						Props: project.ContainerAppProps{
-							Port: 80,
+							Port: 8080,
 						},
 					},
 				},
@@ -208,13 +211,13 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			interactions: []string{
 				// prompt for db -- hit multiple validation cases
 				"my app db",
-				"n",
+				"N",
 				"my$special$db",
-				"n",
+				"N",
 				"mongodb", // fill in db name
 				// prompt for db -- hit multiple validation cases
 				"my$special$db",
-				"n",
+				"N",
 				"postgres", // fill in db name
 			},
 			want: project.ProjectConfig{

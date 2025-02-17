@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -182,6 +185,10 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	startTime := time.Now()
 
 	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
+		return nil, err
+	}
+
+	if err := p.projectManager.EnsureAllTools(ctx, p.projectConfig, nil); err != nil {
 		return nil, err
 	}
 

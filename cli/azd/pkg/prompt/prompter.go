@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package prompt
 
 import (
@@ -25,8 +28,15 @@ type LocationFilterPredicate func(loc account.Location) bool
 
 type Prompter interface {
 	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
-	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
-	PromptResourceGroup(ctx context.Context) (string, error)
+	PromptLocation(
+		ctx context.Context,
+		subId string,
+		msg string,
+		filter LocationFilterPredicate,
+		defaultLocation *string) (string, error)
+	PromptResourceGroup(ctx context.Context, options PromptResourceOptions) (string, error)
+	PromptResourceGroupFrom(
+		ctx context.Context, subscriptionId string, location string, options PromptResourceGroupFromOptions) (string, error)
 }
 
 type DefaultPrompter struct {
@@ -96,8 +106,9 @@ func (p *DefaultPrompter) PromptLocation(
 	subId string,
 	msg string,
 	filter LocationFilterPredicate,
+	defaultLocation *string,
 ) (string, error) {
-	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", p.console, p.accountManager, filter)
+	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", p.console, p.accountManager, filter, defaultLocation)
 	if err != nil {
 		return "", err
 	}
@@ -111,9 +122,36 @@ func (p *DefaultPrompter) PromptLocation(
 	return loc, nil
 }
 
-func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, error) {
+type PromptResourceOptions struct {
+	DisableCreateNew bool
+}
+
+func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context, options PromptResourceOptions) (string, error) {
+	return p.PromptResourceGroupFrom(
+		ctx,
+		p.env.GetSubscriptionId(),
+		p.env.GetLocation(),
+		PromptResourceGroupFromOptions{
+			Tags: map[string]string{
+				azure.TagKeyAzdEnvName: p.env.Name(),
+			},
+			DefaultName:      fmt.Sprintf("rg-%s", p.env.Name()),
+			DisableCreateNew: options.DisableCreateNew,
+		})
+}
+
+type PromptResourceGroupFromOptions struct {
+	Tags                  map[string]string
+	DefaultName           string
+	NewResourceGroupHelp  string
+	PickResourceGroupHelp string
+	DisableCreateNew      bool
+}
+
+func (p *DefaultPrompter) PromptResourceGroupFrom(
+	ctx context.Context, subscriptionId string, location string, options PromptResourceGroupFromOptions) (string, error) {
 	// Get current resource groups
-	groups, err := p.resourceService.ListResourceGroup(ctx, p.env.GetSubscriptionId(), nil)
+	groups, err := p.resourceService.ListResourceGroup(ctx, subscriptionId, nil)
 	if err != nil {
 		return "", fmt.Errorf("listing resource groups: %w", err)
 	}
@@ -122,18 +160,30 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 		return strings.Compare(a.Name, b.Name)
 	})
 
-	choices := make([]string, len(groups)+1)
-	choices[0] = "Create a new resource group"
+	canCreateNeResourceGroup := !options.DisableCreateNew
+
+	choices := make([]string, len(groups))
+	canCreateOverride := 0
+	if canCreateNeResourceGroup {
+		choices = make([]string, len(groups)+1)
+		choices[0] = "Create a new resource group"
+		canCreateOverride = 1
+	}
 	for idx, group := range groups {
-		choices[idx+1] = fmt.Sprintf("%d. %s", idx+1, group.Name)
+		choices[idx+canCreateOverride] = fmt.Sprintf("%d. %s", idx+1, group.Name)
 	}
 
 	choice, err := p.console.Select(ctx, input.ConsoleOptions{
 		Message: "Pick a resource group to use:",
 		Options: choices,
+		Help:    options.PickResourceGroupHelp,
 	})
 	if err != nil {
 		return "", fmt.Errorf("selecting resource group: %w", err)
+	}
+
+	if !canCreateNeResourceGroup {
+		return groups[choice].Name, nil
 	}
 
 	if choice > 0 {
@@ -142,17 +192,19 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 
 	name, err := p.console.Prompt(ctx, input.ConsoleOptions{
 		Message:      "Enter a name for the new resource group:",
-		DefaultValue: fmt.Sprintf("rg-%s", p.env.Name()),
+		DefaultValue: options.DefaultName,
+		Help:         options.NewResourceGroupHelp,
 	})
 	if err != nil {
 		return "", fmt.Errorf("prompting for resource group name: %w", err)
 	}
 
-	err = p.resourceService.CreateOrUpdateResourceGroup(ctx, p.env.GetSubscriptionId(), name, p.env.GetLocation(),
-		map[string]*string{
-			azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
-		},
-	)
+	tagsParam := make(map[string]*string, len(options.Tags))
+	for k, v := range options.Tags {
+		tagsParam[k] = to.Ptr(v)
+	}
+
+	_, err = p.resourceService.CreateOrUpdateResourceGroup(ctx, subscriptionId, name, location, tagsParam)
 	if err != nil {
 		return "", fmt.Errorf("creating resource group: %w", err)
 	}

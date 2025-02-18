@@ -147,7 +147,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	manager, err := NewManager(mockContext.CommandRunner, userConfigManager, sourceManager, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	// List installed extensions (expect 0)
@@ -191,7 +191,7 @@ func Test_Install_With_SemverConstraints(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	manager, err := NewManager(mockContext.CommandRunner, userConfigManager, sourceManager, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	// Generate a list of tests cases to validate the semver constraints of the Install function.

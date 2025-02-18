@@ -26,12 +26,13 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
-	registryCacheFilePath = "registry.cache"
-	extensionRegistryUrl  = "https://aka.ms/azd/extensions/registry"
+	extensionRegistryUrl = "https://aka.ms/azd/extensions/registry"
 )
 
 var (
@@ -48,10 +49,16 @@ type ListOptions struct {
 	Tags   []string
 }
 
+type ExtensionClaims struct {
+	jwt.RegisteredClaims
+	Capabilities []CapabilityType `json:"cap,omitempty"`
+}
+
 type sourceFilterPredicate func(config *SourceConfig) bool
 type extensionFilterPredicate func(extension *ExtensionMetadata) bool
 
 type Manager struct {
+	commandRunner exec.CommandRunner
 	sourceManager *SourceManager
 	sources       []Source
 
@@ -62,6 +69,7 @@ type Manager struct {
 
 // NewManager creates a new extension manager
 func NewManager(
+	commandRunner exec.CommandRunner,
 	configManager config.UserConfigManager,
 	sourceManager *SourceManager,
 	transport policy.Transporter,
@@ -76,6 +84,7 @@ func NewManager(
 	})
 
 	return &Manager{
+		commandRunner: commandRunner,
 		userConfig:    userConfig,
 		configManager: configManager,
 		sourceManager: sourceManager,
@@ -474,6 +483,30 @@ func (m *Manager) Upgrade(ctx context.Context, name string, version string) (*Ex
 	}
 
 	return extensionVersion, nil
+}
+
+type InvokeOptions struct {
+	Args []string
+	Env  []string
+}
+
+// Invoke runs the extension with the provided arguments
+func (m *Manager) Invoke(ctx context.Context, extension *Extension, options *InvokeOptions) (*exec.RunResult, error) {
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user config directory: %w", err)
+	}
+
+	extensionPath := filepath.Join(userConfigDir, extension.Path)
+
+	runArgs := exec.NewRunArgs(extensionPath, options.Args...)
+	if len(options.Env) > 0 {
+		runArgs = runArgs.WithEnv(options.Env)
+	}
+
+	runResult, err := m.commandRunner.Run(ctx, runArgs)
+
+	return &runResult, err
 }
 
 // Helper function to find the artifact for the current OS

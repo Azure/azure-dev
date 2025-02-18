@@ -31,6 +31,7 @@ type Server struct {
 	promptService      azdext.PromptServiceServer
 	userConfigService  azdext.UserConfigServiceServer
 	deploymentService  azdext.DeploymentServiceServer
+	eventService       azdext.EventServiceServer
 }
 
 func NewServer(
@@ -39,6 +40,7 @@ func NewServer(
 	promptService azdext.PromptServiceServer,
 	userConfigService azdext.UserConfigServiceServer,
 	deploymentService azdext.DeploymentServiceServer,
+	eventService azdext.EventServiceServer,
 ) *Server {
 	return &Server{
 		projectService:     projectService,
@@ -46,6 +48,7 @@ func NewServer(
 		promptService:      promptService,
 		userConfigService:  userConfigService,
 		deploymentService:  deploymentService,
+		eventService:       eventService,
 	}
 }
 
@@ -74,6 +77,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterPromptServiceServer(s.grpcServer, s.promptService)
 	azdext.RegisterUserConfigServiceServer(s.grpcServer, s.userConfigService)
 	azdext.RegisterDeploymentServiceServer(s.grpcServer, s.deploymentService)
+	azdext.RegisterEventServiceServer(s.grpcServer, s.eventService)
 
 	go func() {
 		// Start the gRPC server

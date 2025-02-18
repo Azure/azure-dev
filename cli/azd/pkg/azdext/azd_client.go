@@ -23,6 +23,7 @@ type AzdClient struct {
 	userConfigClient  UserConfigServiceClient
 	promptClient      PromptServiceClient
 	deploymentClient  DeploymentServiceClient
+	eventsClient      EventServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -114,4 +115,13 @@ func (c *AzdClient) Deployment() DeploymentServiceClient {
 	}
 
 	return c.deploymentClient
+}
+
+// Deployment returns the deployment service client.
+func (c *AzdClient) Events() EventServiceClient {
+	if c.eventsClient == nil {
+		c.eventsClient = NewEventServiceClient(c.connection)
+	}
+
+	return c.eventsClient
 }

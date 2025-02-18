@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -75,7 +76,7 @@ func invokeExtensionHelp(console input.Console, commandRunner exec.CommandRunner
 		fmt.Println("Failed running help")
 	}
 
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := config.GetUserConfigDir()
 	if err != nil {
 		fmt.Println("Failed running help")
 	}

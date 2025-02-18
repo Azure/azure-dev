@@ -1,0 +1,93 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"slices"
+	"time"
+
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type ExtensionsMiddleware struct {
+	extensionManager *extensions.Manager
+	serviceLocator   ioc.ServiceLocator
+}
+
+func NewExtensionsMiddleware(serviceLocator ioc.ServiceLocator, extensionsManager *extensions.Manager) Middleware {
+	return &ExtensionsMiddleware{
+		serviceLocator:   serviceLocator,
+		extensionManager: extensionsManager,
+	}
+}
+
+func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	installedExtensions, err := m.extensionManager.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+
+	requireLifecycleEvents := false
+	extensionList := []*extensions.Extension{}
+
+	// Find extensions that require lifecycle events
+	for _, extension := range installedExtensions {
+		if slices.Contains(extension.Capabilities, extensions.LifecycleEventsCapability) {
+			extensionList = append(extensionList, extension)
+			requireLifecycleEvents = true
+		}
+	}
+
+	if !requireLifecycleEvents {
+		return next(ctx)
+	}
+
+	var grpcServer *grpcserver.Server
+	if err := m.serviceLocator.Resolve(&grpcServer); err != nil {
+		return nil, err
+	}
+
+	serverInfo, err := grpcServer.Start()
+	if err != nil {
+		return nil, err
+	}
+
+	defer grpcServer.Stop()
+
+	for _, extension := range extensionList {
+		claims := extensions.ExtensionClaims{
+			RegisteredClaims: jwt.RegisteredClaims{
+				Issuer:    "azd",
+				Subject:   extension.Id,
+				Audience:  []string{serverInfo.Address},
+				IssuedAt:  jwt.NewNumericDate(time.Now()),
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 1)),
+			},
+			Capabilities: extension.Capabilities,
+		}
+
+		jwtToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(serverInfo.AccessToken)
+		if err != nil {
+			return nil, err
+		}
+
+		options := &extensions.InvokeOptions{
+			Args: []string{"register"},
+			Env: []string{
+				fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
+				fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
+			},
+		}
+
+		if _, err := m.extensionManager.Invoke(ctx, extension, options); err != nil {
+			log.Printf("Failed to start extension %s: %s", extension.Id, err.Error())
+		}
+	}
+
+	return next(ctx)
+}

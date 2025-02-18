@@ -81,6 +81,7 @@ type Manager interface {
 
 	EnvPath(env *Environment) string
 	ConfigPath(env *Environment) string
+	SetParentEnvironmentName(name string)
 }
 
 type manager struct {
@@ -124,6 +125,10 @@ func NewManager(
 		remote:     remote,
 		console:    console,
 	}, nil
+}
+
+func (m *manager) SetParentEnvironmentName(name string) {
+	m.azdContext.ParentEnvironmentName = name
 }
 
 func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
@@ -182,22 +187,15 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 			return nil, fmt.Errorf("saving default environment: %w", err)
 		}
 	}
-
-	defaultEnvironmentName, err := m.azdContext.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, fmt.Errorf("getting default environment: %w", err)
-	}
-
-	if env.Name() != defaultEnvironmentName {
-		if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
-			return nil, fmt.Errorf("saving default environment: %w", err)
-		}
-	}
-
 	return env, nil
 }
 
 func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName string) (*Environment, bool, error) {
+
+	if environmentName == "" && m.azdContext.ParentEnvironmentName != "" {
+		environmentName = m.azdContext.ParentEnvironmentName
+	}
+
 	// If there's a default environment, use that
 	if environmentName == "" {
 		var err error

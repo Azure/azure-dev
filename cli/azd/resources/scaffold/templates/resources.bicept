@@ -102,18 +102,16 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
 {{- end}}
 
 {{- if .DbPostgres}}
-var databaseName = '{{ .DbPostgres.DatabaseName }}'
-var databaseUser = 'psqladmin'
-module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
-  name: 'postgreServer'
+var postgresDatabaseName = '{{ .DbPostgres.DatabaseName }}'
+var postgresDatabaseUser = 'psqladmin'
+module postgresServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
+  name: 'postgresServer'
   params: {
-    // Required parameters
     name: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
     skuName: 'Standard_B1ms'
     tier: 'Burstable'
-    // Non-required parameters
-    administratorLogin: databaseUser
-    administratorLoginPassword: databasePassword
+    administratorLogin: postgresDatabaseUser
+    administratorLoginPassword: postgresDatabasePassword
     geoRedundantBackup: 'Disabled'
     passwordAuth:'Enabled'
     firewallRules: [
@@ -125,7 +123,7 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     ]
     databases: [
       {
-        name: databaseName
+        name: postgresDatabaseName
       }
     ]
     location: location
@@ -139,11 +137,9 @@ var mysqlDatabaseUser = '{{ .DbMySql.DatabaseUser }}'
 module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.6.1' = {
   name: 'mysqlServer'
   params: {
-    // Required parameters
     name: '${abbrs.dBforMySQLServers}${resourceToken}'
     skuName: 'Standard_B1ms'
     tier: 'Burstable'
-    // Non-required parameters
     administratorLogin: mysqlDatabaseUser
     administratorLoginPassword: mysqlDatabasePassword
     geoRedundantBackup: 'Disabled'
@@ -391,12 +387,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {{- end}}
         {{- if .DbPostgres}}
         {
-          name: 'db-pass'
-          value: databasePassword
+          name: 'postgres-password'
+          value: postgresDatabasePassword
         }
         {
           name: 'db-url'
-          value: 'postgresql://${databaseUser}:${databasePassword}@${postgreServer.outputs.fqdn}:5432/${databaseName}'
+          value: 'postgresql://${postgresDatabaseUser}:${postgresDatabasePassword}@${postgresServer.outputs.fqdn}:5432/${postgresDatabaseName}'
         }
         {{- end}}
         {{- if .DbMySql}}
@@ -405,7 +401,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           value: mysqlDatabasePassword
         }
         {
-          name: 'mysql-db-url'
+          name: 'mysql-url'
           value: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
         }
         {{- end}}
@@ -453,19 +449,19 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- if .DbPostgres}}
           {
             name: 'POSTGRES_HOST'
-            value: postgreServer.outputs.fqdn
+            value: postgresServer.outputs.fqdn
           }
           {
             name: 'POSTGRES_USERNAME'
-            value: databaseUser
+            value: postgresDatabaseUser
           }
           {
             name: 'POSTGRES_DATABASE'
-            value: databaseName
+            value: postgresDatabaseName
           }
           {
             name: 'POSTGRES_PASSWORD'
-            secretRef: 'db-pass'
+            secretRef: 'postgres-password'
           }
           {
             name: 'POSTGRES_URL'
@@ -495,7 +491,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           }
           {
             name: 'MYSQL_URL'
-            secretRef: 'mysql-db-url'
+            secretRef: 'mysql-url'
           }
           {
             name: 'MYSQL_PORT'
@@ -647,13 +643,13 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
     secrets: [
       {{- if .DbPostgres}}
       {
-        name: 'db-pass'
-        value: databasePassword
+        name: 'POSTGRES-PASSWORD'
+        value: postgresDatabasePassword
       }
       {{- end}}
       {{- if .DbMySql}}
       {
-        name: 'mysql-password'
+        name: 'MYSQL-PASSWORD'
         value: mysqlDatabasePassword
       }
       {{- end}}
@@ -679,7 +675,7 @@ output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = '${account.outputs.r
 output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
-output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgreServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgresServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
 {{- end}}
 {{- if .DbMySql}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = '${mysqlServer.outputs.resourceId}/databases/{{.DbMySql.DatabaseName}}'

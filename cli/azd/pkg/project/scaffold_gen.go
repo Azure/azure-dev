@@ -146,12 +146,10 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
 				DatabaseName: res.Name,
-				DatabaseUser: "pgadmin",
 			}
 		case ResourceTypeDbMySql:
 			infraSpec.DbMySql = &scaffold.DatabaseMysql{
 				DatabaseName: res.Name,
-				DatabaseUser: "mysqladmin",
 			}
 		case ResourceTypeHostContainerApp:
 			svcSpec := scaffold.ServiceSpec{

@@ -142,7 +142,6 @@ func TestExecInfra(t *testing.T) {
 			InfraSpec{
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
-					DatabaseUser: "appuser",
 				},
 				Services: []ServiceSpec{
 					{
@@ -160,7 +159,6 @@ func TestExecInfra(t *testing.T) {
 			InfraSpec{
 				DbMySql: &DatabaseMysql{
 					DatabaseName: "appdb",
-					DatabaseUser: "appuser",
 				},
 				Services: []ServiceSpec{
 					{

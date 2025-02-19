@@ -133,7 +133,7 @@ module postgresServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.
 
 {{- if .DbMySql}}
 var mysqlDatabaseName = '{{ .DbMySql.DatabaseName }}'
-var mysqlDatabaseUser = '{{ .DbMySql.DatabaseUser }}'
+var mysqlDatabaseUser = 'mysqladmin'
 module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.6.1' = {
   name: 'mysqlServer'
   params: {

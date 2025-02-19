@@ -37,12 +37,10 @@ type Parameter struct {
 }
 
 type DatabasePostgres struct {
-	DatabaseUser string
 	DatabaseName string
 }
 
 type DatabaseMysql struct {
-	DatabaseUser string
 	DatabaseName string
 }
 

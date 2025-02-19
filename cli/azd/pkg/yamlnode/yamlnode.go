@@ -220,7 +220,11 @@ func find(current *yaml.Node, parts []pathElem, findOnly bool) (*yaml.Node, erro
 		current.Content[part.idx] = node
 	}
 
-	return node, nil
+	if len(parts) == 0 {
+		return node, nil
+	}
+
+	return find(node, parts[1:], findOnly)
 }
 
 // parsePath parses a dotted-path into a slice of yaml path elements.

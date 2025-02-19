@@ -93,7 +93,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
     {{- if .Services}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
-      primaryWriteConnectionStringSecretName: 'MONGODB-URL'
+      primaryWriteConnectionStringSecretName: 'mongodb-url'
     }
     {{- end}}
     capabilitiesToAdd: [ 'EnableServerless' ]
@@ -382,7 +382,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {
           name: 'mongodb-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri
+          keyVaultUrl: cosmos.outputs.exportedSecrets['mongodb-url'].secretUri
         }
         {{- end}}
         {{- if .DbPostgres}}
@@ -409,12 +409,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {
           name: 'redis-pass'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/redis-password'
         }
         {
           name: 'redis-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/redis-url'
         }
         {{- end}}
       ],
@@ -607,8 +607,8 @@ module redis 'br/public:avm/res/cache/redis:0.9.0' = {
     {{- if .Services}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
-      primaryAccessKeyName: 'REDIS-PASSWORD'
-      primaryConnectionStringName: 'REDIS-URL'
+      primaryAccessKeyName: 'redis-password'
+      primaryConnectionStringName: 'redis-url'
     }
     {{- end}}
   }
@@ -643,13 +643,13 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
     secrets: [
       {{- if .DbPostgres}}
       {
-        name: 'POSTGRES-PASSWORD'
+        name: 'postgres-password'
         value: postgresDatabasePassword
       }
       {{- end}}
       {{- if .DbMySql}}
       {
-        name: 'MYSQL-PASSWORD'
+        name: 'mysql-password'
         value: mysqlDatabasePassword
       }
       {{- end}}

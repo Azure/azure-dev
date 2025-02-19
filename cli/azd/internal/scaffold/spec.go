@@ -15,6 +15,7 @@ type InfraSpec struct {
 	// Databases to create
 	DbPostgres    *DatabasePostgres
 	DbCosmosMongo *DatabaseCosmosMongo
+	DbCosmos      *DatabaseCosmos
 	DbRedis       *DatabaseRedis
 
 	// Messaging services
@@ -41,6 +42,10 @@ type DatabasePostgres struct {
 }
 
 type DatabaseCosmosMongo struct {
+	DatabaseName string
+}
+
+type DatabaseCosmos struct {
 	DatabaseName string
 }
 
@@ -89,6 +94,7 @@ type ServiceSpec struct {
 	// Connection to a database
 	DbPostgres    *DatabaseReference
 	DbCosmosMongo *DatabaseReference
+	DbCosmos      *DatabaseReference
 	DbRedis       *DatabaseReference
 
 	StorageAccount *StorageReference

@@ -44,6 +44,8 @@ func Configure(
 	case project.ResourceTypeDbPostgres,
 		project.ResourceTypeDbMongo:
 		return fillDatabaseName(ctx, r, console, p)
+	case project.ResourceTypeDbCosmos:
+		return fillDatabaseName(ctx, r, console, p)
 	case project.ResourceTypeMessagingEventHubs:
 		return fillEventHubs(ctx, r, console, p)
 	case project.ResourceTypeMessagingServiceBus:

@@ -57,6 +57,16 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 			"POSTGRES_PORT",
 			"POSTGRES_URL",
 		}
+	case project.ResourceTypeDbMySql:
+		res.AzureResourceType = "Microsoft.DBforMySQL/flexibleServers/databases"
+		res.UseEnvVars = []string{
+			"MYSQL_HOST",
+			"MYSQL_USERNAME",
+			"MYSQL_DATABASE",
+			"MYSQL_PASSWORD",
+			"MYSQL_PORT",
+			"MYSQL_URL",
+		}
 	case project.ResourceTypeDbMongo:
 		res.AzureResourceType = "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases"
 		res.UseEnvVars = []string{

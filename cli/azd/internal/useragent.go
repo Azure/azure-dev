@@ -19,6 +19,8 @@ const (
 	VsCodeAgentPrefix = "vscode:/extensions/ms-azuretools.azure-dev"
 	// cspell: disable-next-line
 	VsAgentPrefix = "vside:/webtools/azdev.publish"
+	// cspell: disable-next-line
+	VsCodeAzureCopilotAgentPrefix = "ms-azuretools.vscode-azure-github-copilot"
 )
 
 // UserAgent() creates the user agent string for azd.

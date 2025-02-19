@@ -15,6 +15,7 @@ func AllResourceTypes() []ResourceType {
 	return []ResourceType{
 		ResourceTypeDbRedis,
 		ResourceTypeDbPostgres,
+		ResourceTypeDbMySql,
 		ResourceTypeDbMongo,
 		ResourceTypeDbCosmos,
 		ResourceTypeHostContainerApp,
@@ -28,6 +29,7 @@ func AllResourceTypes() []ResourceType {
 const (
 	ResourceTypeDbRedis             ResourceType = "db.redis"
 	ResourceTypeDbPostgres          ResourceType = "db.postgres"
+	ResourceTypeDbMySql             ResourceType = "db.mysql"
 	ResourceTypeDbMongo             ResourceType = "db.mongo"
 	ResourceTypeDbCosmos            ResourceType = "db.cosmos"
 	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
@@ -43,6 +45,8 @@ func (r ResourceType) String() string {
 		return "Redis"
 	case ResourceTypeDbPostgres:
 		return "PostgreSQL"
+	case ResourceTypeDbMySql:
+		return "MySQL"
 	case ResourceTypeDbMongo:
 		return "MongoDB"
 	case ResourceTypeDbCosmos:

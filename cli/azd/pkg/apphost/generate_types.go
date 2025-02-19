@@ -153,6 +153,7 @@ type genBicepTemplateContext struct {
 
 type genContainerAppManifestTemplateContext struct {
 	Name            string
+	Entrypoint      string
 	Ingress         *genContainerAppIngress
 	Env             map[string]string
 	Secrets         map[string]string

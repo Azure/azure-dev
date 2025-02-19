@@ -24,6 +24,7 @@
       "type": "container.v0",
       "image": "mysql:latest",
       "args": [ "arg1", "{project.bindings.https.url}" ],
+      "entrypoint": "entrypoint.sh",
       "bindings": {
         "tcp": {
           "scheme": "tcp",

@@ -170,9 +170,14 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("failed to start gRPC server: %w", err)
 	}
 
+	jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate extension token")
+	}
+
 	allEnv = append(allEnv,
 		fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
-		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", serverInfo.AccessToken),
+		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
 	)
 
 	runArgs := exec.

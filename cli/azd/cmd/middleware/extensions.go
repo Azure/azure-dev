@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"log"
 	"slices"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type ExtensionsMiddleware struct {
@@ -60,18 +58,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	defer grpcServer.Stop()
 
 	for _, extension := range extensionList {
-		claims := extensions.ExtensionClaims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Issuer:    "azd",
-				Subject:   extension.Id,
-				Audience:  []string{serverInfo.Address},
-				IssuedAt:  jwt.NewNumericDate(time.Now()),
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 1)),
-			},
-			Capabilities: extension.Capabilities,
-		}
-
-		jwtToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(serverInfo.AccessToken)
+		jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
 		if err != nil {
 			return nil, err
 		}

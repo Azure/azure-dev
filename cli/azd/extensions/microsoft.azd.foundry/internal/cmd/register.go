@@ -29,8 +29,25 @@ func newRegisterCommand() *cobra.Command {
 			}
 
 			eventStream.Send(&azdext.EventMessage{
-				MessageType: "EventMessage_Subscribe",
+				MessageType: &azdext.EventMessage_Subscribe{
+					Subscribe: &azdext.SubscribeMessage{
+						EventNames: []string{"preprovision"},
+					},
+				},
 			})
+
+			for {
+				msg, err := eventStream.Recv()
+				if err != nil {
+					return fmt.Errorf("failed to receive message: %w", err)
+				}
+
+				switch msg.MessageType.(type) {
+				case *azdext.EventMessage_Invoke:
+					invokeMsg := msg.GetInvoke()
+					fmt.Printf("Received invoke message: %+v\n", invokeMsg.EventName)
+				}
+			}
 		},
 	}
 }

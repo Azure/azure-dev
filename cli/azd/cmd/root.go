@@ -342,7 +342,8 @@ func NewRootCmd(
 		UseMiddleware("ux", middleware.NewUxMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
-		})
+		}) //.
+		//UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	// Register common dependencies for the IoC rootContainer
 	if rootContainer == nil {

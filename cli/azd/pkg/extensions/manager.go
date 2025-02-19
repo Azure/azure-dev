@@ -28,7 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -47,11 +46,6 @@ var (
 type ListOptions struct {
 	Source string
 	Tags   []string
-}
-
-type ExtensionClaims struct {
-	jwt.RegisteredClaims
-	Capabilities []CapabilityType `json:"cap,omitempty"`
 }
 
 type sourceFilterPredicate func(config *SourceConfig) bool

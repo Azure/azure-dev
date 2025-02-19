@@ -6,7 +6,6 @@ package grpcserver
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -19,9 +18,9 @@ import (
 )
 
 type ServerInfo struct {
-	Address     string
-	Port        int
-	AccessToken string
+	Address    string
+	Port       int
+	SigningKey []byte
 }
 
 type Server struct {
@@ -53,13 +52,15 @@ func NewServer(
 }
 
 func (s *Server) Start() (*ServerInfo, error) {
-	accessToken, err := generateToken()
+	signingKey, err := generateSigningKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
+	var serverInfo ServerInfo
+
 	s.grpcServer = grpc.NewServer(
-		grpc.UnaryInterceptor(tokenAuthInterceptor(accessToken)),
+		grpc.UnaryInterceptor(s.tokenAuthInterceptor(&serverInfo)),
 	)
 
 	// Use ":0" to let the system assign an available random port
@@ -79,6 +80,10 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterDeploymentServiceServer(s.grpcServer, s.deploymentService)
 	azdext.RegisterEventServiceServer(s.grpcServer, s.eventService)
 
+	serverInfo.Address = fmt.Sprintf("localhost:%d", randomPort)
+	serverInfo.Port = randomPort
+	serverInfo.SigningKey = signingKey
+
 	go func() {
 		// Start the gRPC server
 		if err := s.grpcServer.Serve(listener); err != nil {
@@ -89,9 +94,9 @@ func (s *Server) Start() (*ServerInfo, error) {
 	log.Printf("AZD Server listening on port %d", randomPort)
 
 	return &ServerInfo{
-		Address:     fmt.Sprintf("localhost:%d", randomPort),
-		Port:        randomPort,
-		AccessToken: accessToken,
+		Address:    fmt.Sprintf("localhost:%d", randomPort),
+		Port:       randomPort,
+		SigningKey: signingKey,
 	}, nil
 }
 
@@ -106,7 +111,7 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-func tokenAuthInterceptor(expectedToken string) grpc.UnaryServerInterceptor {
+func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req interface{},
@@ -120,7 +125,12 @@ func tokenAuthInterceptor(expectedToken string) grpc.UnaryServerInterceptor {
 
 		// Extract the authorization token from metadata
 		token := md["authorization"]
-		if len(token) == 0 || token[0] != expectedToken {
+		if len(token) == 0 {
+			return nil, status.Error(codes.Unauthenticated, "invalid token")
+		}
+
+		_, err := ParseExtensionToken(token[0], serverInfo)
+		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid token")
 		}
 
@@ -129,10 +139,10 @@ func tokenAuthInterceptor(expectedToken string) grpc.UnaryServerInterceptor {
 	}
 }
 
-func generateToken() (string, error) {
+func generateSigningKey() ([]byte, error) {
 	bytes := make([]byte, 16) // 128-bit token
 	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+		return nil, err
 	}
-	return hex.EncodeToString(bytes), nil
+	return bytes, nil
 }

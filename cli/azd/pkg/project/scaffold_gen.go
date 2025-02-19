@@ -148,6 +148,11 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				DatabaseName: res.Name,
 				DatabaseUser: "pgadmin",
 			}
+		case ResourceTypeDbMySql:
+			infraSpec.DbMySql = &scaffold.DatabaseMysql{
+				DatabaseName: res.Name,
+				DatabaseUser: "mysqladmin",
+			}
 		case ResourceTypeHostContainerApp:
 			svcSpec := scaffold.ServiceSpec{
 				Name: res.Name,
@@ -287,6 +292,8 @@ func mapHostUses(
 			svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbPostgres:
 			svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+		case ResourceTypeDbMySql:
+			svcSpec.DbMySql = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbRedis:
 			svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeHostContainerApp:

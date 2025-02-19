@@ -67,7 +67,3 @@ func (m *MockEnvManager) Delete(ctx context.Context, name string) error {
 	args := m.Called(name)
 	return args.Error(0)
 }
-
-func (m *MockEnvManager) SetParentEnvironmentName(name string) {
-	m.Called(name)
-}

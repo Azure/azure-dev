@@ -105,7 +105,7 @@ var resourceIdRegex = regexp.MustCompile("/.+/(?i)resourceGroups/(.+?)/.+")
 // Find the resource group name from the resource id
 func GetResourceGroupName(resourceId string) *string {
 	matches := resourceIdRegex.FindSubmatch([]byte(resourceId))
-	if matches == nil || len(matches) < 2 {
+	if len(matches) < 2 {
 		return nil
 	}
 

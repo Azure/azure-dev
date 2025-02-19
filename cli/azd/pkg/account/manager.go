@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"slices"
 
@@ -62,7 +62,8 @@ func NewManager(
 	azdConfig, err := configManager.Load(filePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("configuration file '%s' does not exist. Creating new empty config.", filePath)
+			slog.InfoContext(context.TODO(), "configuration file does not exist. Creating new empty config.",
+				"path", filePath)
 			azdConfig = config.NewEmptyConfig()
 		} else {
 			return nil, err
@@ -85,7 +86,7 @@ func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	if err != nil {
 		// logging the error, but we don't want to fail, as this could only
 		// means an account change
-		log.Println(fmt.Errorf("failed retrieving default subscription: %w", err).Error())
+		slog.InfoContext(ctx, "failed retrieving default subscription", "err", err)
 	}
 
 	var location *Location

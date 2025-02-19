@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -88,7 +88,7 @@ type AssignmentConfig struct {
 func (am *AssignmentsManager) Assignment(ctx context.Context) (*Assignment, error) {
 	cachedAssignment, err := am.readResponseFromCache()
 	if err != nil {
-		log.Printf("could not read assignment from cache: %v", err)
+		slog.InfoContext(ctx, "could not read assignment from cache", "err", err)
 	}
 
 	if cachedAssignment == nil {
@@ -104,7 +104,7 @@ func (am *AssignmentsManager) Assignment(ctx context.Context) (*Assignment, erro
 			return nil, err
 		}
 		if err := am.cacheResponse(assignment); err != nil {
-			log.Printf("failed to cache assignment response: %v", err)
+			slog.InfoContext(ctx, "failed to cache assignment response", "err", err)
 		}
 
 		cachedAssignment = assignment

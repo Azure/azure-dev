@@ -4,9 +4,10 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -35,7 +36,7 @@ func (c *fileCache) Read(key string) ([]byte, error) {
 	}
 	defer func() {
 		if err := fl.Unlock(); err != nil {
-			log.Printf("failed to release file lock: %v", err)
+			slog.InfoContext(context.TODO(), "failed to release file lock", "err", err)
 		}
 	}()
 
@@ -58,7 +59,7 @@ func (c *fileCache) Set(key string, value []byte) error {
 	}
 	defer func() {
 		if err := fl.Unlock(); err != nil {
-			log.Printf("failed to release file lock: %v", err)
+			slog.InfoContext(context.TODO(), "failed to release file lock", "err", err)
 		}
 	}()
 

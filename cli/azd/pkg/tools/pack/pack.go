@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -102,7 +102,7 @@ func newPackCliImpl(
 	transporter policy.Transporter,
 	extract func(string, string) (string, error)) (*Cli, error) {
 	if override := os.Getenv("AZD_PACK_TOOL_PATH"); override != "" {
-		log.Printf("using external pack tool: %s", override)
+		slog.InfoContext(ctx, "using external pack tool", "path", override)
 
 		return &Cli{
 			path:   override,
@@ -141,10 +141,12 @@ func newPackCliImpl(
 		return nil, fmt.Errorf("checking pack version: %w", err)
 	}
 
-	log.Printf("pack version: %s", ver)
+	slog.InfoContext(ctx, "detected pack version", "version", ver)
 
 	if ver.LT(Version) {
-		log.Printf("installed pack version %s is older than %s; updating.", ver.String(), Version.String())
+		slog.InfoContext(ctx, "installed pack version is out of date, updating.",
+			"currentVersion", ver.String(),
+			"minimumVersion", Version.String())
 
 		msg := "Upgrading pack"
 		console.ShowSpinner(ctx, msg, input.Step)
@@ -155,7 +157,7 @@ func newPackCliImpl(
 		}
 	}
 
-	log.Printf("using local pack: %s", cliPath)
+	slog.InfoContext(ctx, "using local pack", "path", cliPath)
 
 	return cli, nil
 }
@@ -257,14 +259,15 @@ func extractFromZip(
 		return "", err
 	}
 
-	log.Printf("extract from %s", zipped)
+	slog.InfoContext(context.TODO(), "searching for pack cli in zip",
+		"path", zipped)
 	defer zipReader.Close()
 
 	var extractedAt string
 	for _, file := range zipReader.File {
 		fileName := file.FileInfo().Name()
 		if !file.FileInfo().IsDir() && fileName == packName() {
-			log.Printf("found cli at: %s", file.Name)
+			slog.InfoContext(context.TODO(), "found cli", "name", file.Name)
 			fileReader, err := file.Open()
 			if err != nil {
 				return extractedAt, err
@@ -285,7 +288,7 @@ func extractFromZip(
 		}
 	}
 	if extractedAt != "" {
-		log.Printf("extracted to: %s", extractedAt)
+		slog.InfoContext(context.TODO(), "extracted pack cli", "path", extractedAt)
 		return extractedAt, nil
 	}
 	return extractedAt, fmt.Errorf("pack cli binary was not found within the zip file")
@@ -382,7 +385,7 @@ func downloadPack(
 
 	// example: https://github.com/buildpacks/pack/releases/download/v0.29.0/pack-v0.29.0-windows.zip
 	ghReleaseUrl := fmt.Sprintf("https://github.com/buildpacks/pack/releases/download/v%s/%s", version, releaseName)
-	log.Printf("downloading pack cli release %s -> %s", ghReleaseUrl, releaseName)
+	slog.InfoContext(ctx, "downloading pack cli", "source", ghReleaseUrl, "target", releaseName)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", ghReleaseUrl, nil)
 	if err != nil {
@@ -421,12 +424,14 @@ func downloadPack(
 		return err
 	}
 	defer func() {
-		log.Printf("delete %s", compressedFileName)
+		slog.InfoContext(ctx, "remove temporary download",
+			"path", compressedFileName)
 		_ = os.Remove(compressedFileName)
 	}()
 
 	// unzip downloaded file
-	log.Printf("extracting file %s", compressedFileName)
+	slog.InfoContext(ctx, "extracting pack from zip",
+		"path", compressedFileName)
 	_, err = extractFile(compressedFileName, tmpPath)
 	if err != nil {
 		return err

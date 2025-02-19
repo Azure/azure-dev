@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -165,10 +165,9 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 func (a *infraSynthAction) promptForDuplicates(
 	ctx context.Context, staging string, target string) (skipSourceFiles map[string]struct{}, err error) {
-	log.Printf(
-		"infrastructure synth, checking for duplicates. source: %s target: %s",
-		staging,
-		target,
+	slog.InfoContext(ctx, "infrastructure synth, checking for duplicates",
+		"source", staging,
+		"target", target,
 	)
 
 	duplicateFiles, err := determineDuplicates(staging, target)

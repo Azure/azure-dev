@@ -6,7 +6,7 @@ package templates
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -173,7 +173,7 @@ func (tm *TemplateManager) createSourcesFromConfig(
 
 		source, err := tm.sourceManager.CreateSource(ctx, config)
 		if err != nil {
-			log.Printf("failed to create source: %s", err.Error())
+			slog.InfoContext(ctx, "failed to create source", "err", err.Error())
 			continue
 		}
 
@@ -247,7 +247,8 @@ func PromptTemplate(
 	}
 
 	template := templates[selected]
-	log.Printf("Selected template: %s", fmt.Sprint(template.RepositoryPath))
+	slog.InfoContext(ctx, "Selected template",
+		"template", fmt.Sprint(template.RepositoryPath))
 
 	return *template, nil
 }

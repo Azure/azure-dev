@@ -4,7 +4,8 @@
 package runcontext
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"os"
 	"strconv"
 )
@@ -18,7 +19,7 @@ const AzdInCloudShellEnvVar = "AZD_IN_CLOUDSHELL"
 func IsRunningInCloudShell() bool {
 	if azdInCloudShell, has := os.LookupEnv(AzdInCloudShellEnvVar); has {
 		if use, err := strconv.ParseBool(azdInCloudShell); err == nil && use {
-			log.Printf("running in Cloud Shell")
+			slog.InfoContext(context.TODO(), "running in Cloud Shell")
 			return true
 		}
 	}

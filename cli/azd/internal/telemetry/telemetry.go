@@ -7,7 +7,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -85,7 +85,7 @@ func GetTelemetrySystem() *TelemetrySystem {
 	once.Do(func() {
 		telemetrySystem, err := initialize()
 		if err != nil {
-			log.Printf("failed to initialize telemetry: %v\n", err)
+			slog.InfoContext(context.TODO(), "failed to initialize telemetry", "err", err)
 		} else {
 			instance = telemetrySystem
 		}
@@ -96,12 +96,12 @@ func GetTelemetrySystem() *TelemetrySystem {
 
 func initialize() (*TelemetrySystem, error) {
 	if !IsTelemetryEnabled() {
-		log.Println("telemetry is disabled by user and will not be initialized.")
+		slog.InfoContext(context.TODO(), "telemetry is disabled by user and will not be initialized.")
 		return nil, nil
 	}
 
 	appinsightsexporter.SetListener(func(msg string) {
-		log.Println(msg)
+		slog.InfoContext(context.TODO(), msg)
 	})
 
 	telemetryDir, err := getTelemetryDirectory()
@@ -258,12 +258,12 @@ func (ts *TelemetrySystem) RunBackgroundUpload(ctx context.Context, enableDebugL
 		cancelCleanup()
 
 		if err != nil {
-			log.Printf("failed to upload telemetry: %v", err)
+			slog.InfoContext(ctx, "failed to upload telemetry", "err", err)
 		}
 		return err
 	}
 
-	log.Println("Upload already in progress. Exiting.")
+	slog.InfoContext(ctx, "Upload already in progress. Exiting.")
 	return nil
 }
 
@@ -294,7 +294,7 @@ func getTraceFlags() (logFile string, logUrl string) {
 	flags.BoolVarP(&help, "help", "h", false, "")
 
 	if err := flags.Parse(os.Args[1:]); err != nil {
-		log.Printf("could not parse flags: %v", err)
+		slog.InfoContext(context.TODO(), "could not parse flags", "err", err)
 	}
 
 	return

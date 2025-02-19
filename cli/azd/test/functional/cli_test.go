@@ -13,7 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	osexec "os/exec"
@@ -98,7 +98,7 @@ func (c *cliConfig) init() {
 		}
 
 		if err != nil {
-			log.Printf("could not load user config to provide default test values: %v", err)
+			slog.InfoContext(context.Background(), "could not load user config to provide default test values", "err", err)
 		}
 	}
 }
@@ -108,7 +108,7 @@ func TestMain(m *testing.M) {
 
 	shortFlag := flag.Lookup("test.short")
 	if shortFlag != nil && shortFlag.Value.String() == "true" {
-		log.Println("Skipping tests in short mode")
+		fmt.Println("Skipping tests in short mode")
 		os.Exit(0)
 	}
 

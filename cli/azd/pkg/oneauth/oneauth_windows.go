@@ -38,7 +38,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +54,7 @@ import (
 
 //export goLog
 func goLog(s *C.char) {
-	log.Print(C.GoString(s))
+	slog.InfoContext(context.TODO(), C.GoString(s))
 }
 
 // Supported indicates whether this build includes OneAuth integration.

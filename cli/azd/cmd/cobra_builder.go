@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -178,7 +177,7 @@ func (df *docsFlag) Set(value string) error {
 	// Setting help to true will make cobra to stop and call the HelpFunc
 	if err = df.command.Flag("help").Value.Set("true"); err != nil {
 		// dev-issue: help flag should be already been added when
-		log.Panic("tried to set help after docs parameter: %w", err)
+		panic(fmt.Sprintf("tried to set help after docs parameter: %v", err))
 	}
 
 	// keeping the default help function allows to set --help with higher priority and use it
@@ -216,7 +215,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		consoleFn: func() input.Console {
 			var console input.Console
 			if err := cb.container.Resolve(&console); err != nil {
-				log.Panic("creating docs flag: %w", err)
+				panic(fmt.Sprintf("creating docs flag: %v", err))
 			}
 			return console
 		},

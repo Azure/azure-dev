@@ -4,8 +4,9 @@
 package alpha
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -71,7 +72,7 @@ func (m *FeatureManager) initConfigCache() {
 	if m.userConfigCache == nil {
 		config, err := m.configManager.Load()
 		if err != nil {
-			log.Panic("Can't load user config!! %w", err)
+			panic(fmt.Sprintf("Can't load user config!! %v", err))
 		}
 		m.userConfigCache = config
 	}
@@ -100,7 +101,8 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 				foundEnvVar = true
 				break
 			} else {
-				log.Printf("could not parse %s as a bool when considering %s", value, envName)
+				slog.InfoContext(context.TODO(), "could not parse env var value as a bool",
+					"value", value, "envName", envName)
 			}
 		}
 	}
@@ -146,18 +148,17 @@ func isEnabled(config config.Config, id FeatureId) bool {
 	// need to check the cast here in case the config is manually updated
 	stringValue, castResult := value.(string)
 	if !castResult {
-		log.Panicf("Invalid configuration value for '%s': %s", longKey, value)
+		panic(fmt.Sprintf("Invalid configuration value for '%s': %s", longKey, value))
 	}
 	stringValue = strings.ToLower(stringValue)
 
 	if stringValue != disabledValue && stringValue != enabledValue {
-		log.Panicf(
-			"invalid configuration value for '%s': %s. Valid options are '%s' or '%s'.",
+		panic(fmt.Sprintf("invalid configuration value for '%s': %s. Valid options are '%s' or '%s'.",
 			longKey,
 			stringValue,
 			enabledValue,
 			disabledValue,
-		)
+		))
 	}
 
 	// previous condition ensured that stringValue is either `enabledValue` or `disabledValue`

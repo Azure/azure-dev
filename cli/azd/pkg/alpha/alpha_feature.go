@@ -5,7 +5,6 @@ package alpha
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/resources"
@@ -38,7 +37,7 @@ var allFeatures []Feature
 func init() {
 	err := yaml.Unmarshal(resources.AlphaFeatures, &allFeatures)
 	if err != nil {
-		log.Panic("Can't marshall alpha features!! %w", err)
+		panic(fmt.Sprintf("Can't marshall alpha features!! %v", err))
 	}
 }
 

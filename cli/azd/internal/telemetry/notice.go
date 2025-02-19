@@ -4,9 +4,10 @@
 package telemetry
 
 import (
+	"context"
 	"errors"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -27,7 +28,7 @@ func FirstNotice() string {
 	if runcontext.IsRunningInCloudShell() && !noticeShown() {
 		err := SetupFirstRun()
 		if err != nil {
-			log.Printf("failed to setup first run: %v", err)
+			slog.InfoContext(context.TODO(), "failed to setup first run", "err", err)
 		}
 
 		//nolint:lll
@@ -44,7 +45,7 @@ Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-de
 func noticeShown() bool {
 	firstRunFilePath, err := getFirstRunFilePath()
 	if err != nil {
-		log.Printf("failed to get first run file path: %v", err)
+		slog.InfoContext(context.TODO(), "failed to get first run file path", "err", err)
 		// Assume no notice has been show
 		return false
 	}
@@ -56,7 +57,7 @@ func noticeShown() bool {
 		// The file does not exist, this is the first run
 		return false
 	} else {
-		log.Printf("failed to stat first run file: %v", err)
+		slog.InfoContext(context.TODO(), "failed to stat first run file", "err", err)
 		// If the first run file can't be read assume notice hasn't been shown
 		return false
 	}
@@ -65,7 +66,7 @@ func noticeShown() bool {
 func getFirstRunFilePath() (string, error) {
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
-		log.Printf("failed to get user config dir: %v", err)
+		slog.InfoContext(context.TODO(), "failed to get user config dir", "err", err)
 		return "", err
 	}
 

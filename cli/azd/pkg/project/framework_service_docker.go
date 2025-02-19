@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -257,14 +257,12 @@ func (p *dockerProject) Build(
 		buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
 	}
 
-	log.Printf(
-		"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
-		serviceConfig.Name,
-		serviceConfig.Path(),
-		dockerOptions.Path,
-		dockerOptions.Context,
-		buildArgs,
-	)
+	slog.InfoContext(ctx, "building image for service",
+		"service", serviceConfig.Name,
+		"cwd", serviceConfig.Path(),
+		"path", dockerOptions.Path,
+		"context", dockerOptions.Context,
+		"buildArgs", buildArgs)
 
 	imageName := fmt.Sprintf(
 		"%s-%s",
@@ -327,7 +325,7 @@ func (p *dockerProject) Build(
 		return nil, fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err)
 	}
 
-	log.Printf("built image %s for %s", imageId, serviceConfig.Name)
+	slog.InfoContext(ctx, "built image", "id", imageId, "service", serviceConfig.Name)
 	return &ServiceBuildResult{
 		Restore:         restoreOutput,
 		BuildOutputPath: imageId,
@@ -418,7 +416,7 @@ func (p *dockerProject) Package(
 	}
 
 	// Tag image.
-	log.Printf("tagging image %s as %s", imageId, imageWithTag)
+	slog.InfoContext(ctx, "tagging image", "source", imageId, "tagged", imageWithTag)
 	progress.SetProgress(NewServiceProgress("Tagging container image"))
 	if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
 		return nil, fmt.Errorf("tagging image: %w", err)

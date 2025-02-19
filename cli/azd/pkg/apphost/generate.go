@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io/fs"
-	"log"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -688,9 +688,9 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		default:
 			ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 			if err == nil && ignore {
-				log.Printf(
-					"ignoring resource of type %s since AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES is set",
-					comp.Type)
+				slog.InfoContext(context.TODO(),
+					"ignoring unknown resource since AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES is set",
+					"type", comp.Type)
 				continue
 			}
 			return fmt.Errorf("unsupported resource type: %s", comp.Type)
@@ -1676,8 +1676,9 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	default:
 		ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 		if err == nil && ignore {
-			log.Printf("ignoring binding reference to resource of type %s since "+
-				"AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES is set", targetType)
+			slog.InfoContext(context.TODO(),
+				"ignoring binding reference to resource of unknown type since "+
+					"AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES is set", "type", targetType)
 
 			return fmt.Sprintf("!!! expression '%s' to type '%s' unsupported by azd !!!", v, targetType), nil
 		}

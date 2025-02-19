@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"runtime"
@@ -223,7 +223,7 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	} else if c.formatter != nil {
 		c.println(ctx, message)
 	} else {
-		log.Println(message)
+		slog.InfoContext(ctx, message)
 	}
 	// Adding "\n" b/c calling Fprintln is adding one new line at the end to the msg
 	c.updateLastBytes(message + "\n")
@@ -869,7 +869,7 @@ func (c *AskerConsole) WaitForEnter() {
 	inputScanner := bufio.NewScanner(c.handles.Stdin)
 	if scan := inputScanner.Scan(); !scan {
 		if err := inputScanner.Err(); err != nil {
-			log.Printf("error while waiting for enter: %v", err)
+			slog.InfoContext(context.TODO(), "error while waiting for enter", "err", err)
 		}
 	}
 }

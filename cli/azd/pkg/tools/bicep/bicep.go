@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -47,7 +47,7 @@ func newCliWithTransporter(
 	transporter policy.Transporter,
 ) (*Cli, error) {
 	if override := os.Getenv("AZD_BICEP_TOOL_PATH"); override != "" {
-		log.Printf("using external bicep tool: %s", override)
+		slog.InfoContext(ctx, "using external bicep tool", "path", override)
 
 		return &Cli{
 			path:   override,
@@ -87,10 +87,11 @@ func newCliWithTransporter(
 		return nil, fmt.Errorf("checking bicep version: %w", err)
 	}
 
-	log.Printf("bicep version: %s", ver)
+	slog.InfoContext(ctx, "detected bicep version", "version", ver)
 
 	if ver.LT(Version) {
-		log.Printf("installed bicep version %s is older than %s; updating.", ver.String(), Version.String())
+		slog.InfoContext(ctx, "installed bicep version is out of date, updating.",
+			"current", ver.String(), "minimum", Version.String())
 
 		if err := runStep(
 			ctx, console, "Upgrading Bicep", func() error {
@@ -101,7 +102,7 @@ func newCliWithTransporter(
 		}
 	}
 
-	log.Printf("using local bicep: %s", bicepPath)
+	slog.InfoContext(ctx, "using local bicep", "path", bicepPath)
 
 	return cli, nil
 }
@@ -173,7 +174,7 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 
 	bicepReleaseUrl := fmt.Sprintf("https://downloads.bicep.azure.com/v%s/%s", bicepVersion, releaseName)
 
-	log.Printf("downloading bicep release %s -> %s", bicepReleaseUrl, name)
+	slog.InfoContext(ctx, "downloading bicep release", "source", bicepReleaseUrl, "target", name)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", bicepReleaseUrl, nil)
 	if err != nil {

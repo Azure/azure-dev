@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -28,13 +29,17 @@ func newRegisterCommand() *cobra.Command {
 				return fmt.Errorf("failed to create event stream: %w", err)
 			}
 
-			eventStream.Send(&azdext.EventMessage{
+			err = eventStream.Send(&azdext.EventMessage{
 				MessageType: &azdext.EventMessage_Subscribe{
 					Subscribe: &azdext.SubscribeMessage{
 						EventNames: []string{"preprovision"},
 					},
 				},
 			})
+
+			if err != nil {
+				return fmt.Errorf("failed to send subscribe message: %w", err)
+			}
 
 			for {
 				msg, err := eventStream.Recv()
@@ -45,7 +50,23 @@ func newRegisterCommand() *cobra.Command {
 				switch msg.MessageType.(type) {
 				case *azdext.EventMessage_Invoke:
 					invokeMsg := msg.GetInvoke()
-					fmt.Printf("Received invoke message: %+v\n", invokeMsg.EventName)
+
+					// Simulate some work
+					time.Sleep(5 * time.Second)
+
+					err = eventStream.Send(&azdext.EventMessage{
+						MessageType: &azdext.EventMessage_Status{
+							Status: &azdext.StatusMessage{
+								EventName: invokeMsg.EventName,
+								Status:    "completed",
+								Message:   "Extension hook completed",
+							},
+						},
+					})
+
+					if err != nil {
+						return fmt.Errorf("failed to send status message: %w", err)
+					}
 				}
 			}
 		},

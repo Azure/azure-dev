@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// bindExtensions binds the extensions to the root command
+// BindExtensions binds the extensions to the root command
 func bindExtensions(
 	serviceLocator ioc.ServiceLocator,
 	root *actions.ActionDescriptor,
@@ -97,7 +97,7 @@ func invokeExtensionHelp(console input.Console, commandRunner exec.CommandRunner
 
 type extensionAction struct {
 	console          input.Console
-	commandRunner    exec.CommandRunner
+	extensionRunner  *extensions.Runner
 	lazyEnv          *lazy.Lazy[*environment.Environment]
 	extensionManager *extensions.Manager
 	azdServer        *grpcserver.Server
@@ -107,6 +107,7 @@ type extensionAction struct {
 
 func newExtensionAction(
 	console input.Console,
+	extensionRunner *extensions.Runner,
 	commandRunner exec.CommandRunner,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	extensionManager *extensions.Manager,
@@ -116,7 +117,7 @@ func newExtensionAction(
 ) actions.Action {
 	return &extensionAction{
 		console:          console,
-		commandRunner:    commandRunner,
+		extensionRunner:  extensionRunner,
 		lazyEnv:          lazyEnv,
 		extensionManager: extensionManager,
 		azdServer:        azdServer,
@@ -148,23 +149,6 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, env.Environ()...)
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
-	}
-
-	extensionPath := filepath.Join(homeDir, extension.Path)
-
-	_, err = os.Stat(extensionPath)
-	if err != nil {
-		return nil, fmt.Errorf("extension path was not found: %s: %w", extensionPath, err)
-	}
-
 	serverInfo, err := a.azdServer.Start()
 	if err != nil {
 		return nil, fmt.Errorf("failed to start gRPC server: %w", err)
@@ -180,17 +164,17 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
 	)
 
-	runArgs := exec.
-		NewRunArgs(extensionPath, a.args...).
-		WithCwd(cwd).
-		WithEnv(allEnv).
-		WithStdIn(a.console.Handles().Stdin).
-		WithStdOut(a.console.Handles().Stdout).
-		WithStdErr(a.console.Handles().Stderr)
+	options := &extensions.InvokeOptions{
+		Args:   a.args,
+		Env:    allEnv,
+		StdIn:  a.console.Handles().Stdin,
+		StdOut: a.console.Handles().Stdout,
+		StdErr: a.console.Handles().Stderr,
+	}
 
-	_, err = a.commandRunner.Run(ctx, runArgs)
+	_, err = a.extensionRunner.Invoke(ctx, extension, options)
 	if err != nil {
-		log.Printf("Failed to run extension %s: %v\n", extensionNamespace, err)
+		log.Printf("Failed to invoke extension %s: %v\n", extensionNamespace, err)
 	}
 
 	if err = a.azdServer.Stop(); err != nil {

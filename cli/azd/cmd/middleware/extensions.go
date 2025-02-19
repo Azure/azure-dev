@@ -9,18 +9,28 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
 
 type ExtensionsMiddleware struct {
 	extensionManager *extensions.Manager
+	extensionRunner  *extensions.Runner
 	serviceLocator   ioc.ServiceLocator
+	console          input.Console
 }
 
-func NewExtensionsMiddleware(serviceLocator ioc.ServiceLocator, extensionsManager *extensions.Manager) Middleware {
+func NewExtensionsMiddleware(
+	serviceLocator ioc.ServiceLocator,
+	extensionsManager *extensions.Manager,
+	extensionRunner *extensions.Runner,
+	console input.Console,
+) Middleware {
 	return &ExtensionsMiddleware{
 		serviceLocator:   serviceLocator,
 		extensionManager: extensionsManager,
+		extensionRunner:  extensionRunner,
+		console:          console,
 	}
 }
 
@@ -63,17 +73,22 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			return nil, err
 		}
 
-		options := &extensions.InvokeOptions{
-			Args: []string{"register"},
-			Env: []string{
-				fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
-				fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
-			},
-		}
+		go func(extension *extensions.Extension, jwtToken string) {
+			options := &extensions.InvokeOptions{
+				Args: []string{"register"},
+				Env: []string{
+					fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
+					fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
+				},
+				StdIn:  m.console.Handles().Stdin,
+				StdOut: m.console.Handles().Stdout,
+				StdErr: m.console.Handles().Stderr,
+			}
 
-		if _, err := m.extensionManager.Invoke(ctx, extension, options); err != nil {
-			log.Printf("Failed to start extension %s: %s", extension.Id, err.Error())
-		}
+			if _, err := m.extensionRunner.Invoke(ctx, extension, options); err != nil {
+				log.Printf("Failed to start extension %s: %s", extension.Id, err.Error())
+			}
+		}(extension, jwtToken)
 	}
 
 	return next(ctx)

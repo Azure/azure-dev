@@ -805,6 +805,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)
+	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterSingleton(extensions.NewSourceManager)
 
 	// gRPC Server

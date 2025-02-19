@@ -26,7 +26,6 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
 
@@ -52,7 +51,6 @@ type sourceFilterPredicate func(config *SourceConfig) bool
 type extensionFilterPredicate func(extension *ExtensionMetadata) bool
 
 type Manager struct {
-	commandRunner exec.CommandRunner
 	sourceManager *SourceManager
 	sources       []Source
 
@@ -63,7 +61,6 @@ type Manager struct {
 
 // NewManager creates a new extension manager
 func NewManager(
-	commandRunner exec.CommandRunner,
 	configManager config.UserConfigManager,
 	sourceManager *SourceManager,
 	transport policy.Transporter,
@@ -78,7 +75,6 @@ func NewManager(
 	})
 
 	return &Manager{
-		commandRunner: commandRunner,
 		userConfig:    userConfig,
 		configManager: configManager,
 		sourceManager: sourceManager,
@@ -338,11 +334,6 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 			return nil, fmt.Errorf("checksum validation failed: %w", err)
 		}
 
-		userHomeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user's home directory: %w", err)
-		}
-
 		userConfigDir, err := config.GetUserConfigDir()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get user config directory: %w", err)
@@ -381,7 +372,7 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 
 		targetPath := filepath.Join(targetDir, entryPoint)
 
-		relativeExtensionPath, err = filepath.Rel(userHomeDir, targetPath)
+		relativeExtensionPath, err = filepath.Rel(userConfigDir, targetPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get relative path: %w", err)
 		}
@@ -477,30 +468,6 @@ func (m *Manager) Upgrade(ctx context.Context, name string, version string) (*Ex
 	}
 
 	return extensionVersion, nil
-}
-
-type InvokeOptions struct {
-	Args []string
-	Env  []string
-}
-
-// Invoke runs the extension with the provided arguments
-func (m *Manager) Invoke(ctx context.Context, extension *Extension, options *InvokeOptions) (*exec.RunResult, error) {
-	userConfigDir, err := config.GetUserConfigDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user config directory: %w", err)
-	}
-
-	extensionPath := filepath.Join(userConfigDir, extension.Path)
-
-	runArgs := exec.NewRunArgs(extensionPath, options.Args...)
-	if len(options.Env) > 0 {
-		runArgs = runArgs.WithEnv(options.Env)
-	}
-
-	runResult, err := m.commandRunner.Run(ctx, runArgs)
-
-	return &runResult, err
 }
 
 // Helper function to find the artifact for the current OS

@@ -15,3 +15,19 @@ type Extension struct {
 	Path         string           `json:"path"`
 	Source       string           `json:"source"`
 }
+
+func (e *Extension) HasCapability(capability ...CapabilityType) bool {
+	for _, cap := range capability {
+		found := false
+		for _, existing := range e.Capabilities {
+			if existing == cap {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}

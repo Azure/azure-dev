@@ -247,33 +247,34 @@ func (cli *Cli) EffectivePom(ctx context.Context, pomPath string) (string, error
 		return "", err
 	}
 	pomDir := filepath.Dir(pomPath)
-	runArgs := exec.NewRunArgs(mvnCmd, "help:effective-pom", "-f", pomPath).WithCwd(pomDir)
+	runArgs := exec.NewRunArgs(mvnCmd, "help:effective-pom", "-f", pomPath, "-pl", filepath.Base(pomPath)).WithCwd(pomDir)
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", fmt.Errorf("mvn help:effective-pom on project '%s' failed: %w", pomPath, err)
 	}
-	return getEffectivePomFromConsoleOutput(result.Stdout)
+	return getEffectivePomStringFromConsoleOutput(result.Stdout)
 }
 
 var projectStart = regexp.MustCompile(`^\s*<project `) // the space can not be deleted.
 var projectEnd = regexp.MustCompile(`^\s*</project>\s*$`)
 
-func getEffectivePomFromConsoleOutput(consoleOutput string) (string, error) {
+func getEffectivePomStringFromConsoleOutput(consoleOutput string) (string, error) {
 	var builder strings.Builder
 	scanner := bufio.NewScanner(strings.NewReader(consoleOutput))
-	inProject := false
-
+	projectStarted := false
+	projectEnded := false
 	for scanner.Scan() {
 		line := scanner.Text()
 		if projectStart.MatchString(line) {
-			inProject = true
-			builder.Reset() // for a pom which contains submodule, the effective pom for root pom appears at last.
+			projectStarted = true
 		} else if projectEnd.MatchString(line) {
-			builder.WriteString(line)
-			inProject = false
+			projectEnded = true
 		}
-		if inProject {
+		if projectStarted {
 			builder.WriteString(line)
+		}
+		if projectEnded {
+			break
 		}
 	}
 	if err := scanner.Err(); err != nil {

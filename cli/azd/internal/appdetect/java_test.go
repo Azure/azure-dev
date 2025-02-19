@@ -174,7 +174,95 @@ func TestToMavenProject(t *testing.T) {
 			},
 		},
 		{
-			name: "Test pom with multi modules",
+			name: "Test pom with multi modules: root pom build first when run help:effective-pom",
+			testPoms: []testPom{
+				{
+					pomFilePath: "pom.xml",
+					pomContentString: `
+						<project>
+							<modelVersion>4.0.0</modelVersion>
+							<parent>
+								<groupId>org.springframework.boot</groupId>
+								<artifactId>spring-boot-starter-parent</artifactId>
+								<version>3.2.7</version>
+							</parent>
+							<groupId>org.springframework</groupId>
+							<artifactId>gs-multi-module</artifactId>
+							<version>0.1.0</version>
+							<packaging>pom</packaging>
+							<modules>
+								<module>library</module>
+								<module>application</module>
+							</modules>
+						</project>
+						`,
+				},
+				{
+					pomFilePath: filepath.Join("application", "pom.xml"),
+					pomContentString: `
+						<project>
+							<modelVersion>4.0.0</modelVersion>
+							<parent>
+								<groupId>org.springframework</groupId>
+								<artifactId>gs-multi-module</artifactId>
+								<version>0.1.0</version>
+							</parent>
+							<groupId>com.example</groupId>
+							<artifactId>application</artifactId>
+							<version>0.0.1-SNAPSHOT</version>
+							<name>application</name>
+							<description>Demo project for Spring Boot</description>
+							<dependencies>
+								<dependency>
+									<groupId>org.slf4j</groupId>
+									<artifactId>slf4j-api</artifactId>
+								</dependency>
+							</dependencies>
+							<build>
+								<plugins>
+									<plugin>
+										<groupId>org.springframework.boot</groupId>
+										<artifactId>spring-boot-maven-plugin</artifactId>
+									</plugin>
+								</plugins>
+							</build>
+						</project>
+						`,
+				},
+				{
+					pomFilePath: filepath.Join("library", "pom.xml"),
+					pomContentString: `
+						<project>
+							<modelVersion>4.0.0</modelVersion>
+							<parent>
+								<groupId>org.springframework</groupId>
+								<artifactId>gs-multi-module</artifactId>
+								<version>0.1.0</version>
+							</parent>
+							<groupId>com.example</groupId>
+							<artifactId>library</artifactId>
+							<version>0.0.1-SNAPSHOT</version>
+							<name>library</name>
+							<description>Demo project for Spring Boot</description>
+							<dependencies>
+								<dependency>
+									<groupId>org.springframework.boot</groupId>
+									<artifactId>spring-boot</artifactId>
+								</dependency>
+								<dependency>
+									<groupId>org.springframework.boot</groupId>
+									<artifactId>spring-boot-starter-test</artifactId>
+									<scope>test</scope>
+								</dependency>
+							</dependencies>
+						</project>
+						`,
+				},
+			},
+			expected: []dependency{},
+		},
+		{
+			name: "Test pom with multi modules: root pom build last when run help:effective-pom",
 			testPoms: []testPom{
 				{
 					pomFilePath: "pom.xml",
@@ -209,6 +297,10 @@ func TestToMavenProject(t *testing.T) {
 							<name>application</name>
 							<description>Demo project for Spring Boot</description>
 							<dependencies>
+								<dependency>
+									<groupId>org.slf4j</groupId>
+									<artifactId>slf4j-api</artifactId>
+								</dependency>
 							</dependencies>
 							<build>
 								<plugins>

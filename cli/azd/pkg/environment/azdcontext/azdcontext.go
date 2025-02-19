@@ -21,7 +21,8 @@ const ConfigFileName = "config.json"
 const ConfigFileVersion = 1
 
 type AzdContext struct {
-	projectDirectory string
+	projectDirectory      string
+	ParentEnvironmentName string
 }
 
 func (c *AzdContext) ProjectDirectory() string {

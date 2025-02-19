@@ -93,7 +93,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
     {{- if .Services}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
-      primaryWriteConnectionStringSecretName: 'MONGODB-URL'
+      primaryWriteConnectionStringSecretName: 'mongodb-url'
     }
     {{- end}}
     capabilitiesToAdd: [ 'EnableServerless' ]
@@ -102,18 +102,16 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
 {{- end}}
 
 {{- if .DbPostgres}}
-var databaseName = '{{ .DbPostgres.DatabaseName }}'
-var databaseUser = 'psqladmin'
-module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
-  name: 'postgreServer'
+var postgresDatabaseName = '{{ .DbPostgres.DatabaseName }}'
+var postgresDatabaseUser = 'psqladmin'
+module postgresServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
+  name: 'postgresServer'
   params: {
-    // Required parameters
     name: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
     skuName: 'Standard_B1ms'
     tier: 'Burstable'
-    // Non-required parameters
-    administratorLogin: databaseUser
-    administratorLoginPassword: databasePassword
+    administratorLogin: postgresDatabaseUser
+    administratorLoginPassword: postgresDatabasePassword
     geoRedundantBackup: 'Disabled'
     passwordAuth:'Enabled'
     firewallRules: [
@@ -125,10 +123,41 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     ]
     databases: [
       {
-        name: databaseName
+        name: postgresDatabaseName
       }
     ]
     location: location
+  }
+}
+{{- end}}
+
+{{- if .DbMySql}}
+var mysqlDatabaseName = '{{ .DbMySql.DatabaseName }}'
+var mysqlDatabaseUser = 'mysqladmin'
+module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.6.1' = {
+  name: 'mysqlServer'
+  params: {
+    name: '${abbrs.dBforMySQLServers}${resourceToken}'
+    skuName: 'Standard_B1ms'
+    tier: 'Burstable'
+    administratorLogin: mysqlDatabaseUser
+    administratorLoginPassword: mysqlDatabasePassword
+    geoRedundantBackup: 'Disabled'
+    publicNetworkAccess: 'Enabled'
+    firewallRules: [
+      {
+        name: 'AllowAllIps'
+        startIpAddress: '0.0.0.0'
+        endIpAddress: '255.255.255.255'
+      }
+    ]
+    databases: [
+      {
+        name: mysqlDatabaseName
+      }
+    ]
+    location: location
+    highAvailability: 'Disabled'
   }
 }
 {{- end}}
@@ -353,29 +382,39 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {
           name: 'mongodb-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: cosmos.outputs.exportedSecrets['MONGODB-URL'].secretUri
+          keyVaultUrl: cosmos.outputs.exportedSecrets['mongodb-url'].secretUri
         }
         {{- end}}
         {{- if .DbPostgres}}
         {
-          name: 'db-pass'
-          value: databasePassword
+          name: 'postgres-password'
+          value: postgresDatabasePassword
         }
         {
           name: 'db-url'
-          value: 'postgresql://${databaseUser}:${databasePassword}@${postgreServer.outputs.fqdn}:5432/${databaseName}'
+          value: 'postgresql://${postgresDatabaseUser}:${postgresDatabasePassword}@${postgresServer.outputs.fqdn}:5432/${postgresDatabaseName}'
+        }
+        {{- end}}
+        {{- if .DbMySql}}
+        {
+          name: 'mysql-password'
+          value: mysqlDatabasePassword
+        }
+        {
+          name: 'mysql-url'
+          value: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
         }
         {{- end}}
         {{- if .DbRedis}}
         {
           name: 'redis-pass'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/redis-password'
         }
         {
           name: 'redis-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/redis-url'
         }
         {{- end}}
       ],
@@ -410,19 +449,19 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- if .DbPostgres}}
           {
             name: 'POSTGRES_HOST'
-            value: postgreServer.outputs.fqdn
+            value: postgresServer.outputs.fqdn
           }
           {
             name: 'POSTGRES_USERNAME'
-            value: databaseUser
+            value: postgresDatabaseUser
           }
           {
             name: 'POSTGRES_DATABASE'
-            value: databaseName
+            value: postgresDatabaseName
           }
           {
             name: 'POSTGRES_PASSWORD'
-            secretRef: 'db-pass'
+            secretRef: 'postgres-password'
           }
           {
             name: 'POSTGRES_URL'
@@ -431,6 +470,32 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'POSTGRES_PORT'
             value: '5432'
+          }
+          {{- end}}
+          {{- if .DbMySql}}
+          {
+            name: 'MYSQL_HOST'
+            value: mysqlServer.outputs.fqdn
+          }
+          {
+            name: 'MYSQL_USERNAME'
+            value: mysqlDatabaseUser
+          }
+          {
+            name: 'MYSQL_DATABASE'
+            value: mysqlDatabaseName
+          }
+          {
+            name: 'MYSQL_PASSWORD'
+            secretRef: 'mysql-password'
+          }
+          {
+            name: 'MYSQL_URL'
+            secretRef: 'mysql-url'
+          }
+          {
+            name: 'MYSQL_PORT'
+            value: '3306'
           }
           {{- end}}
           {{- if .DbRedis}}
@@ -542,8 +607,8 @@ module redis 'br/public:avm/res/cache/redis:0.9.0' = {
     {{- if .Services}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
-      primaryAccessKeyName: 'REDIS-PASSWORD'
-      primaryConnectionStringName: 'REDIS-URL'
+      primaryAccessKeyName: 'redis-password'
+      primaryConnectionStringName: 'redis-url'
     }
     {{- end}}
   }
@@ -578,8 +643,14 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
     secrets: [
       {{- if .DbPostgres}}
       {
-        name: 'db-pass'
-        value: databasePassword
+        name: 'postgres-password'
+        value: postgresDatabasePassword
+      }
+      {{- end}}
+      {{- if .DbMySql}}
+      {
+        name: 'mysql-password'
+        value: mysqlDatabasePassword
       }
       {{- end}}
     ]
@@ -604,7 +675,10 @@ output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = '${account.outputs.r
 output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
-output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgreServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgresServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
+{{- end}}
+{{- if .DbMySql}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = '${mysqlServer.outputs.resourceId}/databases/{{.DbMySql.DatabaseName}}'
 {{- end}}
 {{- if .StorageAccount }}
 output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId

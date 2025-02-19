@@ -86,6 +86,9 @@ func TestExecInfra(t *testing.T) {
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
 				},
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "mysqldb",
+				},
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
@@ -113,6 +116,9 @@ func TestExecInfra(t *testing.T) {
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
+						DbMySql: &DatabaseReference{
+							DatabaseName: "mysqldb",
+						},
 						ServiceBus:     &ServiceBus{},
 						EventHubs:      &EventHubs{},
 						StorageAccount: &StorageReference{},
@@ -136,13 +142,29 @@ func TestExecInfra(t *testing.T) {
 			InfraSpec{
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
-					DatabaseUser: "appuser",
 				},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
 						Port: 3100,
 						DbPostgres: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with MySQL",
+			InfraSpec{
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "appdb",
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbMySql: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
 					},

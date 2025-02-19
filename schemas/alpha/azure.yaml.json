@@ -1233,6 +1233,7 @@
                     "enum": [
                         "db.postgres",
                         "db.redis",
+                        "db.mysql",
                         "db.mongo",
                         "host.containerapp",
                         "ai.openai.model"

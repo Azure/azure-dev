@@ -247,6 +247,7 @@ func (cli *Cli) EffectivePom(ctx context.Context, pomPath string) (string, error
 		return "", err
 	}
 	pomDir := filepath.Dir(pomPath)
+	// Link to "-pl" related doc: https://maven.apache.org/ref/3.1.0/maven-embedder/cli.html
 	runArgs := exec.NewRunArgs(mvnCmd, "help:effective-pom", "-f", pomPath, "-pl", filepath.Base(pomPath)).WithCwd(pomDir)
 	result, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {

@@ -43,7 +43,8 @@ func Configure(
 		return fillAiModelName(ctx, r, console, p)
 	case project.ResourceTypeDbPostgres,
 		project.ResourceTypeDbMySql,
-		project.ResourceTypeDbMongo:
+		project.ResourceTypeDbMongo,
+		project.ResourceTypeDbCosmos:
 		return fillDatabaseName(ctx, r, console, p)
 	case project.ResourceTypeMessagingEventHubs:
 		return fillEventHubs(ctx, r, console, p)

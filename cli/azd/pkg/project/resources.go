@@ -17,6 +17,7 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeDbPostgres,
 		ResourceTypeDbMySql,
 		ResourceTypeDbMongo,
+		ResourceTypeDbCosmos,
 		ResourceTypeHostContainerApp,
 		ResourceTypeOpenAiModel,
 		ResourceTypeMessagingEventHubs,
@@ -30,6 +31,7 @@ const (
 	ResourceTypeDbPostgres          ResourceType = "db.postgres"
 	ResourceTypeDbMySql             ResourceType = "db.mysql"
 	ResourceTypeDbMongo             ResourceType = "db.mongo"
+	ResourceTypeDbCosmos            ResourceType = "db.cosmos"
 	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
 	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
 	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
@@ -47,6 +49,8 @@ func (r ResourceType) String() string {
 		return "MySQL"
 	case ResourceTypeDbMongo:
 		return "MongoDB"
+	case ResourceTypeDbCosmos:
+		return "CosmosDB"
 	case ResourceTypeHostContainerApp:
 		return "Container App"
 	case ResourceTypeOpenAiModel:
@@ -193,6 +197,11 @@ type AIModelProps struct {
 type AIModelPropsModel struct {
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+type CosmosDBContainerProps struct {
+	Name          string   `yaml:"name,omitempty"`
+	PartitionKeys []string `yaml:"partitionKeys,omitempty"`
 }
 
 type ServiceBusProps struct {

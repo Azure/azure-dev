@@ -369,6 +369,7 @@
                             "db.mysql",
                             "db.redis",
                             "db.mongo",
+                            "db.cosmos",
                             "ai.openai.model",
                             "host.containerapp",
                             "messaging.eventhubs",
@@ -392,6 +393,7 @@
                     { "if": { "properties": { "type": { "const": "db.mysql"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "db.cosmos" }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
                     { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } },
                     { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} }
@@ -1235,6 +1237,7 @@
                         "db.redis",
                         "db.mysql",
                         "db.mongo",
+                        "db.cosmos",
                         "host.containerapp",
                         "ai.openai.model"
                     ]

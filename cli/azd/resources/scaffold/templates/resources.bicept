@@ -123,6 +123,18 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
     sqlDatabases: [
       {
         name: '{{ .DbCosmos.DatabaseName }}'
+        containers: [
+          {{- range .DbCosmos.Containers}}
+          {
+            name: '{{ .ContainerName }}'
+            paths: [
+              {{- range $path := .PartitionKeyPaths}}
+              '{{ $path }}'
+              {{- end}}
+            ]
+          }
+          {{- end}}
+        ]
       }
     ]
     sqlRoleAssignmentsPrincipalIds: [

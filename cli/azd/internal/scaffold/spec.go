@@ -51,6 +51,12 @@ type DatabaseCosmosMongo struct {
 
 type DatabaseCosmos struct {
 	DatabaseName string
+	Containers   []CosmosSqlDatabaseContainer
+}
+
+type CosmosSqlDatabaseContainer struct {
+	ContainerName     string
+	PartitionKeyPaths []string
 }
 
 type DatabaseRedis struct {

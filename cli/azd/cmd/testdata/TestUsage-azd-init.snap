@@ -9,11 +9,9 @@ Usage
 
 Flags
     -b, --branch string       	: The template branch to initialize from. Must be used with a template argument (--template or -t).
-        --docs                	: Opens the documentation for azd init in your web browser.
     -e, --environment string  	: The name of the environment to use.
     -f, --filter strings      	: The tag(s) used to filter template results. Supports comma-separated values.
         --from-code           	: Initializes a new application from your existing code.
-    -h, --help                	: Gets help for init.
     -l, --location string     	: Azure location for the new environment
     -s, --subscription string 	: Name or ID of an Azure subscription to use for the new environment
     -t, --template string     	: Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.
@@ -21,6 +19,8 @@ Flags
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd init in your web browser.
+    -h, --help       	: Gets help for init.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples

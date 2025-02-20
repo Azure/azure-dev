@@ -146,12 +146,16 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
 				DatabaseName: res.Name,
-				DatabaseUser: "pgadmin",
+			}
+		case ResourceTypeDbMySql:
+			infraSpec.DbMySql = &scaffold.DatabaseMysql{
+				DatabaseName: res.Name,
 			}
 		case ResourceTypeHostContainerApp:
 			svcSpec := scaffold.ServiceSpec{
 				Name: res.Name,
 				Port: -1,
+				Env:  map[string]string{},
 			}
 
 			err := mapContainerApp(res, &svcSpec, &infraSpec)
@@ -182,11 +186,37 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 					Version: props.Model.Version,
 				},
 			})
+		case ResourceTypeMessagingEventHubs:
+			if infraSpec.EventHubs != nil {
+				return nil, fmt.Errorf("only one event hubs resource is currently allowed")
+			}
+			props := res.Props.(EventHubsProps)
+			infraSpec.EventHubs = &scaffold.EventHubs{
+				Hubs: props.Hubs,
+			}
+		case ResourceTypeMessagingServiceBus:
+			if infraSpec.ServiceBus != nil {
+				return nil, fmt.Errorf("only one service bus resource is currently allowed")
+			}
+			props := res.Props.(ServiceBusProps)
+			infraSpec.ServiceBus = &scaffold.ServiceBus{
+				Queues: props.Queues,
+				Topics: props.Topics,
+			}
+		case ResourceTypeStorage:
+			if infraSpec.StorageAccount != nil {
+				return nil, fmt.Errorf("only one storage account resource is currently allowed")
+			}
+			props := res.Props.(StorageProps)
+			infraSpec.StorageAccount = &scaffold.StorageAccount{
+				Containers: props.Containers,
+			}
 		}
 	}
 
 	// create reverse frontends -> backends mapping
-	for _, svc := range infraSpec.Services {
+	for i := range infraSpec.Services {
+		svc := &infraSpec.Services[i]
 		if front, ok := backendMapping[svc.Name]; ok {
 			if svc.Backend == nil {
 				svc.Backend = &scaffold.Backend{}
@@ -260,6 +290,8 @@ func mapHostUses(
 			svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbPostgres:
 			svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+		case ResourceTypeDbMySql:
+			svcSpec.DbMySql = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbRedis:
 			svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeHostContainerApp:
@@ -270,6 +302,14 @@ func mapHostUses(
 			svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
 				scaffold.ServiceReference{Name: use})
 			backendMapping[use] = res.Name // record the backend -> frontend mapping
+		case ResourceTypeOpenAiModel:
+			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
+		case ResourceTypeMessagingEventHubs:
+			svcSpec.EventHubs = &scaffold.EventHubs{}
+		case ResourceTypeMessagingServiceBus:
+			svcSpec.ServiceBus = &scaffold.ServiceBus{}
+		case ResourceTypeStorage:
+			svcSpec.StorageAccount = &scaffold.StorageReference{}
 		}
 	}
 

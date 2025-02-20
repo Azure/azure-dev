@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -19,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
@@ -37,6 +41,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -54,7 +59,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -562,27 +566,27 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}, nil
 	})
 	container.MustRegisterScoped(auth.NewManager)
-	container.MustRegisterSingleton(azcli.NewUserProfileService)
+	container.MustRegisterSingleton(azapi.NewUserProfileService)
 	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)
 	container.MustRegisterSingleton(account.NewSubscriptionsManager)
 	container.MustRegisterSingleton(account.NewSubscriptionCredentialProvider)
-	container.MustRegisterSingleton(azcli.NewManagedClustersService)
+	container.MustRegisterSingleton(azapi.NewManagedClustersService)
 	container.MustRegisterSingleton(entraid.NewEntraIdService)
-	container.MustRegisterSingleton(azcli.NewContainerRegistryService)
+	container.MustRegisterSingleton(azapi.NewContainerRegistryService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
 	container.MustRegisterScoped(project.NewContainerHelper)
-	container.MustRegisterSingleton(azcli.NewSpringService)
+	container.MustRegisterSingleton(azapi.NewSpringService)
 
 	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
 	})
 
 	// Tools
-	container.MustRegisterSingleton(azcli.NewAzCli)
+	container.MustRegisterSingleton(azapi.NewAzureClient)
 
 	// Tools
 	container.MustRegisterSingleton(azapi.NewResourceService)
@@ -786,6 +790,30 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
+
+	container.MustRegisterScoped(func(authManager *auth.Manager) prompt.AuthManager {
+		return authManager
+	})
+	container.MustRegisterSingleton(func(subscriptionManager *account.SubscriptionsManager) prompt.SubscriptionManager {
+		return subscriptionManager
+	})
+	container.MustRegisterSingleton(func(resourceService *azapi.ResourceService) prompt.ResourceService {
+		return resourceService
+	})
+
+	container.MustRegisterScoped(prompt.NewPromptService)
+
+	// Extensions
+	container.MustRegisterSingleton(extensions.NewManager)
+	container.MustRegisterSingleton(extensions.NewSourceManager)
+
+	// gRPC Server
+	container.MustRegisterScoped(grpcserver.NewServer)
+	container.MustRegisterScoped(grpcserver.NewProjectService)
+	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
+	container.MustRegisterScoped(grpcserver.NewPromptService)
+	container.MustRegisterScoped(grpcserver.NewDeploymentService)
+	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

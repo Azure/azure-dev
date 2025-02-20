@@ -5,6 +5,9 @@
       "principalId": {
         "value": "${AZURE_PRINCIPAL_ID}"
       },
+      "goversion": {
+        "value": "${AZURE_GOVERSION}"
+      },
       "environmentName": {
         "value": "${AZURE_ENV_NAME}"
       },

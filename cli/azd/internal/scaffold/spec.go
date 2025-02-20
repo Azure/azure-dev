@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package scaffold
 
 import (
@@ -11,8 +14,16 @@ type InfraSpec struct {
 
 	// Databases to create
 	DbPostgres    *DatabasePostgres
+	DbMySql       *DatabaseMysql
 	DbCosmosMongo *DatabaseCosmosMongo
 	DbRedis       *DatabaseRedis
+
+	// Messaging services
+	ServiceBus *ServiceBus
+	EventHubs  *EventHubs
+
+	// Storage account
+	StorageAccount *StorageAccount
 
 	// ai models
 	AIModels []AIModel
@@ -26,7 +37,10 @@ type Parameter struct {
 }
 
 type DatabasePostgres struct {
-	DatabaseUser string
+	DatabaseName string
+}
+
+type DatabaseMysql struct {
 	DatabaseName string
 }
 
@@ -51,6 +65,19 @@ type AIModelModel struct {
 	Version string
 }
 
+type ServiceBus struct {
+	Queues []string
+	Topics []string
+}
+
+type EventHubs struct {
+	Hubs []string
+}
+
+type StorageAccount struct {
+	Containers []string
+}
+
 type ServiceSpec struct {
 	Name string
 	Port int
@@ -65,11 +92,18 @@ type ServiceSpec struct {
 
 	// Connection to a database
 	DbPostgres    *DatabaseReference
+	DbMySql       *DatabaseReference
 	DbCosmosMongo *DatabaseReference
 	DbRedis       *DatabaseReference
 
+	StorageAccount *StorageReference
+
 	// AI model connections
 	AIModels []AIModelReference
+
+	// Messaging services
+	ServiceBus *ServiceBus
+	EventHubs  *EventHubs
 }
 
 type Frontend struct {
@@ -90,6 +124,9 @@ type DatabaseReference struct {
 
 type AIModelReference struct {
 	Name string
+}
+
+type StorageReference struct {
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

@@ -10,19 +10,25 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/sethvargo/go-retry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -45,6 +51,17 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Command:        newEnvSetCmd(),
 		FlagsResolver:  newEnvSetFlags,
 		ActionResolver: newEnvSetAction,
+	})
+
+	group.Add("set-secret", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "set-secret <name>",
+			Short: "Set a <name> as a reference to a Key Vault secret in the environment.",
+			Long: "You can either create a new Key Vault secret or select an existing one.\n" +
+				"The provided name is the key for the .env file which holds the secret reference to the Key Vault secret.",
+		},
+		FlagsResolver:  newEnvSetSecretFlags,
+		ActionResolver: newEnvSetSecretAction,
 	})
 
 	group.Add("select", &actions.ActionDescriptorOptions{
@@ -190,6 +207,309 @@ func warnKeyCaseConflicts(
 					key,
 					ux.ListAsText(conflicts)),
 			})
+
+func newEnvSetSecretFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetSecretFlags {
+	flags := &envSetSecretFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+type envSetSecretFlags struct {
+	internal.EnvFlag
+	global *internal.GlobalCommandOptions
+}
+
+func (f *envSetSecretFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	f.EnvFlag.Bind(local, global)
+	f.global = global
+}
+
+type envSetSecretAction struct {
+	console            input.Console
+	azdCtx             *azdcontext.AzdContext
+	env                *environment.Environment
+	envManager         environment.Manager
+	flags              *envSetFlags
+	args               []string
+	prompter           prompt.Prompter
+	kvService          keyvault.KeyVaultService
+	entraIdService     entraid.EntraIdService
+	subResolver        account.SubscriptionTenantResolver
+	userProfileService *azapi.UserProfileService
+}
+
+func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+
+	if len(e.args) < 1 {
+		return nil, fmt.Errorf(
+			"no <name> provided. Please provide a name as argument like: 'azd env set-secret <name>'")
+	}
+	secretName := e.args[0]
+
+	// When no interactive is supported in the terminal azd will not add numbers to the list when
+	// asking to select options. For example, instead of showing "1. Option 1", it will show "Option 1". This is useful
+	// when the user wants to prefill the selection in stdin before calling azd env set-secret (e.g. in a script).
+	listWithoutNumbers := !e.console.IsSpinnerInteractive()
+
+	createNewStrategy := "Create a new Key Vault secret"
+	selectExistingStrategy := "Select an existing Key Vault secret"
+	setSecretStrategies := []string{createNewStrategy, selectExistingStrategy}
+	selectedStrategyIndex, err := e.console.Select(
+		ctx,
+		input.ConsoleOptions{
+			Message:      "Select how you want to set " + secretName,
+			Options:      setSecretStrategies,
+			DefaultValue: createNewStrategy,
+			Help: "When creating a new Key Vault secret, you can either create a new Key Vault or" +
+				" pick an existing one. A Key Vault secret belongs to a Key Vault.",
+		})
+	if err != nil {
+		return nil, fmt.Errorf("selecting secret setting strategy: %w", err)
+	}
+
+	willCreateNewSecret := setSecretStrategies[selectedStrategyIndex] == createNewStrategy
+
+	subscriptionNote := "\nYou can set the Key Vault secret from any Azure subscription where you have access to."
+	e.console.Message(ctx, subscriptionNote)
+
+	// default messages based on willCreateNewSecret == true
+	pickSubscription := "Select the subscription where you want to create the Key Vault secret"
+	pickKvAccount := "Select the Key Vault where you want to create the Key Vault secret"
+
+	if !willCreateNewSecret {
+		// reassign messages for selecting existing secret
+		pickSubscription = "Select the subscription where the Key Vault secret is"
+		pickKvAccount = "Select the Key Vault where the Key Vault secret is"
+	}
+
+	subId, err := e.prompter.PromptSubscription(ctx, pickSubscription)
+	if err != nil {
+		return nil, fmt.Errorf("prompting for subscription: %w", err)
+	}
+	tenantId, err := e.subResolver.LookupTenant(ctx, subId)
+	if err != nil {
+		return nil, fmt.Errorf("looking up tenant for subscription: %w", err)
+	}
+
+	e.console.ShowSpinner(ctx, "Finding Key Vaults from the selected subscription", input.Step)
+	vaultsList, err := e.kvService.ListSubscriptionVaults(ctx, subId)
+	if err != nil {
+		return nil, fmt.Errorf("getting the list of Key Vaults: %w", err)
+	}
+	// prompt for vault selection
+	e.console.StopSpinner(ctx, "", input.Step)
+
+	atLeastOneKvAccountExists := len(vaultsList) > 0
+	if !atLeastOneKvAccountExists && !willCreateNewSecret {
+		e.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: "No Azure Key Vaults were found in the selected subscription",
+		})
+		// update the flow to offer creating a new Key Vault
+		willCreateNewSecret = true
+	}
+
+	createNewKvAccountOption := "Create a new Key Vault"
+	selectKvAccountOptions := []string{}
+	// indexOffset makes the ids to start from 1 instead of 0 when displaying the options
+	indexOffset := 1
+	if willCreateNewSecret {
+		selectKvAccountOptions = append(selectKvAccountOptions, createNewKvAccountOption)
+	}
+
+	for index, vault := range vaultsList {
+		if listWithoutNumbers {
+			selectKvAccountOptions = append(selectKvAccountOptions, vault.Name)
+		} else {
+			selectKvAccountOptions = append(selectKvAccountOptions, fmt.Sprintf("%2d. %s", index+indexOffset, vault.Name))
+		}
+	}
+
+	kvAccountSelectionIndex, err := e.console.Select(ctx, input.ConsoleOptions{
+		Message:      pickKvAccount,
+		Options:      selectKvAccountOptions,
+		DefaultValue: selectKvAccountOptions[0],
+	})
+	if err != nil {
+		return nil, fmt.Errorf("selecting Key Vault: %w", err)
+	}
+
+	willCreateNewKvAccount := selectKvAccountOptions[kvAccountSelectionIndex] == createNewKvAccountOption
+	if willCreateNewSecret && !willCreateNewKvAccount {
+		// when willCreateNewSecret is true, we added a new option at the beginning of the list
+		// to recover the original kv account name
+		kvAccountSelectionIndex--
+	}
+
+	var kvAccount keyvault.Vault
+	if atLeastOneKvAccountExists {
+		kvAccount = vaultsList[kvAccountSelectionIndex]
+	}
+
+	if willCreateNewKvAccount {
+		location, err := e.prompter.PromptLocation(
+			ctx, subId, "Select the location to create the Key Vault", nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("prompting for Key Vault location: %w", err)
+		}
+		rg, err := e.prompter.PromptResourceGroupFrom(ctx, subId, location, prompt.PromptResourceGroupFromOptions{
+			DefaultName:          "rg-for-my-key-vault",
+			NewResourceGroupHelp: "The name of the new resource group where the Key Vault will be created.",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("prompting for resource group: %w", err)
+		}
+
+		kvAccountName := ""
+		for {
+			kvAccountNameInput, err := e.console.Prompt(ctx, input.ConsoleOptions{
+				Message: "Enter a name for the Key Vault",
+				Help:    "The name must be unique within the subscription and must be between 3 and 24 characters long",
+			})
+			if err != nil {
+				return nil, fmt.Errorf("prompting for Key Vault name: %w", err)
+			}
+			if kvAccountNameInput == "" {
+				e.console.Message(ctx, "Key Vault name cannot be empty")
+				continue
+			}
+			kvAccountName = kvAccountNameInput
+			break
+		}
+
+		e.console.ShowSpinner(ctx, "Creating Key Vault", input.Step)
+		vault, err := e.kvService.CreateVault(ctx, tenantId, subId, rg, location, kvAccountName)
+		e.console.StopSpinner(ctx, "", input.Step)
+		if err != nil {
+			return nil, fmt.Errorf("error creating Key Vault: %w", err)
+		}
+		kvAccount = vault
+
+		// RBAC role assignment
+		e.console.ShowSpinner(ctx, "Adding Administrator Role", input.Step)
+		principalId, err := azureutil.GetCurrentPrincipalId(ctx, e.userProfileService, tenantId)
+		if err != nil {
+			return nil, fmt.Errorf("getting current principal ID: %w", err)
+		}
+		err = e.entraIdService.CreateRbac(
+			ctx, subId, kvAccount.Id, keyvault.RoleIdKeyVaultAdministrator, principalId)
+		if err != nil {
+			return nil, fmt.Errorf("adding Administrator Role: %w", err)
+		}
+		e.console.StopSpinner(ctx, "", input.Step)
+	}
+
+	var kvSecretName string
+	if willCreateNewSecret {
+		for {
+			kvSecretName, err = e.console.Prompt(ctx, input.ConsoleOptions{
+				Message:      "Enter a name for the Key Vault secret",
+				DefaultValue: strings.ReplaceAll(secretName, "_", "-") + "-kv-secret",
+			})
+			if err != nil {
+				return nil, fmt.Errorf("prompting for Key Vault secret name: %w", err)
+			}
+			if keyvault.IsValidSecretName(kvSecretName) {
+				break
+			}
+			e.console.Message(ctx, "Invalid Key Vault secret name. The name must be between 1 and 127 characters"+
+				" long and can contain only alphanumeric characters and dashes.")
+		}
+
+		kvSecretValue, err := e.console.Prompt(ctx, input.ConsoleOptions{
+			Message:    "Enter the value for the Key Vault secret",
+			IsPassword: true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("prompting for secret value: %w", err)
+		}
+		// Creating a secret in a new account too soon can fail due to rbac role assignment not being ready
+		err = retry.Do(
+			ctx,
+			retry.WithMaxRetries(3, retry.NewConstant(5*time.Second)),
+			func(ctx context.Context) error {
+				err = e.kvService.CreateKeyVaultSecret(ctx, subId, kvAccount.Name, kvSecretName, kvSecretValue)
+				if err != nil {
+					return retry.RetryableError(fmt.Errorf("creating Key Vault secret: %w", err))
+				}
+				return nil
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("setting Key Vault secret: %w", err)
+		}
+	} else {
+		secretsInKv, err := e.kvService.ListKeyVaultSecrets(ctx, subId, kvAccount.Name)
+		if err != nil {
+			return nil, fmt.Errorf("listing Key Vault secrets: %w", err)
+		}
+		if len(secretsInKv) == 0 {
+			return nil, fmt.Errorf("no Key Vault secrets were found in the selected Key Vault")
+		}
+		options := make([]string, len(secretsInKv))
+		for i, secret := range secretsInKv {
+			if listWithoutNumbers {
+				options[i] = secret
+			} else {
+				options[i] = fmt.Sprintf("%2d. %s", i+1, secret)
+			}
+		}
+		secretSelectionIndex, err := e.console.Select(ctx, input.ConsoleOptions{
+			Message:      "Select the Key Vault secret",
+			Options:      options,
+			DefaultValue: options[0],
+		})
+		if err != nil {
+			return nil, fmt.Errorf("selecting Key Vault secret: %w", err)
+		}
+		kvSecretName = secretsInKv[secretSelectionIndex]
+	}
+
+	// akvs -> Azure Key Vault Secret (akvs://<subId>/<keyvault-name>/<secret-name>)
+	envValue := keyvault.NewAzureKeyVaultSecret(subId, kvAccount.Name, kvSecretName)
+	e.env.DotenvSet(secretName, envValue)
+	if err := e.envManager.Save(ctx, e.env); err != nil {
+		return nil, fmt.Errorf("saving environment: %w", err)
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("The key %s was saved in the environment as a reference to the"+
+				" Key Vault secret %s from the Key Vault %s",
+				output.WithBackticks(secretName),
+				output.WithBackticks(kvSecretName),
+				output.WithBackticks(kvAccount.Name)),
+			FollowUp: fmt.Sprintf("Learn how to use Key Vault secrets with azd and more: %s",
+				output.WithLinkFormat("https://aka.ms/azd-env-set-secret")),
+		},
+	}, nil
+}
+
+func newEnvSetSecretAction(
+	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
+	envManager environment.Manager,
+	console input.Console,
+	flags *envSetFlags,
+	args []string,
+	prompter prompt.Prompter,
+	kvService keyvault.KeyVaultService,
+	entraIdService entraid.EntraIdService,
+	subResolver account.SubscriptionTenantResolver,
+	userProfileService *azapi.UserProfileService,
+) actions.Action {
+	return &envSetSecretAction{
+		console:            console,
+		azdCtx:             azdCtx,
+		env:                env,
+		envManager:         envManager,
+		flags:              flags,
+		args:               args,
+		prompter:           prompter,
+		kvService:          kvService,
+		entraIdService:     entraIdService,
+		subResolver:        subResolver,
+		userProfileService: userProfileService,
 	}
 }
 
@@ -494,6 +814,10 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
+	if err := ef.projectManager.EnsureAllTools(ctx, ef.projectConfig, nil); err != nil {
+		return nil, err
+	}
+
 	infra, err := ef.importManager.ProjectInfrastructure(ctx, ef.projectConfig)
 	if err != nil {
 		return nil, err
@@ -505,7 +829,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
 		// If bicep is not available, we continue to prompt for subscription and location unfiltered
 		err = provisioning.EnsureSubscriptionAndLocation(ctx, ef.envManager, ef.env, ef.prompters,
-			func(_ account.Location) bool { return true })
+			provisioning.EnsureSubscriptionAndLocationOptions{})
 		if err != nil {
 			return nil, err
 		}

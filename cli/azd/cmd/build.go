@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -149,13 +152,13 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if err := ba.projectManager.EnsureFrameworkTools(ctx, ba.projectConfig, func(svc *project.ServiceConfig) bool {
-		return targetServiceName == "" || svc.Name == targetServiceName
-	}); err != nil {
+	if err := ba.projectManager.Initialize(ctx, ba.projectConfig); err != nil {
 		return nil, err
 	}
 
-	if err := ba.projectManager.Initialize(ctx, ba.projectConfig); err != nil {
+	if err := ba.projectManager.EnsureFrameworkTools(ctx, ba.projectConfig, func(svc *project.ServiceConfig) bool {
+		return targetServiceName == "" || svc.Name == targetServiceName
+	}); err != nil {
 		return nil, err
 	}
 

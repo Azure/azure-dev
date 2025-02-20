@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package scaffold
 
 import (
@@ -10,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/otiai10/copy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,10 +86,16 @@ func TestExecInfra(t *testing.T) {
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
 				},
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "mysqldb",
+				},
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
-				DbRedis: &DatabaseRedis{},
+				DbRedis:        &DatabaseRedis{},
+				ServiceBus:     &ServiceBus{},
+				EventHubs:      &EventHubs{},
+				StorageAccount: &StorageAccount{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
@@ -106,6 +116,12 @@ func TestExecInfra(t *testing.T) {
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
+						DbMySql: &DatabaseReference{
+							DatabaseName: "mysqldb",
+						},
+						ServiceBus:     &ServiceBus{},
+						EventHubs:      &EventHubs{},
+						StorageAccount: &StorageReference{},
 					},
 					{
 						Name: "web",
@@ -126,13 +142,29 @@ func TestExecInfra(t *testing.T) {
 			InfraSpec{
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
-					DatabaseUser: "appuser",
 				},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
 						Port: 3100,
 						DbPostgres: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with MySQL",
+			InfraSpec{
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "appdb",
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbMySql: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
 					},
@@ -186,7 +218,7 @@ func TestExecInfra(t *testing.T) {
 				err := os.MkdirAll(dest, 0700)
 				require.NoError(t, err)
 
-				err = copyFS(os.DirFS(filepath.Dir(dir)), filepath.Base(dir), dest)
+				err = copy.Copy(dir, dest)
 				require.NoError(t, err)
 			}
 

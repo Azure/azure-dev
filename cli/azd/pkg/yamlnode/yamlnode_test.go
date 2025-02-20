@@ -87,6 +87,7 @@ func TestSet(t *testing.T) {
 		{"Create array", "root.new_array", []string{"first_item"}, false},
 		{"Create object", "root.nested.new_object", map[string]string{"key": "value"}, false},
 		{"Create nested array object", "root.mixedArray[1].nestedObj.newKey", "new_deep_value", false},
+		{"Create layers", "root.new?.new2?.new3", "new_deep_value", false},
 		{"Create missing key", "root.nonexistent?.key", "value", false},
 
 		{"Invalid path", "root.nonexistent.key", "value", true},
@@ -141,6 +142,7 @@ func TestAppend(t *testing.T) {
 		{"Append object to mixed array", "root.mixedArray", map[string]string{"key": "value"}, false, 4},
 		{"Append to nested array", "root.mixedArray[2].nestedArr", "item3", false, 3},
 		{"Append to non-existent array", "root.nonexistent[]?", "item1", false, 1},
+		{"Append layers", "root.new?.new2?.arr[]?", "item1", false, 1},
 		{"Invalid path (not an array)", "root.nested.key", "invalid", true, 0},
 		{"Non-existent path", "root.nonexistent", "value", true, 0},
 		{"Invalid path format", "root.array.[1]", "invalid", true, 0},

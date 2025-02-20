@@ -1,11 +1,15 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package appdetect
 
 import (
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParsePortsInLine(t *testing.T) {
@@ -28,7 +32,7 @@ func TestParsePortsInLine(t *testing.T) {
 	}
 }
 
-func TestDetectDockerFromFile(t *testing.T) {
+func TestAnalyzeDockerFromFile(t *testing.T) {
 	tests := []struct {
 		dockerFileContent string
 		expectedPorts     []Port
@@ -52,7 +56,7 @@ func TestDetectDockerFromFile(t *testing.T) {
 			err = os.WriteFile(tempFile, []byte(tt.dockerFileContent), osutil.PermissionFile)
 			assert.NoError(t, err)
 
-			docker, err := detectDockerFromFile(tempFile)
+			docker, err := AnalyzeDocker(tempFile)
 			assert.NoError(t, err)
 			actual := docker.Ports
 			assert.Equal(t, tt.expectedPorts, actual)

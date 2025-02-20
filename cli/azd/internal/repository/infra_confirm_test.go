@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package repository
 
 import (
@@ -35,7 +38,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				Services: []scaffold.ServiceSpec{
 					{
 						Name:    "dotnet",
-						Port:    80,
+						Port:    8080,
 						Backend: &scaffold.Backend{},
 					},
 				},

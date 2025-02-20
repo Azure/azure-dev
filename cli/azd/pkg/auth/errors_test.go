@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package auth
 
 import (
@@ -96,6 +99,38 @@ func TestReLoginRequired(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, got := newReLoginRequiredError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic())
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestReLoginRequiredError(t *testing.T) {
+	tests := []struct {
+		name string
+		resp *AadErrorResponse
+		want string
+	}{
+		{
+			"invalid_grant",
+			&AadErrorResponse{
+				Error:            "invalid_grant",
+				ErrorDescription: "description 1",
+			},
+			"description 1",
+		},
+		{
+			"interaction_required",
+			&AadErrorResponse{
+				Error:            "interaction_required",
+				ErrorDescription: "description 2",
+			},
+			"description 2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err, _ := newReLoginRequiredError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic())
+			got := err.Error()
 			require.Equal(t, tt.want, got)
 		})
 	}

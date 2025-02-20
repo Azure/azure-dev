@@ -41,7 +41,8 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		ServiceLanguageJavaScript,
 		ServiceLanguageTypeScript,
 		ServiceLanguagePython,
-		ServiceLanguageJava:
+		ServiceLanguageJava,
+		ServiceLanguageDocker:
 		// Excluding ServiceLanguageDocker and ServiceLanguageSwa since it is implicitly derived currently,
 		// and not an actual language
 		return kind, nil
@@ -120,4 +121,8 @@ func validatePackageOutput(packagePath string) error {
 	}
 
 	return nil
+}
+
+func (slk ServiceLanguageKind) IsDotNet() bool {
+	return slk == ServiceLanguageDotNet || slk == ServiceLanguageCsharp || slk == ServiceLanguageFsharp
 }

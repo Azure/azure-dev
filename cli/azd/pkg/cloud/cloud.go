@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cloud
 
 import (
@@ -31,6 +34,8 @@ type Cloud struct {
 	// known values and can be found at:
 	// https://<management-endpoint>/metadata/endpoints?api-version=2023-12-01
 	ContainerRegistryEndpointSuffix string
+
+	KeyVaultEndpointSuffix string
 }
 
 type Config struct {
@@ -66,6 +71,7 @@ func AzurePublic() *Cloud {
 		PortalUrlBase:                   "https://portal.azure.com",
 		StorageEndpointSuffix:           "core.windows.net",
 		ContainerRegistryEndpointSuffix: "azurecr.io",
+		KeyVaultEndpointSuffix:          "vault.azure.net",
 	}
 }
 
@@ -75,6 +81,7 @@ func AzureGovernment() *Cloud {
 		PortalUrlBase:                   "https://portal.azure.us",
 		StorageEndpointSuffix:           "core.usgovcloudapi.net",
 		ContainerRegistryEndpointSuffix: "azurecr.us",
+		KeyVaultEndpointSuffix:          "vault.usgovcloudapi.net",
 	}
 }
 
@@ -84,6 +91,7 @@ func AzureChina() *Cloud {
 		PortalUrlBase:                   "https://portal.azure.cn",
 		StorageEndpointSuffix:           "core.chinacloudapi.cn",
 		ContainerRegistryEndpointSuffix: "azurecr.cn",
+		KeyVaultEndpointSuffix:          "vault.azure.cn",
 	}
 }
 

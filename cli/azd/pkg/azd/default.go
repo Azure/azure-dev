@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azd
 
 import (
@@ -12,6 +15,7 @@ import (
 	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	infraTerraform "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
@@ -47,6 +51,30 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	// Tools
 	container.MustRegisterSingleton(terraform.NewCli)
 	container.MustRegisterSingleton(bicep.NewCli)
+
+	container.MustRegisterTransient(func() *lazy.Lazy[*infraBicep.BicepProvider] {
+		return lazy.NewLazy(func() (*infraBicep.BicepProvider, error) {
+			var provider provisioning.Provider
+			if err := container.ResolveNamed(string(provisioning.Bicep), &provider); err != nil {
+				return nil, err
+			}
+
+			bicepProvider, ok := provider.(*infraBicep.BicepProvider)
+			if !ok {
+				return nil, fmt.Errorf("unexpected provider type: %T", provider)
+			}
+
+			return bicepProvider, nil
+		})
+	})
+
+	container.MustRegisterTransient(
+		func(lazyBicepProvider *lazy.Lazy[*infraBicep.BicepProvider],
+		) (*infraBicep.BicepProvider, error) {
+			return lazyBicepProvider.GetValue()
+		})
+
+	container.MustRegisterTransient(infraBicep.NewBicepProvider)
 
 	// Provisioning Providers
 	provisionProviderMap := map[provisioning.ProviderKind]any{

@@ -18,7 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -127,7 +127,7 @@ func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
 
 func TestReportProgress(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	deploymentService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
+	deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
 
 	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
 	deployment := NewSubscriptionDeployment(

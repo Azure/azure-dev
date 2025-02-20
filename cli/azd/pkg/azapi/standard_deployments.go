@@ -710,7 +710,7 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	var rawResponse *http.Response
 	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
 
-	validate, err := deploymentClient.BeginValidateAtSubscriptionScope(
+	_, err = deploymentClient.BeginValidateAtSubscriptionScope(
 		ctxWithResp, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
@@ -723,15 +723,6 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 		}, nil)
 	if err != nil {
 		return validatePreflightError(rawResponse, err, "subscription")
-	}
-
-	_, err = validate.PollUntilDone(ctx, nil)
-	if err != nil {
-		preflightError := createDeploymentError(err)
-		return fmt.Errorf(
-			"validating preflight to subscription:\n\nPreflight Error Details:\n%w",
-			preflightError,
-		)
 	}
 
 	return nil
@@ -754,27 +745,22 @@ func validatePreflightError(
 	typeMessage string,
 ) error {
 	if rawResponse == nil || rawResponse.StatusCode != 400 {
-		return fmt.Errorf("calling preflight validate api failing to %s: %w", typeMessage, err)
+		return fmt.Errorf(
+			"validating preflight to %s:\n\nPreflight Error Details:\n%w",
+			typeMessage,
+			createDeploymentError(err),
+		)
 	}
 
 	defer rawResponse.Body.Close()
 	body, errOnRawResponse := io.ReadAll(rawResponse.Body)
 	if errOnRawResponse != nil {
-		return fmt.Errorf("failed to read response error body from preflight api to %s: %w", typeMessage, errOnRawResponse)
+		return fmt.Errorf("failed to read response error body from preflight validation api to %s: %w", typeMessage, errOnRawResponse)
 	}
 
-	var errPreflight PreflightErrorResponse
-	errOnRawResponse = json.Unmarshal(body, &errPreflight)
-	if errOnRawResponse != nil {
-		return fmt.Errorf("failed to unmarshal preflight error response to %s: %w", typeMessage, errOnRawResponse)
-	}
-
-	if len(errPreflight.Error.Details) > 0 {
-		detailMessage := errPreflight.Error.Details[0].Message
-		return fmt.Errorf("calling preflight validate api failing to %s: %s", typeMessage, detailMessage)
-	} else {
-		return fmt.Errorf("calling preflight validate api failing to %s: %w", typeMessage, err)
-	}
+	return fmt.Errorf("validating preflight to %s:\n\nPreflight Error Details:\n%w",
+		typeMessage,
+		NewAzureDeploymentError(string(body)))
 }
 
 func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
@@ -793,7 +779,7 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	var rawResponse *http.Response
 	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
 
-	validate, err := deploymentClient.BeginValidate(ctxWithResp, resourceGroup, deploymentName,
+	_, err = deploymentClient.BeginValidate(ctxWithResp, resourceGroup, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
 				Template:   armTemplate,
@@ -804,15 +790,6 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 		}, nil)
 	if err != nil {
 		return validatePreflightError(rawResponse, err, "resource group")
-	}
-
-	_, err = validate.PollUntilDone(ctx, nil)
-	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return fmt.Errorf(
-			"validating preflight to resource group:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
 	}
 
 	return nil

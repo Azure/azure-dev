@@ -207,6 +207,8 @@ func warnKeyCaseConflicts(
 					key,
 					ux.ListAsText(conflicts)),
 			})
+	}
+}
 
 func newEnvSetSecretFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetSecretFlags {
 	flags := &envSetSecretFlags{}

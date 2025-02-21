@@ -211,6 +211,8 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.StorageAccount = &scaffold.StorageAccount{
 				Containers: props.Containers,
 			}
+		case ResourceTypeKeyVault:
+			infraSpec.KeyVault = &scaffold.KeyVault{}
 		}
 	}
 
@@ -310,6 +312,8 @@ func mapHostUses(
 			svcSpec.ServiceBus = &scaffold.ServiceBus{}
 		case ResourceTypeStorage:
 			svcSpec.StorageAccount = &scaffold.StorageReference{}
+		case ResourceTypeKeyVault:
+			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
 		}
 	}
 

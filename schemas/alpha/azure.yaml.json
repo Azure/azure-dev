@@ -373,7 +373,8 @@
                             "host.containerapp",
                             "messaging.eventhubs",
                             "messaging.servicebus",
-                            "storage"
+                            "storage",
+                            "key-vault"
                         ]
                     },
                     "uses": {
@@ -394,7 +395,8 @@
                     { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
                     { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } },
-                    { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} }
+                    { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} },
+                    { "if": { "properties": { "type": { "const": "key-vault" }}}, "then": { "$ref": "#/definitions/resource"} }
                 ]
             }
         },
@@ -1236,7 +1238,8 @@
                         "db.mysql",
                         "db.mongo",
                         "host.containerapp",
-                        "ai.openai.model"
+                        "ai.openai.model",
+                        "key-vault"
                     ]
                 },
                 "uses": {

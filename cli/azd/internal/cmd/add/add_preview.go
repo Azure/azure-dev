@@ -95,6 +95,12 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 			"AZURE_STORAGE_ACCOUNT_NAME",
 			"AZURE_STORAGE_BLOB_ENDPOINT",
 		}
+	case project.ResourceTypeKeyVault:
+		res.AzureResourceType = "Microsoft.KeyVault/vaults"
+		res.UseEnvVars = []string{
+			"AZURE_KEY_VAULT_ENDPOINT",
+			"AZURE_KEY_VAULT_NAME",
+		}
 	}
 	return res
 }

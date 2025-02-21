@@ -96,6 +96,7 @@ func TestExecInfra(t *testing.T) {
 				ServiceBus:     &ServiceBus{},
 				EventHubs:      &EventHubs{},
 				StorageAccount: &StorageAccount{},
+				KeyVault:       &KeyVault{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
@@ -122,6 +123,7 @@ func TestExecInfra(t *testing.T) {
 						ServiceBus:     &ServiceBus{},
 						EventHubs:      &EventHubs{},
 						StorageAccount: &StorageReference{},
+						KeyVault:       &KeyVaultReference{},
 					},
 					{
 						Name: "web",

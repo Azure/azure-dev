@@ -61,7 +61,7 @@ func Configure(
 	case project.ResourceTypeKeyVault:
 		if _, exists := p.PrjConfig.Resources["key-vault"]; exists {
 			return nil, fmt.Errorf(
-				"you already have a project key vault named 'key-vault'. To add a secret to it, run 'azd env set-secret'",
+				"you already have a project key vault named 'key-vault'. To add a secret to it, run 'azd env set-secret <name>'",
 			)
 		}
 

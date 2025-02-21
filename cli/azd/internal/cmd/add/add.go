@@ -378,7 +378,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if strings.EqualFold(selected.Namespace, "key-vault") {
 		followUpMessage += fmt.Sprintf(
 			"\nRun '%s' to add a secret to the key vault.",
-			color.BlueString("azd env set-secret"))
+			color.BlueString("azd env set-secret <name>"))
 	}
 
 	return &actions.ActionResult{

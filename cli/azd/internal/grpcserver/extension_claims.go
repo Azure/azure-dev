@@ -1,19 +1,23 @@
 package grpcserver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/golang-jwt/jwt/v5"
+	"google.golang.org/grpc/metadata"
 )
 
+// ExtensionClaims represents the claims in the JWT token for the extension.
 type ExtensionClaims struct {
 	jwt.RegisteredClaims
 	Capabilities []extensions.CapabilityType `json:"cap,omitempty"`
 }
 
+// GenerateExtensionToken generates a JWT token for the extension.
 func GenerateExtensionToken(extension *extensions.Extension, serverInfo *ServerInfo) (string, error) {
 	claims := ExtensionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -34,6 +38,7 @@ func GenerateExtensionToken(extension *extensions.Extension, serverInfo *ServerI
 	return jwtToken, nil
 }
 
+// ParseExtensionToken parses and validates the extension token.
 func ParseExtensionToken(tokenValue string, serverInfo *ServerInfo) (*ExtensionClaims, error) {
 	claims := &ExtensionClaims{}
 
@@ -55,6 +60,32 @@ func ParseExtensionToken(tokenValue string, serverInfo *ServerInfo) (*ExtensionC
 
 	if claims.ExpiresAt.Before(time.Now()) {
 		return nil, errors.New("token has expired")
+	}
+
+	return claims, nil
+}
+
+// GetExtensionClaims retrieves the extension claims from the incoming gRPC context.
+func GetExtensionClaims(ctx context.Context) (*ExtensionClaims, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("failed to get metadata from context")
+	}
+
+	authHeaders := md.Get("authorization")
+	if len(authHeaders) == 0 {
+		return nil, fmt.Errorf("missing authorization header")
+	}
+
+	tokenValue := authHeaders[0]
+	if tokenValue == "" {
+		return nil, fmt.Errorf("missing token value")
+	}
+
+	claims := &ExtensionClaims{}
+	_, _, err := jwt.NewParser().ParseUnverified(tokenValue, claims)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
 	}
 
 	return claims, nil

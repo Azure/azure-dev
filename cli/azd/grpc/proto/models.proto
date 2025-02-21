@@ -14,9 +14,9 @@ message EmptyResponse {}
 message Subscription {
   string id = 1;
   string name = 2;
-  string tenantId = 3;
-  string userAccessTenant_id = 4;
-  bool isDefault = 5;
+  string tenant_id = 3;
+  string user_tenant_id = 4;
+  bool is_default = 5;
 }
 
 message ResourceGroup {
@@ -27,15 +27,15 @@ message ResourceGroup {
 
 message Location {
   string name = 1;
-  string displayName = 2;
-  string regionalDisplayName = 3;
+  string display_name = 2;
+  string regional_display_name = 3;
 }
 
 message AzureScope {
-  string tenantId = 1;
-  string subscriptionId = 2;
+  string tenant_id = 1;
+  string subscription_id = 2;
   string location = 3;
-  string resourceGroup = 4;
+  string resource_group = 4;
 }
 
 message AzureContext {
@@ -56,4 +56,44 @@ message ResourceExtended {
   string type = 3;
   string location = 4;
   string kind = 5;
+}
+
+// ProjectConfig message definition
+message ProjectConfig {
+  string name = 1;
+  string resource_group_name = 2;
+  string path = 3;
+  ProjectMetadata metadata = 4;
+  map<string, ServiceConfig> services = 5;
+  InfraOptions infra = 6;
+}
+
+// RequiredVersions message definition
+message RequiredVersions {
+  string azd = 1;
+}
+
+// ProjectMetadata message definition
+message ProjectMetadata {
+  string template = 1;
+}
+
+// ServiceConfig message definition
+message ServiceConfig {
+  string name = 1;
+  string resource_group_name = 2;
+  string resource_name = 3;
+  string api_version = 4;
+  string relative_path = 5;
+  string host = 6;
+  string language = 7;
+  string output_path = 8;
+  string image = 9;
+}
+
+// InfraOptions message definition
+message InfraOptions {
+  string provider = 1;
+  string path = 2;
+  string module = 3;
 }

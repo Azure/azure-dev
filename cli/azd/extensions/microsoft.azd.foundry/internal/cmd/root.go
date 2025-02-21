@@ -9,8 +9,8 @@ import (
 
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:           "azd demo <command> [options]",
-		Short:         "Demonstrates AZD extension framework capabilities.",
+		Use:           "azd foundry <command> [options]",
+		Short:         "Azure AI Foundry Extension for AZD.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{
@@ -21,7 +21,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 
-	rootCmd.AddCommand(newRegisterCommand())
+	rootCmd.AddCommand(newListenCommand())
 	rootCmd.AddCommand(newVersionCommand())
 
 	return rootCmd

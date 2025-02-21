@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/fatih/color"
 )
 
 type ExtensionsMiddleware struct {
@@ -67,6 +68,8 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 	defer grpcServer.Stop()
 
+	forceColor := !color.NoColor
+
 	for _, extension := range extensionList {
 		jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
 		if err != nil {
@@ -74,19 +77,25 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 		}
 
 		go func(extension *extensions.Extension, jwtToken string) {
+			allEnv := []string{
+				fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
+				fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
+			}
+
+			if forceColor {
+				allEnv = append(allEnv, "FORCE_COLOR=1")
+			}
+
 			options := &extensions.InvokeOptions{
-				Args: []string{"register"},
-				Env: []string{
-					fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
-					fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
-				},
+				Args:   []string{"listen"},
+				Env:    allEnv,
 				StdIn:  m.console.Handles().Stdin,
 				StdOut: m.console.Handles().Stdout,
 				StdErr: m.console.Handles().Stderr,
 			}
 
 			if _, err := m.extensionRunner.Invoke(ctx, extension, options); err != nil {
-				log.Printf("Failed to start extension %s: %s", extension.Id, err.Error())
+				log.Printf("extension '%s' returned unexpected error: %s\n", extension.Id, err.Error())
 			}
 		}(extension, jwtToken)
 	}

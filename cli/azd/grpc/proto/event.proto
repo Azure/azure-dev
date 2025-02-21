@@ -4,35 +4,57 @@ package azdext;
 
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/gen;azdext";
 
+import "models.proto";
+
 // The EventsService allows clients to subscribe and receive event notifications
 service EventService {
   // Bidirectional stream for event subscription, invocation, and status updates
-  rpc EventStream (stream EventMessage) returns (stream EventMessage);
+  rpc EventStream(stream EventMessage) returns (stream EventMessage);
 }
 
 // Represents different types of messages sent over the stream
 message EventMessage {
   oneof message_type {
-    SubscribeMessage subscribe = 1; // Client -> Server (Subscription request)
-    InvokeMessage invoke = 2;       // Server -> Client (Event notification)
-    StatusMessage status = 3;       // Client -> Server (Status updates)
+    SubscribeProjectEvent subscribe_project_event = 1;
+    InvokeProjectHandler invoke_project_handler = 2;
+    ProjectHandlerStatus project_handler_status = 3;
+    SubscribeServiceEvent subscribe_service_event = 4;
+    InvokeServiceHandler invoke_service_handler = 5;
+    ServiceHandlerStatus service_handler_status = 6;
   }
 }
 
 // Client subscribes to events
-message SubscribeMessage {
-  repeated string event_names = 1;  // List of event names the client wants to listen for
+message SubscribeProjectEvent {
+  repeated string event_names = 1;
 }
 
-// Server notifies clients about an event
-message InvokeMessage {
-  string event_name = 1;  // The event being triggered
-  map<string, string> args = 2; // Key-value arguments for the event
+message SubscribeServiceEvent {
+  repeated string event_names = 1;
+  string language = 2;
+  string host = 3;
+}
+
+message InvokeProjectHandler {
+  string event_name = 1;
+  ProjectConfig project = 2;
+}
+
+message InvokeServiceHandler {
+  string event_name = 1;
+  ProjectConfig project = 2;
+  ServiceConfig service = 3;
 }
 
 // Client sends status updates back to the server
-message StatusMessage {
-  string event_name = 1;   // The event this status update is for
-  string status = 2;       // "running", "completed", "failed", etc.
-  string message = 3;      // Optional additional status details
+message ProjectHandlerStatus {
+  string event_name = 1;// The event this status update is for
+  string status = 2;// "running", "completed", "failed", etc.
+  string message = 3;// Optional additional status details
+}
+
+message ServiceHandlerStatus {
+  string event_name = 1;// The event this status update is for
+  string status = 2;// "running", "completed", "failed", etc.
+  string message = 3;// Optional additional status details
 }

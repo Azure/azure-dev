@@ -294,11 +294,22 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
 	}
 
+	var followUpMessage string
+	addedKeyVault := slices.ContainsFunc(dependentResourcesToAdd, func(resource *project.ResourceConfig) bool {
+		return strings.EqualFold(resource.Name, "key-vault")
+	})
+	keyVaultFollowUpMessage := fmt.Sprintf("\nRun '%s' to add a secret to the key vault.", color.BlueString("azd env set-secret <name>"))
+
 	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
+		followUpMessage = fmt.Sprintf("Run '%s' to re-synthesize the infrastructure, then run '%s' to provision these changes anytime later.",
+			color.BlueString("azd infra synth"),
+			color.BlueString("azd provision"))
+		if addedKeyVault {
+			followUpMessage += keyVaultFollowUpMessage
+		}
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
-				FollowUp: "Run '" + color.BlueString("azd infra synth") + "' to re-synthesize the infrastructure, " +
-					"then run '" + color.BlueString("azd provision") + "' to provision these changes anytime later.",
+				FollowUp: followUpMessage,
 			},
 		}, err
 	}
@@ -343,7 +354,6 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	var followUpMessage string
 	if provisionOption == provision {
 		a.azd.SetArgs([]string{followUpCmd})
 		err = a.azd.ExecuteContext(ctx)
@@ -361,10 +371,8 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			verb)
 	}
 
-	if strings.EqualFold(selected.Namespace, "key-vault") {
-		followUpMessage += fmt.Sprintf(
-			"\nRun '%s' to add a secret to the key vault.",
-			color.BlueString("azd env set-secret <name>"))
+	if addedKeyVault {
+		followUpMessage += keyVaultFollowUpMessage
 	}
 
 	return &actions.ActionResult{

@@ -658,9 +658,22 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
-
-	if err := en.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
-		return nil, fmt.Errorf("saving default environment: %w", err)
+	msg := fmt.Sprintf("Would you like to set the new environment '%s' as default environment?", env.Name())
+	shouldSetDefault, promptErr := en.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      msg,
+		DefaultValue: true,
+	})
+	if promptErr != nil {
+		return nil, fmt.Errorf("prompting to set environment '%s' as default environment: %w", env.Name(), promptErr)
+	}
+	if shouldSetDefault {
+		if err := en.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+			return nil, fmt.Errorf("saving default environment: %w", err)
+		}
+		en.console.Message(ctx,
+			fmt.Sprintf(
+				"The new environment '%s' has been set as the default environment.", env.Name()),
+		)
 	}
 
 	return nil, nil

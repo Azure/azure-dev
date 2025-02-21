@@ -315,6 +315,7 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.11.2' = {
 }
 {{- end}}
 
+{{- $infra := . -}}
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
@@ -378,7 +379,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     scaleMaxReplicas: 10
     secrets: {
       secureList:  union([
-        {{- if and .KeyVault .DbCosmosMongo}}
+        {{- if and $infra.KeyVault .DbCosmosMongo}}
         {
           name: 'mongodb-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
@@ -405,7 +406,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           value: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
         }
         {{- end}}
-        {{- if and .KeyVault .DbRedis}}
+        {{- if and $infra.KeyVault .DbRedis}}
         {
           name: 'redis-pass'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
@@ -440,7 +441,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'AZURE_CLIENT_ID'
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
-          {{- if and .KeyVault .DbCosmosMongo}}
+          {{- if and $infra.KeyVault .DbCosmosMongo}}
           {
             name: 'MONGODB_URL'
             secretRef: 'mongodb-url'
@@ -511,7 +512,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'REDIS_ENDPOINT'
             value: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
           }
-          {{- if .KeyVault}}
+          {{- if $infra.KeyVault}}
           {
             name: 'REDIS_URL'
             secretRef: 'redis-url'
@@ -552,7 +553,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: storageAccount.outputs.serviceEndpoints.blob
           }
           {{- end}}
-          {{- if .KeyVault}}
+          {{- if or .KeyVault $infra.KeyVault}}
           {
             name: 'AZURE_KEY_VAULT_NAME'
             value: keyVault.outputs.name
@@ -629,7 +630,7 @@ module redis 'br/public:avm/res/cache/redis:0.9.0' = {
 
 {{- if .KeyVault}}
 // Create a keyvault to store secrets
-module keyVault 'br/public:avm/res/key-vault/vault:0.11.3' = {
+module keyVault 'br/public:avm/res/key-vault/vault:0.12.0' = {
   name: 'keyvault'
   params: {
     name: '${abbrs.keyVaultVaults}${resourceToken}'
@@ -679,6 +680,7 @@ output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = {{bicepName .Name}}.
 {{- if .KeyVault}}
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
+output AZURE_RESOURCE_KEY_VAULT_ID string = keyVault.outputs.resourceId
 {{- end}}
 {{- if  .AIModels}}
 {{- range .AIModels}}

@@ -198,7 +198,16 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				color.BlueString(resourceToAdd.Name)))
 	}
 
+	// Dependent resources (existing and to be added)
 	dependentResources := project.GetRequiredDependencies(resourceToAdd)
+	// Dependent resources to be added
+	dependentResourcesToAdd := make([]*project.ResourceConfig, 0)
+	for _, dep := range dependentResources {
+		if prjConfig.Resources[dep.Name] == nil {
+			dependentResourcesToAdd = append(dependentResourcesToAdd, dep)
+		}
+	}
+
 	for _, svc := range usedBy {
 		err = yamlnode.Append(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
 			Kind:  yaml.ScalarNode,
@@ -208,8 +217,13 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, fmt.Errorf("appending resource: %w", err)
 		}
 
-		// Implicitly add dependent resources to 'uses'
+		// Add dependent resources to 'uses'
 		for _, dep := range dependentResources {
+			// Skip if already in 'uses'
+			if slices.Contains(prjConfig.Resources[svc].Uses, dep.Name) {
+				continue
+			}
+
 			err = yamlnode.Append(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
 				Kind:  yaml.ScalarNode,
 				Value: dep.Name,
@@ -323,7 +337,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if provisionOption == provisionPreview {
-		err = a.previewProvision(ctx, prjConfig, resourceToAdd, usedBy)
+		err = a.previewProvision(ctx, prjConfig, resourceToAdd, dependentResourcesToAdd, usedBy)
 		if err != nil {
 			return nil, err
 		}

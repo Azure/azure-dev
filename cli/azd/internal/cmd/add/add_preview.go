@@ -109,6 +109,7 @@ func (a *AddAction) previewProvision(
 	ctx context.Context,
 	prjConfig *project.ProjectConfig,
 	resourceToAdd *project.ResourceConfig,
+	depsToAdd []*project.ResourceConfig,
 	usedBy []string,
 ) error {
 	a.console.ShowSpinner(ctx, "Previewing changes....", input.Step)
@@ -137,37 +138,44 @@ func (a *AddAction) previewProvision(
 	previewWriter := previewWriter{w: a.console.GetWriter()}
 	w := tabwriter.NewWriter(&previewWriter, 0, 0, 5, ' ', 0)
 
+	allResourcesToAdd := []*project.ResourceConfig{resourceToAdd}
+	allResourcesToAdd = append(allResourcesToAdd, depsToAdd...)
+
 	fmt.Fprintln(w, "b  Name\tResource type")
-	meta := Metadata(resourceToAdd)
-	fmt.Fprintf(w, "+  %s\t%s\n", resourceToAdd.Name, meta.AzureResourceType)
+	for _, res := range allResourcesToAdd {
+		meta := Metadata(res)
+		fmt.Fprintf(w, "+  %s\t%s\n", res.Name, meta.AzureResourceType)
+	}
 
 	w.Flush()
 	a.console.Message(ctx, fmt.Sprintf("\n%s\n", output.WithBold("Environment variables")))
 
-	if strings.HasPrefix(string(resourceToAdd.Type), "host.") {
-		for _, use := range resourceToAdd.Uses {
-			if res, ok := prjConfig.Resources[use]; ok {
-				fmt.Fprintf(w, "   %s -> %s\n", resourceToAdd.Name, output.WithBold("%s", use))
+	for _, res := range allResourcesToAdd {
+		if strings.HasPrefix(string(res.Type), "host.") {
+			for _, use := range res.Uses {
+				if res, ok := prjConfig.Resources[use]; ok {
+					fmt.Fprintf(w, "   %s -> %s\n", res.Name, output.WithBold("%s", use))
 
-				meta := Metadata(res)
+					meta := Metadata(res)
+					for _, envVar := range meta.UseEnvVars {
+						fmt.Fprintf(w, "g   + %s\n", envVar)
+					}
+
+					fmt.Fprintln(w)
+				}
+			}
+		} else {
+			meta := Metadata(res)
+
+			for _, usedBy := range usedBy {
+				fmt.Fprintf(w, "   %s -> %s\n", usedBy, output.WithBold("%s", res.Name))
+
 				for _, envVar := range meta.UseEnvVars {
 					fmt.Fprintf(w, "g   + %s\n", envVar)
 				}
 
 				fmt.Fprintln(w)
 			}
-		}
-	} else {
-		meta := Metadata(resourceToAdd)
-
-		for _, usedBy := range usedBy {
-			fmt.Fprintf(w, "   %s -> %s\n", usedBy, output.WithBold("%s", resourceToAdd.Name))
-
-			for _, envVar := range meta.UseEnvVars {
-				fmt.Fprintf(w, "g   + %s\n", envVar)
-			}
-
-			fmt.Fprintln(w)
 		}
 	}
 

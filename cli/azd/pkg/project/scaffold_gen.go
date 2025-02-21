@@ -135,8 +135,9 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	// backends -> frontends
 	backendMapping := map[string]string{}
 
+	// To handle cases where some resources like AKV aren't defined in azure.yml but another resource like MongoDB
+	// requires it, we need a complete list of required resources with all dependencies resolved.
 	resourcesWithDeps := WithResolvedDependencies(projectConfig.Resources)
-	resourcesWithDeps = projectConfig.Resources
 	for _, res := range resourcesWithDeps {
 		switch res.Type {
 		case ResourceTypeDbRedis:
@@ -394,7 +395,7 @@ func genBicepParamsFromEnvSubst(
 
 // GetRequiredDependencies returns the required dependent resources for a given resource type.
 // For example, Key Vault is considered a dependency of MongoDB and Redis since we store their
-// access keys and connection strings in the project KV.
+// access keys and connection strings in the project key vault.
 func GetRequiredDependencies(resource *ResourceConfig) []*ResourceConfig {
 	switch resource.Type {
 	case ResourceTypeDbMongo, ResourceTypeDbRedis:
@@ -419,7 +420,6 @@ func WithResolvedDependencies(resources map[string]*ResourceConfig) map[string]*
 	for _, res := range resources {
 		deps := GetRequiredDependencies(res)
 		for _, dep := range deps {
-			// Only add if we haven't seen this resource type yet
 			if _, exists := seen[dep.Type]; !exists {
 				allResources[dep.Name] = dep
 				seen[dep.Type] = struct{}{}

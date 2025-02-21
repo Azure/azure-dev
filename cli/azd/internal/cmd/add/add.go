@@ -13,8 +13,6 @@ import (
 	"slices"
 	"strings"
 
-	"maps"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -169,43 +167,31 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("setting resource: %w", err)
 	}
 
-	// Resolve and add any dependent resources
-	allResources := make(map[string]*project.ResourceConfig)
-	maps.Copy(allResources, prjConfig.Resources)
-	allResources[resourceToAdd.Name] = resourceToAdd
-	allResourcesWithDeps := project.WithResolvedDependencies(allResources)
-	requiredByMessages := make([]string, 0)
-
-	for name, res := range allResourcesWithDeps {
-		// Skip if it's the main resource we already added or if it already exists in project config
-		if name == resourceToAdd.Name || prjConfig.Resources[name] != nil {
-			continue
+	// Dependent resources (both existing and to be added)
+	dependentResources := project.GetRequiredDependencies(resourceToAdd)
+	dependentResourcesToAdd := make([]*project.ResourceConfig, 0)
+	for _, dep := range dependentResources {
+		if prjConfig.Resources[dep.Name] == nil {
+			dependentResourcesToAdd = append(dependentResourcesToAdd, dep)
 		}
+	}
 
-		depNode, err := yamlnode.Encode(res)
+	requiredByMessages := make([]string, 0)
+	for _, depToAdd := range dependentResourcesToAdd {
+		depNode, err := yamlnode.Encode(depToAdd)
 		if err != nil {
 			panic(fmt.Sprintf("encoding dependent resource yaml node: %v", err))
 		}
 
-		err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", name), depNode)
+		err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", depToAdd.Name), depNode)
 		if err != nil {
 			return nil, fmt.Errorf("setting dependent resource: %w", err)
 		}
 
 		requiredByMessages = append(requiredByMessages,
 			fmt.Sprintf("(%s is required by %s)",
-				color.BlueString(name),
+				color.BlueString(depToAdd.Name),
 				color.BlueString(resourceToAdd.Name)))
-	}
-
-	// Dependent resources (existing and to be added)
-	dependentResources := project.GetRequiredDependencies(resourceToAdd)
-	// Dependent resources to be added
-	dependentResourcesToAdd := make([]*project.ResourceConfig, 0)
-	for _, dep := range dependentResources {
-		if prjConfig.Resources[dep.Name] == nil {
-			dependentResourcesToAdd = append(dependentResourcesToAdd, dep)
-		}
 	}
 
 	for _, svc := range usedBy {

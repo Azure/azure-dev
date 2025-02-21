@@ -153,10 +153,10 @@ func (a *AddAction) previewProvision(
 	for _, res := range allResourcesToAdd {
 		if strings.HasPrefix(string(res.Type), "host.") {
 			for _, use := range res.Uses {
-				if res, ok := prjConfig.Resources[use]; ok {
+				if usingRes, ok := prjConfig.Resources[use]; ok {
 					fmt.Fprintf(w, "   %s -> %s\n", res.Name, output.WithBold("%s", use))
 
-					meta := Metadata(res)
+					meta := Metadata(usingRes)
 					for _, envVar := range meta.UseEnvVars {
 						fmt.Fprintf(w, "g   + %s\n", envVar)
 					}
